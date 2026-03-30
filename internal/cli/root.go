@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -17,18 +19,50 @@ import (
 // NewRootCommand creates the backlogit CLI root command.
 func NewRootCommand() *cobra.Command {
 	var cwd string
+	var logLevel string
+
 	root := &cobra.Command{
 		Use:          "backlogit",
 		Short:        "Backlogit — AI-native agile workspace",
 		SilenceUsage: true,
+		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+			if logLevel != "" {
+				applyLogLevel(logLevel)
+			}
+		},
 	}
 	root.PersistentFlags().StringVar(&cwd, "cwd", ".", "workspace directory")
+	root.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)")
 
 	root.AddCommand(newInitCommand(&cwd))
 	root.AddCommand(newSyncCommand(&cwd))
 	root.AddCommand(newMCPCommand(&cwd))
 
 	return root
+}
+
+// applyLogLevel reconfigures the global slog handler at the given level.
+func applyLogLevel(level string) {
+	format := strings.ToLower(os.Getenv("BACKLOGIT_LOG_FORMAT"))
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler
+	if format == "json" {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h))
 }
 
 func newInitCommand(cwd *string) *cobra.Command {
