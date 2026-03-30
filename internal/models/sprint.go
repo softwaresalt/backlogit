@@ -12,8 +12,6 @@ type Sprint struct {
 }
 
 // Validate checks sprint required fields.
-//
-// Worker: Implement sprint validation.
 func (s Sprint) Validate() error {
-	panic("not implemented: Worker: Implement sprint validation")
+	return validate.Struct(s)
 }

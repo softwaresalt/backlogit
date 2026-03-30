@@ -3,8 +3,12 @@ package core
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/backlogit/backlogit/internal/config"
+	"github.com/backlogit/backlogit/internal/db"
 )
 
 // Workspace coordinates cross-store operations across Markdown, SQLite, and JSONL.
@@ -15,10 +19,28 @@ type Workspace struct {
 }
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
-//
-// Worker: Implement workspace initialization with config loading and DB setup.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
-	panic("not implemented: Worker: Implement workspace initialization")
+	cfg, err := config.Load(ctx, rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	dbPath := filepath.Join(rootPath, ".backlogit", "backlogit.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	if err := db.EnsureSchema(database); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("ensure schema: %w", err)
+	}
+
+	return &Workspace{
+		RootPath: rootPath,
+		Config:   cfg,
+		DB:       database,
+	}, nil
 }
 
 // Close closes the database connection.
@@ -31,8 +53,14 @@ func (ws *Workspace) Close() error {
 
 // SafeResolve returns an absolute path within the workspace root or an error
 // if the target escapes the workspace boundary.
-//
-// Worker: Implement path traversal validation.
 func SafeResolve(workspaceRoot, target string) (string, error) {
-	panic("not implemented: Worker: Implement path traversal validation")
+	abs, err := filepath.Abs(filepath.Join(workspaceRoot, target))
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	cleanRoot := filepath.Clean(workspaceRoot)
+	if !strings.HasPrefix(abs, cleanRoot+string(filepath.Separator)) && abs != cleanRoot {
+		return "", fmt.Errorf("path escapes workspace boundary: %s", target)
+	}
+	return abs, nil
 }

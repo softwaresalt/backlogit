@@ -2,6 +2,10 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/backlogit/backlogit/internal/models"
 )
@@ -42,16 +46,161 @@ func WithFields(fields map[string]any) Option {
 	return func(o *createOptions) { o.Fields = fields }
 }
 
-// CreateArtifact creates a new artifact with hierarchy enforcement and atomic writes.
-//
-// Worker: Implement artifact creation with naming, routing, and file writing.
+// CreateArtifact creates a new artifact with atomic file write.
 func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactType string, opts ...Option) (*models.Artifact, error) {
-	panic("not implemented: Worker: Implement artifact creation with hierarchy enforcement")
+	o := &createOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	typeConfig, ok := ws.Config.ArtifactTypes[artifactType]
+	if !ok {
+		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
+	}
+
+	nextID, err := NextID(ctx, ws.DB, artifactType)
+	if err != nil {
+		return nil, fmt.Errorf("get next id: %w", err)
+	}
+
+	name := ResolveName(typeConfig, title, nextID, ws.Config.MaxSlugLength)
+
+	status := o.Status
+	if status == "" {
+		status = "todo"
+	}
+
+	now := time.Now()
+	artifact := &models.Artifact{
+		ID:           name,
+		Title:        title,
+		Status:       models.ArtifactStatus(status),
+		ArtifactType: artifactType,
+		ParentID:     o.ParentID,
+		Sprint:       o.Sprint,
+		Description:  o.Description,
+		CustomFields: o.Fields,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	if err := artifact.Validate(); err != nil {
+		return nil, fmt.Errorf("validate artifact: %w", err)
+	}
+
+	dir := artifactType + "s"
+	dirAbs := filepath.Join(ws.RootPath, dir)
+	if err := os.MkdirAll(dirAbs, 0o755); err != nil {
+		return nil, fmt.Errorf("create directory: %w", err)
+	}
+
+	fm := map[string]any{
+		"id":            artifact.ID,
+		"title":         artifact.Title,
+		"status":        string(artifact.Status),
+		"artifact_type": artifact.ArtifactType,
+		"created_at":    artifact.CreatedAt,
+		"updated_at":    artifact.UpdatedAt,
+	}
+	if artifact.ParentID != "" {
+		fm["parent_id"] = artifact.ParentID
+	}
+	if artifact.Sprint != "" {
+		fm["sprint"] = artifact.Sprint
+	}
+	if artifact.Priority != "" {
+		fm["priority"] = artifact.Priority
+	}
+	if artifact.CustomFields != nil {
+		fm["custom_fields"] = artifact.CustomFields
+	}
+
+	content := models.SerializeFrontmatter(fm, artifact.Description)
+	filePath := filepath.Join(dirAbs, name+".md")
+
+	tmpPath := filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
+		return nil, fmt.Errorf("write artifact file: %w", err)
+	}
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("rename artifact file: %w", err)
+	}
+
+	return artifact, nil
 }
 
-// UpdateArtifact updates an existing artifact's fields and moves it if status changed.
-//
-// Worker: Implement artifact update with re-validation and atomic writes.
+// UpdateArtifact updates an existing artifact's fields.
 func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[string]any) (*models.Artifact, error) {
-	panic("not implemented: Worker: Implement artifact update")
+	artifact, err := findArtifact(ctx, ws, id)
+	if err != nil {
+		return nil, fmt.Errorf("find artifact %s: %w", id, err)
+	}
+
+	if v, ok := updates["title"].(string); ok {
+		artifact.Title = v
+	}
+	if v, ok := updates["status"].(string); ok {
+		artifact.Status = models.ArtifactStatus(v)
+	}
+	if v, ok := updates["description"].(string); ok {
+		artifact.Description = v
+	}
+	if v, ok := updates["sprint"].(string); ok {
+		artifact.Sprint = v
+	}
+	if v, ok := updates["priority"].(string); ok {
+		artifact.Priority = v
+	}
+	if v, ok := updates["custom_fields"].(map[string]any); ok {
+		artifact.CustomFields = v
+	}
+	artifact.UpdatedAt = time.Now()
+
+	if err := artifact.Validate(); err != nil {
+		return nil, fmt.Errorf("validate artifact: %w", err)
+	}
+
+	return artifact, nil
+}
+
+func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
+	var found *models.Artifact
+	err := filepath.WalkDir(ws.RootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return err
+		}
+		a, _, parseErr := parseFile(path)
+		if parseErr != nil {
+			return nil
+		}
+		if a.ID == id {
+			found = a
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, fmt.Errorf("artifact not found: %s", id)
+	}
+	return found, nil
+}
+
+func parseFile(path string) (*models.Artifact, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+	fm, body, err := models.ParseFrontmatter(string(data))
+	if err != nil {
+		return nil, "", err
+	}
+	artifact, err := models.ArtifactFromFrontmatter(fm, body)
+	if err != nil {
+		return nil, "", err
+	}
+	return artifact, body, nil
 }

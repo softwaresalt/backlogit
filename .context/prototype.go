@@ -13,7 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // BacklogitConfig holds workspace configuration loaded from YAML files.

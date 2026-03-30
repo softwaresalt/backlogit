@@ -1,5 +1,14 @@
 package config
 
+import "github.com/go-playground/validator/v10"
+
+var validate = validator.New()
+
+// Validate checks all struct tags and returns a descriptive error on failure.
+func (c *WorkspaceConfig) Validate() error {
+	return validate.Struct(c)
+}
+
 // WorkspaceConfig holds the parsed workspace configuration.
 type WorkspaceConfig struct {
 	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`

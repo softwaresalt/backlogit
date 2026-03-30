@@ -1,6 +1,12 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/go-playground/validator/v10"
+)
+
+var validate = validator.New()
 
 // ArtifactStatus represents the lifecycle state of a backlogit artifact.
 type ArtifactStatus string
@@ -31,8 +37,6 @@ type Artifact struct {
 }
 
 // Validate checks all struct tags and returns a descriptive error on failure.
-//
-// Worker: Implement struct validation using go-playground/validator.
 func (a Artifact) Validate() error {
-	panic("not implemented: Worker: Implement artifact struct validation")
+	return validate.Struct(a)
 }
