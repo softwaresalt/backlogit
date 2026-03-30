@@ -31,3 +31,8 @@ Create `internal/models/frontmatter_test.go` with table-driven tests covering ro
 - [ ] #4 Round-trip test: parse then serialize produces functionally identical output
 - [ ] #5 Edge cases handled: no frontmatter, empty body, special characters in values
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

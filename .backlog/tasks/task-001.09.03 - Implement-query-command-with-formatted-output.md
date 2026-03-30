@@ -32,3 +32,8 @@ Create `internal/cli/query_test.go` with tests for formatted output and error ca
 - [ ] #3 Output includes column headers and aligned rows
 - [ ] #4 Tests verify formatted output and error handling
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

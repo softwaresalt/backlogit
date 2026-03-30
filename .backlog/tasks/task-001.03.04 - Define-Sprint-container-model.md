@@ -30,3 +30,8 @@ Per review P1-11: Sprints are indexed as regular items (type='sprint') in the da
 - [ ] #2 Sprint.Validate() enforces required fields (ID, Goal)
 - [ ] #3 Tests cover valid sprints and missing required fields
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

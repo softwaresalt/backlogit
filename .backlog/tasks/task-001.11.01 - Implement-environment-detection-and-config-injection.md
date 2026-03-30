@@ -38,3 +38,8 @@ Create `internal/cli/mcp_init_test.go` with tests for each environment, existing
 - [ ] #5 Repeated runs do not duplicate the backlogit entry
 - [ ] #6 Creates config directories if they do not exist
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

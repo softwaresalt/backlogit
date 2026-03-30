@@ -30,3 +30,8 @@ Create `internal/parser/markdown_test.go` with tests for valid files, files with
 - [ ] #3 Correctly handles files without frontmatter (returns nil artifact, full body)
 - [ ] #4 Tests use t.TempDir() with sample .md files
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

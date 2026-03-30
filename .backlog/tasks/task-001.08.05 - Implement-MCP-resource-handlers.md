@@ -30,3 +30,8 @@ Both resources validate workspace existence before returning content.
 - [ ] #3 Resources return error when workspace is not initialized
 - [ ] #4 Tests verify resource content format and error handling
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

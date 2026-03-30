@@ -30,3 +30,8 @@ Create `internal/events/telemetry_test.go` with tests.
 - [ ] #2 Telemetry entries capture arbitrary payload as map[string]any
 - [ ] #3 Tests verify JSONL format and payload serialization
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 90b24e6. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

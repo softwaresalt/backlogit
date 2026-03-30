@@ -34,3 +34,8 @@ Per review P1-09: this wires the CLI to the Unit 10 migration pipeline.
 - [ ] #3 backlogit migrate archives original file as .bak
 - [ ] #4 Tests verify MCP server startup and migrate pipeline execution
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

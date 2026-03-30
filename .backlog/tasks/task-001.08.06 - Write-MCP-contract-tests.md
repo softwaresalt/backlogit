@@ -35,3 +35,8 @@ Create `tests/contract/resources_test.go` with contract tests for both MCP resou
 - [ ] #4 Contract tests verify error response format for validation_failed
 - [ ] #5 All contract tests pass via go test ./tests/contract/...
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

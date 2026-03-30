@@ -28,3 +28,8 @@ Per review P1-10: All file operations throughout the codebase must use SafeResol
 - [ ] #3 SafeResolve returns error for absolute paths outside workspace
 - [ ] #4 Tests cover normal paths, relative paths, traversal attempts, symlink edge cases
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

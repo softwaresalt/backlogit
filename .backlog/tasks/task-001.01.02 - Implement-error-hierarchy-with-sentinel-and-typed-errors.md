@@ -36,3 +36,8 @@ Create `internal/errors/errors_test.go` with table-driven tests for:
 - [ ] #4 errors.As(wrappedErr, &configErr) populates ConfigError fields
 - [ ] #5 go test ./internal/errors/... passes with 100% coverage
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit de8d31c. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

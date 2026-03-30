@@ -27,3 +27,8 @@ Create `internal/config/defaults.go` with:
 - [ ] #2 DefaultRegistry() returns routing rules mapping statuses to directories
 - [ ] #3 Generated defaults pass validation when loaded through the config loader
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

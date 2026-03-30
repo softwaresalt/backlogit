@@ -31,3 +31,8 @@ Add to `internal/mcp/tools.go`:
 - [ ] #4 backlogit_save_memory updates memories.json
 - [ ] #5 backlogit_create_checkpoint writes state dump to checkpoints/
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

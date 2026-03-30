@@ -29,3 +29,8 @@ Create `internal/events/memory_test.go` with tests for memory save/update/read a
 - [ ] #3 CreateCheckpoint writes timestamped state dump to checkpoints/ directory
 - [ ] #4 Tests verify memory persistence, key updates, and checkpoint file creation
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 90b24e6. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

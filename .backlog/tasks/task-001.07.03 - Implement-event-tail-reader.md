@@ -29,3 +29,8 @@ Create `internal/events/reader_test.go` with tests for filtering, limit, empty r
 - [ ] #3 Correctly handles large files by scanning from the end
 - [ ] #4 Tests verify filtering by item_id and limit enforcement
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 90b24e6. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

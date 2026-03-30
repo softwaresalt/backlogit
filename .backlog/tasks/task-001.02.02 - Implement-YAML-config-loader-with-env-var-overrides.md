@@ -32,3 +32,8 @@ Create `internal/config/loader_test.go` with table-driven tests using `t.TempDir
 - [ ] #4 Validates allowed_children references exist in artifact_types map
 - [ ] #5 Table-driven tests cover valid config, missing files, invalid YAML, validation failures, env overrides
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

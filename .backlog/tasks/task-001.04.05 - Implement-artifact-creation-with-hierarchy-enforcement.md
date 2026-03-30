@@ -33,3 +33,8 @@ Create `internal/core/artifacts_test.go` with table-driven tests.
 - [ ] #4 All paths validated through SafeResolve before filesystem access
 - [ ] #5 Tests verify hierarchy enforcement, file content, and atomic write behavior
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

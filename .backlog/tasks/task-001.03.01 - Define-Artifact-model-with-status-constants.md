@@ -30,3 +30,8 @@ Create `internal/models/artifact_test.go` with table-driven tests for validation
 - [ ] #3 Artifact.Validate() enforces required fields (id, title, status, artifact_type)
 - [ ] #4 Table-driven tests cover valid artifacts, missing fields, invalid status values
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

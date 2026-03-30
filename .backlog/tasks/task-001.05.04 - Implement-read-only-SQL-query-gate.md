@@ -31,3 +31,8 @@ Create `internal/db/gate_test.go` with comprehensive table-driven tests for allo
 - [ ] #4 ExecuteGatedQuery caps results at MaxRows (default 500)
 - [ ] #5 Tests cover allowed queries, each forbidden pattern, and row limit enforcement
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit de8d31c. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

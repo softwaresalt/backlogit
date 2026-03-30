@@ -32,3 +32,8 @@ Create `internal/events/stream_test.go` with tests for append, JSONL format, and
 - [ ] #4 File is opened with O_APPEND flag for process-level safety
 - [ ] #5 Tests verify JSONL format and concurrent write safety
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 90b24e6. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

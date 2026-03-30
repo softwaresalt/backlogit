@@ -29,3 +29,8 @@ Add to `internal/mcp/tools.go`:
 - [ ] #4 query_sql rejects INSERT/UPDATE/DELETE with descriptive error
 - [ ] #5 Tests verify successful reads and error responses
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

@@ -36,3 +36,8 @@ Create `internal/parser/migration_test.go` with end-to-end test using temp works
 - [ ] #4 Original file renamed to .bak extension with zero data loss
 - [ ] #5 End-to-end test verifies complete migration pipeline with temp workspace
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 90b24e6. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

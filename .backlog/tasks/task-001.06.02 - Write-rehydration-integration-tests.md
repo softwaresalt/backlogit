@@ -33,3 +33,8 @@ Create `tests/integration/rehydration_test.go` with end-to-end integration tests
 - [ ] #4 FTS5 search finds items by keyword in title and description
 - [ ] #5 Test verifies custom_fields JSON column is queryable via json_extract
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

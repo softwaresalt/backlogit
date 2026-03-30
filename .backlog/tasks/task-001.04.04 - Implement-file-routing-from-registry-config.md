@@ -30,3 +30,8 @@ Create `internal/core/routing_test.go` with table-driven tests for various statu
 - [ ] #4 Returns fallback directory when no condition matches
 - [ ] #5 Tests cover status-based routing and type-based routing
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

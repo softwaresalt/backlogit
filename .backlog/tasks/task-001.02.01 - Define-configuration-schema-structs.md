@@ -33,3 +33,8 @@ All structs use `yaml:"..."` and `validate:"..."` tags from `go-playground/valid
 - [ ] #4 RegistryConfig maps directory conditions to paths
 - [ ] #5 All structs pass go vet and golangci-lint
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

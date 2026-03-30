@@ -36,3 +36,8 @@ Create `internal/cli/root_test.go` and `internal/cli/init_test.go` with tests.
 - [ ] #4 Repeated init on existing workspace is safe (no data loss)
 - [ ] #5 Tests verify init output, directory creation, and --legacy flag behavior
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

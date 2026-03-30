@@ -35,3 +35,8 @@ Create `Makefile` with targets:
 - [ ] #4 make vet runs go vet ./...
 - [ ] #5 make fmt checks gofmt formatting
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit de8d31c. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

@@ -29,3 +29,8 @@ Create `internal/db/connection_test.go` verifying WAL mode and pragma settings.
 - [ ] #3 Connection closes cleanly with defer db.Close()
 - [ ] #4 Tests verify WAL mode and foreign keys via PRAGMA queries
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit de8d31c. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

@@ -31,3 +31,8 @@ Create `internal/db/schema_test.go` verifying schema creation, idempotency, and 
 - [ ] #3 Schema creation is idempotent (safe to call multiple times)
 - [ ] #4 Tests verify table existence, column types, and FTS5 functionality
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

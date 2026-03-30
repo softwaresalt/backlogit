@@ -30,3 +30,8 @@ Create `internal/core/naming_test.go` with table-driven tests.
 - [ ] #3 Sequential ID assignment increments correctly from existing max
 - [ ] #4 Tests cover various name formats, long titles, special characters
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

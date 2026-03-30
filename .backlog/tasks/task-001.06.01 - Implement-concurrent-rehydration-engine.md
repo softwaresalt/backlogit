@@ -32,3 +32,8 @@ Create `internal/db/rehydration_test.go` with unit tests using temp workspace wi
 - [ ] #4 Correctly indexes sprints as type=sprint items
 - [ ] #5 Handles malformed files gracefully (logs warning, continues with remaining files)
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

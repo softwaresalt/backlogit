@@ -30,3 +30,8 @@ Both handlers follow the five-step pattern and use the Server struct's DB and co
 - [ ] #4 Both tools return workspace_not_initialized error when .backlogit/ missing
 - [ ] #5 Tests verify parameter validation and successful creation/update
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

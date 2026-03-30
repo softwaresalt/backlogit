@@ -35,3 +35,8 @@ Create `internal/db/queries_test.go` with table-driven tests.
 - [ ] #4 SearchItems uses FTS5 for full-text search across title and description
 - [ ] #5 All queries use parameterized statements (no string concatenation)
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

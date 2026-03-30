@@ -32,3 +32,8 @@ Create `internal/core/workspace_test.go` with integration tests using `t.TempDir
 - [ ] #4 Workspace.Close() closes DB connection cleanly
 - [ ] #5 Tests verify cross-store coordination and graceful degradation
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

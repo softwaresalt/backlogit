@@ -29,3 +29,8 @@ Create `internal/core/fields_test.go` with table-driven tests for validation and
 - [ ] #3 TranslateExternalMap converts local field values to external system format
 - [ ] #4 Tests cover enum validation, string fields, int fields, external_map translation
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

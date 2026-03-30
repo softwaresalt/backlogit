@@ -32,3 +32,8 @@ Dependencies to declare: `github.com/spf13/cobra`, `github.com/mark3labs/mcp-go`
 - [ ] #3 cmd/backlogit/main.go compiles with go build ./cmd/backlogit
 - [ ] #4 go mod tidy completes without errors
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit de8d31c. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

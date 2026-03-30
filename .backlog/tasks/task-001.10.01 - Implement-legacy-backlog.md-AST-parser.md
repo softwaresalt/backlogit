@@ -34,3 +34,8 @@ Create `internal/parser/legacy_test.go` with table-driven tests using sample leg
 - [ ] #4 Handles mixed formatting: nested headings with checklists at various depths
 - [ ] #5 Tests cover standard legacy formats with nested headings and checklists
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit 83cebfc. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

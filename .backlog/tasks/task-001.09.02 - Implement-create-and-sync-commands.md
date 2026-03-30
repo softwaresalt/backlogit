@@ -36,3 +36,8 @@ Create `internal/cli/create_test.go` and `internal/cli/sync_test.go` with tests.
 - [ ] #3 backlogit sync triggers rehydration and reports indexed count
 - [ ] #4 Tests verify file creation, validation errors, and sync output
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.

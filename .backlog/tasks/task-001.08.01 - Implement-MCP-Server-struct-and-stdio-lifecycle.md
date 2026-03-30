@@ -34,3 +34,8 @@ Create `internal/mcp/errors.go` with helper functions using `json.Marshal` for s
 - [ ] #3 RunStdio() starts stdio transport and blocks until shutdown
 - [ ] #4 Tests verify server creation and capability registration
 <!-- AC:END -->
+
+
+## Implementation Notes
+
+Completed in commit a49b9dd. Gates passed: `go test ./...`, `go vet ./...`, `golangci-lint run`.
