@@ -16,11 +16,16 @@
     .\make.ps1 fmt          # gofmt check
     .\make.ps1 cover        # print coverage report (run 'test' first)
     .\make.ps1 clean        # remove bin/ and coverage.out
-    .\make.ps1 install      # go install to GOPATH/bin
+    .\make.ps1 install              # install to current location (or GOPATH\bin if not found)
+    .\make.ps1 install -InstallPath C:\Tools  # install to specific path
 #>
 param(
     [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install")]
-    [string]$Target = "all"
+    [string]$Target = "all",
+
+    # Optional install directory for the 'install' target (e.g. C:\Tools).
+    # Defaults to GOPATH\bin when not specified.
+    [string]$InstallPath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -87,6 +92,19 @@ switch ($Target) {
     }
 
     "install" {
-        Step "install" { go install .\cmd\backlogit }
+        if (-not $InstallPath) {
+            $existing = Get-Command backlogit -ErrorAction SilentlyContinue
+            if ($existing) {
+                $InstallPath = Split-Path $existing.Source
+            } else {
+                $InstallPath = Join-Path $env:GOPATH "bin"
+            }
+        }
+        Step "install" {
+            New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
+            $dest = Join-Path $InstallPath "backlogit.exe"
+            go build -o $dest .\cmd\backlogit
+            Write-Host "Installed: $dest" -ForegroundColor Green
+        }
     }
 }

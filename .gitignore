@@ -1,4 +1,5 @@
 # Directories
+bin/
 logs/
 .vscode/
 .engram/
