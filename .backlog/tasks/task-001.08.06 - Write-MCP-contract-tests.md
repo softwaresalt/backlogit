@@ -1,7 +1,7 @@
 ---
 id: TASK-001.08.06
 title: Write MCP contract tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:44'
 labels: []

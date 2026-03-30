@@ -1,7 +1,7 @@
 ---
 id: TASK-001.08.05
 title: Implement MCP resource handlers
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:44'
 labels: []

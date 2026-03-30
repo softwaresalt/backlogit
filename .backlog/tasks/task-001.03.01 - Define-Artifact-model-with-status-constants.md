@@ -1,7 +1,7 @@
 ---
 id: TASK-001.03.01
 title: Define Artifact model with status constants
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:39'
 labels: []

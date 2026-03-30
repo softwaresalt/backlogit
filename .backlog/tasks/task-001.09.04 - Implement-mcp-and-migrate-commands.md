@@ -1,7 +1,7 @@
 ---
 id: TASK-001.09.04
 title: Implement mcp and migrate commands
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:45'
 labels: []

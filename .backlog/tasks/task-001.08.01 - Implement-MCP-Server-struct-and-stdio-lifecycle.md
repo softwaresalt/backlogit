@@ -1,7 +1,7 @@
 ---
 id: TASK-001.08.01
 title: Implement MCP Server struct and stdio lifecycle
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:43'
 labels: []

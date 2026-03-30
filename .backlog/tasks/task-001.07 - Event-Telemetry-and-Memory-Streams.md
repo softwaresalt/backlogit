@@ -1,7 +1,7 @@
 ---
 id: TASK-001.07
 title: 'Event, Telemetry, and Memory Streams'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:37'
 updated_date: '2026-03-30 01:46'

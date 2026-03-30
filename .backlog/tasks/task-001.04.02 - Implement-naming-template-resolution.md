@@ -1,7 +1,7 @@
 ---
 id: TASK-001.04.02
 title: Implement naming template resolution
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:40'
 labels: []

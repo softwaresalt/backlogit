@@ -1,7 +1,7 @@
 ---
 id: TASK-001.02.03
 title: Create default config and registry templates
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:39'
 labels: []

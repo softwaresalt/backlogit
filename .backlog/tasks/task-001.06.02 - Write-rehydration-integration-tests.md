@@ -1,7 +1,7 @@
 ---
 id: TASK-001.06.02
 title: Write rehydration integration tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:42'
 labels: []

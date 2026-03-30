@@ -1,7 +1,7 @@
 ---
 id: TASK-001.03.04
 title: Define Sprint container model
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:39'
 labels: []

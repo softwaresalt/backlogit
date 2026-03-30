@@ -1,7 +1,7 @@
 ---
 id: TASK-001.08.03
 title: Implement item read and query tools
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:43'
 labels: []

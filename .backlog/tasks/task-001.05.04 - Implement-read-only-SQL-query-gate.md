@@ -1,7 +1,7 @@
 ---
 id: TASK-001.05.04
 title: Implement read-only SQL query gate
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:41'
 labels: []

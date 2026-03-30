@@ -1,7 +1,7 @@
 ---
 id: TASK-001.07.03
 title: Implement event tail reader
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:42'
 labels: []

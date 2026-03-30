@@ -1,7 +1,7 @@
 ---
 id: TASK-001.10.02
 title: Implement transformation and migration pipeline
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:45'
 labels: []

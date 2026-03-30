@@ -1,7 +1,7 @@
 ---
 id: TASK-001.01.03
 title: Create Makefile with build targets
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:38'
 labels: []

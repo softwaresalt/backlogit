@@ -1,7 +1,7 @@
 ---
 id: TASK-001.04.04
 title: Implement file routing from registry config
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:40'
 labels: []

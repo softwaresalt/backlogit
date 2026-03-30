@@ -1,7 +1,7 @@
 ---
 id: TASK-001
 title: Backlogit Core Implementation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:35'
 labels:

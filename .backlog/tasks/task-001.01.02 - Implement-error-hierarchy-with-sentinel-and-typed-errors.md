@@ -1,7 +1,7 @@
 ---
 id: TASK-001.01.02
 title: Implement error hierarchy with sentinel and typed errors
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:38'
 labels: []

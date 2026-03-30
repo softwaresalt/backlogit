@@ -1,7 +1,7 @@
 ---
 id: TASK-001.06
 title: Rehydration Engine
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:36'
 updated_date: '2026-03-30 01:46'

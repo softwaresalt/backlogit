@@ -1,7 +1,7 @@
 ---
 id: TASK-001.04.01
 title: Implement SafeResolve workspace containment
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:40'
 labels: []

@@ -1,7 +1,7 @@
 ---
 id: TASK-001.11.01
 title: Implement environment detection and config injection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:45'
 labels: []

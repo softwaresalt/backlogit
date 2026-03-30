@@ -1,7 +1,7 @@
 ---
 id: TASK-001.05.02
 title: Implement schema bootstrapping with FTS5
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:41'
 labels: []
