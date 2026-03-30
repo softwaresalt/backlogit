@@ -37,7 +37,7 @@ func TestWriteDefaults_HeaderDefLoadable(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
-	assert.GreaterOrEqual(t, len(cfg.Types), 8)
+	assert.GreaterOrEqual(t, len(cfg.Types), 3)
 }
 
 func TestWriteDefaults_HeaderDefContainsAllTypes(t *testing.T) {
@@ -49,8 +49,8 @@ func TestWriteDefaults_HeaderDefContainsAllTypes(t *testing.T) {
 	cfg, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 
-	// Assert — all 8 queue-specified types must be present
-	expectedTypes := []string{"epic", "feature", "sub-epic", "user-story", "task", "sub-task", "bug", "decision"}
+	// Assert — initial 3 types must be present (revision-3)
+	expectedTypes := []string{"task", "bug", "epic"}
 	for _, typeName := range expectedTypes {
 		assert.Contains(t, cfg.Types, typeName, "missing type: %s", typeName)
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/backlogit/backlogit/internal/config"
 )
 
-// TASK-002.03.01: Implement template schema and loader.
+// TASK-002.03.01: Implement template schema and loader (revised: no flag field).
 
 func TestLoadTemplates_ValidTemplate(t *testing.T) {
 	// Arrange
@@ -21,10 +21,8 @@ name: task-template
 type: task
 sections:
   - name: description
-    flag: description
     required: true
   - name: acceptance-criteria
-    flag: acceptance-criteria
     required: false
 ---
 
@@ -70,10 +68,8 @@ name: bad-template
 type: task
 sections:
   - name: description
-    flag: description
     required: true
   - name: description
-    flag: desc
     required: false
 ---
 
@@ -98,7 +94,6 @@ name: bad-tags
 type: task
 sections:
   - name: description
-    flag: description
     required: true
 ---
 
@@ -117,8 +112,8 @@ No END tag here
 func TestGetTemplateForType_Found(t *testing.T) {
 	// Arrange
 	templates := []*config.TemplateConfig{
-		{Name: "task-tmpl", ArtifactType: "task", Sections: []config.SectionDef{{Name: "desc", Flag: "desc", Required: true}}},
-		{Name: "bug-tmpl", ArtifactType: "bug", Sections: []config.SectionDef{{Name: "steps", Flag: "steps", Required: true}}},
+		{Name: "task-tmpl", ArtifactType: "task", Sections: []config.SectionDef{{Name: "desc", Required: true}}},
+		{Name: "bug-tmpl", ArtifactType: "bug", Sections: []config.SectionDef{{Name: "steps", Required: true}}},
 	}
 
 	// Act
@@ -132,7 +127,7 @@ func TestGetTemplateForType_Found(t *testing.T) {
 func TestGetTemplateForType_NotFound(t *testing.T) {
 	// Arrange
 	templates := []*config.TemplateConfig{
-		{Name: "task-tmpl", ArtifactType: "task", Sections: []config.SectionDef{{Name: "desc", Flag: "desc", Required: true}}},
+		{Name: "task-tmpl", ArtifactType: "task", Sections: []config.SectionDef{{Name: "desc", Required: true}}},
 	}
 
 	// Act
@@ -140,28 +135,4 @@ func TestGetTemplateForType_NotFound(t *testing.T) {
 
 	// Assert
 	assert.Nil(t, result)
-}
-
-func TestLoadTemplates_InvalidFlag(t *testing.T) {
-	// Arrange — flag with uppercase should fail validation
-	dir := t.TempDir()
-	content := `---
-name: bad-flag
-type: task
-sections:
-  - name: description
-    flag: Description
-    required: true
----
-
-<!-- BEGIN:description -->
-<!-- END:description -->
-`
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "badflag.md"), []byte(content), 0o644))
-
-	// Act
-	_, err := config.LoadTemplates(dir)
-
-	// Assert
-	require.Error(t, err)
 }

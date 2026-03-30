@@ -194,8 +194,8 @@ types:
 	assert.False(t, cfg.IsImmutable("title"))
 }
 
-func TestLoadHeaderDef_AllEightTypes(t *testing.T) {
-	// Arrange
+func TestLoadHeaderDef_InitialThreeTypes(t *testing.T) {
+	// Arrange — revision-3: start with 3 initial types (task, bug, epic)
 	dir := t.TempDir()
 	content := `defaults:
   id:
@@ -208,53 +208,13 @@ func TestLoadHeaderDef_AllEightTypes(t *testing.T) {
     type: datetime
     immutable: true
 types:
-  epic:
-    prefix: OP
-    id_format: "{prefix}{NNN}"
-    fields:
-      status:
-        type: enum
-        values: [queued, active, done]
-        default: queued
-  feature:
-    prefix: OP
-    id_format: "{prefix}{NNN}"
-    fields:
-      status:
-        type: enum
-        values: [queued, active, done]
-        default: queued
-  sub-epic:
-    prefix: OP
-    id_format: "{prefix}{NNN}"
-    fields:
-      status:
-        type: enum
-        values: [queued, active, done]
-        default: queued
-  user-story:
-    prefix: OP
-    id_format: "{prefix}{NNN}"
-    fields:
-      status:
-        type: enum
-        values: [queued, active, done]
-        default: queued
   task:
     prefix: OP
     id_format: "{prefix}{NNN}"
     fields:
       status:
         type: enum
-        values: [queued, active, done]
-        default: queued
-  sub-task:
-    prefix: OP
-    id_format: "{prefix}{NNN}"
-    fields:
-      status:
-        type: enum
-        values: [queued, active, done]
+        values: [queued, active, blocked, review, done, accepted, rejected]
         default: queued
   bug:
     prefix: OP
@@ -262,15 +222,15 @@ types:
     fields:
       status:
         type: enum
-        values: [queued, active, done]
+        values: [queued, active, blocked, review, done, accepted, rejected]
         default: queued
-  decision:
+  epic:
     prefix: OP
     id_format: "{prefix}{NNN}"
     fields:
       status:
         type: enum
-        values: [queued, active, done]
+        values: [queued, active, blocked, review, done, accepted, rejected]
         default: queued
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "header-def.yaml"), []byte(content), 0o644))
@@ -280,8 +240,8 @@ types:
 
 	// Assert
 	require.NoError(t, err)
-	assert.Len(t, cfg.Types, 8)
-	for _, typeName := range []string{"epic", "feature", "sub-epic", "user-story", "task", "sub-task", "bug", "decision"} {
+	assert.Len(t, cfg.Types, 3)
+	for _, typeName := range []string{"task", "bug", "epic"} {
 		assert.Contains(t, cfg.Types, typeName, "missing type: %s", typeName)
 	}
 }

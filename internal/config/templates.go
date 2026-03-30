@@ -11,13 +11,12 @@ type TemplateConfig struct {
 // SectionDef describes a single template section.
 type SectionDef struct {
 	Name     string `yaml:"name" validate:"required"`
-	Flag     string `yaml:"flag" validate:"required"`
 	Required bool   `yaml:"required"`
 }
 
 // LoadTemplates discovers and parses all template files from the templates directory.
 func LoadTemplates(templatesDir string) ([]*TemplateConfig, error) {
-	panic("not implemented: Worker: Walk templatesDir, parse each .md file's YAML frontmatter into TemplateConfig, validate section names are unique within each template, validate flags are lowercase-hyphenated, validate BEGIN/END tags are matched in the body, return slice of validated configs or descriptive error.")
+	panic("not implemented: Worker: Walk templatesDir, parse each .md file's YAML frontmatter into TemplateConfig, validate section names are unique within each template, validate BEGIN/END tags are matched in the body, return slice of validated configs or descriptive error.")
 }
 
 // GetTemplateForType returns the template config for a given artifact type.

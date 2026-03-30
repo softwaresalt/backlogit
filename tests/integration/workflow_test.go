@@ -227,3 +227,66 @@ func TestWorkflow_StatusSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, "task")
 }
+
+// --- Section-aware workflow integration tests (revision-3) ---
+
+func TestWorkflow_AddWithSection(t *testing.T) {
+	// Arrange
+	root := setupIntegrationWorkspace(t)
+
+	// Act — add a task with --section flag
+	_, err := runCLI(t, root, "add", "--type", "task", "--title", "Section task",
+		"--section", `description=This is the body`)
+	require.NoError(t, err)
+
+	// Sync
+	_, err = runCLI(t, root, "sync")
+	require.NoError(t, err)
+
+	// Assert — list should show the task
+	output, err := runCLI(t, root, "list")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Section task")
+}
+
+func TestWorkflow_GetSection(t *testing.T) {
+	// Arrange
+	root := setupIntegrationWorkspace(t)
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+
+	artifact, err := core.CreateArtifact(ctx, ws, "Section get test", "task")
+	require.NoError(t, err)
+	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	require.NoError(t, err)
+	ws.Close()
+
+	// Act — get with --section flag to extract a specific section
+	output, err := runCLI(t, root, "get", artifact.ID, "--section", "description")
+
+	// Assert
+	require.NoError(t, err)
+	_ = output // section content depends on template rendering
+}
+
+func TestWorkflow_UpdateSection(t *testing.T) {
+	// Arrange
+	root := setupIntegrationWorkspace(t)
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+
+	artifact, err := core.CreateArtifact(ctx, ws, "Section update test", "task")
+	require.NoError(t, err)
+	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	require.NoError(t, err)
+	ws.Close()
+
+	// Act — update a specific section
+	_, err = runCLI(t, root, "update", artifact.ID,
+		"--section", `description=Updated section content`)
+
+	// Assert
+	require.NoError(t, err)
+}

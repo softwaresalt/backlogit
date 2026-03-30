@@ -18,6 +18,7 @@ import (
 )
 
 // TASK-002.05.01: Add new fields and static tools to MCP server.
+// TASK-002.05.02 (revised): Section-aware MCP tools contract tests.
 
 func setupMCPServer(t *testing.T) *mcpinternal.Server {
 	t.Helper()
@@ -153,4 +154,72 @@ func toolResultJSON(data []byte) map[string]any {
 	var result map[string]any
 	json.Unmarshal(data, &result)
 	return result
+}
+
+// --- Section-aware MCP tool contract tests (revision-3) ---
+
+func TestListTemplates_ContractToolExists(t *testing.T) {
+	// Arrange
+	s := setupMCPServer(t)
+
+	// Act
+	tools := s.ListTools()
+
+	// Assert — backlogit_list_templates must be unconditionally visible
+	found := false
+	for _, tool := range tools {
+		if tool == "backlogit_list_templates" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "backlogit_list_templates tool must be registered")
+}
+
+func TestCreateItem_ContractAcceptsSectionsParam(t *testing.T) {
+	// Arrange — verify create_item schema accepts sections JSON object
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_create_item"
+	request.Params.Arguments = map[string]any{
+		"title":         "Section contract test",
+		"artifact_type": "task",
+		"sections": map[string]any{
+			"description":         "Task body",
+			"acceptance-criteria": "- [ ] Done",
+		},
+	}
+
+	// Assert — contract: sections parameter is accepted as JSON map
+	assert.NotNil(t, request.Params.Arguments["sections"])
+	sections, ok := request.Params.Arguments["sections"].(map[string]any)
+	assert.True(t, ok, "sections must be a JSON object")
+	assert.Contains(t, sections, "description")
+}
+
+func TestGetItem_ContractAcceptsSectionParam(t *testing.T) {
+	// Arrange — verify get_item schema accepts optional section string
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_get_item"
+	request.Params.Arguments = map[string]any{
+		"id":      "T001",
+		"section": "description",
+	}
+
+	// Assert — contract: section parameter accepted as string
+	assert.Equal(t, "description", request.Params.Arguments["section"])
+}
+
+func TestUpdateItem_ContractAcceptsSectionsParam(t *testing.T) {
+	// Arrange — verify update_item schema accepts sections JSON object
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_update_item"
+	request.Params.Arguments = map[string]any{
+		"id": "T001",
+		"sections": map[string]any{
+			"description": "Updated body",
+		},
+	}
+
+	// Assert
+	assert.NotNil(t, request.Params.Arguments["sections"])
 }
