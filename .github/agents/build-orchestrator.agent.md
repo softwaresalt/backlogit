@@ -43,9 +43,9 @@ Every subagent invocation and terminal command gets a watchdog:
 | Operation | Timeout | Action on timeout |
 |---|---|---|
 | Subagent invocation | 10 minutes | Kill, broadcast stall warning, retry once. Second stall -> mark task blocked |
-| Terminal: pytest | 15 minutes | Kill, broadcast stall error, check for stale `.pytest_cache/` or lock files, clean up |
-| Terminal: pip install | 10 minutes | Kill, broadcast stall error, check for network issues or dependency conflicts |
-| Terminal: ruff/mypy | 5 minutes | Kill, broadcast, proceed with error handling |
+| Terminal: go test / golangci-lint / go vet | 15 minutes | Kill, broadcast stall error, check for stale build cache or lock files, clean up |
+| Terminal: go mod download | 10 minutes | Kill, broadcast stall error, check for network issues or dependency conflicts |
+| Terminal: golangci-lint | 5 minutes | Kill, broadcast, proceed with error handling |
 | Terminal: other | 5 minutes | Kill, broadcast, proceed with error handling |
 | agent-intercom check_clearance | 15 minutes | Treat as timeout/rejection |
 
@@ -53,7 +53,7 @@ Stall recovery:
 
 1. `broadcast(error, "[STALL] {operation} exceeded {timeout} — killing process")`
 2. Kill the stalled process
-3. Check for lock files (git lock, `.pytest_cache/` corruption) and clean up
+3. Check for lock files (git lock, stale build cache) and clean up
 4. Increment stall counter
 5. If stall_count >= 3: broadcast error, write memory checkpoint, exit
 6. If stall_count < 3: broadcast warning, retry once
@@ -68,11 +68,11 @@ Use grep/glob for code exploration and context gathering. Prefer targeted search
 
 | Question | Approach |
 |---|---|
-| Does function `foo` exist in `src/db/queries.py`? | `grep "def foo" src/db/queries.py` |
-| What calls function `X`? | `grep -rn "X(" src/` |
-| What would break if I change `X`? | `grep -rn "X" src/ tests/` to find all references |
-| What symbols are in module `Y`? | `grep "^class \|^def \|^[A-Z]" src/Y.py` |
-| Find all classes related to concept "task" | `grep -rn "class.*Task" src/` |
+| Does function `Foo` exist in `internal/db/queries.go`? | `grep "func Foo" internal/db/queries.go` |
+| What calls function `X`? | `grep -rn "X(" internal/` |
+| What would break if I change `X`? | `grep -rn "X" internal/ tests/` to find all references |
+| What symbols are in package `Y`? | `grep "^func \|^type " internal/Y/*.go` |
+| Find all types related to concept "task" | `grep -rn "type.*Task" internal/` |
 
 ### Availability
 
@@ -116,10 +116,10 @@ If a gate fails repeatedly after remediation attempts, call `transmit` with `pro
 1. **Agent-intercom detection**: Call `ping` with `status_message: "Build orchestrator pre-flight for feature ${input:feature}"`. If the call succeeds, agent-intercom is active for this session — follow all remote operator integration rules. If it fails, print a prominent CLI warning that no Slack status updates or approval routing will occur for this run, then proceed with local-only operation.
 2. **Messaging verification**: If agent-intercom is active, send the first `broadcast` immediately with a startup message and confirm it returns a thread `ts` before continuing. This verification must complete before queue inspection, testing, or any other build work.
 3. **Context compaction check**: Count files in `.copilot-tracking/` (excluding `archive/`). If the count exceeds 40 OR total size exceeds 500 KB, invoke the `compact-context` skill to archive stale tracking artifacts before the build session begins. `broadcast` at `info` level: `[COMPACT] Tracking directory at {N} files / {size} — invoking compaction`. If the threshold is not met, `broadcast`: `[COMPACT] Tracking directory healthy ({N} files)`.
-4. Run `python -m pytest --co -q` (collect-only) to confirm tests are discoverable and imports succeed.
+4. Run `go test -run=^$ -count=1 ./...` (compile-only) to confirm tests compile and the project builds cleanly.
 5. **Feature branch check**: Run `git branch --show-current`. If the result is `main` or a protected branch, halt immediately. `broadcast` at `error` level and instruct the user to create or check out the appropriate feature branch before proceeding. Do not auto-switch branches in build-orchestrator — branch preparation belongs to harness-architect or the user before the build loop starts. All implementation work must happen on a feature branch.
-6. **Shell hygiene**: Before starting any test run, stop all tracked async shell sessions that may still be running from prior activity. Dangling shells holding git lock files or stale pytest processes will cause silent hangs.
-7. **Environment check**: Verify `.venv/` exists and `pyproject.toml` dependencies are installed. If `pip` reports missing packages, run `pip install -e ".[dev]"` before proceeding.
+6. **Shell hygiene**: Before starting any test run, stop all tracked async shell sessions that may still be running from prior activity. Dangling shells holding git lock files or stale go test processes will cause silent hangs.
+7. **Environment check**: Verify `go.mod` exists and dependencies are resolved. If `go mod tidy` reports issues, resolve them before proceeding.
 8. If pre-flight fails, `broadcast` the failure at `error` level (if active) and halt.
 9. If all checks pass, `broadcast` at `success` level: `[🛠️ ORCHESTRATOR] Pre-flight passed — tests pass, environment ready`.
 
@@ -139,7 +139,7 @@ If a gate fails repeatedly after remediation attempts, call `transmit` with `pro
 
 1. Select the top task from the feature queue based on priority (`high` first, then `medium`, then `low`).
 2. Claim it: call `backlog-task_edit` with `id: <task_id>` and `status: "In Progress"` to lock the task from other agents.
-3. Extract the `--harness` command from the task's description or implementation notes (e.g., `python -m pytest tests/integration/test_feature.py`).
+3. Extract the `--harness` command from the task's description or implementation notes (e.g., `go test ./internal/db/... -run TestRehydrate -v`).
 4. **Read execution posture**: Check the task's implementation notes for `Execution note:`. If present, pass it to the build-feature skill as context:
    - `test-first` (default) -- standard harness loop
    - `characterization-first` -- run existing tests first, capture behavior, then modify
@@ -154,18 +154,18 @@ If a gate fails repeatedly after remediation attempts, call `transmit` with `pro
 
 After the build-feature skill finishes, verify that all mandatory gates were satisfied:
 
-1. **Lint and format gate**: Run `ruff format --check .` and `ruff check .`. Both commands must exit 0. Then run `mypy src/` for type checking. If any check fails, fix the violations, re-run all checks, and do not proceed until all pass.
+1. **Lint and format gate**: Run `gofmt -l .` and `golangci-lint run`. Both commands must exit 0. Then run `go vet ./...` for suspicious constructs. If any check fails, fix the violations, re-run all checks, and do not proceed until all pass.
 
 2. **Test gate — tiered strategy**: Use this tiered approach to keep feedback cycles fast:
-   a. **Targeted first**: Run `python -m pytest {harness_test_path} -v` for the specific test file this task implements.
-   b. **Peripheral check**: Run `python -m pytest tests/unit/ -v` to verify unit tests haven't regressed.
-   c. **Full suite**: Run `python -m pytest` only before the final commit that closes the task.
+   a. **Targeted first**: Run `go test {harness_test_path} -v` for the specific test package this task implements.
+   b. **Peripheral check**: Run `go test ./internal/... -v` to verify internal tests haven't regressed.
+   c. **Full suite**: Run `go test ./...` only before the final commit that closes the task.
 
 3. **Commit gate**: Confirm that `git status` shows a clean working tree (all changes committed).
 
 4. **Atomic milestone gate**: Confirm the task produced a verifiable state change. Every completed task MUST result in at least one of:
    - A passing test (harness test or unit test)
-   - A successful import (`python -c "import backlogit.{module}"` succeeds with the new code)
+   - A successful compilation (`go build ./internal/{package}/...` succeeds with the new code)
    - A measurable output (new file, updated configuration, documented decision)
    If the task produced only code changes without any verification artifact, the gate fails. `broadcast` at `error` level: `[🛠️ ORCHESTRATOR] Atomic milestone missing — task {task_id} has no verifiable state change`.
 
@@ -266,7 +266,7 @@ Invoke the `review` skill in `report-only` mode on the full set of accumulated c
 Review the session metrics by examining test run durations and lint pass rates:
 
 1. `broadcast` at `info` level: `[🛠️ ORCHESTRATOR] Checking session metrics`
-2. If any single pytest run exceeded 10 minutes, `broadcast` at `warning` level: `[METRICS] Slow test run detected ({duration}) — review test isolation for potential optimization`
+2. If any single go test run exceeded 10 minutes, `broadcast` at `warning` level: `[METRICS] Slow test run detected ({duration}) — review test isolation for potential optimization`
 3. This check is advisory, not blocking.
 
 #### 7a.6. Granularity Compliance Report

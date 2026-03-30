@@ -37,18 +37,18 @@ Every terminal command gets a watchdog timeout:
 | go test / golangci-lint / go vet | 10 minutes | Kill process, broadcast stall error, clean up |
 | Non-Go terminal commands | 5 minutes | Kill, broadcast, proceed with error handling |
 
-If a command exceeds its timeout, broadcast `[STALL] {command} exceeded {timeout}`, kill the process, clean up any `.mypy_cache` artifacts, and count toward the parent orchestrator's stall limit.
+If a command exceeds its timeout, broadcast `[STALL] {command} exceeded {timeout}`, kill the process, clean up any stale build cache artifacts, and count toward the parent orchestrator's stall limit.
 
 ## Prerequisites
 
 * The test harness defined by `${input:harness-cmd}` imports without error (green imports, red tests)
-* The structural stubs in `src/` exist with `panic("not implemented")` markers
+* The structural stubs in `internal/` exist with `panic("not implemented")` markers
 * The project imports cleanly before starting (`go build ./cmd/backlogit` passes)
-* All test files follow go test discovery conventions (`test_*.go` or `*_test.go`)
+* All test files follow go test discovery conventions (`*_test.go` in the same package or `_test` suffix package)
 
 ## Shell Session Hygiene
 
-Before starting any test run, verify no previous go test processes are still running from prior iterations. On Windows: `Get-Process -Name python,go test -ErrorAction SilentlyContinue`. Stale processes can hold file locks and cause silent hangs. Stop them before proceeding.
+Before starting any test run, verify no previous go test processes are still running from prior iterations. On Windows: `Get-Process -Name go -ErrorAction SilentlyContinue`. Stale processes can hold file locks and cause silent hangs. Stop them before proceeding.
 
 ## Remote Operator Integration (agent-intercom)
 When the agent-intercom MCP server is reachable, status updates and file modifications route through it so the remote operator can follow progress via Slack.
@@ -102,13 +102,13 @@ Execute the following loop with a **hard limit of 5 attempts**:
    b. `broadcast` the failure summary at `warning` level.
    c. **Instruction reinforcement**: Read `.github/agents/go-engineer.agent.md` (if it exists) or `.github/copilot-instructions.md` coding standards section to refresh project conventions before implementing the fix. `broadcast` at `info` level: `[REINFORCE] Coding standards refreshed for attempt {N}/5`.
    d. Analyze the error output and implement the fix:
-      * **Import errors**: Fix missing modules, incorrect imports, circular imports in the `src/` stubs.
-      * **NotImplementedError**: Implement the underlying logic inside the `src/` stubs to make the harness pass. Replace the `panic("not implemented")` markers with real logic.
+      * **Import errors**: Fix missing packages, incorrect imports, circular imports in the `internal/` stubs.
+      * **Panic (not implemented)**: Implement the underlying logic inside the `internal/` stubs to make the harness pass. Replace the `panic("not implemented")` markers with real logic.
       * **Test assertion failures**: Fix the implementation logic (not the test itself, unless the test setup has an import error).
    d. Apply all project coding standards:
-      * All functions use type hints for parameters and return values. � 
-      * Use `backlogit` exception hierarchy, not bare `Exception`.
-      * Follow Effective Go naming and GoDoc docstring conventions.
+      * All exported functions have GoDoc comments.
+      * Use backlogit error hierarchy (`internal/errors/`), not bare `error` values.
+      * Follow Effective Go naming and GoDoc conventions.
       * Run `go build ./cmd/backlogit` after each fix to verify the module imports cleanly before re-running the harness.
    e. After each file write, `broadcast` the change at `info` level with the unified diff.
    f. **Do not modify the test file itself** unless fixing an import error in the test setup.
@@ -121,10 +121,10 @@ Execute the following loop with a **hard limit of 5 attempts**:
 ### Step 3: Verification & State Update
 
 Once the isolated harness passes:
-1. **Workspace verification — tiered strategy**: Do NOT run the full test suite (`python -m go test`) after every harness pass in the feedback loop. Use this order:
-   a. Run `python -m go test {harness_test_file} -v` — confirms the harness still passes after any cleanup changes.
-   b. Run `python -m go test tests/unit/ -v` — fast check for library unit test regressions.
-   c. Run `python -m go test` (full suite) exactly once before committing.
+1. **Workspace verification — tiered strategy**: Do NOT run the full test suite (`go test ./...`) after every harness pass in the feedback loop. Use this order:
+   a. Run `go test {harness_test_path} -v` — confirms the harness still passes after any cleanup changes.
+   b. Run `go test ./internal/... -v` — fast check for internal package regressions.
+   c. Run `go test ./...` (full suite) exactly once before committing.
    * If new failures appear in the full suite, diagnose and fix them before committing.
    * `broadcast` at `success` level: `[BUILD] Workspace tests pass — task {task-id} complete`.
 2. **Lint verification**: Run `golangci-lint run` and `gofmt -l .`. Run `go vet ./...`. Fix any violations.
@@ -137,25 +137,25 @@ Once the isolated harness passes:
 
 ## Troubleshooting
 
-### Import errors after adding new modules
+### Compilation errors after adding new packages
 
-Verify that all new packages have `__init__.py` files and that imports follow the project's package structure. Check that `go.mod` correctly lists the package source directory.
+Verify that all new packages have correct `package` declarations matching the directory name and that imports use the full module path (`github.com/backlogit/backlogit/internal/{package}`). Check that `go.mod` has the correct module declaration.
 
-### mypy reports missing stubs
+### Go vet reports suspicious constructs
 
-Install type stubs for third-party dependencies: `(Go has built-in types)PyYAML types-aiofiles` etc. Check `go.mod` `[tool.mypy]` for `ignore_missing_imports` settings.
+Review `go vet ./...` output for common issues: unused variables, unreachable code, mismatched struct tags. Go vet findings must be fixed before committing.
 
 ### SQLite locking in tests
 
-SQLite allows only one writer at a time. If parallel tests share a database file, use `tmp_path` fixtures to create isolated databases per test. Avoid `go test-xdist` parallelism for database-touching tests unless each test uses its own database file.
+SQLite allows only one writer at a time. If parallel tests share a database file, use `t.TempDir()` to create isolated databases per test. Avoid `go test -parallel` for database-touching tests unless each test uses its own database file.
 
 ### Tests pass locally but fail in CI
 
-Verify the Go version in `go.mod` (`requires-python`) matches the CI matrix in `.github/workflows/ci.yml`. Check that all test dependencies are listed in the `[project.optional-dependencies.dev]` section.
+Verify the Go version in `go.mod` matches the CI matrix in `.github/workflows/ci.yml`. Check that all test dependencies are properly declared in `go.mod` and resolved via `go mod tidy`.
 
 ### Circuit breaker triggered (5 failed attempts)
 
-When the 5-attempt hard limit is reached, the task is marked as blocked in the backlog board. Review the error output from each attempt to identify the root cause. Common issues include missing type annotations, incorrect function signatures in stubs, or test assumptions that conflict with the codebase architecture.
+When the 5-attempt hard limit is reached, the task is marked as blocked in the backlog board. Review the error output from each attempt to identify the root cause. Common issues include incorrect function signatures in stubs, missing interface implementations, or test assumptions that conflict with the codebase architecture.
 ---
 
 Proceed by reading the harness test file and isolating context for the given task.

@@ -94,7 +94,7 @@ Parse the plan document:
 Use grep/glob to search the codebase when validating file references from the plan:
 
 * `grep` with the symbol or class name to verify it exists at the referenced path
-* `glob` with patterns like `src/**/*.py` to confirm module structure
+* `glob` with patterns like `internal/**/*.go` to confirm module structure
 * Read specific files with `view` when you need to inspect class signatures or function definitions
 * Cross-reference import paths to validate that modules are properly wired
 
@@ -122,7 +122,7 @@ Each task description MUST include:
 * The behavioral change expected
 * Test scenarios mapped from success criteria
 * Source code references if available
-* **Package `__init__.py` registration** when creating a new module or sub-package
+* **Package directory creation** when creating a new Go package under `internal/`
 
 #### Step 3.2b: Granularity Validation (NON-NEGOTIABLE)
 
@@ -135,7 +135,7 @@ Before creating any tasks, validate every Level 3 task against the granularity r
    If a task exceeds these heuristics, split it into smaller tasks.
 
 2. **Width isolation**: Each task must target a single skill domain. Do not combine:
-   - Python code changes with documentation changes
+   - Go source code changes with documentation changes
    - Database schema changes with API handler changes
    - Test infrastructure with production code
    If a task mixes domains, separate it into domain-specific tasks.
@@ -217,7 +217,7 @@ Include:
 * Review artifact path and gate decision (from Phase 2)
 * Total epics, sub-epics, and tasks created
 * Ready task count
-* Next step: "Run the harness-architect agent to generate pytest test harnesses from these tasks."
+* Next step: "Run the harness-architect agent to generate Go test harnesses from these tasks."
 
 ## Priority Mapping
 
