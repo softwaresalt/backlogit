@@ -25,10 +25,10 @@ type ArtifactTypeConfig struct {
 
 // FieldConfig defines a custom field's schema.
 type FieldConfig struct {
-	Type    string `yaml:"type" validate:"required,oneof=enum string int"`
-	Values  []string       `yaml:"values"`
-	Default string         `yaml:"default"`
-	Optional    bool           `yaml:"optional"`
+	Type     string   `yaml:"type" validate:"required,oneof=enum string int"`
+	Values   []string `yaml:"values"`
+	Default  string   `yaml:"default"`
+	Optional bool     `yaml:"optional"`
 	// ExternalMap holds translation rules for external systems (e.g., Jira, ADO).
 	// Uses map[string]any because external system payloads have heterogeneous value types.
 	ExternalMap map[string]any `yaml:"external_map"`

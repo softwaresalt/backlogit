@@ -20,7 +20,7 @@ func ParseFrontmatter(content string) (map[string]any, string, error) {
 		return nil, content, nil
 	}
 	yamlBlock := rest[:end]
-	after := rest[end+4:] // skip "\n---"
+	after := rest[end+4:]                   // skip "\n---"
 	after = strings.TrimPrefix(after, "\n") // skip line ending of closing ---
 	after = strings.TrimPrefix(after, "\n") // skip optional blank separator
 	body := after
