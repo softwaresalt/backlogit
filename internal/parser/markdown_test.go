@@ -14,7 +14,7 @@ import (
 func TestParseMarkdownFile_Valid(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
-	content := "---\nid: T001\ntitle: Test\nstatus: todo\nartifact_type: task\n---\n\nDescription"
+	content := "---\nid: T001\ntitle: Test\nstatus: queued\nartifact_type: task\n---\n\nDescription"
 	path := filepath.Join(dir, "T001.md")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 

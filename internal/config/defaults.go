@@ -33,8 +33,8 @@ func DefaultConfig() *WorkspaceConfig {
 		Fields: map[string]*FieldConfig{
 			"status": {
 				Type:    "enum",
-				Values:  []string{"todo", "in_progress", "blocked", "review", "done"},
-				Default: "todo",
+				Values:  []string{"queued", "active", "blocked", "review", "done"},
+				Default: "queued",
 			},
 		},
 	}

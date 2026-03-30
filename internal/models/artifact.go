@@ -12,20 +12,20 @@ var validate = validator.New()
 type ArtifactStatus string
 
 const (
-	StatusTodo       ArtifactStatus = "todo"
-	StatusInProgress ArtifactStatus = "in_progress"
-	StatusBlocked    ArtifactStatus = "blocked"
-	StatusReview     ArtifactStatus = "review"
-	StatusDone       ArtifactStatus = "done"
-	StatusAccepted   ArtifactStatus = "accepted"
-	StatusRejected   ArtifactStatus = "rejected"
+	StatusQueued   ArtifactStatus = "queued"
+	StatusActive   ArtifactStatus = "active"
+	StatusBlocked  ArtifactStatus = "blocked"
+	StatusReview   ArtifactStatus = "review"
+	StatusDone     ArtifactStatus = "done"
+	StatusAccepted ArtifactStatus = "accepted"
+	StatusRejected ArtifactStatus = "rejected"
 )
 
 // Artifact holds the current state of a backlogit work item.
 type Artifact struct {
 	ID           string         `json:"id" yaml:"id" validate:"required"`
 	Title        string         `json:"title" yaml:"title" validate:"required,max=200"`
-	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=todo in_progress blocked review done accepted rejected"`
+	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected"`
 	ArtifactType string         `json:"artifact_type" yaml:"artifact_type" validate:"required"`
 	ParentID     string         `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
 	Sprint       string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`

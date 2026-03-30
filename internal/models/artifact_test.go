@@ -13,7 +13,7 @@ func TestArtifactValidate_ValidArtifact(t *testing.T) {
 	a := models.Artifact{
 		ID:           "T001",
 		Title:        "Test task",
-		Status:       models.StatusTodo,
+		Status:       models.StatusQueued,
 		ArtifactType: "task",
 	}
 
@@ -28,7 +28,7 @@ func TestArtifactValidate_MissingID(t *testing.T) {
 	// Arrange
 	a := models.Artifact{
 		Title:        "Test task",
-		Status:       models.StatusTodo,
+		Status:       models.StatusQueued,
 		ArtifactType: "task",
 	}
 
@@ -56,8 +56,8 @@ func TestArtifactValidate_InvalidStatus(t *testing.T) {
 }
 
 func TestStatusConstants(t *testing.T) {
-	assert.Equal(t, models.ArtifactStatus("todo"), models.StatusTodo)
-	assert.Equal(t, models.ArtifactStatus("in_progress"), models.StatusInProgress)
+	assert.Equal(t, models.ArtifactStatus("queued"), models.StatusQueued)
+	assert.Equal(t, models.ArtifactStatus("active"), models.StatusActive)
 	assert.Equal(t, models.ArtifactStatus("blocked"), models.StatusBlocked)
 	assert.Equal(t, models.ArtifactStatus("review"), models.StatusReview)
 	assert.Equal(t, models.ArtifactStatus("done"), models.StatusDone)

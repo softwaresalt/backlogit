@@ -67,7 +67,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 
 	status := o.Status
 	if status == "" {
-		status = "todo"
+		status = "queued"
 	}
 
 	now := time.Now()

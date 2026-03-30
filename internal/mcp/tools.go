@@ -27,7 +27,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Create a new backlogit artifact"),
 			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Artifact title")),
 			mcplib.WithString("artifact_type", mcplib.Required(), mcplib.Description("Artifact type (task, story, bug, epic)")),
-			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("todo")),
+			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("queued")),
 			mcplib.WithString("description", mcplib.Description("Artifact description")),
 			mcplib.WithString("parent_id", mcplib.Description("Parent artifact ID")),
 			mcplib.WithString("sprint", mcplib.Description("Sprint ID")),
