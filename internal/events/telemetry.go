@@ -2,6 +2,9 @@ package events
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -25,8 +28,21 @@ func NewTelemetryWriter(path string) *TelemetryWriter {
 }
 
 // LogTelemetry appends a telemetry entry to telemetry.jsonl.
-//
-// Worker: Implement JSONL telemetry append.
-func (w *TelemetryWriter) LogTelemetry(ctx context.Context, entry TelemetryEntry) error {
-	panic("not implemented: Worker: Implement telemetry stream append")
+func (w *TelemetryWriter) LogTelemetry(_ context.Context, entry TelemetryEntry) error {
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now()
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal telemetry: %w", err)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	f, err := os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open telemetry file: %w", err)
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "%s\n", data)
+	return err
 }

@@ -10,6 +10,7 @@ var (
 	ErrRehydration = errors.New("backlogit: rehydration error")
 	ErrMigration   = errors.New("backlogit: migration error")
 	ErrMCP         = errors.New("backlogit: mcp error")
+	ErrNotFound    = errors.New("backlogit: not found")
 )
 
 // ConfigError wraps a configuration failure with field context.

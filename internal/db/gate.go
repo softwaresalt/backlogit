@@ -59,8 +59,38 @@ func ValidateQuery(sqlStr string) GateResult {
 }
 
 // ExecuteGatedQuery runs a validated read-only query capped at MaxRows.
-//
-// Worker: Implement gated query execution with row scanning.
 func ExecuteGatedQuery(db *sql.DB, query string, params ...any) ([]map[string]interface{}, error) {
-	panic("not implemented: Worker: Implement gated query execution")
+	gate := ValidateQuery(query)
+	if !gate.Allowed {
+		return nil, fmt.Errorf("query rejected: %s", gate.Reason)
+	}
+
+	rows, err := db.Query(query, params...)
+	if err != nil {
+		return nil, fmt.Errorf("execute query: %w", err)
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("get columns: %w", err)
+	}
+
+	var results []map[string]interface{}
+	for rows.Next() && len(results) < MaxRows {
+		values := make([]interface{}, len(columns))
+		ptrs := make([]interface{}, len(columns))
+		for i := range values {
+			ptrs[i] = &values[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+		row := make(map[string]interface{}, len(columns))
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+		results = append(results, row)
+	}
+	return results, rows.Err()
 }

@@ -30,8 +30,21 @@ func NewEventWriter(path string) *EventWriter {
 }
 
 // AppendEvent marshals and appends an event to events.jsonl.
-//
-// Worker: Implement JSONL append with O_APPEND and mutex protection.
-func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
-	panic("not implemented: Worker: Implement event stream append")
+func (w *EventWriter) AppendEvent(_ context.Context, event Event) error {
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	f, err := os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open events file: %w", err)
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "%s\n", data)
+	return err
 }
