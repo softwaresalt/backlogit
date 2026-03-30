@@ -85,7 +85,7 @@ Routing rules:
 
 | Agent | Focus |
 |---|---|
-| **Python Quality Reviewer** | Type safety, error handling, `raise` patterns, import hygiene, PEP 8/257 compliance |
+| **Go Quality Reviewer** | Type safety, error handling, error return patterns, import organization, Effective Go/GoDoc compliance |
 | **Constitution Reviewer** | Project coding standards compliance |
 | **Learnings Researcher** | Search `.backlog/compound/` for related past issues |
 
@@ -97,9 +97,9 @@ caller's model.
 
 | Agent | Select when diff touches | Suggested Model |
 |---|---|---|
-| **MCP Protocol Reviewer** | `src/backlogit/mcp/`, MCP-related code | GPT-5.4 or Gemini |
-| **SQLite Reviewer** | `src/backlogit/db/`, database queries, schema files | GPT-5.4 or Gemini |
-| **Markdown/YAML Reviewer** | `src/backlogit/parser/`, frontmatter handling, YAML schemas | GPT-5.4 or Gemini |
+| **MCP Protocol Reviewer** | `internal/mcp/`, MCP-related code | GPT-5.4 or Gemini |
+| **SQLite Reviewer** | `internal/db/`, database queries, schema files | GPT-5.4 or Gemini |
+| **Markdown/YAML Reviewer** | `internal/parser/`, frontmatter handling, YAML schemas | GPT-5.4 or Gemini |
 
 ## Workflow
 
@@ -111,7 +111,7 @@ caller's model.
 
 ### Step 2: Route Personas
 
-1. Always-on: spawn Python Quality Reviewer, Constitution Reviewer, Learnings Researcher
+1. Always-on: spawn Go Quality Reviewer, Constitution Reviewer, Learnings Researcher
 2. Conditional: analyze changed file paths and content patterns to select additional personas
 3. Broadcast the routing decision with persona count
 
@@ -193,3 +193,4 @@ reviewers: [{persona_list}]
 ```
 
 Broadcast the file path when written.
+

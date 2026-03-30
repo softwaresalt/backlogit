@@ -16,19 +16,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        go-version: ["1.22", "1.23"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          go-version: ${{ matrix.go-version }}
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: go mod download
       - name: Lint
-        run: ruff check src/ tests/
-      - name: Format check
-        run: ruff format --check src/ tests/
-      - name: Type check
-        run: mypy src/
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+      - name: Vet
+        run: go vet ./...
       - name: Test
-        run: python -m pytest --cov=backlogit --cov-report=xml
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Coverage report
+        run: go tool cover -func=coverage.out

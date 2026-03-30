@@ -1,0 +1,10 @@
+# Directories
+logs/
+.vscode/
+.engram/
+.copilot/
+
+# Project files
+*.prj
+*.pui
+*.code-workspace

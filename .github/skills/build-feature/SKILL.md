@@ -10,7 +10,7 @@ input:
       description: "The unique Backlog.md task ID."
     harness-cmd:
       type: string
-      description: "The pytest command defining the strict test harness boundary."
+      description: "The go test command defining the strict test harness boundary."
   required:
     - task-id
     - harness-cmd
@@ -18,7 +18,7 @@ input:
 
 # Build Feature Skill
 
-Implements a requested feature by continuously looping a fast worker agent against a strict, importable but failing test harness until success is achieved. The harness defines the contract; pytest is the critic.
+Implements a requested feature by continuously looping a fast worker agent against a strict, importable but failing test harness until success is achieved. The harness defines the contract; go test is the critic.
 
 ## Subagent Execution Constraint (NON-NEGOTIABLE)
 
@@ -34,21 +34,21 @@ Every terminal command gets a watchdog timeout:
 
 | Operation | Timeout | Action |
 |---|---|---|
-| pytest / mypy / ruff | 10 minutes | Kill process, broadcast stall error, clean up |
-| Non-Python terminal commands | 5 minutes | Kill, broadcast, proceed with error handling |
+| go test / golangci-lint / go vet | 10 minutes | Kill process, broadcast stall error, clean up |
+| Non-Go terminal commands | 5 minutes | Kill, broadcast, proceed with error handling |
 
 If a command exceeds its timeout, broadcast `[STALL] {command} exceeded {timeout}`, kill the process, clean up any `.mypy_cache` artifacts, and count toward the parent orchestrator's stall limit.
 
 ## Prerequisites
 
 * The test harness defined by `${input:harness-cmd}` imports without error (green imports, red tests)
-* The structural stubs in `src/` exist with `raise NotImplementedError` markers
-* The project imports cleanly before starting (`python -c "import backlogit"` passes)
-* All test files follow pytest discovery conventions (`test_*.py` or `*_test.py`)
+* The structural stubs in `src/` exist with `panic("not implemented")` markers
+* The project imports cleanly before starting (`go build ./cmd/backlogit` passes)
+* All test files follow go test discovery conventions (`test_*.go` or `*_test.go`)
 
 ## Shell Session Hygiene
 
-Before starting any test run, verify no previous pytest processes are still running from prior iterations. On Windows: `Get-Process -Name python,pytest -ErrorAction SilentlyContinue`. Stale processes can hold file locks and cause silent hangs. Stop them before proceeding.
+Before starting any test run, verify no previous go test processes are still running from prior iterations. On Windows: `Get-Process -Name python,go test -ErrorAction SilentlyContinue`. Stale processes can hold file locks and cause silent hangs. Stop them before proceeding.
 
 ## Remote Operator Integration (agent-intercom)
 When the agent-intercom MCP server is reachable, status updates and file modifications route through it so the remote operator can follow progress via Slack.
@@ -84,10 +84,10 @@ For **destructive operations** (file deletion, directory removal), route through
 
 1. Read the test file targeted by the `${input:harness-cmd}`. Carefully read the embedded `# GIVEN`, `# WHEN`, `# THEN` BDD comments to fully internalize the human intent behind the test.
 2. Use grep/glob tools to understand the codebase context before reading raw files:
-   * Search for each domain class and function found in the test to locate the source files in `src/` containing the `raise NotImplementedError` stubs that require attention.
+   * Search for each domain class and function found in the test to locate the source files in `src/` containing the `panic("not implemented")` stubs that require attention.
    * Search for the feature's key concepts to find related code and prior decisions that inform the implementation.
    * Use glob to discover available modules in specific packages.
-3. Read `.github/copilot-instructions.md` and `.github/agents/python-engineer.agent.md` (if it exists) for project coding standards and Python-specific conventions.
+3. Read `.github/copilot-instructions.md` and `.github/agents/go-engineer.agent.md` (if it exists) for project coding standards and Python-specific conventions.
 4. `broadcast` at `info` level: `[BUILD] Starting task {task-id}: {harness-cmd}` with a summary of the test scenarios and stub files.
 
 ### Step 2: Mechanical Feedback Loop (Actor-Critic)
@@ -100,16 +100,16 @@ Execute the following loop with a **hard limit of 5 attempts**:
 3. **If it fails** (exit code != 0):
    a. Capture the raw output (import errors, type errors, or assertion failures).
    b. `broadcast` the failure summary at `warning` level.
-   c. **Instruction reinforcement**: Read `.github/agents/python-engineer.agent.md` (if it exists) or `.github/copilot-instructions.md` coding standards section to refresh project conventions before implementing the fix. `broadcast` at `info` level: `[REINFORCE] Coding standards refreshed for attempt {N}/5`.
+   c. **Instruction reinforcement**: Read `.github/agents/go-engineer.agent.md` (if it exists) or `.github/copilot-instructions.md` coding standards section to refresh project conventions before implementing the fix. `broadcast` at `info` level: `[REINFORCE] Coding standards refreshed for attempt {N}/5`.
    d. Analyze the error output and implement the fix:
       * **Import errors**: Fix missing modules, incorrect imports, circular imports in the `src/` stubs.
-      * **NotImplementedError**: Implement the underlying logic inside the `src/` stubs to make the harness pass. Replace the `raise NotImplementedError` markers with real logic.
+      * **NotImplementedError**: Implement the underlying logic inside the `src/` stubs to make the harness pass. Replace the `panic("not implemented")` markers with real logic.
       * **Test assertion failures**: Fix the implementation logic (not the test itself, unless the test setup has an import error).
    d. Apply all project coding standards:
       * All functions use type hints for parameters and return values. � 
       * Use `backlogit` exception hierarchy, not bare `Exception`.
-      * Follow PEP 8 naming and PEP 257 docstring conventions.
-      * Run `python -c "import backlogit"` after each fix to verify the module imports cleanly before re-running the harness.
+      * Follow Effective Go naming and GoDoc docstring conventions.
+      * Run `go build ./cmd/backlogit` after each fix to verify the module imports cleanly before re-running the harness.
    e. After each file write, `broadcast` the change at `info` level with the unified diff.
    f. **Do not modify the test file itself** unless fixing an import error in the test setup.
    g. Return to step 1 of this loop.
@@ -121,13 +121,13 @@ Execute the following loop with a **hard limit of 5 attempts**:
 ### Step 3: Verification & State Update
 
 Once the isolated harness passes:
-1. **Workspace verification — tiered strategy**: Do NOT run the full test suite (`python -m pytest`) after every harness pass in the feedback loop. Use this order:
-   a. Run `python -m pytest {harness_test_file} -v` — confirms the harness still passes after any cleanup changes.
-   b. Run `python -m pytest tests/unit/ -v` — fast check for library unit test regressions.
-   c. Run `python -m pytest` (full suite) exactly once before committing.
+1. **Workspace verification — tiered strategy**: Do NOT run the full test suite (`python -m go test`) after every harness pass in the feedback loop. Use this order:
+   a. Run `python -m go test {harness_test_file} -v` — confirms the harness still passes after any cleanup changes.
+   b. Run `python -m go test tests/unit/ -v` — fast check for library unit test regressions.
+   c. Run `python -m go test` (full suite) exactly once before committing.
    * If new failures appear in the full suite, diagnose and fix them before committing.
    * `broadcast` at `success` level: `[BUILD] Workspace tests pass — task {task-id} complete`.
-2. **Lint verification**: Run `ruff check src/ tests/` and `ruff format --check src/ tests/`. Run `mypy src/`. Fix any violations.
+2. **Lint verification**: Run `golangci-lint run` and `gofmt -l .`. Run `go vet ./...`. Fix any violations.
 3. **Commit**: Stage and commit validated changes:
    * `git add -A`
    * `git commit -m "feat: implement passing harness for ${input:task-id}"`
@@ -139,19 +139,19 @@ Once the isolated harness passes:
 
 ### Import errors after adding new modules
 
-Verify that all new packages have `__init__.py` files and that imports follow the project's package structure. Check that `pyproject.toml` correctly lists the package source directory.
+Verify that all new packages have `__init__.py` files and that imports follow the project's package structure. Check that `go.mod` correctly lists the package source directory.
 
 ### mypy reports missing stubs
 
-Install type stubs for third-party dependencies: `pip install types-PyYAML types-aiofiles` etc. Check `pyproject.toml` `[tool.mypy]` for `ignore_missing_imports` settings.
+Install type stubs for third-party dependencies: `(Go has built-in types)PyYAML types-aiofiles` etc. Check `go.mod` `[tool.mypy]` for `ignore_missing_imports` settings.
 
 ### SQLite locking in tests
 
-SQLite allows only one writer at a time. If parallel tests share a database file, use `tmp_path` fixtures to create isolated databases per test. Avoid `pytest-xdist` parallelism for database-touching tests unless each test uses its own database file.
+SQLite allows only one writer at a time. If parallel tests share a database file, use `tmp_path` fixtures to create isolated databases per test. Avoid `go test-xdist` parallelism for database-touching tests unless each test uses its own database file.
 
 ### Tests pass locally but fail in CI
 
-Verify the Python version in `pyproject.toml` (`requires-python`) matches the CI matrix in `.github/workflows/ci.yml`. Check that all test dependencies are listed in the `[project.optional-dependencies.dev]` section.
+Verify the Go version in `go.mod` (`requires-python`) matches the CI matrix in `.github/workflows/ci.yml`. Check that all test dependencies are listed in the `[project.optional-dependencies.dev]` section.
 
 ### Circuit breaker triggered (5 failed attempts)
 
@@ -159,5 +159,6 @@ When the 5-attempt hard limit is reached, the task is marked as blocked in the b
 ---
 
 Proceed by reading the harness test file and isolating context for the given task.
+
 
 

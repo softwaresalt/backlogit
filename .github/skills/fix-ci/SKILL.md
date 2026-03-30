@@ -64,7 +64,7 @@ When invoked as a subagent, you MUST NOT spawn additional subagents. You are a l
 
 * The workspace is a Git repository with a remote configured on GitHub.
 * The current branch has an open pull request (or `pr-number` is provided).
-* The project imports cleanly before starting (`python -c "import backlogit"` passes).
+* The project imports cleanly before starting (`go build ./cmd/backlogit` passes).
 * GitHub MCP tools are available (`mcp_github_pull_request_read`).
 * The `.github/copilot-instructions.md` coding standards are accessible.
 
@@ -115,7 +115,7 @@ Poll the PR's check run statuses to determine which checks need attention.
 2. If all checks have passed, report success and stop — no fixes are needed.
 3. If any checks are still *pending*, wait for the configured `poll-interval` (default 30 seconds) and re-poll. Continue polling until all checks have completed or `max-wait` is exceeded.
 4. If `max-wait` is exceeded with checks still pending, report the pending checks and halt.
-5. When checks have completed, identify which specific checks failed. The CI pipeline runs these checks in order: *ruff check*, *ruff format*, *mypy*, *pytest*.
+5. When checks have completed, identify which specific checks failed. The CI pipeline runs these checks in order: *golangci-lint run*, *gofmt*, *go vet*, *go test*.
 6. Also use `mcp_github_pull_request_read` with method `get_comments` to check for CI bot failure summaries that may provide additional diagnostic context.
 7. Report the list of failed checks before proceeding to local reproduction.
 
@@ -139,15 +139,15 @@ Detect and classify GitHub Copilot review comments on the PR.
 Run the failing CI checks locally in CI pipeline order to capture detailed error output.
 
 * Run each check as a separate terminal command (one command per invocation — project rule).
-* If a command produces output that may exceed the terminal buffer, redirect to a file using `Out-File` (e.g., `python -m pytest 2>&1 | Out-File .pytest-output.txt`).
+* If a command produces output that may exceed the terminal buffer, redirect to a file using `Out-File` (e.g., `go test ./... 2>&1 | Out-File .pytest-output.txt`).
 * Use workspace-relative paths for any output files (e.g., `.pytest-output.txt`).
 
 The CI checks in pipeline order:
 
-1. `ruff check src/ tests/` — lint verification.
-2. `ruff format --check src/ tests/` — format verification.
-3. `mypy src/` — type checking.
-4. `python -m pytest --cov=backlogit --cov-report=xml` — test execution.
+1. `golangci-lint run` — lint verification.
+2. `gofmt -l .` — format verification.
+3. `go vet ./...` — type checking.
+4. `go test -race -coverprofile=coverage.out ./...` — test execution.
 
 Run only the checks that failed remotely (and any earlier checks in the pipeline that gate them). Capture and parse the error output from each failing command to identify specific errors, file locations, and error codes.
 
@@ -171,10 +171,10 @@ For each failing check, working in CI pipeline order:
 
 Common fix patterns by check type:
 
-* *ruff check*: Address each lint violation individually — common issues include unused imports, missing type annotations, line length, and naming conventions. Auto-fix with `ruff check --fix src/ tests/` where safe.
-* *ruff format*: Run `ruff format src/ tests/` to auto-fix formatting, then verify with `ruff format --check src/ tests/`.
-* *mypy*: Address type errors individually — common issues include missing type annotations, incompatible types, and missing return types. Fix the source code types rather than adding `# type: ignore`.
-* *pytest*: Investigate test assertion failures, import errors in test code, and missing test fixtures. Fix the implementation rather than weakening the test, unless the test itself contains a bug.
+* *golangci-lint run*: Address each lint violation individually — common issues include unused imports, missing type annotations, line length, and naming conventions. Auto-fix with `golangci-lint run --fix` where safe.
+* *gofmt*: Run `gofmt -w .` to auto-fix formatting, then verify with `gofmt -l .`.
+* *go vet*: Address type errors individually — common issues include missing type annotations, incompatible types, and missing return types. Fix the source code types rather than adding `# type: ignore`.
+* *go test*: Investigate test assertion failures, import errors in test code, and missing test fixtures. Fix the implementation rather than weakening the test, unless the test itself contains a bug.
 
 ### Step 4b: Address Copilot Review Comments
 
@@ -194,13 +194,13 @@ For each unresolved Copilot review comment (from Step 2b):
 
 This is a **hard gate**. All checks pass locally before proceeding to push. Run all CI checks in pipeline order regardless of which ones originally failed, since fixes may have introduced regressions in previously passing checks.
 
-1. Run `ruff check src/ tests/`. If violations are found, run `ruff check --fix src/ tests/` to auto-fix, then re-run the check to confirm it passes.
-2. Run `ruff format --check src/ tests/`. If violations are found, run `ruff format src/ tests/` to auto-fix, then re-run the check to confirm it passes.
-3. Run `mypy src/`. Fix any type errors, then re-run until the command exits cleanly.
-4. Run `python -m pytest --cov=backlogit`. Fix any failures, then re-run until all tests pass.
+1. Run `golangci-lint run`. If violations are found, run `golangci-lint run --fix` to auto-fix, then re-run the check to confirm it passes.
+2. Run `gofmt -l .`. If violations are found, run `gofmt -w .` to auto-fix, then re-run the check to confirm it passes.
+3. Run `go vet ./...`. Fix any type errors, then re-run until the command exits cleanly.
+4. Run `go test -cover ./...`. Fix any failures, then re-run until all tests pass.
 5. If fixes applied in steps 2–4 cause an earlier check to fail, restart from step 1 and repeat the full cycle.
 6. All four checks exit 0 before proceeding.
-7. Report results: ruff check exit code, ruff format exit code, mypy exit code, test counts and pass rate.
+7. Report results: golangci-lint run exit code, gofmt exit code, mypy exit code, test counts and pass rate.
 
 ### Step 6: Stage, Commit, and Push
 
@@ -255,7 +255,7 @@ The CI runner may be queued or slow. Increase `max-wait` and re-invoke the skill
 
 ### Fixes pass locally but fail in CI
 
-Verify the local Python version matches CI. The CI pipeline uses `actions/setup-python` with a version matrix — run `python --version` locally to confirm. Check that `pyproject.toml` `requires-python` matches the CI configuration in `.github/workflows/ci.yml`.
+Verify the local Go version matches CI. The CI pipeline uses `actions/setup-go` with a version matrix — run `go version` locally to confirm. Check that `go.mod` `go` directive in go.mod matches the CI configuration in `.github/workflows/ci.yml`.
 
 ### max-iterations reached without resolution
 
@@ -266,7 +266,7 @@ Some failures may require architectural changes or upstream dependency fixes tha
 When a CI check produces extensive output, redirect to a file:
 
 ```text
-python -m pytest 2>&1 | Out-File .pytest-output.txt
+go test ./... 2>&1 | Out-File .pytest-output.txt
 ```
 
 Then read the output file to review the full error details.
@@ -274,3 +274,4 @@ Then read the output file to review the full error details.
 ---
 
 Proceed with the user's request following the Required Steps.
+
