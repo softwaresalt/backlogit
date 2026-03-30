@@ -14,10 +14,12 @@ import (
 
 // QueryFilters holds optional filters for item queries.
 type QueryFilters struct {
-	Status   string
-	Type     string
-	ParentID string
-	Sprint   string
+	Status     string
+	Type       string
+	ParentID   string
+	Sprint     string
+	AssignedTo string
+	Owner      string
 }
 
 const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at`

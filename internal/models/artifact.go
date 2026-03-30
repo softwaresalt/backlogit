@@ -31,6 +31,12 @@ type Artifact struct {
 	Sprint       string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`
 	Priority     string         `json:"priority,omitempty" yaml:"priority,omitempty"`
 	Description  string         `json:"description,omitempty" yaml:"description,omitempty"`
+	AssignedTo   string         `json:"assigned_to,omitempty" yaml:"assigned_to,omitempty"`
+	Owner        string         `json:"owner,omitempty" yaml:"owner,omitempty"`
+	Labels       []string       `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Dependencies []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	References   []string       `json:"references,omitempty" yaml:"references,omitempty"`
+	Commit       string         `json:"commit,omitempty" yaml:"commit,omitempty"`
 	CustomFields map[string]any `json:"custom_fields,omitempty" yaml:"custom_fields,omitempty"`
 	CreatedAt    time.Time      `json:"created_at" yaml:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at" yaml:"updated_at"`

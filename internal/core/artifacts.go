@@ -46,6 +46,36 @@ func WithFields(fields map[string]any) Option {
 	return func(o *createOptions) { o.Fields = fields }
 }
 
+// WithAssignedTo sets the assigned user.
+func WithAssignedTo(user string) Option {
+	panic("not implemented: Worker: Set o.AssignedTo in createOptions and wire through to artifact creation in CreateArtifact. Add AssignedTo field to createOptions struct.")
+}
+
+// WithOwner sets the artifact owner.
+func WithOwner(owner string) Option {
+	panic("not implemented: Worker: Set o.Owner in createOptions and wire through to artifact creation in CreateArtifact. Add Owner field to createOptions struct.")
+}
+
+// WithLabels sets the artifact labels.
+func WithLabels(labels []string) Option {
+	panic("not implemented: Worker: Set o.Labels in createOptions and wire through to artifact creation in CreateArtifact. Add Labels field to createOptions struct.")
+}
+
+// WithDependencies sets the artifact dependencies.
+func WithDependencies(deps []string) Option {
+	panic("not implemented: Worker: Set o.Dependencies in createOptions and wire through to artifact creation in CreateArtifact. Add Dependencies field to createOptions struct.")
+}
+
+// WithReferences sets the artifact references.
+func WithReferences(refs []string) Option {
+	panic("not implemented: Worker: Set o.References in createOptions and wire through to artifact creation in CreateArtifact. Add References field to createOptions struct.")
+}
+
+// WithCommit sets the artifact commit hash.
+func WithCommit(commit string) Option {
+	panic("not implemented: Worker: Set o.Commit in createOptions and wire through to artifact creation in CreateArtifact. Add Commit field to createOptions struct.")
+}
+
 // CreateArtifact creates a new artifact with atomic file write.
 func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactType string, opts ...Option) (*models.Artifact, error) {
 	o := &createOptions{}
