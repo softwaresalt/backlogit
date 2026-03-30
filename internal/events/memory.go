@@ -6,11 +6,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
+// memoriesMu serializes concurrent SaveMemory calls on the same process.
+var memoriesMu sync.Mutex
+
 // SaveMemory persists a key-value pair to memories.json via atomic read-modify-write.
+// A process-level mutex prevents lost updates from concurrent callers.
 func SaveMemory(_ context.Context, memoriesPath string, key string, summary string) error {
+	memoriesMu.Lock()
+	defer memoriesMu.Unlock()
+
 	memories := make(map[string]string)
 	if data, err := os.ReadFile(memoriesPath); err == nil {
 		_ = json.Unmarshal(data, &memories)

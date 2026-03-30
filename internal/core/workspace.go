@@ -54,11 +54,18 @@ func (ws *Workspace) Close() error {
 // SafeResolve returns an absolute path within the workspace root or an error
 // if the target escapes the workspace boundary.
 func SafeResolve(workspaceRoot, target string) (string, error) {
-	abs, err := filepath.Abs(filepath.Join(workspaceRoot, target))
+	// Convert workspaceRoot to absolute first so both sides of the comparison are absolute.
+	absRoot, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root: %w", err)
+	}
+	cleanRoot := filepath.Clean(absRoot)
+
+	abs, err := filepath.Abs(filepath.Join(absRoot, target))
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
-	cleanRoot := filepath.Clean(workspaceRoot)
+
 	if !strings.HasPrefix(abs, cleanRoot+string(filepath.Separator)) && abs != cleanRoot {
 		return "", fmt.Errorf("path escapes workspace boundary: %s", target)
 	}

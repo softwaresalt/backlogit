@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/backlogit/backlogit/internal/config"
 )
@@ -29,10 +30,13 @@ func ResolveTargetDir(registry *config.RegistryConfig, artifactType string, stat
 // MoveArtifactFile relocates an artifact file to a new directory atomically.
 func MoveArtifactFile(_ context.Context, workspaceRoot string, currentPath string, newDir string) (string, error) {
 	if _, err := SafeResolve(workspaceRoot, currentPath); err != nil {
-		// currentPath may already be absolute; validate it is inside root
-		cleanRoot := filepath.Clean(workspaceRoot)
-		cleanPath := filepath.Clean(currentPath)
-		if len(cleanPath) <= len(cleanRoot) {
+		// currentPath may already be absolute; validate it is inside root using filepath.Rel.
+		absRoot, absErr := filepath.Abs(workspaceRoot)
+		if absErr != nil {
+			return "", fmt.Errorf("resolve workspace root: %w", absErr)
+		}
+		rel, relErr := filepath.Rel(absRoot, filepath.Clean(currentPath))
+		if relErr != nil || strings.HasPrefix(rel, "..") {
 			return "", fmt.Errorf("current path escapes workspace: %s", currentPath)
 		}
 	}
