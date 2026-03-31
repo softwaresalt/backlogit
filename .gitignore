@@ -9,3 +9,5 @@ logs/
 *.prj
 *.pui
 *.code-workspace
+
+.test-output.txt
