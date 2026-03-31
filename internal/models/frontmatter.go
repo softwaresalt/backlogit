@@ -10,11 +10,14 @@ import (
 
 // ParseFrontmatter extracts YAML frontmatter from Markdown content.
 // Returns the parsed key-value pairs, the remaining body text, and any error.
+// Both LF and CRLF line endings are supported.
 func ParseFrontmatter(content string) (map[string]any, string, error) {
-	if !strings.HasPrefix(content, "---\n") {
+	// Normalize CRLF to LF for consistent parsing.
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
 		return nil, content, nil
 	}
-	rest := content[4:]
+	rest := normalized[4:]
 	end := strings.Index(rest, "\n---")
 	if end == -1 {
 		return nil, content, nil

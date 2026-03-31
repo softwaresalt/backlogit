@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -227,11 +228,11 @@ func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRe
 	if err != nil {
 		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
 	}
-	if err := os.Remove(filePath); err != nil {
-		return InternalError(fmt.Sprintf("delete file: %v", err)), nil
-	}
 	if err := db.DeleteItem(ctx, s.Workspace.DB, id); err != nil {
 		return InternalError(fmt.Sprintf("delete from index: %v", err)), nil
+	}
+	if err := os.Remove(filePath); err != nil {
+		return InternalError(fmt.Sprintf("delete file: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }
@@ -278,9 +279,30 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 	if sprint, ok := request.Params.Arguments["sprint"].(string); ok && sprint != "" {
 		opts = append(opts, core.WithSprint(sprint))
 	}
+	if v, ok := request.Params.Arguments["assigned_to"].(string); ok && v != "" {
+		opts = append(opts, core.WithAssignedTo(v))
+	}
+	if v, ok := request.Params.Arguments["owner"].(string); ok && v != "" {
+		opts = append(opts, core.WithOwner(v))
+	}
+	if v, ok := request.Params.Arguments["commit"].(string); ok && v != "" {
+		opts = append(opts, core.WithCommit(v))
+	}
+	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
+		opts = append(opts, core.WithLabels(strings.Split(v, ",")))
+	}
+	if v, ok := request.Params.Arguments["dependencies"].(string); ok && v != "" {
+		opts = append(opts, core.WithDependencies(strings.Split(v, ",")))
+	}
+	if v, ok := request.Params.Arguments["references"].(string); ok && v != "" {
+		opts = append(opts, core.WithReferences(strings.Split(v, ",")))
+	}
 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
 	if err != nil {
 		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
+	}
+	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }
@@ -295,14 +317,27 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed("id is required"), nil
 	}
 	updates := make(map[string]any)
-	for _, key := range []string{"title", "status", "description", "sprint", "priority"} {
+	for _, key := range []string{"title", "status", "description", "sprint", "priority", "assigned_to", "owner", "commit"} {
 		if v, ok := request.Params.Arguments[key].(string); ok && v != "" {
 			updates[key] = v
 		}
 	}
+	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
+		updates["labels"] = strings.Split(v, ",")
+	}
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
 	if err != nil {
 		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
+	}
+	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+	}
+	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
+		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
+	}
+	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }
