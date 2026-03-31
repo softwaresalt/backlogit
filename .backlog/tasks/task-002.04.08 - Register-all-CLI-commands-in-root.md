@@ -1,7 +1,7 @@
 ---
 id: TASK-002.04.08
 title: Register all CLI commands in root
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:01'
 labels: []

@@ -1,7 +1,7 @@
 ---
 id: TASK-002.04.04
 title: Implement CLI update command
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:00'
 labels: []

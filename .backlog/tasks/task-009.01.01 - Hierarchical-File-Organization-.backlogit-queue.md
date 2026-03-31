@@ -1,0 +1,51 @@
+---
+id: TASK-009.01.01
+title: Hierarchical File Organization (.backlogit/queue/)
+status: To Do
+assignee: []
+created_date: '2026-03-31 06:04'
+labels:
+  - task
+  - phase-1
+  - foundation
+dependencies:
+  - TASK-002
+parent_task_id: TASK-009.01
+priority: high
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+**Unit 1 — Hierarchical File Organization**
+
+Restructure artifact storage from flat per-type directories (`tasks/`, `bugs/`, `epics/`) to a single `.backlogit/queue/` folder with hierarchical numeric naming.
+
+Key deliverables:
+- Add `queue_layout` section to `config.yaml` with `root_dir: queue`, `levels` map (e.g., `1: feature`, `2: epic`, `3: task`, `4: sub-task`), and `name_format: "{NNN}"` 
+- Extend `WorkspaceConfig` in `internal/config/schema.go` with `QueueLayout *QueueLayoutConfig`
+- New `internal/core/hierarchy.go`: `ResolveHierarchicalPath(parentID, artifactType) string`, `NextHierarchicalID(parentPath) string`, `ParseHierarchicalID(id) []int`
+- Update `internal/core/routing.go`: `ResolveTargetDir` checks `QueueLayout` first; falls back to existing per-type routing when queue layout is nil
+- Update `internal/core/naming.go`: `ResolveName` and `NextID` support hierarchical format
+- Update `EnsureSchema` in `internal/db/schema.go`: add `parent_id`, `level`, `hierarchy_path` columns to items table
+
+Naming convention: `001` (feature), `001.001` (epic), `001.001.001` (task), `001.001.001.001` (sub-task).
+
+Review finding F2 (P2): Hierarchical ID generation needs scoped counter query — use `SELECT MAX(CAST(suffix AS INTEGER)) FROM items WHERE parent_id = ?` to find next sibling ordinal.
+
+Acceptance criteria:
+- `backlogit create --type task --parent 001` creates `001.001.md` in `.backlogit/queue/`
+- Config.yaml `queue_layout` section parsed and validated
+- Existing flat routing still works when `queue_layout` is nil
+- Hierarchy path stored in SQLite for efficient querying
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 backlogit create --type task --parent 001 creates 001.001.md in .backlogit/queue/
+- [ ] #2 Config.yaml queue_layout section parsed and validated with struct validation
+- [ ] #3 Existing flat routing still works when queue_layout is nil
+- [ ] #4 Hierarchy path stored in SQLite items table for efficient querying
+- [ ] #5 ParseHierarchicalID round-trips correctly for all levels (1-4)
+- [ ] #6 NextHierarchicalID returns correct next sibling ordinal via scoped counter query
+<!-- AC:END -->
