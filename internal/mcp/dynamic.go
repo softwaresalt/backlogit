@@ -43,7 +43,7 @@ func handleListTemplates(_ context.Context, _ *Server, templateSvc *templates.Se
 	infos := templateSvc.ListTemplates()
 	data, err := json.Marshal(infos)
 	if err != nil {
-		return nil, fmt.Errorf("marshal templates: %w", err)
+		return InternalError(fmt.Sprintf("marshal templates: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(string(data)), nil
 }

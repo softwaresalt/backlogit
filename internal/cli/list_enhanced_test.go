@@ -4,21 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/cli"
 )
-
-func TestNewListEnhancedCmd_HasGroupFlags(t *testing.T) {
-	// Act
-	cmd := cli.NewListEnhancedCmd()
-
-	// Assert
-	require.NotNil(t, cmd)
-	assert.NotNil(t, cmd.Flags().Lookup("group-by"), "should have --group-by flag")
-	assert.NotNil(t, cmd.Flags().Lookup("collapse"), "should have --collapse flag")
-	assert.NotNil(t, cmd.Flags().Lookup("tree"), "should have --tree flag")
-}
 
 func TestFormatTreeView_RendersHierarchy(t *testing.T) {
 	// Arrange

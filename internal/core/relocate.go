@@ -2,38 +2,37 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 
 	"github.com/backlogit/backlogit/internal/config"
-	dbpkg "github.com/backlogit/backlogit/internal/db"
 )
 
 // RelocateArtifactFile moves an artifact's Markdown file from its current location
 // to the directory mapped by the new (type, status) pair in registry.yaml.
-func RelocateArtifactFile(ctx context.Context, database *sql.DB, ws *Workspace, artifactID, newStatus string) (string, error) {
-	artifact, err := dbpkg.GetItem(ctx, database, artifactID)
-	if err != nil {
-		return "", fmt.Errorf("get artifact %s: %w", artifactID, err)
-	}
-
+// artifactType is passed by the caller to avoid a DB lookup when the in-memory
+// artifact is already available, keeping this function DB-cache-independent.
+func RelocateArtifactFile(ctx context.Context, ws *Workspace, artifactType, artifactID, newStatus string) (string, error) {
 	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
 	registry, err := config.LoadRegistry(backlogitDir)
 	if err != nil {
 		return "", fmt.Errorf("load registry: %w", err)
 	}
 
-	targetDir := ResolveTargetDir(registry, artifact.ArtifactType, newStatus)
+	targetDir := ResolveTargetDir(registry, artifactType, newStatus)
 
 	currentPath, err := FindArtifactPath(ctx, ws, artifactID)
 	if err != nil {
 		return "", fmt.Errorf("find artifact path: %w", err)
 	}
 
-	// If already in the right directory, no move needed.
-	currentDir := filepath.Base(filepath.Dir(currentPath))
-	if currentDir == targetDir {
+	// Compare the current directory relative to the workspace root with the target
+	// directory from the registry, which may be a multi-segment path.
+	currentRel, err := filepath.Rel(ws.RootPath, filepath.Dir(currentPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve relative path: %w", err)
+	}
+	if filepath.Clean(currentRel) == filepath.Clean(targetDir) {
 		return currentPath, nil
 	}
 

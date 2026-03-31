@@ -7,6 +7,7 @@ package contract_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/client"
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
@@ -36,10 +38,34 @@ func setupRealMCPServer(t *testing.T) *mcpinternal.Server {
 	return mcpinternal.NewServer(ws)
 }
 
-func callToolAndParseJSON(t *testing.T, s *mcpinternal.Server, toolName string, args map[string]any) map[string]any {
+func callToolForTest(t *testing.T, s *mcpinternal.Server, toolName string, args map[string]any) (*mcplib.CallToolResult, error) {
 	t.Helper()
 	ctx := context.Background()
-	result, err := s.CallToolForTest(ctx, toolName, args)
+	c, err := client.NewInProcessClient(s.MCPServer())
+	if err != nil {
+		return nil, fmt.Errorf("create in-process client: %w", err)
+	}
+	if err := c.Start(ctx); err != nil {
+		return nil, fmt.Errorf("start in-process client: %w", err)
+	}
+	defer c.Close() //nolint:errcheck
+
+	initReq := mcplib.InitializeRequest{}
+	initReq.Params.ClientInfo = mcplib.Implementation{Name: "test", Version: "0.0.1"}
+	initReq.Params.ProtocolVersion = mcplib.LATEST_PROTOCOL_VERSION
+	if _, err := c.Initialize(ctx, initReq); err != nil {
+		return nil, fmt.Errorf("initialize in-process client: %w", err)
+	}
+
+	req := mcplib.CallToolRequest{}
+	req.Params.Name = toolName
+	req.Params.Arguments = args
+	return c.CallTool(ctx, req)
+}
+
+func callToolAndParseJSON(t *testing.T, s *mcpinternal.Server, toolName string, args map[string]any) map[string]any {
+	t.Helper()
+	result, err := callToolForTest(t, s, toolName, args)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, result.IsError, "tool call should not return error")
@@ -121,10 +147,9 @@ func TestUpdateItem_Real_ModifiesFields(t *testing.T) {
 func TestCreateItem_Real_InvalidTypeReturnsError(t *testing.T) {
 	// Arrange
 	s := setupRealMCPServer(t)
-	ctx := context.Background()
 
 	// Act
-	result, err := s.CallToolForTest(ctx, "backlogit_create_item", map[string]any{
+	result, err := callToolForTest(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Should fail",
 		"artifact_type": "nonexistent_type",
 	})
@@ -139,10 +164,9 @@ func TestCreateItem_Real_InvalidTypeReturnsError(t *testing.T) {
 func TestGetItem_Real_MissingIDReturnsError(t *testing.T) {
 	// Arrange
 	s := setupRealMCPServer(t)
-	ctx := context.Background()
 
 	// Act
-	result, err := s.CallToolForTest(ctx, "backlogit_get_item", map[string]any{
+	result, err := callToolForTest(t, s, "backlogit_get_item", map[string]any{
 		"id": "NONEXISTENT999",
 	})
 

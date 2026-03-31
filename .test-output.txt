@@ -1,0 +1,13 @@
+?   	github.com/backlogit/backlogit/cmd/backlogit	[no test files]
+ok  	github.com/backlogit/backlogit/internal/cli	5.763s
+ok  	github.com/backlogit/backlogit/internal/config	(cached)
+ok  	github.com/backlogit/backlogit/internal/core	3.768s
+ok  	github.com/backlogit/backlogit/internal/core/templates	3.517s
+ok  	github.com/backlogit/backlogit/internal/db	(cached)
+ok  	github.com/backlogit/backlogit/internal/errors	(cached)
+ok  	github.com/backlogit/backlogit/internal/events	(cached)
+ok  	github.com/backlogit/backlogit/internal/mcp	3.314s
+ok  	github.com/backlogit/backlogit/internal/models	(cached)
+ok  	github.com/backlogit/backlogit/internal/parser	(cached)
+ok  	github.com/backlogit/backlogit/tests/contract	3.317s
+ok  	github.com/backlogit/backlogit/tests/integration	3.650s

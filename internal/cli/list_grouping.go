@@ -3,16 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
-
-// EnhancedListOptions extends the basic list command with grouping capabilities.
-type EnhancedListOptions struct {
-	GroupBy  string `json:"group_by"`
-	Collapse bool   `json:"collapse"`
-	Tree     bool   `json:"tree"`
-}
 
 // ListItem represents a single item in the list output.
 type ListItem struct {
@@ -23,23 +14,6 @@ type ListItem struct {
 	ParentID string `json:"parent_id"`
 	Priority string `json:"priority"`
 	Depth    int    `json:"depth"`
-}
-
-// NewListEnhancedCmd creates enhanced `backlogit list` with grouping and tree view.
-func NewListEnhancedCmd() *cobra.Command {
-	opts := &EnhancedListOptions{}
-
-	cmd := &cobra.Command{
-		Use:   "list-enhanced",
-		Short: "List artifacts with grouping and tree view",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&opts.GroupBy, "group-by", "", "group output by field (type, status, priority)")
-	cmd.Flags().BoolVar(&opts.Collapse, "collapse", false, "collapse groups by default")
-	cmd.Flags().BoolVar(&opts.Tree, "tree", false, "render as a parent-child tree")
-	return cmd
 }
 
 // FormatTreeView renders artifacts as an indented tree based on parent-child relationships.

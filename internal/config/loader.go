@@ -51,6 +51,18 @@ func LoadRegistry(workspacePath string) (*RegistryConfig, error) {
 	if err := yaml.Unmarshal(data, &reg); err != nil {
 		return nil, fmt.Errorf("parse registry: %w", err)
 	}
+	if err := validate.Struct(&reg); err != nil {
+		return nil, fmt.Errorf("validate registry: %w", err)
+	}
+	for _, rule := range reg.Directories {
+		if filepath.IsAbs(rule.Path) {
+			return nil, fmt.Errorf("registry path %q must be relative", rule.Path)
+		}
+		clean := filepath.Clean(rule.Path)
+		if len(clean) >= 2 && clean[:2] == ".." {
+			return nil, fmt.Errorf("registry path %q must not traverse outside the workspace", rule.Path)
+		}
+	}
 	return &reg, nil
 }
 

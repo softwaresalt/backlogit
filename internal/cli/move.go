@@ -37,7 +37,7 @@ func newMoveCommand(cwd *string) *cobra.Command {
 			}
 
 			// Relocate the file to the directory mapped by the new status.
-			newPath, err := core.RelocateArtifactFile(ctx, ws.DB, ws, id, status)
+			newPath, err := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, id, status)
 			if err != nil {
 				return fmt.Errorf("relocate artifact: %w", err)
 			}
