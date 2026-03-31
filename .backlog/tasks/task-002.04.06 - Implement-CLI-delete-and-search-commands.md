@@ -27,3 +27,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `newSyncCommand` at `internal/cli/root.go`
 **Verification:** Delete removes both markdown file and SQLite row. Search returns FTS5 results formatted as a table.
 <!-- SECTION:DESCRIPTION:END -->
+

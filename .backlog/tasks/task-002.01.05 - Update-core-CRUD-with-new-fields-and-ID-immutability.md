@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01.05
 title: Update core CRUD with new fields and ID immutability
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:57'
 labels: []
@@ -23,3 +23,4 @@ Add new `Option` functions to `internal/core/artifacts.go`: `WithAssignedTo`, `W
 **Patterns:** Follow functional options pattern at `internal/core/artifacts.go` lines 14-47
 **Verification:** `go test ./internal/core/...` passes with creation tests using new options. Update test confirms ID change is rejected with descriptive error.
 <!-- SECTION:DESCRIPTION:END -->
+

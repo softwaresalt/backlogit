@@ -23,3 +23,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `newSyncCommand` at `internal/cli/root.go`
 **Verification:** `go test ./internal/cli/...` passes with get output tests. `--section` flag returns only the specified section content.
 <!-- SECTION:DESCRIPTION:END -->
+

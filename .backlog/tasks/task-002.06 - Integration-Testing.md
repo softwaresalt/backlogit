@@ -1,7 +1,7 @@
 ---
 id: TASK-002.06
 title: Integration Testing
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 06:56'
 labels:
@@ -18,3 +18,4 @@ End-to-end integration tests covering the complete workflow: init → add → li
 
 Covers plan Unit 21.
 <!-- SECTION:DESCRIPTION:END -->
+

@@ -1,7 +1,7 @@
 ---
 id: TASK-002.03.01
 title: Implement template schema and loader
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:58'
 labels: []
@@ -27,3 +27,4 @@ Integrate template discovery into the registry so `registry.yaml` can declare wh
 **Patterns:** Follow `WorkspaceConfig` loader in `internal/config/loader.go`
 **Verification:** `go test ./internal/config/...` passes with template loading, parsing, and section extraction tests. Invalid templates (missing END tags, duplicate section names) produce descriptive errors.
 <!-- SECTION:DESCRIPTION:END -->
+

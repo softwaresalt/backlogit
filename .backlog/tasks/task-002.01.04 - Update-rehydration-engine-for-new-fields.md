@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01.04
 title: Update rehydration engine for new fields
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:57'
 labels: []
@@ -22,3 +22,4 @@ Ensure the rehydration engine passes new fields through from parsed frontmatter 
 **Patterns:** Follow `Rehydrate` function in `internal/db/rehydration.go`
 **Verification:** Integration test: write a Markdown file with all new fields → rehydrate → query SQLite → verify all fields round-trip correctly.
 <!-- SECTION:DESCRIPTION:END -->
+

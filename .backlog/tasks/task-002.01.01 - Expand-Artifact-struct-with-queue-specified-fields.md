@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01.01
 title: Expand Artifact struct with queue-specified fields
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:56'
 labels: []

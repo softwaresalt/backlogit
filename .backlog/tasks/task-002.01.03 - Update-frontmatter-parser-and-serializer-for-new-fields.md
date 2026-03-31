@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01.03
 title: Update frontmatter parser and serializer for new fields
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:57'
 labels: []
@@ -21,3 +21,4 @@ Update `ArtifactFromFrontmatter` to extract `assigned_to`, `owner`, `labels`, `d
 **Patterns:** Follow `ArtifactFromFrontmatter` and `SerializeFrontmatter` patterns
 **Verification:** `go test ./internal/models/...` passes with round-trip frontmatter tests for all new fields.
 <!-- SECTION:DESCRIPTION:END -->
+

@@ -27,3 +27,4 @@ Each tool follows the five-step handler pattern. Add contract tests validating i
 **Patterns:** Follow existing tool registration at `internal/mcp/tools.go`
 **Verification:** Contract tests validate tool input/output schemas. Each new tool follows the five-step handler pattern.
 <!-- SECTION:DESCRIPTION:END -->
+

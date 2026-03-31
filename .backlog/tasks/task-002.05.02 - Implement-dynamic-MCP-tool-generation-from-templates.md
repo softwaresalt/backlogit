@@ -31,3 +31,4 @@ Detect and reject naming collisions with static tools. Call `RegisterDynamicTool
 **Patterns:** Follow `RegisterTools` in `internal/mcp/tools.go`, `LoadTemplates` from TASK-002.03.01
 **Verification:** Dynamic tools appear in MCP tool list based on registered templates. Creating an artifact via a dynamic tool produces a file with correct template structure.
 <!-- SECTION:DESCRIPTION:END -->
+

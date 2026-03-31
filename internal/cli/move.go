@@ -1,10 +1,57 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
+
+	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/db"
 )
 
 // newMoveCommand creates the `backlogit move` command.
 func newMoveCommand(cwd *string) *cobra.Command {
-	panic("not implemented: Worker: Create cobra.Command with Use='move <id> --status <new_status>'. Change artifact status via core.UpdateArtifact, then relocate file according to registry.yaml routing rules via core.MoveArtifactFile. Re-sync index after move. Include slog instrumentation per review F4.")
+	var status string
+
+	cmd := &cobra.Command{
+		Use:   "move <id>",
+		Short: "Change artifact status",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if status == "" {
+				return fmt.Errorf("--status is required")
+			}
+
+			id := args[0]
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			artifact, err := core.UpdateArtifact(ctx, ws, id, map[string]any{"status": status})
+			if err != nil {
+				return err
+			}
+
+			filePath, err := core.FindArtifactPath(ctx, ws, id)
+			if err != nil {
+				return err
+			}
+			if err := core.WriteArtifactFile(artifact, filePath); err != nil {
+				return err
+			}
+			if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Moved %s → %s\n", id, status)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&status, "status", "", "new status (required)")
+	return cmd
 }

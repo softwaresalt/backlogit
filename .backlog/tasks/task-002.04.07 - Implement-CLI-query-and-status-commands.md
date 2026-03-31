@@ -27,3 +27,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `db.ExecuteGatedQuery` in `internal/db/gate.go`
 **Verification:** `query` rejects non-SELECT statements with descriptive error. `status` displays correct counts matching SQLite index.
 <!-- SECTION:DESCRIPTION:END -->
+

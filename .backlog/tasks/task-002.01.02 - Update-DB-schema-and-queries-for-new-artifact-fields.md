@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01.02
 title: Update DB schema and queries for new artifact fields
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:56'
 labels: []
@@ -23,3 +23,4 @@ Since `index.db` is ephemeral, the schema change requires dropping and recreatin
 **Patterns:** Follow `UpsertItem`/`scanArtifactRow` at `internal/db/queries.go`
 **Verification:** `go test ./internal/db/...` passes with upsert/scan round-trip tests for new fields. FTS5 search returns results matching label content.
 <!-- SECTION:DESCRIPTION:END -->
+

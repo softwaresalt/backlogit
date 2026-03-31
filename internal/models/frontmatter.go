@@ -71,6 +71,27 @@ func ArtifactFromFrontmatter(fm map[string]any, body string) (*Artifact, error) 
 		a.UpdatedAt = v
 	}
 
+	// New fields added in TASK-002.01.03.
+	if v, ok := fm["assigned_to"].(string); ok {
+		a.AssignedTo = v
+	}
+	if v, ok := fm["owner"].(string); ok {
+		a.Owner = v
+	}
+	if v, ok := fm["commit"].(string); ok {
+		a.Commit = v
+	}
+	// YAML unmarshals sequence values as []interface{}, not []string.
+	if v, ok := fm["labels"]; ok {
+		a.Labels = toStringSlice(v)
+	}
+	if v, ok := fm["dependencies"]; ok {
+		a.Dependencies = toStringSlice(v)
+	}
+	if v, ok := fm["references"]; ok {
+		a.References = toStringSlice(v)
+	}
+
 	if err := a.Validate(); err != nil {
 		return nil, fmt.Errorf("artifact validation: %w", err)
 	}
@@ -84,4 +105,24 @@ func SerializeFrontmatter(fields map[string]any, body string) string {
 		data = []byte{}
 	}
 	return "---\n" + string(data) + "---\n\n" + body
+}
+
+// toStringSlice converts a YAML-decoded sequence value to []string.
+// YAML unmarshals sequences as []interface{}; this helper handles both
+// that case and the native []string case. Returns nil for a nil input.
+func toStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	if ss, ok := v.([]string); ok {
+		return ss
+	}
+	if iface, ok := v.([]any); ok {
+		result := make([]string, len(iface))
+		for i, elem := range iface {
+			result[i] = fmt.Sprintf("%v", elem)
+		}
+		return result
+	}
+	return nil
 }

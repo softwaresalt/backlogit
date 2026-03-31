@@ -35,3 +35,4 @@ Register via `root.AddCommand(newAddCommand(&cwd))`.
 **Patterns:** Follow `newInitCommand` at `internal/cli/root.go`
 **Verification:** `go test ./internal/cli/...` passes. Integration test: `add` creates a valid markdown file with frontmatter and section tags.
 <!-- SECTION:DESCRIPTION:END -->
+

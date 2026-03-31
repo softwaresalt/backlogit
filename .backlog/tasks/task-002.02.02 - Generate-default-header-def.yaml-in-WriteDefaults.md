@@ -1,7 +1,7 @@
 ---
 id: TASK-002.02.02
 title: Generate default header-def.yaml in WriteDefaults
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:58'
 labels: []
@@ -27,3 +27,4 @@ Update `backlogit init` to create this file alongside config.yaml and registry.y
 **Patterns:** Follow `WriteDefaults` pattern in `internal/config/defaults.go`
 **Verification:** `go test ./internal/config/...` passes. Generated `header-def.yaml` can be loaded back by `LoadHeaderDef` without errors.
 <!-- SECTION:DESCRIPTION:END -->
+

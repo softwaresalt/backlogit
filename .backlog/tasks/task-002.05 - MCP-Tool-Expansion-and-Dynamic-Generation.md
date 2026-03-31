@@ -1,7 +1,7 @@
 ---
 id: TASK-002.05
 title: MCP Tool Expansion and Dynamic Generation
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 06:56'
 labels:
@@ -20,3 +20,4 @@ Add new fields to existing MCP tools (create_item, update_item) and create new s
 
 Covers plan Units 19-20.
 <!-- SECTION:DESCRIPTION:END -->
+

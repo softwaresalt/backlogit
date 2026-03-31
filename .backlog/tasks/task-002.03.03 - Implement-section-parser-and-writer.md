@@ -1,7 +1,7 @@
 ---
 id: TASK-002.03.03
 title: Implement section parser and writer
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:59'
 labels: []
@@ -27,3 +27,4 @@ Handle edge cases: nested HTML comments, missing end tags (return error), empty 
 **Patterns:** Follow `ParseFrontmatter` pattern in `internal/models/frontmatter.go`
 **Verification:** `go test ./internal/parser/...` passes with round-trip section parse/write tests. Edge case tests: empty sections, sections with markdown content, missing tags produce errors.
 <!-- SECTION:DESCRIPTION:END -->
+

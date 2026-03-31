@@ -1,7 +1,7 @@
 ---
 id: TASK-002.02.01
 title: Implement header-def.yaml schema and loader
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:58'
 labels: []

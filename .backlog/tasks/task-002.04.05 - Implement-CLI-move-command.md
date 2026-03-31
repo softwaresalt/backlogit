@@ -23,3 +23,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `MoveArtifactFile` in `internal/core/routing.go`
 **Verification:** `go test ./internal/cli/...` passes. Integration test: move changes both status in frontmatter and file location on disk.
 <!-- SECTION:DESCRIPTION:END -->
+

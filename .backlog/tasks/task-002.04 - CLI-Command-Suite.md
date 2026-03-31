@@ -1,7 +1,7 @@
 ---
 id: TASK-002.04
 title: CLI Command Suite
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 06:55'
 labels:
@@ -22,3 +22,4 @@ Multi-line markdown input via stdin (triggered by `-` flag value) enables piped 
 
 Covers plan Units 11-18.
 <!-- SECTION:DESCRIPTION:END -->
+

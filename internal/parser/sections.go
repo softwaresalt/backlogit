@@ -1,17 +1,78 @@
 package parser
 
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// beginRE matches <!-- BEGIN:{name} --> tags and captures the section name.
+var beginRE = regexp.MustCompile(`<!-- BEGIN:(\S+?) -->`)
+
 // ParseSections extracts named sections from markdown content between
 // <!-- BEGIN:{name} --> and <!-- END:{name} --> tags.
+// Leading and trailing newlines are trimmed from each section's content, but
+// internal whitespace (indentation, blank lines) is preserved.
+// Returns an error if a BEGIN tag has no matching END tag.
 func ParseSections(content string) (map[string]string, error) {
-	panic("not implemented: Worker: Scan content for <!-- BEGIN:{name} --> and <!-- END:{name} --> delimiters. Extract the text between each pair into a map keyed by section name. Return error for missing END tags. Handle edge cases: empty sections, leading/trailing whitespace preservation, nested HTML comments.")
+	sections := make(map[string]string)
+
+	matches := beginRE.FindAllStringSubmatchIndex(content, -1)
+	for _, match := range matches {
+		// match[0]:match[1] = full tag, match[2]:match[3] = captured name.
+		name := content[match[2]:match[3]]
+		beginTag := "<!-- BEGIN:" + name + " -->"
+		endTag := "<!-- END:" + name + " -->"
+
+		afterBegin := match[0] + len(beginTag)
+
+		endRelIdx := strings.Index(content[afterBegin:], endTag)
+		if endRelIdx == -1 {
+			return nil, fmt.Errorf("section %q: missing END tag", name)
+		}
+
+		// Trim only leading/trailing newlines; preserve internal whitespace.
+		extracted := content[afterBegin : afterBegin+endRelIdx]
+		sections[name] = strings.Trim(extracted, "\n")
+	}
+
+	return sections, nil
 }
 
 // WriteSections replaces multiple section contents while preserving the rest of the document.
+// For each entry in updates the content between the matching BEGIN/END tags is replaced with
+// the provided value. Returns an error if a named section is absent from content.
 func WriteSections(content string, updates map[string]string) (string, error) {
-	panic("not implemented: Worker: For each section name in updates, locate the BEGIN/END delimiters in content and replace the content between them with the new value. Preserve everything outside section delimiters. Return error if a section name in updates does not exist in content.")
+	result := content
+
+	for name, value := range updates {
+		beginTag := "<!-- BEGIN:" + name + " -->"
+		endTag := "<!-- END:" + name + " -->"
+
+		beginIdx := strings.Index(result, beginTag)
+		if beginIdx == -1 {
+			return "", fmt.Errorf("section %q: not found in document", name)
+		}
+
+		afterBegin := beginIdx + len(beginTag)
+
+		endRelIdx := strings.Index(result[afterBegin:], endTag)
+		if endRelIdx == -1 {
+			return "", fmt.Errorf("section %q: missing END tag", name)
+		}
+
+		endIdx := afterBegin + endRelIdx
+
+		prefix := result[:beginIdx]
+		suffix := result[endIdx+len(endTag):]
+		result = prefix + beginTag + "\n" + value + "\n" + endTag + suffix
+	}
+
+	return result, nil
 }
 
 // WriteSection replaces a single section's content in the document.
+// It is a convenience wrapper around WriteSections.
 func WriteSection(content string, name string, value string) (string, error) {
-	panic("not implemented: Worker: Delegate to WriteSections with a single-entry map. This is a convenience wrapper.")
+	return WriteSections(content, map[string]string{name: value})
 }

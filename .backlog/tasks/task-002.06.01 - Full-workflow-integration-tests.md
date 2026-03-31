@@ -1,7 +1,7 @@
 ---
 id: TASK-002.06.01
 title: Full workflow integration tests
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:02'
 labels: []
@@ -31,3 +31,4 @@ All tests use `t.TempDir()` for isolated workspace directories. Validate cross-l
 **Files:** `tests/integration/workflow_test.go` (new)
 **Verification:** `go test ./tests/integration/...` passes with the complete workflow. All 9 scenarios produce expected results.
 <!-- SECTION:DESCRIPTION:END -->
+

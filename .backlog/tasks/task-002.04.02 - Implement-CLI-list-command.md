@@ -23,3 +23,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `newSyncCommand` at `internal/cli/root.go`
 **Verification:** `go test ./internal/cli/...` passes with list output formatting tests. JSON mode produces valid JSON array.
 <!-- SECTION:DESCRIPTION:END -->
+

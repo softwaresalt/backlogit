@@ -1,7 +1,7 @@
 ---
 id: TASK-002.03.02
 title: Create default templates for 8 artifact types
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 06:58'
 labels: []
@@ -23,3 +23,4 @@ Update `WriteDefaults` and `backlogit init` to create `.backlogit/templates/` wi
 **Patterns:** Follow `WriteDefaults` in `internal/config/defaults.go`
 **Verification:** `backlogit init` on a fresh directory produces `.backlogit/templates/` with 8 template files. Each loads successfully via `LoadTemplates`.
 <!-- SECTION:DESCRIPTION:END -->
+

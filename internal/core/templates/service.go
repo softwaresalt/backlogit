@@ -2,9 +2,13 @@ package templates
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/backlogit/backlogit/internal/config"
+	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/models"
+	"github.com/backlogit/backlogit/internal/parser"
 )
 
 // TemplateInfo describes a registered template and its section metadata for agent discovery.
@@ -21,68 +25,161 @@ type SectionInfo struct {
 }
 
 // Service provides the application-layer boundary for template-aware operations.
-// Both CLI commands and MCP tool handlers call this service for template resolution,
-// section-aware CRUD, and template discovery.
 type Service struct {
 	templatesDir string
 	templates    []*config.TemplateConfig
 }
 
 // NewService creates a template service from the workspace templates directory.
-//
-// Worker: Load templates from templatesDir via config.LoadTemplates. Store the
-// loaded templates for use by Resolve, Create, Update, GetSection, and ListTemplates.
-// Return descriptive error if template loading fails.
-func NewService(ctx context.Context, templatesDir string) (*Service, error) {
-	panic("not implemented: Worker: Call config.LoadTemplates(templatesDir), store result in Service.templates, return error if loading fails. The ctx parameter supports cancellation for I/O-bound template loading.")
+func NewService(_ context.Context, templatesDir string) (*Service, error) {
+	loaded, err := config.LoadTemplates(templatesDir)
+	if err != nil {
+		return nil, fmt.Errorf("load templates: %w", err)
+	}
+	return &Service{
+		templatesDir: templatesDir,
+		templates:    loaded,
+	}, nil
 }
 
 // Resolve returns the TemplateConfig for the given artifact type.
-//
-// Worker: Look up the template by artifact type from s.templates using
-// config.GetTemplateForType. Return ErrTypeNotFound if no template matches.
 func (s *Service) Resolve(artifactType string) (*config.TemplateConfig, error) {
-	panic("not implemented: Worker: Call config.GetTemplateForType(s.templates, artifactType). If nil, return fmt.Errorf wrapping errors.ErrTypeNotFound. Otherwise return the template.")
+	tmpl := config.GetTemplateForType(s.templates, artifactType)
+	if tmpl == nil {
+		return nil, fmt.Errorf("template not found for type %q", artifactType)
+	}
+	return tmpl, nil
 }
 
 // Create produces a new artifact with template-driven section content.
-// The sections map keys must match section names defined in the template.
-//
-// Worker: Resolve the template for artifactType. Validate that all keys in
-// sections exist in the template definition. Construct the markdown body by
-// populating BEGIN/END tags with section content via parser.WriteSections.
-// Delegate file creation to core.CreateArtifact with the composed body.
-// Return the created artifact or a descriptive error.
-func (s *Service) Create(ctx context.Context, ws interface{}, title string, artifactType string, sections map[string]string, opts ...interface{}) (*models.Artifact, error) {
-	panic("not implemented: Worker: 1) Resolve template for artifactType. 2) Validate section names against template. 3) Build body from template Body with parser.WriteSections(templateBody, sections). 4) Call core.CreateArtifact with WithDescription(composedBody). 5) Return artifact. Use core.Workspace as the ws type after removing the interface{} placeholder.")
+func (s *Service) Create(ctx context.Context, ws *core.Workspace, title string, artifactType string, sections map[string]string, opts ...core.Option) (*models.Artifact, error) {
+	tmpl, err := s.Resolve(artifactType)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateSectionNames(tmpl, sections); err != nil {
+		return nil, err
+	}
+
+	body := tmpl.Body
+	if len(sections) > 0 {
+		newBody, writeErr := parser.WriteSections(body, sections)
+		if writeErr != nil {
+			return nil, fmt.Errorf("write sections: %w", writeErr)
+		}
+		body = newBody
+	}
+
+	allOpts := append([]core.Option{core.WithDescription(body)}, opts...)
+	return core.CreateArtifact(ctx, ws, title, artifactType, allOpts...)
 }
 
 // Update applies section-level changes to an existing artifact.
-// Only specified sections are modified; omitted sections remain unchanged.
-//
-// Worker: Read the existing artifact file. Parse its body to extract current
-// sections via parser.ParseSections. Validate that all keys in updates exist
-// in the template definition. Apply updates via parser.WriteSections. Write
-// the updated content back via core.UpdateArtifact.
-func (s *Service) Update(ctx context.Context, ws interface{}, id string, sections map[string]string) (*models.Artifact, error) {
-	panic("not implemented: Worker: 1) Find artifact by id via ws. 2) Resolve template for artifact's type. 3) Validate section names. 4) Read file, apply parser.WriteSections with updates. 5) Write back via core.UpdateArtifact. Use core.Workspace as the ws type.")
+func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sections map[string]string) (*models.Artifact, error) {
+	filePath, err := core.FindArtifactPath(ctx, ws, id)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("read artifact: %w", err)
+	}
+
+	fm, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse artifact: %w", err)
+	}
+
+	artifact, err := models.ArtifactFromFrontmatter(fm, body)
+	if err != nil {
+		return nil, fmt.Errorf("parse artifact fields: %w", err)
+	}
+
+	tmpl, err := s.Resolve(artifact.ArtifactType)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateSectionNames(tmpl, sections); err != nil {
+		return nil, err
+	}
+
+	newBody, err := parser.WriteSections(body, sections)
+	if err != nil {
+		return nil, fmt.Errorf("write sections: %w", err)
+	}
+
+	artifact.Description = newBody
+	newContent := models.SerializeFrontmatter(fm, newBody)
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
+		return nil, fmt.Errorf("write artifact: %w", err)
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp) //nolint:errcheck
+		return nil, fmt.Errorf("rename artifact: %w", err)
+	}
+	return artifact, nil
 }
 
 // GetSection extracts the content of a named section from an artifact.
-//
-// Worker: Find the artifact by id. Read its markdown file. Parse sections via
-// parser.ParseSections. Return the content of the named section, or
-// ErrSectionNotFound if the section does not exist in the document.
-func (s *Service) GetSection(ctx context.Context, ws interface{}, id string, sectionName string) (string, error) {
-	panic("not implemented: Worker: 1) Find artifact file by id. 2) Read content. 3) Call parser.ParseSections. 4) Look up sectionName in result map. 5) Return content or ErrSectionNotFound. Use core.Workspace as the ws type.")
+func (s *Service) GetSection(ctx context.Context, ws *core.Workspace, id string, sectionName string) (string, error) {
+	filePath, err := core.FindArtifactPath(ctx, ws, id)
+	if err != nil {
+		return "", err
+	}
+
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read artifact: %w", err)
+	}
+
+	_, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse artifact: %w", err)
+	}
+
+	sections, err := parser.ParseSections(body)
+	if err != nil {
+		return "", fmt.Errorf("parse sections: %w", err)
+	}
+
+	content, ok := sections[sectionName]
+	if !ok {
+		return "", fmt.Errorf("section %q not found", sectionName)
+	}
+	return content, nil
 }
 
 // ListTemplates returns metadata for all registered templates and their sections.
-// This enables agent discovery of available template types and section names.
-//
-// Worker: Iterate s.templates and build a []TemplateInfo with type name,
-// display name (from template Name field), and section metadata. Return the
-// slice. If no templates are loaded, return an empty slice (not nil).
 func (s *Service) ListTemplates() []TemplateInfo {
-	panic("not implemented: Worker: Iterate s.templates. For each, create TemplateInfo with TypeName=t.ArtifactType, DisplayName=t.Name, and Sections mapped from t.Sections. Return the collected slice. Return empty slice if s.templates is nil or empty.")
+	infos := make([]TemplateInfo, 0, len(s.templates))
+	for _, t := range s.templates {
+		sections := make([]SectionInfo, len(t.Sections))
+		for i, sec := range t.Sections {
+			sections[i] = SectionInfo{Name: sec.Name, Required: sec.Required}
+		}
+		infos = append(infos, TemplateInfo{
+			TypeName:    t.ArtifactType,
+			DisplayName: t.Name,
+			Sections:    sections,
+		})
+	}
+	return infos
+}
+
+// validateSectionNames checks that all keys in sections exist in the template.
+func validateSectionNames(tmpl *config.TemplateConfig, sections map[string]string) error {
+	valid := make(map[string]struct{}, len(tmpl.Sections))
+	for _, sec := range tmpl.Sections {
+		valid[sec.Name] = struct{}{}
+	}
+	for name := range sections {
+		if _, ok := valid[name]; !ok {
+			return fmt.Errorf("unknown section %q in template %q", name, tmpl.ArtifactType)
+		}
+	}
+	return nil
 }

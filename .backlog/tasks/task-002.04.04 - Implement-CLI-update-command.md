@@ -24,3 +24,4 @@ Include slog instrumentation per review F4.
 **Patterns:** Follow `newSyncCommand` at `internal/cli/root.go`
 **Verification:** `go test ./internal/cli/...` passes with update tests for both metadata and section content. ID update attempt produces descriptive error.
 <!-- SECTION:DESCRIPTION:END -->
+

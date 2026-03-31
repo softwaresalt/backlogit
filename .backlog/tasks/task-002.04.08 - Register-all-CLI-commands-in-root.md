@@ -27,3 +27,4 @@ Register all new CLI commands in `NewRootCommand` in `internal/cli/root.go`. Add
 **Patterns:** Follow existing `root.AddCommand` calls at `internal/cli/root.go` lines 37-39
 **Verification:** `backlogit --help` lists all commands. Each command's `--help` produces valid documentation.
 <!-- SECTION:DESCRIPTION:END -->
+

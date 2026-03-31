@@ -14,11 +14,17 @@ import (
 type Option func(*createOptions)
 
 type createOptions struct {
-	ParentID    string
-	Sprint      string
-	Status      string
-	Description string
-	Fields      map[string]any
+	ParentID     string
+	Sprint       string
+	Status       string
+	Description  string
+	Fields       map[string]any
+	AssignedTo   string
+	Owner        string
+	Labels       []string
+	Dependencies []string
+	References   []string
+	Commit       string
 }
 
 // WithParent sets the parent artifact ID.
@@ -48,32 +54,32 @@ func WithFields(fields map[string]any) Option {
 
 // WithAssignedTo sets the assigned user.
 func WithAssignedTo(user string) Option {
-	panic("not implemented: Worker: Set o.AssignedTo in createOptions and wire through to artifact creation in CreateArtifact. Add AssignedTo field to createOptions struct.")
+	return func(o *createOptions) { o.AssignedTo = user }
 }
 
 // WithOwner sets the artifact owner.
 func WithOwner(owner string) Option {
-	panic("not implemented: Worker: Set o.Owner in createOptions and wire through to artifact creation in CreateArtifact. Add Owner field to createOptions struct.")
+	return func(o *createOptions) { o.Owner = owner }
 }
 
 // WithLabels sets the artifact labels.
 func WithLabels(labels []string) Option {
-	panic("not implemented: Worker: Set o.Labels in createOptions and wire through to artifact creation in CreateArtifact. Add Labels field to createOptions struct.")
+	return func(o *createOptions) { o.Labels = labels }
 }
 
 // WithDependencies sets the artifact dependencies.
 func WithDependencies(deps []string) Option {
-	panic("not implemented: Worker: Set o.Dependencies in createOptions and wire through to artifact creation in CreateArtifact. Add Dependencies field to createOptions struct.")
+	return func(o *createOptions) { o.Dependencies = deps }
 }
 
 // WithReferences sets the artifact references.
 func WithReferences(refs []string) Option {
-	panic("not implemented: Worker: Set o.References in createOptions and wire through to artifact creation in CreateArtifact. Add References field to createOptions struct.")
+	return func(o *createOptions) { o.References = refs }
 }
 
 // WithCommit sets the artifact commit hash.
 func WithCommit(commit string) Option {
-	panic("not implemented: Worker: Set o.Commit in createOptions and wire through to artifact creation in CreateArtifact. Add Commit field to createOptions struct.")
+	return func(o *createOptions) { o.Commit = commit }
 }
 
 // CreateArtifact creates a new artifact with atomic file write.
@@ -110,6 +116,12 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		Sprint:       o.Sprint,
 		Description:  o.Description,
 		CustomFields: o.Fields,
+		AssignedTo:   o.AssignedTo,
+		Owner:        o.Owner,
+		Labels:       o.Labels,
+		Dependencies: o.Dependencies,
+		References:   o.References,
+		Commit:       o.Commit,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -141,6 +153,24 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if artifact.Priority != "" {
 		fm["priority"] = artifact.Priority
 	}
+	if artifact.AssignedTo != "" {
+		fm["assigned_to"] = artifact.AssignedTo
+	}
+	if artifact.Owner != "" {
+		fm["owner"] = artifact.Owner
+	}
+	if len(artifact.Labels) > 0 {
+		fm["labels"] = artifact.Labels
+	}
+	if len(artifact.Dependencies) > 0 {
+		fm["dependencies"] = artifact.Dependencies
+	}
+	if len(artifact.References) > 0 {
+		fm["references"] = artifact.References
+	}
+	if artifact.Commit != "" {
+		fm["commit"] = artifact.Commit
+	}
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
 	}
@@ -162,6 +192,10 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 
 // UpdateArtifact updates an existing artifact's fields.
 func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[string]any) (*models.Artifact, error) {
+	if _, hasID := updates["id"]; hasID {
+		return nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
+	}
+
 	artifact, err := findArtifact(ctx, ws, id)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
@@ -182,6 +216,24 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if v, ok := updates["priority"].(string); ok {
 		artifact.Priority = v
 	}
+	if v, ok := updates["assigned_to"].(string); ok {
+		artifact.AssignedTo = v
+	}
+	if v, ok := updates["owner"].(string); ok {
+		artifact.Owner = v
+	}
+	if v, ok := updates["labels"].([]string); ok {
+		artifact.Labels = v
+	}
+	if v, ok := updates["dependencies"].([]string); ok {
+		artifact.Dependencies = v
+	}
+	if v, ok := updates["references"].([]string); ok {
+		artifact.References = v
+	}
+	if v, ok := updates["commit"].(string); ok {
+		artifact.Commit = v
+	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
 		artifact.CustomFields = v
 	}
@@ -192,6 +244,86 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	}
 
 	return artifact, nil
+}
+
+// FindArtifactPath locates the Markdown file for an artifact by ID.
+// Returns the absolute file path or an error if not found.
+func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
+	var found string
+	err := filepath.WalkDir(ws.RootPath, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return walkErr
+		}
+		a, _, parseErr := parseFile(path)
+		if parseErr != nil {
+			return nil
+		}
+		if a.ID == id {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("walk workspace: %w", err)
+	}
+	if found == "" {
+		return "", fmt.Errorf("artifact not found: %s", id)
+	}
+	return found, nil
+}
+
+// WriteArtifactFile atomically writes an artifact to the given file path.
+func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
+	fm := map[string]any{
+		"id":            artifact.ID,
+		"title":         artifact.Title,
+		"status":        string(artifact.Status),
+		"artifact_type": artifact.ArtifactType,
+		"created_at":    artifact.CreatedAt,
+		"updated_at":    artifact.UpdatedAt,
+	}
+	if artifact.ParentID != "" {
+		fm["parent_id"] = artifact.ParentID
+	}
+	if artifact.Sprint != "" {
+		fm["sprint"] = artifact.Sprint
+	}
+	if artifact.Priority != "" {
+		fm["priority"] = artifact.Priority
+	}
+	if artifact.AssignedTo != "" {
+		fm["assigned_to"] = artifact.AssignedTo
+	}
+	if artifact.Owner != "" {
+		fm["owner"] = artifact.Owner
+	}
+	if len(artifact.Labels) > 0 {
+		fm["labels"] = artifact.Labels
+	}
+	if len(artifact.Dependencies) > 0 {
+		fm["dependencies"] = artifact.Dependencies
+	}
+	if len(artifact.References) > 0 {
+		fm["references"] = artifact.References
+	}
+	if artifact.Commit != "" {
+		fm["commit"] = artifact.Commit
+	}
+	if artifact.CustomFields != nil {
+		fm["custom_fields"] = artifact.CustomFields
+	}
+
+	content := models.SerializeFrontmatter(fm, artifact.Description)
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write artifact file: %w", err)
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp) //nolint:errcheck
+		return fmt.Errorf("rename artifact file: %w", err)
+	}
+	return nil
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
