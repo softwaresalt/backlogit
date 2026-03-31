@@ -3,9 +3,10 @@ id: TASK-008.03
 title: >-
   Fix template service Update: set updated_at and call UpsertItem after section
   writes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:41'
+updated_date: '2026-03-31 22:13'
 labels:
   - bug
   - templates

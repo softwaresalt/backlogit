@@ -3,7 +3,13 @@ package core
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/models"
 )
 
 // ArchiveRecord tracks the metadata for a single archived artifact.
@@ -23,28 +29,160 @@ type ArchivePolicy struct {
 }
 
 // ArchiveItem moves an artifact from its active directory to the archive directory,
-// updating the SQLite index and appending an archive event to events.jsonl.
-//
-// Worker: Validate item exists and is in a terminal status. Resolve archive path
-// using registry.yaml routing rules. Move the .md file. Update the DB record path.
-// Append an archive event to events.jsonl via EventWriter.
-func ArchiveItem(ctx context.Context, db *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
-	panic("not implemented: Worker: Move completed artifact to archive dir, update DB and emit archive event")
+// updating the SQLite index and storing the original path in frontmatter for restoration.
+func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
+	currentPath, err := findFileAnywhere(ws.RootPath, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("find artifact: %w", err)
+	}
+
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create archive dir: %w", err)
+	}
+
+	// Stamp the original path into frontmatter for later restoration.
+	raw, err := os.ReadFile(currentPath)
+	if err != nil {
+		return nil, fmt.Errorf("read artifact: %w", err)
+	}
+	fm, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse artifact: %w", err)
+	}
+	if fm == nil {
+		fm = map[string]any{}
+	}
+	fm["archived_from"] = currentPath
+	newContent := models.SerializeFrontmatter(fm, body)
+
+	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
+	if err := os.WriteFile(archivePath, []byte(newContent), 0o644); err != nil {
+		return nil, fmt.Errorf("write archive file: %w", err)
+	}
+	if err := os.Remove(currentPath); err != nil {
+		os.Remove(archivePath) //nolint:errcheck
+		return nil, fmt.Errorf("remove original: %w", err)
+	}
+
+	// Upsert DB record so the archive path is reflected in the index.
+	artifact, err := models.ArtifactFromFrontmatter(fm, body)
+	if err == nil {
+		_ = db.UpsertItem(ctx, database, artifact)
+	}
+
+	return &ArchiveRecord{
+		ID:           itemID,
+		ArchivedAt:   time.Now(),
+		OriginalPath: currentPath,
+		ArchivePath:  archivePath,
+	}, nil
 }
 
-// UnarchiveItem restores an artifact from the archive back to its active directory.
-//
-// Worker: Look up archive record. Move file back to original path. Update DB.
-// Append an unarchive event.
-func UnarchiveItem(ctx context.Context, db *sql.DB, ws *Workspace, itemID string) error {
-	panic("not implemented: Worker: Restore archived artifact to active directory and update DB")
+// UnarchiveItem restores an artifact from the archive back to its original path.
+func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	archivePath := filepath.Join(archiveDir, itemID+".md")
+	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
+		return fmt.Errorf("archived artifact not found: %s", itemID)
+	}
+
+	raw, err := os.ReadFile(archivePath)
+	if err != nil {
+		return fmt.Errorf("read archive file: %w", err)
+	}
+	fm, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return fmt.Errorf("parse archive file: %w", err)
+	}
+
+	originalPath, _ := fm["archived_from"].(string)
+	if originalPath == "" {
+		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
+	}
+
+	// Restore frontmatter without the archived_from field.
+	delete(fm, "archived_from")
+	restored := models.SerializeFrontmatter(fm, body)
+
+	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
+		return fmt.Errorf("create restore dir: %w", err)
+	}
+	if err := os.WriteFile(originalPath, []byte(restored), 0o644); err != nil {
+		return fmt.Errorf("write restored file: %w", err)
+	}
+	if err := os.Remove(archivePath); err != nil {
+		return fmt.Errorf("remove archive file: %w", err)
+	}
+
+	artifact, err := models.ArtifactFromFrontmatter(fm, body)
+	if err == nil {
+		_ = db.UpsertItem(ctx, database, artifact)
+	}
+	return nil
 }
 
 // AutoArchive scans for items in terminal statuses past the retention window and
 // archives them according to the policy.
-//
-// Worker: Query items WHERE status IN terminal_statuses AND updated_at < (now - retention_days).
-// Call ArchiveItem for each. Return count archived.
-func AutoArchive(ctx context.Context, db *sql.DB, ws *Workspace, policy *ArchivePolicy) (int, error) {
-	panic("not implemented: Worker: Scan and archive items past retention window per ArchivePolicy")
+func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *ArchivePolicy) (int, error) {
+	if len(policy.TerminalStatuses) == 0 {
+		return 0, nil
+	}
+
+	threshold := time.Now().AddDate(0, 0, -policy.RetentionDays)
+	items, err := db.QueryItems(ctx, database, db.QueryFilters{})
+	if err != nil {
+		return 0, fmt.Errorf("query items: %w", err)
+	}
+
+	terminalSet := make(map[string]bool, len(policy.TerminalStatuses))
+	for _, s := range policy.TerminalStatuses {
+		terminalSet[s] = true
+	}
+
+	count := 0
+	for _, item := range items {
+		if !terminalSet[string(item.Status)] {
+			continue
+		}
+		if item.UpdatedAt.After(threshold) {
+			continue
+		}
+		if _, archiveErr := ArchiveItem(ctx, database, ws, item.ID); archiveErr != nil {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+// findFileAnywhere walks the entire rootPath (including hidden directories) to
+// locate the Markdown file for the given artifact ID.
+func findFileAnywhere(rootPath, id string) (string, error) {
+	var found string
+	walkErr := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return err
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		fm, _, parseErr := models.ParseFrontmatter(string(data))
+		if parseErr != nil {
+			return nil
+		}
+		if idVal, ok := fm["id"].(string); ok && idVal == id {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("walk workspace: %w", walkErr)
+	}
+	if found == "" {
+		return "", fmt.Errorf("artifact not found: %s", id)
+	}
+	return found, nil
 }

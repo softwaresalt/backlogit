@@ -3,9 +3,10 @@ id: TASK-008.05
 title: >-
   Fix CLI move command: route/relocate artifact file per registry.yaml on status
   change
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:42'
+updated_date: '2026-03-31 22:13'
 labels:
   - bug
   - cli

@@ -1,20 +1,22 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/backlogit/backlogit/internal/config"
 )
 
 // WITMetadata represents complete metadata for a work item type, merging data
 // from header-def.yaml, template config, and workspace config.
 type WITMetadata struct {
-	TypeName       string                    `json:"type"`
-	Description    string                    `json:"description"`
-	HierarchyLevel int                       `json:"hierarchy_level"`
-	IDFormat       string                    `json:"id_format"`
-	Fields         map[string]WITFieldMeta   `json:"fields"`
-	Sections       []WITSectionMeta          `json:"sections"`
-	Relationships  []WITRelationship         `json:"relationships"`
-	Directories    WITDirectoryMeta          `json:"directories"`
+	TypeName       string                  `json:"type"`
+	Description    string                  `json:"description"`
+	HierarchyLevel int                     `json:"hierarchy_level"`
+	IDFormat       string                  `json:"id_format"`
+	Fields         map[string]WITFieldMeta `json:"fields"`
+	Sections       []WITSectionMeta        `json:"sections"`
+	Relationships  []WITRelationship       `json:"relationships"`
+	Directories    WITDirectoryMeta        `json:"directories"`
 }
 
 // WITFieldMeta describes a single field's metadata for agent consumption.
@@ -47,28 +49,69 @@ type WITDirectoryMeta struct {
 
 // DescribeType merges header-def, template, and workspace config to produce
 // complete WIT metadata for a given artifact type.
-//
-// Worker: Look up the type in headerDef.Types, find the matching template in
-// templates, resolve hierarchy level from layout config, merge all three into
-// a WITMetadata struct. Return error for unknown types.
 func DescribeType(
 	artifactType string,
 	headerDef *config.HeaderDefConfig,
 	templates []*config.TemplateConfig,
 	layout *QueueLayoutConfig,
 ) (*WITMetadata, error) {
-	panic("not implemented: Worker: Merge header-def, template, and layout config into WITMetadata for the given artifact type")
+	typeCfg, ok := headerDef.Types[artifactType]
+	if !ok {
+		return nil, fmt.Errorf("unknown artifact type %q", artifactType)
+	}
+
+	fields := make(map[string]WITFieldMeta, len(typeCfg.Fields))
+	for name, def := range typeCfg.Fields {
+		fields[name] = WITFieldMeta{
+			Type:     def.Type,
+			Values:   def.Values,
+			Required: !def.Optional,
+			Default:  def.Default,
+		}
+	}
+
+	var sections []WITSectionMeta
+	for _, tmpl := range templates {
+		if tmpl.ArtifactType == artifactType {
+			for _, s := range tmpl.Sections {
+				sections = append(sections, WITSectionMeta{
+					Name:     s.Name,
+					Required: s.Required,
+				})
+			}
+			break
+		}
+	}
+
+	level, _ := LevelForType(layout, artifactType)
+
+	return &WITMetadata{
+		TypeName:       artifactType,
+		HierarchyLevel: level,
+		IDFormat:       typeCfg.IDFormat,
+		Fields:         fields,
+		Sections:       sections,
+		Directories: WITDirectoryMeta{
+			Active:  artifactType + "s",
+			Archive: "archive",
+		},
+	}, nil
 }
 
 // ListTypes returns a summary of all configured WIT types with their
-// hierarchy levels and descriptions (lightweight discovery).
-//
-// Worker: Iterate headerDef.Types and templates, extract type name, description,
-// and hierarchy level for each. Return as a slice sorted by hierarchy level.
+// hierarchy levels and descriptions.
 func ListTypes(
 	headerDef *config.HeaderDefConfig,
 	templates []*config.TemplateConfig,
 	layout *QueueLayoutConfig,
 ) ([]WITMetadata, error) {
-	panic("not implemented: Worker: Enumerate all configured WIT types with descriptions and hierarchy levels")
+	var result []WITMetadata
+	for typeName := range headerDef.Types {
+		meta, err := DescribeType(typeName, headerDef, templates, layout)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *meta)
+	}
+	return result, nil
 }

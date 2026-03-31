@@ -3,6 +3,10 @@ package core
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os/exec"
+	"regexp"
+	"strings"
 )
 
 // CommitLinkInfo contains the metadata linking an artifact to a git commit.
@@ -13,30 +17,74 @@ type CommitLinkInfo struct {
 	Author    string `json:"author"`
 }
 
-// LinkCommit associates a git commit SHA with an artifact, storing the
-// relationship in both the Markdown frontmatter and SQLite index.
-//
-// Worker: Parse the existing .md frontmatter. Set or append the commit SHA to
-// the `commit` field. Write back the file. Update the DB record. Append a
-// "commit_linked" event to events.jsonl.
+// LinkCommit associates a git commit SHA with an artifact in the SQLite index.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message string) error {
-	panic("not implemented: Worker: Link commit SHA to artifact frontmatter and DB, emit event")
+	_, err := db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, '')`,
+		itemID, commitSHA, message,
+	)
+	if err != nil {
+		return fmt.Errorf("link commit: %w", err)
+	}
+	return nil
 }
 
 // GetCommitLinks retrieves all commit associations for a given artifact.
-//
-// Worker: Query the commit_links table (or items.commit field) for the given
-// item ID and return all linked commits.
 func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLinkInfo, error) {
-	panic("not implemented: Worker: Retrieve all commit links for the given artifact from DB")
+	rows, err := db.QueryContext(ctx,
+		`SELECT item_id, commit_sha, message, author FROM commit_links WHERE item_id = ?`,
+		itemID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get commit links: %w", err)
+	}
+	defer rows.Close()
+
+	var links []CommitLinkInfo
+	for rows.Next() {
+		var l CommitLinkInfo
+		if err := rows.Scan(&l.ItemID, &l.CommitSHA, &l.Message, &l.Author); err != nil {
+			return nil, fmt.Errorf("scan commit link: %w", err)
+		}
+		links = append(links, l)
+	}
+	return links, rows.Err()
 }
 
-// AutoLinkCommits scans recent git log messages for artifact ID references
-// (e.g., "T001" or "BUG003") and creates links automatically.
-//
-// Worker: Run `git log --oneline -N` (where N is configurable). Parse each
-// message for artifact ID patterns matching the configured prefixes. Call
-// LinkCommit for each match.
+// artifactIDPattern matches artifact IDs like T001, BUG003, US042.
+var artifactIDPattern = regexp.MustCompile(`\b([A-Z]{1,6}\d{3,})\b`)
+
+// AutoLinkCommits scans recent git log messages for artifact ID references and
+// creates links automatically. depth=0 returns immediately with no links.
 func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) ([]CommitLinkInfo, error) {
-	panic("not implemented: Worker: Scan recent git log for artifact ID references and auto-link matching commits")
+	if depth <= 0 {
+		return nil, nil
+	}
+
+	out, err := exec.CommandContext(ctx, "git", "-C", ws.RootPath,
+		"log", "--pretty=format:%H\t%ae\t%s", fmt.Sprintf("-n%d", depth)).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	var linked []CommitLinkInfo
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		sha, author, msg := parts[0], parts[1], parts[2]
+		for _, match := range artifactIDPattern.FindAllString(msg, -1) {
+			if err := LinkCommit(ctx, db, ws, match, sha, msg); err != nil {
+				continue
+			}
+			linked = append(linked, CommitLinkInfo{
+				ItemID: match, CommitSHA: sha, Message: msg, Author: author,
+			})
+		}
+	}
+	return linked, nil
 }

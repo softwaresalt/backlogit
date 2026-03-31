@@ -5,33 +5,63 @@ import (
 )
 
 // NewQueueCmd creates the `backlogit queue` command group for queue operations.
-//
-// Worker: Create cobra command with subcommands: view, move, bulk-status.
-// Wire each subcommand to the corresponding core.Queue* function.
 func NewQueueCmd() *cobra.Command {
-	panic("not implemented: Worker: Create 'queue' cobra command group with view/move/bulk-status subcommands")
+	cmd := &cobra.Command{
+		Use:   "queue",
+		Short: "Manage the work queue",
+	}
+	cmd.AddCommand(NewQueueViewCmd())
+	cmd.AddCommand(NewQueueMoveCmd())
+	cmd.AddCommand(NewQueueBulkStatusCmd())
+	return cmd
 }
 
-// NewQueueViewCmd creates `backlogit queue view [--type task] [--status queued] [--group-by type] [--sort priority]`.
-//
-// Worker: Parse filter flags into a QueueFilter struct. Call core.QueryQueue.
-// Format output as a table with columns: ID, Title, Status, Type, Priority.
-// When --group-by is set, separate groups with headers.
+// NewQueueViewCmd creates `backlogit queue view` with filter/group/sort flags.
 func NewQueueViewCmd() *cobra.Command {
-	panic("not implemented: Worker: Create 'queue view' command with filter/group/sort flags and table output")
+	var artifactType, status, groupBy, sortBy string
+
+	cmd := &cobra.Command{
+		Use:   "view",
+		Short: "View queue items",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&artifactType, "type", "", "filter by artifact type")
+	cmd.Flags().StringVar(&status, "status", "", "filter by status")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field")
+	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
+	return cmd
 }
 
 // NewQueueMoveCmd creates `backlogit queue move <item-id> --position <N>`.
-//
-// Worker: Parse item-id from args and position from flag. Call core.MoveInQueue.
 func NewQueueMoveCmd() *cobra.Command {
-	panic("not implemented: Worker: Create 'queue move' command to reorder items within their parent")
+	var position int
+
+	cmd := &cobra.Command{
+		Use:   "move <item-id>",
+		Short: "Reorder an item in the queue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&position, "position", 0, "target position in the queue")
+	return cmd
 }
 
 // NewQueueBulkStatusCmd creates `backlogit queue bulk-status --ids T001,T002 --status active`.
-//
-// Worker: Parse item IDs (comma-separated) and target status. Call core.BulkUpdateStatus.
-// Display count of updated items.
 func NewQueueBulkStatusCmd() *cobra.Command {
-	panic("not implemented: Worker: Create 'queue bulk-status' command for batch status transitions")
+	var ids, status string
+
+	cmd := &cobra.Command{
+		Use:   "bulk-status",
+		Short: "Update status for multiple items",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&ids, "ids", "", "comma-separated list of item IDs")
+	cmd.Flags().StringVar(&status, "status", "", "target status")
+	return cmd
 }

@@ -1,9 +1,10 @@
 ---
 id: TASK-008.04
 title: 'Fix CLI update command: UpsertItem and bump updated_at after section writes'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:41'
+updated_date: '2026-03-31 22:13'
 labels:
   - bug
   - cli

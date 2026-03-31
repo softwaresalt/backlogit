@@ -268,6 +268,15 @@ func escapeFTS5Query(q string) string {
 	return `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
 }
 
+// ScanArtifactRow is the exported wrapper for scanning a single row into an Artifact.
+// It is used by packages that build custom queries against the items table.
+func ScanArtifactRow(row rowScanner) (*models.Artifact, error) {
+	return scanArtifactRow(row)
+}
+
+// SelectCols is the canonical column list for SELECT queries against the items table.
+const SelectCols = selectCols
+
 // scanArtifacts collects all rows into a slice of Artifacts.
 func scanArtifacts(rows *sql.Rows) ([]*models.Artifact, error) {
 	var artifacts []*models.Artifact

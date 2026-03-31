@@ -1,9 +1,10 @@
 ---
 id: TASK-008
 title: MCP & CLI Section/Template Bug Fixes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:40'
+updated_date: '2026-03-31 22:13'
 labels:
   - epic
   - mcp

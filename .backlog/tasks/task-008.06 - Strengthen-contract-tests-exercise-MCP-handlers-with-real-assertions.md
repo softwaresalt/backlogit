@@ -1,9 +1,10 @@
 ---
 id: TASK-008.06
 title: 'Strengthen contract tests: exercise MCP handlers with real assertions'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:42'
+updated_date: '2026-03-31 22:13'
 labels:
   - testing
   - contract

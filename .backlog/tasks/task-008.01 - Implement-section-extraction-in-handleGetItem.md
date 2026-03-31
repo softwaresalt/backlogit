@@ -1,9 +1,10 @@
 ---
 id: TASK-008.01
 title: Implement section extraction in handleGetItem
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 05:40'
+updated_date: '2026-03-31 22:13'
 labels:
   - mcp
   - sections
