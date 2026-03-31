@@ -36,11 +36,13 @@ func newMoveCommand(cwd *string) *cobra.Command {
 				return err
 			}
 
-			filePath, err := core.FindArtifactPath(ctx, ws, id)
+			// Relocate the file to the directory mapped by the new status.
+			newPath, err := core.RelocateArtifactFile(ctx, ws.DB, ws, id, status)
 			if err != nil {
-				return err
+				return fmt.Errorf("relocate artifact: %w", err)
 			}
-			if err := core.WriteArtifactFile(artifact, filePath); err != nil {
+
+			if err := core.WriteArtifactFile(artifact, newPath); err != nil {
 				return err
 			}
 			if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {

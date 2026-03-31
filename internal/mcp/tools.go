@@ -13,6 +13,8 @@ import (
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
+	"github.com/backlogit/backlogit/internal/models"
+	"github.com/backlogit/backlogit/internal/parser"
 )
 
 // RegisterTools adds all backlogit tools to the MCP server.
@@ -246,6 +248,32 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	if id == "" {
 		return ValidationFailed("id is required"), nil
 	}
+
+	// If section param is provided, extract the named section from the file.
+	if section, ok := request.Params.Arguments["section"].(string); ok && section != "" {
+		filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
+		if err != nil {
+			return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+		}
+		raw, err := os.ReadFile(filePath)
+		if err != nil {
+			return InternalError(fmt.Sprintf("read artifact: %v", err)), nil
+		}
+		_, body, err := models.ParseFrontmatter(string(raw))
+		if err != nil {
+			return InternalError(fmt.Sprintf("parse artifact: %v", err)), nil
+		}
+		sections, err := parser.ParseSections(body)
+		if err != nil {
+			return InternalError(fmt.Sprintf("parse sections: %v", err)), nil
+		}
+		content, ok := sections[section]
+		if !ok {
+			return ValidationFailed(fmt.Sprintf("section %q not found in artifact %s", section, id)), nil
+		}
+		return toolResultJSON(map[string]any{"id": id, "section": section, "content": content})
+	}
+
 	artifact, err := db.GetItem(ctx, s.Workspace.DB, id)
 	if err != nil {
 		return InternalError(fmt.Sprintf("get item: %v", err)), nil
@@ -297,10 +325,22 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 	if v, ok := request.Params.Arguments["references"].(string); ok && v != "" {
 		opts = append(opts, core.WithReferences(strings.Split(v, ",")))
 	}
+	sections, sectionsErr := ParseSectionsParam(request.Params.Arguments)
+	if sectionsErr != nil {
+		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
+	}
 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
 	if err != nil {
 		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
 	}
+
+	// If sections provided and template service is available, write section content.
+	if sections != nil && s.templateSvc != nil {
+		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
+			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
+		}
+	}
+
 	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
 		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
 	}
@@ -454,4 +494,42 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 		return InternalError(fmt.Sprintf("create checkpoint: %v", err)), nil
 	}
 	return toolResultJSON(map[string]string{"path": path})
+}
+
+// writeSectionsToFile appends named section content to an artifact's Markdown body
+// using BEGIN/END markers. It reads the existing file, appends each section that is
+// not already present, and atomically rewrites the file.
+func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
+	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
+	if err != nil {
+		return fmt.Errorf("find artifact path: %w", err)
+	}
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read artifact file: %w", err)
+	}
+	fm, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return fmt.Errorf("parse artifact: %w", err)
+	}
+
+	newBody, writeErr := parser.WriteSections(body, sections)
+	if writeErr != nil {
+		// Section tags not in file — append them.
+		for name, value := range sections {
+			body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+		}
+		newBody = body
+	}
+
+	newContent := models.SerializeFrontmatter(fm, newBody)
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
+		return fmt.Errorf("write artifact: %w", err)
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp) //nolint:errcheck
+		return fmt.Errorf("rename artifact: %w", err)
+	}
+	return nil
 }

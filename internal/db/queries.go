@@ -65,11 +65,19 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 	}
 
 	var createdAtParseErr, updatedAtParseErr error
-	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
+	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339Nano, createdAt)
+	if createdAtParseErr != nil {
+		// Fall back to second-precision RFC3339 for legacy records.
+		a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
+	}
 	if createdAtParseErr != nil {
 		return nil, fmt.Errorf("parse created_at %q: %w", createdAt, createdAtParseErr)
 	}
-	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
+	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339Nano, updatedAt)
+	if updatedAtParseErr != nil {
+		// Fall back to second-precision RFC3339 for legacy records.
+		a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
+	}
 	if updatedAtParseErr != nil {
 		return nil, fmt.Errorf("parse updated_at %q: %w", updatedAt, updatedAtParseErr)
 	}
@@ -151,8 +159,8 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		nullString(artifact.Priority),
 		nullString(artifact.Description),
 		string(cf),
-		artifact.CreatedAt.Format(time.RFC3339),
-		artifact.UpdatedAt.Format(time.RFC3339),
+		artifact.CreatedAt.Format(time.RFC3339Nano),
+		artifact.UpdatedAt.Format(time.RFC3339Nano),
 		nullString(artifact.AssignedTo),
 		nullString(artifact.Owner),
 		labelsVal,

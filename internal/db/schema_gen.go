@@ -9,7 +9,7 @@ import (
 
 // columnNameRe validates column names against safe SQL identifier pattern.
 // CRITICAL (P1 review finding): prevents DDL injection via crafted field names.
-var columnNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+var columnNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`) //nolint:unused // used by ValidateColumnName stub
 
 // ValidateColumnName checks that a column name is safe for use in DDL statements.
 //

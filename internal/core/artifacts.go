@@ -247,15 +247,22 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 }
 
 // FindArtifactPath locates the Markdown file for an artifact by ID.
+// It searches all non-hidden subdirectories of the workspace root, including
+// status-based routing directories such as "archive" and "review".
 // Returns the absolute file path or an error if not found.
 func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
+	entries, err := os.ReadDir(ws.RootPath)
+	if err != nil {
+		return "", fmt.Errorf("read workspace root: %w", err)
+	}
+
 	var found string
-	for typeName := range ws.Config.ArtifactTypes {
-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+	for _, entry := range entries {
+		if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
 			continue
 		}
-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+		dirPath := filepath.Join(ws.RootPath, entry.Name())
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}
@@ -333,13 +340,18 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
+	entries, err := os.ReadDir(ws.RootPath)
+	if err != nil {
+		return nil, fmt.Errorf("read workspace root: %w", err)
+	}
+
 	var found *models.Artifact
-	for typeName := range ws.Config.ArtifactTypes {
-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+	for _, entry := range entries {
+		if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
 			continue
 		}
-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+		dirPath := filepath.Join(ws.RootPath, entry.Name())
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}

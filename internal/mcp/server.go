@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/events"
 )
 
@@ -21,6 +23,7 @@ type Server struct {
 	Workspace   *core.Workspace
 	Events      *events.EventWriter
 	Telemetry   *events.TelemetryWriter
+	templateSvc *templates.Service
 	mcp         *mcpserver.MCPServer
 	toolNames   []string
 }
@@ -43,7 +46,14 @@ func NewServer(ws *core.Workspace) *Server {
 	)
 	s.RegisterTools()
 	s.RegisterResources()
-	RegisterSectionAwareTools(s, nil)
+
+	// Construct a live template service for section-aware operations.
+	templatesDir := filepath.Join(ws.RootPath, ".backlogit", "templates")
+	svc, err := templates.NewService(context.Background(), templatesDir)
+	if err != nil {
+		logger.Warn("template service unavailable", "error", err)
+	}
+	RegisterSectionAwareTools(s, svc)
 	return s
 }
 
