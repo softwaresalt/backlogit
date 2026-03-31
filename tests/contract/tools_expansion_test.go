@@ -2,7 +2,6 @@ package contract_test
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,13 +146,6 @@ func TestDeleteItem_ToolExists(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "backlogit_delete_item tool should be registered")
-}
-
-// toolResultJSON is a helper to parse JSON from tool results.
-func toolResultJSON(data []byte) map[string]any {
-	var result map[string]any
-	json.Unmarshal(data, &result)
-	return result
 }
 
 // --- Section-aware MCP tool contract tests (revision-3) ---

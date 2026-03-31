@@ -37,19 +37,6 @@ func handleListTemplates(_ context.Context, _ *Server, templateSvc *templates.Se
 	return mcplib.NewToolResultText(string(data)), nil
 }
 
-// handleCreateItemSections processes the 'sections' parameter from a create_item call.
-func handleCreateItemSections(_ context.Context, templateSvc *templates.Service, artifactType string, sections map[string]string) (string, error) {
-	if templateSvc == nil || len(sections) == 0 {
-		return "", nil
-	}
-	tmpl, err := templateSvc.Resolve(artifactType)
-	if err != nil || tmpl == nil {
-		return "", nil
-	}
-	_ = tmpl // section composition deferred to template service implementation
-	return "", nil
-}
-
 // ListTools returns the names of all registered MCP tools.
 // Used by contract tests to verify the fixed tool surface.
 func (s *Server) ListTools() []string {

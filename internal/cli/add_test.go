@@ -104,7 +104,7 @@ func TestAddCommand_CreatesMarkdownFile(t *testing.T) {
 
 	// Assert — at least one .md file should exist in the workspace
 	found := false
-	filepath.WalkDir(filepath.Join(root, ".backlogit"), func(path string, d os.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(filepath.Join(root, ".backlogit"), func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -112,6 +112,6 @@ func TestAddCommand_CreatesMarkdownFile(t *testing.T) {
 			found = true
 		}
 		return nil
-	})
+	}))
 	assert.True(t, found, "expected at least one .md file created")
 }
