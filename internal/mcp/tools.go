@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -15,26 +17,34 @@ import (
 
 // RegisterTools adds all backlogit tools to the MCP server.
 func (s *Server) RegisterTools() {
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_get_item",
 			mcplib.WithDescription("Get a backlogit item by ID"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Item ID")),
+			mcplib.WithString("section", mcplib.Description("Extract a named section from the body")),
 		),
 		s.handleGetItem,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_create_item",
 			mcplib.WithDescription("Create a new backlogit artifact"),
 			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Artifact title")),
 			mcplib.WithString("artifact_type", mcplib.Required(), mcplib.Description("Artifact type (task, story, bug, epic)")),
-			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("todo")),
+			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("queued")),
 			mcplib.WithString("description", mcplib.Description("Artifact description")),
 			mcplib.WithString("parent_id", mcplib.Description("Parent artifact ID")),
 			mcplib.WithString("sprint", mcplib.Description("Sprint ID")),
+			mcplib.WithString("assigned_to", mcplib.Description("Assignee")),
+			mcplib.WithString("owner", mcplib.Description("Owner")),
+			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
+			mcplib.WithString("dependencies", mcplib.Description("Comma-separated dependency IDs")),
+			mcplib.WithString("references", mcplib.Description("Comma-separated reference paths")),
+			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
+			mcplib.WithString("sections", mcplib.Description("Section content as JSON object {name: content}")),
 		),
 		s.handleCreateItem,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_update_item",
 			mcplib.WithDescription("Update an existing backlogit artifact"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Item ID")),
@@ -43,23 +53,61 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("description", mcplib.Description("New description")),
 			mcplib.WithString("sprint", mcplib.Description("Sprint ID")),
 			mcplib.WithString("priority", mcplib.Description("Priority")),
+			mcplib.WithString("assigned_to", mcplib.Description("Assignee")),
+			mcplib.WithString("owner", mcplib.Description("Owner")),
+			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
+			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
+			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
 		),
 		s.handleUpdateItem,
 	)
-	s.mcp.AddTool(
+	s.addTool(
+		mcplib.NewTool("backlogit_list_items",
+			mcplib.WithDescription("List artifacts with optional filters"),
+			mcplib.WithString("type", mcplib.Description("Filter by artifact type")),
+			mcplib.WithString("status", mcplib.Description("Filter by status")),
+			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
+			mcplib.WithString("sprint", mcplib.Description("Filter by sprint ID")),
+		),
+		s.handleListItems,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_search_items",
+			mcplib.WithDescription("Full-text search across artifact titles and descriptions"),
+			mcplib.WithString("query", mcplib.Required(), mcplib.Description("Search query")),
+			mcplib.WithNumber("limit", mcplib.Description("Maximum results (default 20)")),
+		),
+		s.handleSearchItems,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_move_item",
+			mcplib.WithDescription("Change an artifact's status"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID")),
+			mcplib.WithString("status", mcplib.Required(), mcplib.Description("New status")),
+		),
+		s.handleMoveItem,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_delete_item",
+			mcplib.WithDescription("Delete an artifact by ID"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID")),
+		),
+		s.handleDeleteItem,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_query_sql",
 			mcplib.WithDescription("Execute a read-only SQL query against the backlogit index"),
 			mcplib.WithString("sql", mcplib.Required(), mcplib.Description("SELECT statement to execute")),
 		),
 		s.handleQuerySQL,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_sync_index",
 			mcplib.WithDescription("Rehydrate the SQLite index from Markdown source files"),
 		),
 		s.handleSyncIndex,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_append_comment",
 			mcplib.WithDescription("Append a comment event to events.jsonl"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
@@ -68,14 +116,14 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleAppendComment,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_log_telemetry",
 			mcplib.WithDescription("Write agent telemetry to telemetry.jsonl"),
 			mcplib.WithString("event_type", mcplib.Required(), mcplib.Description("Telemetry event type")),
 		),
 		s.handleLogTelemetry,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_save_memory",
 			mcplib.WithDescription("Save a key-value pair to agent memories"),
 			mcplib.WithString("key", mcplib.Required(), mcplib.Description("Memory key")),
@@ -83,13 +131,110 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleSaveMemory,
 	)
-	s.mcp.AddTool(
+	s.addTool(
 		mcplib.NewTool("backlogit_create_checkpoint",
 			mcplib.WithDescription("Save a session state checkpoint"),
 			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist")),
 		),
 		s.handleCreateCheckpoint,
 	)
+}
+
+func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	filters := db.QueryFilters{}
+	if v, ok := request.Params.Arguments["type"].(string); ok {
+		filters.Type = v
+	}
+	if v, ok := request.Params.Arguments["status"].(string); ok {
+		filters.Status = v
+	}
+	if v, ok := request.Params.Arguments["assigned_to"].(string); ok {
+		filters.AssignedTo = v
+	}
+	if v, ok := request.Params.Arguments["sprint"].(string); ok {
+		filters.Sprint = v
+	}
+	artifacts, err := db.QueryItems(ctx, s.Workspace.DB, filters)
+	if err != nil {
+		return InternalError(fmt.Sprintf("list items: %v", err)), nil
+	}
+	return toolResultJSON(artifacts)
+}
+
+func (s *Server) handleSearchItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	query, _ := request.Params.Arguments["query"].(string)
+	if query == "" {
+		return ValidationFailed("query is required"), nil
+	}
+	limit := 20
+	if v, ok := request.Params.Arguments["limit"].(float64); ok && v > 0 {
+		limit = int(v)
+	}
+	artifacts, err := db.SearchItems(ctx, s.Workspace.DB, query, limit)
+	if err != nil {
+		return InternalError(fmt.Sprintf("search items: %v", err)), nil
+	}
+	return toolResultJSON(artifacts)
+}
+
+func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	status, _ := request.Params.Arguments["status"].(string)
+	if status == "" {
+		return ValidationFailed("status is required"), nil
+	}
+	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, map[string]any{"status": status})
+	if err != nil {
+		return InternalError(fmt.Sprintf("move item: %v", err)), nil
+	}
+	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+	}
+	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
+		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
+	}
+	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
+	}
+	return toolResultJSON(artifact)
+}
+
+func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+	}
+	if err := db.DeleteItem(ctx, s.Workspace.DB, id); err != nil {
+		return InternalError(fmt.Sprintf("delete from index: %v", err)), nil
+	}
+	if err := os.Remove(filePath); err != nil {
+		return InternalError(fmt.Sprintf("delete file: %v", err)), nil
+	}
+	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }
 
 func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -134,9 +279,30 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 	if sprint, ok := request.Params.Arguments["sprint"].(string); ok && sprint != "" {
 		opts = append(opts, core.WithSprint(sprint))
 	}
+	if v, ok := request.Params.Arguments["assigned_to"].(string); ok && v != "" {
+		opts = append(opts, core.WithAssignedTo(v))
+	}
+	if v, ok := request.Params.Arguments["owner"].(string); ok && v != "" {
+		opts = append(opts, core.WithOwner(v))
+	}
+	if v, ok := request.Params.Arguments["commit"].(string); ok && v != "" {
+		opts = append(opts, core.WithCommit(v))
+	}
+	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
+		opts = append(opts, core.WithLabels(strings.Split(v, ",")))
+	}
+	if v, ok := request.Params.Arguments["dependencies"].(string); ok && v != "" {
+		opts = append(opts, core.WithDependencies(strings.Split(v, ",")))
+	}
+	if v, ok := request.Params.Arguments["references"].(string); ok && v != "" {
+		opts = append(opts, core.WithReferences(strings.Split(v, ",")))
+	}
 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
 	if err != nil {
 		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
+	}
+	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }
@@ -151,14 +317,27 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed("id is required"), nil
 	}
 	updates := make(map[string]any)
-	for _, key := range []string{"title", "status", "description", "sprint", "priority"} {
+	for _, key := range []string{"title", "status", "description", "sprint", "priority", "assigned_to", "owner", "commit"} {
 		if v, ok := request.Params.Arguments[key].(string); ok && v != "" {
 			updates[key] = v
 		}
 	}
+	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
+		updates["labels"] = strings.Split(v, ",")
+	}
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
 	if err != nil {
 		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
+	}
+	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+	}
+	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
+		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
+	}
+	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }

@@ -29,13 +29,13 @@ func ParseLegacy(content string) ([]LegacyItem, error) {
 		if m := checklistRe.FindStringSubmatch(line); m != nil {
 			checked := strings.ToLower(m[1]) == "x"
 			title := strings.TrimSpace(m[2])
-			status := "todo"
+			status := "queued"
 			if checked {
 				status = "done"
 			} else {
 				switch strings.ToLower(currentSection) {
-				case "in progress", "in_progress":
-					status = "in_progress"
+				case "in progress", "in_progress", "active":
+					status = "active"
 				case "blocked":
 					status = "blocked"
 				}

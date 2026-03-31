@@ -26,7 +26,13 @@ func EnsureSchema(db *sql.DB) error {
 			description  TEXT,
 			custom_fields TEXT,
 			created_at   DATETIME NOT NULL,
-			updated_at   DATETIME NOT NULL
+			updated_at   DATETIME NOT NULL,
+			assigned_to  TEXT,
+			owner        TEXT,
+			labels       TEXT,
+			dependencies TEXT,
+			"references" TEXT,
+			"commit"     TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_type   ON items(artifact_type)`,
@@ -36,6 +42,7 @@ func EnsureSchema(db *sql.DB) error {
 			id UNINDEXED,
 			title,
 			description,
+			labels,
 			content='items',
 			content_rowid='rowid'
 		)`,
@@ -43,18 +50,18 @@ func EnsureSchema(db *sql.DB) error {
 		// INSERT OR REPLACE issues a DELETE then INSERT at the storage layer, so
 		// the delete trigger fires before the insert trigger as expected.
 		`CREATE TRIGGER IF NOT EXISTS items_ai AFTER INSERT ON items BEGIN
-			INSERT INTO items_fts(rowid, id, title, description)
-			VALUES (new.rowid, new.id, new.title, new.description);
+			INSERT INTO items_fts(rowid, id, title, description, labels)
+			VALUES (new.rowid, new.id, new.title, new.description, new.labels);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS items_ad AFTER DELETE ON items BEGIN
-			INSERT INTO items_fts(items_fts, rowid, id, title, description)
-			VALUES ('delete', old.rowid, old.id, old.title, old.description);
+			INSERT INTO items_fts(items_fts, rowid, id, title, description, labels)
+			VALUES ('delete', old.rowid, old.id, old.title, old.description, old.labels);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE ON items BEGIN
-			INSERT INTO items_fts(items_fts, rowid, id, title, description)
-			VALUES ('delete', old.rowid, old.id, old.title, old.description);
-			INSERT INTO items_fts(rowid, id, title, description)
-			VALUES (new.rowid, new.id, new.title, new.description);
+			INSERT INTO items_fts(items_fts, rowid, id, title, description, labels)
+			VALUES ('delete', old.rowid, old.id, old.title, old.description, old.labels);
+			INSERT INTO items_fts(rowid, id, title, description, labels)
+			VALUES (new.rowid, new.id, new.title, new.description, new.labels);
 		END`,
 	}
 

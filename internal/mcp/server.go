@@ -18,10 +18,11 @@ var logger = slog.With("package", "mcp")
 
 // Server holds dependencies for MCP tool handlers.
 type Server struct {
-	Workspace *core.Workspace
-	Events    *events.EventWriter
-	Telemetry *events.TelemetryWriter
-	mcp       *mcpserver.MCPServer
+	Workspace   *core.Workspace
+	Events      *events.EventWriter
+	Telemetry   *events.TelemetryWriter
+	mcp         *mcpserver.MCPServer
+	toolNames   []string
 }
 
 // NewServer creates an MCP server from a workspace.
@@ -42,7 +43,14 @@ func NewServer(ws *core.Workspace) *Server {
 	)
 	s.RegisterTools()
 	s.RegisterResources()
+	RegisterSectionAwareTools(s, nil)
 	return s
+}
+
+// addTool registers a tool with the mcp server and records its name for ListTools.
+func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
+	s.mcp.AddTool(tool, handler)
+	s.toolNames = append(s.toolNames, tool.Name)
 }
 
 // RunStdio starts the MCP server on stdio transport.

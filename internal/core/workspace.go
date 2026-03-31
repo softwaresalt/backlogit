@@ -20,7 +20,8 @@ type Workspace struct {
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
-	cfg, err := config.Load(ctx, rootPath)
+	backlogitDir := filepath.Join(rootPath, ".backlogit")
+	cfg, err := config.Load(ctx, backlogitDir)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}

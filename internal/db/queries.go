@@ -14,13 +14,15 @@ import (
 
 // QueryFilters holds optional filters for item queries.
 type QueryFilters struct {
-	Status   string
-	Type     string
-	ParentID string
-	Sprint   string
+	Status     string
+	Type       string
+	ParentID   string
+	Sprint     string
+	AssignedTo string
+	Owner      string
 }
 
-const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at`
+const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit"`
 
 // rowScanner abstracts *sql.Row and *sql.Rows for the shared scan helper.
 type rowScanner interface {
@@ -32,11 +34,13 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 	var a models.Artifact
 	var status, createdAt, updatedAt string
 	var parentID, sprint, priority, description, customFields sql.NullString
+	var assignedTo, owner, labels, dependencies, references, commit sql.NullString
 
 	if err := row.Scan(
 		&a.ID, &a.Title, &status, &a.ArtifactType,
 		&parentID, &sprint, &priority, &description,
 		&customFields, &createdAt, &updatedAt,
+		&assignedTo, &owner, &labels, &dependencies, &references, &commit,
 	); err != nil {
 		return nil, err
 	}
@@ -60,8 +64,40 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 		}
 	}
 
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var createdAtParseErr, updatedAtParseErr error
+	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
+	if createdAtParseErr != nil {
+		return nil, fmt.Errorf("parse created_at %q: %w", createdAt, createdAtParseErr)
+	}
+	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
+	if updatedAtParseErr != nil {
+		return nil, fmt.Errorf("parse updated_at %q: %w", updatedAt, updatedAtParseErr)
+	}
+
+	if assignedTo.Valid {
+		a.AssignedTo = assignedTo.String
+	}
+	if owner.Valid {
+		a.Owner = owner.String
+	}
+	if commit.Valid {
+		a.Commit = commit.String
+	}
+	if labels.Valid && labels.String != "" && labels.String != "null" {
+		if err := json.Unmarshal([]byte(labels.String), &a.Labels); err != nil {
+			return nil, fmt.Errorf("unmarshal labels: %w", err)
+		}
+	}
+	if dependencies.Valid && dependencies.String != "" && dependencies.String != "null" {
+		if err := json.Unmarshal([]byte(dependencies.String), &a.Dependencies); err != nil {
+			return nil, fmt.Errorf("unmarshal dependencies: %w", err)
+		}
+	}
+	if references.Valid && references.String != "" && references.String != "null" {
+		if err := json.Unmarshal([]byte(references.String), &a.References); err != nil {
+			return nil, fmt.Errorf("unmarshal references: %w", err)
+		}
+	}
 
 	return &a, nil
 }
@@ -73,10 +109,39 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		return fmt.Errorf("marshal custom fields: %w", err)
 	}
 
+	labelsJSON, err := json.Marshal(artifact.Labels)
+	if err != nil {
+		return fmt.Errorf("marshal labels: %w", err)
+	}
+	depsJSON, err := json.Marshal(artifact.Dependencies)
+	if err != nil {
+		return fmt.Errorf("marshal dependencies: %w", err)
+	}
+	refsJSON, err := json.Marshal(artifact.References)
+	if err != nil {
+		return fmt.Errorf("marshal references: %w", err)
+	}
+
+	// Store JSON slice fields as NULL when empty to keep rows tidy.
+	labelsVal := nullString(string(labelsJSON))
+	if string(labelsJSON) == "null" {
+		labelsVal = sql.NullString{}
+	}
+	depsVal := nullString(string(depsJSON))
+	if string(depsJSON) == "null" {
+		depsVal = sql.NullString{}
+	}
+	refsVal := nullString(string(refsJSON))
+	if string(refsJSON) == "null" {
+		refsVal = sql.NullString{}
+	}
+
 	_, err = db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO items
-			(id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(id, title, status, artifact_type, parent_id, sprint, priority, description,
+			 custom_fields, created_at, updated_at,
+			 assigned_to, owner, labels, dependencies, "references", "commit")
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		artifact.ID,
 		artifact.Title,
 		string(artifact.Status),
@@ -88,6 +153,12 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		string(cf),
 		artifact.CreatedAt.Format(time.RFC3339),
 		artifact.UpdatedAt.Format(time.RFC3339),
+		nullString(artifact.AssignedTo),
+		nullString(artifact.Owner),
+		labelsVal,
+		depsVal,
+		refsVal,
+		nullString(artifact.Commit),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
@@ -140,6 +211,14 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 		conditions = append(conditions, "sprint = ?")
 		args = append(args, filters.Sprint)
 	}
+	if filters.AssignedTo != "" {
+		conditions = append(conditions, "assigned_to = ?")
+		args = append(args, filters.AssignedTo)
+	}
+	if filters.Owner != "" {
+		conditions = append(conditions, "owner = ?")
+		args = append(args, filters.Owner)
+	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -153,7 +232,10 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	return scanArtifacts(rows)
 }
 
-// SearchItems performs FTS5 full-text search across titles and descriptions.
+// SearchItems performs FTS5 full-text search across titles, descriptions, and labels.
+// The query is wrapped in FTS5 phrase-quote delimiters so that hyphens and
+// other FTS5 operator characters in the input are treated as literal phrase
+// content rather than query operators.
 func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) ([]*models.Artifact, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT i.`+strings.ReplaceAll(selectCols, ", ", ", i.")+
@@ -161,7 +243,7 @@ func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) ([]*m
 			  JOIN items_fts fts ON i.rowid = fts.rowid
 			 WHERE items_fts MATCH ?
 			 LIMIT ?`,
-		query, limit,
+		escapeFTS5Query(query), limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("search items: %w", err)
@@ -169,6 +251,13 @@ func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) ([]*m
 	defer rows.Close()
 
 	return scanArtifacts(rows)
+}
+
+// escapeFTS5Query wraps q in FTS5 double-quote phrase delimiters and escapes
+// any embedded double-quotes so that operators like hyphens, OR, and AND are
+// treated as literal characters rather than FTS5 query syntax.
+func escapeFTS5Query(q string) string {
+	return `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
 }
 
 // scanArtifacts collects all rows into a slice of Artifacts.

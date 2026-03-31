@@ -53,7 +53,7 @@ func TestArtifactFromFrontmatter_Valid(t *testing.T) {
 	fm := map[string]any{
 		"id":            "T001",
 		"title":         "Test",
-		"status":        "todo",
+		"status":        "queued",
 		"artifact_type": "task",
 	}
 
@@ -63,5 +63,5 @@ func TestArtifactFromFrontmatter_Valid(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, "T001", artifact.ID)
-	assert.Equal(t, models.StatusTodo, artifact.Status)
+	assert.Equal(t, models.StatusQueued, artifact.Status)
 }
