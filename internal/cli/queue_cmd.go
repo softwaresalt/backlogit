@@ -1,7 +1,14 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
+
+	"github.com/backlogit/backlogit/internal/core"
 )
 
 // NewQueueCmd creates the `backlogit queue` command group for queue operations.
@@ -24,7 +31,26 @@ func NewQueueViewCmd() *cobra.Command {
 		Use:   "view",
 		Short: "View queue items",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, ".")
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			filter := &core.QueueFilter{
+				Types:   []string{artifactType},
+				Statuses: []string{status},
+				GroupBy: groupBy,
+				SortBy:  sortBy,
+			}
+			view, err := core.QueryQueue(ctx, ws.DB, filter)
+			if err != nil {
+				return fmt.Errorf("query queue: %w", err)
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(view)
 		},
 	}
 	cmd.Flags().StringVar(&artifactType, "type", "", "filter by artifact type")
@@ -43,6 +69,17 @@ func NewQueueMoveCmd() *cobra.Command {
 		Short: "Reorder an item in the queue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, ".")
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			if err := core.MoveInQueue(ctx, ws.DB, args[0], position); err != nil {
+				return fmt.Errorf("move in queue: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Moved %s to position %d\n", args[0], position)
 			return nil
 		},
 	}
@@ -58,6 +95,25 @@ func NewQueueBulkStatusCmd() *cobra.Command {
 		Use:   "bulk-status",
 		Short: "Update status for multiple items",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if ids == "" {
+				return fmt.Errorf("--ids is required")
+			}
+			if status == "" {
+				return fmt.Errorf("--status is required")
+			}
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, ".")
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			itemIDs := strings.Split(ids, ",")
+			updated, err := core.BulkUpdateStatus(ctx, ws.DB, ws, itemIDs, status)
+			if err != nil {
+				return fmt.Errorf("bulk update status: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated %d items to status %q\n", updated, status)
 			return nil
 		},
 	}

@@ -230,11 +230,12 @@ func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRe
 	if err != nil {
 		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
 	}
-	if err := db.DeleteItem(ctx, s.Workspace.DB, id); err != nil {
-		return InternalError(fmt.Sprintf("delete from index: %v", err)), nil
-	}
+	// Delete the file first; only remove from index if file deletion succeeds.
 	if err := os.Remove(filePath); err != nil {
 		return InternalError(fmt.Sprintf("delete file: %v", err)), nil
+	}
+	if err := db.DeleteItem(ctx, s.Workspace.DB, id); err != nil {
+		return InternalError(fmt.Sprintf("delete from index: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }
@@ -334,8 +335,8 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
 	}
 
-	// If sections provided and template service is available, write section content.
-	if sections != nil && s.templateSvc != nil {
+	// Write section content when sections are provided; independent of template service.
+	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
 		}
@@ -365,6 +366,10 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
 		updates["labels"] = strings.Split(v, ",")
 	}
+	sections, sectionsErr := ParseSectionsParam(request.Params.Arguments)
+	if sectionsErr != nil {
+		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
+	}
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
 	if err != nil {
 		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
@@ -375,6 +380,12 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	}
 	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
 		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
+	}
+	// Write section content when sections are provided.
+	if sections != nil {
+		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
+			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
+		}
 	}
 	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
 		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
@@ -496,10 +507,30 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 	return toolResultJSON(map[string]string{"path": path})
 }
 
+// validateSectionName rejects section names that would produce malformed HTML comment markers.
+func validateSectionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("section name must not be empty")
+	}
+	if strings.Contains(name, "-->") {
+		return fmt.Errorf("section name %q contains invalid sequence \"-->\"", name)
+	}
+	if strings.ContainsAny(name, "\n\r") {
+		return fmt.Errorf("section name %q must not contain newlines", name)
+	}
+	return nil
+}
+
 // writeSectionsToFile appends named section content to an artifact's Markdown body
 // using BEGIN/END markers. It reads the existing file, appends each section that is
 // not already present, and atomically rewrites the file.
 func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
+	// Validate all section names before any I/O.
+	for name := range sections {
+		if err := validateSectionName(name); err != nil {
+			return err
+		}
+	}
 	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
 	if err != nil {
 		return fmt.Errorf("find artifact path: %w", err)

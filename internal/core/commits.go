@@ -17,11 +17,11 @@ type CommitLinkInfo struct {
 	Author    string `json:"author"`
 }
 
-// LinkCommit associates a git commit SHA with an artifact in the SQLite index.
-func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message string) error {
+// LinkCommit associates a git commit SHA and author with an artifact in the SQLite index.
+func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
 	_, err := db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, '')`,
-		itemID, commitSHA, message,
+		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
+		itemID, commitSHA, message, author,
 	)
 	if err != nil {
 		return fmt.Errorf("link commit: %w", err)
@@ -78,7 +78,7 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 		}
 		sha, author, msg := parts[0], parts[1], parts[2]
 		for _, match := range artifactIDPattern.FindAllString(msg, -1) {
-			if err := LinkCommit(ctx, db, ws, match, sha, msg); err != nil {
+			if err := LinkCommit(ctx, db, ws, match, sha, msg, author); err != nil {
 				continue
 			}
 			linked = append(linked, CommitLinkInfo{

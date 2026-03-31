@@ -57,25 +57,38 @@ func GenerateSchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) ([]
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", fieldName, err)
 			}
-			stmts = append(stmts, fmt.Sprintf("ALTER TABLE items ADD COLUMN %s %s", fieldName, sqlType))
+			stmts = append(stmts, fmt.Sprintf(`ALTER TABLE items ADD COLUMN "%s" %s`, fieldName, sqlType))
 		}
 	}
 	return stmts, nil
 }
 
-// ApplySchemaExtensions executes the generated ALTER TABLE statements idempotently.
+// ApplySchemaExtensions executes the generated ALTER TABLE statements idempotently
+// within an explicit transaction to prevent partial schema migrations on failure.
 func ApplySchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) error {
 	stmts, err := GenerateSchemaExtensions(db, headerDef)
 	if err != nil {
 		return err
 	}
+	if len(stmts) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin schema extension transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := tx.Exec(stmt); err != nil {
 			// SQLite returns error if column already exists; treat as idempotent.
 			if !isColumnExistsError(err) {
 				return fmt.Errorf("apply schema extension: %w", err)
 			}
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema extensions: %w", err)
 	}
 	return nil
 }

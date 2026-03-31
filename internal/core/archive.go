@@ -31,12 +31,13 @@ type ArchivePolicy struct {
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
-	currentPath, err := findFileAnywhere(ws.RootPath, itemID)
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	currentPath, err := findFileAnywhere(backlogDir, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact: %w", err)
 	}
 
-	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	archiveDir := filepath.Join(backlogDir, "archive")
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
@@ -57,8 +58,15 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	newContent := models.SerializeFrontmatter(fm, body)
 
 	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
-	if err := os.WriteFile(archivePath, []byte(newContent), 0o644); err != nil {
+
+	// Atomic write: write to a temp file then rename.
+	tmpPath := archivePath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(newContent), 0o644); err != nil {
 		return nil, fmt.Errorf("write archive file: %w", err)
+	}
+	if err := os.Rename(tmpPath, archivePath); err != nil {
+		os.Remove(tmpPath) //nolint:errcheck
+		return nil, fmt.Errorf("rename archive file: %w", err)
 	}
 	if err := os.Remove(currentPath); err != nil {
 		os.Remove(archivePath) //nolint:errcheck
@@ -68,7 +76,9 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// Upsert DB record so the archive path is reflected in the index.
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
 	if err == nil {
-		_ = db.UpsertItem(ctx, database, artifact)
+		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
+			return nil, fmt.Errorf("sync archive state: %w", upsertErr)
+		}
 	}
 
 	return &ArchiveRecord{
@@ -101,6 +111,14 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
 	}
 
+	// F-006: Validate the restore path is contained within the workspace.
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	rel, relErr := filepath.Rel(ws.RootPath, originalPath)
+	if relErr != nil || len(rel) >= 2 && rel[:2] == ".." {
+		return fmt.Errorf("archived_from path %q escapes workspace: cannot restore", originalPath)
+	}
+	_ = backlogDir // containment validated via filepath.Rel above
+
 	// Restore frontmatter without the archived_from field.
 	delete(fm, "archived_from")
 	restored := models.SerializeFrontmatter(fm, body)
@@ -108,8 +126,15 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
 		return fmt.Errorf("create restore dir: %w", err)
 	}
-	if err := os.WriteFile(originalPath, []byte(restored), 0o644); err != nil {
+
+	// Atomic write: write to a temp file then rename.
+	tmpPath := originalPath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(restored), 0o644); err != nil {
 		return fmt.Errorf("write restored file: %w", err)
+	}
+	if err := os.Rename(tmpPath, originalPath); err != nil {
+		os.Remove(tmpPath) //nolint:errcheck
+		return fmt.Errorf("rename restored file: %w", err)
 	}
 	if err := os.Remove(archivePath); err != nil {
 		return fmt.Errorf("remove archive file: %w", err)
@@ -117,7 +142,9 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
 	if err == nil {
-		_ = db.UpsertItem(ctx, database, artifact)
+		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
+			return fmt.Errorf("sync unarchive state: %w", upsertErr)
+		}
 	}
 	return nil
 }
@@ -156,11 +183,11 @@ func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *A
 	return count, nil
 }
 
-// findFileAnywhere walks the entire rootPath (including hidden directories) to
+// findFileAnywhere walks the .backlogit directory (including hidden subdirs) to
 // locate the Markdown file for the given artifact ID.
-func findFileAnywhere(rootPath, id string) (string, error) {
+func findFileAnywhere(backlogDir, id string) (string, error) {
 	var found string
-	walkErr := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(backlogDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 			return err
 		}

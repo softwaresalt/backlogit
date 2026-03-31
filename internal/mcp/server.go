@@ -30,8 +30,9 @@ type Server struct {
 
 // NewServer creates an MCP server from a workspace.
 func NewServer(ws *core.Workspace) *Server {
-	eventsPath := filepath.Join(ws.RootPath, "events.jsonl")
-	telemetryPath := filepath.Join(ws.RootPath, "telemetry.jsonl")
+	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	eventsPath := filepath.Join(backlogitDir, "events.jsonl")
+	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
 		Workspace: ws,
 		Events:    events.NewEventWriter(eventsPath),
@@ -79,7 +80,7 @@ func dirExists(path string) bool {
 func toolResultJSON(v any) (*mcplib.CallToolResult, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("marshal result: %w", err)
+		return InternalError(fmt.Sprintf("marshal result: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(string(data)), nil
 }

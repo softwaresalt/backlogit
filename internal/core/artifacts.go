@@ -84,6 +84,9 @@ func WithCommit(commit string) Option {
 
 // CreateArtifact creates a new artifact with atomic file write.
 func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactType string, opts ...Option) (*models.Artifact, error) {
+	if ws == nil || ws.Config == nil {
+		return nil, fmt.Errorf("workspace config is required")
+	}
 	o := &createOptions{}
 	for _, opt := range opts {
 		opt(o)

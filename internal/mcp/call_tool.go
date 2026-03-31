@@ -18,6 +18,7 @@ func (s *Server) CallToolForTest(ctx context.Context, toolName string, args map[
 	if err := c.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start in-process client: %w", err)
 	}
+	defer c.Close() //nolint:errcheck
 
 	initReq := mcplib.InitializeRequest{}
 	initReq.Params.ClientInfo = mcplib.Implementation{Name: "test", Version: "0.0.1"}

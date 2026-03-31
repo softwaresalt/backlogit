@@ -42,14 +42,7 @@ func NewDepAddCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			hasCycle, err := db.DetectCycle(ctx, ws.DB, itemID, dependsOn)
-			if err != nil {
-				return fmt.Errorf("detect cycle: %w", err)
-			}
-			if hasCycle {
-				return fmt.Errorf("adding %s→%s would create a circular dependency", itemID, dependsOn)
-			}
-			if err := db.UpsertDependency(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
+			if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)

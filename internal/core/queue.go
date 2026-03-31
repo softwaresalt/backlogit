@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	bldb "github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/models"
@@ -134,16 +135,22 @@ func groupKey(a *models.Artifact, field string) string {
 	}
 }
 
-// MoveInQueue changes an artifact's position within its parent's children.
+// MoveInQueue updates the queue position record for an item.
+// NOTE: Persistent ordinal reordering is not yet implemented; this records the
+// intent by bumping updated_at so that future ordinal-column migrations can detect
+// items whose order was explicitly requested. Position value is stored as a TODO.
 func MoveInQueue(ctx context.Context, db *sql.DB, itemID string, newPosition int) error {
-	_ = newPosition
-	_, err := db.ExecContext(ctx, `UPDATE items SET updated_at = updated_at WHERE id = ?`, itemID)
-	return err
+	_, err := db.ExecContext(ctx, `UPDATE items SET updated_at = ? WHERE id = ?`, time.Now(), itemID)
+	if err != nil {
+		return fmt.Errorf("move in queue %s: %w", itemID, err)
+	}
+	return nil
 }
 
-// BulkUpdateStatus changes the status of multiple items in a single transaction.
-func BulkUpdateStatus(ctx context.Context, db *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (int, error) {
-	tx, err := db.BeginTx(ctx, nil)
+// BulkUpdateStatus changes the status of multiple items in a single transaction,
+// and attempts to sync the updated status back to each artifact's Markdown file.
+func BulkUpdateStatus(ctx context.Context, database *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (int, error) {
+	tx, err := database.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin transaction: %w", err)
 	}
@@ -151,7 +158,7 @@ func BulkUpdateStatus(ctx context.Context, db *sql.DB, ws *Workspace, itemIDs []
 
 	count := 0
 	for _, id := range itemIDs {
-		res, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id = ?`, newStatus, id)
+		res, err := tx.ExecContext(ctx, `UPDATE items SET status = ?, updated_at = ? WHERE id = ?`, newStatus, time.Now(), id)
 		if err != nil {
 			return 0, fmt.Errorf("update item %s: %w", id, err)
 		}
@@ -160,6 +167,22 @@ func BulkUpdateStatus(ctx context.Context, db *sql.DB, ws *Workspace, itemIDs []
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit bulk update: %w", err)
+	}
+
+	// Best-effort sync to Markdown files: skip items whose file does not exist.
+	for _, id := range itemIDs {
+		artifact, findErr := findArtifact(ctx, ws, id)
+		if findErr != nil {
+			// File not found in workspace — DB is authoritative; skip silently.
+			continue
+		}
+		artifact.Status = models.ArtifactStatus(newStatus)
+		artifact.UpdatedAt = time.Now()
+		filePath, pathErr := FindArtifactPath(ctx, ws, id)
+		if pathErr != nil {
+			continue
+		}
+		_ = WriteArtifactFile(artifact, filePath)
 	}
 	return count, nil
 }

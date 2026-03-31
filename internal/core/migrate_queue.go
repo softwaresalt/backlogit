@@ -73,8 +73,13 @@ func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, er
 		if err != nil {
 			return nil, fmt.Errorf("marshal migration state: %w", err)
 		}
-		if err := os.WriteFile(statePath, data, 0o644); err != nil {
+		tmpPath := statePath + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 			return nil, fmt.Errorf("write migration state: %w", err)
+		}
+		if err := os.Rename(tmpPath, statePath); err != nil {
+			os.Remove(tmpPath) //nolint:errcheck
+			return nil, fmt.Errorf("commit migration state: %w", err)
 		}
 	}
 

@@ -49,7 +49,7 @@ func TestLinkCommit_StoresAssociation(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	err := core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001")
+	err := core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001", "test@example.com")
 
 	// Assert
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestGetCommitLinks_ReturnsLinked(t *testing.T) {
 	// Arrange
 	ws := setupCommitWorkspace(t)
 	ctx := context.Background()
-	require.NoError(t, core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001"))
+	require.NoError(t, core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001", "test@example.com"))
 
 	// Act
 	links, err := core.GetCommitLinks(ctx, ws.DB, "T001")
