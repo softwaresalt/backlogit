@@ -18,6 +18,7 @@ func newListCommand(cwd *string) *cobra.Command {
 		filterType       string
 		filterStatus     string
 		filterAssignedTo string
+		filterOwner      string
 		filterSprint     string
 		jsonOutput       bool
 	)
@@ -37,6 +38,7 @@ func newListCommand(cwd *string) *cobra.Command {
 				Type:       filterType,
 				Status:     filterStatus,
 				AssignedTo: filterAssignedTo,
+				Owner:      filterOwner,
 				Sprint:     filterSprint,
 			})
 			if err != nil {
@@ -62,6 +64,7 @@ func newListCommand(cwd *string) *cobra.Command {
 	cmd.Flags().StringVar(&filterType, "type", "", "filter by artifact type")
 	cmd.Flags().StringVar(&filterStatus, "status", "", "filter by status")
 	cmd.Flags().StringVar(&filterAssignedTo, "assigned-to", "", "filter by assignee")
+	cmd.Flags().StringVar(&filterOwner, "owner", "", "filter by owner")
 	cmd.Flags().StringVar(&filterSprint, "sprint", "", "filter by sprint ID")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON array")
 	return cmd

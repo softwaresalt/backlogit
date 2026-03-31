@@ -54,9 +54,10 @@ func newGetCommand(cwd *string) *cobra.Command {
 					return parseErr
 				}
 				content, ok := sections[section]
-				if ok {
-					fmt.Fprintln(cmd.OutOrStdout(), content)
+				if !ok {
+					return fmt.Errorf("section %q not found in artifact %s", section, id)
 				}
+				fmt.Fprintln(cmd.OutOrStdout(), content)
 				return nil
 			}
 

@@ -88,6 +88,8 @@ func parseTemplateFile(path string) (*TemplateConfig, error) {
 	}
 
 	content := string(data)
+	// Normalize CRLF to LF so Windows-authored template files parse correctly.
+	content = strings.ReplaceAll(content, "\r\n", "\n")
 
 	// Expect YAML frontmatter delimited by "---\n" ... "\n---\n".
 	const opener = "---\n"

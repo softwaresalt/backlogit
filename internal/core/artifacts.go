@@ -250,27 +250,33 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 // Returns the absolute file path or an error if not found.
 func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
 	var found string
-	err := filepath.WalkDir(ws.RootPath, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-			return walkErr
+	for typeName := range ws.Config.ArtifactTypes {
+		typeDir := filepath.Join(ws.RootPath, typeName+"s")
+		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+			continue
 		}
-		a, _, parseErr := parseFile(path)
-		if parseErr != nil {
+		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+				return err
+			}
+			a, _, parseErr := parseFile(path)
+			if parseErr != nil {
+				return nil
+			}
+			if a.ID == id {
+				found = path
+				return filepath.SkipAll
+			}
 			return nil
+		})
+		if walkErr != nil {
+			return "", fmt.Errorf("walk workspace: %w", walkErr)
 		}
-		if a.ID == id {
-			found = path
-			return filepath.SkipAll
+		if found != "" {
+			return found, nil
 		}
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("walk workspace: %w", err)
 	}
-	if found == "" {
-		return "", fmt.Errorf("artifact not found: %s", id)
-	}
-	return found, nil
+	return "", fmt.Errorf("artifact not found: %s", id)
 }
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
@@ -328,27 +334,33 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
 	var found *models.Artifact
-	err := filepath.WalkDir(ws.RootPath, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-			return err
+	for typeName := range ws.Config.ArtifactTypes {
+		typeDir := filepath.Join(ws.RootPath, typeName+"s")
+		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+			continue
 		}
-		a, _, parseErr := parseFile(path)
-		if parseErr != nil {
+		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+				return err
+			}
+			a, _, parseErr := parseFile(path)
+			if parseErr != nil {
+				return nil
+			}
+			if a.ID == id {
+				found = a
+				return filepath.SkipAll
+			}
 			return nil
+		})
+		if walkErr != nil {
+			return nil, walkErr
 		}
-		if a.ID == id {
-			found = a
-			return filepath.SkipAll
+		if found != nil {
+			return found, nil
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
-	if found == nil {
-		return nil, fmt.Errorf("artifact not found: %s", id)
-	}
-	return found, nil
+	return nil, fmt.Errorf("artifact not found: %s", id)
 }
 
 func parseFile(path string) (*models.Artifact, string, error) {

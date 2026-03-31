@@ -64,8 +64,15 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 		}
 	}
 
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var createdAtParseErr, updatedAtParseErr error
+	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
+	if createdAtParseErr != nil {
+		return nil, fmt.Errorf("parse created_at %q: %w", createdAt, createdAtParseErr)
+	}
+	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
+	if updatedAtParseErr != nil {
+		return nil, fmt.Errorf("parse updated_at %q: %w", updatedAt, updatedAtParseErr)
+	}
 
 	if assignedTo.Valid {
 		a.AssignedTo = assignedTo.String

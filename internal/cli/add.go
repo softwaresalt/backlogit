@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/db"
 )
 
 // newAddCommand creates the `backlogit add` command.
@@ -16,6 +17,7 @@ func newAddCommand(cwd *string) *cobra.Command {
 		artifactType string
 		title        string
 		description  string
+		status       string
 		sections     []string
 	)
 
@@ -41,6 +43,9 @@ func newAddCommand(cwd *string) *cobra.Command {
 			if description != "" {
 				opts = append(opts, core.WithDescription(description))
 			}
+			if status != "" {
+				opts = append(opts, core.WithStatus(status))
+			}
 
 			// Apply --section name=value pairs as description overrides when applicable.
 			for _, sec := range sections {
@@ -57,6 +62,9 @@ func newAddCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("create artifact: %w", err)
 			}
+			if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+				return fmt.Errorf("index artifact: %w", err)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created %s: %s\n", artifact.ArtifactType, artifact.ID)
 			return nil
 		},
@@ -65,6 +73,7 @@ func newAddCommand(cwd *string) *cobra.Command {
 	cmd.Flags().StringVar(&artifactType, "type", "", "artifact type (task, bug, epic, …)")
 	cmd.Flags().StringVar(&title, "title", "", "artifact title")
 	cmd.Flags().StringVar(&description, "description", "", "artifact description")
+	cmd.Flags().StringVar(&status, "status", "", "initial status (queued, active, …)")
 	cmd.Flags().StringArrayVar(&sections, "section", nil, "section content as name=value (repeatable)")
 	return cmd
 }

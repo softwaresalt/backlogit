@@ -38,11 +38,11 @@ func newDeleteCommand(cwd *string) *cobra.Command {
 				return fmt.Errorf("use --force to delete %s", id)
 			}
 
-			if err := os.Remove(filePath); err != nil {
-				return fmt.Errorf("delete artifact file: %w", err)
-			}
 			if err := db.DeleteItem(ctx, ws.DB, id); err != nil {
 				return fmt.Errorf("delete from index: %w", err)
+			}
+			if err := os.Remove(filePath); err != nil {
+				return fmt.Errorf("delete artifact file: %w", err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s\n", id)

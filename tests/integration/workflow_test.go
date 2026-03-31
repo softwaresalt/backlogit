@@ -13,6 +13,7 @@ import (
 	"github.com/backlogit/backlogit/internal/cli"
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/db"
 )
 
@@ -256,7 +257,11 @@ func TestWorkflow_GetSection(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Section get test", "task")
+	// Use the template service so the artifact body contains section markers.
+	templatesDir := filepath.Join(root, ".backlogit", "templates")
+	svc, err := templates.NewService(ctx, templatesDir)
+	require.NoError(t, err)
+	artifact, err := svc.Create(ctx, ws, "Section get test", "task", nil)
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
 	require.NoError(t, err)
@@ -277,7 +282,11 @@ func TestWorkflow_UpdateSection(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Section update test", "task")
+	// Use the template service so the artifact body contains section markers.
+	templatesDir := filepath.Join(root, ".backlogit", "templates")
+	svc, err := templates.NewService(ctx, templatesDir)
+	require.NoError(t, err)
+	artifact, err := svc.Create(ctx, ws, "Section update test", "task", nil)
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
 	require.NoError(t, err)
