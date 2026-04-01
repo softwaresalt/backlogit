@@ -71,12 +71,22 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 		conditions = append(conditions, "sprint = ?")
 		args = append(args, filter.Sprint)
 	}
+	if filter.AssignedTo != "" {
+		conditions = append(conditions, "assigned_to = ?")
+		args = append(args, filter.AssignedTo)
+	}
 
 	query := `SELECT ` + bldb.SelectCols + ` FROM items`
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += " ORDER BY created_at ASC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+	}
+	if filter.Offset > 0 {
+		query += fmt.Sprintf(" OFFSET %d", filter.Offset)
+	}
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -94,6 +104,11 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Filter out items with unresolved dependencies (dependency-aware queue).
+	if len(items) > 0 {
+		items = filterByResolvedDependencies(ctx, db, items)
 	}
 
 	view := &QueueView{
@@ -185,4 +200,52 @@ func BulkUpdateStatus(ctx context.Context, database *sql.DB, ws *Workspace, item
 		_ = WriteArtifactFile(artifact, filePath)
 	}
 	return count, nil
+}
+
+// filterByResolvedDependencies removes items from the queue whose blocking dependencies
+// are not yet in a terminal state (done, accepted).
+func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) []*models.Artifact {
+	terminalStatuses := map[string]bool{
+		string(models.StatusDone):     true,
+		string(models.StatusAccepted): true,
+	}
+
+	// Build a set of all item IDs and their statuses from the current result set.
+	statusMap := make(map[string]string)
+	for _, item := range items {
+		statusMap[item.ID] = string(item.Status)
+	}
+
+	var result []*models.Artifact
+	for _, item := range items {
+		deps, err := bldb.GetDependencies(ctx, database, item.ID)
+		if err != nil || len(deps) == 0 {
+			result = append(result, item)
+			continue
+		}
+
+		blocked := false
+		for _, dep := range deps {
+			// Check if the dependency is in a terminal state.
+			depStatus := ""
+			if s, ok := statusMap[dep.DependsOn]; ok {
+				depStatus = s
+			} else {
+				// Look up from DB if not in current result set.
+				var s sql.NullString
+				_ = database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s)
+				if s.Valid {
+					depStatus = s.String
+				}
+			}
+			if dep.DepType == "blocks" && !terminalStatuses[depStatus] {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			result = append(result, item)
+		}
+	}
+	return result
 }

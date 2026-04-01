@@ -130,11 +130,36 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		UpdatedAt:    now,
 	}
 
+	// Apply field defaults and validate against header-def if available.
+	if ws.HeaderDef != nil {
+		if err := ApplyFieldDefaults(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("apply field defaults: %w", err)
+		}
+		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("validate artifact fields: %w", err)
+		}
+	}
+
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
-	dir := artifactType + "s"
+	// Determine target directory: use hierarchy layout if configured, otherwise flat.
+	var dir string
+	if ws.Config.QueueLayout != nil {
+		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
+			hierPath, hierErr := ResolveHierarchicalPath(ws.Config.QueueLayout, o.ParentID, artifactType)
+			if hierErr == nil {
+				dir = hierPath
+				artifact.HierarchyPath = dir
+				level, _ := LevelForType(ws.Config.QueueLayout, artifactType)
+				artifact.Level = level
+			}
+		}
+	}
+	if dir == "" {
+		dir = artifactType + "s"
+	}
 	dirAbs := filepath.Join(ws.RootPath, dir)
 	if err := os.MkdirAll(dirAbs, 0o755); err != nil {
 		return nil, fmt.Errorf("create directory: %w", err)
@@ -177,6 +202,12 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
+	}
+	if artifact.Level > 0 {
+		fm["level"] = artifact.Level
+	}
+	if artifact.HierarchyPath != "" {
+		fm["hierarchy_path"] = artifact.HierarchyPath
 	}
 
 	content := models.SerializeFrontmatter(fm, artifact.Description)
@@ -243,6 +274,13 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	}
 	artifact.UpdatedAt = time.Now()
 
+	// Validate against header-def if available.
+	if ws.HeaderDef != nil {
+		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("validate artifact fields: %w", err)
+		}
+	}
+
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
@@ -297,6 +335,11 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 				addDir(rule.Path)
 			}
 		}
+	}
+
+	// Include queue layout root directory if configured.
+	if ws.Config != nil && ws.Config.QueueLayout != nil {
+		addDir(ws.Config.QueueLayout.RootDir)
 	}
 
 	return dirs, nil

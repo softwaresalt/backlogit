@@ -46,6 +46,10 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newSearchCommand(&cwd))
 	root.AddCommand(newQueryCommand(&cwd))
 	root.AddCommand(newStatusCommand(&cwd))
+	root.AddCommand(NewDepCmd())
+	root.AddCommand(NewQueueCmd())
+	root.AddCommand(newArchiveCommand(&cwd))
+	root.AddCommand(newMigrateCommand(&cwd))
 
 	return root
 }
