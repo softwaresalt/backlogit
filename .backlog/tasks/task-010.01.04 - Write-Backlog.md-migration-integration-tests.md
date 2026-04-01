@@ -1,9 +1,10 @@
 ---
 id: TASK-010.01.04
 title: Write Backlog.md migration integration tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:36'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
   - test
@@ -14,11 +15,6 @@ dependencies:
 parent_task_id: TASK-010.01
 priority: medium
 ordinal: 4000
-implementation_notes: |
-  Harness command: go test ./tests/integration/... -run "TestMigration_EndToEnd" -v
-  Test file: tests/integration/migration_test.go
-  Stub files: internal/parser/adapter.go, internal/config/migration.go
-  Execution note: test-first
 ---
 
 ## Description

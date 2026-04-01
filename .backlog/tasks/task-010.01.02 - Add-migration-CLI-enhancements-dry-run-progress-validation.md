@@ -1,9 +1,10 @@
 ---
 id: TASK-010.01.02
 title: 'Add migration CLI enhancements (dry-run, progress, validation)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:35'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
 dependencies:
@@ -11,11 +12,6 @@ dependencies:
 parent_task_id: TASK-010.01
 priority: medium
 ordinal: 2000
-implementation_notes: |
-  Harness command: go test ./internal/parser/... -run "TestMigrateWithOptions|TestFormatReport|TestMigrationReport" -v
-  Test file: internal/parser/migrate_options_test.go
-  Stub file: internal/parser/adapter.go (MigrateWithOptions, FormatReport functions)
-  Execution note: test-first
 ---
 
 ## Description

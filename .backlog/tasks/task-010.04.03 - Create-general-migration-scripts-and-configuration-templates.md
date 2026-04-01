@@ -1,9 +1,10 @@
 ---
 id: TASK-010.04.03
 title: Create general migration scripts and configuration templates
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:38'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
 dependencies:
@@ -12,11 +13,6 @@ dependencies:
 parent_task_id: TASK-010.04
 priority: medium
 ordinal: 3000
-implementation_notes: |
-  Harness command: go test ./tests/integration/... -run "TestGeneralMigration_MigrateWithAdapterFlag" -v
-  Test file: tests/integration/migration_test.go
-  Stub files: internal/parser/adapter.go, internal/cli/migrate.go
-  Execution note: test-first
 ---
 
 ## Description

@@ -1,20 +1,16 @@
 ---
 id: TASK-010.01.03
 title: Create migration configuration for document class mapping
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:35'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
 dependencies: []
 parent_task_id: TASK-010.01
 priority: medium
 ordinal: 3000
-implementation_notes: |
-  Harness command: go test ./internal/config/... -run "Migration" -v
-  Test file: internal/config/migration_test.go
-  Stub file: internal/config/migration.go
-  Execution note: test-first
 ---
 
 ## Description

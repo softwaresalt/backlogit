@@ -1,9 +1,10 @@
 ---
 id: TASK-010.04.02
 title: Implement file classification engine for markdown document types
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:38'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
 dependencies:
@@ -11,11 +12,6 @@ dependencies:
 parent_task_id: TASK-010.04
 priority: medium
 ordinal: 2000
-implementation_notes: |
-  Harness command: go test ./internal/parser/... -run "TestClassifier|TestNewClassifier|TestDocumentClassConstants" -v
-  Test file: internal/parser/adapter_test.go
-  Stub file: internal/parser/adapter.go (Classifier, NewClassifier, Classify, ClassifyDir)
-  Execution note: test-first
 ---
 
 ## Description

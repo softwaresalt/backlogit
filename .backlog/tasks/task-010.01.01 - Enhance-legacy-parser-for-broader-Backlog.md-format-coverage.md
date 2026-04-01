@@ -1,20 +1,16 @@
 ---
 id: TASK-010.01.01
 title: Enhance legacy parser for broader Backlog.md format coverage
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:34'
+updated_date: '2026-04-01 23:38'
 labels:
   - go
 dependencies: []
 parent_task_id: TASK-010.01
 priority: medium
 ordinal: 1000
-implementation_notes: |
-  Harness command: go test ./internal/parser/... -run "TestParseLegacyEnhanced" -v
-  Test file: internal/parser/legacy_enhanced_test.go
-  Stub file: internal/parser/adapter.go (ParseLegacyEnhanced function)
-  Execution note: test-first
 ---
 
 ## Description
