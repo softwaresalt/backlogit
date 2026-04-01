@@ -76,6 +76,45 @@ func TestUnarchiveItem_RestoresFromArchive(t *testing.T) {
 	assert.FileExists(t, originalPath)
 }
 
+func TestArchiveItem_ExcludedFromDefaultList(t *testing.T) {
+	// GIVEN an archived item in the workspace
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+	_, err := core.ArchiveItem(ctx, ws.DB, ws, "T001")
+	require.NoError(t, err)
+
+	// WHEN querying with the default (empty) filters
+	items, err := db.QueryItems(ctx, ws.DB, db.QueryFilters{})
+
+	// THEN the archived item must not appear
+	require.NoError(t, err)
+	for _, item := range items {
+		assert.NotEqual(t, "T001", item.ID, "archived item T001 must be excluded from default query")
+	}
+}
+
+func TestArchiveItem_IncludedWhenExplicitlyRequested(t *testing.T) {
+	// GIVEN an archived item
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+	_, err := core.ArchiveItem(ctx, ws.DB, ws, "T001")
+	require.NoError(t, err)
+
+	// WHEN querying with IncludeArchived: true
+	items, err := db.QueryItems(ctx, ws.DB, db.QueryFilters{IncludeArchived: true})
+
+	// THEN the archived item must be present
+	require.NoError(t, err)
+	found := false
+	for _, item := range items {
+		if item.ID == "T001" {
+			found = true
+			assert.Equal(t, models.StatusArchived, item.Status)
+		}
+	}
+	assert.True(t, found, "archived item T001 must appear when IncludeArchived is true")
+}
+
 func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {
 	// Arrange
 	ws := setupArchiveWorkspace(t)

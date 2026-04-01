@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/events"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -55,6 +56,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		fm = map[string]any{}
 	}
 	fm["archived_from"] = currentPath
+	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
 
 	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
@@ -73,13 +75,22 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("remove original: %w", err)
 	}
 
-	// Upsert DB record so the archive path is reflected in the index.
-	artifact, err := models.ArtifactFromFrontmatter(fm, body)
-	if err == nil {
-		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
-			return nil, fmt.Errorf("sync archive state: %w", upsertErr)
-		}
+	// Update DB status to archived directly — avoids re-parsing frontmatter field
+	// mapping discrepancies (e.g. type vs artifact_type).
+	if _, dbErr := database.ExecContext(ctx, "UPDATE items SET status = ? WHERE id = ?", string(models.StatusArchived), itemID); dbErr != nil {
+		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
+
+	// Best-effort: log archive event to events.jsonl (non-fatal on failure).
+	eventsPath := filepath.Join(ws.RootPath, ".backlogit", "events.jsonl")
+	ew := events.NewEventWriter(eventsPath)
+	_ = ew.AppendEvent(ctx, events.Event{
+		Timestamp: time.Now(),
+		Actor:     "backlogit",
+		ItemID:    itemID,
+		EventType: "archived",
+		Delta:     map[string]any{"archive_path": archivePath},
+	})
 
 	return &ArchiveRecord{
 		ID:           itemID,
@@ -157,7 +168,7 @@ func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *A
 	}
 
 	threshold := time.Now().AddDate(0, 0, -policy.RetentionDays)
-	items, err := db.QueryItems(ctx, database, db.QueryFilters{})
+	items, err := db.QueryItems(ctx, database, db.QueryFilters{IncludeArchived: true})
 	if err != nil {
 		return 0, fmt.Errorf("query items: %w", err)
 	}

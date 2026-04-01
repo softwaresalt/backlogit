@@ -73,7 +73,7 @@ A plan is ready when an implementer can start confidently without needing the pl
 
 #### 0.1 Resume Existing Plan Work
 
-If the user references an existing plan file or there is an obvious recent matching plan in `.backlog/plans/`:
+If the user references an existing plan file or there is an obvious recent matching plan in `.backlog/exec-plans/`:
 
 - Read it
 - Confirm whether to update in place or create new
@@ -123,7 +123,7 @@ If the origin doc has "Resolve Before Planning" questions:
 
 ### Phase 2: Structure the Plan
 
-Write to `.backlog/plans/{YYYY-MM-DD}-{slug}-plan.md`
+Write to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
 
 ```markdown
 ---
@@ -207,7 +207,7 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 ### Phase 3: Complete
 
-1. Confirm the plan file was written to `.backlog/plans/{YYYY-MM-DD}-{slug}-plan.md`.
+1. Confirm the plan file was written to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
 2. Return the plan file path to the caller.
 
 When invoked standalone (not as a subagent of backlog-harvester), present next steps:

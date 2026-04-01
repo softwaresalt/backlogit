@@ -1,7 +1,7 @@
 ---
 title: "Plan Review: Queue Features V2"
 date: 2026-03-31
-plan: ".backlog/plans/2026-03-31-queue-features-v2-plan.md"
+plan: ".backlog/exec-plans/2026-03-31-queue-features-v2-plan.md"
 gate: ADVISORY
 reviewers:
   - Constitution Reviewer (claude-opus-4.6)

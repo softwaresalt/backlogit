@@ -11,7 +11,7 @@ labels:
   - phase-2
 dependencies: []
 references:
-  - .backlog/plans/2026-03-31-queue-features-v2-plan.md
+  - .backlog/exec-plans/2026-03-31-queue-features-v2-plan.md
 parent_task_id: TASK-009
 priority: high
 ordinal: 3000

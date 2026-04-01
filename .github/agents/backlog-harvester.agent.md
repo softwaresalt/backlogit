@@ -25,7 +25,7 @@ The backlog harvester spawns skills as subagents (impl-plan, plan-review, learni
   - `.backlog/research/{filename}.md` — External research, evaluation reports, or design explorations
   - `.backlog/brainstorm/{filename}.md` — Requirements documents produced by the brainstorm skill
 * `${input:dry_run:false}`: (Optional, defaults to `false`) When `true`, output the planned task structure without creating entries.
-* `${input:skip_plan:false}`: (Optional, defaults to `false`) When `true`, skip Phase 1 (impl-plan) and use the source document directly. Only valid when source is a `.backlog/plans/` file that was already planned externally.
+* `${input:skip_plan:false}`: (Optional, defaults to `false`) When `true`, skip Phase 1 (impl-plan) and use the source document directly. Only valid when source is a `.backlog/exec-plans/` file that was already planned externally.
 * `${input:skip_review:false}`: (Optional, defaults to `false`) When `true`, skip Phase 2 (plan-review) and proceed directly to harvesting. Use when speed matters more than validation.
 
 ## Remote Operator Integration (agent-intercom)
@@ -52,7 +52,7 @@ Skip this phase if `${input:skip_plan}` is `true`.
 
 1. `broadcast` at `info` level: `[HARVEST] Phase 1: Invoking impl-plan skill`
 2. Invoke the `impl-plan` skill as a subagent, passing `source: ${input:source}`.
-3. The impl-plan skill writes its output to `.backlog/plans/{YYYY-MM-DD}-{slug}-plan.md`.
+3. The impl-plan skill writes its output to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
 4. Capture the plan file path from the skill's output.
 5. `broadcast` at `success` level: `[HARVEST] Plan written: {plan_path}`
 6. Store the plan path for Phase 2.

@@ -1,7 +1,7 @@
 ---
 name: plan-review
 description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, coding standards compliance, and Python quality before the backlog harvester decomposes a plan into tasks."
-argument-hint: "[path to plan file in .backlog/plans/]"
+argument-hint: "[path to plan file in .backlog/exec-plans/]"
 ---
 
 # Plan Review Gate
@@ -28,9 +28,9 @@ This skill spawns reviewer subagents. Those subagents are leaf executors and MUS
 
 ## Inputs
 
-The user provides the path to a plan file in `.backlog/plans/` when invoking this skill.
+The user provides the path to a plan file in `.backlog/exec-plans/` when invoking this skill.
 
-If no path is provided, search `.backlog/plans/` for the most recent `*-plan.md` file and confirm with the user.
+If no path is provided, search `.backlog/exec-plans/` for the most recent `*-plan.md` file and confirm with the user.
 
 ## Reviewer Personas
 
@@ -56,7 +56,7 @@ If cross-model invocation is not available, run all 4 with the caller's model. M
 
 ### Step 1: Load Plan and Context
 
-1. Read the plan file from `.backlog/plans/`
+1. Read the plan file from `.backlog/exec-plans/`
 2. If the plan references an origin document in `.backlog/brainstorm/`, read that too
 3. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 

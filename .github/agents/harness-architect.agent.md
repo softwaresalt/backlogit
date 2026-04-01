@@ -157,7 +157,7 @@ For each subtask in the work queue (from Step 2):
    relevant code, prior decisions, and TODO comments.
 
 6. Determine the test file path (`internal/{package}/{feature}_test.go` or `tests/{tier}/{feature}_test.go`) and the source stub path (`internal/{package}/{feature}.go`).
-7. **Execution posture from plan**: Check `.backlog/plans/` for a plan file matching this feature. If a plan exists, read the `Execution note:` field for each implementation unit and carry the posture signal forward into the task's harness command. Valid postures: `test-first` (default), `characterization-first`, `migration-first`, `spike`. Broadcast: `[📐 ARCHITECT] Execution posture for {task_id}: {posture}`
+7. **Execution posture from plan**: Check `.backlog/exec-plans/` for a plan file matching this feature. If a plan exists, read the `Execution note:` field for each implementation unit and carry the posture signal forward into the task's harness command. Valid postures: `test-first` (default), `characterization-first`, `migration-first`, `spike`. Broadcast: `[📐 ARCHITECT] Execution posture for {task_id}: {posture}`
 
 ### Step 5: Generate the Harness
 

@@ -14,13 +14,14 @@ import (
 
 // QueryFilters holds optional filters for item queries.
 type QueryFilters struct {
-	Status     string
-	Type       string
-	ParentID   string
-	Sprint     string
-	AssignedTo string
-	Owner      string
-	Priority   string
+	Status          string
+	Type            string
+	ParentID        string
+	Sprint          string
+	AssignedTo      string
+	Owner           string
+	Priority        string
+	IncludeArchived bool // when false (default), archived items are excluded from results
 }
 
 const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit", level, hierarchy_path`
@@ -220,6 +221,10 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	if filters.Status != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, filters.Status)
+	} else if !filters.IncludeArchived {
+		// Exclude archived items from all default queries unless explicitly requested.
+		conditions = append(conditions, "status != ?")
+		args = append(args, string(models.StatusArchived))
 	}
 	if filters.Type != "" {
 		conditions = append(conditions, "artifact_type = ?")

@@ -1,7 +1,7 @@
 ---
 title: "Plan Review: Backlogit Core Implementation"
 description: "Multi-persona review gate results for the backlogit core implementation plan"
-source: ".backlog/plans/2026-03-30-backlogit-core-plan.md"
+source: ".backlog/exec-plans/2026-03-30-backlogit-core-plan.md"
 gate_decision: "ADVISORY"
 ms.date: 2026-03-30
 ---

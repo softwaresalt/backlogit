@@ -19,13 +19,14 @@ const (
 	StatusDone     ArtifactStatus = "done"
 	StatusAccepted ArtifactStatus = "accepted"
 	StatusRejected ArtifactStatus = "rejected"
+	StatusArchived ArtifactStatus = "archived"
 )
 
 // Artifact holds the current state of a backlogit work item.
 type Artifact struct {
 	ID           string         `json:"id" yaml:"id" validate:"required"`
 	Title        string         `json:"title" yaml:"title" validate:"required,max=200"`
-	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected"`
+	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected archived"`
 	ArtifactType string         `json:"artifact_type" yaml:"artifact_type" validate:"required"`
 	ParentID     string         `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
 	Sprint       string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`

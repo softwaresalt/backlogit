@@ -18,11 +18,12 @@ import (
 // newUpdateCommand creates the `backlogit update` command.
 func newUpdateCommand(cwd *string) *cobra.Command {
 	var (
-		title    string
-		status   string
-		priority string
-		idFlag   string
-		sections []string
+		title         string
+		status        string
+		priority      string
+		idFlag        string
+		sections      []string
+		harnessStatus string
 	)
 
 	cmd := &cobra.Command{
@@ -52,6 +53,9 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 			}
 			if cmd.Flags().Changed("priority") {
 				updates["priority"] = priority
+			}
+			if cmd.Flags().Changed("harness-status") {
+				updates["harness_status"] = harnessStatus
 			}
 
 			// Parse section updates: name=value pairs.
@@ -142,5 +146,6 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority")
 	cmd.Flags().StringVar(&idFlag, "id", "", "artifact ID (immutable, always rejected)")
 	cmd.Flags().StringArrayVar(&sections, "section", nil, "section update as name=value (repeatable)")
+	cmd.Flags().StringVar(&harnessStatus, "harness-status", "", "harness status (pending, scaffolded, passing, failing)")
 	return cmd
 }

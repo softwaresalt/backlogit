@@ -12,7 +12,7 @@ labels:
 dependencies: []
 references:
   - .backlog/queue.md
-  - .backlog/plans/2026-03-31-queue-features-v2-plan.md
+  - .backlog/exec-plans/2026-03-31-queue-features-v2-plan.md
   - .backlog/reviews/2026-03-31-queue-features-v2-plan-review.md
 priority: high
 ordinal: 1000
