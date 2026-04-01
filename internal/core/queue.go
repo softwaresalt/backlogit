@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -243,7 +244,10 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 			} else {
 				// Look up from DB if not in current result set.
 				var s sql.NullString
-				_ = database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s)
+				if scanErr := database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+					slog.Warn("filterByResolvedDependencies: failed to look up dependency status",
+						"dep_id", dep.DependsOn, "error", scanErr)
+				}
 				if s.Valid {
 					depStatus = s.String
 				}

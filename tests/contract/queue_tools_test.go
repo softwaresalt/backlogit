@@ -1,4 +1,4 @@
-﻿package contract_test
+package contract_test
 
 // Contract tests for the 8 new queue-feature MCP tools introduced in the
 // 009-queue-features-v2 branch. Each tool is tested for:

@@ -74,8 +74,7 @@ func newGetCommand(cwd *string) *cobra.Command {
 				return enc.Encode(detail)
 			}
 
-			printDetailView(cmd, fm, body, ctx, ws, id)
-			return nil
+			return printDetailView(cmd, fm, body, ctx, ws, id)
 		},
 	}
 
@@ -108,7 +107,7 @@ func buildDetailMap(ctx context.Context, ws *core.Workspace, fm map[string]any, 
 }
 
 // printDetailView writes a human-readable detail view to the command output.
-func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx context.Context, ws *core.Workspace, id string) {
+func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx context.Context, ws *core.Workspace, id string) error {
 	out := cmd.OutOrStdout()
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
@@ -129,7 +128,9 @@ func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx con
 		}
 		fmt.Fprintf(w, "%s:\t%v\n", key, val)
 	}
-	w.Flush() //nolint:errcheck
+	if err := w.Flush(); err != nil {
+		return err
+	}
 
 	// Description body
 	trimmed := strings.TrimSpace(body)
@@ -154,6 +155,7 @@ func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx con
 			fmt.Fprintf(out, "  %s  %s  (%s)\n", c.CommitSHA, c.Message, c.Author)
 		}
 	}
+	return nil
 }
 
 func isInSlice(s string, slice []string) bool {

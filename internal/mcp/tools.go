@@ -191,8 +191,9 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Get prioritized work queue items respecting dependency constraints"),
 			mcplib.WithString("type", mcplib.Description("Filter by artifact type")),
 			mcplib.WithString("status", mcplib.Description("Filter by status")),
-			mcplib.WithString("assignee", mcplib.Description("Filter by assignee")),
+			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
 			mcplib.WithNumber("limit", mcplib.Description("Maximum results")),
+			mcplib.WithNumber("offset", mcplib.Description("Result offset for pagination")),
 			mcplib.WithString("group_by", mcplib.Description("Group output by field: type, status, priority")),
 		),
 		s.handleGetQueue,
@@ -797,11 +798,14 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 	if v, ok := request.Params.Arguments["status"].(string); ok && v != "" {
 		filter.Statuses = []string{v}
 	}
-	if v, ok := request.Params.Arguments["assignee"].(string); ok && v != "" {
+	if v, ok := request.Params.Arguments["assigned_to"].(string); ok && v != "" {
 		filter.AssignedTo = v
 	}
 	if v, ok := request.Params.Arguments["limit"].(float64); ok && v > 0 {
 		filter.Limit = int(v)
+	}
+	if v, ok := request.Params.Arguments["offset"].(float64); ok && v > 0 {
+		filter.Offset = int(v)
 	}
 	if v, ok := request.Params.Arguments["group_by"].(string); ok && v != "" {
 		filter.GroupBy = v

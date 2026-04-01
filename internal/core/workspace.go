@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,18 +36,21 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Load header-def (optional — nil if not found).
+	// Load header-def (optional — nil if file is absent).
 	headerDef, hdErr := config.LoadHeaderDef(backlogitDir)
 	if hdErr != nil {
-		// Non-fatal: header-def is optional for basic operation.
+		if !errors.Is(hdErr, os.ErrNotExist) {
+			database.Close()
+			return nil, fmt.Errorf("load header-def: %w", hdErr)
+		}
 		headerDef = nil
 	}
 
-	// Load templates (optional — empty slice if templates dir missing).
-	var templates []*config.TemplateConfig
-	templatesDir := filepath.Join(backlogitDir, "templates")
-	if _, statErr := os.Stat(templatesDir); statErr == nil {
-		templates, _ = config.LoadTemplates(templatesDir)
+	// Load templates (optional — nil if templates dir is absent).
+	templates, templatesErr := config.LoadTemplates(filepath.Join(backlogitDir, "templates"))
+	if templatesErr != nil {
+		database.Close()
+		return nil, fmt.Errorf("load templates: %w", templatesErr)
 	}
 
 	if headerDef != nil {

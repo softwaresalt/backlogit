@@ -151,7 +151,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 			hierPath, hierErr := ResolveHierarchicalPath(ws.Config.QueueLayout, o.ParentID, artifactType)
 			if hierErr == nil {
 				dir = hierPath
-				artifact.HierarchyPath = dir
 				level, _ := LevelForType(ws.Config.QueueLayout, artifactType)
 				artifact.Level = level
 			}
@@ -203,14 +202,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
 	}
-	if artifact.Level > 0 {
-		fm["level"] = artifact.Level
-	}
-	if artifact.HierarchyPath != "" {
-		fm["hierarchy_path"] = artifact.HierarchyPath
-	}
-
-	content := models.SerializeFrontmatter(fm, artifact.Description)
+	content:= models.SerializeFrontmatter(fm, artifact.Description)
 	filePath := filepath.Join(dirAbs, name+".md")
 
 	tmpPath := filePath + ".tmp"

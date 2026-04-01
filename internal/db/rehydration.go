@@ -63,7 +63,9 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 					continue
 				}
 				// Best-effort: skip if target doesn't exist yet (will be linked on subsequent rehydration).
-				_ = upsertDependencyBestEffort(ctx, db, artifact.ID, depID)
+				if depErr := upsertDependencyBestEffort(ctx, db, artifact.ID, depID); depErr != nil {
+					slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+				}
 			}
 		}
 
