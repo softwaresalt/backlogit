@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -71,12 +73,22 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 		conditions = append(conditions, "sprint = ?")
 		args = append(args, filter.Sprint)
 	}
+	if filter.AssignedTo != "" {
+		conditions = append(conditions, "assigned_to = ?")
+		args = append(args, filter.AssignedTo)
+	}
 
 	query := `SELECT ` + bldb.SelectCols + ` FROM items`
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += " ORDER BY created_at ASC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+	}
+	if filter.Offset > 0 {
+		query += fmt.Sprintf(" OFFSET %d", filter.Offset)
+	}
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -94,6 +106,11 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Filter out items with unresolved dependencies (dependency-aware queue).
+	if len(items) > 0 {
+		items = filterByResolvedDependencies(ctx, db, items)
 	}
 
 	view := &QueueView{
@@ -136,15 +153,11 @@ func groupKey(a *models.Artifact, field string) string {
 }
 
 // MoveInQueue updates the queue position record for an item.
-// NOTE: Persistent ordinal reordering is not yet implemented; this records the
-// intent by bumping updated_at so that future ordinal-column migrations can detect
-// items whose order was explicitly requested. Position value is stored as a TODO.
-func MoveInQueue(ctx context.Context, db *sql.DB, itemID string, newPosition int) error {
-	_, err := db.ExecContext(ctx, `UPDATE items SET updated_at = ? WHERE id = ?`, time.Now(), itemID)
-	if err != nil {
-		return fmt.Errorf("move in queue %s: %w", itemID, err)
-	}
-	return nil
+// NOTE: Persistent ordinal reordering is not yet implemented. This operation
+// is intentionally rejected so callers receive explicit feedback rather than a
+// silent no-op.
+func MoveInQueue(_ context.Context, _ *sql.DB, _ string, _ int) error {
+	return fmt.Errorf("queue position reordering is not yet implemented")
 }
 
 // BulkUpdateStatus changes the status of multiple items in a single transaction,
@@ -170,19 +183,83 @@ func BulkUpdateStatus(ctx context.Context, database *sql.DB, ws *Workspace, item
 	}
 
 	// Best-effort sync to Markdown files: skip items whose file does not exist.
+	// CQRS note: the DB transaction commits first (DB-authoritative for now). A future
+	// migration should flip this to Markdown-first per Constitution §VII.
 	for _, id := range itemIDs {
 		artifact, findErr := findArtifact(ctx, ws, id)
 		if findErr != nil {
-			// File not found in workspace — DB is authoritative; skip silently.
+			slog.Warn("bulk update: artifact file not found, DB updated but Markdown not synced",
+				"id", id, "error", findErr)
 			continue
 		}
 		artifact.Status = models.ArtifactStatus(newStatus)
 		artifact.UpdatedAt = time.Now()
 		filePath, pathErr := FindArtifactPath(ctx, ws, id)
 		if pathErr != nil {
+			slog.Warn("bulk update: could not locate artifact path for Markdown sync",
+				"id", id, "error", pathErr)
 			continue
 		}
-		_ = WriteArtifactFile(artifact, filePath)
+		if syncErr := WriteArtifactFile(artifact, filePath); syncErr != nil {
+			slog.Warn("bulk update: failed to sync status to Markdown file",
+				"id", id, "path", filePath, "error", syncErr)
+		}
 	}
 	return count, nil
+}
+
+// filterByResolvedDependencies removes items from the queue whose blocking dependencies
+// are not yet in a terminal state (done, accepted).
+func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) []*models.Artifact {
+	terminalStatuses := map[string]bool{
+		string(models.StatusDone):     true,
+		string(models.StatusAccepted): true,
+	}
+
+	// Build a set of all item IDs and their statuses from the current result set.
+	statusMap := make(map[string]string)
+	for _, item := range items {
+		statusMap[item.ID] = string(item.Status)
+	}
+
+	var result []*models.Artifact
+	for _, item := range items {
+		deps, err := bldb.GetDependencies(ctx, database, item.ID)
+		if err != nil {
+			slog.Warn("filterByResolvedDependencies: failed to fetch deps, skipping item",
+				"item_id", item.ID, "error", err)
+			continue
+		}
+		if len(deps) == 0 {
+			result = append(result, item)
+			continue
+		}
+
+		blocked := false
+		for _, dep := range deps {
+			// Check if the dependency is in a terminal state.
+			depStatus := ""
+			if s, ok := statusMap[dep.DependsOn]; ok {
+				depStatus = s
+			} else {
+				// Look up from DB if not in current result set.
+				var s sql.NullString
+				if scanErr := database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+					slog.Warn("filterByResolvedDependencies: failed to look up dependency status",
+						"dep_id", dep.DependsOn, "error", scanErr)
+				}
+				if s.Valid {
+					depStatus = s.String
+				}
+			}
+			if dep.DepType == "blocks" && !terminalStatuses[depStatus] {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			result = append(result, item)
+		}
+	}
+	return result
 }

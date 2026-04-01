@@ -15,14 +15,16 @@ import (
 type TemplateConfig struct {
 	Name         string       `yaml:"name" validate:"required"`
 	ArtifactType string       `yaml:"type" validate:"required"`
+	Description  string       `yaml:"description"`
 	Sections     []SectionDef `yaml:"sections" validate:"required,min=1,dive"`
 	Body         string       `yaml:"-"`
 }
 
 // SectionDef describes a single template section.
 type SectionDef struct {
-	Name     string `yaml:"name" validate:"required"`
-	Required bool   `yaml:"required"`
+	Name        string `yaml:"name" validate:"required"`
+	Required    bool   `yaml:"required"`
+	Description string `yaml:"description"`
 }
 
 // LoadTemplates discovers and parses all .md template files from templatesDir.

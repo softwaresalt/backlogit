@@ -3,7 +3,7 @@ title: "Queue Features V2: WIT Metadata, Archive Lifecycle, Dependency Queue, an
 date: 2026-03-31
 origin: ".backlog/queue.md"
 status: draft
-predecessor: ".backlog/plans/2026-03-30-queue-features-plan.md"
+predecessor: ".backlog/exec-plans/2026-03-30-queue-features-plan.md"
 ---
 
 ## Problem Statement

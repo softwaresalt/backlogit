@@ -74,16 +74,17 @@ func TestQueryQueue_GroupByType(t *testing.T) {
 	assert.NotEmpty(t, view.Groups, "should have groups when GroupBy is set")
 }
 
-func TestMoveInQueue_ReordersItems(t *testing.T) {
+func TestMoveInQueue_ReturnsNotImplemented(t *testing.T) {
 	// Arrange
 	ws := setupQueueWorkspace(t)
 	ctx := context.Background()
 
-	// Act — move T003 to position 0
+	// Act — queue position reordering is not yet implemented
 	err := core.MoveInQueue(ctx, ws.DB, "T003", 0)
 
-	// Assert
-	require.NoError(t, err)
+	// Assert — must return an explicit error, not silently succeed
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not yet implemented")
 }
 
 func TestBulkUpdateStatus(t *testing.T) {

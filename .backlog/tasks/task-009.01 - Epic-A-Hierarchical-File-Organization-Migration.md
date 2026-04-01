@@ -1,17 +1,19 @@
 ---
 id: TASK-009.01
 title: 'Epic A: Hierarchical File Organization & Migration'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:03'
+updated_date: '2026-04-01 05:20'
 labels:
   - sub-epic
   - phase-1
 dependencies: []
 references:
-  - .backlog/plans/2026-03-31-queue-features-v2-plan.md
+  - .backlog/exec-plans/2026-03-31-queue-features-v2-plan.md
 parent_task_id: TASK-009
 priority: high
+ordinal: 2000
 ---
 
 ## Description

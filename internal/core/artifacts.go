@@ -130,11 +130,35 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		UpdatedAt:    now,
 	}
 
+	// Apply field defaults and validate against header-def if available.
+	if ws.HeaderDef != nil {
+		if err := ApplyFieldDefaults(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("apply field defaults: %w", err)
+		}
+		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("validate artifact fields: %w", err)
+		}
+	}
+
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
-	dir := artifactType + "s"
+	// Determine target directory: use hierarchy layout if configured, otherwise flat.
+	var dir string
+	if ws.Config.QueueLayout != nil {
+		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
+			hierPath, hierErr := ResolveHierarchicalPath(ws.Config.QueueLayout, o.ParentID, artifactType)
+			if hierErr == nil {
+				dir = hierPath
+				level, _ := LevelForType(ws.Config.QueueLayout, artifactType)
+				artifact.Level = level
+			}
+		}
+	}
+	if dir == "" {
+		dir = artifactType + "s"
+	}
 	dirAbs := filepath.Join(ws.RootPath, dir)
 	if err := os.MkdirAll(dirAbs, 0o755); err != nil {
 		return nil, fmt.Errorf("create directory: %w", err)
@@ -178,8 +202,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
 	}
-
-	content := models.SerializeFrontmatter(fm, artifact.Description)
+	content:= models.SerializeFrontmatter(fm, artifact.Description)
 	filePath := filepath.Join(dirAbs, name+".md")
 
 	tmpPath := filePath + ".tmp"
@@ -241,7 +264,20 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
 		artifact.CustomFields = v
 	}
+	if v, ok := updates["harness_status"].(string); ok {
+		if artifact.CustomFields == nil {
+			artifact.CustomFields = map[string]any{}
+		}
+		artifact.CustomFields["harness_status"] = v
+	}
 	artifact.UpdatedAt = time.Now()
+
+	// Validate against header-def if available.
+	if ws.HeaderDef != nil {
+		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+			return nil, fmt.Errorf("validate artifact fields: %w", err)
+		}
+	}
 
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
@@ -259,17 +295,30 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 // When ws.Config is nil (e.g., in bare test workspaces), it falls back to all non-hidden
 // top-level directories under ws.RootPath.
 func artifactSearchDirs(ws *Workspace) ([]string, error) {
+	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+
 	if ws.Config == nil {
+		// No config loaded: scan all non-hidden dirs at the workspace root, plus
+		// subdirectories of .backlogit/ for backward-compatibility with legacy
+		// workspaces that store artifacts under .backlogit/tasks/, .backlogit/bugs/, etc.
+		var dirs []string
 		entries, err := os.ReadDir(ws.RootPath)
 		if err != nil {
 			return nil, fmt.Errorf("read workspace root: %w", err)
 		}
-		var dirs []string
 		for _, entry := range entries {
 			if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
 				continue
 			}
 			dirs = append(dirs, filepath.Join(ws.RootPath, entry.Name()))
+		}
+		// Also include .backlogit/ subdirectories (legacy artifact storage location).
+		if blEntries, blErr := os.ReadDir(backlogitDir); blErr == nil {
+			for _, entry := range blEntries {
+				if entry.IsDir() {
+					dirs = append(dirs, filepath.Join(backlogitDir, entry.Name()))
+				}
+			}
 		}
 		return dirs, nil
 	}
@@ -290,13 +339,17 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 	}
 
 	// Registry-specified paths cover status-based relocations (e.g., archive, review).
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
 	if registry, err := config.LoadRegistry(backlogitDir); err == nil {
 		for _, rule := range registry.Directories {
 			if rule.Path != "" {
 				addDir(rule.Path)
 			}
 		}
+	}
+
+	// Include queue layout root directory if configured.
+	if ws.Config != nil && ws.Config.QueueLayout != nil {
+		addDir(ws.Config.QueueLayout.RootDir)
 	}
 
 	return dirs, nil

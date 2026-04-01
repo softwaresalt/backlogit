@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,9 +15,11 @@ import (
 
 // Workspace coordinates cross-store operations across Markdown, SQLite, and JSONL.
 type Workspace struct {
-	RootPath string
-	Config   *config.WorkspaceConfig
-	DB       *sql.DB
+	RootPath  string
+	Config    *config.WorkspaceConfig
+	DB        *sql.DB
+	HeaderDef *config.HeaderDefConfig
+	Templates []*config.TemplateConfig
 }
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
@@ -32,15 +36,41 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	if err := db.EnsureSchema(database); err != nil {
+	// Load header-def (optional — nil if file is absent).
+	headerDef, hdErr := config.LoadHeaderDef(backlogitDir)
+	if hdErr != nil {
+		if !errors.Is(hdErr, os.ErrNotExist) {
+			database.Close()
+			return nil, fmt.Errorf("load header-def: %w", hdErr)
+		}
+		headerDef = nil
+	}
+
+	// Load templates (optional — nil if templates dir is absent).
+	templates, templatesErr := config.LoadTemplates(filepath.Join(backlogitDir, "templates"))
+	if templatesErr != nil {
 		database.Close()
-		return nil, fmt.Errorf("ensure schema: %w", err)
+		return nil, fmt.Errorf("load templates: %w", templatesErr)
+	}
+
+	if headerDef != nil {
+		if err := db.EnsureSchemaWithExtensions(database, headerDef); err != nil {
+			database.Close()
+			return nil, fmt.Errorf("ensure schema: %w", err)
+		}
+	} else {
+		if err := db.EnsureSchema(database); err != nil {
+			database.Close()
+			return nil, fmt.Errorf("ensure schema: %w", err)
+		}
 	}
 
 	return &Workspace{
-		RootPath: rootPath,
-		Config:   cfg,
-		DB:       database,
+		RootPath:  rootPath,
+		Config:    cfg,
+		DB:        database,
+		HeaderDef: headerDef,
+		Templates: templates,
 	}, nil
 }
 

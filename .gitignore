@@ -11,3 +11,10 @@ logs/
 *.code-workspace
 
 .test-output.txt
+
+# Build artifacts
+*.exe
+
+# Ephemeral SQLite databases (always regenerated; never commit)
+backlogit.db
+.backlogit/backlogit.db

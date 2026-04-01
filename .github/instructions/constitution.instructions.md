@@ -191,7 +191,7 @@ precisely to serve token-efficient query results to agents.
    decisions MUST be documented in `.backlog/research/` before
    implementation begins.
 2. **Plan before code**: Implementation plans MUST be generated via
-   the planning workflow and stored in `.backlog/plans/`.
+   the planning workflow and stored in `.backlog/exec-plans/`.
 3. **Branch per feature**: Each feature MUST be developed on a
    dedicated branch with a descriptive name.
 4. **Contract-first design**: MCP tool schemas and Go structs

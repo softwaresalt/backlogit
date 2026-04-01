@@ -14,6 +14,7 @@ type WorkspaceConfig struct {
 	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
 	Fields        map[string]*FieldConfig        `yaml:"fields"`
 	MaxSlugLength int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
+	QueueLayout   *QueueLayoutConfig             `yaml:"queue_layout"`
 }
 
 // ArtifactTypeConfig defines an artifact type's behavior.
@@ -49,6 +50,19 @@ type DirectoryRule struct {
 type DirectoryCondition struct {
 	Status []string `yaml:"status"`
 	Type   []string `yaml:"type"`
+}
+
+// QueueLayoutConfig defines the hierarchical file organization for .backlogit/queue/.
+type QueueLayoutConfig struct {
+	RootDir    string           `yaml:"root_dir" validate:"required"`
+	Levels     []HierarchyLevel `yaml:"levels" validate:"required,min=1,dive"`
+	NameFormat string           `yaml:"name_format"`
+}
+
+// HierarchyLevel maps a hierarchy depth to one or more artifact types.
+type HierarchyLevel struct {
+	Level int      `yaml:"level" validate:"required,gte=1,lte=5"`
+	Types []string `yaml:"types" validate:"required,min=1"`
 }
 
 // HooksConfig is a minimal stub for external integration hooks (deferred scope).

@@ -1,9 +1,10 @@
 ---
 id: TASK-009.04.02
 title: Commit Tracking
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:06'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-3
@@ -39,10 +40,10 @@ Review finding F4 (P2): Commit tracking shells out to git — implicit runtime d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit commit <id> --sha <sha> associates a commit with a work item
-- [ ] #2 Commit association stored in frontmatter: commits: ['abc123', 'def456']
-- [ ] #3 Commits table in SQLite: item_id, sha, timestamp, message
-- [ ] #4 backlogit_get_item response includes associated commits
-- [ ] #5 Graceful degradation when git is not available (warning, not error)
-- [ ] #6 backlogit archive --auto-complete archives items whose commits are all merged to main
+- [x] #1 backlogit commit <id> --sha <sha> associates a commit with a work item
+- [x] #2 Commit association stored in frontmatter: commits: ['abc123', 'def456']
+- [x] #3 Commits table in SQLite: item_id, sha, timestamp, message
+- [x] #4 backlogit_get_item response includes associated commits
+- [x] #5 Graceful degradation when git is not available (warning, not error)
+- [x] #6 backlogit archive --auto-complete archives items whose commits are all merged to main
 <!-- AC:END -->

@@ -1,7 +1,7 @@
 ---
 title: "Plan Review: Queue Features — CLI Commands, Header Definitions, Templates, and Dynamic Tools"
 date: 2026-03-30
-plan: ".backlog/plans/2026-03-30-queue-features-plan.md"
+plan: ".backlog/exec-plans/2026-03-30-queue-features-plan.md"
 gate: fail
 reviewers: [constitution-reviewer, go-quality-reviewer, architecture-strategist, scope-boundary-auditor]
 revision: 2

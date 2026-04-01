@@ -4,9 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/backlogit/backlogit/internal/events"
 )
 
 // CommitLinkInfo contains the metadata linking an artifact to a git commit.
@@ -17,7 +22,8 @@ type CommitLinkInfo struct {
 	Author    string `json:"author"`
 }
 
-// LinkCommit associates a git commit SHA and author with an artifact in the SQLite index.
+// LinkCommit associates a git commit SHA and author with an artifact in the SQLite index
+// and appends a commit_tracked event to events.jsonl for rehydration durability.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
 	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
@@ -26,6 +32,24 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 	if err != nil {
 		return fmt.Errorf("link commit: %w", err)
 	}
+
+	// Append to events.jsonl so rehydration can rebuild commit_links from the event stream.
+	eventsPath := filepath.Join(ws.RootPath, ".backlogit", "events.jsonl")
+	ew := events.NewEventWriter(eventsPath)
+	if evErr := ew.AppendEvent(ctx, events.Event{
+		Timestamp: time.Now(),
+		Actor:     "backlogit",
+		ItemID:    itemID,
+		EventType: "commit_tracked",
+		Delta: map[string]any{
+			"commit_sha": commitSHA,
+			"message":    message,
+			"author":     author,
+		},
+	}); evErr != nil {
+		slog.Warn("link commit: failed to append to events.jsonl", "item_id", itemID, "sha", commitSHA, "error", evErr)
+	}
+
 	return nil
 }
 

@@ -1,9 +1,10 @@
 ---
 id: TASK-009.01.02
 title: Migration Pipeline (Flat → Hierarchical)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:05'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-1
@@ -12,6 +13,7 @@ dependencies:
   - TASK-009.01.01
 parent_task_id: TASK-009.01
 priority: high
+ordinal: 3000
 ---
 
 ## Description
@@ -36,10 +38,10 @@ Review finding F5 (P2): Migration atomicity at scale — state file tracks each 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit migrate --dry-run reports all files that would move without modifying anything
-- [ ] #2 backlogit migrate converts flat layout to hierarchical queue/ layout
-- [ ] #3 State file (.backlogit/.migration-state) tracks progress for crash recovery
-- [ ] #4 Rollback via backlogit migrate --rollback restores pre-migration layout
-- [ ] #5 SQLite index.db rehydrated after migration with new hierarchy columns populated
-- [ ] #6 Migration preserves all frontmatter content and description body
+- [x] #1 backlogit migrate --dry-run reports all files that would move without modifying anything
+- [x] #2 backlogit migrate converts flat layout to hierarchical queue/ layout
+- [x] #3 State file (.backlogit/.migration-state) tracks progress for crash recovery
+- [x] #4 Rollback via backlogit migrate --rollback restores pre-migration layout
+- [x] #5 SQLite index.db rehydrated after migration with new hierarchy columns populated
+- [x] #6 Migration preserves all frontmatter content and description body
 <!-- AC:END -->

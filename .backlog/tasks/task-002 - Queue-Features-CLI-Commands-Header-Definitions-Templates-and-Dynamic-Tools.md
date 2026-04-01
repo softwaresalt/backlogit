@@ -9,7 +9,7 @@ labels:
 dependencies: []
 references:
   - .backlog/queue.md
-  - .backlog/plans/2026-03-30-queue-features-plan.md
+  - .backlog/exec-plans/2026-03-30-queue-features-plan.md
   - .backlog/reviews/2026-03-30-queue-features-plan-review.md
 priority: high
 ---

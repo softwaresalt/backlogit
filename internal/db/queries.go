@@ -14,15 +14,17 @@ import (
 
 // QueryFilters holds optional filters for item queries.
 type QueryFilters struct {
-	Status     string
-	Type       string
-	ParentID   string
-	Sprint     string
-	AssignedTo string
-	Owner      string
+	Status          string
+	Type            string
+	ParentID        string
+	Sprint          string
+	AssignedTo      string
+	Owner           string
+	Priority        string
+	IncludeArchived bool // when false (default), archived items are excluded from results
 }
 
-const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit"`
+const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit", level, hierarchy_path`
 
 // rowScanner abstracts *sql.Row and *sql.Rows for the shared scan helper.
 type rowScanner interface {
@@ -35,12 +37,15 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 	var status, createdAt, updatedAt string
 	var parentID, sprint, priority, description, customFields sql.NullString
 	var assignedTo, owner, labels, dependencies, references, commit sql.NullString
+	var level sql.NullInt64
+	var hierarchyPath sql.NullString
 
 	if err := row.Scan(
 		&a.ID, &a.Title, &status, &a.ArtifactType,
 		&parentID, &sprint, &priority, &description,
 		&customFields, &createdAt, &updatedAt,
 		&assignedTo, &owner, &labels, &dependencies, &references, &commit,
+		&level, &hierarchyPath,
 	); err != nil {
 		return nil, err
 	}
@@ -107,6 +112,13 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 		}
 	}
 
+	if level.Valid {
+		a.Level = int(level.Int64)
+	}
+	if hierarchyPath.Valid {
+		a.HierarchyPath = hierarchyPath.String
+	}
+
 	return &a, nil
 }
 
@@ -148,8 +160,9 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		`INSERT OR REPLACE INTO items
 			(id, title, status, artifact_type, parent_id, sprint, priority, description,
 			 custom_fields, created_at, updated_at,
-			 assigned_to, owner, labels, dependencies, "references", "commit")
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 assigned_to, owner, labels, dependencies, "references", "commit",
+			 level, hierarchy_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		artifact.ID,
 		artifact.Title,
 		string(artifact.Status),
@@ -167,6 +180,8 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		depsVal,
 		refsVal,
 		nullString(artifact.Commit),
+		nullInt64(artifact.Level),
+		nullString(artifact.HierarchyPath),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
@@ -206,6 +221,10 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	if filters.Status != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, filters.Status)
+	} else if !filters.IncludeArchived {
+		// Exclude archived items from all default queries unless explicitly requested.
+		conditions = append(conditions, "status != ?")
+		args = append(args, string(models.StatusArchived))
 	}
 	if filters.Type != "" {
 		conditions = append(conditions, "artifact_type = ?")
@@ -226,6 +245,10 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	if filters.Owner != "" {
 		conditions = append(conditions, "owner = ?")
 		args = append(args, filters.Owner)
+	}
+	if filters.Priority != "" {
+		conditions = append(conditions, "priority = ?")
+		args = append(args, filters.Priority)
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
@@ -293,4 +316,9 @@ func scanArtifacts(rows *sql.Rows) ([]*models.Artifact, error) {
 // nullString converts an empty string to a NULL-valued sql.NullString.
 func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
+}
+
+// nullInt64 converts a zero int to a NULL-valued sql.NullInt64.
+func nullInt64(n int) sql.NullInt64 {
+	return sql.NullInt64{Int64: int64(n), Valid: n != 0}
 }

@@ -1,9 +1,10 @@
 ---
 id: TASK-009.05.02
 title: Queue CLI & MCP Tools
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:07'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-3
@@ -32,10 +33,10 @@ Key deliverables:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit queue shows next actionable items in priority order
-- [ ] #2 backlogit queue --type task --limit 5 filters and limits output
-- [ ] #3 backlogit_get_queue MCP tool returns JSON array of queue items
-- [ ] #4 backlogit_get_queue accepts filter parameters: type, status, assignee, limit
-- [ ] #5 Queue output includes blocking reason for items not yet actionable
-- [ ] #6 CLI output uses tabwriter for aligned tabular display
+- [x] #1 backlogit queue shows next actionable items in priority order
+- [x] #2 backlogit queue --type task --limit 5 filters and limits output
+- [x] #3 backlogit_get_queue MCP tool returns JSON array of queue items
+- [x] #4 backlogit_get_queue accepts filter parameters: type, status, assignee, limit
+- [x] #5 Queue output includes blocking reason for items not yet actionable
+- [x] #6 CLI output uses tabwriter for aligned tabular display
 <!-- AC:END -->

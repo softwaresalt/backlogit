@@ -1,9 +1,10 @@
 ---
 id: TASK-009.02.01
 title: Dynamic Schema Extension Engine
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:05'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-1
@@ -13,6 +14,7 @@ dependencies:
   - TASK-002
 parent_task_id: TASK-009.02
 priority: high
+ordinal: 4000
 ---
 
 ## Description
@@ -36,10 +38,10 @@ Security constraint: Column names MUST be validated before use in DDL. This is t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ALTER TABLE items ADD COLUMN executes for each custom field defined in header-def.yaml
-- [ ] #2 Column names validated against ^[a-z][a-z0-9_]{0,62}$ regex before DDL generation
-- [ ] #3 Invalid column names produce descriptive validation error, not silent failure
-- [ ] #4 EnsureSchema idempotent: re-running with same config produces no schema changes
-- [ ] #5 FTS5 index rebuilt to include new custom field columns
-- [ ] #6 Rehydration populates custom field columns from frontmatter values
+- [x] #1 ALTER TABLE items ADD COLUMN executes for each custom field defined in header-def.yaml
+- [x] #2 Column names validated against ^[a-z][a-z0-9_]{0,62}$ regex before DDL generation
+- [x] #3 Invalid column names produce descriptive validation error, not silent failure
+- [x] #4 EnsureSchema idempotent: re-running with same config produces no schema changes
+- [x] #5 FTS5 index rebuilt to include new custom field columns
+- [x] #6 Rehydration populates custom field columns from frontmatter values
 <!-- AC:END -->

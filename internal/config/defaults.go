@@ -54,6 +54,19 @@ func defaultHeaderDef() *HeaderDefConfig {
 					"status": statusField,
 				},
 			},
+			"feature": {
+				Prefix:   "OP",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+					"harness_status": {
+						Type:     "enum",
+						Values:   []string{"pending", "scaffolded", "passing", "failing"},
+						Default:  "pending",
+						Optional: true,
+					},
+				},
+			},
 		},
 	}
 }
@@ -64,13 +77,17 @@ func defaultTemplates() map[string]string {
 		"task": `---
 name: task-template
 type: task
+description: "A discrete unit of work"
 sections:
   - name: description
     required: true
+    description: "Detailed description of the work item"
   - name: acceptance-criteria
     required: false
+    description: "Conditions that must be met for completion"
   - name: implementation-notes
     required: false
+    description: "Technical notes and implementation details"
 ---
 # {title}
 
@@ -92,15 +109,20 @@ sections:
 		"bug": `---
 name: bug-template
 type: bug
+description: "A defect or issue to be resolved"
 sections:
   - name: description
     required: true
+    description: "Detailed description of the defect"
   - name: steps-to-reproduce
     required: true
+    description: "Steps to reproduce the issue"
   - name: expected-behavior
     required: false
+    description: "What should happen"
   - name: actual-behavior
     required: false
+    description: "What actually happens"
 ---
 # {title}
 
@@ -127,11 +149,14 @@ sections:
 		"epic": `---
 name: epic-template
 type: epic
+description: "A large body of work that can be broken down into tasks"
 sections:
   - name: description
     required: true
+    description: "Detailed description of the epic"
   - name: goals
     required: false
+    description: "Goals and objectives for this epic"
 ---
 # {title}
 
@@ -169,12 +194,29 @@ func DefaultConfig() *WorkspaceConfig {
 				Prefix:     "E",
 				NameFormat: "{prefix}{NNN}-{title_slug}",
 			},
+			"feature": {
+				Prefix:     "F",
+				NameFormat: "{prefix}{NNN}-{title_slug}",
+			},
+			"sub-task": {
+				Prefix:     "ST",
+				NameFormat: "{prefix}{NNN}-{title_slug}",
+			},
 		},
 		Fields: map[string]*FieldConfig{
 			"status": {
 				Type:    "enum",
 				Values:  []string{"queued", "active", "blocked", "review", "done"},
 				Default: "queued",
+			},
+		},
+		QueueLayout: &QueueLayoutConfig{
+			RootDir:    "queue",
+			NameFormat: "{NNN}",
+			Levels: []HierarchyLevel{
+				{Level: 1, Types: []string{"feature", "epic"}},
+				{Level: 2, Types: []string{"task", "story", "bug"}},
+				{Level: 3, Types: []string{"sub-task"}},
 			},
 		},
 	}

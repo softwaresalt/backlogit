@@ -9,7 +9,7 @@ labels:
 dependencies: []
 references:
   - .backlog/research/Backlogit-Architecture-Design.md
-  - .backlog/plans/2026-03-30-backlogit-core-plan.md
+  - .backlog/exec-plans/2026-03-30-backlogit-core-plan.md
   - .backlog/reviews/2026-03-30-backlogit-core-plan-review.md
 priority: high
 ---

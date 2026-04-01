@@ -57,7 +57,7 @@
 | `internal/mcp/tools.go` | modified | ~1-320 | 4 new handlers + section params on existing tools |
 | `internal/mcp/dynamic.go` | added | 1-84 | RegisterSectionAwareTools, handleListTemplates, ListTools, ParseSectionsParam |
 | `.backlog/tasks/task-002.*` | added/modified | various | All 21 TASK-002 subtask files |
-| `.backlog/plans/2026-03-30-queue-features-plan.md` | added | 1-712 | Implementation plan |
+| `.backlog/exec-plans/2026-03-30-queue-features-plan.md` | added | 1-712 | Implementation plan |
 | `.backlog/reviews/2026-03-30-queue-features-plan-review.md` | added | 1-232 | Plan review doc |
 | `.copilot-tracking/harness-manifest.md` | added | 1-88 | TDD harness manifest |
 | `tests/contract/tools_expansion_test.go` | added | 1-225 | Contract tests for new tools |

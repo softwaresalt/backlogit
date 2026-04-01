@@ -10,6 +10,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
@@ -139,6 +140,73 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist")),
 		),
 		s.handleCreateCheckpoint,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_wit_metadata",
+			mcplib.WithDescription("Get complete WIT metadata for an artifact type including fields, sections, and relationships"),
+			mcplib.WithString("type", mcplib.Required(), mcplib.Description("Artifact type (task, bug, epic, feature)")),
+		),
+		s.handleGetWITMetadata,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_list_types",
+			mcplib.WithDescription("List all configured WIT types with hierarchy levels and descriptions"),
+		),
+		s.handleListTypes,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_add_dependency",
+			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection"),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithString("dep_type", mcplib.Description("Dependency type: blocks, relates_to, parent_of"), mcplib.DefaultString("blocks")),
+		),
+		s.handleAddDependency,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_remove_dependency",
+			mcplib.WithDescription("Remove a dependency between two artifacts"),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID")),
+		),
+		s.handleRemoveDependency,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_dependencies",
+			mcplib.WithDescription("Get dependency graph for an artifact including upstream and downstream edges"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID")),
+			mcplib.WithBoolean("reverse", mcplib.Description("Show items that depend on this item")),
+		),
+		s.handleGetDependencies,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_archive_item",
+			mcplib.WithDescription("Archive a completed artifact to the archive directory"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID to archive")),
+		),
+		s.handleArchiveItem,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_queue",
+			mcplib.WithDescription("Get prioritized work queue items respecting dependency constraints"),
+			mcplib.WithString("type", mcplib.Description("Filter by artifact type")),
+			mcplib.WithString("status", mcplib.Description("Filter by status")),
+			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
+			mcplib.WithNumber("limit", mcplib.Description("Maximum results")),
+			mcplib.WithNumber("offset", mcplib.Description("Result offset for pagination")),
+			mcplib.WithString("group_by", mcplib.Description("Group output by field: type, status, priority")),
+		),
+		s.handleGetQueue,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_track_commit",
+			mcplib.WithDescription("Associate a git commit SHA with an artifact for traceability"),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Artifact ID")),
+			mcplib.WithString("sha", mcplib.Required(), mcplib.Description("Git commit SHA")),
+			mcplib.WithString("message", mcplib.Description("Commit message")),
+			mcplib.WithString("author", mcplib.Description("Commit author")),
+		),
+		s.handleTrackCommit,
 	)
 }
 
@@ -563,4 +631,213 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 		return fmt.Errorf("rename artifact: %w", err)
 	}
 	return nil
+}
+
+// queueLayout returns the configured QueueLayoutConfig for the workspace,
+// falling back to a sensible default when none is configured.
+func (s *Server) queueLayout() *core.QueueLayoutConfig {
+	if s.Workspace.Config != nil && s.Workspace.Config.QueueLayout != nil {
+		return s.Workspace.Config.QueueLayout
+	}
+	return &core.QueueLayoutConfig{
+		RootDir: "queue",
+		Levels: []core.HierarchyLevel{
+			{Level: 1, Types: []string{"feature", "epic"}},
+			{Level: 2, Types: []string{"task", "story", "bug"}},
+			{Level: 3, Types: []string{"sub-task"}},
+		},
+	}
+}
+
+func (s *Server) handleGetWITMetadata(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	artifactType, _ := request.Params.Arguments["type"].(string)
+	if artifactType == "" {
+		return ValidationFailed("type is required"), nil
+	}
+	headerDef, err := config.LoadHeaderDef(backlogitDir)
+	if err != nil {
+		return InternalError(fmt.Sprintf("load header-def: %v", err)), nil
+	}
+	templates, err := config.LoadTemplates(filepath.Join(backlogitDir, "templates"))
+	if err != nil {
+		return InternalError(fmt.Sprintf("load templates: %v", err)), nil
+	}
+	layout := s.queueLayout()
+	metadata, err := core.DescribeType(artifactType, headerDef, templates, layout)
+	if err != nil {
+		return InternalError(fmt.Sprintf("describe type: %v", err)), nil
+	}
+	return toolResultJSON(metadata)
+}
+
+func (s *Server) handleListTypes(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	headerDef, err := config.LoadHeaderDef(backlogitDir)
+	if err != nil {
+		return InternalError(fmt.Sprintf("load header-def: %v", err)), nil
+	}
+	templates, err := config.LoadTemplates(filepath.Join(backlogitDir, "templates"))
+	if err != nil {
+		return InternalError(fmt.Sprintf("load templates: %v", err)), nil
+	}
+	layout := s.queueLayout()
+	types, err := core.ListTypes(headerDef, templates, layout)
+	if err != nil {
+		return InternalError(fmt.Sprintf("list types: %v", err)), nil
+	}
+	return toolResultJSON(types)
+}
+
+func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+	dependsOn, _ := request.Params.Arguments["depends_on"].(string)
+	if dependsOn == "" {
+		return ValidationFailed("depends_on is required"), nil
+	}
+	depType := "blocks"
+	if v, ok := request.Params.Arguments["dep_type"].(string); ok && v != "" {
+		depType = v
+	}
+	if err := db.AddDependencyChecked(ctx, s.Workspace.DB, itemID, dependsOn, depType); err != nil {
+		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
+	}
+	return toolResultJSON(map[string]string{
+		"item_id":    itemID,
+		"depends_on": dependsOn,
+		"dep_type":   depType,
+		"status":     "added",
+	})
+}
+
+func (s *Server) handleRemoveDependency(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+	dependsOn, _ := request.Params.Arguments["depends_on"].(string)
+	if dependsOn == "" {
+		return ValidationFailed("depends_on is required"), nil
+	}
+	if err := db.DeleteDependency(ctx, s.Workspace.DB, itemID, dependsOn); err != nil {
+		return InternalError(fmt.Sprintf("remove dependency: %v", err)), nil
+	}
+	return toolResultJSON(map[string]string{
+		"item_id":    itemID,
+		"depends_on": dependsOn,
+		"status":     "removed",
+	})
+}
+
+func (s *Server) handleGetDependencies(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	reverse, _ := request.Params.Arguments["reverse"].(bool)
+	if reverse {
+		edges, err := db.GetDependents(ctx, s.Workspace.DB, id)
+		if err != nil {
+			return InternalError(fmt.Sprintf("get dependents: %v", err)), nil
+		}
+		return toolResultJSON(edges)
+	}
+	edges, err := db.GetDependencies(ctx, s.Workspace.DB, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("get dependencies: %v", err)), nil
+	}
+	return toolResultJSON(edges)
+}
+
+func (s *Server) handleArchiveItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	record, err := core.ArchiveItem(ctx, s.Workspace.DB, s.Workspace, id)
+	if err != nil {
+		return InternalError(fmt.Sprintf("archive item: %v", err)), nil
+	}
+	return toolResultJSON(record)
+}
+
+func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	filter := &core.QueueFilter{}
+	if v, ok := request.Params.Arguments["type"].(string); ok && v != "" {
+		filter.Types = []string{v}
+	}
+	if v, ok := request.Params.Arguments["status"].(string); ok && v != "" {
+		filter.Statuses = []string{v}
+	}
+	if v, ok := request.Params.Arguments["assigned_to"].(string); ok && v != "" {
+		filter.AssignedTo = v
+	}
+	if v, ok := request.Params.Arguments["limit"].(float64); ok && v > 0 {
+		filter.Limit = int(v)
+	}
+	if v, ok := request.Params.Arguments["offset"].(float64); ok && v > 0 {
+		filter.Offset = int(v)
+	}
+	if v, ok := request.Params.Arguments["group_by"].(string); ok && v != "" {
+		filter.GroupBy = v
+	}
+	view, err := core.QueryQueue(ctx, s.Workspace.DB, filter)
+	if err != nil {
+		return InternalError(fmt.Sprintf("get queue: %v", err)), nil
+	}
+	return toolResultJSON(view)
+}
+
+func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+	sha, _ := request.Params.Arguments["sha"].(string)
+	if sha == "" {
+		return ValidationFailed("sha is required"), nil
+	}
+	message, _ := request.Params.Arguments["message"].(string)
+	author, _ := request.Params.Arguments["author"].(string)
+	if err := core.LinkCommit(ctx, s.Workspace.DB, s.Workspace, itemID, sha, message, author); err != nil {
+		return InternalError(fmt.Sprintf("track commit: %v", err)), nil
+	}
+	return toolResultJSON(map[string]string{
+		"item_id": itemID,
+		"sha":     sha,
+		"status":  "linked",
+	})
 }

@@ -1,9 +1,10 @@
 ---
 id: TASK-009.03.01
 title: Dependency Table & Junction Model
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:06'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-1
@@ -36,9 +37,9 @@ Review finding F3 (P2): Extend frontmatter format to include dependency type. De
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CREATE TABLE dependencies with from_id, to_id, dep_type columns exists in schema
-- [ ] #2 Dependency frontmatter format: dependencies: [{id: 'TASK-001', type: 'blocks'}]
-- [ ] #3 Rehydration engine populates dependencies table from frontmatter
-- [ ] #4 backlogit_query_sql can query dependency graph via JOIN on dependencies table
-- [ ] #5 Default dep_type is 'blocks' when type omitted from frontmatter
+- [x] #1 CREATE TABLE dependencies with from_id, to_id, dep_type columns exists in schema
+- [x] #2 Dependency frontmatter format: dependencies: [{id: 'TASK-001', type: 'blocks'}]
+- [x] #3 Rehydration engine populates dependencies table from frontmatter
+- [x] #4 backlogit_query_sql can query dependency graph via JOIN on dependencies table
+- [x] #5 Default dep_type is 'blocks' when type omitted from frontmatter
 <!-- AC:END -->

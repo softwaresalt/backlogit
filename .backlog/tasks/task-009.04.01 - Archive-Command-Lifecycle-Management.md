@@ -1,9 +1,10 @@
 ---
 id: TASK-009.04.01
 title: Archive Command & Lifecycle Management
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 06:06'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-3
@@ -34,10 +35,10 @@ Key deliverables:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit archive <id> moves artifact to .backlogit/archive/ directory
-- [ ] #2 Archive preserves full artifact content (frontmatter + body)
-- [ ] #3 Archived artifacts excluded from default list/query results
-- [ ] #4 backlogit archive --all-done archives all artifacts with status=done
-- [ ] #5 Archive event appended to events.jsonl
-- [ ] #6 SQLite items table updated: status set to 'archived' or row moved to archive table
+- [x] #1 backlogit archive <id> moves artifact to .backlogit/archive/ directory
+- [x] #2 Archive preserves full artifact content (frontmatter + body)
+- [x] #3 Archived artifacts excluded from default list/query results
+- [x] #4 backlogit archive --all-done archives all artifacts with status=done
+- [x] #5 Archive event appended to events.jsonl
+- [x] #6 SQLite items table updated: status set to 'archived' or row moved to archive table
 <!-- AC:END -->
