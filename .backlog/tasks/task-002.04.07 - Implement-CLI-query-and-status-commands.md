@@ -1,7 +1,7 @@
 ---
 id: TASK-002.04.07
 title: Implement CLI query and status commands
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:01'
 labels: []

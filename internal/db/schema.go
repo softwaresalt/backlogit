@@ -15,6 +15,14 @@ func EnsureSchema(db *sql.DB) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS item_deps (
+			item_id    TEXT NOT NULL,
+			depends_on TEXT NOT NULL,
+			dep_type   TEXT NOT NULL DEFAULT 'blocks',
+			PRIMARY KEY (item_id, depends_on)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_item_deps_item ON item_deps(item_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_item_deps_dep  ON item_deps(depends_on)`,
 		`CREATE TABLE IF NOT EXISTS items (
 			id           TEXT PRIMARY KEY,
 			title        TEXT NOT NULL,
@@ -38,6 +46,14 @@ func EnsureSchema(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_items_type   ON items(artifact_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(sprint)`,
+		`CREATE TABLE IF NOT EXISTS commit_links (
+			item_id    TEXT NOT NULL,
+			commit_sha TEXT NOT NULL,
+			message    TEXT NOT NULL DEFAULT '',
+			author     TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (item_id, commit_sha)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_commit_links_item ON commit_links(item_id)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
 			id UNINDEXED,
 			title,

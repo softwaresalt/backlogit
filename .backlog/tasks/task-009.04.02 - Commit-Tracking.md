@@ -1,0 +1,48 @@
+---
+id: TASK-009.04.02
+title: Commit Tracking
+status: To Do
+assignee: []
+created_date: '2026-03-31 06:06'
+labels:
+  - task
+  - phase-3
+dependencies:
+  - TASK-009.04.01
+parent_task_id: TASK-009.04
+priority: high
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+**Unit 9 — Commit Tracking**
+
+Track git commits associated with work items for auto-archiving triggers and traceability.
+
+Key deliverables:
+- New CLI command: `backlogit commit <id> --sha <sha>` — associate a commit with a work item
+- New MCP tool: `backlogit_track_commit`
+- Extend `Artifact` model with `Commits []string` field
+- Extend frontmatter format: `commits: ['abc123', 'def456']`
+- New SQLite table: `CREATE TABLE commits (item_id TEXT, sha TEXT, timestamp TEXT, message TEXT)`
+- Update rehydration to populate commits table from frontmatter
+- Auto-archive trigger: `backlogit archive --auto-complete` checks if all tracked commits are merged to main branch
+- Git integration: shell out to `git log --format=%H` and `git branch --contains`
+
+Review finding F4 (P2): Commit tracking shells out to git — implicit runtime dependency. Handle gracefully:
+- Check for git availability on first use
+- Cache git binary path
+- Return descriptive error when git is unavailable (not panic)
+- Log warning when git operations fail
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 backlogit commit <id> --sha <sha> associates a commit with a work item
+- [ ] #2 Commit association stored in frontmatter: commits: ['abc123', 'def456']
+- [ ] #3 Commits table in SQLite: item_id, sha, timestamp, message
+- [ ] #4 backlogit_get_item response includes associated commits
+- [ ] #5 Graceful degradation when git is not available (warning, not error)
+- [ ] #6 backlogit archive --auto-complete archives items whose commits are all merged to main
+<!-- AC:END -->

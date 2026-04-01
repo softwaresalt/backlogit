@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/models"
 	"github.com/backlogit/backlogit/internal/parser"
 )
@@ -72,7 +74,14 @@ func (s *Service) Create(ctx context.Context, ws *core.Workspace, title string, 
 	}
 
 	allOpts := append([]core.Option{core.WithDescription(body)}, opts...)
-	return core.CreateArtifact(ctx, ws, title, artifactType, allOpts...)
+	artifact, err := core.CreateArtifact(ctx, ws, title, artifactType, allOpts...)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+		return nil, fmt.Errorf("sync index after create: %w", err)
+	}
+	return artifact, nil
 }
 
 // Update applies section-level changes to an existing artifact.
@@ -111,7 +120,11 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
 		return nil, fmt.Errorf("write sections: %w", err)
 	}
 
+	now := time.Now()
 	artifact.Description = newBody
+	artifact.UpdatedAt = now
+	fm["updated_at"] = now
+
 	newContent := models.SerializeFrontmatter(fm, newBody)
 	tmp := filePath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
@@ -121,6 +134,11 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
 		os.Remove(tmp) //nolint:errcheck
 		return nil, fmt.Errorf("rename artifact: %w", err)
 	}
+
+	if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+		return nil, fmt.Errorf("sync index after section update: %w", err)
+	}
+
 	return artifact, nil
 }
 

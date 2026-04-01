@@ -13,13 +13,24 @@ import (
 // RegisterSectionAwareTools registers the fixed MCP tools that support section-aware
 // operations and template discovery. All tools are registered unconditionally regardless
 // of workspace state, satisfying the constitutional mandate.
+// If called more than once, subsequent calls only update the template service reference
+// without re-registering tools to avoid duplicates.
 func RegisterSectionAwareTools(s *Server, templateSvc *templates.Service) {
+	s.templateSvc = templateSvc
+
+	// Guard against double-registration from NewServer + test setup.
+	for _, name := range s.toolNames {
+		if name == "backlogit_list_templates" {
+			return
+		}
+	}
+
 	s.addTool(
 		mcplib.NewTool("backlogit_list_templates",
 			mcplib.WithDescription("List registered template types and their section definitions"),
 		),
 		func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-			return handleListTemplates(ctx, s, templateSvc)
+			return handleListTemplates(ctx, s, s.templateSvc)
 		},
 	)
 }
@@ -32,7 +43,7 @@ func handleListTemplates(_ context.Context, _ *Server, templateSvc *templates.Se
 	infos := templateSvc.ListTemplates()
 	data, err := json.Marshal(infos)
 	if err != nil {
-		return nil, fmt.Errorf("marshal templates: %w", err)
+		return InternalError(fmt.Sprintf("marshal templates: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(string(data)), nil
 }

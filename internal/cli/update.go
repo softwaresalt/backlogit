@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -105,6 +106,11 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 					}
 					newBody = body
 				}
+
+				// Bump updated_at so callers can detect the change.
+				now := time.Now()
+				fm["updated_at"] = now
+
 				newContent := models.SerializeFrontmatter(fm, newBody)
 				tmp := filePath + ".tmp"
 				if writeErr2 := os.WriteFile(tmp, []byte(newContent), 0o644); writeErr2 != nil {
@@ -113,6 +119,16 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 				if renameErr := os.Rename(tmp, filePath); renameErr != nil {
 					os.Remove(tmp) //nolint:errcheck
 					return fmt.Errorf("rename artifact: %w", renameErr)
+				}
+
+				// Sync the updated artifact into the DB index.
+				sectionArtifact, parseArtErr := models.ArtifactFromFrontmatter(fm, newBody)
+				if parseArtErr != nil {
+					return fmt.Errorf("parse artifact after section write: %w", parseArtErr)
+				}
+				sectionArtifact.UpdatedAt = now
+				if upsertErr := db.UpsertItem(ctx, ws.DB, sectionArtifact); upsertErr != nil {
+					return fmt.Errorf("sync index after section write: %w", upsertErr)
 				}
 			}
 

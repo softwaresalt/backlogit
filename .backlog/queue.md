@@ -1,5 +1,7 @@
 # Queue
 
+- First order of business: there are two backlog items with id TASK-003, two with TASK-004, TASK-005, TASK-006, and TASK-007.  Some of these are bugs, others tasks. I want to reorganize these tasks and bugs into a single set. I want you to reorganize these such that TASK-003 will be a feature level task.  The existing tasks should be arranged as tasks and bugs that have TASK-003 as their parent.
+
 - Customizations to templates and YAML definitions shoud automatically cause modifications to the DB schema; schema should be directly mapped to YAML definitions.
 
 - Must be able to define for a Work Item Type (WIT) template whether a field or attribute or template section is required or optional.
@@ -35,4 +37,4 @@
   
   - Status enums: ready, (other status levels)
 
-
+- Rather than having a subfolder of .backlogit named tasks, we should generalize this folder since it will hold a range of work item types, so the folder should be named instead .backlogit\queue.  The way we will organize work items within the folder will be such that the file names will be named hierarchically.  The default hierarchy of work item types will be: level 1 => 001, level 2 => 001.001, level 3 => 001.001.001.  The default will be level 1 = feature type, level 2 = task type, level 3 = subtask type.  But the user can reorganize the work item types to link to the hierarchy level they want.  They could choose to set level 1 = epic type, for example.  They could establish 4 levels. They could establish both tasks and bugs as level 2 work items.  This way, the ID and the file naming conventions can remain static and programmable.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -84,6 +85,9 @@ func WithCommit(commit string) Option {
 
 // CreateArtifact creates a new artifact with atomic file write.
 func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactType string, opts ...Option) (*models.Artifact, error) {
+	if ws == nil || ws.Config == nil {
+		return nil, fmt.Errorf("workspace config is required")
+	}
 	o := &createOptions{}
 	for _, opt := range opts {
 		opt(o)
@@ -247,15 +251,70 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 }
 
 // FindArtifactPath locates the Markdown file for an artifact by ID.
+// It searches all non-hidden subdirectories of the workspace root, including
+// status-based routing directories such as "archive" and "review".
+// artifactSearchDirs returns the set of directories to search for artifact .md files.
+// When ws.Config is available, it derives directories from artifact type names and
+// registry routing rules, avoiding expensive scans of source directories like cmd/ or internal/.
+// When ws.Config is nil (e.g., in bare test workspaces), it falls back to all non-hidden
+// top-level directories under ws.RootPath.
+func artifactSearchDirs(ws *Workspace) ([]string, error) {
+	if ws.Config == nil {
+		entries, err := os.ReadDir(ws.RootPath)
+		if err != nil {
+			return nil, fmt.Errorf("read workspace root: %w", err)
+		}
+		var dirs []string
+		for _, entry := range entries {
+			if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
+				continue
+			}
+			dirs = append(dirs, filepath.Join(ws.RootPath, entry.Name()))
+		}
+		return dirs, nil
+	}
+
+	seen := make(map[string]bool)
+	var dirs []string
+	addDir := func(rel string) {
+		abs := filepath.Join(ws.RootPath, rel)
+		if !seen[abs] {
+			seen[abs] = true
+			dirs = append(dirs, abs)
+		}
+	}
+
+	// Artifact type directories are {type}s (e.g., tasks, bugs, stories).
+	for artifactType := range ws.Config.ArtifactTypes {
+		addDir(artifactType + "s")
+	}
+
+	// Registry-specified paths cover status-based relocations (e.g., archive, review).
+	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	if registry, err := config.LoadRegistry(backlogitDir); err == nil {
+		for _, rule := range registry.Directories {
+			if rule.Path != "" {
+				addDir(rule.Path)
+			}
+		}
+	}
+
+	return dirs, nil
+}
+
 // Returns the absolute file path or an error if not found.
 func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
-	var found string
-	for typeName := range ws.Config.ArtifactTypes {
-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+	searchDirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return "", err
+	}
+
+	for _, dirPath := range searchDirs {
+		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+		var found string
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}
@@ -270,7 +329,7 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 			return nil
 		})
 		if walkErr != nil {
-			return "", fmt.Errorf("walk workspace: %w", walkErr)
+			return "", fmt.Errorf("walk %s: %w", dirPath, walkErr)
 		}
 		if found != "" {
 			return found, nil
@@ -333,13 +392,17 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
-	var found *models.Artifact
-	for typeName := range ws.Config.ArtifactTypes {
-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
+	searchDirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, dirPath := range searchDirs {
+		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
+		var found *models.Artifact
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}

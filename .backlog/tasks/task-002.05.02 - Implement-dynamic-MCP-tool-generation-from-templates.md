@@ -1,7 +1,7 @@
 ---
 id: TASK-002.05.02
 title: Implement dynamic MCP tool generation from templates
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:02'
 labels: []

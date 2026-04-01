@@ -181,9 +181,12 @@ func DefaultConfig() *WorkspaceConfig {
 }
 
 // DefaultRegistry returns default directory routing rules.
+// Status-based rules are listed first so they take priority over type-based rules.
 func DefaultRegistry() *RegistryConfig {
 	return &RegistryConfig{
 		Directories: []DirectoryRule{
+			{Path: "archive", Condition: DirectoryCondition{Status: []string{"done", "accepted", "rejected"}}},
+			{Path: "review", Condition: DirectoryCondition{Status: []string{"review"}}},
 			{Path: "tasks", Condition: DirectoryCondition{Type: []string{"task"}}},
 			{Path: "stories", Condition: DirectoryCondition{Type: []string{"story"}}},
 			{Path: "bugs", Condition: DirectoryCondition{Type: []string{"bug"}}},

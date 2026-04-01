@@ -1,7 +1,7 @@
 ---
 id: TASK-002.05.01
 title: Add new fields and static tools to MCP server
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 07:01'
 labels: []

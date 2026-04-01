@@ -1,7 +1,7 @@
 ---
 id: TASK-002
 title: 'Queue Features: CLI Commands, Header Definitions, Templates, and Dynamic Tools'
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 06:53'
 labels:

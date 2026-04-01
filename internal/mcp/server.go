@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/events"
 )
 
@@ -21,14 +23,16 @@ type Server struct {
 	Workspace   *core.Workspace
 	Events      *events.EventWriter
 	Telemetry   *events.TelemetryWriter
+	templateSvc *templates.Service
 	mcp         *mcpserver.MCPServer
 	toolNames   []string
 }
 
 // NewServer creates an MCP server from a workspace.
 func NewServer(ws *core.Workspace) *Server {
-	eventsPath := filepath.Join(ws.RootPath, "events.jsonl")
-	telemetryPath := filepath.Join(ws.RootPath, "telemetry.jsonl")
+	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	eventsPath := filepath.Join(backlogitDir, "events.jsonl")
+	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
 		Workspace: ws,
 		Events:    events.NewEventWriter(eventsPath),
@@ -43,7 +47,14 @@ func NewServer(ws *core.Workspace) *Server {
 	)
 	s.RegisterTools()
 	s.RegisterResources()
-	RegisterSectionAwareTools(s, nil)
+
+	// Construct a live template service for section-aware operations.
+	templatesDir := filepath.Join(ws.RootPath, ".backlogit", "templates")
+	svc, err := templates.NewService(context.Background(), templatesDir)
+	if err != nil {
+		logger.Warn("template service unavailable", "error", err)
+	}
+	RegisterSectionAwareTools(s, svc)
 	return s
 }
 
@@ -69,7 +80,7 @@ func dirExists(path string) bool {
 func toolResultJSON(v any) (*mcplib.CallToolResult, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("marshal result: %w", err)
+		return InternalError(fmt.Sprintf("marshal result: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(string(data)), nil
 }

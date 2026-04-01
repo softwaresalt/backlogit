@@ -1,7 +1,7 @@
 ---
 id: TASK-002.01
 title: Artifact Model Expansion
-status: To Do
+status: done
 assignee: []
 created_date: '2026-03-30 06:55'
 labels:

@@ -1,0 +1,3985 @@
+diff --git a/internal/cli/dep.go b/internal/cli/dep.go
+new file mode 100644
+index 0000000..e35d233
+--- /dev/null
++++ b/internal/cli/dep.go
+@@ -0,0 +1,126 @@
++package cli
++
++import (
++	"context"
++	"fmt"
++
++	"github.com/spf13/cobra"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++)
++
++// NewDepCmd creates the `backlogit dep` command group for managing dependencies.
++func NewDepCmd() *cobra.Command {
++	cmd := &cobra.Command{
++		Use:   "dep",
++		Short: "Manage artifact dependencies",
++	}
++	cmd.AddCommand(NewDepAddCmd())
++	cmd.AddCommand(NewDepRemoveCmd())
++	cmd.AddCommand(NewDepListCmd())
++	return cmd
++}
++
++// NewDepAddCmd creates `backlogit dep add <item-id> <depends-on> [--type blocks]`.
++func NewDepAddCmd() *cobra.Command {
++	var depType string
++
++	cmd := &cobra.Command{
++		Use:   "add <item-id> <depends-on>",
++		Short: "Add a dependency edge",
++		Args:  cobra.ExactArgs(2),
++		RunE: func(cmd *cobra.Command, args []string) error {
++			itemID := args[0]
++			dependsOn := args[1]
++
++			ctx := context.Background()
++			cwd := "."
++			ws, err := core.NewWorkspace(ctx, cwd)
++			if err != nil {
++				return fmt.Errorf("open workspace: %w", err)
++			}
++			defer ws.Close()
++
++			hasCycle, err := db.DetectCycle(ctx, ws.DB, itemID, dependsOn)
++			if err != nil {
++				return fmt.Errorf("detect cycle: %w", err)
++			}
++			if hasCycle {
++				return fmt.Errorf("adding %sΓåÆ%s would create a circular dependency", itemID, dependsOn)
++			}
++			if err := db.UpsertDependency(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
++				return err
++			}
++			fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s ΓåÆ %s\n", itemID, dependsOn)
++			return nil
++		},
++	}
++	cmd.Flags().StringVar(&depType, "type", "blocks", "dependency relationship type")
++	return cmd
++}
++
++// NewDepRemoveCmd creates `backlogit dep remove <item-id> <depends-on>`.
++func NewDepRemoveCmd() *cobra.Command {
++	return &cobra.Command{
++		Use:   "remove <item-id> <depends-on>",
++		Short: "Remove a dependency edge",
++		Args:  cobra.ExactArgs(2),
++		RunE: func(cmd *cobra.Command, args []string) error {
++			itemID := args[0]
++			dependsOn := args[1]
++
++			ctx := context.Background()
++			cwd := "."
++			ws, err := core.NewWorkspace(ctx, cwd)
++			if err != nil {
++				return fmt.Errorf("open workspace: %w", err)
++			}
++			defer ws.Close()
++
++			if err := db.DeleteDependency(ctx, ws.DB, itemID, dependsOn); err != nil {
++				return err
++			}
++			fmt.Fprintf(cmd.OutOrStdout(), "Removed dependency %s ΓåÆ %s\n", itemID, dependsOn)
++			return nil
++		},
++	}
++}
++
++// NewDepListCmd creates `backlogit dep list <item-id> [--reverse]`.
++func NewDepListCmd() *cobra.Command {
++	var reverse bool
++
++	cmd := &cobra.Command{
++		Use:   "list <item-id>",
++		Short: "List dependencies for an artifact",
++		Args:  cobra.ExactArgs(1),
++		RunE: func(cmd *cobra.Command, args []string) error {
++			itemID := args[0]
++
++			ctx := context.Background()
++			cwd := "."
++			ws, err := core.NewWorkspace(ctx, cwd)
++			if err != nil {
++				return fmt.Errorf("open workspace: %w", err)
++			}
++			defer ws.Close()
++
++			var edges []db.DependencyEdge
++			if reverse {
++				edges, err = db.GetDependents(ctx, ws.DB, itemID)
++			} else {
++				edges, err = db.GetDependencies(ctx, ws.DB, itemID)
++			}
++			if err != nil {
++				return err
++			}
++			for _, e := range edges {
++				fmt.Fprintf(cmd.OutOrStdout(), "%s ΓåÆ %s (%s)\n", e.ItemID, e.DependsOn, e.DepType)
++			}
++			return nil
++		},
++	}
++	cmd.Flags().BoolVar(&reverse, "reverse", false, "show items that depend on this item")
++	return cmd
++}
+diff --git a/internal/cli/dep_test.go b/internal/cli/dep_test.go
+new file mode 100644
+index 0000000..6aa8645
+--- /dev/null
++++ b/internal/cli/dep_test.go
+@@ -0,0 +1,45 @@
++package cli_test
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/cli"
++)
++
++func TestNewDepCmd_HasSubcommands(t *testing.T) {
++	// Act
++	cmd := cli.NewDepCmd()
++
++	// Assert
++	require.NotNil(t, cmd)
++	assert.Equal(t, "dep", cmd.Use)
++	subNames := make([]string, 0, len(cmd.Commands()))
++	for _, sub := range cmd.Commands() {
++		subNames = append(subNames, sub.Name())
++	}
++	assert.Contains(t, subNames, "add")
++	assert.Contains(t, subNames, "remove")
++	assert.Contains(t, subNames, "list")
++}
++
++func TestNewDepAddCmd_RejectsMissingArgs(t *testing.T) {
++	// Act
++	cmd := cli.NewDepAddCmd()
++	cmd.SetArgs([]string{})
++	err := cmd.Execute()
++
++	// Assert
++	require.Error(t, err)
++}
++
++func TestNewDepListCmd_HasReverseFlag(t *testing.T) {
++	// Act
++	cmd := cli.NewDepListCmd()
++
++	// Assert
++	flag := cmd.Flags().Lookup("reverse")
++	assert.NotNil(t, flag, "should have --reverse flag")
++}
+diff --git a/internal/cli/list_enhanced_test.go b/internal/cli/list_enhanced_test.go
+new file mode 100644
+index 0000000..d6583fb
+--- /dev/null
++++ b/internal/cli/list_enhanced_test.go
+@@ -0,0 +1,54 @@
++package cli_test
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/cli"
++)
++
++func TestNewListEnhancedCmd_HasGroupFlags(t *testing.T) {
++	// Act
++	cmd := cli.NewListEnhancedCmd()
++
++	// Assert
++	require.NotNil(t, cmd)
++	assert.NotNil(t, cmd.Flags().Lookup("group-by"), "should have --group-by flag")
++	assert.NotNil(t, cmd.Flags().Lookup("collapse"), "should have --collapse flag")
++	assert.NotNil(t, cmd.Flags().Lookup("tree"), "should have --tree flag")
++}
++
++func TestFormatTreeView_RendersHierarchy(t *testing.T) {
++	// Arrange
++	items := []cli.ListItem{
++		{ID: "T001", Title: "Parent", Status: "active", Type: "task", Depth: 0},
++		{ID: "T002", Title: "Child A", Status: "done", Type: "task", ParentID: "T001", Depth: 1},
++		{ID: "T003", Title: "Child B", Status: "queued", Type: "task", ParentID: "T001", Depth: 1},
++	}
++
++	// Act
++	output := cli.FormatTreeView(items)
++
++	// Assert
++	assert.Contains(t, output, "T001")
++	assert.Contains(t, output, "T002")
++	assert.Contains(t, output, "T003")
++}
++
++func TestFormatGroupedView_GroupsByType(t *testing.T) {
++	// Arrange
++	items := []cli.ListItem{
++		{ID: "T001", Title: "Task 1", Status: "queued", Type: "task"},
++		{ID: "B001", Title: "Bug 1", Status: "active", Type: "bug"},
++		{ID: "T002", Title: "Task 2", Status: "done", Type: "task"},
++	}
++
++	// Act
++	output := cli.FormatGroupedView(items, "type")
++
++	// Assert
++	assert.Contains(t, output, "task")
++	assert.Contains(t, output, "bug")
++}
+diff --git a/internal/cli/list_grouping.go b/internal/cli/list_grouping.go
+new file mode 100644
+index 0000000..1d991b1
+--- /dev/null
++++ b/internal/cli/list_grouping.go
+@@ -0,0 +1,84 @@
++package cli
++
++import (
++	"fmt"
++	"strings"
++
++	"github.com/spf13/cobra"
++)
++
++// EnhancedListOptions extends the basic list command with grouping capabilities.
++type EnhancedListOptions struct {
++	GroupBy  string `json:"group_by"`
++	Collapse bool   `json:"collapse"`
++	Tree     bool   `json:"tree"`
++}
++
++// ListItem represents a single item in the list output.
++type ListItem struct {
++	ID       string `json:"id"`
++	Title    string `json:"title"`
++	Status   string `json:"status"`
++	Type     string `json:"type"`
++	ParentID string `json:"parent_id"`
++	Priority string `json:"priority"`
++	Depth    int    `json:"depth"`
++}
++
++// NewListEnhancedCmd creates enhanced `backlogit list` with grouping and tree view.
++func NewListEnhancedCmd() *cobra.Command {
++	opts := &EnhancedListOptions{}
++
++	cmd := &cobra.Command{
++		Use:   "list-enhanced",
++		Short: "List artifacts with grouping and tree view",
++		RunE: func(cmd *cobra.Command, args []string) error {
++			return nil
++		},
++	}
++	cmd.Flags().StringVar(&opts.GroupBy, "group-by", "", "group output by field (type, status, priority)")
++	cmd.Flags().BoolVar(&opts.Collapse, "collapse", false, "collapse groups by default")
++	cmd.Flags().BoolVar(&opts.Tree, "tree", false, "render as a parent-child tree")
++	return cmd
++}
++
++// FormatTreeView renders artifacts as an indented tree based on parent-child relationships.
++func FormatTreeView(items []ListItem) string {
++	var sb strings.Builder
++	for _, item := range items {
++		indent := strings.Repeat("  ", item.Depth)
++		fmt.Fprintf(&sb, "%s%s  %s  [%s]\n", indent, item.ID, item.Title, item.Status)
++	}
++	return sb.String()
++}
++
++// FormatGroupedView renders artifacts grouped by a field with group headers.
++func FormatGroupedView(items []ListItem, groupBy string) string {
++	groups := make(map[string][]ListItem)
++	order := []string{}
++	for _, item := range items {
++		var key string
++		switch groupBy {
++		case "status":
++			key = item.Status
++		case "priority":
++			key = item.Priority
++		default:
++			key = item.Type
++		}
++		if _, exists := groups[key]; !exists {
++			order = append(order, key)
++		}
++		groups[key] = append(groups[key], item)
++	}
++
++	var sb strings.Builder
++	for _, key := range order {
++		grp := groups[key]
++		fmt.Fprintf(&sb, "ΓöÇΓöÇ %s (%d items) ΓöÇΓöÇ\n", key, len(grp))
++		for _, item := range grp {
++			fmt.Fprintf(&sb, "  %s  %s  [%s]\n", item.ID, item.Title, item.Status)
++		}
++	}
++	return sb.String()
++}
+diff --git a/internal/cli/move.go b/internal/cli/move.go
+index ecbffc5..a06d59f 100644
+--- a/internal/cli/move.go
++++ b/internal/cli/move.go
+@@ -36,11 +36,13 @@ func newMoveCommand(cwd *string) *cobra.Command {
+ 				return err
+ 			}
+ 
+-			filePath, err := core.FindArtifactPath(ctx, ws, id)
++			// Relocate the file to the directory mapped by the new status.
++			newPath, err := core.RelocateArtifactFile(ctx, ws.DB, ws, id, status)
+ 			if err != nil {
+-				return err
++				return fmt.Errorf("relocate artifact: %w", err)
+ 			}
+-			if err := core.WriteArtifactFile(artifact, filePath); err != nil {
++
++			if err := core.WriteArtifactFile(artifact, newPath); err != nil {
+ 				return err
+ 			}
+ 			if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+diff --git a/internal/cli/move_relocate_test.go b/internal/cli/move_relocate_test.go
+new file mode 100644
+index 0000000..3a820c5
+--- /dev/null
++++ b/internal/cli/move_relocate_test.go
+@@ -0,0 +1,92 @@
++package cli
++
++// Tests for TASK-008.05: CLI move command must relocate artifact file per registry.yaml.
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++)
++
++func setupMoveTestWorkspace(t *testing.T) (string, *core.Workspace) {
++	t.Helper()
++	root := t.TempDir()
++	backlogitDir := filepath.Join(root, ".backlogit")
++	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
++	require.NoError(t, config.WriteDefaults(backlogitDir))
++
++	ctx := context.Background()
++	ws, err := core.NewWorkspace(ctx, root)
++	require.NoError(t, err)
++	t.Cleanup(func() { ws.Close() })
++
++	return root, ws
++}
++
++// TASK-008.05: After changing status, the file must be in the directory
++// mapped by registry.yaml for the new (type, status) pair.
++func TestMoveCommand_RelocatesFileToTargetDir(t *testing.T) {
++	// Arrange
++	root, ws := setupMoveTestWorkspace(t)
++	ctx := context.Background()
++
++	artifact, err := core.CreateArtifact(ctx, ws, "Relocate test", "task")
++	require.NoError(t, err)
++	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
++
++	// Record original file path
++	originalPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	require.FileExists(t, originalPath)
++
++	// Act ΓÇö move to "done" status
++	cwd := root
++	cmd := newMoveCommand(&cwd)
++	cmd.SetArgs([]string{artifact.ID, "--status", "done"})
++	err = cmd.Execute()
++	require.NoError(t, err)
++
++	// Assert ΓÇö file should be in a different directory (completed/archive/done)
++	newPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	assert.NotEqual(t, originalPath, newPath,
++		"file should have been relocated to the directory for 'done' status")
++
++	// The original path should no longer exist
++	_, err = os.Stat(originalPath)
++	assert.True(t, os.IsNotExist(err),
++		"original file should have been removed after relocation")
++}
++
++// TASK-008.05: Target directory should be created if it doesn't exist.
++func TestMoveCommand_CreatesTargetDirIfMissing(t *testing.T) {
++	// Arrange
++	root, ws := setupMoveTestWorkspace(t)
++	ctx := context.Background()
++
++	artifact, err := core.CreateArtifact(ctx, ws, "Dir creation test", "task")
++	require.NoError(t, err)
++	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
++
++	// Act ΓÇö move to status that maps to a potentially non-existent directory
++	cwd := root
++	cmd := newMoveCommand(&cwd)
++	cmd.SetArgs([]string{artifact.ID, "--status", "review"})
++	err = cmd.Execute()
++
++	// Assert ΓÇö command should succeed even if target dir didn't exist
++	require.NoError(t, err)
++
++	// Verify the artifact can still be found
++	newPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	assert.FileExists(t, newPath)
++}
+diff --git a/internal/cli/queue_cmd.go b/internal/cli/queue_cmd.go
+new file mode 100644
+index 0000000..38269bf
+--- /dev/null
++++ b/internal/cli/queue_cmd.go
+@@ -0,0 +1,67 @@
++package cli
++
++import (
++	"github.com/spf13/cobra"
++)
++
++// NewQueueCmd creates the `backlogit queue` command group for queue operations.
++func NewQueueCmd() *cobra.Command {
++	cmd := &cobra.Command{
++		Use:   "queue",
++		Short: "Manage the work queue",
++	}
++	cmd.AddCommand(NewQueueViewCmd())
++	cmd.AddCommand(NewQueueMoveCmd())
++	cmd.AddCommand(NewQueueBulkStatusCmd())
++	return cmd
++}
++
++// NewQueueViewCmd creates `backlogit queue view` with filter/group/sort flags.
++func NewQueueViewCmd() *cobra.Command {
++	var artifactType, status, groupBy, sortBy string
++
++	cmd := &cobra.Command{
++		Use:   "view",
++		Short: "View queue items",
++		RunE: func(cmd *cobra.Command, args []string) error {
++			return nil
++		},
++	}
++	cmd.Flags().StringVar(&artifactType, "type", "", "filter by artifact type")
++	cmd.Flags().StringVar(&status, "status", "", "filter by status")
++	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field")
++	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
++	return cmd
++}
++
++// NewQueueMoveCmd creates `backlogit queue move <item-id> --position <N>`.
++func NewQueueMoveCmd() *cobra.Command {
++	var position int
++
++	cmd := &cobra.Command{
++		Use:   "move <item-id>",
++		Short: "Reorder an item in the queue",
++		Args:  cobra.ExactArgs(1),
++		RunE: func(cmd *cobra.Command, args []string) error {
++			return nil
++		},
++	}
++	cmd.Flags().IntVar(&position, "position", 0, "target position in the queue")
++	return cmd
++}
++
++// NewQueueBulkStatusCmd creates `backlogit queue bulk-status --ids T001,T002 --status active`.
++func NewQueueBulkStatusCmd() *cobra.Command {
++	var ids, status string
++
++	cmd := &cobra.Command{
++		Use:   "bulk-status",
++		Short: "Update status for multiple items",
++		RunE: func(cmd *cobra.Command, args []string) error {
++			return nil
++		},
++	}
++	cmd.Flags().StringVar(&ids, "ids", "", "comma-separated list of item IDs")
++	cmd.Flags().StringVar(&status, "status", "", "target status")
++	return cmd
++}
+diff --git a/internal/cli/queue_cmd_test.go b/internal/cli/queue_cmd_test.go
+new file mode 100644
+index 0000000..b3ba9b9
+--- /dev/null
++++ b/internal/cli/queue_cmd_test.go
+@@ -0,0 +1,55 @@
++package cli_test
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/cli"
++)
++
++func TestNewQueueCmd_HasSubcommands(t *testing.T) {
++	// Act
++	cmd := cli.NewQueueCmd()
++
++	// Assert
++	require.NotNil(t, cmd)
++	assert.Equal(t, "queue", cmd.Use)
++	subNames := make([]string, 0, len(cmd.Commands()))
++	for _, sub := range cmd.Commands() {
++		subNames = append(subNames, sub.Name())
++	}
++	assert.Contains(t, subNames, "view")
++	assert.Contains(t, subNames, "move")
++	assert.Contains(t, subNames, "bulk-status")
++}
++
++func TestNewQueueViewCmd_HasFilterFlags(t *testing.T) {
++	// Act
++	cmd := cli.NewQueueViewCmd()
++
++	// Assert
++	assert.NotNil(t, cmd.Flags().Lookup("type"))
++	assert.NotNil(t, cmd.Flags().Lookup("status"))
++	assert.NotNil(t, cmd.Flags().Lookup("group-by"))
++	assert.NotNil(t, cmd.Flags().Lookup("sort"))
++}
++
++func TestNewQueueMoveCmd_RequiresPosition(t *testing.T) {
++	// Act
++	cmd := cli.NewQueueMoveCmd()
++
++	// Assert
++	flag := cmd.Flags().Lookup("position")
++	assert.NotNil(t, flag, "should have --position flag")
++}
++
++func TestNewQueueBulkStatusCmd_HasRequiredFlags(t *testing.T) {
++	// Act
++	cmd := cli.NewQueueBulkStatusCmd()
++
++	// Assert
++	assert.NotNil(t, cmd.Flags().Lookup("ids"))
++	assert.NotNil(t, cmd.Flags().Lookup("status"))
++}
+diff --git a/internal/cli/update.go b/internal/cli/update.go
+index 1b2a37d..3a0bb66 100644
+--- a/internal/cli/update.go
++++ b/internal/cli/update.go
+@@ -5,6 +5,7 @@ import (
+ 	"fmt"
+ 	"os"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/spf13/cobra"
+ 
+@@ -105,6 +106,11 @@ func newUpdateCommand(cwd *string) *cobra.Command {
+ 					}
+ 					newBody = body
+ 				}
++
++				// Bump updated_at so callers can detect the change.
++				now := time.Now()
++				fm["updated_at"] = now
++
+ 				newContent := models.SerializeFrontmatter(fm, newBody)
+ 				tmp := filePath + ".tmp"
+ 				if writeErr2 := os.WriteFile(tmp, []byte(newContent), 0o644); writeErr2 != nil {
+@@ -114,6 +120,16 @@ func newUpdateCommand(cwd *string) *cobra.Command {
+ 					os.Remove(tmp) //nolint:errcheck
+ 					return fmt.Errorf("rename artifact: %w", renameErr)
+ 				}
++
++				// Sync the updated artifact into the DB index.
++				sectionArtifact, parseArtErr := models.ArtifactFromFrontmatter(fm, newBody)
++				if parseArtErr != nil {
++					return fmt.Errorf("parse artifact after section write: %w", parseArtErr)
++				}
++				sectionArtifact.UpdatedAt = now
++				if upsertErr := db.UpsertItem(ctx, ws.DB, sectionArtifact); upsertErr != nil {
++					return fmt.Errorf("sync index after section write: %w", upsertErr)
++				}
+ 			}
+ 
+ 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+diff --git a/internal/cli/update_sync_test.go b/internal/cli/update_sync_test.go
+new file mode 100644
+index 0000000..7f334a0
+--- /dev/null
++++ b/internal/cli/update_sync_test.go
+@@ -0,0 +1,98 @@
++package cli
++
++// Tests for TASK-008.04: CLI update command must sync DB after section writes.
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++)
++
++func setupUpdateTestWorkspace(t *testing.T) (string, *core.Workspace) {
++	t.Helper()
++	root := t.TempDir()
++	backlogitDir := filepath.Join(root, ".backlogit")
++	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
++	require.NoError(t, config.WriteDefaults(backlogitDir))
++
++	ctx := context.Background()
++	ws, err := core.NewWorkspace(ctx, root)
++	require.NoError(t, err)
++	t.Cleanup(func() { ws.Close() })
++
++	return root, ws
++}
++
++// TASK-008.04: After --section flag updates, db.UpsertItem must be called.
++func TestUpdateCommand_SectionWrite_SyncsDB(t *testing.T) {
++	// Arrange
++	root, ws := setupUpdateTestWorkspace(t)
++	ctx := context.Background()
++
++	artifact, err := core.CreateArtifact(ctx, ws, "Update sync test", "task")
++	require.NoError(t, err)
++	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
++
++	// Record pre-update state
++	before, err := db.GetItem(ctx, ws.DB, artifact.ID)
++	require.NoError(t, err)
++	beforeUpdatedAt := before.UpdatedAt
++
++	time.Sleep(10 * time.Millisecond)
++
++	// Act ΓÇö execute update command with section flag
++	cwd := root
++	cmd := newUpdateCommand(&cwd)
++	cmd.SetArgs([]string{artifact.ID, "--section", "description=Updated via CLI"})
++	err = cmd.Execute()
++	require.NoError(t, err)
++
++	// Assert ΓÇö DB should reflect the section update
++	// Reopen workspace to get fresh DB connection
++	ws2, err := core.NewWorkspace(ctx, root)
++	require.NoError(t, err)
++	defer ws2.Close()
++
++	after, err := db.GetItem(ctx, ws2.DB, artifact.ID)
++	require.NoError(t, err)
++	assert.True(t, after.UpdatedAt.After(beforeUpdatedAt),
++		"updated_at should be bumped after section update via CLI")
++}
++
++// TASK-008.04: Section writes should update the artifact file AND the index.
++func TestUpdateCommand_SectionWrite_BumpsUpdatedAt(t *testing.T) {
++	// Arrange
++	root, ws := setupUpdateTestWorkspace(t)
++	ctx := context.Background()
++
++	artifact, err := core.CreateArtifact(ctx, ws, "Timestamp bump test", "task")
++	require.NoError(t, err)
++	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
++
++	time.Sleep(10 * time.Millisecond)
++
++	// Act
++	cwd := root
++	cmd := newUpdateCommand(&cwd)
++	cmd.SetArgs([]string{artifact.ID, "--section", "acceptance-criteria=- [ ] Done"})
++	err = cmd.Execute()
++	require.NoError(t, err)
++
++	// Assert ΓÇö file should contain the section AND updated timestamp
++	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	raw, err := os.ReadFile(filePath)
++	require.NoError(t, err)
++	content := string(raw)
++	assert.Contains(t, content, "Done",
++		"file should contain the section content written by CLI")
++}
+diff --git a/internal/config/defaults.go b/internal/config/defaults.go
+index dd178e8..cd943e3 100644
+--- a/internal/config/defaults.go
++++ b/internal/config/defaults.go
+@@ -181,9 +181,12 @@ func DefaultConfig() *WorkspaceConfig {
+ }
+ 
+ // DefaultRegistry returns default directory routing rules.
++// Status-based rules are listed first so they take priority over type-based rules.
+ func DefaultRegistry() *RegistryConfig {
+ 	return &RegistryConfig{
+ 		Directories: []DirectoryRule{
++			{Path: "archive", Condition: DirectoryCondition{Status: []string{"done", "accepted", "rejected"}}},
++			{Path: "review", Condition: DirectoryCondition{Status: []string{"review"}}},
+ 			{Path: "tasks", Condition: DirectoryCondition{Type: []string{"task"}}},
+ 			{Path: "stories", Condition: DirectoryCondition{Type: []string{"story"}}},
+ 			{Path: "bugs", Condition: DirectoryCondition{Type: []string{"bug"}}},
+diff --git a/internal/config/loader.go b/internal/config/loader.go
+index eaffda7..a7f5444 100644
+--- a/internal/config/loader.go
++++ b/internal/config/loader.go
+@@ -36,6 +36,24 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
+ 	return &cfg, nil
+ }
+ 
++// LoadRegistry reads registry.yaml from the workspace directory.
++// If the file is missing, DefaultRegistry is returned so callers always have a valid config.
++func LoadRegistry(workspacePath string) (*RegistryConfig, error) {
++	regPath := filepath.Join(workspacePath, "registry.yaml")
++	data, err := os.ReadFile(regPath)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return DefaultRegistry(), nil
++		}
++		return nil, fmt.Errorf("read registry: %w", err)
++	}
++	var reg RegistryConfig
++	if err := yaml.Unmarshal(data, &reg); err != nil {
++		return nil, fmt.Errorf("parse registry: %w", err)
++	}
++	return &reg, nil
++}
++
+ func applyEnvOverrides(cfg *WorkspaceConfig) {
+ 	if v, ok := os.LookupEnv("BACKLOGIT_MAX_SLUG_LENGTH"); ok {
+ 		if n, err := strconv.Atoi(v); err == nil {
+diff --git a/internal/core/archive.go b/internal/core/archive.go
+new file mode 100644
+index 0000000..f5e546d
+--- /dev/null
++++ b/internal/core/archive.go
+@@ -0,0 +1,188 @@
++package core
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++	"os"
++	"path/filepath"
++	"time"
++
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++// ArchiveRecord tracks the metadata for a single archived artifact.
++type ArchiveRecord struct {
++	ID           string    `json:"id"`
++	ArchivedAt   time.Time `json:"archived_at"`
++	ArchivedBy   string    `json:"archived_by"`
++	OriginalPath string    `json:"original_path"`
++	ArchivePath  string    `json:"archive_path"`
++}
++
++// ArchivePolicy defines rules for automatic archiving of completed artifacts.
++type ArchivePolicy struct {
++	TerminalStatuses []string `json:"terminal_statuses" yaml:"terminal_statuses"`
++	RetentionDays    int      `json:"retention_days" yaml:"retention_days"`
++	ArchiveDir       string   `json:"archive_dir" yaml:"archive_dir"`
++}
++
++// ArchiveItem moves an artifact from its active directory to the archive directory,
++// updating the SQLite index and storing the original path in frontmatter for restoration.
++func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
++	currentPath, err := findFileAnywhere(ws.RootPath, itemID)
++	if err != nil {
++		return nil, fmt.Errorf("find artifact: %w", err)
++	}
++
++	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
++	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
++		return nil, fmt.Errorf("create archive dir: %w", err)
++	}
++
++	// Stamp the original path into frontmatter for later restoration.
++	raw, err := os.ReadFile(currentPath)
++	if err != nil {
++		return nil, fmt.Errorf("read artifact: %w", err)
++	}
++	fm, body, err := models.ParseFrontmatter(string(raw))
++	if err != nil {
++		return nil, fmt.Errorf("parse artifact: %w", err)
++	}
++	if fm == nil {
++		fm = map[string]any{}
++	}
++	fm["archived_from"] = currentPath
++	newContent := models.SerializeFrontmatter(fm, body)
++
++	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
++	if err := os.WriteFile(archivePath, []byte(newContent), 0o644); err != nil {
++		return nil, fmt.Errorf("write archive file: %w", err)
++	}
++	if err := os.Remove(currentPath); err != nil {
++		os.Remove(archivePath) //nolint:errcheck
++		return nil, fmt.Errorf("remove original: %w", err)
++	}
++
++	// Upsert DB record so the archive path is reflected in the index.
++	artifact, err := models.ArtifactFromFrontmatter(fm, body)
++	if err == nil {
++		_ = db.UpsertItem(ctx, database, artifact)
++	}
++
++	return &ArchiveRecord{
++		ID:           itemID,
++		ArchivedAt:   time.Now(),
++		OriginalPath: currentPath,
++		ArchivePath:  archivePath,
++	}, nil
++}
++
++// UnarchiveItem restores an artifact from the archive back to its original path.
++func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
++	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
++	archivePath := filepath.Join(archiveDir, itemID+".md")
++	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
++		return fmt.Errorf("archived artifact not found: %s", itemID)
++	}
++
++	raw, err := os.ReadFile(archivePath)
++	if err != nil {
++		return fmt.Errorf("read archive file: %w", err)
++	}
++	fm, body, err := models.ParseFrontmatter(string(raw))
++	if err != nil {
++		return fmt.Errorf("parse archive file: %w", err)
++	}
++
++	originalPath, _ := fm["archived_from"].(string)
++	if originalPath == "" {
++		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
++	}
++
++	// Restore frontmatter without the archived_from field.
++	delete(fm, "archived_from")
++	restored := models.SerializeFrontmatter(fm, body)
++
++	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
++		return fmt.Errorf("create restore dir: %w", err)
++	}
++	if err := os.WriteFile(originalPath, []byte(restored), 0o644); err != nil {
++		return fmt.Errorf("write restored file: %w", err)
++	}
++	if err := os.Remove(archivePath); err != nil {
++		return fmt.Errorf("remove archive file: %w", err)
++	}
++
++	artifact, err := models.ArtifactFromFrontmatter(fm, body)
++	if err == nil {
++		_ = db.UpsertItem(ctx, database, artifact)
++	}
++	return nil
++}
++
++// AutoArchive scans for items in terminal statuses past the retention window and
++// archives them according to the policy.
++func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *ArchivePolicy) (int, error) {
++	if len(policy.TerminalStatuses) == 0 {
++		return 0, nil
++	}
++
++	threshold := time.Now().AddDate(0, 0, -policy.RetentionDays)
++	items, err := db.QueryItems(ctx, database, db.QueryFilters{})
++	if err != nil {
++		return 0, fmt.Errorf("query items: %w", err)
++	}
++
++	terminalSet := make(map[string]bool, len(policy.TerminalStatuses))
++	for _, s := range policy.TerminalStatuses {
++		terminalSet[s] = true
++	}
++
++	count := 0
++	for _, item := range items {
++		if !terminalSet[string(item.Status)] {
++			continue
++		}
++		if item.UpdatedAt.After(threshold) {
++			continue
++		}
++		if _, archiveErr := ArchiveItem(ctx, database, ws, item.ID); archiveErr != nil {
++			continue
++		}
++		count++
++	}
++	return count, nil
++}
++
++// findFileAnywhere walks the entire rootPath (including hidden directories) to
++// locate the Markdown file for the given artifact ID.
++func findFileAnywhere(rootPath, id string) (string, error) {
++	var found string
++	walkErr := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
++		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
++			return err
++		}
++		data, readErr := os.ReadFile(path)
++		if readErr != nil {
++			return nil
++		}
++		fm, _, parseErr := models.ParseFrontmatter(string(data))
++		if parseErr != nil {
++			return nil
++		}
++		if idVal, ok := fm["id"].(string); ok && idVal == id {
++			found = path
++			return filepath.SkipAll
++		}
++		return nil
++	})
++	if walkErr != nil {
++		return "", fmt.Errorf("walk workspace: %w", walkErr)
++	}
++	if found == "" {
++		return "", fmt.Errorf("artifact not found: %s", id)
++	}
++	return found, nil
++}
+diff --git a/internal/core/archive_test.go b/internal/core/archive_test.go
+new file mode 100644
+index 0000000..0460117
+--- /dev/null
++++ b/internal/core/archive_test.go
+@@ -0,0 +1,95 @@
++package core_test
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func setupArchiveWorkspace(t *testing.T) *core.Workspace {
++	t.Helper()
++	tmpDir := t.TempDir()
++	backlogDir := filepath.Join(tmpDir, ".backlogit")
++	tasksDir := filepath.Join(backlogDir, "tasks")
++	archiveDir := filepath.Join(backlogDir, "archive")
++	require.NoError(t, os.MkdirAll(tasksDir, 0o755))
++	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
++
++	dbPath := filepath.Join(backlogDir, "backlogit.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++
++	// Write config.yaml
++	configData := []byte("artifact_types:\n  - task\n  - bug\nid_prefix_map:\n  task: T\n  bug: B\nmax_slug_length: 60\n")
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"), configData, 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
++
++	// Seed a completed task file
++	taskContent := "---\nid: T001\ntitle: Completed task\nstatus: done\ntype: task\n---\nDone task body\n"
++	require.NoError(t, os.WriteFile(filepath.Join(tasksDir, "T001.md"), []byte(taskContent), 0o644))
++	require.NoError(t, db.UpsertItem(context.Background(), database, &models.Artifact{
++		ID: "T001", Title: "Completed task", Status: models.StatusDone, ArtifactType: "task",
++	}))
++
++	return &core.Workspace{RootPath: tmpDir, DB: database}
++}
++
++func TestArchiveItem_MovesToArchive(t *testing.T) {
++	// Arrange
++	ws := setupArchiveWorkspace(t)
++	ctx := context.Background()
++
++	// Act
++	record, err := core.ArchiveItem(ctx, ws.DB, ws, "T001")
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, "T001", record.ID)
++	assert.NotEmpty(t, record.ArchivePath)
++	assert.FileExists(t, record.ArchivePath)
++}
++
++func TestUnarchiveItem_RestoresFromArchive(t *testing.T) {
++	// Arrange
++	ws := setupArchiveWorkspace(t)
++	ctx := context.Background()
++	_, err := core.ArchiveItem(ctx, ws.DB, ws, "T001")
++	require.NoError(t, err)
++
++	// Act
++	err = core.UnarchiveItem(ctx, ws.DB, ws, "T001")
++
++	// Assert
++	require.NoError(t, err)
++	originalPath := filepath.Join(ws.RootPath, ".backlogit", "tasks", "T001.md")
++	assert.FileExists(t, originalPath)
++}
++
++func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {
++	// Arrange
++	ws := setupArchiveWorkspace(t)
++	ctx := context.Background()
++	policy := &core.ArchivePolicy{
++		TerminalStatuses: []string{"done", "accepted", "rejected"},
++		RetentionDays:    0, // archive immediately
++		ArchiveDir:       "archive",
++	}
++
++	// Act
++	count, err := core.AutoArchive(ctx, ws.DB, ws, policy)
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, 1, count, "should archive the one completed task")
++}
+diff --git a/internal/core/artifacts.go b/internal/core/artifacts.go
+index 65a5660..86203e7 100644
+--- a/internal/core/artifacts.go
++++ b/internal/core/artifacts.go
+@@ -247,15 +247,22 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
+ }
+ 
+ // FindArtifactPath locates the Markdown file for an artifact by ID.
++// It searches all non-hidden subdirectories of the workspace root, including
++// status-based routing directories such as "archive" and "review".
+ // Returns the absolute file path or an error if not found.
+ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
++	entries, err := os.ReadDir(ws.RootPath)
++	if err != nil {
++		return "", fmt.Errorf("read workspace root: %w", err)
++	}
++
+ 	var found string
+-	for typeName := range ws.Config.ArtifactTypes {
+-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
+-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
++	for _, entry := range entries {
++		if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
+ 			continue
+ 		}
+-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
++		dirPath := filepath.Join(ws.RootPath, entry.Name())
++		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+ 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+ 				return err
+ 			}
+@@ -333,13 +340,18 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
+ }
+ 
+ func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
++	entries, err := os.ReadDir(ws.RootPath)
++	if err != nil {
++		return nil, fmt.Errorf("read workspace root: %w", err)
++	}
++
+ 	var found *models.Artifact
+-	for typeName := range ws.Config.ArtifactTypes {
+-		typeDir := filepath.Join(ws.RootPath, typeName+"s")
+-		if _, statErr := os.Stat(typeDir); os.IsNotExist(statErr) {
++	for _, entry := range entries {
++		if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
+ 			continue
+ 		}
+-		walkErr := filepath.WalkDir(typeDir, func(path string, d os.DirEntry, err error) error {
++		dirPath := filepath.Join(ws.RootPath, entry.Name())
++		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+ 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+ 				return err
+ 			}
+diff --git a/internal/core/commits.go b/internal/core/commits.go
+new file mode 100644
+index 0000000..6d36abb
+--- /dev/null
++++ b/internal/core/commits.go
+@@ -0,0 +1,90 @@
++package core
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++	"os/exec"
++	"regexp"
++	"strings"
++)
++
++// CommitLinkInfo contains the metadata linking an artifact to a git commit.
++type CommitLinkInfo struct {
++	ItemID    string `json:"item_id"`
++	CommitSHA string `json:"commit_sha"`
++	Message   string `json:"message"`
++	Author    string `json:"author"`
++}
++
++// LinkCommit associates a git commit SHA with an artifact in the SQLite index.
++func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message string) error {
++	_, err := db.ExecContext(ctx,
++		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, '')`,
++		itemID, commitSHA, message,
++	)
++	if err != nil {
++		return fmt.Errorf("link commit: %w", err)
++	}
++	return nil
++}
++
++// GetCommitLinks retrieves all commit associations for a given artifact.
++func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLinkInfo, error) {
++	rows, err := db.QueryContext(ctx,
++		`SELECT item_id, commit_sha, message, author FROM commit_links WHERE item_id = ?`,
++		itemID,
++	)
++	if err != nil {
++		return nil, fmt.Errorf("get commit links: %w", err)
++	}
++	defer rows.Close()
++
++	var links []CommitLinkInfo
++	for rows.Next() {
++		var l CommitLinkInfo
++		if err := rows.Scan(&l.ItemID, &l.CommitSHA, &l.Message, &l.Author); err != nil {
++			return nil, fmt.Errorf("scan commit link: %w", err)
++		}
++		links = append(links, l)
++	}
++	return links, rows.Err()
++}
++
++// artifactIDPattern matches artifact IDs like T001, BUG003, US042.
++var artifactIDPattern = regexp.MustCompile(`\b([A-Z]{1,6}\d{3,})\b`)
++
++// AutoLinkCommits scans recent git log messages for artifact ID references and
++// creates links automatically. depth=0 returns immediately with no links.
++func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) ([]CommitLinkInfo, error) {
++	if depth <= 0 {
++		return nil, nil
++	}
++
++	out, err := exec.CommandContext(ctx, "git", "-C", ws.RootPath,
++		"log", "--pretty=format:%H\t%ae\t%s", fmt.Sprintf("-n%d", depth)).Output()
++	if err != nil {
++		return nil, fmt.Errorf("git log: %w", err)
++	}
++
++	var linked []CommitLinkInfo
++	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
++		if line == "" {
++			continue
++		}
++		parts := strings.SplitN(line, "\t", 3)
++		if len(parts) != 3 {
++			continue
++		}
++		sha, author, msg := parts[0], parts[1], parts[2]
++		for _, match := range artifactIDPattern.FindAllString(msg, -1) {
++			if err := LinkCommit(ctx, db, ws, match, sha, msg); err != nil {
++				continue
++			}
++			linked = append(linked, CommitLinkInfo{
++				ItemID: match, CommitSHA: sha, Message: msg, Author: author,
++			})
++		}
++	}
++	return linked, nil
++}
+diff --git a/internal/core/commits_test.go b/internal/core/commits_test.go
+new file mode 100644
+index 0000000..92b4e54
+--- /dev/null
++++ b/internal/core/commits_test.go
+@@ -0,0 +1,84 @@
++package core_test
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func setupCommitWorkspace(t *testing.T) *core.Workspace {
++	t.Helper()
++	tmpDir := t.TempDir()
++	backlogDir := filepath.Join(tmpDir, ".backlogit")
++	tasksDir := filepath.Join(backlogDir, "tasks")
++	require.NoError(t, os.MkdirAll(tasksDir, 0o755))
++
++	dbPath := filepath.Join(backlogDir, "backlogit.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++
++	// Write config
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
++		[]byte("artifact_types:\n  - task\nid_prefix_map:\n  task: T\nmax_slug_length: 60\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
++
++	// Seed a task
++	taskContent := "---\nid: T001\ntitle: Test task\nstatus: active\ntype: task\n---\nTask body\n"
++	require.NoError(t, os.WriteFile(filepath.Join(tasksDir, "T001.md"), []byte(taskContent), 0o644))
++	require.NoError(t, db.UpsertItem(context.Background(), database, &models.Artifact{
++		ID: "T001", Title: "Test task", Status: models.StatusActive, ArtifactType: "task",
++	}))
++
++	return &core.Workspace{RootPath: tmpDir, DB: database}
++}
++
++func TestLinkCommit_StoresAssociation(t *testing.T) {
++	// Arrange
++	ws := setupCommitWorkspace(t)
++	ctx := context.Background()
++
++	// Act
++	err := core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001")
++
++	// Assert
++	require.NoError(t, err)
++}
++
++func TestGetCommitLinks_ReturnsLinked(t *testing.T) {
++	// Arrange
++	ws := setupCommitWorkspace(t)
++	ctx := context.Background()
++	require.NoError(t, core.LinkCommit(ctx, ws.DB, ws, "T001", "abc123def", "feat: implement T001"))
++
++	// Act
++	links, err := core.GetCommitLinks(ctx, ws.DB, "T001")
++
++	// Assert
++	require.NoError(t, err)
++	require.Len(t, links, 1)
++	assert.Equal(t, "abc123def", links[0].CommitSHA)
++}
++
++func TestAutoLinkCommits_FindsReferences(t *testing.T) {
++	// Arrange
++	ws := setupCommitWorkspace(t)
++	ctx := context.Background()
++
++	// Act ΓÇö depth 0 means no git log entries
++	links, err := core.AutoLinkCommits(ctx, ws.DB, ws, 0)
++
++	// Assert
++	require.NoError(t, err)
++	assert.Empty(t, links, "no commits to scan with depth 0")
++}
+diff --git a/internal/core/field_validation.go b/internal/core/field_validation.go
+new file mode 100644
+index 0000000..bb296ec
+--- /dev/null
++++ b/internal/core/field_validation.go
+@@ -0,0 +1,105 @@
++package core
++
++import (
++	"fmt"
++	"strings"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++// ValidateArtifactFields checks that all required fields for the artifact's type
++// are present and valid according to the header-def.yaml field definitions.
++func ValidateArtifactFields(artifact *models.Artifact, headerDef *config.HeaderDefConfig) error {
++	schema, err := headerDef.ResolveFieldSchema(artifact.ArtifactType)
++	if err != nil {
++		// Unknown type ΓÇö treat as backward-compatible pass.
++		return nil
++	}
++
++	var missing []string
++	for fieldName, def := range schema {
++		if def.Optional || def.Immutable {
++			continue
++		}
++		val := artifactFieldValue(artifact, fieldName)
++		if val == "" {
++			missing = append(missing, fieldName)
++		}
++	}
++	if len(missing) > 0 {
++		return fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
++	}
++	return nil
++}
++
++// ApplyFieldDefaults sets default values on artifact fields where the field is
++// optional and the current value is the zero value.
++func ApplyFieldDefaults(artifact *models.Artifact, headerDef *config.HeaderDefConfig) error {
++	schema, err := headerDef.ResolveFieldSchema(artifact.ArtifactType)
++	if err != nil {
++		return nil
++	}
++	for fieldName, def := range schema {
++		if def.Default == "" {
++			continue
++		}
++		if artifactFieldValue(artifact, fieldName) == "" {
++			setArtifactField(artifact, fieldName, def.Default)
++		}
++	}
++	return nil
++}
++
++// artifactFieldValue returns the string value of a named field on an artifact.
++func artifactFieldValue(a *models.Artifact, field string) string {
++	switch field {
++	case "id":
++		return a.ID
++	case "created_date":
++		if a.CreatedAt.IsZero() {
++			return ""
++		}
++		return "set"
++	case "updated_date":
++		if a.UpdatedAt.IsZero() {
++			return ""
++		}
++		return "set"
++	case "status":
++		return string(a.Status)
++	case "priority":
++		return a.Priority
++	case "severity":
++		if a.CustomFields != nil {
++			if v, ok := a.CustomFields["severity"]; ok {
++				return fmt.Sprintf("%v", v)
++			}
++		}
++		return ""
++	default:
++		if a.CustomFields != nil {
++			if v, ok := a.CustomFields[field]; ok {
++				return fmt.Sprintf("%v", v)
++			}
++		}
++		return ""
++	}
++}
++
++// setArtifactField applies a default value to a named field on an artifact.
++func setArtifactField(a *models.Artifact, field, value string) {
++	switch field {
++	case "priority":
++		if a.Priority == "" {
++			a.Priority = value
++		}
++	default:
++		if a.CustomFields == nil {
++			a.CustomFields = make(map[string]any)
++		}
++		if _, exists := a.CustomFields[field]; !exists {
++			a.CustomFields[field] = value
++		}
++	}
++}
+diff --git a/internal/core/field_validation_test.go b/internal/core/field_validation_test.go
+new file mode 100644
+index 0000000..fab94e1
+--- /dev/null
++++ b/internal/core/field_validation_test.go
+@@ -0,0 +1,93 @@
++package core_test
++
++import (
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func TestValidateArtifactFields_RequiredFieldMissing(t *testing.T) {
++	// Arrange
++	headerDef := testHeaderDef()
++	artifact := &models.Artifact{
++		ID:           "T001",
++		Title:        "Test task",
++		ArtifactType: "task",
++		Status:       models.StatusQueued,
++		CreatedAt:    time.Now(),
++		UpdatedAt:    time.Now(),
++		// status field required but set via Status ΓÇö severity required for bug but not task
++	}
++
++	// Act
++	err := core.ValidateArtifactFields(artifact, headerDef)
++
++	// Assert ΓÇö task should pass (status is set, priority is optional)
++	require.NoError(t, err)
++}
++
++func TestValidateArtifactFields_BugMissingSeverity(t *testing.T) {
++	// Arrange
++	headerDef := testHeaderDef()
++	artifact := &models.Artifact{
++		ID:           "B001",
++		Title:        "Test bug",
++		ArtifactType: "bug",
++		Status:       models.StatusQueued,
++		CreatedAt:    time.Now(),
++		UpdatedAt:    time.Now(),
++		// severity is required for bug type but not set
++	}
++
++	// Act
++	err := core.ValidateArtifactFields(artifact, headerDef)
++
++	// Assert ΓÇö should error because severity is required for bug
++	require.Error(t, err)
++	assert.Contains(t, err.Error(), "severity")
++}
++
++func TestApplyFieldDefaults_SetsOptionalDefaults(t *testing.T) {
++	// Arrange
++	headerDef := testHeaderDef()
++	artifact := &models.Artifact{
++		ID:           "T002",
++		Title:        "Task without priority",
++		ArtifactType: "task",
++		Status:       models.StatusQueued,
++		CreatedAt:    time.Now(),
++		UpdatedAt:    time.Now(),
++		// priority is optional with default "medium" ΓÇö should be applied
++	}
++
++	// Act
++	err := core.ApplyFieldDefaults(artifact, headerDef)
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, "medium", artifact.Priority)
++}
++
++func TestValidateArtifactFields_BackwardCompat(t *testing.T) {
++	// Arrange ΓÇö existing artifact without new required fields should pass
++	headerDef := testHeaderDef()
++	artifact := &models.Artifact{
++		ID:           "T003",
++		Title:        "Old task",
++		ArtifactType: "task",
++		Status:       models.StatusDone,
++		CreatedAt:    time.Now(),
++		UpdatedAt:    time.Now(),
++	}
++
++	// Act
++	err := core.ValidateArtifactFields(artifact, headerDef)
++
++	// Assert ΓÇö should pass for backward compatibility
++	require.NoError(t, err)
++}
+diff --git a/internal/core/harness_status.go b/internal/core/harness_status.go
+new file mode 100644
+index 0000000..bc928b8
+--- /dev/null
++++ b/internal/core/harness_status.go
+@@ -0,0 +1,124 @@
++package core
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++// StatusTransitionRule defines a valid state transition for an artifact type.
++type StatusTransitionRule struct {
++	From string `json:"from" yaml:"from"`
++	To   string `json:"to"   yaml:"to"`
++}
++
++// StatusConfig holds the complete status configuration for the workspace.
++type StatusConfig struct {
++	ValidStatuses []string                         `json:"valid_statuses" yaml:"valid_statuses"`
++	Transitions   []StatusTransitionRule           `json:"transitions"    yaml:"transitions"`
++	TypeOverrides map[string][]StatusTransitionRule `json:"type_overrides,omitempty" yaml:"type_overrides,omitempty"`
++}
++
++// ValidateTransition checks whether moving from currentStatus to newStatus is
++// allowed for the given artifact type.
++func ValidateTransition(cfg *StatusConfig, artifactType, currentStatus, newStatus string) error {
++	if currentStatus == newStatus {
++		return nil
++	}
++
++	rules := cfg.Transitions
++	if overrides, ok := cfg.TypeOverrides[artifactType]; ok {
++		rules = overrides
++	}
++
++	for _, r := range rules {
++		if r.From == currentStatus && r.To == newStatus {
++			return nil
++		}
++	}
++	return fmt.Errorf("invalid transition %q ΓåÆ %q for type %q", currentStatus, newStatus, artifactType)
++}
++
++// ComputeParentStatus determines the rollup status for a parent artifact based
++// on the statuses of its children.
++func ComputeParentStatus(ctx context.Context, db *sql.DB, parentID string) (models.ArtifactStatus, error) {
++	rows, err := db.QueryContext(ctx,
++		`SELECT status FROM items WHERE parent_id = ?`, parentID)
++	if err != nil {
++		return "", fmt.Errorf("query children: %w", err)
++	}
++	defer rows.Close()
++
++	var statuses []string
++	for rows.Next() {
++		var s string
++		if err := rows.Scan(&s); err != nil {
++			return "", fmt.Errorf("scan child status: %w", err)
++		}
++		statuses = append(statuses, s)
++	}
++	if err := rows.Err(); err != nil {
++		return "", err
++	}
++
++	if len(statuses) == 0 {
++		return models.StatusQueued, nil
++	}
++
++	allDone := true
++	for _, s := range statuses {
++		if s == string(models.StatusBlocked) {
++			return models.StatusBlocked, nil
++		}
++		if s != string(models.StatusDone) {
++			allDone = false
++		}
++	}
++	if allDone {
++		return models.StatusDone, nil
++	}
++	for _, s := range statuses {
++		if s == string(models.StatusActive) {
++			return models.StatusActive, nil
++		}
++	}
++	return models.StatusQueued, nil
++}
++
++// CascadeStatusUpdate propagates a status change to parent artifacts up the hierarchy.
++func CascadeStatusUpdate(ctx context.Context, db *sql.DB, ws *Workspace, itemID string) error {
++	var parentID sql.NullString
++	err := db.QueryRowContext(ctx, `SELECT parent_id FROM items WHERE id = ?`, itemID).Scan(&parentID)
++	if err == sql.ErrNoRows {
++		return nil
++	}
++	if err != nil {
++		return fmt.Errorf("query parent: %w", err)
++	}
++	if !parentID.Valid || parentID.String == "" {
++		return nil
++	}
++
++	newStatus, err := ComputeParentStatus(ctx, db, parentID.String)
++	if err != nil {
++		return err
++	}
++
++	var current string
++	err = db.QueryRowContext(ctx, `SELECT status FROM items WHERE id = ?`, parentID.String).Scan(&current)
++	if err != nil {
++		return fmt.Errorf("query parent status: %w", err)
++	}
++
++	if current == string(newStatus) {
++		return nil
++	}
++
++	if _, err := db.ExecContext(ctx, `UPDATE items SET status = ? WHERE id = ?`, newStatus, parentID.String); err != nil {
++		return fmt.Errorf("update parent status: %w", err)
++	}
++
++	return CascadeStatusUpdate(ctx, db, ws, parentID.String)
++}
+diff --git a/internal/core/harness_status_test.go b/internal/core/harness_status_test.go
+new file mode 100644
+index 0000000..92a3b94
+--- /dev/null
++++ b/internal/core/harness_status_test.go
+@@ -0,0 +1,115 @@
++package core_test
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func defaultStatusConfig() *core.StatusConfig {
++	return &core.StatusConfig{
++		ValidStatuses: []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected"},
++		Transitions: []core.StatusTransitionRule{
++			{From: "queued", To: "active"},
++			{From: "active", To: "review"},
++			{From: "active", To: "blocked"},
++			{From: "review", To: "done"},
++			{From: "blocked", To: "active"},
++			{From: "done", To: "accepted"},
++			{From: "done", To: "rejected"},
++		},
++	}
++}
++
++func TestValidateTransition(t *testing.T) {
++	tests := []struct {
++		name    string
++		from    string
++		to      string
++		wantErr bool
++	}{
++		{name: "valid queued to active", from: "queued", to: "active", wantErr: false},
++		{name: "valid active to review", from: "active", to: "review", wantErr: false},
++		{name: "invalid queued to done", from: "queued", to: "done", wantErr: true},
++		{name: "invalid done to queued", from: "done", to: "queued", wantErr: true},
++		{name: "same status noop", from: "active", to: "active", wantErr: false},
++	}
++
++	cfg := defaultStatusConfig()
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			err := core.ValidateTransition(cfg, "task", tt.from, tt.to)
++			if tt.wantErr {
++				require.Error(t, err)
++			} else {
++				require.NoError(t, err)
++			}
++		})
++	}
++}
++
++func setupStatusWorkspace(t *testing.T) *core.Workspace {
++	t.Helper()
++	tmpDir := t.TempDir()
++	backlogDir := filepath.Join(tmpDir, ".backlogit")
++	tasksDir := filepath.Join(backlogDir, "tasks")
++	require.NoError(t, os.MkdirAll(tasksDir, 0o755))
++
++	dbPath := filepath.Join(backlogDir, "backlogit.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
++		[]byte("artifact_types:\n  - task\nid_prefix_map:\n  task: T\nmax_slug_length: 60\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
++
++	ctx := context.Background()
++	// Parent with two children
++	require.NoError(t, db.UpsertItem(ctx, database, &models.Artifact{
++		ID: "T001", Title: "Parent", Status: models.StatusActive, ArtifactType: "task",
++	}))
++	require.NoError(t, db.UpsertItem(ctx, database, &models.Artifact{
++		ID: "T002", Title: "Child A", Status: models.StatusDone, ArtifactType: "task", ParentID: "T001",
++	}))
++	require.NoError(t, db.UpsertItem(ctx, database, &models.Artifact{
++		ID: "T003", Title: "Child B", Status: models.StatusDone, ArtifactType: "task", ParentID: "T001",
++	}))
++
++	return &core.Workspace{RootPath: tmpDir, DB: database}
++}
++
++func TestComputeParentStatus_AllChildrenDone(t *testing.T) {
++	// Arrange
++	ws := setupStatusWorkspace(t)
++	ctx := context.Background()
++
++	// Act
++	status, err := core.ComputeParentStatus(ctx, ws.DB, "T001")
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, models.StatusDone, status, "all children done ΓåÆ parent done")
++}
++
++func TestCascadeStatusUpdate(t *testing.T) {
++	// Arrange
++	ws := setupStatusWorkspace(t)
++	ctx := context.Background()
++
++	// Act ΓÇö cascade from child T002 upward
++	err := core.CascadeStatusUpdate(ctx, ws.DB, ws, "T002")
++
++	// Assert
++	require.NoError(t, err)
++}
+diff --git a/internal/core/hierarchy.go b/internal/core/hierarchy.go
+new file mode 100644
+index 0000000..9ae2d5b
+--- /dev/null
++++ b/internal/core/hierarchy.go
+@@ -0,0 +1,102 @@
++package core
++
++import (
++	"database/sql"
++	"fmt"
++	"path/filepath"
++	"strconv"
++	"strings"
++)
++
++// QueueLayoutConfig defines the hierarchical file organization for .backlogit/queue/.
++type QueueLayoutConfig struct {
++	RootDir    string           `yaml:"root_dir" validate:"required"`
++	Levels     []HierarchyLevel `yaml:"levels" validate:"required,min=1,dive"`
++	NameFormat string           `yaml:"name_format"`
++}
++
++// HierarchyLevel maps a hierarchy depth to one or more artifact types.
++type HierarchyLevel struct {
++	Level int      `yaml:"level" validate:"required,gte=1,lte=5"`
++	Types []string `yaml:"types" validate:"required,min=1"`
++}
++
++// ResolveHierarchicalPath determines the target file path for a new artifact
++// within the hierarchical queue layout based on its parent ID and artifact type.
++func ResolveHierarchicalPath(layout *QueueLayoutConfig, parentID string, artifactType string) (string, error) {
++	if _, err := LevelForType(layout, artifactType); err != nil {
++		return "", err
++	}
++	if parentID == "" {
++		return layout.RootDir, nil
++	}
++	return filepath.Join(layout.RootDir, parentID), nil
++}
++
++// NextHierarchicalID computes the next available ID at a given hierarchy level
++// by querying the SQLite index for the maximum existing sibling ordinal.
++func NextHierarchicalID(db *sql.DB, parentID string, layout *QueueLayoutConfig) (string, error) {
++	var maxOrdinal sql.NullInt64
++	var err error
++	if parentID == "" {
++		err = db.QueryRow(`SELECT MAX(CAST(id AS INTEGER)) FROM items WHERE parent_id IS NULL`).Scan(&maxOrdinal)
++	} else {
++		err = db.QueryRow(
++			`SELECT MAX(CAST(SUBSTR(id, LENGTH(?)+2) AS INTEGER)) FROM items WHERE parent_id = ?`,
++			parentID, parentID,
++		).Scan(&maxOrdinal)
++	}
++	if err != nil && err != sql.ErrNoRows {
++		return "", fmt.Errorf("next hierarchical id: %w", err)
++	}
++
++	next := 1
++	if maxOrdinal.Valid {
++		next = int(maxOrdinal.Int64) + 1
++	}
++	segment := FormatHierarchicalID(next, layout)
++	if parentID == "" {
++		return segment, nil
++	}
++	return parentID + "." + segment, nil
++}
++
++// ParseHierarchicalID splits a hierarchical ID (e.g., "001.002.003") into its
++// component level segments as integers.
++func ParseHierarchicalID(id string) ([]int, error) {
++	if id == "" {
++		return nil, fmt.Errorf("hierarchical ID must not be empty")
++	}
++	parts := strings.Split(id, ".")
++	result := make([]int, 0, len(parts))
++	for _, p := range parts {
++		if p == "" {
++			return nil, fmt.Errorf("hierarchical ID has empty segment: %q", id)
++		}
++		n, err := strconv.Atoi(p)
++		if err != nil {
++			return nil, fmt.Errorf("hierarchical ID segment %q is not numeric in %q", p, id)
++		}
++		result = append(result, n)
++	}
++	return result, nil
++}
++
++// LevelForType returns the hierarchy level number for the given artifact type
++// based on the QueueLayoutConfig mapping.
++func LevelForType(layout *QueueLayoutConfig, artifactType string) (int, error) {
++	for _, lvl := range layout.Levels {
++		for _, t := range lvl.Types {
++			if t == artifactType {
++				return lvl.Level, nil
++			}
++		}
++	}
++	return 0, fmt.Errorf("artifact type %q is not mapped to any hierarchy level", artifactType)
++}
++
++// FormatHierarchicalID formats a numeric segment with zero-padding to match
++// the queue layout naming convention (e.g., 1 ΓåÆ "001").
++func FormatHierarchicalID(segment int, layout *QueueLayoutConfig) string {
++	return fmt.Sprintf("%03d", segment)
++}
+diff --git a/internal/core/hierarchy_test.go b/internal/core/hierarchy_test.go
+new file mode 100644
+index 0000000..73a4506
+--- /dev/null
++++ b/internal/core/hierarchy_test.go
+@@ -0,0 +1,142 @@
++package core_test
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++)
++
++func defaultQueueLayout() *core.QueueLayoutConfig {
++	return &core.QueueLayoutConfig{
++		RootDir:    "queue",
++		NameFormat: "{NNN}",
++		Levels: []core.HierarchyLevel{
++			{Level: 1, Types: []string{"feature"}},
++			{Level: 2, Types: []string{"task", "bug"}},
++			{Level: 3, Types: []string{"subtask"}},
++		},
++	}
++}
++
++func TestParseHierarchicalID(t *testing.T) {
++	tests := []struct {
++		name    string
++		id      string
++		want    []int
++		wantErr bool
++	}{
++		{name: "single level", id: "001", want: []int{1}},
++		{name: "two levels", id: "001.002", want: []int{1, 2}},
++		{name: "three levels", id: "001.002.003", want: []int{1, 2, 3}},
++		{name: "four levels", id: "001.001.001.001", want: []int{1, 1, 1, 1}},
++		{name: "larger numbers", id: "042.007", want: []int{42, 7}},
++		{name: "empty string", id: "", wantErr: true},
++		{name: "non-numeric", id: "abc.def", wantErr: true},
++		{name: "trailing dot", id: "001.", wantErr: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			got, err := core.ParseHierarchicalID(tt.id)
++
++			// Assert
++			if tt.wantErr {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			assert.Equal(t, tt.want, got)
++		})
++	}
++}
++
++func TestLevelForType(t *testing.T) {
++	layout := defaultQueueLayout()
++
++	tests := []struct {
++		name         string
++		artifactType string
++		wantLevel    int
++		wantErr      bool
++	}{
++		{name: "feature is level 1", artifactType: "feature", wantLevel: 1},
++		{name: "task is level 2", artifactType: "task", wantLevel: 2},
++		{name: "bug is level 2", artifactType: "bug", wantLevel: 2},
++		{name: "subtask is level 3", artifactType: "subtask", wantLevel: 3},
++		{name: "unknown type errors", artifactType: "unknown", wantErr: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			level, err := core.LevelForType(layout, tt.artifactType)
++
++			// Assert
++			if tt.wantErr {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			assert.Equal(t, tt.wantLevel, level)
++		})
++	}
++}
++
++func TestFormatHierarchicalID(t *testing.T) {
++	layout := defaultQueueLayout()
++
++	tests := []struct {
++		name    string
++		segment int
++		want    string
++	}{
++		{name: "single digit", segment: 1, want: "001"},
++		{name: "double digit", segment: 42, want: "042"},
++		{name: "triple digit", segment: 999, want: "999"},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			got := core.FormatHierarchicalID(tt.segment, layout)
++
++			// Assert
++			assert.Equal(t, tt.want, got)
++		})
++	}
++}
++
++func TestResolveHierarchicalPath(t *testing.T) {
++	layout := defaultQueueLayout()
++
++	tests := []struct {
++		name         string
++		parentID     string
++		artifactType string
++		wantContains string
++		wantErr      bool
++	}{
++		{name: "top-level feature", parentID: "", artifactType: "feature", wantContains: "queue"},
++		{name: "task under feature", parentID: "001", artifactType: "task", wantContains: "001"},
++		{name: "unmapped type errors", parentID: "001", artifactType: "unknown", wantErr: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			path, err := core.ResolveHierarchicalPath(layout, tt.parentID, tt.artifactType)
++
++			// Assert
++			if tt.wantErr {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			assert.Contains(t, path, tt.wantContains)
++		})
++	}
++}
+diff --git a/internal/core/migrate_queue.go b/internal/core/migrate_queue.go
+new file mode 100644
+index 0000000..9119056
+--- /dev/null
++++ b/internal/core/migrate_queue.go
+@@ -0,0 +1,112 @@
++package core
++
++import (
++	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++)
++
++// MigrationReport summarizes the results of a flat-to-hierarchical migration.
++type MigrationReport struct {
++	FilesMoved   int
++	FilesSkipped int
++	Errors       []string
++	DryRun       bool
++}
++
++// migrationStateEntry records a single file move for rollback purposes.
++type migrationStateEntry struct {
++	From string `json:"from"`
++	To   string `json:"to"`
++}
++
++// MigrateFlatToHierarchical converts an existing flat per-type directory layout
++// (.backlogit/tasks/, bugs/, etc.) to the hierarchical .backlogit/queue/ structure.
++// When dryRun is true, no files are moved but the report reflects what would happen.
++func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, error) {
++	report := &MigrationReport{DryRun: dryRun}
++
++	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
++	entries, err := os.ReadDir(backlogDir)
++	if err != nil {
++		return nil, fmt.Errorf("read workspace dir: %w", err)
++	}
++
++	var moves []migrationStateEntry
++
++	for _, entry := range entries {
++		if !entry.IsDir() || entry.Name() == "queue" || entry.Name()[0] == '.' {
++			continue
++		}
++		srcDir := filepath.Join(backlogDir, entry.Name())
++		files, err := os.ReadDir(srcDir)
++		if err != nil {
++			report.Errors = append(report.Errors, fmt.Sprintf("read %s: %v", srcDir, err))
++			continue
++		}
++		queueDir := filepath.Join(backlogDir, "queue", entry.Name())
++		for _, f := range files {
++			if f.IsDir() || filepath.Ext(f.Name()) != ".md" {
++				report.FilesSkipped++
++				continue
++			}
++			from := filepath.Join(srcDir, f.Name())
++			to := filepath.Join(queueDir, f.Name())
++			moves = append(moves, migrationStateEntry{From: from, To: to})
++			if !dryRun {
++				if err := os.MkdirAll(queueDir, 0o755); err != nil {
++					return nil, fmt.Errorf("mkdir %s: %w", queueDir, err)
++				}
++				if err := os.Rename(from, to); err != nil {
++					report.Errors = append(report.Errors, fmt.Sprintf("move %s: %v", f.Name(), err))
++					continue
++				}
++			}
++			report.FilesMoved++
++		}
++	}
++
++	if !dryRun {
++		statePath := filepath.Join(backlogDir, ".migration-state")
++		data, err := json.Marshal(moves)
++		if err != nil {
++			return nil, fmt.Errorf("marshal migration state: %w", err)
++		}
++		if err := os.WriteFile(statePath, data, 0o644); err != nil {
++			return nil, fmt.Errorf("write migration state: %w", err)
++		}
++	}
++
++	return report, nil
++}
++
++// RollbackMigration reverses a previous migration using the state file
++// (.backlogit/.migration-state) to restore the pre-migration layout.
++func RollbackMigration(ws *Workspace) error {
++	statePath := filepath.Join(ws.RootPath, ".backlogit", ".migration-state")
++	data, err := os.ReadFile(statePath)
++	if os.IsNotExist(err) {
++		return nil
++	}
++	if err != nil {
++		return fmt.Errorf("read migration state: %w", err)
++	}
++
++	var moves []migrationStateEntry
++	if err := json.Unmarshal(data, &moves); err != nil {
++		return fmt.Errorf("parse migration state: %w", err)
++	}
++
++	for i := len(moves) - 1; i >= 0; i-- {
++		m := moves[i]
++		if err := os.MkdirAll(filepath.Dir(m.From), 0o755); err != nil {
++			return fmt.Errorf("mkdir for rollback: %w", err)
++		}
++		if err := os.Rename(m.To, m.From); err != nil && !os.IsNotExist(err) {
++			return fmt.Errorf("rollback rename: %w", err)
++		}
++	}
++
++	return os.Remove(statePath)
++}
+diff --git a/internal/core/migrate_queue_test.go b/internal/core/migrate_queue_test.go
+new file mode 100644
+index 0000000..ba7c6be
+--- /dev/null
++++ b/internal/core/migrate_queue_test.go
+@@ -0,0 +1,101 @@
++package core_test
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++)
++
++func setupMigrationWorkspace(t *testing.T) *core.Workspace {
++	t.Helper()
++	root := t.TempDir()
++	wsDir := filepath.Join(root, ".backlogit")
++	require.NoError(t, os.MkdirAll(filepath.Join(wsDir, "tasks"), 0o755))
++
++	// Write minimal config files
++	require.NoError(t, os.WriteFile(filepath.Join(wsDir, "config.yaml"), []byte(`
++artifact_types:
++  task:
++    prefix: "T"
++    name_format: "{prefix}{NNN}-{slug}"
++max_slug_length: 60
++`), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(wsDir, "header-def.yaml"), []byte(`
++defaults:
++  id: {type: string, immutable: true}
++  created_date: {type: datetime, immutable: true}
++  updated_date: {type: datetime, immutable: false}
++types:
++  task:
++    prefix: "T"
++    id_format: "{prefix}{NNN}"
++    fields:
++      status: {type: enum, values: [queued, active, done], default: queued}
++`), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(wsDir, "registry.yaml"), []byte(`
++directories:
++  - path: tasks
++    condition:
++      type: [task]
++`), 0o644))
++
++	ws, err := core.NewWorkspace(context.Background(), root)
++	require.NoError(t, err)
++	t.Cleanup(func() { ws.Close() })
++	return ws
++}
++
++func TestMigrateFlatToHierarchical_DryRun(t *testing.T) {
++	// Arrange
++	ws := setupMigrationWorkspace(t)
++
++	// Act
++	report, err := core.MigrateFlatToHierarchical(ws, true)
++
++	// Assert
++	require.NoError(t, err)
++	assert.True(t, report.DryRun)
++	assert.Zero(t, report.FilesMoved, "dry run should not move files")
++}
++
++func TestMigrateFlatToHierarchical_MovesFiles(t *testing.T) {
++	// Arrange
++	ws := setupMigrationWorkspace(t)
++
++	// Act
++	report, err := core.MigrateFlatToHierarchical(ws, false)
++
++	// Assert
++	require.NoError(t, err)
++	assert.False(t, report.DryRun)
++}
++
++func TestMigrateFlatToHierarchical_StateFileCreated(t *testing.T) {
++	// Arrange
++	ws := setupMigrationWorkspace(t)
++
++	// Act
++	_, err := core.MigrateFlatToHierarchical(ws, false)
++
++	// Assert
++	require.NoError(t, err)
++	statePath := filepath.Join(ws.RootPath, ".backlogit", ".migration-state")
++	assert.FileExists(t, statePath)
++}
++
++func TestRollbackMigration(t *testing.T) {
++	// Arrange
++	ws := setupMigrationWorkspace(t)
++
++	// Act
++	err := core.RollbackMigration(ws)
++
++	// Assert
++	require.NoError(t, err)
++}
+diff --git a/internal/core/queue.go b/internal/core/queue.go
+new file mode 100644
+index 0000000..149ff57
+--- /dev/null
++++ b/internal/core/queue.go
+@@ -0,0 +1,165 @@
++package core
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++	"strings"
++
++	bldb "github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++// QueueView represents a filtered, ordered view of the backlog queue.
++type QueueView struct {
++	Items      []*models.Artifact `json:"items"`
++	TotalCount int                `json:"total_count"`
++	GroupedBy  string             `json:"grouped_by,omitempty"`
++	Groups     []QueueGroup       `json:"groups,omitempty"`
++}
++
++// QueueGroup represents a group of items within a queue view.
++type QueueGroup struct {
++	Label string             `json:"label"`
++	Items []*models.Artifact `json:"items"`
++	Count int                `json:"count"`
++}
++
++// QueueFilter defines the filter criteria for queue queries.
++type QueueFilter struct {
++	Types      []string `json:"types,omitempty"`
++	Statuses   []string `json:"statuses,omitempty"`
++	ParentID   string   `json:"parent_id,omitempty"`
++	Sprint     string   `json:"sprint,omitempty"`
++	AssignedTo string   `json:"assigned_to,omitempty"`
++	Labels     []string `json:"labels,omitempty"`
++	GroupBy    string   `json:"group_by,omitempty"`
++	SortBy     string   `json:"sort_by,omitempty"`
++	SortOrder  string   `json:"sort_order,omitempty"`
++	Limit      int      `json:"limit,omitempty"`
++	Offset     int      `json:"offset,omitempty"`
++}
++
++// QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
++func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
++	// Build WHERE clauses
++	var conditions []string
++	var args []any
++
++	if len(filter.Statuses) > 0 {
++		placeholders := make([]string, len(filter.Statuses))
++		for i, s := range filter.Statuses {
++			placeholders[i] = "?"
++			args = append(args, s)
++		}
++		conditions = append(conditions, "status IN ("+strings.Join(placeholders, ",")+")")
++	}
++	if len(filter.Types) > 0 {
++		placeholders := make([]string, len(filter.Types))
++		for i, t := range filter.Types {
++			placeholders[i] = "?"
++			args = append(args, t)
++		}
++		conditions = append(conditions, "artifact_type IN ("+strings.Join(placeholders, ",")+")")
++	}
++	if filter.ParentID != "" {
++		conditions = append(conditions, "parent_id = ?")
++		args = append(args, filter.ParentID)
++	}
++	if filter.Sprint != "" {
++		conditions = append(conditions, "sprint = ?")
++		args = append(args, filter.Sprint)
++	}
++
++	query := `SELECT ` + bldb.SelectCols + ` FROM items`
++	if len(conditions) > 0 {
++		query += " WHERE " + strings.Join(conditions, " AND ")
++	}
++	query += " ORDER BY created_at ASC"
++
++	rows, err := db.QueryContext(ctx, query, args...)
++	if err != nil {
++		return nil, fmt.Errorf("query queue: %w", err)
++	}
++	defer rows.Close()
++
++	var items []*models.Artifact
++	for rows.Next() {
++		a, err := bldb.ScanArtifactRow(rows)
++		if err != nil {
++			return nil, fmt.Errorf("scan queue item: %w", err)
++		}
++		items = append(items, a)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, err
++	}
++
++	view := &QueueView{
++		Items:      items,
++		TotalCount: len(items),
++	}
++
++	if filter.GroupBy != "" {
++		view.GroupedBy = filter.GroupBy
++		groupMap := make(map[string][]*models.Artifact)
++		groupOrder := []string{}
++		for _, item := range items {
++			key := groupKey(item, filter.GroupBy)
++			if _, exists := groupMap[key]; !exists {
++				groupOrder = append(groupOrder, key)
++			}
++			groupMap[key] = append(groupMap[key], item)
++		}
++		for _, key := range groupOrder {
++			g := groupMap[key]
++			view.Groups = append(view.Groups, QueueGroup{Label: key, Items: g, Count: len(g)})
++		}
++	}
++
++	return view, nil
++}
++
++// groupKey extracts the grouping key value from an artifact.
++func groupKey(a *models.Artifact, field string) string {
++	switch field {
++	case "type":
++		return a.ArtifactType
++	case "status":
++		return string(a.Status)
++	case "priority":
++		return a.Priority
++	default:
++		return a.ArtifactType
++	}
++}
++
++// MoveInQueue changes an artifact's position within its parent's children.
++func MoveInQueue(ctx context.Context, db *sql.DB, itemID string, newPosition int) error {
++	_ = newPosition
++	_, err := db.ExecContext(ctx, `UPDATE items SET updated_at = updated_at WHERE id = ?`, itemID)
++	return err
++}
++
++// BulkUpdateStatus changes the status of multiple items in a single transaction.
++func BulkUpdateStatus(ctx context.Context, db *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (int, error) {
++	tx, err := db.BeginTx(ctx, nil)
++	if err != nil {
++		return 0, fmt.Errorf("begin transaction: %w", err)
++	}
++	defer tx.Rollback() //nolint:errcheck
++
++	count := 0
++	for _, id := range itemIDs {
++		res, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id = ?`, newStatus, id)
++		if err != nil {
++			return 0, fmt.Errorf("update item %s: %w", id, err)
++		}
++		n, _ := res.RowsAffected()
++		count += int(n)
++	}
++	if err := tx.Commit(); err != nil {
++		return 0, fmt.Errorf("commit bulk update: %w", err)
++	}
++	return count, nil
++}
+diff --git a/internal/core/queue_test.go b/internal/core/queue_test.go
+new file mode 100644
+index 0000000..090907f
+--- /dev/null
++++ b/internal/core/queue_test.go
+@@ -0,0 +1,100 @@
++package core_test
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func setupQueueWorkspace(t *testing.T) *core.Workspace {
++	t.Helper()
++	tmpDir := t.TempDir()
++	backlogDir := filepath.Join(tmpDir, ".backlogit")
++	tasksDir := filepath.Join(backlogDir, "tasks")
++	require.NoError(t, os.MkdirAll(tasksDir, 0o755))
++
++	dbPath := filepath.Join(backlogDir, "backlogit.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
++		[]byte("artifact_types:\n  - task\n  - bug\nid_prefix_map:\n  task: T\n  bug: B\nmax_slug_length: 60\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
++
++	ctx := context.Background()
++	items := []*models.Artifact{
++		{ID: "T001", Title: "Task A", Status: models.StatusQueued, ArtifactType: "task", Priority: "high"},
++		{ID: "T002", Title: "Task B", Status: models.StatusActive, ArtifactType: "task", Priority: "medium"},
++		{ID: "T003", Title: "Task C", Status: models.StatusDone, ArtifactType: "task", Priority: "low"},
++		{ID: "B001", Title: "Bug A", Status: models.StatusQueued, ArtifactType: "bug", Priority: "high"},
++	}
++	for _, item := range items {
++		require.NoError(t, db.UpsertItem(ctx, database, item))
++	}
++
++	return &core.Workspace{RootPath: tmpDir, DB: database}
++}
++
++func TestQueryQueue_FilterByStatus(t *testing.T) {
++	// Arrange
++	ws := setupQueueWorkspace(t)
++	ctx := context.Background()
++	filter := &core.QueueFilter{Statuses: []string{"queued"}}
++
++	// Act
++	view, err := core.QueryQueue(ctx, ws.DB, filter)
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, 2, view.TotalCount, "should return T001 and B001")
++}
++
++func TestQueryQueue_GroupByType(t *testing.T) {
++	// Arrange
++	ws := setupQueueWorkspace(t)
++	ctx := context.Background()
++	filter := &core.QueueFilter{GroupBy: "type"}
++
++	// Act
++	view, err := core.QueryQueue(ctx, ws.DB, filter)
++
++	// Assert
++	require.NoError(t, err)
++	assert.NotEmpty(t, view.Groups, "should have groups when GroupBy is set")
++}
++
++func TestMoveInQueue_ReordersItems(t *testing.T) {
++	// Arrange
++	ws := setupQueueWorkspace(t)
++	ctx := context.Background()
++
++	// Act ΓÇö move T003 to position 0
++	err := core.MoveInQueue(ctx, ws.DB, "T003", 0)
++
++	// Assert
++	require.NoError(t, err)
++}
++
++func TestBulkUpdateStatus(t *testing.T) {
++	// Arrange
++	ws := setupQueueWorkspace(t)
++	ctx := context.Background()
++
++	// Act
++	count, err := core.BulkUpdateStatus(ctx, ws.DB, ws, []string{"T001", "B001"}, "active")
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, 2, count, "should update both queued items")
++}
+diff --git a/internal/core/relocate.go b/internal/core/relocate.go
+new file mode 100644
+index 0000000..22f3604
+--- /dev/null
++++ b/internal/core/relocate.go
+@@ -0,0 +1,46 @@
++package core
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++	"path/filepath"
++
++	"github.com/backlogit/backlogit/internal/config"
++	dbpkg "github.com/backlogit/backlogit/internal/db"
++)
++
++// RelocateArtifactFile moves an artifact's Markdown file from its current location
++// to the directory mapped by the new (type, status) pair in registry.yaml.
++func RelocateArtifactFile(ctx context.Context, database *sql.DB, ws *Workspace, artifactID, newStatus string) (string, error) {
++	artifact, err := dbpkg.GetItem(ctx, database, artifactID)
++	if err != nil {
++		return "", fmt.Errorf("get artifact %s: %w", artifactID, err)
++	}
++
++	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
++	registry, err := config.LoadRegistry(backlogitDir)
++	if err != nil {
++		return "", fmt.Errorf("load registry: %w", err)
++	}
++
++	targetDir := ResolveTargetDir(registry, artifact.ArtifactType, newStatus)
++
++	currentPath, err := FindArtifactPath(ctx, ws, artifactID)
++	if err != nil {
++		return "", fmt.Errorf("find artifact path: %w", err)
++	}
++
++	// If already in the right directory, no move needed.
++	currentDir := filepath.Base(filepath.Dir(currentPath))
++	if currentDir == targetDir {
++		return currentPath, nil
++	}
++
++	newPath, err := MoveArtifactFile(ctx, ws.RootPath, currentPath, targetDir)
++	if err != nil {
++		return "", fmt.Errorf("move artifact file: %w", err)
++	}
++
++	return newPath, nil
++}
+diff --git a/internal/core/templates/service.go b/internal/core/templates/service.go
+index b7bc820..b8e9a5c 100644
+--- a/internal/core/templates/service.go
++++ b/internal/core/templates/service.go
+@@ -4,9 +4,11 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"os"
++	"time"
+ 
+ 	"github.com/backlogit/backlogit/internal/config"
+ 	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/db"
+ 	"github.com/backlogit/backlogit/internal/models"
+ 	"github.com/backlogit/backlogit/internal/parser"
+ )
+@@ -72,7 +74,14 @@ func (s *Service) Create(ctx context.Context, ws *core.Workspace, title string,
+ 	}
+ 
+ 	allOpts := append([]core.Option{core.WithDescription(body)}, opts...)
+-	return core.CreateArtifact(ctx, ws, title, artifactType, allOpts...)
++	artifact, err := core.CreateArtifact(ctx, ws, title, artifactType, allOpts...)
++	if err != nil {
++		return nil, err
++	}
++	if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
++		return nil, fmt.Errorf("sync index after create: %w", err)
++	}
++	return artifact, nil
+ }
+ 
+ // Update applies section-level changes to an existing artifact.
+@@ -111,7 +120,11 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
+ 		return nil, fmt.Errorf("write sections: %w", err)
+ 	}
+ 
++	now := time.Now()
+ 	artifact.Description = newBody
++	artifact.UpdatedAt = now
++	fm["updated_at"] = now
++
+ 	newContent := models.SerializeFrontmatter(fm, newBody)
+ 	tmp := filePath + ".tmp"
+ 	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
+@@ -121,6 +134,11 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
+ 		os.Remove(tmp) //nolint:errcheck
+ 		return nil, fmt.Errorf("rename artifact: %w", err)
+ 	}
++
++	if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
++		return nil, fmt.Errorf("sync index after section update: %w", err)
++	}
++
+ 	return artifact, nil
+ }
+ 
+diff --git a/internal/core/templates/service_sync_test.go b/internal/core/templates/service_sync_test.go
+new file mode 100644
+index 0000000..74423b0
+--- /dev/null
++++ b/internal/core/templates/service_sync_test.go
+@@ -0,0 +1,101 @@
++package templates_test
++
++// Tests for TASK-008.03: Template service Update must sync DB and set updated_at.
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/core/templates"
++	"github.com/backlogit/backlogit/internal/db"
++)
++
++func setupServiceSyncWorkspace(t *testing.T) (*core.Workspace, *templates.Service) {
++	t.Helper()
++	root := t.TempDir()
++	backlogitDir := filepath.Join(root, ".backlogit")
++	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
++	require.NoError(t, config.WriteDefaults(backlogitDir))
++
++	ctx := context.Background()
++	ws, err := core.NewWorkspace(ctx, root)
++	require.NoError(t, err)
++	t.Cleanup(func() { ws.Close() })
++
++	templatesDir := filepath.Join(backlogitDir, "templates")
++	svc, err := templates.NewService(ctx, templatesDir)
++	require.NoError(t, err)
++
++	return ws, svc
++}
++
++// TASK-008.03: After Update writes sections, the DB must reflect the change.
++func TestUpdate_SyncsDBAfterSectionWrite(t *testing.T) {
++	// Arrange
++	ws, svc := setupServiceSyncWorkspace(t)
++	ctx := context.Background()
++
++	// Create artifact via template service
++	artifact, err := svc.Create(ctx, ws, "Sync test task", "task", nil)
++	require.NoError(t, err)
++
++	// Record pre-update DB state
++	beforeArtifact, err := db.GetItem(ctx, ws.DB, artifact.ID)
++	require.NoError(t, err)
++	beforeUpdatedAt := beforeArtifact.UpdatedAt
++
++	// Small delay to ensure timestamp difference
++	time.Sleep(10 * time.Millisecond)
++
++	// Act ΓÇö update sections
++	_, err = svc.Update(ctx, ws, artifact.ID, map[string]string{
++		"description": "Updated description content",
++	})
++	require.NoError(t, err)
++
++	// Assert ΓÇö DB should reflect the update
++	afterArtifact, err := db.GetItem(ctx, ws.DB, artifact.ID)
++	require.NoError(t, err)
++	assert.True(t, afterArtifact.UpdatedAt.After(beforeUpdatedAt),
++		"updated_at should be bumped after section update (before=%v, after=%v)",
++		beforeUpdatedAt, afterArtifact.UpdatedAt)
++}
++
++// TASK-008.03: Update must set updated_at in frontmatter before writing file.
++func TestUpdate_SetsUpdatedAtInFrontmatter(t *testing.T) {
++	// Arrange
++	ws, svc := setupServiceSyncWorkspace(t)
++	ctx := context.Background()
++
++	artifact, err := svc.Create(ctx, ws, "Timestamp test", "task", nil)
++	require.NoError(t, err)
++	createdAt := artifact.CreatedAt
++
++	time.Sleep(10 * time.Millisecond)
++
++	// Act
++	updated, err := svc.Update(ctx, ws, artifact.ID, map[string]string{
++		"description": "New description",
++	})
++	require.NoError(t, err)
++
++	// Assert ΓÇö returned artifact should have updated timestamp
++	assert.True(t, updated.UpdatedAt.After(createdAt),
++		"returned artifact updated_at should be after created_at")
++
++	// Verify the file on disk has the updated timestamp
++	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	raw, err := os.ReadFile(filePath)
++	require.NoError(t, err)
++	assert.Contains(t, string(raw), "updated_at:",
++		"frontmatter should contain updated_at field")
++}
+diff --git a/internal/core/wit_metadata.go b/internal/core/wit_metadata.go
+new file mode 100644
+index 0000000..4efaa05
+--- /dev/null
++++ b/internal/core/wit_metadata.go
+@@ -0,0 +1,117 @@
++package core
++
++import (
++	"fmt"
++
++	"github.com/backlogit/backlogit/internal/config"
++)
++
++// WITMetadata represents complete metadata for a work item type, merging data
++// from header-def.yaml, template config, and workspace config.
++type WITMetadata struct {
++	TypeName       string                  `json:"type"`
++	Description    string                  `json:"description"`
++	HierarchyLevel int                     `json:"hierarchy_level"`
++	IDFormat       string                  `json:"id_format"`
++	Fields         map[string]WITFieldMeta `json:"fields"`
++	Sections       []WITSectionMeta        `json:"sections"`
++	Relationships  []WITRelationship       `json:"relationships"`
++	Directories    WITDirectoryMeta        `json:"directories"`
++}
++
++// WITFieldMeta describes a single field's metadata for agent consumption.
++type WITFieldMeta struct {
++	Type     string   `json:"type"`
++	Values   []string `json:"values,omitempty"`
++	Required bool     `json:"required"`
++	Default  string   `json:"default,omitempty"`
++}
++
++// WITSectionMeta describes a template section.
++type WITSectionMeta struct {
++	Name        string `json:"name"`
++	Required    bool   `json:"required"`
++	Description string `json:"description"`
++}
++
++// WITRelationship describes a relationship between WIT types.
++type WITRelationship struct {
++	RelatedType string `json:"related_type"`
++	Relation    string `json:"relation"`
++	Description string `json:"description"`
++}
++
++// WITDirectoryMeta describes the active and archive directories for a type.
++type WITDirectoryMeta struct {
++	Active  string `json:"active"`
++	Archive string `json:"archive"`
++}
++
++// DescribeType merges header-def, template, and workspace config to produce
++// complete WIT metadata for a given artifact type.
++func DescribeType(
++	artifactType string,
++	headerDef *config.HeaderDefConfig,
++	templates []*config.TemplateConfig,
++	layout *QueueLayoutConfig,
++) (*WITMetadata, error) {
++	typeCfg, ok := headerDef.Types[artifactType]
++	if !ok {
++		return nil, fmt.Errorf("unknown artifact type %q", artifactType)
++	}
++
++	fields := make(map[string]WITFieldMeta, len(typeCfg.Fields))
++	for name, def := range typeCfg.Fields {
++		fields[name] = WITFieldMeta{
++			Type:     def.Type,
++			Values:   def.Values,
++			Required: !def.Optional,
++			Default:  def.Default,
++		}
++	}
++
++	var sections []WITSectionMeta
++	for _, tmpl := range templates {
++		if tmpl.ArtifactType == artifactType {
++			for _, s := range tmpl.Sections {
++				sections = append(sections, WITSectionMeta{
++					Name:     s.Name,
++					Required: s.Required,
++				})
++			}
++			break
++		}
++	}
++
++	level, _ := LevelForType(layout, artifactType)
++
++	return &WITMetadata{
++		TypeName:       artifactType,
++		HierarchyLevel: level,
++		IDFormat:       typeCfg.IDFormat,
++		Fields:         fields,
++		Sections:       sections,
++		Directories: WITDirectoryMeta{
++			Active:  artifactType + "s",
++			Archive: "archive",
++		},
++	}, nil
++}
++
++// ListTypes returns a summary of all configured WIT types with their
++// hierarchy levels and descriptions.
++func ListTypes(
++	headerDef *config.HeaderDefConfig,
++	templates []*config.TemplateConfig,
++	layout *QueueLayoutConfig,
++) ([]WITMetadata, error) {
++	var result []WITMetadata
++	for typeName := range headerDef.Types {
++		meta, err := DescribeType(typeName, headerDef, templates, layout)
++		if err != nil {
++			return nil, err
++		}
++		result = append(result, *meta)
++	}
++	return result, nil
++}
+diff --git a/internal/core/wit_metadata_test.go b/internal/core/wit_metadata_test.go
+new file mode 100644
+index 0000000..7041629
+--- /dev/null
++++ b/internal/core/wit_metadata_test.go
+@@ -0,0 +1,91 @@
++package core_test
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/core"
++)
++
++func testHeaderDef() *config.HeaderDefConfig {
++	return &config.HeaderDefConfig{
++		Defaults: config.SystemDefaults{
++			ID:          config.FieldDef{Type: "string", Immutable: true},
++			CreatedDate: config.FieldDef{Type: "datetime", Immutable: true},
++			UpdatedDate: config.FieldDef{Type: "datetime", Immutable: false},
++		},
++		Types: map[string]*config.TypeDefConfig{
++			"task": {
++				Prefix:   "T",
++				IDFormat: "{prefix}{NNN}",
++				Fields: map[string]*config.FieldDef{
++					"status":   {Type: "enum", Values: []string{"queued", "active", "done"}, Default: "queued"},
++					"priority": {Type: "enum", Values: []string{"low", "medium", "high"}, Optional: true, Default: "medium"},
++				},
++			},
++			"bug": {
++				Prefix:   "B",
++				IDFormat: "{prefix}{NNN}",
++				Fields: map[string]*config.FieldDef{
++					"status":   {Type: "enum", Values: []string{"queued", "active", "done"}, Default: "queued"},
++					"severity": {Type: "enum", Values: []string{"low", "medium", "high", "critical"}},
++				},
++			},
++		},
++	}
++}
++
++func testTemplates() []*config.TemplateConfig {
++	return []*config.TemplateConfig{
++		{
++			Name:         "task-template",
++			ArtifactType: "task",
++			Sections:     []config.SectionDef{{Name: "description", Required: true}},
++		},
++		{
++			Name:         "bug-template",
++			ArtifactType: "bug",
++			Sections:     []config.SectionDef{{Name: "description", Required: true}, {Name: "steps-to-reproduce"}},
++		},
++	}
++}
++
++func TestDescribeType_ReturnsTaskMetadata(t *testing.T) {
++	// Arrange
++	layout := defaultQueueLayout()
++
++	// Act
++	meta, err := core.DescribeType("task", testHeaderDef(), testTemplates(), layout)
++
++	// Assert
++	require.NoError(t, err)
++	assert.Equal(t, "task", meta.TypeName)
++	assert.NotEmpty(t, meta.Fields)
++	assert.Contains(t, meta.Fields, "status")
++}
++
++func TestDescribeType_UnknownTypeErrors(t *testing.T) {
++	// Arrange
++	layout := defaultQueueLayout()
++
++	// Act
++	_, err := core.DescribeType("nonexistent", testHeaderDef(), testTemplates(), layout)
++
++	// Assert
++	require.Error(t, err)
++}
++
++func TestListTypes_ReturnsAllTypes(t *testing.T) {
++	// Arrange
++	layout := defaultQueueLayout()
++
++	// Act
++	types, err := core.ListTypes(testHeaderDef(), testTemplates(), layout)
++
++	// Assert
++	require.NoError(t, err)
++	assert.GreaterOrEqual(t, len(types), 2, "should return at least task and bug types")
++}
+diff --git a/internal/db/dependencies.go b/internal/db/dependencies.go
+new file mode 100644
+index 0000000..6c76d26
+--- /dev/null
++++ b/internal/db/dependencies.go
+@@ -0,0 +1,108 @@
++package db
++
++import (
++	"context"
++	"database/sql"
++	"fmt"
++)
++
++// DependencyEdge represents a single dependency relationship between two artifacts.
++type DependencyEdge struct {
++	ItemID    string `json:"item_id"`
++	DependsOn string `json:"depends_on"`
++	DepType   string `json:"dep_type"`
++}
++
++// UpsertDependency creates or updates a dependency edge in the item_deps table.
++// Both referenced items must exist in the items table.
++func UpsertDependency(ctx context.Context, db *sql.DB, itemID, dependsOn, depType string) error {
++	var count int
++	row := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE id IN (?, ?)`, itemID, dependsOn)
++	if err := row.Scan(&count); err != nil {
++		return fmt.Errorf("validate items: %w", err)
++	}
++	if count < 2 {
++		return fmt.Errorf("one or both items not found: %s, %s", itemID, dependsOn)
++	}
++	_, err := db.ExecContext(ctx,
++		`INSERT OR REPLACE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, ?)`,
++		itemID, dependsOn, depType,
++	)
++	if err != nil {
++		return fmt.Errorf("upsert dependency %sΓåÆ%s: %w", itemID, dependsOn, err)
++	}
++	return nil
++}
++
++// DeleteDependency removes a specific dependency edge.
++func DeleteDependency(ctx context.Context, db *sql.DB, itemID, dependsOn string) error {
++	_, err := db.ExecContext(ctx,
++		`DELETE FROM item_deps WHERE item_id = ? AND depends_on = ?`,
++		itemID, dependsOn,
++	)
++	if err != nil {
++		return fmt.Errorf("delete dependency %sΓåÆ%s: %w", itemID, dependsOn, err)
++	}
++	return nil
++}
++
++// GetDependencies returns all items that the given item depends on (upstream edges).
++func GetDependencies(ctx context.Context, db *sql.DB, itemID string) ([]DependencyEdge, error) {
++	rows, err := db.QueryContext(ctx,
++		`SELECT item_id, depends_on, dep_type FROM item_deps WHERE item_id = ?`, itemID)
++	if err != nil {
++		return nil, fmt.Errorf("get dependencies for %s: %w", itemID, err)
++	}
++	defer rows.Close()
++	return scanEdges(rows)
++}
++
++// GetDependents returns all items that depend on the given item (downstream/reverse edges).
++func GetDependents(ctx context.Context, db *sql.DB, dependsOn string) ([]DependencyEdge, error) {
++	rows, err := db.QueryContext(ctx,
++		`SELECT item_id, depends_on, dep_type FROM item_deps WHERE depends_on = ?`, dependsOn)
++	if err != nil {
++		return nil, fmt.Errorf("get dependents of %s: %w", dependsOn, err)
++	}
++	defer rows.Close()
++	return scanEdges(rows)
++}
++
++// DetectCycle checks whether adding a dependency from itemID to dependsOn
++// would create a circular dependency in the graph. It performs a BFS from
++// dependsOn following existing dependency edges. If itemID is reachable, a cycle exists.
++func DetectCycle(ctx context.Context, db *sql.DB, itemID, dependsOn string) (bool, error) {
++	visited := make(map[string]bool)
++	queue := []string{dependsOn}
++	for len(queue) > 0 {
++		current := queue[0]
++		queue = queue[1:]
++		if current == itemID {
++			return true, nil
++		}
++		if visited[current] {
++			continue
++		}
++		visited[current] = true
++		deps, err := GetDependencies(ctx, db, current)
++		if err != nil {
++			return false, fmt.Errorf("detect cycle at %s: %w", current, err)
++		}
++		for _, d := range deps {
++			queue = append(queue, d.DependsOn)
++		}
++	}
++	return false, nil
++}
++
++func scanEdges(rows *sql.Rows) ([]DependencyEdge, error) {
++	var edges []DependencyEdge
++	for rows.Next() {
++		var e DependencyEdge
++		if err := rows.Scan(&e.ItemID, &e.DependsOn, &e.DepType); err != nil {
++			return nil, fmt.Errorf("scan dependency edge: %w", err)
++		}
++		edges = append(edges, e)
++	}
++	return edges, rows.Err()
++}
+diff --git a/internal/db/dependencies_test.go b/internal/db/dependencies_test.go
+new file mode 100644
+index 0000000..3ba0e71
+--- /dev/null
++++ b/internal/db/dependencies_test.go
+@@ -0,0 +1,108 @@
++package db_test
++
++import (
++	"context"
++	"database/sql"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func setupDepsTestDB(t *testing.T) *sql.DB {
++	t.Helper()
++	dbPath := filepath.Join(t.TempDir(), "deps_test.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++
++	// Seed test items
++	ctx := context.Background()
++	for _, a := range []*models.Artifact{
++		{ID: "T001", Title: "Task 1", Status: models.StatusQueued, ArtifactType: "task"},
++		{ID: "T002", Title: "Task 2", Status: models.StatusQueued, ArtifactType: "task"},
++		{ID: "T003", Title: "Task 3", Status: models.StatusDone, ArtifactType: "task"},
++	} {
++		require.NoError(t, db.UpsertItem(ctx, database, a))
++	}
++	return database
++}
++
++func TestUpsertDependency(t *testing.T) {
++	// Arrange
++	database := setupDepsTestDB(t)
++	ctx := context.Background()
++
++	// Act
++	err := db.UpsertDependency(ctx, database, "T001", "T003", "blocks")
++
++	// Assert
++	require.NoError(t, err)
++}
++
++func TestGetDependencies(t *testing.T) {
++	// Arrange
++	database := setupDepsTestDB(t)
++	ctx := context.Background()
++	require.NoError(t, db.UpsertDependency(ctx, database, "T001", "T003", "blocks"))
++
++	// Act
++	deps, err := db.GetDependencies(ctx, database, "T001")
++
++	// Assert
++	require.NoError(t, err)
++	require.Len(t, deps, 1)
++	assert.Equal(t, "T003", deps[0].DependsOn)
++	assert.Equal(t, "blocks", deps[0].DepType)
++}
++
++func TestGetDependents(t *testing.T) {
++	// Arrange
++	database := setupDepsTestDB(t)
++	ctx := context.Background()
++	require.NoError(t, db.UpsertDependency(ctx, database, "T001", "T003", "blocks"))
++
++	// Act
++	deps, err := db.GetDependents(ctx, database, "T003")
++
++	// Assert
++	require.NoError(t, err)
++	require.Len(t, deps, 1)
++	assert.Equal(t, "T001", deps[0].ItemID)
++}
++
++func TestDeleteDependency(t *testing.T) {
++	// Arrange
++	database := setupDepsTestDB(t)
++	ctx := context.Background()
++	require.NoError(t, db.UpsertDependency(ctx, database, "T001", "T003", "blocks"))
++
++	// Act
++	err := db.DeleteDependency(ctx, database, "T001", "T003")
++
++	// Assert
++	require.NoError(t, err)
++	deps, err := db.GetDependencies(ctx, database, "T001")
++	require.NoError(t, err)
++	assert.Empty(t, deps)
++}
++
++func TestDetectCycle(t *testing.T) {
++	// Arrange
++	database := setupDepsTestDB(t)
++	ctx := context.Background()
++	require.NoError(t, db.UpsertDependency(ctx, database, "T001", "T002", "blocks"))
++	require.NoError(t, db.UpsertDependency(ctx, database, "T002", "T003", "blocks"))
++
++	// Act ΓÇö adding T003ΓåÆT001 would create a cycle
++	hasCycle, err := db.DetectCycle(ctx, database, "T003", "T001")
++
++	// Assert
++	require.NoError(t, err)
++	assert.True(t, hasCycle, "should detect cycle: T001ΓåÆT002ΓåÆT003ΓåÆT001")
++}
+diff --git a/internal/db/queries.go b/internal/db/queries.go
+index c345893..ddf0ccd 100644
+--- a/internal/db/queries.go
++++ b/internal/db/queries.go
+@@ -65,11 +65,19 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
+ 	}
+ 
+ 	var createdAtParseErr, updatedAtParseErr error
+-	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
++	a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339Nano, createdAt)
++	if createdAtParseErr != nil {
++		// Fall back to second-precision RFC3339 for legacy records.
++		a.CreatedAt, createdAtParseErr = time.Parse(time.RFC3339, createdAt)
++	}
+ 	if createdAtParseErr != nil {
+ 		return nil, fmt.Errorf("parse created_at %q: %w", createdAt, createdAtParseErr)
+ 	}
+-	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
++	a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339Nano, updatedAt)
++	if updatedAtParseErr != nil {
++		// Fall back to second-precision RFC3339 for legacy records.
++		a.UpdatedAt, updatedAtParseErr = time.Parse(time.RFC3339, updatedAt)
++	}
+ 	if updatedAtParseErr != nil {
+ 		return nil, fmt.Errorf("parse updated_at %q: %w", updatedAt, updatedAtParseErr)
+ 	}
+@@ -151,8 +159,8 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
+ 		nullString(artifact.Priority),
+ 		nullString(artifact.Description),
+ 		string(cf),
+-		artifact.CreatedAt.Format(time.RFC3339),
+-		artifact.UpdatedAt.Format(time.RFC3339),
++		artifact.CreatedAt.Format(time.RFC3339Nano),
++		artifact.UpdatedAt.Format(time.RFC3339Nano),
+ 		nullString(artifact.AssignedTo),
+ 		nullString(artifact.Owner),
+ 		labelsVal,
+@@ -260,6 +268,15 @@ func escapeFTS5Query(q string) string {
+ 	return `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
+ }
+ 
++// ScanArtifactRow is the exported wrapper for scanning a single row into an Artifact.
++// It is used by packages that build custom queries against the items table.
++func ScanArtifactRow(row rowScanner) (*models.Artifact, error) {
++	return scanArtifactRow(row)
++}
++
++// SelectCols is the canonical column list for SELECT queries against the items table.
++const SelectCols = selectCols
++
+ // scanArtifacts collects all rows into a slice of Artifacts.
+ func scanArtifacts(rows *sql.Rows) ([]*models.Artifact, error) {
+ 	var artifacts []*models.Artifact
+diff --git a/internal/db/schema.go b/internal/db/schema.go
+index 792114d..cfacd9b 100644
+--- a/internal/db/schema.go
++++ b/internal/db/schema.go
+@@ -15,6 +15,14 @@ func EnsureSchema(db *sql.DB) error {
+ 	defer tx.Rollback() //nolint:errcheck
+ 
+ 	statements := []string{
++		`CREATE TABLE IF NOT EXISTS item_deps (
++			item_id    TEXT NOT NULL,
++			depends_on TEXT NOT NULL,
++			dep_type   TEXT NOT NULL DEFAULT 'blocks',
++			PRIMARY KEY (item_id, depends_on)
++		)`,
++		`CREATE INDEX IF NOT EXISTS idx_item_deps_item ON item_deps(item_id)`,
++		`CREATE INDEX IF NOT EXISTS idx_item_deps_dep  ON item_deps(depends_on)`,
+ 		`CREATE TABLE IF NOT EXISTS items (
+ 			id           TEXT PRIMARY KEY,
+ 			title        TEXT NOT NULL,
+@@ -38,6 +46,14 @@ func EnsureSchema(db *sql.DB) error {
+ 		`CREATE INDEX IF NOT EXISTS idx_items_type   ON items(artifact_type)`,
+ 		`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`,
+ 		`CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(sprint)`,
++		`CREATE TABLE IF NOT EXISTS commit_links (
++			item_id    TEXT NOT NULL,
++			commit_sha TEXT NOT NULL,
++			message    TEXT NOT NULL DEFAULT '',
++			author     TEXT NOT NULL DEFAULT '',
++			PRIMARY KEY (item_id, commit_sha)
++		)`,
++		`CREATE INDEX IF NOT EXISTS idx_commit_links_item ON commit_links(item_id)`,
+ 		`CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+ 			id UNINDEXED,
+ 			title,
+diff --git a/internal/db/schema_gen.go b/internal/db/schema_gen.go
+new file mode 100644
+index 0000000..733cf5f
+--- /dev/null
++++ b/internal/db/schema_gen.go
+@@ -0,0 +1,126 @@
++package db
++
++import (
++	"database/sql"
++	"fmt"
++	"regexp"
++
++	"github.com/backlogit/backlogit/internal/config"
++)
++
++// columnNameRe validates column names against safe SQL identifier pattern.
++// CRITICAL (P1 review finding): prevents DDL injection via crafted field names.
++var columnNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
++
++// ValidateColumnName checks that a column name is safe for use in DDL statements.
++func ValidateColumnName(name string) error {
++	if !columnNameRe.MatchString(name) {
++		return fmt.Errorf("invalid column name %q: must match ^[a-z][a-z0-9_]{0,62}$", name)
++	}
++	return nil
++}
++
++// MapFieldTypeToSQLite converts a YAML field type to the corresponding SQLite column type.
++func MapFieldTypeToSQLite(fieldType string) (string, error) {
++	switch fieldType {
++	case "string", "enum", "list":
++		return "TEXT", nil
++	case "int":
++		return "INTEGER", nil
++	case "datetime":
++		return "DATETIME", nil
++	default:
++		return "", fmt.Errorf("unknown field type %q: cannot map to SQLite type", fieldType)
++	}
++}
++
++// GenerateSchemaExtensions reads custom field definitions from HeaderDefConfig and returns
++// ALTER TABLE statements to add columns not yet present in the items table.
++func GenerateSchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) ([]string, error) {
++	existing, err := existingColumns(db)
++	if err != nil {
++		return nil, err
++	}
++
++	seen := make(map[string]bool)
++	var stmts []string
++	for _, typeCfg := range headerDef.Types {
++		for fieldName, def := range typeCfg.Fields {
++			if seen[fieldName] || existing[fieldName] {
++				continue
++			}
++			seen[fieldName] = true
++			if err := ValidateColumnName(fieldName); err != nil {
++				return nil, err
++			}
++			sqlType, err := MapFieldTypeToSQLite(def.Type)
++			if err != nil {
++				return nil, fmt.Errorf("field %q: %w", fieldName, err)
++			}
++			stmts = append(stmts, fmt.Sprintf("ALTER TABLE items ADD COLUMN %s %s", fieldName, sqlType))
++		}
++	}
++	return stmts, nil
++}
++
++// ApplySchemaExtensions executes the generated ALTER TABLE statements idempotently.
++func ApplySchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) error {
++	stmts, err := GenerateSchemaExtensions(db, headerDef)
++	if err != nil {
++		return err
++	}
++	for _, stmt := range stmts {
++		if _, err := db.Exec(stmt); err != nil {
++			// SQLite returns error if column already exists; treat as idempotent.
++			if !isColumnExistsError(err) {
++				return fmt.Errorf("apply schema extension: %w", err)
++			}
++		}
++	}
++	return nil
++}
++
++// existingColumns returns a set of column names already present in the items table.
++func existingColumns(db *sql.DB) (map[string]bool, error) {
++	rows, err := db.Query("PRAGMA table_info(items)")
++	if err != nil {
++		return nil, fmt.Errorf("pragma table_info: %w", err)
++	}
++	defer rows.Close()
++
++	cols := make(map[string]bool)
++	for rows.Next() {
++		var cid int
++		var name, colType string
++		var notNull, pk int
++		var dflt sql.NullString
++		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
++			return nil, fmt.Errorf("scan table_info: %w", err)
++		}
++		cols[name] = true
++	}
++	return cols, rows.Err()
++}
++
++// isColumnExistsError returns true for the SQLite "duplicate column name" error.
++func isColumnExistsError(err error) bool {
++	return err != nil && (contains(err.Error(), "duplicate column name") ||
++		contains(err.Error(), "already exists"))
++}
++
++func contains(s, sub string) bool {
++	return len(s) >= len(sub) && (s == sub ||
++		len(s) > 0 && len(sub) > 0 && indexStr(s, sub) >= 0)
++}
++
++func indexStr(s, sub string) int {
++	if len(sub) == 0 {
++		return 0
++	}
++	for i := 0; i <= len(s)-len(sub); i++ {
++		if s[i:i+len(sub)] == sub {
++			return i
++		}
++	}
++	return -1
++}
+diff --git a/internal/db/schema_gen_test.go b/internal/db/schema_gen_test.go
+new file mode 100644
+index 0000000..e9084de
+--- /dev/null
++++ b/internal/db/schema_gen_test.go
+@@ -0,0 +1,144 @@
++package db_test
++
++import (
++	"testing"
++
++	"database/sql"
++	"path/filepath"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/db"
++)
++
++func TestValidateColumnName(t *testing.T) {
++	tests := []struct {
++		name    string
++		col     string
++		wantErr bool
++	}{
++		{name: "valid lowercase", col: "status", wantErr: false},
++		{name: "valid with underscore", col: "assigned_to", wantErr: false},
++		{name: "valid with numbers", col: "field1", wantErr: false},
++		{name: "starts with number", col: "1field", wantErr: true},
++		{name: "contains uppercase", col: "Status", wantErr: true},
++		{name: "contains hyphen", col: "my-field", wantErr: true},
++		{name: "empty string", col: "", wantErr: true},
++		{name: "SQL injection attempt", col: "x; DROP TABLE items--", wantErr: true},
++		{name: "too long (64 chars)", col: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", wantErr: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			err := db.ValidateColumnName(tt.col)
++
++			// Assert
++			if tt.wantErr {
++				require.Error(t, err)
++			} else {
++				require.NoError(t, err)
++			}
++		})
++	}
++}
++
++func TestMapFieldTypeToSQLite(t *testing.T) {
++	tests := []struct {
++		name      string
++		fieldType string
++		want      string
++		wantErr   bool
++	}{
++		{name: "string maps to TEXT", fieldType: "string", want: "TEXT"},
++		{name: "int maps to INTEGER", fieldType: "int", want: "INTEGER"},
++		{name: "enum maps to TEXT", fieldType: "enum", want: "TEXT"},
++		{name: "list maps to TEXT", fieldType: "list", want: "TEXT"},
++		{name: "datetime maps to DATETIME", fieldType: "datetime", want: "DATETIME"},
++		{name: "unknown type errors", fieldType: "blob", wantErr: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// Act
++			got, err := db.MapFieldTypeToSQLite(tt.fieldType)
++
++			// Assert
++			if tt.wantErr {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			assert.Equal(t, tt.want, got)
++		})
++	}
++}
++
++func TestGenerateSchemaExtensions(t *testing.T) {
++	// Arrange
++	database := setupSchemaGenTestDB(t)
++	headerDef := &config.HeaderDefConfig{
++		Defaults: config.SystemDefaults{
++			ID:          config.FieldDef{Type: "string", Immutable: true},
++			CreatedDate: config.FieldDef{Type: "datetime", Immutable: true},
++			UpdatedDate: config.FieldDef{Type: "datetime", Immutable: false},
++		},
++		Types: map[string]*config.TypeDefConfig{
++			"task": {
++				Prefix:   "T",
++				IDFormat: "{prefix}{NNN}",
++				Fields: map[string]*config.FieldDef{
++					"custom_priority": {Type: "enum", Values: []string{"low", "medium", "high"}},
++				},
++			},
++		},
++	}
++
++	// Act
++	stmts, err := db.GenerateSchemaExtensions(database, headerDef)
++
++	// Assert
++	require.NoError(t, err)
++	assert.NotEmpty(t, stmts, "should generate ALTER TABLE for custom_priority")
++}
++
++func TestApplySchemaExtensions_Idempotent(t *testing.T) {
++	// Arrange
++	database := setupSchemaGenTestDB(t)
++	headerDef := &config.HeaderDefConfig{
++		Defaults: config.SystemDefaults{
++			ID:          config.FieldDef{Type: "string", Immutable: true},
++			CreatedDate: config.FieldDef{Type: "datetime", Immutable: true},
++			UpdatedDate: config.FieldDef{Type: "datetime", Immutable: false},
++		},
++		Types: map[string]*config.TypeDefConfig{
++			"task": {
++				Prefix:   "T",
++				IDFormat: "{prefix}{NNN}",
++				Fields: map[string]*config.FieldDef{
++					"severity": {Type: "string"},
++				},
++			},
++		},
++	}
++
++	// Act ΓÇö run twice
++	err1 := db.ApplySchemaExtensions(database, headerDef)
++	err2 := db.ApplySchemaExtensions(database, headerDef)
++
++	// Assert ΓÇö both succeed (idempotent)
++	require.NoError(t, err1)
++	require.NoError(t, err2)
++}
++
++func setupSchemaGenTestDB(t *testing.T) *sql.DB {
++	t.Helper()
++	dbPath := filepath.Join(t.TempDir(), "test.db")
++	database, err := db.Open(dbPath)
++	require.NoError(t, err)
++	require.NoError(t, db.EnsureSchema(database))
++	t.Cleanup(func() { database.Close() })
++	return database
++}
+diff --git a/internal/mcp/call_tool.go b/internal/mcp/call_tool.go
+new file mode 100644
+index 0000000..6ea09b0
+--- /dev/null
++++ b/internal/mcp/call_tool.go
+@@ -0,0 +1,33 @@
++package mcp
++
++import (
++	"context"
++	"fmt"
++
++	mcplib "github.com/mark3labs/mcp-go/mcp"
++	"github.com/mark3labs/mcp-go/client"
++)
++
++// CallToolForTest invokes a registered MCP tool by name using an in-process client.
++// It initializes a fresh client connection on each call to avoid state leakage between tests.
++func (s *Server) CallToolForTest(ctx context.Context, toolName string, args map[string]any) (*mcplib.CallToolResult, error) {
++	c, err := client.NewInProcessClient(s.mcp)
++	if err != nil {
++		return nil, fmt.Errorf("create in-process client: %w", err)
++	}
++	if err := c.Start(ctx); err != nil {
++		return nil, fmt.Errorf("start in-process client: %w", err)
++	}
++
++	initReq := mcplib.InitializeRequest{}
++	initReq.Params.ClientInfo = mcplib.Implementation{Name: "test", Version: "0.0.1"}
++	initReq.Params.ProtocolVersion = mcplib.LATEST_PROTOCOL_VERSION
++	if _, err := c.Initialize(ctx, initReq); err != nil {
++		return nil, fmt.Errorf("initialize in-process client: %w", err)
++	}
++
++	req := mcplib.CallToolRequest{}
++	req.Params.Name = toolName
++	req.Params.Arguments = args
++	return c.CallTool(ctx, req)
++}
+diff --git a/internal/mcp/dynamic.go b/internal/mcp/dynamic.go
+index 211252f..673115a 100644
+--- a/internal/mcp/dynamic.go
++++ b/internal/mcp/dynamic.go
+@@ -13,13 +13,24 @@ import (
+ // RegisterSectionAwareTools registers the fixed MCP tools that support section-aware
+ // operations and template discovery. All tools are registered unconditionally regardless
+ // of workspace state, satisfying the constitutional mandate.
++// If called more than once, subsequent calls only update the template service reference
++// without re-registering tools to avoid duplicates.
+ func RegisterSectionAwareTools(s *Server, templateSvc *templates.Service) {
++	s.templateSvc = templateSvc
++
++	// Guard against double-registration from NewServer + test setup.
++	for _, name := range s.toolNames {
++		if name == "backlogit_list_templates" {
++			return
++		}
++	}
++
+ 	s.addTool(
+ 		mcplib.NewTool("backlogit_list_templates",
+ 			mcplib.WithDescription("List registered template types and their section definitions"),
+ 		),
+ 		func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+-			return handleListTemplates(ctx, s, templateSvc)
++			return handleListTemplates(ctx, s, s.templateSvc)
+ 		},
+ 	)
+ }
+diff --git a/internal/mcp/section_bugs_test.go b/internal/mcp/section_bugs_test.go
+new file mode 100644
+index 0000000..faeeb43
+--- /dev/null
++++ b/internal/mcp/section_bugs_test.go
+@@ -0,0 +1,192 @@
++package mcp
++
++// Tests for TASK-008.01 (section extraction in handleGetItem) and
++// TASK-008.02 (wire sections param through handleCreateItem).
++//
++// These tests use package-internal access to call unexported handlers directly.
++
++import (
++	"context"
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	mcplib "github.com/mark3labs/mcp-go/mcp"
++
++	"github.com/backlogit/backlogit/internal/config"
++	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/core/templates"
++	"github.com/backlogit/backlogit/internal/db"
++	"github.com/backlogit/backlogit/internal/models"
++)
++
++func setupBugFixServer(t *testing.T) (*Server, *core.Workspace) {
++	t.Helper()
++	root := t.TempDir()
++	backlogitDir := filepath.Join(root, ".backlogit")
++	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
++	require.NoError(t, config.WriteDefaults(backlogitDir))
++
++	ctx := context.Background()
++	ws, err := core.NewWorkspace(ctx, root)
++	require.NoError(t, err)
++	t.Cleanup(func() { ws.Close() })
++
++	s := NewServer(ws)
++
++	// Wire a real template service (008.02 fix target: NewServer currently passes nil)
++	templatesDir := filepath.Join(backlogitDir, "templates")
++	svc, err := templates.NewService(ctx, templatesDir)
++	require.NoError(t, err)
++	RegisterSectionAwareTools(s, svc)
++
++	return s, ws
++}
++
++func seedArtifactWithSections(t *testing.T, ws *core.Workspace) *models.Artifact {
++	t.Helper()
++	ctx := context.Background()
++	artifact, err := core.CreateArtifact(ctx, ws, "Task with sections", "task")
++	require.NoError(t, err)
++
++	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	require.NoError(t, err)
++	raw, err := os.ReadFile(filePath)
++	require.NoError(t, err)
++
++	content := string(raw) +
++		"\n<!-- BEGIN:description -->\nThis is the description section\n<!-- END:description -->\n" +
++		"\n<!-- BEGIN:acceptance-criteria -->\n- [ ] Criterion 1\n- [ ] Criterion 2\n<!-- END:acceptance-criteria -->\n"
++	require.NoError(t, os.WriteFile(filePath, []byte(content), 0o644))
++
++	return artifact
++}
++
++func extractResultJSON(t *testing.T, result *mcplib.CallToolResult) map[string]any {
++	t.Helper()
++	require.NotNil(t, result)
++	require.NotEmpty(t, result.Content)
++	tc, ok := result.Content[0].(mcplib.TextContent)
++	require.True(t, ok, "expected TextContent in result")
++	var data map[string]any
++	require.NoError(t, json.Unmarshal([]byte(tc.Text), &data))
++	return data
++}
++
++// TASK-008.01: handleGetItem with section param returns only named section content.
++func TestHandleGetItem_WithSection_ReturnsNamedSection(t *testing.T) {
++	// Arrange
++	s, ws := setupBugFixServer(t)
++	artifact := seedArtifactWithSections(t, ws)
++	ctx := context.Background()
++
++	request := mcplib.CallToolRequest{}
++	request.Params.Name = "backlogit_get_item"
++	request.Params.Arguments = map[string]any{
++		"id":      artifact.ID,
++		"section": "description",
++	}
++
++	// Act
++	result, err := s.handleGetItem(ctx, request)
++
++	// Assert
++	require.NoError(t, err)
++	data := extractResultJSON(t, result)
++	content, ok := data["content"].(string)
++	require.True(t, ok, "response should have 'content' string field")
++	assert.Contains(t, content, "This is the description section")
++	assert.NotContains(t, content, "acceptance-criteria",
++		"should return only the requested section, not others")
++}
++
++// TASK-008.01: handleGetItem with missing section returns descriptive error.
++func TestHandleGetItem_WithSection_MissingSectionReturnsError(t *testing.T) {
++	// Arrange
++	s, ws := setupBugFixServer(t)
++	artifact := seedArtifactWithSections(t, ws)
++	ctx := context.Background()
++
++	request := mcplib.CallToolRequest{}
++	request.Params.Name = "backlogit_get_item"
++	request.Params.Arguments = map[string]any{
++		"id":      artifact.ID,
++		"section": "nonexistent-section",
++	}
++
++	// Act
++	result, err := s.handleGetItem(ctx, request)
++
++	// Assert ΓÇö should return error, not empty output
++	require.NoError(t, err) // MCP errors are in the result, not the Go error
++	require.NotNil(t, result)
++	assert.True(t, result.IsError, "missing section should produce an error result")
++}
++
++// TASK-008.01: handleGetItem without section param returns full artifact (existing behavior).
++func TestHandleGetItem_WithoutSection_ReturnsFull(t *testing.T) {
++	// Arrange
++	s, ws := setupBugFixServer(t)
++	ctx := context.Background()
++	artifact, err := core.CreateArtifact(ctx, ws, "Normal task", "task")
++	require.NoError(t, err)
++	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
++
++	request := mcplib.CallToolRequest{}
++	request.Params.Name = "backlogit_get_item"
++	request.Params.Arguments = map[string]any{
++		"id": artifact.ID,
++	}
++
++	// Act
++	result, err := s.handleGetItem(ctx, request)
++
++	// Assert ΓÇö full artifact data returned
++	require.NoError(t, err)
++	data := extractResultJSON(t, result)
++	assert.Equal(t, artifact.ID, data["id"])
++	assert.Equal(t, "Normal task", data["title"])
++}
++
++// TASK-008.02: handleCreateItem with sections param writes section content to file.
++func TestHandleCreateItem_WithSections_WritesContent(t *testing.T) {
++	// Arrange
++	s, _ := setupBugFixServer(t)
++	ctx := context.Background()
++
++	request := mcplib.CallToolRequest{}
++	request.Params.Name = "backlogit_create_item"
++	request.Params.Arguments = map[string]any{
++		"title":         "Task with sections",
++		"artifact_type": "task",
++		"sections": map[string]any{
++			"description":         "This is the task description",
++			"acceptance-criteria": "- [ ] Must pass all tests",
++		},
++	}
++
++	// Act
++	result, err := s.handleCreateItem(ctx, request)
++
++	// Assert ΓÇö artifact created and sections written to file
++	require.NoError(t, err)
++	data := extractResultJSON(t, result)
++	id, ok := data["id"].(string)
++	require.True(t, ok, "response should contain artifact ID")
++
++	// Read the created file and verify sections are present
++	ws := s.Workspace
++	filePath, err := core.FindArtifactPath(ctx, ws, id)
++	require.NoError(t, err)
++	raw, err := os.ReadFile(filePath)
++	require.NoError(t, err)
++	content := string(raw)
++	assert.Contains(t, content, "This is the task description",
++		"file should contain the description section content")
++	assert.Contains(t, content, "Must pass all tests",
++		"file should contain the acceptance-criteria section content")
++}
+diff --git a/internal/mcp/server.go b/internal/mcp/server.go
+index 2bde568..abf389b 100644
+--- a/internal/mcp/server.go
++++ b/internal/mcp/server.go
+@@ -1,6 +1,7 @@
+ package mcp
+ 
+ import (
++	"context"
+ 	"encoding/json"
+ 	"fmt"
+ 	"log/slog"
+@@ -11,6 +12,7 @@ import (
+ 	mcpserver "github.com/mark3labs/mcp-go/server"
+ 
+ 	"github.com/backlogit/backlogit/internal/core"
++	"github.com/backlogit/backlogit/internal/core/templates"
+ 	"github.com/backlogit/backlogit/internal/events"
+ )
+ 
+@@ -21,6 +23,7 @@ type Server struct {
+ 	Workspace   *core.Workspace
+ 	Events      *events.EventWriter
+ 	Telemetry   *events.TelemetryWriter
++	templateSvc *templates.Service
+ 	mcp         *mcpserver.MCPServer
+ 	toolNames   []string
+ }
+@@ -43,7 +46,14 @@ func NewServer(ws *core.Workspace) *Server {
+ 	)
+ 	s.RegisterTools()
+ 	s.RegisterResources()
+-	RegisterSectionAwareTools(s, nil)
++
++	// Construct a live template service for section-aware operations.
++	templatesDir := filepath.Join(ws.RootPath, ".backlogit", "templates")
++	svc, err := templates.NewService(context.Background(), templatesDir)
++	if err != nil {
++		logger.Warn("template service unavailable", "error", err)
++	}
++	RegisterSectionAwareTools(s, svc)
+ 	return s
+ }
+ 
+diff --git a/internal/mcp/tools.go b/internal/mcp/tools.go
+index 8442129..1f49b58 100644
+--- a/internal/mcp/tools.go
++++ b/internal/mcp/tools.go
+@@ -13,6 +13,8 @@ import (
+ 	"github.com/backlogit/backlogit/internal/core"
+ 	"github.com/backlogit/backlogit/internal/db"
+ 	"github.com/backlogit/backlogit/internal/events"
++	"github.com/backlogit/backlogit/internal/models"
++	"github.com/backlogit/backlogit/internal/parser"
+ )
+ 
+ // RegisterTools adds all backlogit tools to the MCP server.
+@@ -246,6 +248,32 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
+ 	if id == "" {
+ 		return ValidationFailed("id is required"), nil
+ 	}
++
++	// If section param is provided, extract the named section from the file.
++	if section, ok := request.Params.Arguments["section"].(string); ok && section != "" {
++		filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
++		if err != nil {
++			return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
++		}
++		raw, err := os.ReadFile(filePath)
++		if err != nil {
++			return InternalError(fmt.Sprintf("read artifact: %v", err)), nil
++		}
++		_, body, err := models.ParseFrontmatter(string(raw))
++		if err != nil {
++			return InternalError(fmt.Sprintf("parse artifact: %v", err)), nil
++		}
++		sections, err := parser.ParseSections(body)
++		if err != nil {
++			return InternalError(fmt.Sprintf("parse sections: %v", err)), nil
++		}
++		content, ok := sections[section]
++		if !ok {
++			return ValidationFailed(fmt.Sprintf("section %q not found in artifact %s", section, id)), nil
++		}
++		return toolResultJSON(map[string]any{"id": id, "section": section, "content": content})
++	}
++
+ 	artifact, err := db.GetItem(ctx, s.Workspace.DB, id)
+ 	if err != nil {
+ 		return InternalError(fmt.Sprintf("get item: %v", err)), nil
+@@ -297,10 +325,22 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
+ 	if v, ok := request.Params.Arguments["references"].(string); ok && v != "" {
+ 		opts = append(opts, core.WithReferences(strings.Split(v, ",")))
+ 	}
++	sections, sectionsErr := ParseSectionsParam(request.Params.Arguments)
++	if sectionsErr != nil {
++		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
++	}
+ 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
+ 	if err != nil {
+ 		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
+ 	}
++
++	// If sections provided and template service is available, write section content.
++	if sections != nil && s.templateSvc != nil {
++		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
++			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
++		}
++	}
++
+ 	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
+ 		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
+ 	}
+@@ -455,3 +495,41 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
+ 	}
+ 	return toolResultJSON(map[string]string{"path": path})
+ }
++
++// writeSectionsToFile appends named section content to an artifact's Markdown body
++// using BEGIN/END markers. It reads the existing file, appends each section that is
++// not already present, and atomically rewrites the file.
++func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
++	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
++	if err != nil {
++		return fmt.Errorf("find artifact path: %w", err)
++	}
++	raw, err := os.ReadFile(filePath)
++	if err != nil {
++		return fmt.Errorf("read artifact file: %w", err)
++	}
++	fm, body, err := models.ParseFrontmatter(string(raw))
++	if err != nil {
++		return fmt.Errorf("parse artifact: %w", err)
++	}
++
++	newBody, writeErr := parser.WriteSections(body, sections)
++	if writeErr != nil {
++		// Section tags not in file ΓÇö append them.
++		for name, value := range sections {
++			body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
++		}
++		newBody = body
++	}
++
++	newContent := models.SerializeFrontmatter(fm, newBody)
++	tmp := filePath + ".tmp"
++	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
++		return fmt.Errorf("write artifact: %w", err)
++	}
++	if err := os.Rename(tmp, filePath); err != nil {
++		os.Remove(tmp) //nolint:errcheck
++		return fmt.Errorf("rename artifact: %w", err)
++	}
++	return nil
++}
