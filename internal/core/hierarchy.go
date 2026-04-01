@@ -30,11 +30,17 @@ func ResolveHierarchicalPath(layout *config.QueueLayoutConfig, parentID string, 
 
 // NextHierarchicalID computes the next available ID at a given hierarchy level
 // by querying the SQLite index for the maximum existing sibling ordinal.
+// Root-level IDs must be purely numeric segments (e.g., "001", "002"); items
+// with non-numeric IDs such as legacy prefix IDs ("T001", "BUG-3") are excluded
+// from the ordinal computation.
 func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutConfig) (string, error) {
 	var maxOrdinal sql.NullInt64
 	var err error
 	if parentID == "" {
-		err = db.QueryRow(`SELECT MAX(CAST(id AS INTEGER)) FROM items WHERE parent_id IS NULL`).Scan(&maxOrdinal)
+		// Restrict to purely numeric IDs (hierarchical format) to avoid CAST("T001" AS INTEGER) = 0.
+		err = db.QueryRow(
+			`SELECT MAX(CAST(id AS INTEGER)) FROM items WHERE parent_id IS NULL AND id GLOB '[0-9]*'`,
+		).Scan(&maxOrdinal)
 	} else {
 		err = db.QueryRow(
 			`SELECT MAX(CAST(SUBSTR(id, LENGTH(?)+2) AS INTEGER)) FROM items WHERE parent_id = ?`,

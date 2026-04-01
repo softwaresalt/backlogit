@@ -36,7 +36,7 @@ func setupArchiveWorkspace(t *testing.T) *core.Workspace {
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
 
 	// Seed a completed task file
-	taskContent := "---\nid: T001\ntitle: Completed task\nstatus: done\ntype: task\n---\nDone task body\n"
+	taskContent := "---\nid: T001\ntitle: Completed task\nstatus: done\nartifact_type: task\n---\nDone task body\n"
 	require.NoError(t, os.WriteFile(filepath.Join(tasksDir, "T001.md"), []byte(taskContent), 0o644))
 	require.NoError(t, db.UpsertItem(context.Background(), database, &models.Artifact{
 		ID: "T001", Title: "Completed task", Status: models.StatusDone, ArtifactType: "task",

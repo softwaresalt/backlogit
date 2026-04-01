@@ -272,6 +272,12 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
 		artifact.CustomFields = v
 	}
+	if v, ok := updates["harness_status"].(string); ok {
+		if artifact.CustomFields == nil {
+			artifact.CustomFields = map[string]any{}
+		}
+		artifact.CustomFields["harness_status"] = v
+	}
 	artifact.UpdatedAt = time.Now()
 
 	// Validate against header-def if available.
@@ -297,17 +303,30 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 // When ws.Config is nil (e.g., in bare test workspaces), it falls back to all non-hidden
 // top-level directories under ws.RootPath.
 func artifactSearchDirs(ws *Workspace) ([]string, error) {
+	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+
 	if ws.Config == nil {
+		// No config loaded: scan all non-hidden dirs at the workspace root, plus
+		// subdirectories of .backlogit/ for backward-compatibility with legacy
+		// workspaces that store artifacts under .backlogit/tasks/, .backlogit/bugs/, etc.
+		var dirs []string
 		entries, err := os.ReadDir(ws.RootPath)
 		if err != nil {
 			return nil, fmt.Errorf("read workspace root: %w", err)
 		}
-		var dirs []string
 		for _, entry := range entries {
 			if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
 				continue
 			}
 			dirs = append(dirs, filepath.Join(ws.RootPath, entry.Name()))
+		}
+		// Also include .backlogit/ subdirectories (legacy artifact storage location).
+		if blEntries, blErr := os.ReadDir(backlogitDir); blErr == nil {
+			for _, entry := range blEntries {
+				if entry.IsDir() {
+					dirs = append(dirs, filepath.Join(backlogitDir, entry.Name()))
+				}
+			}
 		}
 		return dirs, nil
 	}
@@ -328,7 +347,6 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 	}
 
 	// Registry-specified paths cover status-based relocations (e.g., archive, review).
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
 	if registry, err := config.LoadRegistry(backlogitDir); err == nil {
 		for _, rule := range registry.Directories {
 			if rule.Path != "" {

@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/backlogit/backlogit/internal/config"
 )
@@ -92,7 +93,34 @@ func EnsureSchema(db *sql.DB) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Migrate existing databases: add columns introduced in the queue features release.
+	// ALTER TABLE ADD COLUMN does not support IF NOT EXISTS in SQLite, so we attempt
+	// each migration and ignore "duplicate column name" errors.
+	migrations := []string{
+		`ALTER TABLE items ADD COLUMN level INTEGER`,
+		`ALTER TABLE items ADD COLUMN hierarchy_path TEXT`,
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			if !isDuplicateColumnError(err) {
+				return fmt.Errorf("apply migration %q: %w", m, err)
+			}
+		}
+	}
+	return nil
+}
+
+// isDuplicateColumnError reports whether an SQLite error indicates an attempt
+// to add a column that already exists.
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "duplicate column name")
 }
 
 // EnsureSchemaWithExtensions creates base schema and applies dynamic columns from header-def.

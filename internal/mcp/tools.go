@@ -632,6 +632,22 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 	return nil
 }
 
+// queueLayout returns the configured QueueLayoutConfig for the workspace,
+// falling back to a sensible default when none is configured.
+func (s *Server) queueLayout() *core.QueueLayoutConfig {
+	if s.Workspace.Config != nil && s.Workspace.Config.QueueLayout != nil {
+		return s.Workspace.Config.QueueLayout
+	}
+	return &core.QueueLayoutConfig{
+		RootDir: "queue",
+		Levels: []core.HierarchyLevel{
+			{Level: 1, Types: []string{"feature", "epic"}},
+			{Level: 2, Types: []string{"task", "story", "bug"}},
+			{Level: 3, Types: []string{"sub-task"}},
+		},
+	}
+}
+
 func (s *Server) handleGetWITMetadata(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
 	if !dirExists(backlogitDir) {
@@ -649,14 +665,7 @@ func (s *Server) handleGetWITMetadata(ctx context.Context, request mcplib.CallTo
 	if err != nil {
 		return InternalError(fmt.Sprintf("load templates: %v", err)), nil
 	}
-	layout := &core.QueueLayoutConfig{
-		RootDir: "queue",
-		Levels: []core.HierarchyLevel{
-			{Level: 1, Types: []string{"feature", "epic"}},
-			{Level: 2, Types: []string{"task", "story", "bug"}},
-			{Level: 3, Types: []string{"sub-task"}},
-		},
-	}
+	layout := s.queueLayout()
 	metadata, err := core.DescribeType(artifactType, headerDef, templates, layout)
 	if err != nil {
 		return InternalError(fmt.Sprintf("describe type: %v", err)), nil
@@ -677,14 +686,7 @@ func (s *Server) handleListTypes(ctx context.Context, _ mcplib.CallToolRequest) 
 	if err != nil {
 		return InternalError(fmt.Sprintf("load templates: %v", err)), nil
 	}
-	layout := &core.QueueLayoutConfig{
-		RootDir: "queue",
-		Levels: []core.HierarchyLevel{
-			{Level: 1, Types: []string{"feature", "epic"}},
-			{Level: 2, Types: []string{"task", "story", "bug"}},
-			{Level: 3, Types: []string{"sub-task"}},
-		},
-	}
+	layout := s.queueLayout()
 	types, err := core.ListTypes(headerDef, templates, layout)
 	if err != nil {
 		return InternalError(fmt.Sprintf("list types: %v", err)), nil

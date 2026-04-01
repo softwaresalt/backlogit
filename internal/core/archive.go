@@ -33,7 +33,7 @@ type ArchivePolicy struct {
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
 	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
-	currentPath, err := findFileAnywhere(backlogDir, itemID)
+	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact: %w", err)
 	}
@@ -122,13 +122,12 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
 	}
 
-	// F-006: Validate the restore path is contained within the workspace.
-	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	// F-006: Validate the restore path is contained within the workspace root to
+	// prevent path traversal when restoring artifacts from archive.
 	rel, relErr := filepath.Rel(ws.RootPath, originalPath)
 	if relErr != nil || len(rel) >= 2 && rel[:2] == ".." {
 		return fmt.Errorf("archived_from path %q escapes workspace: cannot restore", originalPath)
 	}
-	_ = backlogDir // containment validated via filepath.Rel above
 
 	// Restore frontmatter without the archived_from field.
 	delete(fm, "archived_from")
@@ -194,33 +193,3 @@ func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *A
 	return count, nil
 }
 
-// findFileAnywhere walks the .backlogit directory (including hidden subdirs) to
-// locate the Markdown file for the given artifact ID.
-func findFileAnywhere(backlogDir, id string) (string, error) {
-	var found string
-	walkErr := filepath.WalkDir(backlogDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-			return err
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil
-		}
-		fm, _, parseErr := models.ParseFrontmatter(string(data))
-		if parseErr != nil {
-			return nil
-		}
-		if idVal, ok := fm["id"].(string); ok && idVal == id {
-			found = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return "", fmt.Errorf("walk workspace: %w", walkErr)
-	}
-	if found == "" {
-		return "", fmt.Errorf("artifact not found: %s", id)
-	}
-	return found, nil
-}
