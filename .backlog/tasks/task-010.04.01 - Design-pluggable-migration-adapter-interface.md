@@ -1,20 +1,16 @@
 ---
 id: TASK-010.04.01
 title: Design pluggable migration adapter interface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-01 22:37'
+updated_date: '2026-04-01 23:29'
 labels:
   - go
 dependencies: []
 parent_task_id: TASK-010.04
 priority: medium
 ordinal: 1000
-implementation_notes: |
-  Harness command: go test ./internal/parser/... -run "TestRegisterAdapter|TestGetAdapter|TestListAdapters|TestDetectAdapter|TestBacklogMdAdapter|TestMigrationItem" -v
-  Test file: internal/parser/adapter_test.go
-  Stub file: internal/parser/adapter.go (MigrationAdapter interface, registry, BacklogMdAdapter)
-  Execution note: test-first
 ---
 
 ## Description
