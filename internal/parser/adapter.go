@@ -3,6 +3,9 @@ package parser
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -97,7 +100,13 @@ var (
 // Worker: Store the adapter in the adapters map under adapter.Name().
 // Return an error if an adapter with the same name is already registered.
 func RegisterAdapter(adapter MigrationAdapter) error {
-	panic("not implemented: Worker: Lock registryMu, check for duplicate name in adapters map, store adapter, unlock. Return fmt.Errorf if duplicate.")
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	if _, exists := adapters[adapter.Name()]; exists {
+		return fmt.Errorf("adapter %q already registered", adapter.Name())
+	}
+	adapters[adapter.Name()] = adapter
+	return nil
 }
 
 // GetAdapter retrieves a registered adapter by name.
@@ -105,14 +114,26 @@ func RegisterAdapter(adapter MigrationAdapter) error {
 // Worker: Look up the adapter in the adapters map.
 // Return (adapter, nil) if found, (nil, error) if not found.
 func GetAdapter(name string) (MigrationAdapter, error) {
-	panic("not implemented: Worker: Lock registryMu for reading, look up name in adapters map, return adapter or error.")
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	if a, ok := adapters[name]; ok {
+		return a, nil
+	}
+	return nil, fmt.Errorf("adapter %q not found", name)
 }
 
 // ListAdapters returns the names of all registered adapters.
 //
 // Worker: Return a sorted slice of adapter names from the registry.
 func ListAdapters() []string {
-	panic("not implemented: Worker: Lock registryMu for reading, collect keys from adapters map, sort, return.")
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	names := make([]string, 0, len(adapters))
+	for name := range adapters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // DetectAdapter finds the first registered adapter that can handle the given path.
@@ -120,7 +141,14 @@ func ListAdapters() []string {
 // Worker: Iterate through all registered adapters, call Detect(path) on each.
 // Return the first adapter that returns true. If none match, return an error.
 func DetectAdapter(path string) (MigrationAdapter, error) {
-	panic("not implemented: Worker: Lock registryMu for reading, iterate adapters, call Detect(path), return first match or error.")
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	for _, a := range adapters {
+		if a.Detect(path) {
+			return a, nil
+		}
+	}
+	return nil, fmt.Errorf("no adapter detected for path %q", path)
 }
 
 // ResetRegistry clears all registered adapters. Used for testing.
@@ -143,7 +171,16 @@ func (a *BacklogMdAdapter) Name() string {
 // Worker: Check if path points to a .md file that contains checklist items
 // (regex match for `- [ ]` or `- [x]` patterns) indicating a legacy backlog format.
 func (a *BacklogMdAdapter) Detect(path string) bool {
-	panic("not implemented: Worker: Read the file at path, check for checklist patterns using checklistRe. Return true if matches found, false otherwise. Return false on read errors.")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if checklistRe.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // Parse extracts migration items from a Backlog.md file.
@@ -152,8 +189,27 @@ func (a *BacklogMdAdapter) Detect(path string) bool {
 // each LegacyItem to a MigrationItem with appropriate field mapping.
 func (a *BacklogMdAdapter) Parse(ctx context.Context, path string) ([]MigrationItem, error) {
 	_ = ctx
-	_ = path
-	panic("not implemented: Worker: Read the file, call ParseLegacy, convert []LegacyItem to []MigrationItem. Map Title→Title, Status→Status, ParentTitle→ParentRef, Depth→Depth, Description→Body.")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	legacy, err := ParseLegacy(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse legacy: %w", err)
+	}
+	items := make([]MigrationItem, len(legacy))
+	for i, li := range legacy {
+		items[i] = MigrationItem{
+			Title:      li.Title,
+			Status:     li.Status,
+			ParentRef:  li.ParentTitle,
+			Depth:      li.Depth,
+			Body:       li.Description,
+			SourceType: ClassWorkItem,
+			SourcePath: path,
+		}
+	}
+	return items, nil
 }
 
 // Ensure BacklogMdAdapter implements MigrationAdapter at compile time.
@@ -226,5 +282,5 @@ type MigrateOptions struct {
 func FormatReport(report *MigrationReport, format string) (string, error) {
 	_ = report
 	_ = format
-	panic(fmt.Sprintf("not implemented: Worker: Format the MigrationReport. For 'json', use json.MarshalIndent. For 'text', produce a summary like 'Migrated: N, Skipped: N, Failed: N' followed by error details."))
+	panic("not implemented: Worker: Format the MigrationReport. For 'json', use json.MarshalIndent. For 'text', produce a summary like 'Migrated: N, Skipped: N, Failed: N' followed by error details.")
 }
