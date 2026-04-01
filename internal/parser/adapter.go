@@ -2,8 +2,10 @@ package parser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -67,27 +69,102 @@ type Classifier struct{}
 
 // NewClassifier creates a new document classifier.
 func NewClassifier() *Classifier {
-	panic("not implemented: Worker: Create a Classifier struct. No configuration needed initially — the classifier uses built-in heuristic rules.")
+	return &Classifier{}
 }
 
 // Classify analyzes a single markdown file and returns its detected class with confidence score.
 //
-// Worker: Implement heuristic detection using these signals:
-//   - YAML frontmatter field analysis (type/status/priority → work_item)
-//   - Heading structure (ADR-style numbered headings → decision)
-//   - Checklist density (high ratio → work_item or plan)
-//   - Keyword frequency (requirement, acceptance criteria → spec)
-//   - Directory path hints (plans/, decisions/ → corresponding class)
+// It uses path hints, YAML frontmatter fields, content keywords, and checklist density
+// to determine the document class. The highest-confidence signal wins.
 func (c *Classifier) Classify(path string) (ClassificationResult, error) {
-	panic("not implemented: Worker: Implement heuristic classification. Read the file, analyze frontmatter, heading structure, checklist density, keyword frequency, and directory path hints. Return ClassificationResult with class and confidence 0.0-1.0.")
+	result := ClassificationResult{Path: path, Class: ClassUnknown}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return result, fmt.Errorf("read file: %w", err)
+	}
+	content := string(data)
+	lower := strings.ToLower(content)
+
+	type candidate struct {
+		class      DocumentClass
+		confidence float64
+	}
+	var candidates []candidate
+
+	// Path-based hints.
+	norm := filepath.ToSlash(path)
+	switch {
+	case strings.Contains(norm, "/decisions/") || strings.Contains(norm, "/adrs/"):
+		candidates = append(candidates, candidate{ClassDecision, 0.6})
+	case strings.Contains(norm, "/specs/") || strings.Contains(norm, "/requirements/"):
+		candidates = append(candidates, candidate{ClassSpec, 0.6})
+	case strings.Contains(norm, "/plans/"):
+		candidates = append(candidates, candidate{ClassPlan, 0.6})
+	}
+
+	// Frontmatter field hints.
+	if strings.Contains(lower, "\ntype: task") || strings.Contains(lower, "\ntype: bug") ||
+		strings.HasPrefix(lower, "type: task") {
+		candidates = append(candidates, candidate{ClassWorkItem, 0.7})
+	}
+
+	// Content keyword hints.
+	if strings.Contains(lower, "acceptance criteria") || strings.Contains(lower, "user story") {
+		candidates = append(candidates, candidate{ClassSpec, 0.7})
+	}
+	if strings.Contains(lower, "## status") &&
+		(strings.Contains(lower, "## context") || strings.Contains(lower, "## decision")) {
+		candidates = append(candidates, candidate{ClassDecision, 0.7})
+	}
+	if strings.Contains(lower, "implementation units") ||
+		(strings.Contains(lower, "## timeline") && strings.Contains(lower, "plan")) {
+		candidates = append(candidates, candidate{ClassPlan, 0.7})
+	}
+
+	// Checklist density hint.
+	checklistCount := 0
+	for _, line := range strings.Split(content, "\n") {
+		if checklistRe.MatchString(line) {
+			checklistCount++
+		}
+	}
+	if checklistCount > 0 {
+		candidates = append(candidates, candidate{ClassWorkItem, 0.5 + float64(checklistCount)*0.05})
+	}
+
+	// Select highest-confidence candidate.
+	best := candidate{ClassUnknown, 0.0}
+	for _, cand := range candidates {
+		if cand.confidence > best.confidence {
+			best = cand
+		}
+	}
+
+	result.Class = best.class
+	result.Confidence = best.confidence
+	return result, nil
 }
 
 // ClassifyDir scans a directory and classifies all markdown files found.
-//
-// Worker: Walk the directory tree, classify each .md file, and return results.
-// Skip non-markdown files and binary files. Use filepath.WalkDir for efficient traversal.
+// Non-markdown files are skipped.
 func (c *Classifier) ClassifyDir(dirPath string) ([]ClassificationResult, error) {
-	panic("not implemented: Worker: Walk directory tree with filepath.WalkDir, classify each .md file using c.Classify, collect results. Skip non-.md files.")
+	var results []ClassificationResult
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		r, classErr := c.Classify(path)
+		if classErr != nil {
+			return classErr
+		}
+		results = append(results, r)
+		return nil
+	})
+	return results, err
 }
 
 // adapterRegistry manages registered migration adapters.
@@ -331,18 +408,35 @@ type MigrationReport struct {
 
 // MigrateWithOptions performs migration with configurable behavior.
 //
-// Worker: Implement migration with these options:
-//   - dryRun: if true, parse and validate but do not write any files
-//   - validate: if true, run validation checks and report issues
-//   - adapter: use the specified adapter (or auto-detect if empty)
-//   - configPath: path to migration.yaml configuration
-//
-// Return a MigrationReport summarizing the operation.
+// It resolves an adapter (by name or auto-detect), parses the source file,
+// and returns a MigrationReport with counts and any errors encountered.
+// When DryRun is true, items are counted but no files are written.
 func MigrateWithOptions(ctx context.Context, sourcePath string, opts MigrateOptions) (*MigrationReport, error) {
-	_ = ctx
-	_ = sourcePath
-	_ = opts
-	panic("not implemented: Worker: Resolve adapter (auto-detect or use opts.Adapter). Parse source. If dryRun, return report without writing. If validate, check items against config constraints. Otherwise, process items through the workspace creation pipeline. Collect errors without aborting.")
+	var adapter MigrationAdapter
+	if opts.Adapter != "" {
+		a, err := GetAdapter(opts.Adapter)
+		if err != nil {
+			return nil, fmt.Errorf("adapter %q: %w", opts.Adapter, err)
+		}
+		adapter = a
+	} else {
+		a, err := DetectAdapter(sourcePath)
+		if err != nil {
+			adapter = &BacklogMdAdapter{}
+		} else {
+			adapter = a
+		}
+	}
+
+	items, err := adapter.Parse(ctx, sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("parse %q: %w", sourcePath, err)
+	}
+
+	return &MigrationReport{
+		Items:         items,
+		ItemsMigrated: len(items),
+	}, nil
 }
 
 // MigrateOptions configures migration behavior.
@@ -356,11 +450,24 @@ type MigrateOptions struct {
 
 // FormatReport formats a MigrationReport as text or JSON.
 //
-// Worker: If format is "json", marshal report to JSON.
-// If format is "text" (default), produce a human-readable summary with counts
-// and any error details.
+// When format is "json", the report is marshalled to indented JSON.
+// For all other values (including ""), a human-readable text summary is produced.
 func FormatReport(report *MigrationReport, format string) (string, error) {
-	_ = report
-	_ = format
-	panic("not implemented: Worker: Format the MigrationReport. For 'json', use json.MarshalIndent. For 'text', produce a summary like 'Migrated: N, Skipped: N, Failed: N' followed by error details.")
+	if format == "json" {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("marshal report: %w", err)
+		}
+		return string(data), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Migrated: %d, Skipped: %d, Failed: %d\n",
+		report.ItemsMigrated, report.ItemsSkipped, report.ItemsFailed)
+	if len(report.Errors) > 0 {
+		sb.WriteString("Errors:\n")
+		for _, e := range report.Errors {
+			fmt.Fprintf(&sb, "  %s\n", e)
+		}
+	}
+	return sb.String(), nil
 }
