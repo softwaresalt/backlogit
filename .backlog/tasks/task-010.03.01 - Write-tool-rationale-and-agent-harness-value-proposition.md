@@ -1,7 +1,7 @@
 ---
 id: TASK-010.03.01
 title: Write tool rationale and agent harness value proposition
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:32'
 labels:

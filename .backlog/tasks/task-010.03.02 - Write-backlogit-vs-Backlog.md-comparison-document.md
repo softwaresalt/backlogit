@@ -1,7 +1,7 @@
 ---
 id: TASK-010.03.02
 title: Write backlogit vs Backlog.md comparison document
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:34'
 labels:

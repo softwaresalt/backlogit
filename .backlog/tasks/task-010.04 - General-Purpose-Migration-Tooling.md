@@ -1,7 +1,7 @@
 ---
 id: TASK-010.04
 title: General Purpose Migration Tooling
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:28'
 labels:

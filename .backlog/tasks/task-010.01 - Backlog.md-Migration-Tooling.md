@@ -1,7 +1,7 @@
 ---
 id: TASK-010.01
 title: Backlog.md Migration Tooling
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:25'
 labels:

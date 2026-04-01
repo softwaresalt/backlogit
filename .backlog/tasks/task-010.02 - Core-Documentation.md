@@ -1,7 +1,7 @@
 ---
 id: TASK-010.02
 title: Core Documentation
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:27'
 labels:

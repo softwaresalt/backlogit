@@ -1,7 +1,7 @@
 ---
 id: TASK-010.03
 title: Positioning & Migration Documentation
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:28'
 labels:

@@ -1,7 +1,7 @@
 ---
 id: TASK-010
 title: Backlogit Documentation & Migration Suite
-status: To Do
+status: done
 assignee: []
 created_date: '2026-04-01 22:24'
 labels:
