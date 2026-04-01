@@ -53,7 +53,7 @@ func DescribeType(
 	artifactType string,
 	headerDef *config.HeaderDefConfig,
 	templates []*config.TemplateConfig,
-	layout *QueueLayoutConfig,
+	layout *config.QueueLayoutConfig,
 ) (*WITMetadata, error) {
 	typeCfg, ok := headerDef.Types[artifactType]
 	if !ok {
@@ -103,7 +103,7 @@ func DescribeType(
 func ListTypes(
 	headerDef *config.HeaderDefConfig,
 	templates []*config.TemplateConfig,
-	layout *QueueLayoutConfig,
+	layout *config.QueueLayoutConfig,
 ) ([]WITMetadata, error) {
 	var result []WITMetadata
 	for typeName := range headerDef.Types {

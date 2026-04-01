@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/backlogit/backlogit/internal/config"
 )
 
 // EnsureSchema creates the items table, indexes, FTS5 virtual table, and
@@ -40,12 +42,15 @@ func EnsureSchema(db *sql.DB) error {
 			labels       TEXT,
 			dependencies TEXT,
 			"references" TEXT,
-			"commit"     TEXT
+			"commit"     TEXT,
+			level          INTEGER,
+			hierarchy_path TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_type   ON items(artifact_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(sprint)`,
+		`CREATE INDEX IF NOT EXISTS idx_items_hierarchy ON items(hierarchy_path)`,
 		`CREATE TABLE IF NOT EXISTS commit_links (
 			item_id    TEXT NOT NULL,
 			commit_sha TEXT NOT NULL,
@@ -88,4 +93,15 @@ func EnsureSchema(db *sql.DB) error {
 	}
 
 	return tx.Commit()
+}
+
+// EnsureSchemaWithExtensions creates base schema and applies dynamic columns from header-def.
+func EnsureSchemaWithExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) error {
+	if err := EnsureSchema(db); err != nil {
+		return err
+	}
+	if headerDef != nil {
+		return ApplySchemaExtensions(db, headerDef)
+	}
+	return nil
 }

@@ -40,6 +40,8 @@ type Artifact struct {
 	CustomFields map[string]any `json:"custom_fields,omitempty" yaml:"custom_fields,omitempty"`
 	CreatedAt    time.Time      `json:"created_at" yaml:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at" yaml:"updated_at"`
+	Level         int    `json:"level,omitempty" yaml:"level,omitempty"`
+	HierarchyPath string `json:"hierarchy_path,omitempty" yaml:"hierarchy_path,omitempty"`
 }
 
 // Validate checks all struct tags and returns a descriptive error on failure.

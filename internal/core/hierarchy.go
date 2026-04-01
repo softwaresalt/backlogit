@@ -6,24 +6,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/backlogit/backlogit/internal/config"
 )
 
-// QueueLayoutConfig defines the hierarchical file organization for .backlogit/queue/.
-type QueueLayoutConfig struct {
-	RootDir    string           `yaml:"root_dir" validate:"required"`
-	Levels     []HierarchyLevel `yaml:"levels" validate:"required,min=1,dive"`
-	NameFormat string           `yaml:"name_format"`
-}
+// QueueLayoutConfig is an alias for config.QueueLayoutConfig, kept for backward compatibility.
+type QueueLayoutConfig = config.QueueLayoutConfig
 
-// HierarchyLevel maps a hierarchy depth to one or more artifact types.
-type HierarchyLevel struct {
-	Level int      `yaml:"level" validate:"required,gte=1,lte=5"`
-	Types []string `yaml:"types" validate:"required,min=1"`
-}
+// HierarchyLevel is an alias for config.HierarchyLevel, kept for backward compatibility.
+type HierarchyLevel = config.HierarchyLevel
 
 // ResolveHierarchicalPath determines the target file path for a new artifact
 // within the hierarchical queue layout based on its parent ID and artifact type.
-func ResolveHierarchicalPath(layout *QueueLayoutConfig, parentID string, artifactType string) (string, error) {
+func ResolveHierarchicalPath(layout *config.QueueLayoutConfig, parentID string, artifactType string) (string, error) {
 	if _, err := LevelForType(layout, artifactType); err != nil {
 		return "", err
 	}
@@ -35,7 +30,7 @@ func ResolveHierarchicalPath(layout *QueueLayoutConfig, parentID string, artifac
 
 // NextHierarchicalID computes the next available ID at a given hierarchy level
 // by querying the SQLite index for the maximum existing sibling ordinal.
-func NextHierarchicalID(db *sql.DB, parentID string, layout *QueueLayoutConfig) (string, error) {
+func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutConfig) (string, error) {
 	var maxOrdinal sql.NullInt64
 	var err error
 	if parentID == "" {
@@ -84,7 +79,7 @@ func ParseHierarchicalID(id string) ([]int, error) {
 
 // LevelForType returns the hierarchy level number for the given artifact type
 // based on the QueueLayoutConfig mapping.
-func LevelForType(layout *QueueLayoutConfig, artifactType string) (int, error) {
+func LevelForType(layout *config.QueueLayoutConfig, artifactType string) (int, error) {
 	for _, lvl := range layout.Levels {
 		for _, t := range lvl.Types {
 			if t == artifactType {
@@ -97,6 +92,6 @@ func LevelForType(layout *QueueLayoutConfig, artifactType string) (int, error) {
 
 // FormatHierarchicalID formats a numeric segment with zero-padding to match
 // the queue layout naming convention (e.g., 1 → "001").
-func FormatHierarchicalID(segment int, layout *QueueLayoutConfig) string {
+func FormatHierarchicalID(segment int, layout *config.QueueLayoutConfig) string {
 	return fmt.Sprintf("%03d", segment)
 }

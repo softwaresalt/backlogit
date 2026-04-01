@@ -41,6 +41,17 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 			return nil
 		}
 
+		// Upsert dependency edges from frontmatter.
+		if len(artifact.Dependencies) > 0 {
+			for _, depID := range artifact.Dependencies {
+				if depID == "" {
+					continue
+				}
+				// Best-effort: skip if target doesn't exist yet (will be linked on subsequent rehydration).
+				_ = upsertDependencyBestEffort(ctx, db, artifact.ID, depID)
+			}
+		}
+
 		count++
 		return nil
 	})
@@ -74,4 +85,12 @@ func parseMarkdownArtifact(path string) (*models.Artifact, error) {
 	}
 
 	return artifact, nil
+}
+
+func upsertDependencyBestEffort(ctx context.Context, db *sql.DB, itemID, dependsOn string) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, 'blocks')`,
+		itemID, dependsOn,
+	)
+	return err
 }
