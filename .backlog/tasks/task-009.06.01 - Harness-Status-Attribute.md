@@ -1,9 +1,10 @@
 ---
 id: TASK-009.06.01
 title: Harness Status Attribute
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:07'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-2
@@ -35,9 +36,9 @@ Review finding F8 (P3): Could merge into Unit 4 (template self-description) sinc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Feature-level WIT template includes harness_status field with enum: pending, scaffolded, passing, failing
-- [ ] #2 harness_status queryable via backlogit_query_sql
-- [ ] #3 build-feature workflow can check harness_status to gate progression
-- [ ] #4 Default harness_status is 'pending' for new feature artifacts
-- [ ] #5 backlogit update <id> --harness-status scaffolded updates the field
+- [x] #1 Feature-level WIT template includes harness_status field with enum: pending, scaffolded, passing, failing
+- [x] #2 harness_status queryable via backlogit_query_sql
+- [x] #3 build-feature workflow can check harness_status to gate progression
+- [x] #4 Default harness_status is 'pending' for new feature artifacts
+- [x] #5 backlogit update <id> --harness-status scaffolded updates the field
 <!-- AC:END -->

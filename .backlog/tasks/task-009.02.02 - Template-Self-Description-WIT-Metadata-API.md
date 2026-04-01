@@ -1,10 +1,10 @@
 ---
 id: TASK-009.02.02
 title: Template Self-Description & WIT Metadata API
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:05'
-updated_date: '2026-04-01 04:05'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-1
@@ -38,9 +38,9 @@ This is the foundation for the agent-queryable WIT system (queue.md requirement 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Templates include description field and attribute descriptions for each section/field
-- [ ] #2 backlogit_list_templates MCP tool returns template descriptions and field metadata
-- [ ] #3 backlogit_get_wit_metadata MCP tool returns full WIT schema including required/optional fields and enums
-- [ ] #4 Agent can discover all WIT types, their fields, allowed values, and relationships via MCP tools alone
-- [ ] #5 Template descriptions visible via CLI: backlogit templates list --verbose
+- [x] #1 Templates include description field and attribute descriptions for each section/field
+- [x] #2 backlogit_list_templates MCP tool returns template descriptions and field metadata
+- [x] #3 backlogit_get_wit_metadata MCP tool returns full WIT schema including required/optional fields and enums
+- [x] #4 Agent can discover all WIT types, their fields, allowed values, and relationships via MCP tools alone
+- [x] #5 Template descriptions visible via CLI: backlogit templates list --verbose
 <!-- AC:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-009.06.02
 title: CLI Enhancements (Tabular Listing)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:07'
+updated_date: '2026-04-01 05:20'
 labels:
   - task
   - phase-2
@@ -34,10 +35,10 @@ This is an enhancement of existing CLI commands (queue.md requirement #9), not n
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit list shows aligned tabular output with status, priority, ID, title columns
-- [ ] #2 backlogit list --status active filters by status
-- [ ] #3 backlogit list --type bug filters by artifact type
-- [ ] #4 backlogit get <id> shows full artifact detail including all frontmatter fields and body
-- [ ] #5 Column widths auto-adjust to content using tabwriter
-- [ ] #6 Empty result sets show descriptive 'no items found' message
+- [x] #1 backlogit list shows aligned tabular output with status, priority, ID, title columns
+- [x] #2 backlogit list --status active filters by status
+- [x] #3 backlogit list --type bug filters by artifact type
+- [x] #4 backlogit get <id> shows full artifact detail including all frontmatter fields and body
+- [x] #5 Column widths auto-adjust to content using tabwriter
+- [x] #6 Empty result sets show descriptive 'no items found' message
 <!-- AC:END -->

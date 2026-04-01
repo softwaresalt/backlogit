@@ -1,9 +1,10 @@
 ---
 id: TASK-009.02.03
 title: Required/Optional Field Enforcement
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:05'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-2
@@ -16,7 +17,6 @@ priority: high
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 **Unit 5 — Required/Optional Field Enforcement**
 
 Enforce required/optional field constraints from WIT template definitions at artifact creation and update time.
@@ -36,23 +36,19 @@ Key deliverables:
 - Backward compatibility: existing artifacts without new required fields pass validation (fields added after creation are not retroactively required)
 
 - Default values applied when optional fields are omitted
-  
-  <!-- SECTION:DESCRIPTION:END -->
+<!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
+- [x] #1 Required fields missing from create request produce descriptive validation error
 
-- [ ] #1 Required fields missing from create request produce descriptive validation error
+- [x] #2 Optional fields with defaults auto-populated when omitted
 
-- [ ] #2 Optional fields with defaults auto-populated when omitted
+- [x] #3 Validation runs on both MCP tool calls and CLI commands
 
-- [ ] #3 Validation runs on both MCP tool calls and CLI commands
+- [x] #4 backlogit create --type bug enforces required fields per bug template
 
-- [ ] #4 backlogit create --type bug enforces required fields per bug template
+- [x] #5 Field optionality metadata readable via backlogit_get_wit_metadata
 
-- [ ] #5 Field optionality metadata readable via backlogit_get_wit_metadata
-
-- [ ] #6 Existing artifacts without new required fields pass validation (backward compat)
-  
-  <!-- AC:END -->
+- [x] #6 Existing artifacts without new required fields pass validation (backward compat)
+<!-- AC:END -->

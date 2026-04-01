@@ -1,10 +1,10 @@
 ---
 id: TASK-009.01.01
 title: Hierarchical File Organization (.backlogit/queue/)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:04'
-updated_date: '2026-04-01 03:58'
+updated_date: '2026-04-01 05:18'
 labels:
   - task
   - phase-1
@@ -44,10 +44,10 @@ Acceptance criteria:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit create --type task --parent 001 creates 001.001.md in .backlogit/queue/
-- [ ] #2 Config.yaml queue_layout section parsed and validated with struct validation
-- [ ] #3 Existing flat routing still works when queue_layout is nil
-- [ ] #4 Hierarchy path stored in SQLite items table for efficient querying
-- [ ] #5 ParseHierarchicalID round-trips correctly for all levels (1-4)
-- [ ] #6 NextHierarchicalID returns correct next sibling ordinal via scoped counter query
+- [x] #1 backlogit create --type task --parent 001 creates 001.001.md in .backlogit/queue/
+- [x] #2 Config.yaml queue_layout section parsed and validated with struct validation
+- [x] #3 Existing flat routing still works when queue_layout is nil
+- [x] #4 Hierarchy path stored in SQLite items table for efficient querying
+- [x] #5 ParseHierarchicalID round-trips correctly for all levels (1-4)
+- [x] #6 NextHierarchicalID returns correct next sibling ordinal via scoped counter query
 <!-- AC:END -->

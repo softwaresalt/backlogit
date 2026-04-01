@@ -1,9 +1,10 @@
 ---
 id: TASK-009.03.02
 title: Dependency CLI & MCP Wiring
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:06'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-2
@@ -33,10 +34,10 @@ Key deliverables:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlogit dep add T001 --blocks T002 creates dependency in frontmatter and DB
-- [ ] #2 backlogit dep list T001 shows all dependencies with types and directions
-- [ ] #3 backlogit_add_dependency MCP tool creates dependency and returns updated graph
-- [ ] #4 backlogit_get_dependencies MCP tool returns dependency graph for an artifact
-- [ ] #5 Circular dependency detection prevents cycles (A blocks B blocks A rejected)
-- [ ] #6 Removing an artifact cascades dependency cleanup
+- [x] #1 backlogit dep add T001 --blocks T002 creates dependency in frontmatter and DB
+- [x] #2 backlogit dep list T001 shows all dependencies with types and directions
+- [x] #3 backlogit_add_dependency MCP tool creates dependency and returns updated graph
+- [x] #4 backlogit_get_dependencies MCP tool returns dependency graph for an artifact
+- [x] #5 Circular dependency detection prevents cycles (A blocks B blocks A rejected)
+- [x] #6 Removing an artifact cascades dependency cleanup
 <!-- AC:END -->

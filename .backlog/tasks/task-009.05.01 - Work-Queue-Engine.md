@@ -1,9 +1,10 @@
 ---
 id: TASK-009.05.01
 title: Work Queue Engine
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-31 06:06'
+updated_date: '2026-04-01 05:19'
 labels:
   - task
   - phase-3
@@ -36,10 +37,10 @@ The queue engine is the core algorithm; CLI and MCP exposure is in Unit 11.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ComputeQueue returns ordered list of actionable items respecting dependency constraints
-- [ ] #2 Blocked items (unresolved dependencies) excluded from queue output
-- [ ] #3 Parallel-ready items (independent siblings) surfaced together
-- [ ] #4 Priority weighting: high > medium > low within same dependency tier
-- [ ] #5 Queue computation completes in <100ms for 500-item workspace
-- [ ] #6 Queue considers both direct and transitive blocking dependencies
+- [x] #1 ComputeQueue returns ordered list of actionable items respecting dependency constraints
+- [x] #2 Blocked items (unresolved dependencies) excluded from queue output
+- [x] #3 Parallel-ready items (independent siblings) surfaced together
+- [x] #4 Priority weighting: high > medium > low within same dependency tier
+- [x] #5 Queue computation completes in <100ms for 500-item workspace
+- [x] #6 Queue considers both direct and transitive blocking dependencies
 <!-- AC:END -->
