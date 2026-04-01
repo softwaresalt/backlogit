@@ -1,9 +1,10 @@
 ---
 id: TASK-009.01.02
 title: Migration Pipeline (Flat → Hierarchical)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:05'
+updated_date: '2026-04-01 03:59'
 labels:
   - task
   - phase-1
@@ -12,6 +13,7 @@ dependencies:
   - TASK-009.01.01
 parent_task_id: TASK-009.01
 priority: high
+ordinal: 3000
 ---
 
 ## Description

@@ -1,7 +1,7 @@
 ---
 id: TASK-009.06.02
 title: CLI Enhancements (Tabular Listing)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:07'
 labels:

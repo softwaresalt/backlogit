@@ -1,7 +1,7 @@
 ---
 id: TASK-009.04
 title: 'Epic D: Archive & Lifecycle Management'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:04'
 labels:

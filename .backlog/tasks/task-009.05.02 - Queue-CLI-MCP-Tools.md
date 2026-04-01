@@ -1,7 +1,7 @@
 ---
 id: TASK-009.05.02
 title: Queue CLI & MCP Tools
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:07'
 labels:

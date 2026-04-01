@@ -1,7 +1,7 @@
 ---
 id: TASK-009.03.02
 title: Dependency CLI & MCP Wiring
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:06'
 labels:

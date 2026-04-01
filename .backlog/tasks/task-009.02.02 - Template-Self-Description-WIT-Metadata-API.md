@@ -1,9 +1,10 @@
 ---
 id: TASK-009.02.02
 title: Template Self-Description & WIT Metadata API
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:05'
+updated_date: '2026-04-01 04:05'
 labels:
   - task
   - phase-1
@@ -13,6 +14,7 @@ dependencies:
   - TASK-009.02.01
 parent_task_id: TASK-009.02
 priority: high
+ordinal: 1500
 ---
 
 ## Description

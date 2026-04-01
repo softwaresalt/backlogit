@@ -3,9 +3,10 @@ id: TASK-009
 title: >-
   Queue Features V2: WIT Metadata, Archive Lifecycle, Dependency Queue,
   Hierarchical File Organization
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:03'
+updated_date: '2026-04-01 03:58'
 labels:
   - epic
 dependencies: []
@@ -14,6 +15,7 @@ references:
   - .backlog/plans/2026-03-31-queue-features-v2-plan.md
   - .backlog/reviews/2026-03-31-queue-features-v2-plan-review.md
 priority: high
+ordinal: 1000
 ---
 
 ## Description

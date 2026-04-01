@@ -1,9 +1,10 @@
 ---
 id: TASK-009.02
 title: 'Epic B: WIT Type System & Self-Description'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 06:03'
+updated_date: '2026-04-01 04:00'
 labels:
   - sub-epic
   - phase-1
@@ -13,6 +14,7 @@ references:
   - .backlog/plans/2026-03-31-queue-features-v2-plan.md
 parent_task_id: TASK-009
 priority: high
+ordinal: 3000
 ---
 
 ## Description
