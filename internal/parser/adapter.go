@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +94,15 @@ func (c *Classifier) ClassifyDir(dirPath string) ([]ClassificationResult, error)
 var (
 	registryMu sync.RWMutex
 	adapters   = make(map[string]MigrationAdapter)
+)
+
+// Enhanced-parser extraction patterns.
+var (
+	priorityBracketRe = regexp.MustCompile(`^\[P[0-4]\]\s+`)
+	priorityBangRe    = regexp.MustCompile(`^!(\w+)\s+`)
+	assigneeRe        = regexp.MustCompile(`^@\w+\s+`)
+	dateRe            = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\s+`)
+	tagRe             = regexp.MustCompile(`^\[[^\]]*,[^\]]*\]\s+`)
 )
 
 // RegisterAdapter adds a migration adapter to the global registry.
@@ -226,18 +236,88 @@ func init() {
 
 // ParseLegacyEnhanced extends ParseLegacy with broader format coverage.
 //
-// Worker: Enhance the parsing to handle:
-//   - Nested heading hierarchies (H1-H4) with depth tracking
-//   - Section-based document type recognition (specs, plans, decisions)
-//   - Inline metadata extraction: priority markers (P0-P4, !high, !low),
-//     assignee mentions (@user), date references (YYYY-MM-DD)
-//   - Sprint groupings and milestone headers
-//   - Tag annotations ([tag1, tag2])
-//   - Description content preservation (paragraph text between checklist items)
+// It parses checklist items and enriches each LegacyItem with:
+//   - Depth set from the heading level (H1=1 … H4=4) of the containing heading
+//   - ParentTitle from the immediate heading title
+//   - Title with priority markers ([P0]-[P4], !high), @mentions, dates (YYYY-MM-DD)
+//     and tag annotations ([tag, tag]) stripped
+//   - Description populated from paragraph text immediately following the item
 //
-// Returns enhanced LegacyItem structs with populated metadata fields.
+// Status mapping and backwards compatibility are identical to ParseLegacy.
 func ParseLegacyEnhanced(content string) ([]LegacyItem, error) {
-	panic("not implemented: Worker: Parse content line by line. Track heading depth (H1-H4). For each checklist item, extract priority markers, @mentions, dates, and tags from the title text. Preserve paragraph text as Description. Set Depth from heading level. Return []LegacyItem with all fields populated.")
+	var items []LegacyItem
+
+	var currentDepth int
+	var currentSection string
+	lastIdx := -1
+	var descLines []string
+	inDesc := false
+
+	flushDesc := func() {
+		if lastIdx >= 0 && len(descLines) > 0 {
+			items[lastIdx].Description = strings.TrimSpace(strings.Join(descLines, "\n"))
+			descLines = nil
+		}
+		inDesc = false
+	}
+
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "#") {
+			flushDesc()
+			i := 0
+			for i < len(line) && line[i] == '#' {
+				i++
+			}
+			currentDepth = i
+			currentSection = strings.TrimSpace(line[i:])
+			continue
+		}
+
+		if m := checklistRe.FindStringSubmatch(line); m != nil {
+			flushDesc()
+			checked := strings.ToLower(m[1]) == "x"
+			rawTitle := strings.TrimSpace(m[2])
+
+			status := "queued"
+			if checked {
+				status = "done"
+			} else {
+				switch strings.ToLower(currentSection) {
+				case "in progress", "in_progress", "active":
+					status = "active"
+				case "blocked":
+					status = "blocked"
+				}
+			}
+
+			// Strip metadata prefixes from title.
+			title := priorityBracketRe.ReplaceAllString(rawTitle, "")
+			title = priorityBangRe.ReplaceAllString(title, "")
+			title = assigneeRe.ReplaceAllString(title, "")
+			title = dateRe.ReplaceAllString(title, "")
+			title = tagRe.ReplaceAllString(title, "")
+			title = strings.TrimSpace(title)
+
+			items = append(items, LegacyItem{
+				Title:       title,
+				Status:      status,
+				ParentTitle: currentSection,
+				Depth:       currentDepth,
+			})
+			lastIdx = len(items) - 1
+			inDesc = true
+			continue
+		}
+
+		if inDesc {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				descLines = append(descLines, trimmed)
+			}
+		}
+	}
+
+	flushDesc()
+	return items, nil
 }
 
 // MigrationReport holds the results of a migration operation.

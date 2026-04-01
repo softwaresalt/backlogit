@@ -2,10 +2,12 @@ package config
 
 import (
 	"fmt"
-	"os"
+	"path/filepath"
 
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
+
+	"os"
 )
 
 // MigrationConfig holds the parsed migration.yaml configuration.
@@ -35,57 +37,97 @@ func (c *MigrationConfig) Validate() error {
 }
 
 // LoadMigrationConfig reads and validates migration.yaml from the workspace.
-//
-// Worker: Read the file at workspacePath/migration.yaml, unmarshal YAML,
-// validate with struct tags, return the config or a descriptive error.
 func LoadMigrationConfig(workspacePath string) (*MigrationConfig, error) {
-	_ = workspacePath
-	panic("not implemented: Worker: Read workspacePath/migration.yaml with os.ReadFile. Unmarshal with yaml.v3. Call Validate(). Return (*MigrationConfig, nil) on success or (nil, error) with context wrapping.")
+	data, err := os.ReadFile(filepath.Join(workspacePath, "migration.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("read migration config: %w", err)
+	}
+	var cfg MigrationConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse migration config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate migration config: %w", err)
+	}
+	return &cfg, nil
 }
 
 // DefaultMigrationConfig returns a sensible default migration configuration
 // for common Backlog.md layouts.
-//
-// Worker: Return a MigrationConfig with these defaults:
-//   - document_classes: specs (requirements/*.md → story), plans (plans/*.md → epic),
-//     work_items (tasks/*.md, bugs/*.md → task/bug), decisions (decisions/*.md → adr),
-//     notes (notes/*.md, docs/*.md → note)
-//   - default_layout: "flat"
-//   - source_paths: common directory patterns
 func DefaultMigrationConfig() *MigrationConfig {
-	panic("not implemented: Worker: Build and return a *MigrationConfig with sensible defaults for each document class. Map glob patterns to artifact types. Set default_layout to 'flat'.")
+	return &MigrationConfig{
+		DefaultLayout: "flat",
+		DocumentClasses: []DocumentClassConfig{
+			{
+				Name:         "work_items",
+				GlobPatterns: []string{"tasks/*.md", "bugs/*.md"},
+				ArtifactType: "task",
+				Keywords:     []string{"todo", "bug", "fix"},
+			},
+			{
+				Name:         "specs",
+				GlobPatterns: []string{"requirements/*.md", "specs/*.md"},
+				ArtifactType: "story",
+				Keywords:     []string{"requirement", "acceptance criteria"},
+			},
+			{
+				Name:         "decisions",
+				GlobPatterns: []string{"decisions/*.md", "adrs/*.md"},
+				ArtifactType: "adr",
+				Keywords:     []string{"decision", "status", "context"},
+			},
+			{
+				Name:         "plans",
+				GlobPatterns: []string{"plans/*.md"},
+				ArtifactType: "epic",
+				Keywords:     []string{"plan", "milestone"},
+			},
+			{
+				Name:         "notes",
+				GlobPatterns: []string{"notes/*.md", "docs/*.md"},
+				ArtifactType: "note",
+				Keywords:     []string{"note", "documentation"},
+			},
+		},
+		SourcePaths: []SourcePathConfig{
+			{Path: "tasks/", Class: "work_items"},
+			{Path: "bugs/", Class: "work_items"},
+			{Path: "requirements/", Class: "specs"},
+			{Path: "decisions/", Class: "decisions"},
+			{Path: "plans/", Class: "plans"},
+		},
+	}
 }
 
 // WriteMigrationDefaults writes the default migration.yaml to the workspace if it does not exist.
-//
-// Worker: Call DefaultMigrationConfig(), marshal to YAML, write to workspacePath/migration.yaml
-// using writeFileIfNotExists pattern from defaults.go. Return nil if file already exists.
 func WriteMigrationDefaults(workspacePath string) error {
-	_ = workspacePath
-	panic("not implemented: Worker: Get DefaultMigrationConfig(), yaml.Marshal it, write to filepath.Join(workspacePath, 'migration.yaml') using writeFileIfNotExists. Return nil on success or if file exists.")
+	cfg := DefaultMigrationConfig()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal migration defaults: %w", err)
+	}
+	return writeFileIfNotExists(filepath.Join(workspacePath, "migration.yaml"), data)
 }
 
 // ResolveArtifactType maps a document class name to its configured artifact type.
-//
-// Worker: Search document_classes for matching name, return the artifact_type.
-// Return error if class name is not found.
 func (c *MigrationConfig) ResolveArtifactType(className string) (string, error) {
-	_ = className
-	panic(fmt.Sprintf("not implemented: Worker: Iterate c.DocumentClasses, find entry where Name == className, return ArtifactType. Return error if not found."))
+	for _, dc := range c.DocumentClasses {
+		if dc.Name == className {
+			return dc.ArtifactType, nil
+		}
+	}
+	return "", fmt.Errorf("document class %q not found", className)
 }
 
 // MatchClass finds the document class that matches the given file path based on glob patterns.
-//
-// Worker: For each DocumentClassConfig, check if any of its GlobPatterns match the path
-// using filepath.Match. Return the first matching class name, or empty string if none match.
+// Returns the first matching class name, or empty string if none match.
 func (c *MigrationConfig) MatchClass(filePath string) string {
-	_ = filePath
-	panic("not implemented: Worker: Iterate c.DocumentClasses, for each check c.GlobPatterns against filePath using filepath.Match. Return first match's Name, or empty string.")
+	for _, dc := range c.DocumentClasses {
+		for _, pattern := range dc.GlobPatterns {
+			if matched, err := filepath.Match(pattern, filePath); err == nil && matched {
+				return dc.Name
+			}
+		}
+	}
+	return ""
 }
-
-// Ensure imports are used.
-var (
-	_ = os.ReadFile
-	_ = yaml.Unmarshal
-	_ = fmt.Errorf
-)
