@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/backlogit/backlogit/internal/models"
 )
 
 // DocumentClass represents the type of a markdown document detected by classification.
@@ -32,19 +35,24 @@ const (
 
 // MigrationItem is a generalized intermediate representation produced by adapters.
 type MigrationItem struct {
-	Title       string            `json:"title"`
-	Body        string            `json:"body"`
-	Status      string            `json:"status"`
-	Metadata    map[string]string `json:"metadata"`
-	SourceType  DocumentClass     `json:"source_type"`
-	ParentRef   string            `json:"parent_ref"`
-	SourcePath  string            `json:"source_path"`
-	Depth       int               `json:"depth"`
-	Priority    string            `json:"priority"`
-	AssignedTo  string            `json:"assigned_to"`
-	DateRef     string            `json:"date_ref"`
-	Tags        []string          `json:"tags"`
-	SprintGroup string            `json:"sprint_group"`
+	Title        string            `json:"title"`
+	Body         string            `json:"body"`
+	Status       string            `json:"status"`
+	Metadata     map[string]string `json:"metadata"`
+	Fields       map[string]any    `json:"fields,omitempty"`
+	SourceType   DocumentClass     `json:"source_type"`
+	ParentRef    string            `json:"parent_ref"`
+	SourcePath   string            `json:"source_path"`
+	SourceID     string            `json:"source_id,omitempty"`
+	ArtifactType string            `json:"artifact_type,omitempty"`
+	Depth        int               `json:"depth"`
+	Priority     string            `json:"priority"`
+	AssignedTo   string            `json:"assigned_to"`
+	DateRef      string            `json:"date_ref"`
+	Tags         []string          `json:"tags"`
+	Dependencies []string          `json:"dependencies,omitempty"`
+	References   []string          `json:"references,omitempty"`
+	SprintGroup  string            `json:"sprint_group"`
 }
 
 // MigrationAdapter defines the contract for pluggable migration sources.
@@ -248,6 +256,16 @@ func ResetRegistry() {
 // BacklogMdAdapter implements MigrationAdapter for Backlog.md files.
 type BacklogMdAdapter struct{}
 
+var errSkipStructuredFile = errors.New("skip structured backlog file")
+
+var structuredDirArtifactTypes = map[string]string{
+	"tasks":      "task",
+	"drafts":     "task",
+	"completed":  "task",
+	"archive":    "task",
+	"milestones": "epic",
+}
+
 // Name returns the adapter identifier.
 func (a *BacklogMdAdapter) Name() string {
 	return "backlog-md"
@@ -258,6 +276,16 @@ func (a *BacklogMdAdapter) Name() string {
 // Worker: Check if path points to a .md file that contains checklist items
 // (regex match for `- [ ]` or `- [x]` patterns) indicating a legacy backlog format.
 func (a *BacklogMdAdapter) Detect(path string) bool {
+	if _, ok := resolveStructuredBacklogRoot(path); ok {
+		return true
+	}
+
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		if item, parseErr := parseStructuredBacklogFile(path, "", "task"); parseErr == nil && item != nil {
+			return true
+		}
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
@@ -276,6 +304,16 @@ func (a *BacklogMdAdapter) Detect(path string) bool {
 // each LegacyItem to a MigrationItem with appropriate field mapping.
 func (a *BacklogMdAdapter) Parse(ctx context.Context, path string) ([]MigrationItem, error) {
 	_ = ctx
+	if structuredRoot, ok := resolveStructuredBacklogRoot(path); ok {
+		return parseStructuredBacklogWorkspace(structuredRoot)
+	}
+
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		if item, parseErr := parseStructuredBacklogFile(path, "", "task"); parseErr == nil && item != nil {
+			return []MigrationItem{*item}, nil
+		}
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -287,16 +325,318 @@ func (a *BacklogMdAdapter) Parse(ctx context.Context, path string) ([]MigrationI
 	items := make([]MigrationItem, len(legacy))
 	for i, li := range legacy {
 		items[i] = MigrationItem{
-			Title:      li.Title,
-			Status:     li.Status,
-			ParentRef:  li.ParentTitle,
-			Depth:      li.Depth,
-			Body:       li.Description,
-			SourceType: ClassWorkItem,
-			SourcePath: path,
+			Title:        li.Title,
+			Status:       li.Status,
+			ParentRef:    li.ParentTitle,
+			Depth:        li.Depth,
+			Body:         li.Description,
+			ArtifactType: "task",
+			SourceType:   ClassWorkItem,
+			SourcePath:   path,
 		}
 	}
 	return items, nil
+}
+
+func resolveStructuredBacklogRoot(path string) (string, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", false
+	}
+
+	if info.IsDir() {
+		if isStructuredBacklogRoot(path) {
+			return path, true
+		}
+
+		for _, candidate := range []string{"backlog", ".backlog"} {
+			child := filepath.Join(path, candidate)
+			if isStructuredBacklogRoot(child) {
+				return child, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+func isStructuredBacklogRoot(path string) bool {
+	if _, err := os.Stat(filepath.Join(path, "config.yml")); err == nil {
+		for dir := range structuredDirArtifactTypes {
+			if _, dirErr := os.Stat(filepath.Join(path, dir)); dirErr == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func parseStructuredBacklogWorkspace(root string) ([]MigrationItem, error) {
+	var items []MigrationItem
+
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		parts := strings.Split(rel, "/")
+		if len(parts) == 0 {
+			return nil
+		}
+
+		defaultType, ok := structuredDirArtifactTypes[parts[0]]
+		if !ok {
+			return nil
+		}
+
+		item, err := parseStructuredBacklogFile(path, parts[0], defaultType)
+		if err != nil {
+			if errors.Is(err, errSkipStructuredFile) {
+				return nil
+			}
+			return err
+		}
+		items = append(items, *item)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Depth == items[j].Depth {
+			return items[i].SourceID < items[j].SourceID
+		}
+		return items[i].Depth < items[j].Depth
+	})
+
+	return items, nil
+}
+
+func parseStructuredBacklogFile(path, sourceDir, defaultType string) (*MigrationItem, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read structured backlog file: %w", err)
+	}
+
+	fm, body, err := models.ParseFrontmatter(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse structured frontmatter: %w", err)
+	}
+	if fm == nil {
+		return nil, errSkipStructuredFile
+	}
+
+	title, _ := fm["title"].(string)
+	sourceID, _ := fm["id"].(string)
+	if strings.TrimSpace(title) == "" || strings.TrimSpace(sourceID) == "" {
+		return nil, errSkipStructuredFile
+	}
+
+	status, _ := fm["status"].(string)
+	priority, _ := fm["priority"].(string)
+	milestone, _ := fm["milestone"].(string)
+	reporter := firstStringValue(fm["reporter"])
+	assigned := firstStringValue(fm["assignee"])
+	labels := stringSliceValue(fm["labels"])
+	dependencies := stringSliceValue(fm["dependencies"])
+	references := uniqueStrings(append(stringSliceValue(fm["references"]), stringSliceValue(fm["documentation"])...))
+
+	artifactType := resolveStructuredArtifactType(defaultType, fm, sourceID)
+	parentRef := deriveParentRefFromSourceID(sourceID)
+	depth := 1
+	if parentRef != "" {
+		depth = strings.Count(sourceID, ".") + 1
+	}
+
+	fields := make(map[string]any)
+	fields["backlog_md_id"] = sourceID
+	fields["backlog_md_source_path"] = filepath.ToSlash(path)
+	if reporter != "" {
+		fields["backlog_md_reporter"] = reporter
+	}
+	if created, ok := fm["created_date"]; ok {
+		fields["backlog_md_created_date"] = fmt.Sprintf("%v", created)
+	}
+	if updated, ok := fm["updated_date"]; ok {
+		fields["backlog_md_updated_date"] = fmt.Sprintf("%v", updated)
+	}
+	if completed, ok := fm["completed_date"]; ok {
+		fields["backlog_md_completed_date"] = fmt.Sprintf("%v", completed)
+	}
+	if rawType := firstStringValue(fm["type"]); rawType != "" {
+		fields["backlog_md_type"] = rawType
+	}
+	if rawTaskType := firstStringValue(fm["task_type"]); rawTaskType != "" {
+		fields["backlog_md_task_type"] = rawTaskType
+	}
+
+	for key, value := range fm {
+		switch key {
+		case "id", "title", "status", "assignee", "reporter", "created_date", "updated_date", "completed_date", "labels", "dependencies", "priority", "milestone", "references", "documentation", "type", "task_type":
+			continue
+		default:
+			fields["backlog_md_"+key] = value
+		}
+	}
+
+	return &MigrationItem{
+		Title:        title,
+		Body:         strings.TrimSpace(body),
+		Status:       mapStructuredStatus(status, sourceDir),
+		Fields:       fields,
+		SourceType:   ClassWorkItem,
+		ParentRef:    parentRef,
+		SourcePath:   path,
+		SourceID:     sourceID,
+		ArtifactType: artifactType,
+		Depth:        depth,
+		Priority:     priority,
+		AssignedTo:   assigned,
+		Tags:         labels,
+		Dependencies: dependencies,
+		References:   references,
+		SprintGroup:  milestone,
+		Metadata: map[string]string{
+			"source_dir": sourceDir,
+		},
+	}, nil
+}
+
+func mapStructuredStatus(status, sourceDir string) string {
+	if sourceDir == "archive" {
+		return "archived"
+	}
+	if sourceDir == "completed" {
+		return "done"
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	normalized = strings.ReplaceAll(normalized, "-", "")
+	normalized = strings.ReplaceAll(normalized, "_", "")
+	normalized = strings.ReplaceAll(normalized, " ", "")
+
+	switch normalized {
+	case "", "todo", "open", "draft":
+		return "queued"
+	case "inprogress", "active", "doing":
+		return "active"
+	case "blocked":
+		return "blocked"
+	case "review", "inreview":
+		return "review"
+	case "done", "completed", "closed":
+		return "done"
+	case "accepted":
+		return "accepted"
+	case "rejected":
+		return "rejected"
+	case "archived":
+		return "archived"
+	default:
+		if sourceDir == "drafts" {
+			return "queued"
+		}
+		return "queued"
+	}
+}
+
+func resolveStructuredArtifactType(defaultType string, fm map[string]any, sourceID string) string {
+	rawType := strings.ToLower(strings.TrimSpace(firstStringValue(fm["task_type"])))
+	if rawType == "" {
+		rawType = strings.ToLower(strings.TrimSpace(firstStringValue(fm["type"])))
+	}
+
+	switch rawType {
+	case "bug":
+		return "bug"
+	case "feature", "enhancement":
+		return "feature"
+	case "story", "userstory", "user_story":
+		return "story"
+	case "epic", "milestone":
+		return "epic"
+	case "subtask", "sub-task", "sub_task":
+		return "sub-task"
+	case "task", "chore", "spike", "":
+		if strings.Contains(sourceID, ".") {
+			return "sub-task"
+		}
+		return defaultType
+	default:
+		return defaultType
+	}
+}
+
+func deriveParentRefFromSourceID(sourceID string) string {
+	lastDot := strings.LastIndex(sourceID, ".")
+	if lastDot == -1 {
+		return ""
+	}
+	return sourceID[:lastDot]
+}
+
+func stringSliceValue(v any) []string {
+	if v == nil {
+		return nil
+	}
+	if s, ok := v.([]string); ok {
+		return s
+	}
+	if s, ok := v.([]any); ok {
+		result := make([]string, 0, len(s))
+		for _, item := range s {
+			str := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if str != "" {
+				result = append(result, str)
+			}
+		}
+		return result
+	}
+	if s, ok := v.(string); ok {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
+	return nil
+}
+
+func firstStringValue(v any) string {
+	values := stringSliceValue(v)
+	if len(values) > 0 {
+		return values[0]
+	}
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 // Ensure BacklogMdAdapter implements MigrationAdapter at compile time.
@@ -463,6 +803,20 @@ func FormatReport(report *MigrationReport, format string) (string, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Migrated: %d, Skipped: %d, Failed: %d\n",
 		report.ItemsMigrated, report.ItemsSkipped, report.ItemsFailed)
+	if len(report.Items) > 0 {
+		sb.WriteString("Items:\n")
+		for _, item := range report.Items {
+			label := item.Title
+			if item.SourceID != "" {
+				label = item.SourceID + " - " + item.Title
+			}
+			if item.ArtifactType != "" {
+				fmt.Fprintf(&sb, "  - %s [%s -> %s]\n", label, item.Status, item.ArtifactType)
+			} else {
+				fmt.Fprintf(&sb, "  - %s [%s]\n", label, item.Status)
+			}
+		}
+	}
 	if len(report.Errors) > 0 {
 		sb.WriteString("Errors:\n")
 		for _, e := range report.Errors {

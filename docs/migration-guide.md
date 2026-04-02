@@ -17,40 +17,69 @@ Before migrating, confirm you have:
 
 - backlogit installed (`backlogit --version` should print the version)
 - Go 1.22 or later if you plan to build from source
-- A `Backlog.md` file in checklist format
+- A current Backlog.md workspace under `backlog/` or `.backlog/`, or a legacy checklist-style backlog file
 - A project directory where the backlogit workspace will live
-- Git initialized in the project (optional but recommended for rollback)
+- Git initialized in the project (strongly recommended so you can review and revert imports easily)
+
+## What the Current Importer Supports
+
+The `backlog-md` adapter now works with the current structured Backlog.md layout rather than only with a monolithic checklist file.
+
+For the latest upstream Backlog.md, the importer reads the work-item side of a source workspace rooted at `backlog/` or `.backlog/`. It is designed around these directories:
+
+- `tasks/`
+- `drafts/`
+- `completed/`
+- `archive/`
+- `milestones/`
+
+The importer focuses on work-item content first. It preserves task metadata such as IDs, labels, dependencies, assignees, priority, milestone, references, and documentation links. It also keeps source-trace fields in `custom_fields` so you can audit where each imported item came from.
+
+Under the current backlogit methodology, queue-driven migration is intentionally limited to work items and milestones. Repository documentation and decision records belong in their own documentation concern, not inside queue-driven backlog flows. For that reason, the importer leaves Backlog.md `docs/` and `decisions/` directories alone.
+
+`migration.yaml` lets you remap the imported classes that are already parsed, but it does not make the importer discover new Backlog.md directory classes on its own.
 
 ## Migration Steps
 
 ### Step 1: Initialize the backlogit workspace
 
-Run `backlogit init` in the directory where your `Backlog.md` file lives. This creates the `.backlogit/` directory with default configuration files.
+Run `backlogit init` in the directory where the imported backlog should live. This creates `.backlogit/` and writes the default workspace and migration configuration files.
 
 ```bash
 cd your-project
 backlogit init
 ```
 
-Review `.backlogit/config.yaml` and adjust artifact types if your project uses categories that do not map directly to `task`, `story`, `bug`, or `epic`.
+Review these files before importing if your project needs custom mapping:
+
+- `.backlogit/config.yaml` for artifact types and naming
+- `.backlogit/registry.yaml` for routing
+- `.backlogit/migration.yaml` for source-path to artifact-type mapping
+
+The generated `migration.yaml` defaults to the current structured Backlog.md layout and maps:
+
+- task-like directories to `task`
+- milestone files to `epic`
 
 ### Step 2: Preview the migration with --dry-run
 
-Always run a dry run before writing any files. The `--dry-run` flag prints the migration plan to standard output without creating any artifacts.
+Always run a dry run before writing any files. The `--dry-run` flag parses the source, applies status and type mapping, and prints the migration plan without creating backlogit artifacts.
 
 ```bash
 backlogit migrate \
-  --source ./Backlog.md \
+  --source ./.backlog \
   --adapter backlog-md \
   --dry-run \
   --format text
 ```
 
+If your project uses `backlog/` instead of `.backlog/`, substitute that path in the examples below.
+
 Use `--format json` if you want machine-readable output for scripting or inspection:
 
 ```bash
 backlogit migrate \
-  --source ./Backlog.md \
+  --source ./.backlog \
   --adapter backlog-md \
   --dry-run \
   --format json
@@ -58,51 +87,59 @@ backlogit migrate \
 
 ### Step 3: Detect and validate the source format
 
-Use `--detect` to confirm the adapter recognizes your file's format, and `--validate` to check that all items would convert successfully without errors.
+Use `--detect` to confirm the adapter recognizes the source path, and `--validate` to check that all parsed items can map into your current backlogit configuration without writing files.
 
 ```bash
-backlogit migrate --source ./Backlog.md --detect
-backlogit migrate --source ./Backlog.md --adapter backlog-md --validate
+backlogit migrate --source ./.backlog --detect
+backlogit migrate --source ./.backlog --adapter backlog-md --validate
 ```
 
-If `--validate` reports errors, resolve them in the source file before proceeding. Common issues include checklist items with no title text and malformed section headings.
+If `--validate` reports errors, resolve them before proceeding. Common issues include unsupported target artifact types after custom remapping, malformed source frontmatter, or source files that are not task-like items.
 
 ### Step 4: Run the migration
 
 Once the dry run and validation pass, run the migration without `--dry-run`:
 
 ```bash
-backlogit migrate --source ./Backlog.md --adapter backlog-md
+backlogit migrate --source ./.backlog --adapter backlog-md
 ```
 
-backlogit will create one Markdown file per checklist item in the appropriate subdirectory of `.backlogit/`, assign IDs, and set frontmatter fields based on the source item's status and section.
+backlogit will create one Markdown artifact per imported work item, assign new backlogit IDs, preserve key source metadata, and then rehydrate the SQLite index.
 
 ### Step 5: Sync the index and verify
 
-After migration, rebuild the SQLite index and verify the artifacts were created correctly:
+The import command rehydrates the index automatically. After it finishes, verify the imported artifacts:
 
 ```bash
-backlogit sync
 backlogit list
 backlogit status
+backlogit query "SELECT id, title, artifact_type, status FROM items ORDER BY created_at DESC LIMIT 20"
 ```
 
-The `status` command shows a summary of artifact counts by type and status. Compare this against your original `Backlog.md` item count to confirm completeness.
+Compare the results against your source task count and spot-check a few imported artifacts to confirm that parent links, dependencies, references, and statuses came across correctly.
 
 ## Before and After Example
 
-**Backlog.md source:**
+**Backlog.md source (`.backlog/tasks/back-101 - Example-task.md`):**
 
 ```markdown
-## In Progress
+---
+id: BACK-101
+title: Example task
+status: In Progress
+assignee:
+  - '@alice'
+labels: ["backend"]
+dependencies: ["BACK-100"]
+priority: medium
+milestone: M1
+---
 
-- [ ] Implement rate limiting on the public API
-- [x] Add JWT authentication
+## Description
 
-## Backlog
-
-- [ ] Write integration tests for the payment service
-- [ ] Migrate database to PostgreSQL
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Implement rate limiting on the public API.
+<!-- SECTION:DESCRIPTION:END -->
 ```
 
 **Resulting backlogit artifact (T001.md):**
@@ -110,44 +147,74 @@ The `status` command shows a summary of artifact counts by type and status. Comp
 ```markdown
 ---
 id: T001
-title: Implement rate limiting on the public API
+title: Example task
 type: task
 status: active
-created_at: 2026-04-01T00:00:00Z
-updated_at: 2026-04-01T00:00:00Z
+assigned_to: '@alice'
+labels:
+  - backend
+sprint: M1
+custom_fields:
+  backlog_md_id: BACK-101
+  backlog_md_source_path: .backlog/tasks/back-101 - Example-task.md
 ---
 
-Migrated from Backlog.md section: In Progress.
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Implement rate limiting on the public API.
+<!-- SECTION:DESCRIPTION:END -->
 ```
 
-Each checklist item becomes an independent Markdown file. Completed items (checked boxes) receive a `done` status. Items in an "In Progress" section receive an `active` status.
+The imported artifact receives a new backlogit ID, keeps the migrated body, and stores source-trace metadata so you can map it back to the original Backlog.md file.
 
 ## Status Mapping
 
-The migration adapter maps Backlog.md states to backlogit statuses using the following rules:
+The structured-workspace importer maps current Backlog.md statuses and directory context to backlogit statuses using the following rules:
 
-| Backlog.md State             | backlogit Status |
-|------------------------------|------------------|
-| Checked item `[x]`           | done             |
-| Item in "In Progress" section | active           |
-| Item in "Backlog" section    | queued           |
-| Item in "Blocked" section    | blocked          |
-| Item in "Review" section     | in_review        |
-| Item in "Done" / "Completed" | done             |
-| Item in "Archive" section    | archived         |
-| Unchecked item (no section)  | queued           |
+| Backlog.md State              | backlogit Status |
+| ----------------------------- | ---------------- |
+| `To Do`                       | queued           |
+| `In Progress`                 | active           |
+| `Blocked`                     | blocked          |
+| `Review`                      | review           |
+| `Done`                        | done             |
+| Files under `completed/`      | done             |
+| Files under `archive/`        | archived         |
+| Draft items with empty status | queued           |
 
-Sections are matched case-insensitively. Items in sections not listed in the table default to `queued`.
+Status values are matched case-insensitively and normalized across spaces, underscores, and hyphens. Unknown statuses default to `queued`.
+
+Legacy checklist-style Backlog.md files still use the older section-and-checkbox mapping rules.
+
+## Metadata Mapping
+
+The importer preserves or translates the most useful Backlog.md fields:
+
+| Backlog.md Field | backlogit Destination |
+|------------------|-----------------------|
+| `title` | `title` |
+| `status` | `status` |
+| `assignee` | `assigned_to` (first assignee) |
+| `labels` | `labels` |
+| `dependencies` | dependency links, remapped to new backlogit IDs when possible |
+| `milestone` | `sprint` |
+| `references` | `references` |
+| `documentation` | merged into `references` for agent-friendly context |
+| `task_type` / `type` | `artifact_type` when it maps cleanly, otherwise preserved in `custom_fields` |
+| source ID, path, reporter, dates | preserved in `custom_fields` with `backlog_md_*` keys |
+
+Subtasks identified by decimal source IDs such as `BACK-217.02` are linked to their parent item when the parent is imported in the same run.
 
 ## Using --dry-run Safely
 
-The `--dry-run` flag is your safety net. It performs the full migration pipeline, including format detection, status mapping, ID assignment, and frontmatter generation, but writes nothing to disk. You can run it as many times as needed without side effects.
+The `--dry-run` flag is your safety net. It performs format detection, structured parsing, status mapping, and target-type selection, but writes nothing to disk. You can run it as many times as needed without side effects.
 
 Pipe the dry-run output to a file for review:
 
 ```bash
 backlogit migrate \
-  --source ./Backlog.md \
+  --source ./.backlog \
   --adapter backlog-md \
   --dry-run \
   --format json > migration-preview.json
@@ -155,9 +222,15 @@ backlogit migrate \
 
 Inspect `migration-preview.json` to verify that every item was mapped correctly before committing to the full migration.
 
+## Customizing Artifact Mapping
+
+If you want different target types for the currently supported imported classes, edit `.backlogit/migration.yaml` before importing. For example, you can remap milestone files to `feature` instead of `epic`, or change task-like directories to use a custom type that exists in your `config.yaml`.
+
+The migration command reads `.backlogit/migration.yaml` automatically when it exists.
+
 ## Configuring Artifact Types Post-Migration
 
-After migration, you may want to refine the artifact types assigned to migrated items. The migration adapter assigns `task` as the default type for all items. To change the type of a specific artifact:
+After migration, you may want to refine the artifact types assigned to migrated items. Task-like items default to `task`, milestone files default to `epic`, and explicit source task types are mapped when backlogit has a compatible target type. To change the type of a specific artifact:
 
 ```bash
 backlogit update T042 --type bug
@@ -181,44 +254,62 @@ Run `backlogit sync` after editing the configuration to refresh the index.
 
 **`no items found` after migration**
 
-Run `backlogit sync` to rebuild the SQLite index. The migration writes Markdown files but does not automatically refresh the cache.
+The import command rehydrates the SQLite index automatically. If the cache still looks stale, run `backlogit sync` once to force a rebuild and verify you are inspecting the same target workspace where the import ran.
 
 **Items mapped to wrong status**
 
-Check that your `Backlog.md` section headings match the expected names in the status mapping table. The adapter matches headings case-insensitively, but unusual section names fall back to `queued`. Rename the sections in the source file, or update the status manually after migration with `backlogit update <id> --status <status>`.
+Check the source item's `status` field and the directory it lives in. The importer normalizes status names, but unknown values fall back to `queued`. If needed, adjust the imported artifact with `backlogit update <id> --status <status>` after import.
 
 **`--detect` reports unknown format**
 
-Confirm the file uses standard Backlog.md checklist syntax (`- [ ]` and `- [x]` items under Markdown `##` section headings). Other checklist formats are not currently supported by the `backlog-md` adapter.
+Confirm the source path points at one of these:
+
+- a structured Backlog.md workspace directory such as `./backlog` or `./.backlog`
+- a legacy checklist-style markdown file such as `./backlog.md`
+
+The adapter does not treat arbitrary markdown directories as importable just because they contain `.md` files.
+
+**Documentation and decisions did not import**
+
+That is expected with the current importer and with the current backlogit methodology. It focuses on tasks, drafts, completed/archive task files, and milestones. Docs and decisions are treated as a separate documentation concern rather than part of the queue migration flow.
 
 **Duplicate IDs after migration**
 
-This can happen if you run the migration twice. Delete the `.backlogit/` contents (except config files) and re-run the migration once from a clean state.
+This can happen if you run the import multiple times into the same workspace. Use Git to revert the generated artifact files, or delete the imported artifact directories and rerun from a clean state.
 
-## Rollback Procedure
+## Safe Revert Procedure
 
-If the migration produces unexpected results and you want to start over:
+Source import does not currently use the `--rollback` flow. That flag belongs to the separate internal layout migration used for queue reorganization. For Backlog.md imports, the safest revert path is Git.
 
-1. Remove the migrated artifact files from `.backlogit/`:
+If the import produces unexpected results and you want to start over:
+
+1. Revert the import in Git if possible:
+
+```bash
+git restore .
+git clean -fd
+```
+
+2. If you are not using Git, remove the imported artifact files from the workspace directories created by backlogit:
 
 ```bash
 # Linux / macOS
-find .backlogit -name '*.md' -not -path '*.backlogit/config*' -delete
+find tasks bugs stories epics features queue review archive -name '*.md' -delete
 
 # Windows PowerShell
-Get-ChildItem -Path .backlogit -Recurse -Filter '*.md' | Remove-Item
+Get-ChildItem -Path tasks,bugs,stories,epics,features,queue,review,archive -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Remove-Item
 ```
 
-2. Delete the index to clear the cache:
+3. Delete the index to clear the cache:
 
 ```bash
-rm .backlogit/index.db
+rm .backlogit/backlogit.db
 ```
 
-3. If you committed the migration to Git, revert the commit:
+4. Rehydrate from the remaining Markdown source:
 
 ```bash
-git revert HEAD
+backlogit sync
 ```
 
-Your original `Backlog.md` file is not modified or deleted during migration, so the source data remains intact.
+Your original Backlog.md source workspace is not modified or deleted during import, so the source data remains intact.

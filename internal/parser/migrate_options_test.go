@@ -101,6 +101,52 @@ func TestMigrateWithOptions_AutoDetect(t *testing.T) {
 	assert.Equal(t, 1, report.ItemsMigrated)
 }
 
+func TestMigrateWithOptions_StructuredBacklogWorkspace(t *testing.T) {
+	// Arrange
+	dir := t.TempDir()
+	sourceDir := filepath.Join(dir, "backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "tasks"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "tasks", "back-101 - Example-task.md"), []byte(`---
+id: BACK-101
+title: Example task
+status: To Do
+assignee:
+  - '@alice'
+labels: ["infra"]
+dependencies: ["BACK-100"]
+priority: medium
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Imported body
+<!-- SECTION:DESCRIPTION:END -->
+`), 0o644))
+
+	parser.ResetRegistry()
+	require.NoError(t, parser.RegisterAdapter(&parser.BacklogMdAdapter{}))
+
+	opts := parser.MigrateOptions{
+		Adapter: "backlog-md",
+		DryRun:  true,
+	}
+
+	// Act
+	report, err := parser.MigrateWithOptions(context.Background(), sourceDir, opts)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.Equal(t, 1, report.ItemsMigrated)
+	require.Len(t, report.Items, 1)
+	assert.Equal(t, "Example task", report.Items[0].Title)
+	assert.Equal(t, "queued", report.Items[0].Status)
+	assert.Equal(t, "@alice", report.Items[0].AssignedTo)
+	assert.Contains(t, report.Items[0].Tags, "infra")
+}
+
 func TestMigrateWithOptions_ErrorRecovery(t *testing.T) {
 	// Arrange — file does not exist
 	opts := parser.MigrateOptions{DryRun: true}

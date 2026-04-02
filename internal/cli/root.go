@@ -94,6 +94,9 @@ func newInitCommand(cwd *string) *cobra.Command {
 			if err := config.WriteDefaults(dir); err != nil {
 				return fmt.Errorf("write defaults: %w", err)
 			}
+			if err := config.WriteMigrationDefaults(dir); err != nil {
+				return fmt.Errorf("write migration defaults: %w", err)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir)
 			return nil
 		},

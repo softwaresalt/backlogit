@@ -18,15 +18,37 @@ Every agile tool faces a choice: optimize for humans, or optimize for machines. 
 
 backlogit was built to resolve that tension. It stores task state in human-readable Markdown with YAML frontmatter, the same format developers use for documentation, ADRs, and changelogs. At the same time, it maintains an ephemeral SQLite cache that agents can query with SQL, returning structured results in a fraction of the tokens that raw file content would require.
 
-## Why Existing Tools Fall Short for AI Agents
+## backlogit Is Not Just Another Markdown Task Manager
 
-**JIRA and Azure DevOps** have rich APIs, but those APIs impose authentication overhead, rate limits, network latency, and complex OAuth flows. An agent running in a local coding session cannot reasonably provision API credentials, and every call adds latency and token cost for the API response JSON.
+Current markdown-native tools already solve part of the problem well. Backlog.md, for example, is Git-friendly, AI-aware, and MCP-capable. backlogit does not exist because other local-first tools forgot to add agent support. It exists because some teams need a deeper level of control over their workflow model, metadata model, and integration boundary than a task-manager-first design usually provides.
 
-**GitHub Issues** are accessible through the GitHub API, but the API's rate limits become a constraint for agentic workflows that query dozens of issues per session. The response format includes significant metadata overhead, and there is no SQL query interface for filtering across hundreds of open issues efficiently.
+backlogit treats the backlog as a configurable local work-item system of record. That difference shows up in four places: workflow composition, metadata richness, queryability, and portability to upstream systems.
 
-**Plain text files** like `TODO.md` or `BACKLOG.md` contain all the information, but agents must load the entire file into context to find anything. A 500-line backlog file costs thousands of tokens. Filtering for active bugs requires the agent to read, parse, and reason about every line rather than executing a targeted query.
+## Workflow Composition in Three Layers
 
-**Backlog.md** improved on plain text with a structured checklist format and Backlog.md's companion tooling. But it still lacks a query layer, a typed event stream, dependency tracking, and MCP protocol support.
+backlogit is designed so teams can shape their workflow in layers instead of accepting a single built-in process.
+
+1. `config.yaml` defines artifact identity and hierarchy. It controls artifact types, prefixes, naming formats, allowed child relationships, and queue layout. The default queue spans three levels, and the type-to-level mapping is configurable.
+2. `header-def.yaml` defines per-type field schemas. It specifies required and optional fields, enum values, defaults, and immutable system-managed fields such as IDs and timestamps.
+3. `templates/` and `registry.yaml` define structure and lifecycle. Templates declare named sections for each work item type, while routing rules map item types or statuses to directories such as `review`, `archive`, `tasks`, or `bugs`.
+
+That combination lets a team model Scrum, Kanban, a bug triage flow, a feature-harness workflow, or a custom delivery process without rewriting the application.
+
+## Rich Metadata, Not Just Better Titles
+
+backlogit tracks far more than title and status. The artifact model includes fields such as `parent_id`, `sprint`, `priority`, `assigned_to`, `owner`, `labels`, `dependencies`, `references`, `commit`, `custom_fields`, `level`, and `hierarchy_path`.
+
+That richer metadata matters for two reasons. First, it gives agents more context for planning, sequencing, and filtering work. Second, it makes the local file model portable. Custom fields can define `external_map` translation rules so a local value can map cleanly into an upstream system's representation instead of forcing the local Markdown file to adopt vendor-specific field names.
+
+This is the bridge backlogit is designed for: a local Git-friendly source of truth that can still map to systems such as Azure DevOps, Jira, or GitHub Issues when a team needs that integration boundary.
+
+## Queryability Is Part of the Data Model
+
+The SQLite cache is not an accessory. It is part of the architecture. backlogit uses the file layer for durable state, the database layer for query efficiency, and JSONL streams for history and telemetry.
+
+Because work item fields are schema-driven, backlogit can extend the SQLite schema from `header-def.yaml` and make custom fields queryable. An agent can ask for exactly the rows it needs, including status, type, priority, sprint, parentage, and custom fields, instead of scraping prose out of Markdown files.
+
+That is a meaningful difference from tools that expose search and listing commands but do not center their architecture around an explicit, queryable work-item index.
 
 ## The CQRS Solution
 
@@ -50,11 +72,12 @@ This is not a theoretical optimization. It is the reason backlogit's architectur
 
 backlogit functions as an operating system for AI coding agents. It provides:
 
-- A structured task board that agents can read and write without consuming the entire workspace in context
+- A structured work-item store that agents can read and write without consuming the entire workspace in context
 - A persistent memory system through `backlogit_save_memory` and `backlogit_create_checkpoint`, so agents resume sessions with relevant context rather than starting cold
-- A commit tracking mechanism through `backlogit_track_commit` that connects code changes to the tasks that motivated them
+- A commit tracking mechanism through `backlogit_track_commit` that connects code changes to the work items that motivated them
 - A telemetry stream through `backlogit_log_telemetry` that captures agent execution metrics for debugging and improvement
-- A dependency graph that lets agents reason about task sequencing without manual coordination
+- A dependency graph and dependency-aware queue that let agents reason about sequencing without manual coordination
+- A type-metadata surface through `backlogit_get_wit_metadata`, `backlogit_list_types`, and template discovery so agents can inspect the configured workflow instead of guessing it
 
 An agent running inside Claude Code, GitHub Copilot CLI, or Cursor can query the backlogit workspace to understand what work is queued, what is blocked, and what dependencies exist before choosing its next action. This is qualitatively different from an agent that must infer project state from file contents alone.
 
@@ -70,6 +93,10 @@ Several decisions shaped backlogit's architecture:
 
 **Git-friendly persistence.** Every artifact is a separate Markdown file with stable YAML frontmatter field ordering. Files merge cleanly, history is transparent, and the workspace travels with the codebase. There are no binary blobs and no database files in the Git history.
 
+**Configurable workflow semantics.** The workflow is not hardcoded into one task model. Teams can define artifact types, field schemas, default values, named sections, hierarchy levels, and routing rules without changing the binary.
+
+**Portable metadata model.** backlogit is designed to keep local files readable while preserving enough structure to map into upstream Agile systems. `external_map` translations, type metadata, commit links, and hooks surfaces all exist to keep that bridge explicit.
+
 **Single-binary simplicity.** Installation is one `go install` command. There are no runtime dependencies, no container images, no background services to manage. The SQLite driver uses a pure-Go implementation with no CGo, so cross-compilation works without a C toolchain.
 
 **Workspace containment.** All file operations resolve within `.backlogit/`. Path traversal attempts are rejected at the API layer. The `backlogit_query_sql` MCP tool enforces a read-only gate so agents cannot execute destructive SQL.
@@ -82,6 +109,18 @@ backlogit separates state across three storage mechanisms, each with a distinct 
 
 The Markdown layer holds current artifact state: title, status, type, description, and custom fields. These files are committed to Git and are the authoritative record. History, comments, and agent traces do not belong here; they live in the event stream.
 
-The SQLite cache enables fast relational queries. It is rebuilt automatically whenever it is missing or stale. Agents and CLI commands read from it exclusively; they never scan Markdown files directly for query operations.
+The SQLite cache enables fast relational queries. It is rebuilt automatically whenever it is missing or stale. Agents and CLI commands read from it for query operations, including full-text search, filtered lists, queue views, dependency lookups, and type-aware metadata access.
 
 The JSONL event stream records state transitions and agent activity in append-only files. `events.jsonl` captures comments and status changes. `telemetry.jsonl` captures agent execution metrics. These files accumulate over time and support audit and replay workflows.
+
+## Where backlogit Fits Best
+
+backlogit is a strong fit when a team wants all of the following at the same time:
+
+- Git-friendly local files as the source of truth.
+- Agent-native querying and orchestration.
+- Configurable workflow semantics rather than a fixed task model.
+- Rich metadata that can be filtered locally and translated for external systems.
+- A durable event trail and agent telemetry without polluting the Markdown artifacts.
+
+That is the niche backlogit is designed to occupy.

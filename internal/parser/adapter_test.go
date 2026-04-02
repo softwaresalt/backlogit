@@ -167,6 +167,38 @@ func TestBacklogMdAdapter_Parse(t *testing.T) {
 	assert.Equal(t, "active", items[0].Status)
 }
 
+func TestBacklogMdAdapter_ParseStructuredDotBacklogRoot(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, ".backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "tasks"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "tasks", "task-001 - Example-task.md"), []byte(`---
+id: TASK-001
+title: Example task
+status: To Do
+parent_task_id:
+priority: medium
+---
+
+## Description
+
+Imported body
+`), 0o644))
+	adapter := &parser.BacklogMdAdapter{}
+
+	// Act
+	items, err := adapter.Parse(context.Background(), sourceDir)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Len(t, items, 1)
+	assert.Equal(t, "TASK-001", items[0].SourceID)
+	assert.Equal(t, "Example task", items[0].Title)
+	assert.Equal(t, filepath.Join(sourceDir, "tasks", "task-001 - Example-task.md"), items[0].SourcePath)
+	assert.Equal(t, "queued", items[0].Status)
+}
+
 func TestMigrationItem_Fields(t *testing.T) {
 	// Arrange & Act
 	item := parser.MigrationItem{

@@ -37,7 +37,7 @@ A JSONL event stream records state transitions, comments, and agent telemetry in
 - Dependency tracking between artifacts with `dep add`, `dep list`, and `backlogit_get_dependencies`
 - Work queue prioritization via `backlogit queue` and `backlogit_get_queue`
 - Agent memory and checkpoint persistence through `backlogit_save_memory` and `backlogit_create_checkpoint`
-- Migration from Backlog.md checklist format with `backlogit migrate`
+- Migration from current Backlog.md workspaces and legacy checklist files with `backlogit migrate --source`
 - Single CGo-free static binary built with `modernc.org/sqlite`
 - Workspace containment: all operations stay within `.backlogit/` with path traversal rejection
 

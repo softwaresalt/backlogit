@@ -56,45 +56,27 @@ func LoadMigrationConfig(workspacePath string) (*MigrationConfig, error) {
 // for common Backlog.md layouts.
 func DefaultMigrationConfig() *MigrationConfig {
 	return &MigrationConfig{
-		DefaultLayout: "flat",
+		DefaultLayout: "structured",
 		DocumentClasses: []DocumentClassConfig{
 			{
 				Name:         "work_items",
-				GlobPatterns: []string{"tasks/*.md", "bugs/*.md"},
+				GlobPatterns: []string{"tasks/*.md", "drafts/*.md", "completed/*.md", "archive/*.md"},
 				ArtifactType: "task",
-				Keywords:     []string{"todo", "bug", "fix"},
+				Keywords:     []string{"task", "acceptance criteria", "implementation plan"},
 			},
 			{
-				Name:         "specs",
-				GlobPatterns: []string{"requirements/*.md", "specs/*.md"},
-				ArtifactType: "story",
-				Keywords:     []string{"requirement", "acceptance criteria"},
-			},
-			{
-				Name:         "decisions",
-				GlobPatterns: []string{"decisions/*.md", "adrs/*.md"},
-				ArtifactType: "adr",
-				Keywords:     []string{"decision", "status", "context"},
-			},
-			{
-				Name:         "plans",
-				GlobPatterns: []string{"plans/*.md"},
+				Name:         "milestones",
+				GlobPatterns: []string{"milestones/*.md"},
 				ArtifactType: "epic",
 				Keywords:     []string{"plan", "milestone"},
-			},
-			{
-				Name:         "notes",
-				GlobPatterns: []string{"notes/*.md", "docs/*.md"},
-				ArtifactType: "note",
-				Keywords:     []string{"note", "documentation"},
 			},
 		},
 		SourcePaths: []SourcePathConfig{
 			{Path: "tasks/", Class: "work_items"},
-			{Path: "bugs/", Class: "work_items"},
-			{Path: "requirements/", Class: "specs"},
-			{Path: "decisions/", Class: "decisions"},
-			{Path: "plans/", Class: "plans"},
+			{Path: "drafts/", Class: "work_items"},
+			{Path: "completed/", Class: "work_items"},
+			{Path: "archive/", Class: "work_items"},
+			{Path: "milestones/", Class: "milestones"},
 		},
 	}
 }

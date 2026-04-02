@@ -32,7 +32,7 @@ The lifecycle has five stages:
 backlogit init
 ```
 
-This creates the `.backlogit/` directory with default `config.yaml`, `registry.yaml`, and `hooks.yaml` files. The SQLite cache (`index.db`) is created on first use and is listed in `.gitignore` automatically.
+This creates the `.backlogit/` directory with default `config.yaml`, `registry.yaml`, `hooks.yaml`, and `migration.yaml` files. The SQLite cache (`index.db`) is created on first use and is listed in `.gitignore` automatically.
 
 **Add artifacts:**
 
@@ -196,13 +196,15 @@ This means you can safely delete `index.db` at any time. Running `backlogit sync
 
 ## Configuration Overview
 
-Three YAML files control workspace behavior:
+Four YAML files control workspace behavior:
 
 `config.yaml` defines artifact types, naming templates, ID prefixes, and custom fields. The default types are `task`, `story`, `bug`, and `epic`.
 
 `registry.yaml` maps artifact types and statuses to directory paths within `.backlogit/`. You can route `done` bugs to a different directory than `active` bugs, for example.
 
 `hooks.yaml` configures external integration triggers, such as syncing state changes to Jira or Azure DevOps.
+
+`migration.yaml` defines source-path classification and default artifact-type mappings for imports from external markdown-backed systems such as Backlog.md.
 
 ## Git Integration
 

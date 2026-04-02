@@ -109,8 +109,7 @@ func TestDefaultMigrationConfig_CoversAllClasses(t *testing.T) {
 		classNames = append(classNames, dc.Name)
 	}
 	assert.Contains(t, classNames, "work_items")
-	assert.Contains(t, classNames, "specs")
-	assert.Contains(t, classNames, "decisions")
+	assert.Contains(t, classNames, "milestones")
 }
 
 func TestWriteMigrationDefaults_CreatesFile(t *testing.T) {
