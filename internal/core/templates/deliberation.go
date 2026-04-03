@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/backlogit/backlogit/internal/core"
+	corerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -39,7 +40,7 @@ func CreateDeliberationFromStash(ctx context.Context, ws *core.Workspace, svc *S
 		return nil, err
 	}
 	if entry.DeliberationID != "" {
-		return nil, fmt.Errorf("stash entry %s is already linked to deliberation %s", entry.ID, entry.DeliberationID)
+		return nil, fmt.Errorf("stash entry %s is already linked to deliberation %s: %w", entry.ID, entry.DeliberationID, corerrors.ErrValidation)
 	}
 
 	title := strings.TrimSpace(input.Title)

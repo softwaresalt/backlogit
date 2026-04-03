@@ -4,12 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	blErrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -71,10 +73,12 @@ func ParseContent(content string) (map[string]any, []Entry, error) {
 		}
 		priority, err := NormalizePriority(matches[2])
 		if err != nil {
+			slog.Warn("skipping stash entry: invalid priority", "line", line, "error", err)
 			continue
 		}
 		kind, err := NormalizeKind(matches[4])
 		if err != nil {
+			slog.Warn("skipping stash entry: invalid kind", "line", line, "error", err)
 			continue
 		}
 		entries = append(entries, Entry{
@@ -157,7 +161,7 @@ func NormalizeKind(kind string) (string, error) {
 	case "feature", "task", "bug", "epic":
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("unsupported stash kind %q", kind)
+		return "", fmt.Errorf("unsupported stash kind %q: %w", kind, blErrors.ErrValidation)
 	}
 }
 
@@ -171,7 +175,7 @@ func NormalizePriority(priority string) (string, error) {
 	case "low", "medium", "high", "critical":
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("unsupported stash priority %q", priority)
+		return "", fmt.Errorf("unsupported stash priority %q: %w", priority, blErrors.ErrValidation)
 	}
 }
 

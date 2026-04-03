@@ -2,8 +2,12 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+
+	corerrors "github.com/backlogit/backlogit/internal/errors"
 )
 
 type errorResponse struct {
@@ -30,4 +34,14 @@ func ValidationFailed(detail string) *mcplib.CallToolResult {
 // InternalError returns an MCP error for internal failures.
 func InternalError(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("internal", detail)
+}
+
+// domainError routes not-found and validation errors to ValidationFailed and
+// all other errors to InternalError. op is a short description prepended to
+// InternalError messages to aid diagnosis.
+func domainError(op string, err error) *mcplib.CallToolResult {
+	if errors.Is(err, corerrors.ErrNotFound) || errors.Is(err, corerrors.ErrValidation) {
+		return ValidationFailed(err.Error())
+	}
+	return InternalError(fmt.Sprintf("%s: %v", op, err))
 }

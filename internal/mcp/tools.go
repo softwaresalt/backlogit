@@ -234,7 +234,7 @@ func (s *Server) RegisterTools() {
 	s.addTool(
 		mcplib.NewTool("backlogit_stash",
 			mcplib.WithDescription("Add a deferred work item to the stash"),
-			mcplib.WithString("kind", mcplib.Required(), mcplib.Description("Stash kind (feature, task, bug, epic)")),
+			mcplib.WithString("kind", mcplib.DefaultString("task"), mcplib.Description("Stash kind (feature, task, bug, epic)")),
 			mcplib.WithString("priority", mcplib.Description("Stash priority (low, medium, high, critical)"), mcplib.DefaultString("medium")),
 			mcplib.WithString("text", mcplib.Required(), mcplib.Description("Stash item text")),
 		),
@@ -245,7 +245,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Harvest a stash entry or all stash entries at a priority into backlogit work items"),
 			mcplib.WithString("stash_id", mcplib.Description("Stash entry ID")),
 			mcplib.WithString("priority", mcplib.Description("Harvest all stash entries at this priority (low, medium, high, critical)")),
-			mcplib.WithString("artifact_type", mcplib.Required(), mcplib.Description("Target artifact type (feature, task, subtask)")),
+			mcplib.WithString("artifact_type", mcplib.DefaultString("task"), mcplib.Description("Target artifact type (feature, task, subtask)")),
 			mcplib.WithString("title", mcplib.Description("Override title for the harvested work item")),
 			mcplib.WithString("description", mcplib.Description("Description for the harvested work item")),
 			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("queued")),
@@ -915,7 +915,7 @@ func (s *Server) handleFetchStash(ctx context.Context, request mcplib.CallToolRe
 		GroupByPriority: groupByPriority,
 	})
 	if err != nil {
-		return InternalError(fmt.Sprintf("fetch stash: %v", err)), nil
+		return domainError("fetch stash", err), nil
 	}
 	return toolResultJSON(entries)
 }
@@ -936,7 +936,7 @@ func (s *Server) handleStash(ctx context.Context, request mcplib.CallToolRequest
 	}
 	entry, err := core.AddStashEntry(ctx, s.Workspace, kind, priority, text)
 	if err != nil {
-		return InternalError(fmt.Sprintf("stash item: %v", err)), nil
+		return domainError("stash item", err), nil
 	}
 	return toolResultJSON(entry)
 }
@@ -972,7 +972,7 @@ func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallTool
 			ParentID:     parentID,
 		})
 		if err != nil {
-			return InternalError(fmt.Sprintf("harvest stash: %v", err)), nil
+			return domainError("harvest stash by priority", err), nil
 		}
 		return toolResultJSON(result)
 	}
@@ -985,7 +985,7 @@ func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallTool
 		ParentID:     parentID,
 	})
 	if err != nil {
-		return InternalError(fmt.Sprintf("harvest stash: %v", err)), nil
+		return domainError("harvest stash", err), nil
 	}
 	return toolResultJSON(result)
 }
@@ -1019,7 +1019,7 @@ func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRe
 		Notes:           notes,
 	})
 	if err != nil {
-		return InternalError(fmt.Sprintf("create deliberation: %v", err)), nil
+		return domainError("create deliberation", err), nil
 	}
 	return toolResultJSON(result)
 }

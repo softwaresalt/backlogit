@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/backlogit/backlogit/internal/stash"
@@ -126,35 +127,71 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 }
 
 // RehydrateStashIndex rebuilds the stash index from the hidden stash file and artifact provenance.
+// The entire clear-and-rebuild sequence runs inside a single transaction to prevent partial state.
 func RehydrateStashIndex(ctx context.Context, database *sql.DB, stashEntries []stash.Entry, sourcePath string, harvested map[string]StashRecord) error {
-	if err := ClearStashIndex(ctx, database); err != nil {
-		return err
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin stash rehydration tx: %w", err)
 	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM stash_links`); err != nil {
+		return fmt.Errorf("clear stash links: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM stash_entries`); err != nil {
+		return fmt.Errorf("clear stash entries: %w", err)
+	}
+
 	now := time.Now().UTC()
+	const upsertStashSQL = `INSERT INTO stash_entries (stash_id, priority, kind, text, deliberation_id, state, source_path, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(stash_id) DO UPDATE SET
+		   priority = excluded.priority,
+		   kind = excluded.kind,
+		   text = excluded.text,
+		   deliberation_id = excluded.deliberation_id,
+		   state = excluded.state,
+		   source_path = excluded.source_path,
+		   updated_at = excluded.updated_at`
+	const upsertLinkSQL = `INSERT INTO stash_links (stash_id, item_id, linked_at)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(stash_id) DO UPDATE SET
+		   item_id = excluded.item_id,
+		   linked_at = excluded.linked_at`
+
 	for _, entry := range stashEntries {
-		if err := UpsertStashEntry(ctx, database, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", sourcePath, now); err != nil {
-			return err
+		if _, err := tx.ExecContext(ctx, upsertStashSQL,
+			entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", sourcePath, now.Format(time.RFC3339Nano),
+		); err != nil {
+			return fmt.Errorf("upsert stash entry %s: %w", entry.ID, err)
 		}
 	}
 	for _, record := range harvested {
-		if err := UpsertStashEntry(ctx, database, record.ID, record.Priority, record.Kind, record.Text, record.DeliberationID, "harvested", record.SourcePath, record.UpdatedAt); err != nil {
-			return err
+		if _, err := tx.ExecContext(ctx, upsertStashSQL,
+			record.ID, record.Priority, record.Kind, record.Text, record.DeliberationID, "harvested", record.SourcePath, record.UpdatedAt.Format(time.RFC3339Nano),
+		); err != nil {
+			return fmt.Errorf("upsert harvested stash entry %s: %w", record.ID, err)
 		}
 		linkedAt := record.UpdatedAt
 		if record.LinkedAt != nil {
 			linkedAt = *record.LinkedAt
 		}
-		if err := LinkStashEntry(ctx, database, record.ID, record.ItemID, linkedAt); err != nil {
-			return err
+		if _, err := tx.ExecContext(ctx, upsertLinkSQL,
+			record.ID, record.ItemID, linkedAt.Format(time.RFC3339Nano),
+		); err != nil {
+			return fmt.Errorf("link stash entry %s: %w", record.ID, err)
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func mustParseTime(value string) time.Time {
 	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
 		return parsed
 	}
-	parsed, _ := time.Parse(time.RFC3339, value)
-	return parsed
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed
+	}
+	slog.Warn("stash: failed to parse timestamp; zero time used", "value", value)
+	return time.Time{}
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/db"
+	corerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 	"github.com/backlogit/backlogit/internal/stash"
 )
@@ -230,17 +232,21 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		createOpts = append(createOpts, WithParent(harvestOpts.ParentID))
 	}
 
+	// Rewrite the stash file first to prevent double-harvest if artifact creation fails.
+	if err := writeStringAtomically(StashFilePath(ws.RootPath), stash.RenderContent(fm, remaining)); err != nil {
+		return nil, fmt.Errorf("rewrite stash file: %w", err)
+	}
+
 	artifact, err := CreateArtifact(ctx, ws, itemTitle, harvestOpts.ArtifactType, createOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create artifact from stash: %w", err)
 	}
-	if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
-		return nil, fmt.Errorf("index harvested artifact: %w", err)
+	if ws.DB != nil {
+		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+			return nil, fmt.Errorf("index harvested artifact: %w", err)
+		}
 	}
 
-	if err := writeStringAtomically(StashFilePath(ws.RootPath), stash.RenderContent(fm, remaining)); err != nil {
-		return nil, err
-	}
 	if ws.DB != nil {
 		now := time.Now().UTC()
 		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateHarvested, stashRelativePath(), now); err != nil {
@@ -311,7 +317,7 @@ func removeStashEntry(rootPath, stashID string) (stash.Entry, []stash.Entry, map
 		remaining = append(remaining, entry)
 	}
 	if !found {
-		return stash.Entry{}, nil, nil, fmt.Errorf("stash entry not found: %s", stashID)
+		return stash.Entry{}, nil, nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
 	return matched, remaining, fm, nil
 }
@@ -337,10 +343,10 @@ func GetStashEntry(ctx context.Context, ws *Workspace, stashID string) (*StashEn
 			return &view, nil
 		}
 	}
-	return nil, fmt.Errorf("stash entry not found: %s", stashID)
+	return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 }
 
-// LinkDeliberationToStashEntry links an existing deliberation artifact to an active stash entry.
+// LinkDeliberationToStashEntrylinks an existing deliberation artifact to an active stash entry.
 func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, deliberationID string) (*StashEntryView, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
@@ -365,14 +371,14 @@ func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, d
 		}
 		found = true
 		if existing := strings.ToUpper(strings.TrimSpace(entries[i].DeliberationID)); existing != "" && !strings.EqualFold(existing, normalizedDeliberationID) {
-			return nil, fmt.Errorf("stash entry %s is already linked to deliberation %s", entries[i].ID, existing)
+			return nil, fmt.Errorf("stash entry %s is already linked to deliberation %s: %w", entries[i].ID, existing, corerrors.ErrValidation)
 		}
 		entries[i].DeliberationID = normalizedDeliberationID
 		updated = entries[i]
 		break
 	}
 	if !found {
-		return nil, fmt.Errorf("stash entry not found: %s", stashID)
+		return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
 	if err := writeStringAtomically(path, stash.RenderContent(fm, entries)); err != nil {
 		return nil, err
@@ -429,6 +435,8 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 		artifact, err := db.GetItem(ctx, ws.DB, entry.DeliberationID)
 		if err == nil {
 			view.Deliberation = artifact
+		} else if !errors.Is(err, corerrors.ErrNotFound) {
+			return StashEntryView{}, fmt.Errorf("load linked deliberation %s: %w", entry.DeliberationID, err)
 		}
 	}
 	return view, nil

@@ -33,7 +33,7 @@ The lifecycle has six stages:
 backlogit init
 ```
 
-This creates the `.backlogit/` directory with default `config.yaml`, `header-def.yaml`, `registry.yaml`, `migration.yaml`, and template files. It also creates `.backlogit/queue/.stash.md` so deferred work can be captured before it is ready to become a formal work item. The SQLite cache (`backlogit.db`) is created on first use and is listed in `.gitignore` automatically.
+This creates the `.backlogit/` directory with default `config.yaml`, `header-def.yaml`, `registry.yaml`, `migration.yaml`, and template files. It also creates `.backlogit/queue/.stash.md` so deferred work can be captured before it is ready to become a formal work item. The SQLite cache (`backlogit.db`) is created on first use.
 
 **Add artifacts:**
 
@@ -106,7 +106,7 @@ backlogit get T042
 **Update fields on an artifact:**
 
 ```bash
-backlogit update T042 --status in_review
+backlogit update T042 --status review
 backlogit update T042 --title "Add rate limiting to public API"
 ```
 

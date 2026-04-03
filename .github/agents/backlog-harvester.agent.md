@@ -83,13 +83,13 @@ Decompose the reviewed plan into a backlogit feature, task, and subtask hierarch
 
 Parse the plan document:
 1. **Feature title** from the frontmatter `title` field
-2. **Problem statement** from the `## Problem Statement` section
-3. **Approach** from the `## Approach` section — preserved in the root feature description
+2. **Problem frame** from the `## Problem Frame` section — preserved in the root feature description
+3. **Requirements trace** from the `## Requirements Trace` table — inform task acceptance criteria
 4. **Task candidates** from each `### Unit N:` or `### {Subsection}` under `## Implementation Units`
 5. **Subtask candidates** from file-level changes, dependencies, and acceptance criteria within each unit
-6. **Key decisions** from the `## Key Decisions` section — preserved in the root feature description
+6. **Decisions** from the `## Decisions` table — preserved in the root feature description
 7. **Dependency graph** from the `## Dependency Graph` section — maps to dependency wiring
-8. **Constitution check** from the `## Constitution Check` section — preserved in the root feature description
+8. **Standards check** from the `## Standards Check` section — preserved in the root feature description
 
 Use grep/glob to search the codebase when validating file references from the plan:
 

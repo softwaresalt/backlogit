@@ -39,8 +39,8 @@ Running `backlogit init` creates a workspace rooted at `.backlogit/` with these 
 * Deferred planning ideas live in `.backlogit/queue/.stash.md`
 * Per-item history lives in `.backlogit/logs/{item-id}.jsonl`
 * The disposable cache lives in `.backlogit/backlogit.db`
-* Default artifact types are `feature`, `task`, and `subtask`
-* Default ID segments are `F`, `T`, and `ST`
+* Default artifact types are `feature`, `task`, `subtask`, and `deliberation`
+* Default ID segments are `F`, `T`, `ST`, and `DL`
 
 The default hierarchy yields IDs such as `F001`, `F001.T001`, and `F001.T001.ST001`.
 
@@ -144,6 +144,10 @@ artifact_types:
     prefix: ST
     name_format: "{prefix}{NNN}"
     allowed_children: []
+  deliberation:
+    prefix: DL
+    name_format: "{prefix}{NNN}"
+    allowed_children: []
 fields:
   status:
     type: enum
@@ -166,6 +170,7 @@ queue_layout:
     - level: 1
       types:
         - feature
+        - deliberation
     - level: 2
       types:
         - task
