@@ -8,32 +8,27 @@ import (
 	"os"
 )
 
-// TailEvents reads the most recent events for a specific item from events.jsonl.
-func TailEvents(_ context.Context, path string, itemID string, limit int) ([]Event, error) {
-	all, err := ReadAllEvents(context.Background(), path)
+// TailEvents reads the most recent events for a specific item from its JSONL log file.
+func TailEvents(_ context.Context, logsDir string, itemID string, limit int) ([]Event, error) {
+	all, err := ReadAllEvents(context.Background(), logsDir, itemID)
 	if err != nil {
 		return nil, err
 	}
-	var filtered []Event
-	for _, e := range all {
-		if e.ItemID == itemID {
-			filtered = append(filtered, e)
-		}
+	if limit > 0 && len(all) > limit {
+		all = all[len(all)-limit:]
 	}
-	if limit > 0 && len(filtered) > limit {
-		filtered = filtered[len(filtered)-limit:]
-	}
-	return filtered, nil
+	return all, nil
 }
 
-// ReadAllEvents reads all events from a JSONL file.
-func ReadAllEvents(_ context.Context, path string) ([]Event, error) {
+// ReadAllEvents reads all events from a work item's JSONL log file.
+func ReadAllEvents(_ context.Context, logsDir string, itemID string) ([]Event, error) {
+	path := LogPathForItem(logsDir, itemID)
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("open events file: %w", err)
+		return nil, fmt.Errorf("open item log file: %w", err)
 	}
 	defer f.Close()
 
@@ -47,6 +42,9 @@ func ReadAllEvents(_ context.Context, path string) ([]Event, error) {
 		var e Event
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			continue
+		}
+		if e.ItemID == "" {
+			e.ItemID = itemID
 		}
 		result = append(result, e)
 	}

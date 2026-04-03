@@ -13,35 +13,35 @@ import (
 // ResolveTargetDir determines the filesystem directory for an artifact.
 func ResolveTargetDir(registry *config.RegistryConfig, artifactType string, status string) string {
 	for _, rule := range registry.Directories {
-		for _, t := range rule.Condition.Type {
-			if t == artifactType {
-				return rule.Path
-			}
-		}
 		for _, s := range rule.Condition.Status {
 			if s == status {
 				return rule.Path
 			}
 		}
+		for _, t := range rule.Condition.Type {
+			if t == artifactType {
+				return rule.Path
+			}
+		}
 	}
-	return "items"
+	return "queue"
 }
 
-// MoveArtifactFile relocates an artifact file to a new directory atomically.
-func MoveArtifactFile(_ context.Context, workspaceRoot string, currentPath string, newDir string) (string, error) {
-	if _, err := SafeResolve(workspaceRoot, currentPath); err != nil {
+// MoveArtifactFile relocates an artifact file within the .backlogit storage root atomically.
+func MoveArtifactFile(_ context.Context, storageRoot string, currentPath string, newDir string) (string, error) {
+	if _, err := SafeResolve(storageRoot, currentPath); err != nil {
 		// currentPath may already be absolute; validate it is inside root using filepath.Rel.
-		absRoot, absErr := filepath.Abs(workspaceRoot)
+		absRoot, absErr := filepath.Abs(storageRoot)
 		if absErr != nil {
-			return "", fmt.Errorf("resolve workspace root: %w", absErr)
+			return "", fmt.Errorf("resolve storage root: %w", absErr)
 		}
 		rel, relErr := filepath.Rel(absRoot, filepath.Clean(currentPath))
 		if relErr != nil || strings.HasPrefix(rel, "..") {
-			return "", fmt.Errorf("current path escapes workspace: %s", currentPath)
+			return "", fmt.Errorf("current path escapes storage root: %s", currentPath)
 		}
 	}
 
-	newDirAbs := filepath.Join(workspaceRoot, newDir)
+	newDirAbs := filepath.Join(storageRoot, newDir)
 	if err := os.MkdirAll(newDirAbs, 0o755); err != nil {
 		return "", fmt.Errorf("create directory %s: %w", newDirAbs, err)
 	}

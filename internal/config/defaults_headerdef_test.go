@@ -49,8 +49,8 @@ func TestWriteDefaults_HeaderDefContainsAllTypes(t *testing.T) {
 	cfg, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 
-	// Assert — initial 3 types must be present (revision-3)
-	expectedTypes := []string{"task", "bug", "epic"}
+	// Assert — initial 3 types must be present
+	expectedTypes := []string{"feature", "task", "subtask"}
 	for _, typeName := range expectedTypes {
 		assert.Contains(t, cfg.Types, typeName, "missing type: %s", typeName)
 	}
@@ -71,7 +71,7 @@ func TestWriteDefaults_HeaderDefSystemFields(t *testing.T) {
 	assert.True(t, cfg.Defaults.UpdatedDate.Immutable)
 }
 
-func TestWriteDefaults_HeaderDefOPPrefix(t *testing.T) {
+func TestWriteDefaults_HeaderDefTypedPrefixes(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
@@ -80,10 +80,10 @@ func TestWriteDefaults_HeaderDefOPPrefix(t *testing.T) {
 	cfg, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 
-	// Assert — all types use OP prefix
-	for typeName, typeCfg := range cfg.Types {
-		assert.Equal(t, "OP", typeCfg.Prefix, "type %s should use OP prefix", typeName)
-	}
+	// Assert — default types use typed prefixes
+	assert.Equal(t, "F", cfg.Types["feature"].Prefix)
+	assert.Equal(t, "T", cfg.Types["task"].Prefix)
+	assert.Equal(t, "ST", cfg.Types["subtask"].Prefix)
 }
 
 func TestWriteDefaults_DoesNotOverwriteExisting(t *testing.T) {

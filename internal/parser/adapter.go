@@ -263,7 +263,7 @@ var structuredDirArtifactTypes = map[string]string{
 	"drafts":     "task",
 	"completed":  "task",
 	"archive":    "task",
-	"milestones": "epic",
+	"milestones": "feature",
 }
 
 // Name returns the adapter identifier.
@@ -555,24 +555,26 @@ func resolveStructuredArtifactType(defaultType string, fm map[string]any, source
 		rawType = strings.ToLower(strings.TrimSpace(firstStringValue(fm["type"])))
 	}
 
+	hierarchyType := defaultType
+	dotCount := strings.Count(sourceID, ".")
+	switch {
+	case dotCount == 0:
+		hierarchyType = "feature"
+	case dotCount == 1:
+		hierarchyType = "task"
+	case dotCount >= 2:
+		hierarchyType = "subtask"
+	}
+
 	switch rawType {
-	case "bug":
-		return "bug"
-	case "feature", "enhancement":
+	case "feature", "enhancement", "epic", "milestone":
 		return "feature"
-	case "story", "userstory", "user_story":
-		return "story"
-	case "epic", "milestone":
-		return "epic"
 	case "subtask", "sub-task", "sub_task":
-		return "sub-task"
-	case "task", "chore", "spike", "":
-		if strings.Contains(sourceID, ".") {
-			return "sub-task"
-		}
-		return defaultType
+		return "subtask"
+	case "task", "chore", "spike", "story", "userstory", "user_story", "bug", "":
+		return hierarchyType
 	default:
-		return defaultType
+		return hierarchyType
 	}
 }
 

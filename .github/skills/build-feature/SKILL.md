@@ -7,7 +7,7 @@ input:
   properties:
     task-id:
       type: string
-      description: "The unique Backlog.md task ID."
+      description: "The unique backlogit task or subtask ID."
     harness-cmd:
       type: string
       description: "The go test command defining the strict test harness boundary."
@@ -116,7 +116,8 @@ Execute the following loop with a **hard limit of 5 attempts**:
 
 4. **Circuit breaker**: If 5 attempts are exhausted without the harness passing:
    * `broadcast` at `error` level: `[BUILD] Circuit breaker � 5 attempts exhausted, task blocked`.
-   * Call `backlog-task_edit` with `id: ${input:task-id}` and add a note in the task description indicating it is blocked pending human review.
+   * Call `backlogit_move_item` with `id: ${input:task-id}` and `status: "blocked"`.
+   * Call `backlogit_append_comment` with `item_id: ${input:task-id}`, `actor: "build-feature"`, and a note indicating the task is blocked pending human review.
    * Halt execution. Do not retry automatically.
 ### Step 3: Verification & State Update
 
@@ -132,8 +133,9 @@ Once the isolated harness passes:
    * `git add -A`
    * `git commit -m "feat: implement passing harness for ${input:task-id}"`
    * `broadcast` at `success` level: `[BUILD] Task {task-id} complete — commit {short_hash} — {N} attempt(s)`. The attempt count is used by the build-orchestrator to decide whether to invoke compound knowledge capture.
-4. **State update**: Mark the task complete in the backlog board:
-   * Call `backlog-task_complete` with `id: ${input:task-id}`
+4. **State update**: Mark the task complete in backlogit:
+   * Call `backlogit_move_item` with `id: ${input:task-id}` and `status: "done"`
+   * Call `backlogit_track_commit` with `item_id: ${input:task-id}` and `sha: {full_commit_hash}`
 
 ## Troubleshooting
 
@@ -155,7 +157,7 @@ Verify the Go version in `go.mod` matches the CI matrix in `.github/workflows/ci
 
 ### Circuit breaker triggered (5 failed attempts)
 
-When the 5-attempt hard limit is reached, the task is marked as blocked in the backlog board. Review the error output from each attempt to identify the root cause. Common issues include incorrect function signatures in stubs, missing interface implementations, or test assumptions that conflict with the codebase architecture.
+When the 5-attempt hard limit is reached, the task is marked as blocked in backlogit. Review the error output from each attempt to identify the root cause. Common issues include incorrect function signatures in stubs, missing interface implementations, or test assumptions that conflict with the codebase architecture.
 ---
 
 Proceed by reading the harness test file and isolating context for the given task.

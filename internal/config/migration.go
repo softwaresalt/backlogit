@@ -67,7 +67,7 @@ func DefaultMigrationConfig() *MigrationConfig {
 			{
 				Name:         "milestones",
 				GlobPatterns: []string{"milestones/*.md"},
-				ArtifactType: "epic",
+				ArtifactType: "feature",
 				Keywords:     []string{"plan", "milestone"},
 			},
 		},

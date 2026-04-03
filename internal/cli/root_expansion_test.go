@@ -23,7 +23,7 @@ func TestRootCommand_RegistersAllCommands(t *testing.T) {
 	}
 
 	// Assert — all queue-specified commands must be registered
-	expected := []string{"init", "sync", "mcp", "add", "list", "get", "update", "move", "delete", "search", "query", "status"}
+	expected := []string{"init", "sync", "mcp", "add", "list", "get", "update", "move", "delete", "search", "query", "status", "stash", "metadata"}
 	for _, name := range expected {
 		assert.True(t, names[name], "missing command: %s", name)
 	}
@@ -42,7 +42,7 @@ func TestRootCommand_HelpListsAllCommands(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	output := buf.String()
-	for _, name := range []string{"add", "list", "get", "update", "move", "delete", "search", "query", "status"} {
+	for _, name := range []string{"add", "list", "get", "update", "move", "delete", "search", "query", "status", "stash", "metadata"} {
 		assert.Contains(t, output, name, "help output should list %s command", name)
 	}
 }

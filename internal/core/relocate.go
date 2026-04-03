@@ -13,7 +13,7 @@ import (
 // artifactType is passed by the caller to avoid a DB lookup when the in-memory
 // artifact is already available, keeping this function DB-cache-independent.
 func RelocateArtifactFile(ctx context.Context, ws *Workspace, artifactType, artifactID, newStatus string) (string, error) {
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogitDir := WorkspaceStorageRoot(ws.RootPath)
 	registry, err := config.LoadRegistry(backlogitDir)
 	if err != nil {
 		return "", fmt.Errorf("load registry: %w", err)
@@ -26,9 +26,9 @@ func RelocateArtifactFile(ctx context.Context, ws *Workspace, artifactType, arti
 		return "", fmt.Errorf("find artifact path: %w", err)
 	}
 
-	// Compare the current directory relative to the workspace root with the target
+	// Compare the current directory relative to the .backlogit storage root with the target
 	// directory from the registry, which may be a multi-segment path.
-	currentRel, err := filepath.Rel(ws.RootPath, filepath.Dir(currentPath))
+	currentRel, err := filepath.Rel(backlogitDir, filepath.Dir(currentPath))
 	if err != nil {
 		return "", fmt.Errorf("resolve relative path: %w", err)
 	}
@@ -36,7 +36,7 @@ func RelocateArtifactFile(ctx context.Context, ws *Workspace, artifactType, arti
 		return currentPath, nil
 	}
 
-	newPath, err := MoveArtifactFile(ctx, ws.RootPath, currentPath, targetDir)
+	newPath, err := MoveArtifactFile(ctx, backlogitDir, currentPath, targetDir)
 	if err != nil {
 		return "", fmt.Errorf("move artifact file: %w", err)
 	}

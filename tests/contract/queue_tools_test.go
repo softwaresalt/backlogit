@@ -6,15 +6,15 @@ package contract_test
 //   - success path with real data
 
 import (
-"encoding/json"
-"testing"
+	"encoding/json"
+	"path/filepath"
+	"testing"
 
-"github.com/stretchr/testify/assert"
-"github.com/stretchr/testify/require"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-mcplib "github.com/mark3labs/mcp-go/mcp"
-
-mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
 )
 
 // setupServerWithArtifact creates a real workspace and a single task artifact,
@@ -75,12 +75,29 @@ assert.NotEmpty(t, data, "should return type metadata")
 // ---------------------------------------------------------------------------
 
 func TestListTypes_ReturnsTypeList(t *testing.T) {
-s := setupRealMCPServer(t)
-result, err := callToolForTest(t, s, "backlogit_list_types", map[string]any{})
+	s := setupRealMCPServer(t)
+	result, err := callToolForTest(t, s, "backlogit_list_types", map[string]any{})
 require.NoError(t, err)
 require.NotNil(t, result)
-assert.False(t, result.IsError, "list types should succeed")
-assert.NotEmpty(t, result.Content)
+	assert.False(t, result.IsError, "list types should succeed")
+	assert.NotEmpty(t, result.Content)
+}
+
+func TestGetMetadataCatalog_ReturnsUnifiedCatalog(t *testing.T) {
+	s := setupRealMCPServer(t)
+	data := callToolAndParseJSON(t, s, "backlogit_get_metadata_catalog", map[string]any{})
+	assert.Contains(t, data, "artifact_types")
+	assert.Contains(t, data, "mcp_tools")
+	assert.Contains(t, data, "cli")
+}
+
+func TestExportCommandMap_WritesWorkspaceFile(t *testing.T) {
+	s := setupRealMCPServer(t)
+	data := callToolAndParseJSON(t, s, "backlogit_export_command_map", map[string]any{
+		"path": filepath.Join(".github", "instructions", "backlogit-command-map.md"),
+	})
+	assert.Equal(t, "written", data["status"])
+	assert.Equal(t, "markdown", data["format"])
 }
 
 // ---------------------------------------------------------------------------

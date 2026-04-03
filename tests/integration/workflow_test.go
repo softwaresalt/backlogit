@@ -85,7 +85,7 @@ func TestWorkflow_AddThenGet(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Get workflow test", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -106,7 +106,7 @@ func TestWorkflow_UpdateStatus(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Update workflow", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -126,7 +126,7 @@ func TestWorkflow_MoveToDone(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Move workflow", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -146,7 +146,7 @@ func TestWorkflow_SearchFindsArtifact(t *testing.T) {
 
 	_, err = core.CreateArtifact(ctx, ws, "Searchable unique term xyz", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -167,7 +167,7 @@ func TestWorkflow_DeleteRemovesArtifact(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Delete workflow", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -194,7 +194,7 @@ func TestWorkflow_QuerySQL(t *testing.T) {
 
 	_, err = core.CreateArtifact(ctx, ws, "Query workflow", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -215,9 +215,9 @@ func TestWorkflow_StatusSummary(t *testing.T) {
 
 	_, err = core.CreateArtifact(ctx, ws, "Status task 1", "task")
 	require.NoError(t, err)
-	_, err = core.CreateArtifact(ctx, ws, "Status bug 1", "bug")
+	_, err = core.CreateArtifact(ctx, ws, "Status feature 1", "feature")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -227,6 +227,7 @@ func TestWorkflow_StatusSummary(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Contains(t, output, "task")
+	assert.Contains(t, output, "feature")
 }
 
 // --- Section-aware workflow integration tests (revision-3) ---
@@ -263,7 +264,7 @@ func TestWorkflow_GetSection(t *testing.T) {
 	require.NoError(t, err)
 	artifact, err := svc.Create(ctx, ws, "Section get test", "task", nil)
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -288,7 +289,7 @@ func TestWorkflow_UpdateSection(t *testing.T) {
 	require.NoError(t, err)
 	artifact, err := svc.Create(ctx, ws, "Section update test", "task", nil)
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 

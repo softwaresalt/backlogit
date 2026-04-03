@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/backlogit/backlogit/internal/config"
 )
@@ -10,9 +11,11 @@ import (
 // from header-def.yaml, template config, and workspace config.
 type WITMetadata struct {
 	TypeName       string                  `json:"type"`
+	Prefix         string                  `json:"prefix,omitempty"`
 	Description    string                  `json:"description"`
 	HierarchyLevel int                     `json:"hierarchy_level"`
 	IDFormat       string                  `json:"id_format"`
+	AllowedChildren []string               `json:"allowed_children,omitempty"`
 	Fields         map[string]WITFieldMeta `json:"fields"`
 	Sections       []WITSectionMeta        `json:"sections"`
 	Relationships  []WITRelationship       `json:"relationships"`
@@ -71,12 +74,15 @@ func DescribeType(
 	}
 
 	var sections []WITSectionMeta
+	description := ""
 	for _, tmpl := range templates {
 		if tmpl.ArtifactType == artifactType {
+			description = tmpl.Description
 			for _, s := range tmpl.Sections {
 				sections = append(sections, WITSectionMeta{
-					Name:     s.Name,
-					Required: s.Required,
+					Name:        s.Name,
+					Required:    s.Required,
+					Description: s.Description,
 				})
 			}
 			break
@@ -86,13 +92,15 @@ func DescribeType(
 	level, _ := LevelForType(layout, artifactType)
 
 	return &WITMetadata{
-		TypeName:       artifactType,
-		HierarchyLevel: level,
-		IDFormat:       typeCfg.IDFormat,
-		Fields:         fields,
-		Sections:       sections,
+		TypeName:        artifactType,
+		Prefix:          typeCfg.Prefix,
+		Description:     description,
+		HierarchyLevel:  level,
+		IDFormat:        typeCfg.IDFormat,
+		Fields:          fields,
+		Sections:        sections,
 		Directories: WITDirectoryMeta{
-			Active:  artifactType + "s",
+			Active:  "queue",
 			Archive: "archive",
 		},
 	}, nil
@@ -113,5 +121,11 @@ func ListTypes(
 		}
 		result = append(result, *meta)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].HierarchyLevel == result[j].HierarchyLevel {
+			return result[i].TypeName < result[j].TypeName
+		}
+		return result[i].HierarchyLevel < result[j].HierarchyLevel
+	})
 	return result, nil
 }

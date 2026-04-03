@@ -1,0 +1,63 @@
+defaults:
+  id:
+    type: string
+    immutable: true
+  created_date:
+    type: datetime
+    immutable: true
+  updated_date:
+    type: datetime
+    immutable: true
+  status:
+    type: enum
+    values:
+      - queued
+      - active
+      - blocked
+      - review
+      - done
+      - accepted
+      - rejected
+      - archived
+    default: queued
+types:
+  feature:
+    prefix: F
+    id_format: "{prefix}{NNN}"
+    fields:
+      harness_status:
+        type: enum
+        values:
+          - pending
+          - scaffolded
+          - passing
+          - failing
+        default: pending
+        optional: true
+  task:
+    prefix: T
+    id_format: "{prefix}{NNN}"
+    fields:
+      priority:
+        type: enum
+        values:
+          - low
+          - medium
+          - high
+        default: medium
+  subtask:
+    prefix: ST
+    id_format: "{prefix}{NNN}"
+    fields:
+  bug:
+    prefix: B
+    id_format: "{prefix}{NNN}"
+    fields:
+      severity:
+        type: enum
+        values:
+          - low
+          - medium
+          - high
+          - critical
+        default: medium

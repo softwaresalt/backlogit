@@ -23,6 +23,17 @@ func newMigrateCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
 		Short: "Migrate backlog data between supported formats and layouts",
+		Long: `Migrate backlog data either from supported source adapters such as backlog-md
+or from older internal workspace layouts.
+
+Use --source with --adapter backlog-md for source imports. Use --dry-run and
+--validate before writing imported artifacts. Use --rollback only for internal
+layout migrations, not source imports.`,
+		Example: `  backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
+  backlogit migrate --source .\.backlog --adapter backlog-md --validate
+  backlogit migrate --source .\.backlog --adapter backlog-md
+  backlogit migrate --dry-run
+  backlogit migrate --rollback`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if source != "" || adapter != "" || detect || validate {
 				if rollback {
@@ -57,7 +68,7 @@ func newMigrateCommand(cwd *string) *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d files, %d skipped\n",
 					report.FilesMoved, report.FilesSkipped)
-				count, rehydErr := db.Rehydrate(ctx, ws.RootPath, ws.DB)
+				count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 				if rehydErr != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
 				} else {
@@ -116,6 +127,7 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 	if migrationCfg, cfgErr := config.LoadMigrationConfig(filepath.Join(cwd, ".backlogit")); cfgErr == nil {
 		applyMigrationConfig(sourcePath, report.Items, migrationCfg)
 	}
+	stampMigrationProvenance(report.Items)
 
 	applyValidation(ws, report)
 
@@ -143,7 +155,7 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 		}
 	}
 
-	count, rehydErr := db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	if rehydErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
 	}
@@ -183,6 +195,8 @@ type migrationImportResult struct {
 	Errors   []string
 }
 
+type existingImportIndex map[string]string
+
 func applyValidation(ws *core.Workspace, report *parser.MigrationReport) {
 	for _, item := range report.Items {
 		if strings.TrimSpace(item.Title) == "" {
@@ -209,7 +223,10 @@ func applyValidation(ws *core.Workspace, report *parser.MigrationReport) {
 
 func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parser.MigrationItem) (*migrationImportResult, error) {
 	result := &migrationImportResult{}
-	idMap := make(map[string]string)
+	idMap, err := buildExistingImportIndex(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
 
 	sorted := append([]parser.MigrationItem(nil), items...)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -258,11 +275,20 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			opts = append(opts, core.WithSprint(item.SprintGroup))
 		}
 		if item.ParentRef != "" {
-			if mappedParent, ok := idMap[item.ParentRef]; ok {
+			if mappedParent, ok := idMap[legacyImportIdentity("", item.ParentRef)]; ok {
 				opts = append(opts, core.WithParent(mappedParent))
 			} else {
 				result.Errors = append(result.Errors, fmt.Sprintf("parent %q for %s not imported yet; creating without parent link", item.ParentRef, item.SourcePath))
 			}
+		}
+
+		identity := importIdentity(item)
+		if existingID, ok := idMap[identity]; ok {
+			if item.SourceID != "" {
+				idMap[legacyImportIdentity("", item.SourceID)] = existingID
+			}
+			result.Skipped++
+			continue
 		}
 
 		artifact, err := core.CreateArtifact(ctx, ws, item.Title, targetType, opts...)
@@ -271,6 +297,13 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			result.Errors = append(result.Errors, fmt.Sprintf("create artifact for %s: %v", item.SourcePath, err))
 			continue
 		}
+		if relocatedPath, relocateErr := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status)); relocateErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("relocate artifact %s: %v", artifact.ID, relocateErr))
+		} else if relocateErr == nil && relocatedPath != "" {
+			if writeErr := core.WriteArtifactFile(artifact, relocatedPath); writeErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("rewrite relocated artifact %s: %v", artifact.ID, writeErr))
+			}
+		}
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("index artifact %s: %v", artifact.ID, err))
@@ -278,8 +311,9 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		}
 
 		if item.SourceID != "" {
-			idMap[item.SourceID] = artifact.ID
+			idMap[legacyImportIdentity("", item.SourceID)] = artifact.ID
 		}
+		idMap[identity] = artifact.ID
 		result.Imported++
 	}
 
@@ -287,14 +321,14 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		if len(item.Dependencies) == 0 || item.SourceID == "" {
 			continue
 		}
-		newID, ok := idMap[item.SourceID]
+		newID, ok := idMap[legacyImportIdentity("", item.SourceID)]
 		if !ok {
 			continue
 		}
 
 		mappedDeps := make([]string, 0, len(item.Dependencies))
 		for _, dep := range item.Dependencies {
-			if mapped, ok := idMap[dep]; ok {
+			if mapped, ok := idMap[legacyImportIdentity("", dep)]; ok {
 				mappedDeps = append(mappedDeps, mapped)
 			}
 		}
@@ -324,6 +358,52 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 	return result, nil
 }
 
+func buildExistingImportIndex(ctx context.Context, ws *core.Workspace) (existingImportIndex, error) {
+	items, err := db.QueryItems(ctx, ws.DB, db.QueryFilters{IncludeArchived: true})
+	if err != nil {
+		return nil, fmt.Errorf("query existing imported artifacts: %w", err)
+	}
+
+	index := make(existingImportIndex)
+	for _, item := range items {
+		if item == nil || item.CustomFields == nil {
+			continue
+		}
+
+		sourcePath, _ := item.CustomFields["backlog_md_source_path"].(string)
+		sourceID, _ := item.CustomFields["backlog_md_id"].(string)
+		if sourcePath == "" {
+			continue
+		}
+
+		index[legacyImportIdentity(sourcePath, sourceID)] = item.ID
+		if sourceID != "" {
+			index[legacyImportIdentity("", sourceID)] = item.ID
+		}
+	}
+	return index, nil
+}
+
+func stampMigrationProvenance(items []parser.MigrationItem) {
+	for i := range items {
+		if items[i].Fields == nil {
+			items[i].Fields = map[string]any{}
+		}
+		items[i].Fields["backlog_md_source_path"] = filepath.ToSlash(items[i].SourcePath)
+		if items[i].SourceID != "" {
+			items[i].Fields["backlog_md_id"] = items[i].SourceID
+		}
+	}
+}
+
+func importIdentity(item parser.MigrationItem) string {
+	return legacyImportIdentity(filepath.ToSlash(item.SourcePath), item.SourceID)
+}
+
+func legacyImportIdentity(sourcePath, sourceID string) string {
+	return filepath.ToSlash(sourcePath) + "::" + sourceID
+}
+
 func cloneMigrationFields(fields map[string]any) map[string]any {
 	if len(fields) == 0 {
 		return map[string]any{}
@@ -342,6 +422,10 @@ func applyMigrationConfig(sourcePath string, items []parser.MigrationItem, cfg *
 
 	structuredRoot, _ := resolveStructuredSourceRoot(sourcePath)
 	for i := range items {
+		if items[i].SourceID != "" {
+			continue
+		}
+
 		rel := filepath.Base(items[i].SourcePath)
 		if structuredRoot != "" {
 			if computed, err := filepath.Rel(structuredRoot, items[i].SourcePath); err == nil {

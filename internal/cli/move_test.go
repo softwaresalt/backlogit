@@ -24,7 +24,7 @@ func TestMoveCommand_ChangesStatus(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Move test", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -91,7 +91,7 @@ func TestMoveCommand_OutputContainsConfirmation(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Move confirm", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 

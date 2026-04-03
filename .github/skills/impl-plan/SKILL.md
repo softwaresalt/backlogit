@@ -13,7 +13,7 @@ input:
 
 # Create Implementation Plan
 
-The `brainstorm` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `backlog-harvester` agent decomposes the plan into tasks.
+The `brainstorm` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `backlog-harvester` agent decomposes the plan into backlogit work items.
 
 This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
 
@@ -212,6 +212,6 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 When invoked standalone (not as a subagent of backlog-harvester), present next steps:
 
-1. "Run backlog-harvester to decompose this plan into backlog tasks" (Recommended)
+1. "Run backlog-harvester to decompose this plan into backlogit feature, task, and subtask items" (Recommended)
 2. "Run plan-review to validate this plan with multi-persona review first"
 3. "Revise specific sections"

@@ -30,7 +30,7 @@ backlogit is designed so teams can shape their workflow in layers instead of acc
 
 1. `config.yaml` defines artifact identity and hierarchy. It controls artifact types, prefixes, naming formats, allowed child relationships, and queue layout. The default queue spans three levels, and the type-to-level mapping is configurable.
 2. `header-def.yaml` defines per-type field schemas. It specifies required and optional fields, enum values, defaults, and immutable system-managed fields such as IDs and timestamps.
-3. `templates/` and `registry.yaml` define structure and lifecycle. Templates declare named sections for each work item type, while routing rules map item types or statuses to directories such as `review`, `archive`, `tasks`, or `bugs`.
+3. `templates/` and `registry.yaml` define structure and lifecycle. Templates declare named sections for each work item type, while routing rules map item types or statuses to directories such as `queue`, `review`, or `archive`.
 
 That combination lets a team model Scrum, Kanban, a bug triage flow, a feature-harness workflow, or a custom delivery process without rewriting the application.
 
@@ -83,7 +83,7 @@ An agent running inside Claude Code, GitHub Copilot CLI, or Cursor can query the
 
 ## MCP Protocol Bridge
 
-The Model Context Protocol provides a standard JSON-RPC 2.0 interface for connecting AI tools to external services. backlogit implements MCP over stdio: the agent starts `backlogit mcp`, and the server exposes 21 tools that the agent discovers through the protocol's `initialize` handshake.
+The Model Context Protocol provides a standard JSON-RPC 2.0 interface for connecting AI tools to external services. backlogit implements MCP over stdio: the agent starts `backlogit mcp`, and the server exposes its configured tool surface through the protocol's `initialize` handshake.
 
 MCP was chosen because it is client-agnostic. Any MCP-compatible client, including Claude Code, GitHub Copilot CLI, Cursor, and VS Code extensions, connects to the same server without backlogit needing to implement client-specific plugins for each. The protocol also handles capability negotiation, so clients know which tools are available before calling them.
 
@@ -95,13 +95,13 @@ Several decisions shaped backlogit's architecture:
 
 **Configurable workflow semantics.** The workflow is not hardcoded into one task model. Teams can define artifact types, field schemas, default values, named sections, hierarchy levels, and routing rules without changing the binary.
 
-**Portable metadata model.** backlogit is designed to keep local files readable while preserving enough structure to map into upstream Agile systems. `external_map` translations, type metadata, commit links, and hooks surfaces all exist to keep that bridge explicit.
+**Portable metadata model.** backlogit is designed to keep local files readable while preserving enough structure to map into upstream Agile systems. `external_map` translations, type metadata, and commit links keep that bridge explicit. Full external sync remains deferred.
 
 **Single-binary simplicity.** Installation is one `go install` command. There are no runtime dependencies, no container images, no background services to manage. The SQLite driver uses a pure-Go implementation with no CGo, so cross-compilation works without a C toolchain.
 
 **Workspace containment.** All file operations resolve within `.backlogit/`. Path traversal attempts are rejected at the API layer. The `backlogit_query_sql` MCP tool enforces a read-only gate so agents cannot execute destructive SQL.
 
-**Ephemeral cache.** `index.db` is gitignored and disposable. Deleting it loses nothing. The rehydration engine rebuilds it from the Markdown files in seconds. This means the source of truth is always the files, never the database.
+**Ephemeral cache.** `backlogit.db` is gitignored and disposable. Deleting it loses nothing. The rehydration engine rebuilds it from the Markdown files in seconds. This means the source of truth is always the files, never the database.
 
 ## Three Storage Layers
 
@@ -111,7 +111,7 @@ The Markdown layer holds current artifact state: title, status, type, descriptio
 
 The SQLite cache enables fast relational queries. It is rebuilt automatically whenever it is missing or stale. Agents and CLI commands read from it for query operations, including full-text search, filtered lists, queue views, dependency lookups, and type-aware metadata access.
 
-The JSONL event stream records state transitions and agent activity in append-only files. `events.jsonl` captures comments and status changes. `telemetry.jsonl` captures agent execution metrics. These files accumulate over time and support audit and replay workflows.
+The JSONL event model records state transitions and agent activity in append-only files. Per-item logs capture comments and status changes under `.backlogit/logs/{item-id}.jsonl`. `telemetry.jsonl` captures agent execution metrics. These files accumulate over time and support audit and replay workflows.
 
 ## Where backlogit Fits Best
 

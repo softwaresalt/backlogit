@@ -10,7 +10,7 @@ import (
 	"github.com/backlogit/backlogit/internal/config"
 )
 
-// TASK-002.03.02: Create default templates for 3 initial artifact types (revision-3).
+// TASK-002.03.02: Create default templates for 3 initial artifact types.
 
 func TestWriteDefaults_CreatesTemplatesDir(t *testing.T) {
 	// Arrange
@@ -34,7 +34,7 @@ func TestWriteDefaults_Creates3Templates(t *testing.T) {
 	templatesDir := filepath.Join(dir, "templates")
 	templates, err := config.LoadTemplates(templatesDir)
 
-	// Assert — revision-3: 3 initial types (task, bug, epic)
+	// Assert — initial 3 types
 	require.NoError(t, err)
 	assert.Len(t, templates, 3)
 }
@@ -53,8 +53,8 @@ func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
 		types[tmpl.ArtifactType] = true
 	}
 
-	// Assert — revision-3: initial 3 types only
-	expectedTypes := []string{"task", "bug", "epic"}
+	// Assert — initial 3 types only
+	expectedTypes := []string{"feature", "task", "subtask"}
 	for _, typeName := range expectedTypes {
 		assert.True(t, types[typeName], "missing template for type: %s", typeName)
 	}
@@ -81,7 +81,7 @@ func TestWriteDefaults_TaskTemplateHasExpectedSections(t *testing.T) {
 	assert.Contains(t, sectionNames, "acceptance-criteria")
 }
 
-func TestWriteDefaults_BugTemplateHasReproSteps(t *testing.T) {
+func TestWriteDefaults_FeatureTemplateHasGoals(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
@@ -90,15 +90,35 @@ func TestWriteDefaults_BugTemplateHasReproSteps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	bugTmpl := config.GetTemplateForType(templates, "bug")
+	featureTmpl := config.GetTemplateForType(templates, "feature")
 
 	// Assert
-	require.NotNil(t, bugTmpl)
-	sectionNames := make([]string, 0, len(bugTmpl.Sections))
-	for _, s := range bugTmpl.Sections {
+	require.NotNil(t, featureTmpl)
+	sectionNames := make([]string, 0, len(featureTmpl.Sections))
+	for _, s := range featureTmpl.Sections {
 		sectionNames = append(sectionNames, s.Name)
 	}
-	assert.Contains(t, sectionNames, "steps-to-reproduce")
-	assert.Contains(t, sectionNames, "expected-behavior")
-	assert.Contains(t, sectionNames, "actual-behavior")
+	assert.Contains(t, sectionNames, "description")
+	assert.Contains(t, sectionNames, "goals")
+}
+
+func TestWriteDefaults_SubtaskTemplateHasImplementationNotes(t *testing.T) {
+	// Arrange
+	dir := t.TempDir()
+	require.NoError(t, config.WriteDefaults(dir))
+	templatesDir := filepath.Join(dir, "templates")
+	templates, err := config.LoadTemplates(templatesDir)
+	require.NoError(t, err)
+
+	// Act
+	subtaskTmpl := config.GetTemplateForType(templates, "subtask")
+
+	// Assert
+	require.NotNil(t, subtaskTmpl)
+	sectionNames := make([]string, 0, len(subtaskTmpl.Sections))
+	for _, s := range subtaskTmpl.Sections {
+		sectionNames = append(sectionNames, s.Name)
+	}
+	assert.Contains(t, sectionNames, "description")
+	assert.Contains(t, sectionNames, "implementation-notes")
 }

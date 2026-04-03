@@ -16,6 +16,10 @@ func NewQueueCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "queue",
 		Short: "Manage the work queue",
+		Long: `View and manipulate the indexed work queue.
+
+Use queue view for grouped queue output, queue move to reorder items, and
+queue bulk-status to update multiple items in one command.`,
 	}
 	cmd.AddCommand(NewQueueViewCmd())
 	cmd.AddCommand(NewQueueMoveCmd())
@@ -30,6 +34,9 @@ func NewQueueViewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "view",
 		Short: "View queue items",
+		Example: `  backlogit queue view
+  backlogit queue view --status active --group-by type
+  backlogit queue view --sort priority`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, ".")
@@ -67,6 +74,7 @@ func NewQueueMoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "move <item-id>",
 		Short: "Reorder an item in the queue",
+		Example: `  backlogit queue move T001 --position 1`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -94,6 +102,7 @@ func NewQueueBulkStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bulk-status",
 		Short: "Update status for multiple items",
+		Example: `  backlogit queue bulk-status --ids T001,T002,T003 --status active`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ids == "" {
 				return fmt.Errorf("--ids is required")

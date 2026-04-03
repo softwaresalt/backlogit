@@ -7,6 +7,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/core/templates"
 )
 
@@ -53,6 +54,18 @@ func handleListTemplates(_ context.Context, _ *Server, templateSvc *templates.Se
 func (s *Server) ListTools() []string {
 	result := make([]string, len(s.toolNames))
 	copy(result, s.toolNames)
+	return result
+}
+
+// DescribeTools returns the registered MCP tools with their descriptions.
+func (s *Server) DescribeTools() []core.ToolInfo {
+	result := make([]core.ToolInfo, 0, len(s.toolDefs))
+	for _, tool := range s.toolDefs {
+		result = append(result, core.ToolInfo{
+			Name:        tool.Name,
+			Description: tool.Description,
+		})
+	}
 	return result
 }
 

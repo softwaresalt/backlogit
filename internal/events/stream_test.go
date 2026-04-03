@@ -14,8 +14,7 @@ import (
 func TestEventWriter_AppendEvent(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
-	path := filepath.Join(dir, "events.jsonl")
-	writer := events.NewEventWriter(path)
+	writer := events.NewEventWriter(dir)
 	event := events.Event{
 		Actor:     "test-agent",
 		ItemID:    "T001",
@@ -28,16 +27,15 @@ func TestEventWriter_AppendEvent(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	assert.FileExists(t, path)
+	assert.FileExists(t, filepath.Join(dir, "T001.jsonl"))
 }
 
 func TestTailEvents_FiltersByItemID(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
-	path := filepath.Join(dir, "events.jsonl")
 
 	// Act
-	result, err := events.TailEvents(context.Background(), path, "T001", 5)
+	result, err := events.TailEvents(context.Background(), dir, "T001", 5)
 
 	// Assert
 	require.NoError(t, err)

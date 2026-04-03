@@ -170,7 +170,7 @@ Broadcast the file path when written.
 
 Present options:
 
-1. "Run the backlog-harvester agent to plan, review, and decompose this requirements doc into backlog tasks" (Recommended — the harvester orchestrates impl-plan and plan-review automatically)
+1. "Run the backlog-harvester agent to plan, review, and decompose this requirements doc into backlogit feature, task, and subtask items" (Recommended — the harvester orchestrates impl-plan and plan-review automatically)
 2. "Run the impl-plan skill standalone to create a plan without harvesting"
 3. "Revise specific sections of the requirements"
 4. "Park this for later"

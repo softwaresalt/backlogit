@@ -59,6 +59,8 @@ func TestMoveCommand_RelocatesFileToTargetDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, originalPath, newPath,
 		"file should have been relocated to the directory for 'done' status")
+	assert.Contains(t, filepath.ToSlash(newPath), "/.backlogit/",
+		"relocated file should remain inside the .backlogit workspace")
 
 	// The original path should no longer exist
 	_, err = os.Stat(originalPath)
@@ -89,4 +91,6 @@ func TestMoveCommand_CreatesTargetDirIfMissing(t *testing.T) {
 	newPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
 	require.NoError(t, err)
 	assert.FileExists(t, newPath)
+	assert.Contains(t, filepath.ToSlash(newPath), "/.backlogit/",
+		"relocated file should remain inside the .backlogit workspace")
 }

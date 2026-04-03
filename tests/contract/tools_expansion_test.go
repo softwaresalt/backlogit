@@ -148,6 +148,40 @@ func TestDeleteItem_ToolExists(t *testing.T) {
 	assert.True(t, found, "backlogit_delete_item tool should be registered")
 }
 
+func TestStashTools_Exist(t *testing.T) {
+	s := setupMCPServer(t)
+	tools := s.ListTools()
+
+	expected := []string{"backlogit_fetch_stash", "backlogit_stash", "backlogit_harvest_stash"}
+	for _, name := range expected {
+		found := false
+		for _, tool := range tools {
+			if tool == name {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected %s tool to be registered", name)
+	}
+}
+
+func TestMetadataTools_Exist(t *testing.T) {
+	s := setupMCPServer(t)
+	tools := s.ListTools()
+
+	expected := []string{"backlogit_get_metadata_catalog", "backlogit_export_command_map"}
+	for _, name := range expected {
+		found := false
+		for _, tool := range tools {
+			if tool == name {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected %s tool to be registered", name)
+	}
+}
+
 // --- Section-aware MCP tool contract tests (revision-3) ---
 
 func TestListTemplates_ContractToolExists(t *testing.T) {

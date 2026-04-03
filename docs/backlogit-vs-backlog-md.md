@@ -22,15 +22,15 @@ The real difference is not "AI support versus no AI support" or "MCP versus no M
 | Area                        | Backlog.md                                                                | backlogit                                                                                                         |
 | --------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Storage architecture        | Project-local backlog folders with markdown task, doc, and decision files | `.backlogit/` Markdown artifacts plus SQLite cache and JSONL streams                                              |
-| AI integration              | MCP and CLI workflows for agents are part of the upstream design          | MCP with 21 tools plus CLI workflows and type-aware agent surfaces                                                |
+| AI integration              | MCP and CLI workflows for agents are part of the upstream design          | MCP plus CLI workflows and type-aware agent surfaces                                                              |
 | Primary emphasis            | Task-manager and board workflow with strong browser and CLI UX            | Configurable local work-item system of record for humans and agents                                               |
 | Query surface               | Search, list, board, browser, and task-focused workflows                  | Read-only SQL, FTS search, filtered lists, dependency-aware queue, WIT metadata, template discovery               |
 | Workflow modeling           | Opinionated task/docs/decisions flow documented upstream                  | User-defined artifact types, field schemas, named templates, routing rules, and queue hierarchy                   |
 | Metadata model              | Rich task metadata oriented around Backlog.md's workflow                  | Rich artifact metadata plus custom fields, `external_map` translation, commit links, hierarchy metadata           |
 | Hierarchy and dependencies  | Supports subtasks and dependencies                                        | Supports dependencies plus configurable parent-child structure, queue levels, `level`, and `hierarchy_path`       |
 | Type introspection          | Public docs focus on commands and workflows                               | Agents can inspect configured work item types, fields, defaults, sections, and hierarchy through MCP              |
-| History and telemetry       | Public docs emphasize markdown files and tool workflows                   | Explicit `events.jsonl` and `telemetry.jsonl` streams separate current state from history                         |
-| External-system portability | Not a primary design theme in public docs                                 | Designed for mapping and integration through field schemas, `external_map`, hooks surfaces, and portable metadata |
+| History and telemetry       | Public docs emphasize markdown files and tool workflows                   | Per-item JSONL logs plus telemetry separate current state from history                                            |
+| External-system portability | Not a primary design theme in public docs                                 | Designed for mapping and integration through field schemas, `external_map`, and portable metadata                 |
 
 ## Architectural Differences
 
@@ -62,7 +62,7 @@ backlogit earns its place when a team needs capabilities that go beyond a polish
 
 It lets users compose workflow semantics in layers. A team can define artifact types and naming in `config.yaml`, define required and optional fields in `header-def.yaml`, define per-type document sections in templates, and route items by status or type through `registry.yaml`.
 
-It treats metadata as a first-class portability boundary. Fields such as sprint, owner, assignee, labels, dependencies, references, commit links, custom fields, and hierarchy metadata are stored explicitly, not inferred from prose. `external_map` exists so local values can translate cleanly into upstream tracker-specific representations such as Azure DevOps, Jira, or GitHub Issues.
+It treats metadata as a first-class portability boundary. Fields such as sprint, owner, assignee, labels, dependencies, references, commit links, custom fields, and hierarchy metadata are stored explicitly, not inferred from prose. `external_map` exists so local values can translate cleanly into upstream tracker-specific representations such as Azure DevOps, Jira, or GitHub Issues, even though automatic outbound sync is still future work.
 
 It gives agents introspection APIs instead of forcing hardcoded assumptions. `backlogit_get_wit_metadata`, `backlogit_list_types`, and template discovery let an agent inspect the configured workflow before it starts mutating work items.
 
@@ -95,5 +95,4 @@ backlogit's Backlog.md interoperability adapter supports two source shapes:
 - older checklist-style backlog files
 
 That still does not mean full-fidelity import of every current Backlog.md document class. Work-item migration is the primary path today. Documentation and decision directories are not and will not be imported because documentation and decisions are a separate concern from workflow management and should be treated separately.  Our position is that such documentation should exist in a root "docs" folder as distinct, first-class artifacts of the project workspace.
-
 

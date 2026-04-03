@@ -121,7 +121,7 @@ func TestResolveHierarchicalPath(t *testing.T) {
 		wantErr      bool
 	}{
 		{name: "top-level feature", parentID: "", artifactType: "feature", wantContains: "queue"},
-		{name: "task under feature", parentID: "001", artifactType: "task", wantContains: "001"},
+		{name: "task under feature", parentID: "001", artifactType: "task", wantContains: "queue"},
 		{name: "unmapped type errors", parentID: "001", artifactType: "unknown", wantErr: true},
 	}
 

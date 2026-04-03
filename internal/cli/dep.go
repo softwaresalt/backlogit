@@ -15,6 +15,10 @@ func NewDepCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dep",
 		Short: "Manage artifact dependencies",
+		Long: `Manage explicit dependency edges between work items.
+
+Dependencies are stored in the backlogit index and can be queried from both the
+CLI and MCP tools.`,
 	}
 	cmd.AddCommand(NewDepAddCmd())
 	cmd.AddCommand(NewDepRemoveCmd())
@@ -29,6 +33,8 @@ func NewDepAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <item-id> <depends-on>",
 		Short: "Add a dependency edge",
+		Example: `  backlogit dep add T002 T001
+  backlogit dep add T010 F002 --type blocks`,
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
@@ -58,6 +64,7 @@ func NewDepRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <item-id> <depends-on>",
 		Short: "Remove a dependency edge",
+		Example: `  backlogit dep remove T002 T001`,
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
@@ -87,6 +94,8 @@ func NewDepListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <item-id>",
 		Short: "List dependencies for an artifact",
+		Example: `  backlogit dep list T002
+  backlogit dep list T001 --reverse`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]

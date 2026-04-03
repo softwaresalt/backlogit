@@ -18,6 +18,7 @@ type createOptions struct {
 	ParentID     string
 	Sprint       string
 	Status       string
+	Priority     string
 	Description  string
 	Fields       map[string]any
 	AssignedTo   string
@@ -41,6 +42,11 @@ func WithSprint(id string) Option {
 // WithStatus sets the initial status.
 func WithStatus(status string) Option {
 	return func(o *createOptions) { o.Status = status }
+}
+
+// WithPriority sets the artifact priority.
+func WithPriority(priority string) Option {
+	return func(o *createOptions) { o.Priority = priority }
 }
 
 // WithDescription sets the artifact description.
@@ -98,12 +104,30 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
 	}
 
-	nextID, err := NextID(ctx, ws.DB, artifactType)
-	if err != nil {
-		return nil, fmt.Errorf("get next id: %w", err)
+	artifactID := ""
+	if ws.Config.QueueLayout != nil {
+		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
+			nextTypedID, idErr := NextTypedHierarchicalID(
+				ctx,
+				ws.DB,
+				o.ParentID,
+				artifactType,
+				typeConfig,
+				ws.Config.QueueLayout,
+			)
+			if idErr != nil {
+				return nil, fmt.Errorf("get next hierarchical id: %w", idErr)
+			}
+			artifactID = nextTypedID
+		}
 	}
-
-	name := ResolveName(typeConfig, title, nextID, ws.Config.MaxSlugLength)
+	if artifactID == "" {
+		nextID, err := NextID(ctx, ws.DB, artifactType)
+		if err != nil {
+			return nil, fmt.Errorf("get next id: %w", err)
+		}
+		artifactID = ResolveName(typeConfig, title, nextID, ws.Config.MaxSlugLength)
+	}
 
 	status := o.Status
 	if status == "" {
@@ -112,12 +136,13 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 
 	now := time.Now()
 	artifact := &models.Artifact{
-		ID:           name,
+		ID:           artifactID,
 		Title:        title,
 		Status:       models.ArtifactStatus(status),
 		ArtifactType: artifactType,
 		ParentID:     o.ParentID,
 		Sprint:       o.Sprint,
+		Priority:     o.Priority,
 		Description:  o.Description,
 		CustomFields: o.Fields,
 		AssignedTo:   o.AssignedTo,
@@ -144,22 +169,25 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
-	// Determine target directory: use hierarchy layout if configured, otherwise flat.
+	backlogitDir := WorkspaceStorageRoot(ws.RootPath)
 	var dir string
+	if registry, regErr := config.LoadRegistry(backlogitDir); regErr == nil {
+		dir = ResolveTargetDir(registry, artifactType, status)
+	}
 	if ws.Config.QueueLayout != nil {
 		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
 			hierPath, hierErr := ResolveHierarchicalPath(ws.Config.QueueLayout, o.ParentID, artifactType)
-			if hierErr == nil {
+			if hierErr == nil && dir == "" {
 				dir = hierPath
-				level, _ := LevelForType(ws.Config.QueueLayout, artifactType)
-				artifact.Level = level
 			}
+			level, _ := LevelForType(ws.Config.QueueLayout, artifactType)
+			artifact.Level = level
 		}
 	}
 	if dir == "" {
-		dir = artifactType + "s"
+		dir = "queue"
 	}
-	dirAbs := filepath.Join(ws.RootPath, dir)
+	dirAbs := filepath.Join(backlogitDir, dir)
 	if err := os.MkdirAll(dirAbs, 0o755); err != nil {
 		return nil, fmt.Errorf("create directory: %w", err)
 	}
@@ -202,8 +230,8 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
 	}
-	content:= models.SerializeFrontmatter(fm, artifact.Description)
-	filePath := filepath.Join(dirAbs, name+".md")
+	content := models.SerializeFrontmatter(fm, artifact.Description)
+	filePath := filepath.Join(dirAbs, artifact.ID+".md")
 
 	tmpPath := filePath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
@@ -287,38 +315,28 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 }
 
 // FindArtifactPath locates the Markdown file for an artifact by ID.
-// It searches all non-hidden subdirectories of the workspace root, including
+// It searches all non-hidden subdirectories of the .backlogit workspace, including
 // status-based routing directories such as "archive" and "review".
 // artifactSearchDirs returns the set of directories to search for artifact .md files.
 // When ws.Config is available, it derives directories from artifact type names and
-// registry routing rules, avoiding expensive scans of source directories like cmd/ or internal/.
+// registry routing rules, avoiding expensive scans of unrelated repository directories.
 // When ws.Config is nil (e.g., in bare test workspaces), it falls back to all non-hidden
-// top-level directories under ws.RootPath.
+// top-level directories under .backlogit.
 func artifactSearchDirs(ws *Workspace) ([]string, error) {
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogitDir := WorkspaceStorageRoot(ws.RootPath)
 
 	if ws.Config == nil {
-		// No config loaded: scan all non-hidden dirs at the workspace root, plus
-		// subdirectories of .backlogit/ for backward-compatibility with legacy
-		// workspaces that store artifacts under .backlogit/tasks/, .backlogit/bugs/, etc.
+		// No config loaded: scan all non-hidden dirs under .backlogit.
 		var dirs []string
-		entries, err := os.ReadDir(ws.RootPath)
+		entries, err := os.ReadDir(backlogitDir)
 		if err != nil {
-			return nil, fmt.Errorf("read workspace root: %w", err)
+			return nil, fmt.Errorf("read workspace storage root: %w", err)
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() || len(entry.Name()) > 0 && entry.Name()[0] == '.' {
 				continue
 			}
-			dirs = append(dirs, filepath.Join(ws.RootPath, entry.Name()))
-		}
-		// Also include .backlogit/ subdirectories (legacy artifact storage location).
-		if blEntries, blErr := os.ReadDir(backlogitDir); blErr == nil {
-			for _, entry := range blEntries {
-				if entry.IsDir() {
-					dirs = append(dirs, filepath.Join(backlogitDir, entry.Name()))
-				}
-			}
+			dirs = append(dirs, filepath.Join(backlogitDir, entry.Name()))
 		}
 		return dirs, nil
 	}
@@ -326,16 +344,11 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 	seen := make(map[string]bool)
 	var dirs []string
 	addDir := func(rel string) {
-		abs := filepath.Join(ws.RootPath, rel)
+		abs := filepath.Join(backlogitDir, rel)
 		if !seen[abs] {
 			seen[abs] = true
 			dirs = append(dirs, abs)
 		}
-	}
-
-	// Artifact type directories are {type}s (e.g., tasks, bugs, stories).
-	for artifactType := range ws.Config.ArtifactTypes {
-		addDir(artifactType + "s")
 	}
 
 	// Registry-specified paths cover status-based relocations (e.g., archive, review).
@@ -350,6 +363,8 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 	// Include queue layout root directory if configured.
 	if ws.Config != nil && ws.Config.QueueLayout != nil {
 		addDir(ws.Config.QueueLayout.RootDir)
+	} else {
+		addDir("queue")
 	}
 
 	return dirs, nil

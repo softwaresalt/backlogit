@@ -87,3 +87,51 @@ Body`
 	assert.Empty(t, got.AssignedTo)
 	assert.Empty(t, got.Labels)
 }
+
+func TestRehydrate_IndexesPerItemLogs(t *testing.T) {
+	// Arrange
+	ws := t.TempDir()
+	md := `---
+id: T003
+title: Logged task
+status: queued
+artifact_type: task
+---
+
+Body`
+
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "queue"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "queue", "T003.md"), []byte(md), 0o644))
+
+	logsDir := filepath.Join(ws, "logs")
+	require.NoError(t, os.MkdirAll(logsDir, 0o755))
+	logLines := `{"timestamp":"2026-04-03T00:00:00Z","actor":"alice","item_id":"T003","event_type":"comment","delta":{"comment":"investigated issue"}}` + "\n" +
+		`{"timestamp":"2026-04-03T00:01:00Z","actor":"bob","item_id":"T003","event_type":"worklog","delta":{"summary":"implemented fix"}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(logsDir, "T003.jsonl"), []byte(logLines), 0o644))
+
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	// Act
+	count, err := db.Rehydrate(ctx, ws, database)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	entries, err := db.ListItemLogEntries(ctx, database, "T003", 10)
+	require.NoError(t, err)
+
+	searchResults, err := db.SearchItemLogEntries(ctx, database, "implemented fix", 10)
+	require.NoError(t, err)
+
+	// Assert
+	require.Len(t, entries, 2)
+	assert.Equal(t, "alice", entries[0].Actor)
+	assert.Equal(t, "comment", entries[0].EventType)
+	assert.Equal(t, "bob", entries[1].Actor)
+	assert.Equal(t, "worklog", entries[1].EventType)
+	assert.Contains(t, entries[0].LogPath, "logs/T003.jsonl")
+
+	require.Len(t, searchResults, 1)
+	assert.Equal(t, "T003", searchResults[0].ItemID)
+	assert.Equal(t, "worklog", searchResults[0].EventType)
+}

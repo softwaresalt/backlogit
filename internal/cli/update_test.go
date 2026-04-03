@@ -23,7 +23,7 @@ func TestUpdateCommand_StatusChange(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Update test", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -49,7 +49,7 @@ func TestUpdateCommand_TitleChange(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Original title", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 
@@ -75,7 +75,7 @@ func TestUpdateCommand_IDChangeRejected(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "ID test", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 

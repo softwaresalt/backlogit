@@ -16,6 +16,11 @@ func newStatusCommand(cwd *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show workspace artifact summary",
+		Long: `Show a workspace summary grouped by artifact type and status.
+
+This is a quick health check for the current indexed backlog state.`,
+		Example: `  backlogit status
+  backlogit --cwd D:\Source\MyProject status`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)

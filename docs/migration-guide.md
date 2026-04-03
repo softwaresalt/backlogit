@@ -59,7 +59,7 @@ Review these files before importing if your project needs custom mapping:
 The generated `migration.yaml` defaults to the current structured Backlog.md layout and maps:
 
 - task-like directories to `task`
-- milestone files to `epic`
+- milestone files to `feature`
 
 ### Step 2: Preview the migration with --dry-run
 
@@ -104,7 +104,9 @@ Once the dry run and validation pass, run the migration without `--dry-run`:
 backlogit migrate --source ./.backlog --adapter backlog-md
 ```
 
-backlogit will create one Markdown artifact per imported work item, assign new backlogit IDs, preserve key source metadata, and then rehydrate the SQLite index.
+backlogit will create one Markdown artifact per imported work item inside `.backlogit/`, assign new backlogit IDs, preserve key source metadata, and then rehydrate the SQLite index.
+
+Imported active work lands under `.backlogit/queue/`. Imported terminal work such as archived items stays under `.backlogit/archive/`. Migration does not create top-level `queue/`, `tasks/`, `epics/`, or `archive/` directories in the repository root.
 
 ### Step 5: Sync the index and verify
 
@@ -142,7 +144,7 @@ Implement rate limiting on the public API.
 <!-- SECTION:DESCRIPTION:END -->
 ```
 
-**Resulting backlogit artifact (T001.md):**
+**Resulting backlogit artifact (`T001.md`):**
 
 ```markdown
 ---
@@ -166,7 +168,7 @@ Implement rate limiting on the public API.
 <!-- SECTION:DESCRIPTION:END -->
 ```
 
-The imported artifact receives a new backlogit ID, keeps the migrated body, and stores source-trace metadata so you can map it back to the original Backlog.md file.
+The imported artifact receives a new backlogit ID, keeps the migrated body, and stores source-trace metadata so you can map it back to the original Backlog.md file. Nested imports use typed hierarchical IDs such as `F001.T001` and `F001.T001.ST001`, and the filename matches the ID exactly.
 
 ## Status Mapping
 
@@ -230,7 +232,7 @@ The migration command reads `.backlogit/migration.yaml` automatically when it ex
 
 ## Configuring Artifact Types Post-Migration
 
-After migration, you may want to refine the artifact types assigned to migrated items. Task-like items default to `task`, milestone files default to `epic`, and explicit source task types are mapped when backlogit has a compatible target type. To change the type of a specific artifact:
+After migration, you may want to refine the artifact types assigned to migrated items. Task-like items default to `task`, milestone files default to `feature`, and explicit source task types are mapped when backlogit has a compatible target type. To change the type of a specific artifact:
 
 ```bash
 backlogit update T042 --type bug
@@ -240,12 +242,18 @@ To configure custom artifact types for future use, edit `.backlogit/config.yaml`
 
 ```yaml
 artifact_types:
-  - task
-  - story
-  - bug
-  - epic
-  - spike
-  - chore
+  feature:
+    prefix: F
+    name_format: "{prefix}{NNN}"
+    allowed_children: [task]
+  task:
+    prefix: T
+    name_format: "{prefix}{NNN}"
+    allowed_children: [subtask]
+  subtask:
+    prefix: ST
+    name_format: "{prefix}{NNN}"
+    allowed_children: []
 ```
 
 Run `backlogit sync` after editing the configuration to refresh the index.
@@ -294,10 +302,10 @@ git clean -fd
 
 ```bash
 # Linux / macOS
-find tasks bugs stories epics features queue review archive -name '*.md' -delete
+find .backlogit/queue .backlogit/archive -name '*.md' -delete
 
 # Windows PowerShell
-Get-ChildItem -Path tasks,bugs,stories,epics,features,queue,review,archive -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Remove-Item
+Get-ChildItem -Path .backlogit\queue,.backlogit\archive -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Remove-Item
 ```
 
 3. Delete the index to clear the cache:

@@ -18,6 +18,10 @@ func newDeleteCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <id>",
 		Short: "Delete an artifact",
+		Long: `Delete an artifact from the workspace and remove it from the index.
+
+This is a destructive operation and requires --force.`,
+		Example: `  backlogit delete T001 --force`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]

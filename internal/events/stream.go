@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -18,19 +19,27 @@ type Event struct {
 	Delta     map[string]any `json:"delta"`
 }
 
-// EventWriter provides goroutine-safe append-only writes to events.jsonl.
+// EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
 type EventWriter struct {
-	path string
-	mu   sync.Mutex
+	logsDir string
+	mu      sync.Mutex
 }
 
-// NewEventWriter creates an event writer for the given file path.
-func NewEventWriter(path string) *EventWriter {
-	return &EventWriter{path: path}
+// NewEventWriter creates an event writer for the given logs directory.
+func NewEventWriter(logsDir string) *EventWriter {
+	return &EventWriter{logsDir: logsDir}
 }
 
-// AppendEvent marshals and appends an event to events.jsonl.
+// LogPathForItem returns the JSONL log path for a work item ID.
+func LogPathForItem(logsDir, itemID string) string {
+	return filepath.Join(logsDir, itemID+".jsonl")
+}
+
+// AppendEvent marshals and appends an event to the item's JSONL log file.
 func (w *EventWriter) AppendEvent(_ context.Context, event Event) error {
+	if event.ItemID == "" {
+		return fmt.Errorf("append event: item_id is required")
+	}
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
@@ -40,9 +49,13 @@ func (w *EventWriter) AppendEvent(_ context.Context, event Event) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	f, err := os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err := os.MkdirAll(w.logsDir, 0o755); err != nil {
+		return fmt.Errorf("create logs dir: %w", err)
+	}
+	path := LogPathForItem(w.logsDir, event.ItemID)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return fmt.Errorf("open events file: %w", err)
+		return fmt.Errorf("open item log file: %w", err)
 	}
 	defer f.Close()
 	_, err = fmt.Fprintf(f, "%s\n", data)
