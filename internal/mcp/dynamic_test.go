@@ -141,7 +141,7 @@ func TestStashTools_AreRegistered(t *testing.T) {
 	s, _ := setupSectionAwareServer(t)
 	tools := s.ListTools()
 
-	expected := []string{"backlogit_fetch_stash", "backlogit_stash", "backlogit_harvest_stash"}
+	expected := []string{"backlogit_fetch_stash", "backlogit_stash", "backlogit_harvest_stash", "backlogit_deliberate"}
 	for _, name := range expected {
 		found := false
 		for _, tool := range tools {

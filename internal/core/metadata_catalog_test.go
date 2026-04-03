@@ -40,6 +40,8 @@ func TestBuildMetadataCatalog_ReturnsUnifiedCatalog(t *testing.T) {
 	assert.Contains(t, catalog.Stash.SupportedKinds, "feature")
 	assert.Contains(t, catalog.Stash.SupportedPriorities, "critical")
 	assert.Equal(t, "medium", catalog.Stash.DefaultPriority)
+	assert.True(t, catalog.Stash.SupportsDeliberation)
+	assert.Equal(t, "deliberation", catalog.Stash.DeliberationType)
 }
 
 func TestWriteCommandMap_WritesInsideWorkspace(t *testing.T) {

@@ -22,14 +22,15 @@ const (
 	DefaultDescription = "Candidate backlog ideas, issues, risks, and tasks for future planning"
 )
 
-var entryPattern = regexp.MustCompile(`(?i)^\s*-\s+\[\s*\]\s+\[([A-Z0-9]{1,8})\](?:\s+\[priority:([a-z]+)\])?\s+([a-z]+):\s+(.+?)\s*$`)
+var entryPattern = regexp.MustCompile(`(?i)^\s*-\s+\[\s*\]\s+\[([A-Z0-9]{1,8})\](?:\s+\[priority:([a-z]+)\])?(?:\s+\[deliberation:([A-Z0-9.]+)\])?\s+([a-z]+):\s+(.+?)\s*$`)
 
 // Entry represents a single active stash item stored in the stash file.
 type Entry struct {
-	ID       string `json:"id"`
-	Priority string `json:"priority"`
-	Kind     string `json:"kind"`
-	Text     string `json:"text"`
+	ID             string `json:"id"`
+	Priority       string `json:"priority"`
+	DeliberationID string `json:"deliberation_id,omitempty"`
+	Kind           string `json:"kind"`
+	Text           string `json:"text"`
 }
 
 var allowedKinds = []string{"feature", "task", "bug", "epic"}
@@ -65,22 +66,23 @@ func ParseContent(content string) (map[string]any, []Entry, error) {
 	entries := make([]Entry, 0)
 	for _, line := range lines {
 		matches := entryPattern.FindStringSubmatch(line)
-		if len(matches) != 5 {
+		if len(matches) != 6 {
 			continue
 		}
 		priority, err := NormalizePriority(matches[2])
 		if err != nil {
 			continue
 		}
-		kind, err := NormalizeKind(matches[3])
+		kind, err := NormalizeKind(matches[4])
 		if err != nil {
 			continue
 		}
 		entries = append(entries, Entry{
-			ID:       strings.ToUpper(matches[1]),
-			Priority: priority,
-			Kind:     kind,
-			Text:     strings.TrimSpace(matches[4]),
+			ID:             strings.ToUpper(matches[1]),
+			Priority:       priority,
+			DeliberationID: strings.ToUpper(strings.TrimSpace(matches[3])),
+			Kind:           kind,
+			Text:           strings.TrimSpace(matches[5]),
 		})
 	}
 	return fm, entries, nil
@@ -117,13 +119,20 @@ func FormatEntry(entry Entry) string {
 	if err != nil {
 		priority = DefaultPriority
 	}
-	return fmt.Sprintf(
-		"- [ ] [%s] [priority:%s] %s: %s",
+	line := fmt.Sprintf(
+		"- [ ] [%s] [priority:%s]",
 		strings.ToUpper(entry.ID),
 		priority,
+	)
+	if deliberationID := strings.ToUpper(strings.TrimSpace(entry.DeliberationID)); deliberationID != "" {
+		line += fmt.Sprintf(" [deliberation:%s]", deliberationID)
+	}
+	line += fmt.Sprintf(
+		" %s: %s",
 		strings.ToLower(entry.Kind),
 		strings.TrimSpace(entry.Text),
 	)
+	return line
 }
 
 // GenerateID returns a unique uppercase alphanumeric stash ID with up to 8 characters.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
 	"github.com/backlogit/backlogit/internal/models"
@@ -251,6 +252,19 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("parent_id", mcplib.Description("Optional parent artifact ID")),
 		),
 		s.handleHarvestStash,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_deliberate",
+			mcplib.WithDescription("Create a deliberation artifact linked to an active stash entry"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID to deliberate")),
+			mcplib.WithString("title", mcplib.Description("Deliberation title (defaults to stash text)")),
+			mcplib.WithString("problem_frame", mcplib.Description("Problem frame content")),
+			mcplib.WithString("options", mcplib.Description("Options or alternatives considered")),
+			mcplib.WithString("chosen_direction", mcplib.Description("Chosen direction and rationale")),
+			mcplib.WithString("open_questions", mcplib.Description("Outstanding questions or risks")),
+			mcplib.WithString("notes", mcplib.Description("Supporting notes or research")),
+		),
+		s.handleDeliberate,
 	)
 }
 
@@ -972,6 +986,40 @@ func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallTool
 	})
 	if err != nil {
 		return InternalError(fmt.Sprintf("harvest stash: %v", err)), nil
+	}
+	return toolResultJSON(result)
+}
+
+func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	if s.templateSvc == nil {
+		return InternalError("template service is unavailable"), nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	if stashID == "" {
+		return ValidationFailed("stash_id is required"), nil
+	}
+	title, _ := request.Params.Arguments["title"].(string)
+	problemFrame, _ := request.Params.Arguments["problem_frame"].(string)
+	options, _ := request.Params.Arguments["options"].(string)
+	chosenDirection, _ := request.Params.Arguments["chosen_direction"].(string)
+	openQuestions, _ := request.Params.Arguments["open_questions"].(string)
+	notes, _ := request.Params.Arguments["notes"].(string)
+
+	result, err := templates.CreateDeliberationFromStash(ctx, s.Workspace, s.templateSvc, templates.DeliberationInput{
+		StashID:         stashID,
+		Title:           title,
+		ProblemFrame:    problemFrame,
+		Options:         options,
+		ChosenDirection: chosenDirection,
+		OpenQuestions:   openQuestions,
+		Notes:           notes,
+	})
+	if err != nil {
+		return InternalError(fmt.Sprintf("create deliberation: %v", err)), nil
 	}
 	return toolResultJSON(result)
 }

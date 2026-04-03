@@ -57,6 +57,7 @@ func TestDefaultConfig_ReturnsValid(t *testing.T) {
 	// Assert
 	assert.NotNil(t, cfg)
 	assert.NotEmpty(t, cfg.ArtifactTypes)
+	assert.Contains(t, cfg.ArtifactTypes, "deliberation")
 }
 
 func TestDefaultRegistry_ReturnsValid(t *testing.T) {
@@ -80,4 +81,5 @@ func TestWriteDefaults_CreatesFiles(t *testing.T) {
 	assert.FileExists(t, filepath.Join(ws, "config.yaml"))
 	assert.FileExists(t, filepath.Join(ws, "registry.yaml"))
 	assert.FileExists(t, filepath.Join(ws, "queue", ".stash.md"))
+	assert.FileExists(t, filepath.Join(ws, "templates", "deliberation.md"))
 }

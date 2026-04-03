@@ -11,15 +11,16 @@ import (
 
 // StashRecord represents an indexed stash entry with any harvested link.
 type StashRecord struct {
-	ID         string     `json:"id"`
-	Priority   string     `json:"priority"`
-	Kind       string     `json:"kind"`
-	Text       string     `json:"text"`
-	State      string     `json:"state"`
-	SourcePath string     `json:"source_path"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	ItemID     string     `json:"item_id,omitempty"`
-	LinkedAt   *time.Time `json:"linked_at,omitempty"`
+	ID             string     `json:"id"`
+	Priority       string     `json:"priority"`
+	DeliberationID string     `json:"deliberation_id,omitempty"`
+	Kind           string     `json:"kind"`
+	Text           string     `json:"text"`
+	State          string     `json:"state"`
+	SourcePath     string     `json:"source_path"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	ItemID         string     `json:"item_id,omitempty"`
+	LinkedAt       *time.Time `json:"linked_at,omitempty"`
 }
 
 // ClearStashIndex deletes stash entries and stash links before rehydration.
@@ -34,14 +35,15 @@ func ClearStashIndex(ctx context.Context, database *sql.DB) error {
 }
 
 // UpsertStashEntry writes or updates a stash entry record.
-func UpsertStashEntry(ctx context.Context, database *sql.DB, stashID, priority, kind, text, state, sourcePath string, updatedAt time.Time) error {
+func UpsertStashEntry(ctx context.Context, database *sql.DB, stashID, priority, kind, text, deliberationID, state, sourcePath string, updatedAt time.Time) error {
 	_, err := database.ExecContext(ctx,
-		`INSERT INTO stash_entries (stash_id, priority, kind, text, state, source_path, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO stash_entries (stash_id, priority, kind, text, deliberation_id, state, source_path, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(stash_id) DO UPDATE SET
 		   priority = excluded.priority,
 		   kind = excluded.kind,
 		   text = excluded.text,
+		   deliberation_id = excluded.deliberation_id,
 		   state = excluded.state,
 		   source_path = excluded.source_path,
 		   updated_at = excluded.updated_at`,
@@ -49,6 +51,7 @@ func UpsertStashEntry(ctx context.Context, database *sql.DB, stashID, priority, 
 		priority,
 		kind,
 		text,
+		deliberationID,
 		state,
 		sourcePath,
 		updatedAt.Format(time.RFC3339Nano),
@@ -79,7 +82,7 @@ func LinkStashEntry(ctx context.Context, database *sql.DB, stashID, itemID strin
 
 // ListStashEntries returns indexed stash entries with any harvested item links.
 func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bool) ([]StashRecord, error) {
-	query := `SELECT se.stash_id, se.priority, se.kind, se.text, se.state, se.source_path, se.updated_at, sl.item_id, sl.linked_at
+	query := `SELECT se.stash_id, se.priority, se.kind, se.text, se.deliberation_id, se.state, se.source_path, se.updated_at, sl.item_id, sl.linked_at
 		FROM stash_entries se
 		LEFT JOIN stash_links sl ON sl.stash_id = se.stash_id`
 	args := []any{}
@@ -98,14 +101,18 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 	var records []StashRecord
 	for rows.Next() {
 		var (
-			record         StashRecord
-			updatedAt      string
-			itemID, linked sql.NullString
+			record                StashRecord
+			updatedAt             string
+			deliberationID        sql.NullString
+			itemID, linked        sql.NullString
 		)
-		if err := rows.Scan(&record.ID, &record.Priority, &record.Kind, &record.Text, &record.State, &record.SourcePath, &updatedAt, &itemID, &linked); err != nil {
+		if err := rows.Scan(&record.ID, &record.Priority, &record.Kind, &record.Text, &deliberationID, &record.State, &record.SourcePath, &updatedAt, &itemID, &linked); err != nil {
 			return nil, fmt.Errorf("scan stash entry: %w", err)
 		}
 		record.UpdatedAt = mustParseTime(updatedAt)
+		if deliberationID.Valid {
+			record.DeliberationID = deliberationID.String
+		}
 		if itemID.Valid {
 			record.ItemID = itemID.String
 		}
@@ -125,12 +132,12 @@ func RehydrateStashIndex(ctx context.Context, database *sql.DB, stashEntries []s
 	}
 	now := time.Now().UTC()
 	for _, entry := range stashEntries {
-		if err := UpsertStashEntry(ctx, database, entry.ID, entry.Priority, entry.Kind, entry.Text, "active", sourcePath, now); err != nil {
+		if err := UpsertStashEntry(ctx, database, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", sourcePath, now); err != nil {
 			return err
 		}
 	}
 	for _, record := range harvested {
-		if err := UpsertStashEntry(ctx, database, record.ID, record.Priority, record.Kind, record.Text, "harvested", record.SourcePath, record.UpdatedAt); err != nil {
+		if err := UpsertStashEntry(ctx, database, record.ID, record.Priority, record.Kind, record.Text, record.DeliberationID, "harvested", record.SourcePath, record.UpdatedAt); err != nil {
 			return err
 		}
 		linkedAt := record.UpdatedAt

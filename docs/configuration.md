@@ -85,11 +85,12 @@ Deferred planning work lives in `.backlogit/queue/.stash.md`. The current stash 
 * kinds: `feature`, `task`, `bug`, `epic`
 * priorities: `low`, `medium`, `high`, `critical`
 * default priority: `medium`
+* optional deliberation linkage to a first-class `deliberation` artifact
 
 Each stash line is stored in a programmatically readable format:
 
 ```text
-- [ ] [ABCD1234] [priority:high] feature: Split audit dashboard into a later feature set
+- [ ] [ABCD1234] [priority:high] [deliberation:DL001] feature: Split audit dashboard into a later feature set
 ```
 
 Older stash lines without a priority tag are still accepted and normalize to `medium` when read.
@@ -98,6 +99,7 @@ Older stash lines without a priority tag are still accepted and normalize to `me
 
 ```text
 backlogit stash add "Capture follow-up hardening ideas" --kind feature --priority high
+backlogit deliberate ABCD1234 --problem-frame "Clarify the trade-offs before this becomes a planned feature."
 backlogit stash fetch-stash --priority critical
 backlogit stash fetch-stash --group-by-priority
 backlogit stash harvest ABCD1234 --type feature
@@ -109,7 +111,8 @@ backlogit stash harvest --priority high --type task
 The matching MCP tools support the same capability set:
 
 * `backlogit_stash` accepts `kind`, `text`, and optional `priority`
-* `backlogit_fetch_stash` accepts optional `priority` and `group_by_priority`
+* `backlogit_fetch_stash` accepts optional `priority` and `group_by_priority`, and returns linked deliberation artifacts when present
+* `backlogit_deliberate` accepts `stash_id`, optional `title`, and optional deliberation section content
 * `backlogit_harvest_stash` accepts either `stash_id` or `priority`, plus the target artifact details
 
 This is the stash metadata that also appears in `backlogit metadata catalog` and exported command maps, which lets agents reason about priority-aware planning without hardcoding enums.

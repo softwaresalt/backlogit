@@ -205,3 +205,32 @@ func TestStash_Real_AddFetchAndHarvest(t *testing.T) {
 	assert.Equal(t, "feature", artifact["artifact_type"])
 	assert.Equal(t, "critical", artifact["priority"])
 }
+
+func TestDeliberate_Real_CreatesLinkedArtifact(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	stashData := callToolAndParseJSON(t, s, "backlogit_stash", map[string]any{
+		"kind":     "feature",
+		"priority": "high",
+		"text":     "Capture audit split trade-offs",
+	})
+	stashID := stashData["id"].(string)
+
+	deliberationData := callToolAndParseJSON(t, s, "backlogit_deliberate", map[string]any{
+		"stash_id":         stashID,
+		"chosen_direction": "Split the dashboard work into two queue waves.",
+	})
+	entry := deliberationData["entry"].(map[string]any)
+	artifact := deliberationData["artifact"].(map[string]any)
+	assert.Equal(t, stashID, entry["id"])
+	assert.Equal(t, "deliberation", artifact["artifact_type"])
+	assert.Equal(t, artifact["id"], entry["deliberation_id"])
+
+	fetchData := callToolAndParseJSON(t, s, "backlogit_fetch_stash", map[string]any{"priority": "high"})
+	entries := fetchData["entries"].([]any)
+	require.Len(t, entries, 1)
+	fetchedEntry := entries[0].(map[string]any)
+	assert.Equal(t, artifact["id"], fetchedEntry["deliberation_id"])
+	linkedDeliberation := fetchedEntry["deliberation"].(map[string]any)
+	assert.Equal(t, artifact["id"], linkedDeliberation["id"])
+}

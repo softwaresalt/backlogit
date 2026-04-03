@@ -247,17 +247,21 @@ func stashRecordFromArtifact(artifact *models.Artifact) (StashRecord, bool) {
 	kind, _ := artifact.CustomFields["source_stash_kind"].(string)
 	text, _ := artifact.CustomFields["source_stash_text"].(string)
 	record := StashRecord{
-		ID:         stashID,
-		Priority:   stash.DefaultPriority,
-		Kind:       kind,
-		Text:       text,
-		State:      "harvested",
-		SourcePath: filepath.ToSlash(filepath.Join("queue", stash.FileName)),
-		ItemID:     artifact.ID,
-		UpdatedAt:  artifact.UpdatedAt,
+		ID:             stashID,
+		Priority:       stash.DefaultPriority,
+		Kind:           kind,
+		Text:           text,
+		State:          "harvested",
+		SourcePath:     filepath.ToSlash(filepath.Join("queue", stash.FileName)),
+		ItemID:         artifact.ID,
+		UpdatedAt:      artifact.UpdatedAt,
+		DeliberationID: "",
 	}
 	if priority, _ := artifact.CustomFields["source_stash_priority"].(string); priority != "" {
 		record.Priority = priority
+	}
+	if deliberationID, _ := artifact.CustomFields["source_deliberation_id"].(string); deliberationID != "" {
+		record.DeliberationID = deliberationID
 	}
 	linkedAt := artifact.UpdatedAt
 	record.LinkedAt = &linkedAt

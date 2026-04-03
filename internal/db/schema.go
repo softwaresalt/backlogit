@@ -65,6 +65,7 @@ func EnsureSchema(db *sql.DB) error {
 			priority    TEXT NOT NULL,
 			kind        TEXT NOT NULL,
 			text        TEXT NOT NULL,
+			deliberation_id TEXT,
 			state       TEXT NOT NULL,
 			source_path TEXT NOT NULL,
 			updated_at  DATETIME NOT NULL
@@ -162,6 +163,7 @@ func EnsureSchema(db *sql.DB) error {
 		`ALTER TABLE items ADD COLUMN level INTEGER`,
 		`ALTER TABLE items ADD COLUMN hierarchy_path TEXT`,
 		`ALTER TABLE stash_entries ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`,
+		`ALTER TABLE stash_entries ADD COLUMN deliberation_id TEXT`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {

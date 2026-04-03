@@ -55,10 +55,12 @@ type MetadataMigration struct {
 
 // MetadataStashInfo describes stash conventions and supported kinds.
 type MetadataStashInfo struct {
-	Path                string   `json:"path"`
-	SupportedKinds      []string `json:"supported_kinds"`
-	SupportedPriorities []string `json:"supported_priorities"`
-	DefaultPriority     string   `json:"default_priority"`
+	Path                 string   `json:"path"`
+	SupportedKinds       []string `json:"supported_kinds"`
+	SupportedPriorities  []string `json:"supported_priorities"`
+	DefaultPriority      string   `json:"default_priority"`
+	SupportsDeliberation bool     `json:"supports_deliberation"`
+	DeliberationType     string   `json:"deliberation_type,omitempty"`
 }
 
 // TemplateInfo describes a registered template and its section metadata.
@@ -131,10 +133,12 @@ func BuildMetadataCatalog(
 		Registry:      registryRoutes(registry),
 		Templates:     templateInfos,
 		Stash: MetadataStashInfo{
-			Path:                filepath.Join(WorkspaceStorageRoot(ws.RootPath), "queue", ".stash.md"),
-			SupportedKinds:      stash.AllowedKinds(),
-			SupportedPriorities: stash.AllowedPriorities(),
-			DefaultPriority:     stash.DefaultPriority,
+			Path:                 filepath.Join(WorkspaceStorageRoot(ws.RootPath), "queue", ".stash.md"),
+			SupportedKinds:       stash.AllowedKinds(),
+			SupportedPriorities:  stash.AllowedPriorities(),
+			DefaultPriority:      stash.DefaultPriority,
+			SupportsDeliberation: true,
+			DeliberationType:     "deliberation",
 		},
 		CLI:      DescribeCLICommands(cliRoot),
 		MCPTools: sortToolInfos(mcpTools),
@@ -268,6 +272,9 @@ func RenderCommandMapMarkdown(catalog *MetadataCatalog) string {
 	fmt.Fprintf(&b, "* Supported kinds: `%s`\n", strings.Join(catalog.Stash.SupportedKinds, "`, `"))
 	fmt.Fprintf(&b, "\n* Supported priorities: `%s`\n", strings.Join(catalog.Stash.SupportedPriorities, "`, `"))
 	fmt.Fprintf(&b, "\n* Default priority: `%s`\n", catalog.Stash.DefaultPriority)
+	if catalog.Stash.SupportsDeliberation {
+		fmt.Fprintf(&b, "\n* Deliberation type: `%s`\n", catalog.Stash.DeliberationType)
+	}
 
 	b.WriteString("\n## CLI Commands\n\n")
 	for _, cmd := range catalog.CLI {

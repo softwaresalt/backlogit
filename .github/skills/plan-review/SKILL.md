@@ -57,7 +57,7 @@ If cross-model invocation is not available, run all 4 with the caller's model. M
 ### Step 1: Load Plan and Context
 
 1. Read the plan file from `.backlog/exec-plans/`
-2. If the plan references an origin document in `.backlog/brainstorm/`, read that too
+2. If the plan references an origin document in `.backlogit/queue/` or `.backlog/research/`, read that too
 3. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 
 ### Step 2: Spawn Reviewer Subagents

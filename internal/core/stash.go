@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/models"
 	"github.com/backlogit/backlogit/internal/stash"
 )
 
@@ -34,11 +35,21 @@ type HarvestStashOptions struct {
 	ParentID     string `json:"parent_id,omitempty"`
 }
 
+// StashEntryView describes a stash entry plus any linked deliberation artifact.
+type StashEntryView struct {
+	ID             string           `json:"id"`
+	Priority       string           `json:"priority"`
+	DeliberationID string           `json:"deliberation_id,omitempty"`
+	Kind           string           `json:"kind"`
+	Text           string           `json:"text"`
+	Deliberation   *models.Artifact `json:"deliberation,omitempty"`
+}
+
 // FetchedStashResult describes fetched stash entries, with optional grouping.
 type FetchedStashResult struct {
-	Entries           []stash.Entry            `json:"entries"`
-	GroupBy           string                   `json:"group_by,omitempty"`
-	EntriesByPriority map[string][]stash.Entry `json:"entries_by_priority,omitempty"`
+	Entries           []StashEntryView            `json:"entries"`
+	GroupBy           string                      `json:"group_by,omitempty"`
+	EntriesByPriority map[string][]StashEntryView `json:"entries_by_priority,omitempty"`
 }
 
 // StashFilePath returns the canonical hidden stash file path for a workspace root.
@@ -61,7 +72,7 @@ func EnsureStashFile(rootPath string) error {
 }
 
 // FetchStash returns the currently active stash entries.
-func FetchStash(_ context.Context, ws *Workspace, opts FetchStashOptions) (*FetchedStashResult, error) {
+func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*FetchedStashResult, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
 	}
@@ -86,14 +97,19 @@ func FetchStash(_ context.Context, ws *Workspace, opts FetchStashOptions) (*Fetc
 		entries = filtered
 	}
 
-	result := &FetchedStashResult{Entries: entries}
+	views, err := expandStashEntries(ctx, ws, entries)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &FetchedStashResult{Entries: views}
 	if opts.GroupByPriority {
 		result.GroupBy = "priority"
-		grouped := make(map[string][]stash.Entry, len(stash.AllowedPriorities()))
+		grouped := make(map[string][]StashEntryView, len(stash.AllowedPriorities()))
 		for _, priority := range stash.AllowedPriorities() {
-			grouped[priority] = []stash.Entry{}
+			grouped[priority] = []StashEntryView{}
 		}
-		for _, entry := range entries {
+		for _, entry := range views {
 			grouped[entry.Priority] = append(grouped[entry.Priority], entry)
 		}
 		result.EntriesByPriority = grouped
@@ -142,7 +158,7 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 		return nil, err
 	}
 	if ws.DB != nil {
-		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, stashStateActive, stashRelativePath(), time.Now().UTC()); err != nil {
+		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC()); err != nil {
 			return nil, err
 		}
 	}
@@ -151,8 +167,8 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 
 // HarvestedStashResult describes a stash harvest operation.
 type HarvestedStashResult struct {
-	Entry    stash.Entry `json:"entry"`
-	Artifact any         `json:"artifact"`
+	Entry    StashEntryView `json:"entry"`
+	Artifact any            `json:"artifact"`
 }
 
 // HarvestedStashBatchResult describes a priority-based stash harvest operation.
@@ -190,6 +206,17 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 			"source_stash_text":     entry.Text,
 		}),
 	}
+	if entry.DeliberationID != "" {
+		createOpts = []Option{
+			WithFields(map[string]any{
+				"source_stash_id":        entry.ID,
+				"source_stash_priority":  entry.Priority,
+				"source_stash_kind":      entry.Kind,
+				"source_stash_text":      entry.Text,
+				"source_deliberation_id": entry.DeliberationID,
+			}),
+		}
+	}
 	if entry.Priority != "" {
 		createOpts = append(createOpts, WithPriority(entry.Priority))
 	}
@@ -216,7 +243,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	}
 	if ws.DB != nil {
 		now := time.Now().UTC()
-		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, stashStateHarvested, stashRelativePath(), now); err != nil {
+		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateHarvested, stashRelativePath(), now); err != nil {
 			return nil, err
 		}
 		if err := db.LinkStashEntry(ctx, ws.DB, entry.ID, artifact.ID, now); err != nil {
@@ -224,7 +251,11 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		}
 	}
 
-	return &HarvestedStashResult{Entry: entry, Artifact: artifact}, nil
+	entryView, err := expandStashEntry(ctx, ws, entry)
+	if err != nil {
+		return nil, err
+	}
+	return &HarvestedStashResult{Entry: entryView, Artifact: artifact}, nil
 }
 
 // HarvestStashByPriority harvests all active stash entries matching a priority.
@@ -285,6 +316,79 @@ func removeStashEntry(rootPath, stashID string) (stash.Entry, []stash.Entry, map
 	return matched, remaining, fm, nil
 }
 
+// GetStashEntry returns a single active stash entry enriched with any linked deliberation.
+func GetStashEntry(ctx context.Context, ws *Workspace, stashID string) (*StashEntryView, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	if err := EnsureStashFile(ws.RootPath); err != nil {
+		return nil, err
+	}
+	_, entries, err := stash.ParseFile(StashFilePath(ws.RootPath))
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if strings.EqualFold(entry.ID, stashID) {
+			view, err := expandStashEntry(ctx, ws, entry)
+			if err != nil {
+				return nil, err
+			}
+			return &view, nil
+		}
+	}
+	return nil, fmt.Errorf("stash entry not found: %s", stashID)
+}
+
+// LinkDeliberationToStashEntry links an existing deliberation artifact to an active stash entry.
+func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, deliberationID string) (*StashEntryView, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	normalizedDeliberationID := strings.ToUpper(strings.TrimSpace(deliberationID))
+	if normalizedDeliberationID == "" {
+		return nil, fmt.Errorf("deliberation id is required")
+	}
+	if err := EnsureStashFile(ws.RootPath); err != nil {
+		return nil, err
+	}
+	path := StashFilePath(ws.RootPath)
+	fm, entries, err := stash.ParseFile(path)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	var updated stash.Entry
+	for i := range entries {
+		if !strings.EqualFold(entries[i].ID, stashID) {
+			continue
+		}
+		found = true
+		if existing := strings.ToUpper(strings.TrimSpace(entries[i].DeliberationID)); existing != "" && !strings.EqualFold(existing, normalizedDeliberationID) {
+			return nil, fmt.Errorf("stash entry %s is already linked to deliberation %s", entries[i].ID, existing)
+		}
+		entries[i].DeliberationID = normalizedDeliberationID
+		updated = entries[i]
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("stash entry not found: %s", stashID)
+	}
+	if err := writeStringAtomically(path, stash.RenderContent(fm, entries)); err != nil {
+		return nil, err
+	}
+	if ws.DB != nil {
+		if err := db.UpsertStashEntry(ctx, ws.DB, updated.ID, updated.Priority, updated.Kind, updated.Text, updated.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
+	view, err := expandStashEntry(ctx, ws, updated)
+	if err != nil {
+		return nil, err
+	}
+	return &view, nil
+}
+
 func writeStringAtomically(path, content string) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
@@ -299,4 +403,33 @@ func writeStringAtomically(path, content string) error {
 
 func stashRelativePath() string {
 	return filepath.ToSlash(filepath.Join("queue", stash.FileName))
+}
+
+func expandStashEntries(ctx context.Context, ws *Workspace, entries []stash.Entry) ([]StashEntryView, error) {
+	views := make([]StashEntryView, 0, len(entries))
+	for _, entry := range entries {
+		view, err := expandStashEntry(ctx, ws, entry)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (StashEntryView, error) {
+	view := StashEntryView{
+		ID:             entry.ID,
+		Priority:       entry.Priority,
+		DeliberationID: entry.DeliberationID,
+		Kind:           entry.Kind,
+		Text:           entry.Text,
+	}
+	if ws != nil && ws.DB != nil && entry.DeliberationID != "" {
+		artifact, err := db.GetItem(ctx, ws.DB, entry.DeliberationID)
+		if err == nil {
+			view.Deliberation = artifact
+		}
+	}
+	return view, nil
 }

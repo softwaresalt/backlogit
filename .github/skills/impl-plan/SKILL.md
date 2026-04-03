@@ -1,19 +1,19 @@
 ---
 name: impl-plan
-description: "Transform feature descriptions or requirements into structured implementation plans grounded in repo patterns and research. Use when the user says 'plan this', 'create a plan', 'how should we build', 'break this down', or when a brainstorm requirements document is ready for technical planning."
-argument-hint: "source=.backlog/brainstorm/{file}.md or source=.backlog/research/{file}.md"
+description: "Transform backlogit deliberation artifacts, feature descriptions, or research documents into structured implementation plans grounded in repo patterns and research. Use when the user says 'plan this', 'create a plan', 'how should we build', 'break this down', or when a deliberate session is ready for technical planning."
+argument-hint: "source=.backlogit/queue/DL...md or source=.backlog/research/{file}.md"
 input:
   properties:
     source:
       type: string
-      description: "Path to the source document to plan from. Accepted locations: .backlog/brainstorm/{file}.md (brainstorm requirements) or .backlog/research/{file}.md (research reports)."
+      description: "Path to the source document to plan from. Accepted locations: .backlogit/queue/DL...md (deliberation artifacts) or .backlog/research/{file}.md (research reports)."
   required:
     - source
 ---
 
 # Create Implementation Plan
 
-The `brainstorm` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `backlog-harvester` agent decomposes the plan into backlogit work items.
+The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `backlog-harvester` agent decomposes the plan into backlogit work items.
 
 This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
 
@@ -34,7 +34,7 @@ Call `ping` at session start. If agent-intercom is reachable, broadcast at every
 
 ## Core Principles
 
-1. **Use requirements as the source of truth** -- If `brainstorm` produced a requirements doc, build from it rather than re-inventing.
+1. **Use the source artifact as the source of truth** -- If `deliberate` produced a deliberation artifact, build from it rather than re-inventing.
 2. **Decisions, not code** -- Capture approach, boundaries, files, dependencies, risks, and test scenarios. Do not pre-write implementation code.
 3. **Research before structuring** -- Explore the codebase and institutional learnings before finalizing the plan.
 4. **Right-size the artifact** -- Small work gets a compact plan. Large work gets more structure.
@@ -64,7 +64,7 @@ A plan is ready when an implementer can start confidently without needing the pl
 ## Inputs
 
 * `${input:source}`: (Required) Path to the source document to plan from. Accepted locations:
-  - `.backlog/brainstorm/{filename}.md` — Requirements documents produced by the brainstorm skill
+  - `.backlogit/queue/DL...md` — Deliberation artifacts produced by the deliberate skill or `backlogit deliberate`
   - `.backlog/research/{filename}.md` — External research, evaluation reports, or design explorations
 
 ## Workflow
@@ -83,10 +83,10 @@ If the user references an existing plan file or there is an obvious recent match
 
 Read the source document at `${input:source}` in full.
 
-1. Validate the file exists and is in an accepted location (`.backlog/brainstorm/` or `.backlog/research/`).
+1. Validate the file exists and is in an accepted location (`.backlogit/queue/` for deliberations or `.backlog/research/`).
 2. If the file does not exist, list available files in both directories and halt.
 3. Determine the source type from the file path:
-   - **Brainstorm**: Structured format with YAML frontmatter, `## Problem Frame`, `## Requirements`, `## Success Criteria`, `## Key Decisions`, `## Scope Boundaries`
+   - **Deliberation**: Structured format with YAML frontmatter and sections such as `## Problem Frame`, `## Options`, `## Chosen Direction`, `## Open Questions`, and `## Notes`
    - **Research**: Free-form structure with H1/H2 sections, executive summary, proposed changes, evaluation criteria
 4. Announce the source document: `broadcast` at `info` level: `[PLAN] Using source doc: ${input:source}`
 
@@ -129,7 +129,7 @@ Write to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
 ---
 title: "{Feature Title}"
 date: YYYY-MM-DD
-origin: ".backlog/brainstorm/{slug}-requirements.md"
+origin: ".backlogit/queue/DL....md"
 status: draft|reviewed|approved
 ---
 

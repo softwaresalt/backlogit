@@ -66,6 +66,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewDepCmd())
 	root.AddCommand(NewQueueCmd())
 	root.AddCommand(NewStashCmd(&cwd))
+	root.AddCommand(newDeliberateCommand(&cwd))
 	root.AddCommand(NewMetadataCmd(&cwd))
 	root.AddCommand(newArchiveCommand(&cwd))
 	root.AddCommand(newMigrateCommand(&cwd))

@@ -32,11 +32,11 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 
 - Hybrid CQRS architecture keeps human-readable Markdown files as the source of truth while SQLite serves token-efficient agent queries
 - MCP server exposes backlog, queue, stash, search, and planning tools over JSON-RPC 2.0 for integration with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
-- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, stash, fetch-stash, and priority-aware stash harvest
+- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `fetch-stash`, `harvest`), and `deliberate`
 - FTS5 full-text search across artifact titles and descriptions via the `search` command and `backlogit_search_items` MCP tool
 - Dependency tracking between artifacts with `dep add`, `dep list`, and `backlogit_get_dependencies`
 - Work queue prioritization via `backlogit queue` and `backlogit_get_queue`
-- Stash workflow for deferred work in `.backlogit/queue/.stash.md`, including priority-tagged entries, filtered or grouped fetch, and single-item or batch harvest flows for feature-set planning
+- Stash workflow for deferred work in `.backlogit/queue/.stash.md`, including priority-tagged entries, linked deliberation artifacts, filtered or grouped fetch, and single-item or batch harvest flows for feature-set planning
 - Unified metadata discovery for agents via `backlogit metadata catalog`, `backlogit metadata export-command-map`, and matching MCP tools
 - Agent memory and checkpoint persistence through `backlogit_save_memory` and `backlogit_create_checkpoint`
 - Migration from current Backlog.md workspaces and legacy checklist files with `backlogit migrate --source`
@@ -68,6 +68,7 @@ backlogit add --type task --title "Implement authentication" --status active
 
 ```bash
 backlogit stash add "Capture follow-up hardening ideas" --kind feature --priority high
+backlogit deliberate ABCD1234 --chosen-direction "Keep the initial scope narrow and defer follow-up polish"
 backlogit stash fetch-stash --group-by-priority
 backlogit stash harvest --priority critical --type task
 ```

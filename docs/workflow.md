@@ -84,12 +84,13 @@ backlogit queue
 ```bash
 # Stash an idea during planning or review
 backlogit stash add "Split audit dashboard into a later feature set" --kind feature --priority high
+backlogit deliberate ABCD1234 --options "- Keep the current feature set narrow\n- Pull the work into the next feature wave"
 
 # Fetch active stash entries for grouping and planning
 backlogit stash fetch-stash --group-by-priority
 backlogit stash fetch-stash --priority critical
 
-# Harvest a stash entry into a real work item
+# Harvest a stash entry into a real work item, carrying any linked deliberation lineage
 backlogit stash harvest ABCD1234 --type feature --description "Pulled into the current feature wave"
 
 # Harvest every critical stash item into planned work
@@ -199,8 +200,9 @@ backlogit_update_item  -- change status, title, or other fields
 backlogit_move_item    -- transition an artifact to a new status
 backlogit_search_items -- full-text search across all artifacts
 backlogit_get_queue    -- retrieve the prioritized work queue
-backlogit_fetch_stash  -- retrieve active stash entries from .stash.md, optionally filtered or grouped by priority
+backlogit_fetch_stash  -- retrieve active stash entries from .stash.md, optionally filtered or grouped by priority, with linked deliberations when present
 backlogit_stash        -- add deferred work to the stash with kind and priority
+backlogit_deliberate   -- create a deliberation artifact linked to a stash entry
 backlogit_harvest_stash -- promote one stash entry or a whole priority band into planned work items
 backlogit_save_memory  -- persist agent memory to memories.json
 backlogit_create_checkpoint -- save a session state snapshot

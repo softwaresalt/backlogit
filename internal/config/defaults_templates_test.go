@@ -10,7 +10,7 @@ import (
 	"github.com/backlogit/backlogit/internal/config"
 )
 
-// TASK-002.03.02: Create default templates for 3 initial artifact types.
+// TASK-002.03.02: Create default templates for the initial artifact types.
 
 func TestWriteDefaults_CreatesTemplatesDir(t *testing.T) {
 	// Arrange
@@ -25,7 +25,7 @@ func TestWriteDefaults_CreatesTemplatesDir(t *testing.T) {
 	assert.DirExists(t, templatesDir)
 }
 
-func TestWriteDefaults_Creates3Templates(t *testing.T) {
+func TestWriteDefaults_CreatesTemplates(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
@@ -34,9 +34,9 @@ func TestWriteDefaults_Creates3Templates(t *testing.T) {
 	templatesDir := filepath.Join(dir, "templates")
 	templates, err := config.LoadTemplates(templatesDir)
 
-	// Assert — initial 3 types
+	// Assert — initial default types
 	require.NoError(t, err)
-	assert.Len(t, templates, 3)
+	assert.Len(t, templates, 4)
 }
 
 func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
@@ -53,8 +53,8 @@ func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
 		types[tmpl.ArtifactType] = true
 	}
 
-	// Assert — initial 3 types only
-	expectedTypes := []string{"feature", "task", "subtask"}
+	// Assert — initial default types only
+	expectedTypes := []string{"feature", "deliberation", "task", "subtask"}
 	for _, typeName := range expectedTypes {
 		assert.True(t, types[typeName], "missing template for type: %s", typeName)
 	}

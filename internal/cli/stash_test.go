@@ -37,3 +37,29 @@ func TestStashCommand_AddFetchAndHarvest(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), stashID)
 }
+
+func TestStashCommand_FetchReturnsLinkedDeliberation(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	cmd.SetArgs([]string{"--cwd", root, "stash", "add", "Capture queue redesign follow-up", "--kind", "feature", "--priority", "critical"})
+	require.NoError(t, cmd.Execute())
+
+	var added map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &added))
+	stashID, _ := added["id"].(string)
+	require.NotEmpty(t, stashID)
+
+	buf.Reset()
+	cmd.SetArgs([]string{"--cwd", root, "deliberate", stashID, "--notes", "Capture the reasons before implementation."})
+	require.NoError(t, cmd.Execute())
+
+	buf.Reset()
+	cmd.SetArgs([]string{"--cwd", root, "stash", "fetch-stash", "--priority", "critical"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), `"deliberation_id"`)
+	assert.Contains(t, buf.String(), `"artifact_type": "deliberation"`)
+}
