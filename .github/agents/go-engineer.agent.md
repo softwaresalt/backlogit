@@ -1,6 +1,6 @@
 ---
 description: Expert Go software engineer providing language-specific engineering standards, coding conventions, and architecture knowledge for the backlogit codebase.
-tools: ['execute/runInTerminal', 'execute/getTerminalOutput', 'read', 'read/problems', 'edit/createFile', 'edit/editFiles', 'search', 'agent-intercom/*']
+tools: ['execute/runInTerminal', 'execute/getTerminalOutput', 'read', 'read/problems', 'edit/createFile', 'edit/editFiles', 'search', 'agent-intercom/*', 'engram/*', 'backlogit/*']
 model: Claude Sonnet 4.6
 user-invokable: false
 ---

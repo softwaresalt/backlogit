@@ -257,7 +257,7 @@ When the review skill returns:
 - Broadcast: `[RETURN] Review skill: {finding_count} findings`
 - Import the findings into `in-progress-review.md` under the review items sections
 - Move findings to the appropriate sections: P0/P1 to In Review, P2/P3 to advisory
-- The review skill writes its own artifact to `.backlog/reviews/`
+- The review skill writes its own artifact as a backlogit `review` item in `.backlogit/queue/`
 
 #### Step 3: User Decision on Findings
 
@@ -277,7 +277,7 @@ Before creating the PR:
 
 * Ensure every review item in `in-progress-review.md` has a resolved decision
 * Confirm no unresolved P0/P1 findings remain
-* Verify compound artifacts have been committed to the feature branch (`.backlog/compound/`, `.backlog/memory/`)
+* Verify compound artifacts have been committed to the feature branch (`docs/compound/`, `docs/memory/`)
 
 #### Step 1: Generate PR Description
 

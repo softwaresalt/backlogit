@@ -115,6 +115,34 @@ func TestArchiveItem_IncludedWhenExplicitlyRequested(t *testing.T) {
 	assert.True(t, found, "archived item T001 must appear when IncludeArchived is true")
 }
 
+func TestUnarchiveItem_RestoresSuffixedFilenameByFrontmatterID(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	originalPath := filepath.Join(ws.RootPath, ".backlogit", "tasks", "T001.md")
+	suffixedPath := filepath.Join(ws.RootPath, ".backlogit", "tasks", "T001-completed-task.md")
+	require.NoError(t, os.Rename(originalPath, suffixedPath))
+
+	record, err := core.ArchiveItem(ctx, ws.DB, ws, "T001")
+	require.NoError(t, err)
+	assert.FileExists(t, record.ArchivePath)
+
+	err = core.UnarchiveItem(ctx, ws.DB, ws, "T001")
+
+	require.NoError(t, err)
+	assert.FileExists(t, suffixedPath)
+}
+
+func TestUnarchiveItem_RejectsActiveArtifact(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	err := core.UnarchiveItem(ctx, ws.DB, ws, "T001")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not archived")
+}
+
 func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {
 	// Arrange
 	ws := setupArchiveWorkspace(t)

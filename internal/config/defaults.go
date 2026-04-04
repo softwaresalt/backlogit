@@ -10,7 +10,6 @@ import (
 )
 
 // defaultHeaderDef returns the default HeaderDefConfig for a new workspace.
-// Uses 3 initial artifact types: feature, task, subtask.
 func defaultHeaderDef() *HeaderDefConfig {
 	statusField := &FieldDef{
 		Type:    "enum",
@@ -58,6 +57,17 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Type:    "enum",
 						Values:  []string{"low", "medium", "high", "critical"},
 						Default: "medium",
+					},
+				},
+			},
+			"review": {
+				Prefix:   "R",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+					"source_branch": {
+						Type:     "string",
+						Optional: true,
 					},
 				},
 			},
@@ -187,6 +197,38 @@ sections:
 <!-- BEGIN:implementation-notes -->
 <!-- END:implementation-notes -->
 `,
+		"review": `---
+name: review-template
+type: review
+description: "A review artifact tied to a feature branch lifecycle"
+sections:
+  - name: summary
+    required: true
+    description: "High-level review outcome and scope"
+  - name: findings
+    required: false
+    description: "Findings, recommendations, and reviewer notes"
+  - name: decisions
+    required: false
+    description: "Disposition of findings and next actions"
+---
+# {title}
+
+## Summary
+
+<!-- BEGIN:summary -->
+<!-- END:summary -->
+
+## Findings
+
+<!-- BEGIN:findings -->
+<!-- END:findings -->
+
+## Decisions
+
+<!-- BEGIN:decisions -->
+<!-- END:decisions -->
+`,
 		"subtask": `---
 name: subtask-template
 type: subtask
@@ -222,7 +264,7 @@ func DefaultConfig() *WorkspaceConfig {
 			"feature": {
 				Prefix:          "F",
 				NameFormat:      "{prefix}{NNN}",
-				AllowedChildren: []string{"task"},
+				AllowedChildren: []string{"task", "review"},
 			},
 			"deliberation": {
 				Prefix:     "DL",
@@ -232,6 +274,11 @@ func DefaultConfig() *WorkspaceConfig {
 				Prefix:          "T",
 				NameFormat:      "{prefix}{NNN}",
 				AllowedChildren: []string{"subtask"},
+			},
+			"review": {
+				Prefix:         "R",
+				NameFormat:     "{prefix}{NNN}",
+				FileNameFormat: "{id}-{title_slug}",
 			},
 			"subtask": {
 				Prefix:     "ST",
@@ -250,7 +297,7 @@ func DefaultConfig() *WorkspaceConfig {
 			NameFormat: "{NNN}",
 			Levels: []HierarchyLevel{
 				{Level: 1, Types: []string{"feature", "deliberation"}},
-				{Level: 2, Types: []string{"task"}},
+				{Level: 2, Types: []string{"task", "review"}},
 				{Level: 3, Types: []string{"subtask"}},
 			},
 		},

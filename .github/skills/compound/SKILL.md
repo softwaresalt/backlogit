@@ -1,12 +1,12 @@
 ---
 name: compound
-description: "Document a recently solved problem to compound institutional knowledge. Captures solutions in .backlog/compound/ with searchable YAML frontmatter for the learnings-researcher. Use after fixing bugs, resolving build issues, or discovering gotchas."
+description: "Document a recently solved problem to compound institutional knowledge. Captures solutions in docs/compound/ with searchable YAML frontmatter for the learnings-researcher. Use after fixing bugs, resolving build issues, or discovering gotchas."
 argument-hint: "[optional: brief context about the fix or discovery]"
 ---
 
 # Compound Knowledge
 
-Capture a recently solved problem while context is fresh. Produces structured documentation in `.backlog/compound/` with YAML frontmatter searchable by the `learnings-researcher` agent.
+Capture a recently solved problem while context is fresh. Produces structured documentation in `docs/compound/` with YAML frontmatter searchable by the `learnings-researcher` agent.
 
 **Why "compound"?** Each documented solution compounds institutional knowledge. The first time you solve a problem takes research. Document it, and the next occurrence takes minutes.
 
@@ -53,7 +53,7 @@ Analyzes investigation steps:
 
 #### 3. Related Docs Finder
 
-Searches `.backlog/compound/` for related existing solutions:
+Searches `docs/compound/` for related existing solutions:
 
 - Uses grep/glob to search for related solutions
 - Identifies cross-references and related documents
@@ -65,7 +65,7 @@ The orchestrator (this skill) synthesizes subagent output and writes a single fi
 
 **Only this orchestrator writes files. Subagents return text data only.**
 
-Write to `.backlog/compound/{category}/{slug}-{YYYY-MM-DD}.md`
+Write to `docs/compound/{category}/{slug}-{YYYY-MM-DD}.md`
 
 ### Schema Enums
 
@@ -164,7 +164,7 @@ date: YYYY-MM-DD
 
 ## Related Solutions
 
-{Cross-references to related docs in .backlog/compound/}
+{Cross-references to related docs in docs/compound/}
 ```
 
 Broadcast the file path when the document is written.

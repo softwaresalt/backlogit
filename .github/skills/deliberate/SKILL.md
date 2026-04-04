@@ -85,7 +85,7 @@ Search the codebase for relevant context, matching depth to scope:
 - Identify affected modules and related code patterns
 - Review existing implementations for consistency
 
-**Learnings check**: Invoke `learnings-researcher` as a subagent to search `.backlog/compound/` for relevant past solutions. Broadcast the result count.
+**Learnings check**: Invoke `learnings-researcher` as a subagent to search `docs/compound/` for relevant past solutions. Broadcast the result count.
 
 #### 1.2 Collaborative Dialogue
 

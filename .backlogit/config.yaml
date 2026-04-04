@@ -4,11 +4,17 @@ artifact_types:
     name_format: "{prefix}{NNN}"
     allowed_children:
       - task
+      - review
   task:
     prefix: T
     name_format: "{prefix}{NNN}"
     allowed_children:
       - subtask
+  review:
+    prefix: R
+    name_format: "{prefix}{NNN}"
+    file_name_format: "{id}-{title_slug}"
+    allowed_children: []
   subtask:
     prefix: ST
     name_format: "{prefix}{NNN}"
@@ -42,6 +48,7 @@ queue_layout:
     - level: 2
       types:
         - task
+        - review
     - level: 3
       types:
         - subtask

@@ -37,14 +37,14 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | **Interactive** (default) | No mode token | Review, present findings, ask for decisions |
 | **Autofix** | `mode:autofix` | No user interaction. Apply `safe_auto` fixes only, write artifact, emit residual work |
-| **Report-only** | `mode:report-only` | Read-only. Report findings, no edits, no artifacts beyond review doc |
+| **Report-only** | `mode:report-only` | Read-only. Report findings with no edits, backlogit artifacts, or follow-up item creation |
 
 ### Autofix mode rules
 
 - Skip all user questions
 - Apply only `safe_auto` findings
 - Leave `gated_auto`, `manual`, and `advisory` findings unresolved
-- Write a review artifact to `.backlog/reviews/`
+- Write a review artifact as a backlogit `review` item in `.backlogit/queue/`
 - Create backlogit follow-up items for unresolved actionable findings
 - Never commit, push, or create a PR
 
@@ -53,6 +53,8 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 - Skip all user questions
 - Never edit files
 - Return structured findings to caller
+- Do not write a review artifact
+- Do not create backlogit follow-up items
 - Safe for the build orchestrator to invoke during the build loop
 
 ## Severity Scale
@@ -87,7 +89,7 @@ Routing rules:
 |---|---|
 | **Go Quality Reviewer** | Type safety, error handling, error return patterns, import organization, Effective Go/GoDoc compliance |
 | **Constitution Reviewer** | Project coding standards compliance |
-| **Learnings Researcher** | Search `.backlog/compound/` for related past issues |
+| **Learnings Researcher** | Search `docs/compound/` for related past issues |
 
 ### Conditional (based on changed files)
 
@@ -153,11 +155,11 @@ As each persona returns:
 **Report-only mode:**
 
 1. Return structured findings to caller
-2. No edits, no side effects beyond the review artifact
+2. No side effects: no edits, no review artifact, no follow-up items
 
 ### Step 5a: Log Follow-Up Work in backlogit
 
-For every unresolved actionable finding, log follow-up work in backlogit after the review artifact is written:
+In interactive and autofix modes, log follow-up work in backlogit for every unresolved actionable finding after the review artifact is written:
 
 1. Call `backlogit_list_types` or `backlogit_get_metadata_catalog` to determine whether the workspace defines a `bug` artifact type.
 2. For each unresolved `manual` finding, and for any `gated_auto` finding that was declined or left unapplied:
@@ -174,18 +176,33 @@ For every unresolved actionable finding, log follow-up work in backlogit after t
 
 ### Step 6: Write Review Artifact
 
-Write to `.backlog/reviews/{YYYY-MM-DD}-{slug}-review.md`
+In interactive and autofix modes, create a backlogit artifact of type `review` instead of writing an ad hoc markdown file. Skip this step in report-only mode.
+
+1. Determine whether the reviewed scope belongs to a known level-1 artifact such as a feature.
+2. When a level-1 artifact is known, create the review as its child with `parent_id` set to that artifact. This yields stable IDs such as `F013.R001`.
+3. Use a short, descriptive review title so the configured filename format yields grouped files such as:
+   * `F013.R001-branch-review.md`
+   * `F013.R002-followup-review.md`
+4. Set `status: "review"` and include branch metadata in `custom_fields.source_branch` when available.
+5. Write the merged review content as the artifact body.
 
 ```markdown
 ---
-title: "Code Review: {scope_description}"
-date: YYYY-MM-DD
-mode: interactive|autofix|report-only
-gate: pass|fail
-reviewers: [{persona_list}]
+id: F013.R001
+title: "Branch review"
+status: review
+artifact_type: review
+parent_id: F013
+created_at: YYYY-MM-DDTHH:MM:SSZ
+updated_at: YYYY-MM-DDTHH:MM:SSZ
+custom_fields:
+  source_branch: 013-release-pipeline-fix
+  mode: interactive|autofix|report-only
+  gate: pass|fail
+  reviewers: [{persona_list}]
 ---
 
-# Code Review: {scope_description}
+# Branch review
 
 ## Summary
 
@@ -202,7 +219,7 @@ reviewers: [{persona_list}]
 
 ## Learnings Applied
 
-{Relevant solutions from .backlog/compound/ that informed this review}
+{Relevant solutions from docs/compound/ that informed this review}
 
 ## Residual Work
 
@@ -213,5 +230,5 @@ reviewers: [{persona_list}]
 {Backlogit bug or task IDs created for unresolved actionable findings}
 ```
 
-Broadcast the file path when written.
+Broadcast the created review artifact path when written.
 

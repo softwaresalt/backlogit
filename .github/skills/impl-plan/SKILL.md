@@ -117,7 +117,7 @@ If the origin doc has "Resolve Before Planning" questions:
 4. Search for existing patterns that the implementation should follow
 5. Fall back to broader file reads when needed
 
-**Learnings check**: Invoke `learnings-researcher` as a subagent to search `.backlog/compound/` for relevant past solutions. Incorporate relevant learnings into the plan's decisions and caveats.
+**Learnings check**: Invoke `learnings-researcher` as a subagent to search `docs/compound/` for relevant past solutions. Incorporate relevant learnings into the plan's decisions and caveats.
 
 **Broadcast** research findings at each step.
 
@@ -198,7 +198,7 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 ## Learnings Applied
 
-{Solutions from .backlog/compound/ that informed this plan, with file paths}
+{Solutions from docs/compound/ that informed this plan, with file paths}
 
 ## Standards Check
 

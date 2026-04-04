@@ -152,3 +152,40 @@ func TestCreateArtifact_WritesUnderBacklogitStorage(t *testing.T) {
 	assert.FileExists(t, filePath)
 	assert.Contains(t, filepath.ToSlash(filePath), "/.backlogit/")
 }
+
+func TestCreateArtifact_ReviewRequiresFeatureParent(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	_, err := core.CreateArtifact(ctx, ws, "Branch review", "review")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `artifact type "review" requires a parent_id`)
+}
+
+func TestCreateArtifact_ReviewRejectsDisallowedParentType(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	task, err := core.CreateArtifact(ctx, ws, "Parent task", "task")
+	require.NoError(t, err)
+
+	_, err = core.CreateArtifact(ctx, ws, "Task review", "review", core.WithParent(task.ID))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `artifact type "review" is not allowed under parent type "task"`)
+}
+
+func TestCreateArtifact_ReviewAllowsFeatureParent(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Release pipeline fix", "feature")
+	require.NoError(t, err)
+
+	review, err := core.CreateArtifact(ctx, ws, "Branch review", "review", core.WithParent(feature.ID))
+
+	require.NoError(t, err)
+	assert.Equal(t, feature.ID, review.ParentID)
+	assert.Equal(t, "review", review.ArtifactType)
+}

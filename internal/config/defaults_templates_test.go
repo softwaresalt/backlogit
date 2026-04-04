@@ -36,7 +36,7 @@ func TestWriteDefaults_CreatesTemplates(t *testing.T) {
 
 	// Assert — initial default types
 	require.NoError(t, err)
-	assert.Len(t, templates, 4)
+	assert.Len(t, templates, 5)
 }
 
 func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
@@ -54,7 +54,7 @@ func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
 	}
 
 	// Assert — initial default types only
-	expectedTypes := []string{"feature", "deliberation", "task", "subtask"}
+	expectedTypes := []string{"feature", "deliberation", "task", "review", "subtask"}
 	for _, typeName := range expectedTypes {
 		assert.True(t, types[typeName], "missing template for type: %s", typeName)
 	}

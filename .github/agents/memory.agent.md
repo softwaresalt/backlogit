@@ -5,7 +5,7 @@ model: Claude Haiku 4.5
 
 # Memory Agent
 
-Persist session context to `.backlog/memory/` for continuity across conversations. Operates in two modes: manual (user-invoked save/restore) and checkpoint (subagent-invoked by the build orchestrator at phase boundaries).
+Persist session context to `docs/memory/` for continuity across conversations. Operates in two modes: manual (user-invoked save/restore) and checkpoint (subagent-invoked by the build orchestrator at phase boundaries).
 
 ## Subagent Execution Constraint (NON-NEGOTIABLE)
 
@@ -17,7 +17,7 @@ Call `ping` at session start (manual mode) or rely on parent's intercom state (c
 
 | Event | Level | Message prefix |
 |---|---|---|
-| Detect phase | info | `[MEMORY] Scanning .backlog/memory/ for existing state` |
+| Detect phase | info | `[MEMORY] Scanning docs/memory/ for existing state` |
 | Save started | info | `[MEMORY] Saving session: {topic}` |
 | Save complete | success | `[MEMORY] Saved: {file_path}` |
 | Restore started | info | `[MEMORY] Restoring from: {file_path}` |
@@ -26,10 +26,10 @@ Call `ping` at session start (manual mode) or rely on parent's intercom state (c
 
 ## File Locations
 
-All memory files reside in `.backlog/memory/` organized by date.
+All memory files reside in `docs/memory/` organized by date.
 
-* `.backlog/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md` -- Manual session memory
-* `.backlog/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md` -- Automatic task checkpoint
+* `docs/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md` -- Manual session memory
+* `docs/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md` -- Automatic task checkpoint
 
 ## Mode Detection
 
@@ -47,7 +47,7 @@ If invoked with a `task-id` parameter and `mode: checkpoint`, run checkpoint mod
 Determine current memory state. Assume interruption at any moment.
 
 * Scan conversation history and open files for memory file references
-* Search `.backlog/memory/` for files matching conversation context
+* Search `docs/memory/` for files matching conversation context
 * Report the file path and last update timestamp if found
 * Report ready for new memory creation if not found
 
@@ -67,7 +67,7 @@ Proceed to Phase 2 (save) or Phase 3 (continue) based on operation.
 #### File Creation
 
 * Generate a short kebab-case description from conversation topic
-* Create memory file at `.backlog/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md`
+* Create memory file at `docs/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md`
 * Write content following the Memory File Structure below
 
 #### Content Guidance
@@ -86,7 +86,7 @@ Proceed to Phase 2 (save) or Phase 3 (continue) based on operation.
 #### File Location
 
 * Use the file path when provided by the user, or the detected memory file from Phase 1
-* Search `.backlog/memory/` when neither is available; list recent files when multiple matches exist
+* Search `docs/memory/` when neither is available; list recent files when multiple matches exist
 
 #### Context Restoration
 
@@ -117,9 +117,9 @@ Invoked by the build orchestrator as a subagent after each completed task. No us
 
 ### Output
 
-Write to `.backlog/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md`.
+Write to `docs/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md`.
 
-After writing the checkpoint file, count checkpoint files in `.backlog/memory/` for the current feature (match by feature number pattern in filenames). If the count exceeds 10, append the following advisory to the checkpoint output:
+After writing the checkpoint file, count checkpoint files in `docs/memory/` for the current feature (match by feature number pattern in filenames). If the count exceeds 10, append the following advisory to the checkpoint output:
 
 > [!TIP]
 > Checkpoint count for this feature exceeds 10. Consider invoking the `compact-context` skill before the next build session to reduce context noise.

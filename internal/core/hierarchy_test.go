@@ -15,7 +15,7 @@ func defaultQueueLayout() *core.QueueLayoutConfig {
 		NameFormat: "{NNN}",
 		Levels: []core.HierarchyLevel{
 			{Level: 1, Types: []string{"feature"}},
-			{Level: 2, Types: []string{"task", "bug"}},
+			{Level: 2, Types: []string{"task", "bug", "review"}},
 			{Level: 3, Types: []string{"subtask"}},
 		},
 	}
@@ -66,6 +66,7 @@ func TestLevelForType(t *testing.T) {
 		{name: "feature is level 1", artifactType: "feature", wantLevel: 1},
 		{name: "task is level 2", artifactType: "task", wantLevel: 2},
 		{name: "bug is level 2", artifactType: "bug", wantLevel: 2},
+		{name: "review is level 2", artifactType: "review", wantLevel: 2},
 		{name: "subtask is level 3", artifactType: "subtask", wantLevel: 3},
 		{name: "unknown type errors", artifactType: "unknown", wantErr: true},
 	}

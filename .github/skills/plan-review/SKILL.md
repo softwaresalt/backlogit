@@ -94,9 +94,11 @@ As each persona returns:
 
 Broadcast the gate decision.
 
-### Step 5: Write Review Artifact
+### Step 5: Write Review Tracking Artifact
 
-Write to `.backlog/reviews/{YYYY-MM-DD}-{slug}-plan-review.md`
+Write to `.copilot-tracking/plan-review/{YYYY-MM-DD}-{slug}-plan-review.md`
+
+This output is a tracking artifact, not a backlogit `review` work item. Plan reviews run before a feature branch lifecycle artifact exists, so they should not create malformed queue items.
 
 ```markdown
 ---

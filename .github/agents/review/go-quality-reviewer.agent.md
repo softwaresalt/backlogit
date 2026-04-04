@@ -3,7 +3,7 @@ description: "Go code quality reviewer: type safety, error handling, testing pat
 name: Go Quality Reviewer
 model: Claude Haiku 4.5
 user-invocable: false
-tools: [read, search]
+tools: [read, search, 'engram/*', 'backlogit/*']
 ---
 
 # Go Quality Reviewer

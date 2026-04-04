@@ -11,6 +11,7 @@ logs/
 *.code-workspace
 
 .test-output.txt
+.copilot-tracking/pr/**/pr-reference.xml
 
 # Build artifacts
 *.exe
@@ -18,3 +19,5 @@ logs/
 # Ephemeral SQLite databases (always regenerated; never commit)
 backlogit.db
 .backlogit/backlogit.db
+.backlogit/backlogit.db-shm
+.backlogit/backlogit.db-wal

@@ -21,6 +21,7 @@ type WorkspaceConfig struct {
 type ArtifactTypeConfig struct {
 	Prefix          string   `yaml:"prefix" validate:"required"`
 	NameFormat      string   `yaml:"name_format" validate:"required"`
+	FileNameFormat  string   `yaml:"file_name_format,omitempty"`
 	AllowedChildren []string `yaml:"allowed_children"`
 }
 
