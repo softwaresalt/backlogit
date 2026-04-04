@@ -102,7 +102,8 @@ func SafeResolve(workspaceRoot, target string) (string, error) {
 	}
 	cleanRoot := filepath.Clean(absRoot)
 
-	abs, err := filepath.Abs(filepath.Join(absRoot, target))
+	normalizedTarget := strings.ReplaceAll(target, "\\", string(filepath.Separator))
+	abs, err := filepath.Abs(filepath.Join(absRoot, normalizedTarget))
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
