@@ -3,18 +3,19 @@
 
 ## Review Status
 
-* Phase: 3 — Follow-up Review Complete (all 10 findings resolved) | Handoff generated
-* Last Updated: 2026-04-05 (refreshed @ a875a20)
-* Summary: F013 Release Pipeline Fix — follow-up commit a875a20 addresses all 10 original findings; zero unresolved P0/P1/P2 findings remain
+* Phase: 4 — PR created
+* Last Updated: 2026-04-05 (refreshed @ 1e4d405)
+* Summary: Branch is PR-ready and pushed. Handoff refreshed to match the final 60-file diff for F013 plus review-control-plane hardening.
 
 ## Branch and Metadata
 
 * Normalized Branch: `013-release-pipeline-fix`
 * Source Branch: `013-release-pipeline-fix`
 * Base Branch: `main`
-* Head SHA: `9e4f932a06150c663c0ccc523b240c176771cd6a`
+* Head SHA: `1e4d405`
+* PR: `#6` <https://github.com/softwaresalt/backlogit/pull/6>
 * Author: `williamsderek <software.salt@gmail.com>`
-* Total Commits on Branch: 7
+* Total Commits on Branch: 11
 * Linked Work Items: F013, F013.T001, F013.T002, F013.T003 (and subtasks ST001–ST003)
 * Harness Manifest: `.copilot-tracking/harness/F013-harness.md`
 * PR-Ref Generated: Manual (scripts/dev-tools/pr-ref-gen.sh not present in repo)
@@ -137,5 +138,5 @@ Feature 013 (Release Pipeline Fix) corrects four categories of CI/CD compliance 
 
 - [x] Follow-up review complete — all 10 original findings resolved
 - [x] Advisory follow-up stashed as `2ED12470` for the next workstream
-- [x] `handoff.md` generated
-- [ ] Create PR (user-confirmed when ready)
+- [x] `handoff.md` refreshed to match the pushed branch
+- [x] Create PR against `main` — <https://github.com/softwaresalt/backlogit/pull/6>
