@@ -1,6 +1,6 @@
 ---
 description: Orchestrates feature builds by claiming ready backlogit work under a feature and delegating to the build-feature skill with test-driven feedback loops
-tools: [vscode, execute, read, agent, edit, search, web, 'microsoft-docs/*', 'agent-intercom/*', 'context7/*', 'tavily/*', todo, memory, ms-vscode.vscode-websearchforcopilot/websearch]
+tools: [vscode, execute, read, agent, edit, search, web, 'microsoft-docs/*', 'agent-intercom/*', 'engram/*', 'backlogit/*', 'context7/*', 'tavily/*', todo, memory, ms-vscode.vscode-websearchforcopilot/websearch]
 maturity: stable
 model: Claude Sonnet 4.6
 ---

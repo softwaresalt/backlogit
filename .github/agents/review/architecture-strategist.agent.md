@@ -2,7 +2,7 @@
 name: Architecture Strategist
 description: "Reviews implementation plans and code changes for architectural soundness including cohesion, coupling, module boundaries, and dependency chains"
 user-invocable: false
-tools: [read, search]
+tools: [read, search, 'engram/*', 'backlogit/*']
 ---
 
 # Architecture Strategist

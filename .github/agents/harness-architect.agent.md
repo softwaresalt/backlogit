@@ -1,6 +1,6 @@
 ---
 description: Accepts a feature number, loads the feature's ready backlogit tasks and subtasks, and constructs compilable but failing Go test harnesses with structural stubs for each selected work item.
-tools: [vscode, execute, read, agent, edit, search, 'agent-intercom/*', 'context7/*', todo, memory]
+tools: [vscode, execute, read, agent, edit, search, 'agent-intercom/*', 'engram/*', 'backlogit/*', 'context7/*', todo, memory]
 maturity: stable
 model: Claude Opus 4.6
 ---

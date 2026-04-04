@@ -1,6 +1,6 @@
 ---
 description: Reads a research or deliberation source file, analyzes its structure, and decomposes it into backlogit features, tasks, and subtasks with priorities and dependency wiring.
-tools: [vscode, execute, read, agent, edit, search, 'agent-intercom/*', todo, memory]
+tools: [vscode, execute, read, agent, edit, search, 'agent-intercom/*', 'engram/*', 'backlogit/*', todo, memory]
 agents: [Learnings Researcher]
 maturity: stable
 model: Claude Opus 4.6

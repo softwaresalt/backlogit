@@ -1,0 +1,5795 @@
+[
+  {
+    "path": ".backlog/completed/task-001.07.03 - Implement-event-tail-reader.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008 - MCP-CLI-Section-Template-Bug-Fixes.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.01 - Implement-section-extraction-in-handleGetItem.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.02 - Wire-sections-param-through-handleCreateItem-to-template-service.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.03 - Fix-template-service-Update-set-updated_at-and-call-UpsertItem-after-section-writes.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.04 - Fix-CLI-update-command-UpsertItem-and-bump-updated_at-after-section-writes.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.05 - Fix-CLI-move-command-route-relocate-artifact-file-per-registry.yaml-on-status-change.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-008.06 - Strengthen-contract-tests-exercise-MCP-handlers-with-real-assertions.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009 - Queue-Features-V2-WIT-Metadata-Archive-Lifecycle-Dependency-Queue-Hierarchical-File-Organization.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.01 - Epic-A-Hierarchical-File-Organization-Migration.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.01.01 - Hierarchical-File-Organization-.backlogit-queue.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.02 - Epic-B-WIT-Type-System-Self-Description.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.02.01 - Dynamic-Schema-Extension-Engine.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.02.02 - Template-Self-Description-WIT-Metadata-API.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.02.03 - Required-Optional-Field-Enforcement.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.03 - Epic-C-Dependency-Graph.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.03.01 - Dependency-Table-Junction-Model.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.03.02 - Dependency-CLI-MCP-Wiring.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.04 - Epic-D-Archive-Lifecycle-Management.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.04.01 - Archive-Command-Lifecycle-Management.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.04.02 - Commit-Tracking.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.05 - Epic-E-Work-Queue.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.05.01 - Work-Queue-Engine.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.05.02 - Queue-CLI-MCP-Tools.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.06 - Epic-F-Workflow-Policy-CLI-Enhancements.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.06.01 - Harness-Status-Attribute.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/completed/task-009.06.02 - CLI-Enhancements-Tabular-Listing.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/memory/2024-01-16/task-010-epic-complete-memory.md",
+    "change_type": "added",
+    "added": "-",
+    "deleted": "-",
+    "hunks": []
+  },
+  {
+    "path": ".backlog/queue.md",
+    "change_type": "modified",
+    "added": "8",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 2,
+        "old_end": 2,
+        "new_start": 3,
+        "new_end": 10
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010 - Backlogit-Documentation-Migration-Suite.md",
+    "change_type": "added",
+    "added": "35",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 35
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.01 - Backlog.md-Migration-Tooling.md",
+    "change_type": "added",
+    "added": "26",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 26
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.01.01 - Enhance-legacy-parser-for-broader-Backlog.md-format-coverage.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.01.02 - Add-migration-CLI-enhancements-dry-run-progress-validation.md",
+    "change_type": "added",
+    "added": "44",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 44
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.01.03 - Create-migration-configuration-for-document-class-mapping.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.01.04 - Write-Backlog.md-migration-integration-tests.md",
+    "change_type": "added",
+    "added": "50",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 50
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.02 - Core-Documentation.md",
+    "change_type": "added",
+    "added": "27",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 27
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.02.01 - Write-comprehensive-README.md.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.02.02 - Write-installation-guide.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.02.03 - Write-process-and-workflow-documentation.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.03 - Positioning-Migration-Documentation.md",
+    "change_type": "added",
+    "added": "22",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 22
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.03.01 - Write-tool-rationale-and-agent-harness-value-proposition.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.03.02 - Write-backlogit-vs-Backlog.md-comparison-document.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.03.03 - Write-Backlog.md-to-backlogit-migration-guide.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.04 - General-Purpose-Migration-Tooling.md",
+    "change_type": "added",
+    "added": "22",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 22
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.04.01 - Design-pluggable-migration-adapter-interface.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.04.02 - Implement-file-classification-engine-for-markdown-document-types.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.04.03 - Create-general-migration-scripts-and-configuration-templates.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlog/tasks/task-010.04.04 - Write-general-migration-integration-tests.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T001.ST001.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T001.ST002.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T001.ST003.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T001.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T002.ST001.md",
+    "change_type": "added",
+    "added": "44",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 44
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T002.ST002.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T002.ST003.md",
+    "change_type": "added",
+    "added": "38",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 38
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T002.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T003.ST001.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T003.ST002.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T003.ST003.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T003.ST004.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T003.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST001.md",
+    "change_type": "added",
+    "added": "39",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 39
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST002.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST003.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST004.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST005.md",
+    "change_type": "added",
+    "added": "44",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 44
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.ST006.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T004.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T005.ST001.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T005.ST002.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T005.ST003.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T005.ST004.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T005.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T006.ST001.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T006.ST002.md",
+    "change_type": "added",
+    "added": "44",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 44
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T006.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T007.ST001.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T007.ST002.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T007.ST003.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T007.ST004.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T007.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST001.md",
+    "change_type": "added",
+    "added": "45",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 45
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST002.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST003.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST004.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST005.md",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.ST006.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T008.md",
+    "change_type": "added",
+    "added": "39",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 39
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T009.ST001.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T009.ST002.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T009.ST003.md",
+    "change_type": "added",
+    "added": "43",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T009.ST004.md",
+    "change_type": "added",
+    "added": "45",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 45
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T009.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T010.ST001.md",
+    "change_type": "added",
+    "added": "45",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 45
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T010.ST002.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T010.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T011.ST001.md",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.T011.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F001.md",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T001.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.ST001.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.ST002.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.ST003.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.ST004.md",
+    "change_type": "added",
+    "added": "29",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 29
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.ST005.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T002.md",
+    "change_type": "added",
+    "added": "26",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 26
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T003.ST001.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T003.ST002.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T003.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T004.ST001.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T004.ST002.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T004.ST003.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T004.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST001.md",
+    "change_type": "added",
+    "added": "42",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 42
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST002.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST003.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST004.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST005.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST006.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST007.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.ST008.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T005.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T006.ST001.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T006.ST002.md",
+    "change_type": "added",
+    "added": "38",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 38
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T006.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T007.ST001.md",
+    "change_type": "added",
+    "added": "38",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 38
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.T007.md",
+    "change_type": "added",
+    "added": "26",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 26
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F002.md",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F003.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F004.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F005.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F006.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F007.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F008.md",
+    "change_type": "added",
+    "added": "37",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 37
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F009.md",
+    "change_type": "added",
+    "added": "37",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 37
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T001.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T002.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T003.md",
+    "change_type": "added",
+    "added": "27",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 27
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T004.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T005.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T006.md",
+    "change_type": "added",
+    "added": "35",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 35
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.T007.md",
+    "change_type": "added",
+    "added": "35",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 35
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F010.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T001.ST001.md",
+    "change_type": "added",
+    "added": "59",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 59
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T001.ST002.md",
+    "change_type": "added",
+    "added": "53",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 53
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T001.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T002.ST001.md",
+    "change_type": "added",
+    "added": "53",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 53
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T002.ST002.md",
+    "change_type": "added",
+    "added": "52",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 52
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T002.ST003.md",
+    "change_type": "added",
+    "added": "60",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 60
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T002.md",
+    "change_type": "added",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T003.ST001.md",
+    "change_type": "added",
+    "added": "51",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 51
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T003.ST002.md",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T003.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T004.ST001.md",
+    "change_type": "added",
+    "added": "50",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 50
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T004.ST002.md",
+    "change_type": "added",
+    "added": "55",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 55
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T004.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T005.ST001.md",
+    "change_type": "added",
+    "added": "52",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 52
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T005.ST002.md",
+    "change_type": "added",
+    "added": "48",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 48
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T005.md",
+    "change_type": "added",
+    "added": "30",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T006.ST001.md",
+    "change_type": "added",
+    "added": "50",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 50
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T006.ST002.md",
+    "change_type": "added",
+    "added": "50",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 50
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.T006.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F011.md",
+    "change_type": "added",
+    "added": "35",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 35
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T001.ST001.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T001.ST002.md",
+    "change_type": "added",
+    "added": "50",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 50
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T001.ST003.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T001.ST004.md",
+    "change_type": "added",
+    "added": "56",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 56
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T001.md",
+    "change_type": "added",
+    "added": "32",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 32
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T002.ST001.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T002.ST002.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T002.ST003.md",
+    "change_type": "added",
+    "added": "48",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 48
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T002.md",
+    "change_type": "added",
+    "added": "33",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T003.ST001.md",
+    "change_type": "added",
+    "added": "45",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 45
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T003.ST002.md",
+    "change_type": "added",
+    "added": "46",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 46
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T003.ST003.md",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T003.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T004.ST001.md",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T004.ST002.md",
+    "change_type": "added",
+    "added": "52",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 52
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T004.ST003.md",
+    "change_type": "added",
+    "added": "53",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 53
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T004.ST004.md",
+    "change_type": "added",
+    "added": "52",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 52
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.T004.md",
+    "change_type": "added",
+    "added": "28",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 28
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/archive/F012.md",
+    "change_type": "added",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/config.yaml",
+    "change_type": "added",
+    "added": "49",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 49
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/header-def.yaml",
+    "change_type": "added",
+    "added": "63",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 63
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/migration.yaml",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/queue/.stash.md",
+    "change_type": "added",
+    "added": "11",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 11
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/registry.yaml",
+    "change_type": "added",
+    "added": "17",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 17
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/templates/feature.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/templates/subtask.md",
+    "change_type": "added",
+    "added": "23",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 23
+      }
+    ]
+  },
+  {
+    "path": ".backlogit/templates/task.md",
+    "change_type": "added",
+    "added": "31",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 31
+      }
+    ]
+  },
+  {
+    "path": ".copilot-tracking/pr/review/009-queue-features-v2/in-progress-review.md",
+    "change_type": "added",
+    "added": "186",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 186
+      }
+    ]
+  },
+  {
+    "path": ".github/agents/backlog-harvester.agent.md",
+    "change_type": "modified",
+    "added": "58",
+    "deleted": "52",
+    "hunks": [
+      {
+        "old_start": 2,
+        "old_end": 3,
+        "new_start": 2,
+        "new_end": 3
+      },
+      {
+        "old_start": 11,
+        "old_end": 11,
+        "new_start": 11,
+        "new_end": 11
+      },
+      {
+        "old_start": 16,
+        "old_end": 16,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 26,
+        "new_end": 26
+      },
+      {
+        "old_start": 43,
+        "old_end": 43,
+        "new_start": 43,
+        "new_end": 43
+      },
+      {
+        "old_start": 45,
+        "old_end": 45,
+        "new_start": 45,
+        "new_end": 45
+      },
+      {
+        "old_start": 71,
+        "old_end": 71,
+        "new_start": 71,
+        "new_end": 71
+      },
+      {
+        "old_start": 76,
+        "old_end": 76,
+        "new_start": 76,
+        "new_end": 76
+      },
+      {
+        "old_start": 78,
+        "old_end": 78,
+        "new_start": 78,
+        "new_end": 78
+      },
+      {
+        "old_start": 87,
+        "old_end": 92,
+        "new_start": 87,
+        "new_end": 92
+      },
+      {
+        "old_start": 105,
+        "old_end": 106,
+        "new_start": 105,
+        "new_end": 106
+      },
+      {
+        "old_start": 108,
+        "old_end": 109,
+        "new_start": 108,
+        "new_end": 109
+      },
+      {
+        "old_start": 114,
+        "old_end": 115,
+        "new_start": 114,
+        "new_end": 115
+      },
+      {
+        "old_start": 117,
+        "old_end": 117,
+        "new_start": 117,
+        "new_end": 117
+      },
+      {
+        "old_start": 149,
+        "old_end": 149,
+        "new_start": 149,
+        "new_end": 149
+      },
+      {
+        "old_start": 151,
+        "old_end": 151,
+        "new_start": 151,
+        "new_end": 151
+      },
+      {
+        "old_start": 153,
+        "old_end": 153,
+        "new_start": 153,
+        "new_end": 153
+      },
+      {
+        "old_start": 156,
+        "old_end": 156,
+        "new_start": 156,
+        "new_end": 157
+      },
+      {
+        "old_start": 158,
+        "old_end": 158,
+        "new_start": 160,
+        "new_end": 160
+      },
+      {
+        "old_start": 160,
+        "old_end": 160,
+        "new_start": 161,
+        "new_end": 161
+      },
+      {
+        "old_start": 164,
+        "old_end": 164,
+        "new_start": 165,
+        "new_end": 165
+      },
+      {
+        "old_start": 169,
+        "old_end": 169,
+        "new_start": 170,
+        "new_end": 171
+      },
+      {
+        "old_start": 171,
+        "old_end": 171,
+        "new_start": 174,
+        "new_end": 174
+      },
+      {
+        "old_start": 173,
+        "old_end": 174,
+        "new_start": 176,
+        "new_end": 176
+      },
+      {
+        "old_start": 177,
+        "old_end": 177,
+        "new_start": 179,
+        "new_end": 179
+      },
+      {
+        "old_start": 179,
+        "old_end": 179,
+        "new_start": 181,
+        "new_end": 181
+      },
+      {
+        "old_start": 182,
+        "old_end": 184,
+        "new_start": 184,
+        "new_end": 188
+      },
+      {
+        "old_start": 186,
+        "old_end": 186,
+        "new_start": 190,
+        "new_end": 190
+      },
+      {
+        "old_start": 191,
+        "old_end": 191,
+        "new_start": 195,
+        "new_end": 195
+      },
+      {
+        "old_start": 194,
+        "old_end": 196,
+        "new_start": 198,
+        "new_end": 201
+      },
+      {
+        "old_start": 201,
+        "old_end": 202,
+        "new_start": 206,
+        "new_end": 208
+      },
+      {
+        "old_start": 210,
+        "old_end": 212,
+        "new_start": 216,
+        "new_end": 218
+      },
+      {
+        "old_start": 218,
+        "old_end": 218,
+        "new_start": 224,
+        "new_end": 224
+      },
+      {
+        "old_start": 224,
+        "old_end": 225,
+        "new_start": 230,
+        "new_end": 231
+      },
+      {
+        "old_start": 234,
+        "old_end": 234,
+        "new_start": 240,
+        "new_end": 240
+      },
+      {
+        "old_start": 238,
+        "old_end": 238,
+        "new_start": 244,
+        "new_end": 244
+      }
+    ]
+  },
+  {
+    "path": ".github/agents/build-orchestrator.agent.md",
+    "change_type": "modified",
+    "added": "25",
+    "deleted": "24",
+    "hunks": [
+      {
+        "old_start": 2,
+        "old_end": 2,
+        "new_start": 2,
+        "new_end": 2
+      },
+      {
+        "old_start": 10,
+        "old_end": 10,
+        "new_start": 10,
+        "new_end": 10
+      },
+      {
+        "old_start": 16,
+        "old_end": 16,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 129,
+        "old_end": 136,
+        "new_start": 129,
+        "new_end": 137
+      },
+      {
+        "old_start": 141,
+        "old_end": 141,
+        "new_start": 142,
+        "new_end": 142
+      },
+      {
+        "old_start": 183,
+        "old_end": 184,
+        "new_start": 184,
+        "new_end": 185
+      },
+      {
+        "old_start": 192,
+        "old_end": 192,
+        "new_start": 193,
+        "new_end": 193
+      },
+      {
+        "old_start": 203,
+        "old_end": 203,
+        "new_start": 204,
+        "new_end": 204
+      },
+      {
+        "old_start": 205,
+        "old_end": 209,
+        "new_start": 206,
+        "new_end": 210
+      },
+      {
+        "old_start": 259,
+        "old_end": 260,
+        "new_start": 260,
+        "new_end": 261
+      },
+      {
+        "old_start": 326,
+        "old_end": 326,
+        "new_start": 327,
+        "new_end": 327
+      }
+    ]
+  },
+  {
+    "path": ".github/agents/go-engineer.agent.md",
+    "change_type": "modified",
+    "added": "11",
+    "deleted": "9",
+    "hunks": [
+      {
+        "old_start": 182,
+        "old_end": 182,
+        "new_start": 182,
+        "new_end": 182
+      },
+      {
+        "old_start": 200,
+        "old_end": 200,
+        "new_start": 200,
+        "new_end": 200
+      },
+      {
+        "old_start": 213,
+        "old_end": 213,
+        "new_start": 213,
+        "new_end": 213
+      },
+      {
+        "old_start": 216,
+        "old_end": 220,
+        "new_start": 216,
+        "new_end": 222
+      },
+      {
+        "old_start": 223,
+        "old_end": 223,
+        "new_start": 225,
+        "new_end": 225
+      }
+    ]
+  },
+  {
+    "path": ".github/agents/harness-architect.agent.md",
+    "change_type": "modified",
+    "added": "43",
+    "deleted": "49",
+    "hunks": [
+      {
+        "old_start": 2,
+        "old_end": 2,
+        "new_start": 2,
+        "new_end": 2
+      },
+      {
+        "old_start": 10,
+        "old_end": 10,
+        "new_start": 10,
+        "new_end": 10
+      },
+      {
+        "old_start": 23,
+        "old_end": 23,
+        "new_start": 23,
+        "new_end": 23
+      },
+      {
+        "old_start": 40,
+        "old_end": 40,
+        "new_start": 40,
+        "new_end": 40
+      },
+      {
+        "old_start": 49,
+        "old_end": 49,
+        "new_start": 49,
+        "new_end": 49
+      },
+      {
+        "old_start": 51,
+        "old_end": 51,
+        "new_start": 51,
+        "new_end": 51
+      },
+      {
+        "old_start": 64,
+        "old_end": 65,
+        "new_start": 64,
+        "new_end": 65
+      },
+      {
+        "old_start": 84,
+        "old_end": 84,
+        "new_start": 84,
+        "new_end": 84
+      },
+      {
+        "old_start": 88,
+        "old_end": 89,
+        "new_start": 88,
+        "new_end": 89
+      },
+      {
+        "old_start": 91,
+        "old_end": 94,
+        "new_start": 91,
+        "new_end": 94
+      },
+      {
+        "old_start": 102,
+        "old_end": 102,
+        "new_start": 102,
+        "new_end": 102
+      },
+      {
+        "old_start": 106,
+        "old_end": 106,
+        "new_start": 106,
+        "new_end": 106
+      },
+      {
+        "old_start": 108,
+        "old_end": 108,
+        "new_start": 108,
+        "new_end": 108
+      },
+      {
+        "old_start": 111,
+        "old_end": 112,
+        "new_start": 111,
+        "new_end": 112
+      },
+      {
+        "old_start": 240,
+        "old_end": 240,
+        "new_start": 240,
+        "new_end": 240
+      },
+      {
+        "old_start": 249,
+        "old_end": 249,
+        "new_start": 249,
+        "new_end": 249
+      },
+      {
+        "old_start": 254,
+        "old_end": 254,
+        "new_start": 254,
+        "new_end": 254
+      },
+      {
+        "old_start": 256,
+        "old_end": 256,
+        "new_start": 256,
+        "new_end": 256
+      },
+      {
+        "old_start": 258,
+        "old_end": 258,
+        "new_start": 258,
+        "new_end": 258
+      },
+      {
+        "old_start": 261,
+        "old_end": 263,
+        "new_start": 261,
+        "new_end": 263
+      },
+      {
+        "old_start": 266,
+        "old_end": 266,
+        "new_start": 266,
+        "new_end": 266
+      },
+      {
+        "old_start": 268,
+        "old_end": 270,
+        "new_start": 268,
+        "new_end": 268
+      },
+      {
+        "old_start": 272,
+        "old_end": 272,
+        "new_start": 270,
+        "new_end": 270
+      },
+      {
+        "old_start": 274,
+        "old_end": 278,
+        "new_start": 272,
+        "new_end": 272
+      },
+      {
+        "old_start": 285,
+        "old_end": 285,
+        "new_start": 279,
+        "new_end": 279
+      },
+      {
+        "old_start": 303,
+        "old_end": 303,
+        "new_start": 297,
+        "new_end": 297
+      },
+      {
+        "old_start": 305,
+        "old_end": 305,
+        "new_start": 299,
+        "new_end": 299
+      },
+      {
+        "old_start": 307,
+        "old_end": 307,
+        "new_start": 301,
+        "new_end": 301
+      },
+      {
+        "old_start": 347,
+        "old_end": 348,
+        "new_start": 341,
+        "new_end": 342
+      },
+      {
+        "old_start": 356,
+        "old_end": 356,
+        "new_start": 350,
+        "new_end": 350
+      },
+      {
+        "old_start": 360,
+        "old_end": 360,
+        "new_start": 354,
+        "new_end": 354
+      },
+      {
+        "old_start": 362,
+        "old_end": 362,
+        "new_start": 356,
+        "new_end": 356
+      },
+      {
+        "old_start": 364,
+        "old_end": 364,
+        "new_start": 358,
+        "new_end": 358
+      },
+      {
+        "old_start": 371,
+        "old_end": 371,
+        "new_start": 365,
+        "new_end": 365
+      }
+    ]
+  },
+  {
+    "path": ".github/agents/pr-review.agent.md",
+    "change_type": "modified",
+    "added": "1",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 270,
+        "old_end": 270,
+        "new_start": 270,
+        "new_end": 270
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/brainstorm/SKILL.md",
+    "change_type": "deleted",
+    "added": "0",
+    "deleted": "176",
+    "hunks": [
+      {
+        "old_start": 1,
+        "old_end": 176,
+        "new_start": 0,
+        "new_end": 0
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/build-feature/SKILL.md",
+    "change_type": "modified",
+    "added": "7",
+    "deleted": "5",
+    "hunks": [
+      {
+        "old_start": 10,
+        "old_end": 10,
+        "new_start": 10,
+        "new_end": 10
+      },
+      {
+        "old_start": 119,
+        "old_end": 119,
+        "new_start": 119,
+        "new_end": 120
+      },
+      {
+        "old_start": 135,
+        "old_end": 136,
+        "new_start": 136,
+        "new_end": 138
+      },
+      {
+        "old_start": 158,
+        "old_end": 158,
+        "new_start": 160,
+        "new_end": 160
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/deliberate/SKILL.md",
+    "change_type": "added",
+    "added": "167",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 167
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/fix-ci/SKILL.md",
+    "change_type": "modified",
+    "added": "19",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 177,
+        "old_end": 177,
+        "new_start": 177,
+        "new_end": 177
+      },
+      {
+        "old_start": 203,
+        "old_end": 203,
+        "new_start": 203,
+        "new_end": 203
+      },
+      {
+        "old_start": 228,
+        "old_end": 228,
+        "new_start": 228,
+        "new_end": 244
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/impl-plan/SKILL.md",
+    "change_type": "modified",
+    "added": "10",
+    "deleted": "10",
+    "hunks": [
+      {
+        "old_start": 3,
+        "old_end": 4,
+        "new_start": 3,
+        "new_end": 4
+      },
+      {
+        "old_start": 9,
+        "old_end": 9,
+        "new_start": 9,
+        "new_end": 9
+      },
+      {
+        "old_start": 16,
+        "old_end": 16,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 37,
+        "old_end": 37,
+        "new_start": 37,
+        "new_end": 37
+      },
+      {
+        "old_start": 67,
+        "old_end": 67,
+        "new_start": 67,
+        "new_end": 67
+      },
+      {
+        "old_start": 86,
+        "old_end": 86,
+        "new_start": 86,
+        "new_end": 86
+      },
+      {
+        "old_start": 89,
+        "old_end": 89,
+        "new_start": 89,
+        "new_end": 89
+      },
+      {
+        "old_start": 132,
+        "old_end": 132,
+        "new_start": 132,
+        "new_end": 132
+      },
+      {
+        "old_start": 215,
+        "old_end": 215,
+        "new_start": 215,
+        "new_end": 215
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/plan-review/SKILL.md",
+    "change_type": "modified",
+    "added": "6",
+    "deleted": "6",
+    "hunks": [
+      {
+        "old_start": 3,
+        "old_end": 3,
+        "new_start": 3,
+        "new_end": 3
+      },
+      {
+        "old_start": 9,
+        "old_end": 9,
+        "new_start": 9,
+        "new_end": 9
+      },
+      {
+        "old_start": 44,
+        "old_end": 44,
+        "new_start": 44,
+        "new_end": 44
+      },
+      {
+        "old_start": 60,
+        "old_end": 60,
+        "new_start": 60,
+        "new_end": 60
+      },
+      {
+        "old_start": 107,
+        "old_end": 107,
+        "new_start": 107,
+        "new_end": 107
+      },
+      {
+        "old_start": 153,
+        "old_end": 153,
+        "new_start": 153,
+        "new_end": 153
+      }
+    ]
+  },
+  {
+    "path": ".github/skills/review/SKILL.md",
+    "change_type": "modified",
+    "added": "26",
+    "deleted": "5",
+    "hunks": [
+      {
+        "old_start": 48,
+        "old_end": 48,
+        "new_start": 48,
+        "new_end": 48
+      },
+      {
+        "old_start": 64,
+        "old_end": 64,
+        "new_start": 64,
+        "new_end": 64
+      },
+      {
+        "old_start": 73,
+        "old_end": 73,
+        "new_start": 73,
+        "new_end": 73
+      },
+      {
+        "old_start": 150,
+        "old_end": 150,
+        "new_start": 150,
+        "new_end": 150
+      },
+      {
+        "old_start": 157,
+        "old_end": 157,
+        "new_start": 158,
+        "new_end": 174
+      },
+      {
+        "old_start": 179,
+        "old_end": 179,
+        "new_start": 196,
+        "new_end": 196
+      },
+      {
+        "old_start": 192,
+        "old_end": 192,
+        "new_start": 210,
+        "new_end": 213
+      }
+    ]
+  },
+  {
+    "path": "AGENTS.md",
+    "change_type": "modified",
+    "added": "16",
+    "deleted": "15",
+    "hunks": [
+      {
+        "old_start": 2,
+        "old_end": 2,
+        "new_start": 2,
+        "new_end": 2
+      },
+      {
+        "old_start": 6,
+        "old_end": 6,
+        "new_start": 6,
+        "new_end": 6
+      },
+      {
+        "old_start": 8,
+        "old_end": 8,
+        "new_start": 8,
+        "new_end": 8
+      },
+      {
+        "old_start": 12,
+        "old_end": 13,
+        "new_start": 12,
+        "new_end": 14
+      },
+      {
+        "old_start": 15,
+        "old_end": 17,
+        "new_start": 16,
+        "new_end": 18
+      },
+      {
+        "old_start": 19,
+        "old_end": 23,
+        "new_start": 20,
+        "new_end": 24
+      },
+      {
+        "old_start": 25,
+        "old_end": 25,
+        "new_start": 26,
+        "new_end": 26
+      },
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 30,
+        "new_end": 30
+      }
+    ]
+  },
+  {
+    "path": "README.md",
+    "change_type": "modified",
+    "added": "118",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 1,
+        "old_end": 1,
+        "new_start": 1,
+        "new_end": 118
+      }
+    ]
+  },
+  {
+    "path": "docs/backlogit-vs-backlog-md.md",
+    "change_type": "added",
+    "added": "98",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 98
+      }
+    ]
+  },
+  {
+    "path": "docs/compound/go-implementation/feature-001-core-implementation.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/configuration.md",
+    "change_type": "added",
+    "added": "732",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 732
+      }
+    ]
+  },
+  {
+    "path": "docs/exec-plans/2026-03-30-backlogit-core-plan.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/exec-plans/2026-03-30-queue-features-plan.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/exec-plans/2026-03-31-queue-features-v2-plan.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/installation.md",
+    "change_type": "added",
+    "added": "124",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 124
+      }
+    ]
+  },
+  {
+    "path": "docs/migration-guide.md",
+    "change_type": "added",
+    "added": "323",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 323
+      }
+    ]
+  },
+  {
+    "path": "docs/rationale.md",
+    "change_type": "added",
+    "added": "126",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 126
+      }
+    ]
+  },
+  {
+    "path": "docs/research/Backlogit-Architecture-Design.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/reviews/2026-03-30-backlogit-core-plan-review.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/reviews/2026-03-30-queue-features-plan-review.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/reviews/2026-03-31-feature-002-code-review.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/reviews/2026-03-31-queue-features-v2-plan-review.md",
+    "change_type": "renamed",
+    "added": "",
+    "deleted": "",
+    "hunks": []
+  },
+  {
+    "path": "docs/workflow.md",
+    "change_type": "added",
+    "added": "248",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 248
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/add.go",
+    "change_type": "modified",
+    "added": "9",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 27,
+        "new_end": 34
+      },
+      {
+        "old_start": 73,
+        "old_end": 73,
+        "new_start": 81,
+        "new_end": 81
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/archive.go",
+    "change_type": "modified",
+    "added": "5",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 17,
+        "old_end": 17,
+        "new_start": 18,
+        "new_end": 22
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/delete.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 20,
+        "old_end": 20,
+        "new_start": 21,
+        "new_end": 24
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/delete_search_test.go",
+    "change_type": "modified",
+    "added": "1",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 29,
+        "new_end": 29
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/deliberate.go",
+    "change_type": "added",
+    "added": "71",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 71
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/deliberate_test.go",
+    "change_type": "added",
+    "added": "41",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 41
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/dep.go",
+    "change_type": "modified",
+    "added": "9",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 17,
+        "old_end": 17,
+        "new_start": 18,
+        "new_end": 21
+      },
+      {
+        "old_start": 31,
+        "old_end": 31,
+        "new_start": 36,
+        "new_end": 37
+      },
+      {
+        "old_start": 60,
+        "old_end": 60,
+        "new_start": 67,
+        "new_end": 67
+      },
+      {
+        "old_start": 89,
+        "old_end": 89,
+        "new_start": 97,
+        "new_end": 98
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/get.go",
+    "change_type": "modified",
+    "added": "5",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 30,
+        "new_end": 34
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/get_test.go",
+    "change_type": "modified",
+    "added": "3",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 29,
+        "new_end": 29
+      },
+      {
+        "old_start": 56,
+        "old_end": 56,
+        "new_start": 56,
+        "new_end": 56
+      },
+      {
+        "old_start": 85,
+        "old_end": 85,
+        "new_start": 85,
+        "new_end": 85
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/list.go",
+    "change_type": "modified",
+    "added": "8",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 30,
+        "old_end": 30,
+        "new_start": 31,
+        "new_end": 38
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/metadata.go",
+    "change_type": "added",
+    "added": "159",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 159
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/metadata_test.go",
+    "change_type": "added",
+    "added": "47",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 47
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/migrate.go",
+    "change_type": "modified",
+    "added": "398",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 5,
+        "old_end": 5,
+        "new_start": 6,
+        "new_end": 9
+      },
+      {
+        "old_start": 8,
+        "old_end": 8,
+        "new_start": 13,
+        "new_end": 13
+      },
+      {
+        "old_start": 10,
+        "old_end": 10,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 14,
+        "old_end": 14,
+        "new_start": 20,
+        "new_end": 21
+      },
+      {
+        "old_start": 18,
+        "old_end": 18,
+        "new_start": 25,
+        "new_end": 36
+      },
+      {
+        "old_start": 19,
+        "old_end": 19,
+        "new_start": 38,
+        "new_end": 44
+      },
+      {
+        "old_start": 46,
+        "old_end": 46,
+        "new_start": 71,
+        "new_end": 71
+      },
+      {
+        "old_start": 61,
+        "old_end": 61,
+        "new_start": 87,
+        "new_end": 91
+      },
+      {
+        "old_start": 63,
+        "old_end": 63,
+        "new_start": 94,
+        "new_end": 458
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/migrate_import_test.go",
+    "change_type": "added",
+    "added": "210",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 210
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/move.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 19,
+        "old_end": 19,
+        "new_start": 20,
+        "new_end": 23
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/move_relocate_test.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 61,
+        "old_end": 61,
+        "new_start": 62,
+        "new_end": 63
+      },
+      {
+        "old_start": 91,
+        "old_end": 91,
+        "new_start": 94,
+        "new_end": 95
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/move_test.go",
+    "change_type": "modified",
+    "added": "2",
+    "deleted": "2",
+    "hunks": [
+      {
+        "old_start": 27,
+        "old_end": 27,
+        "new_start": 27,
+        "new_end": 27
+      },
+      {
+        "old_start": 94,
+        "old_end": 94,
+        "new_start": 94,
+        "new_end": 94
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/query.go",
+    "change_type": "modified",
+    "added": "6",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 18,
+        "old_end": 18,
+        "new_start": 19,
+        "new_end": 24
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/queue_cmd.go",
+    "change_type": "modified",
+    "added": "9",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 18,
+        "old_end": 18,
+        "new_start": 19,
+        "new_end": 22
+      },
+      {
+        "old_start": 32,
+        "old_end": 32,
+        "new_start": 37,
+        "new_end": 39
+      },
+      {
+        "old_start": 69,
+        "old_end": 69,
+        "new_start": 77,
+        "new_end": 77
+      },
+      {
+        "old_start": 96,
+        "old_end": 96,
+        "new_start": 105,
+        "new_end": 105
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/root.go",
+    "change_type": "modified",
+    "added": "46",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 27,
+        "new_end": 43
+      },
+      {
+        "old_start": 50,
+        "old_end": 50,
+        "new_start": 68,
+        "new_end": 70
+      },
+      {
+        "old_start": 84,
+        "old_end": 84,
+        "new_start": 105,
+        "new_end": 110
+      },
+      {
+        "old_start": 93,
+        "old_end": 93,
+        "new_start": 120,
+        "new_end": 122
+      },
+      {
+        "old_start": 96,
+        "old_end": 96,
+        "new_start": 126,
+        "new_end": 128
+      },
+      {
+        "old_start": 106,
+        "old_end": 106,
+        "new_start": 139,
+        "new_end": 145
+      },
+      {
+        "old_start": 115,
+        "old_end": 115,
+        "new_start": 154,
+        "new_end": 154
+      },
+      {
+        "old_start": 128,
+        "old_end": 128,
+        "new_start": 168,
+        "new_end": 173
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/root_expansion_test.go",
+    "change_type": "modified",
+    "added": "2",
+    "deleted": "2",
+    "hunks": [
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 26,
+        "new_end": 26
+      },
+      {
+        "old_start": 45,
+        "old_end": 45,
+        "new_start": 45,
+        "new_end": 45
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/search.go",
+    "change_type": "modified",
+    "added": "5",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 20,
+        "old_end": 20,
+        "new_start": 21,
+        "new_end": 25
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/stash.go",
+    "change_type": "added",
+    "added": "153",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 153
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/stash_test.go",
+    "change_type": "added",
+    "added": "65",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 65
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/status_cmd.go",
+    "change_type": "modified",
+    "added": "5",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 18,
+        "old_end": 18,
+        "new_start": 19,
+        "new_end": 23
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/update.go",
+    "change_type": "modified",
+    "added": "9",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 31,
+        "old_end": 31,
+        "new_start": 32,
+        "new_end": 40
+      }
+    ]
+  },
+  {
+    "path": "internal/cli/update_test.go",
+    "change_type": "modified",
+    "added": "3",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 26,
+        "new_end": 26
+      },
+      {
+        "old_start": 52,
+        "old_end": 52,
+        "new_start": 52,
+        "new_end": 52
+      },
+      {
+        "old_start": 78,
+        "old_end": 78,
+        "new_start": 78,
+        "new_end": 78
+      }
+    ]
+  },
+  {
+    "path": "internal/config/config_test.go",
+    "change_type": "modified",
+    "added": "3",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 59,
+        "old_end": 59,
+        "new_start": 60,
+        "new_end": 60
+      },
+      {
+        "old_start": 81,
+        "old_end": 81,
+        "new_start": 83,
+        "new_end": 84
+      }
+    ]
+  },
+  {
+    "path": "internal/config/defaults.go",
+    "change_type": "modified",
+    "added": "137",
+    "deleted": "98",
+    "hunks": [
+      {
+        "old_start": 7,
+        "old_end": 7,
+        "new_start": 8,
+        "new_end": 8
+      },
+      {
+        "old_start": 12,
+        "old_end": 12,
+        "new_start": 13,
+        "new_end": 13
+      },
+      {
+        "old_start": 16,
+        "old_end": 16,
+        "new_start": 17,
+        "new_end": 17
+      },
+      {
+        "old_start": 26,
+        "old_end": 27,
+        "new_start": 27,
+        "new_end": 28
+      },
+      {
+        "old_start": 31,
+        "old_end": 34,
+        "new_start": 32,
+        "new_end": 36
+      },
+      {
+        "old_start": 38,
+        "old_end": 39,
+        "new_start": 40,
+        "new_end": 41
+      },
+      {
+        "old_start": 43,
+        "old_end": 43,
+        "new_start": 45,
+        "new_end": 45
+      },
+      {
+        "old_start": 50,
+        "old_end": 51,
+        "new_start": 52,
+        "new_end": 53
+      },
+      {
+        "old_start": 54,
+        "old_end": 54,
+        "new_start": 57,
+        "new_end": 61
+      },
+      {
+        "old_start": 57,
+        "old_end": 58,
+        "new_start": 64,
+        "new_end": 65
+      },
+      {
+        "old_start": 62,
+        "old_end": 67,
+        "new_start": 68,
+        "new_end": 68
+      },
+      {
+        "old_start": 77,
+        "old_end": 80,
+        "new_start": 78,
+        "new_end": 81
+      },
+      {
+        "old_start": 84,
+        "old_end": 85,
+        "new_start": 85,
+        "new_end": 86
+      },
+      {
+        "old_start": 87,
+        "old_end": 88,
+        "new_start": 88,
+        "new_end": 89
+      },
+      {
+        "old_start": 90,
+        "old_end": 90,
+        "new_start": 91,
+        "new_end": 91
+      },
+      {
+        "old_start": 99,
+        "old_end": 99,
+        "new_start": 100,
+        "new_end": 100
+      },
+      {
+        "old_start": 101,
+        "old_end": 102,
+        "new_start": 102,
+        "new_end": 103
+      },
+      {
+        "old_start": 104,
+        "old_end": 104,
+        "new_start": 105,
+        "new_end": 105
+      },
+      {
+        "old_start": 106,
+        "old_end": 107,
+        "new_start": 107,
+        "new_end": 108
+      },
+      {
+        "old_start": 109,
+        "old_end": 112,
+        "new_start": 110,
+        "new_end": 113
+      },
+      {
+        "old_start": 114,
+        "old_end": 114,
+        "new_start": 115,
+        "new_end": 115
+      },
+      {
+        "old_start": 116,
+        "old_end": 117,
+        "new_start": 117,
+        "new_end": 163
+      },
+      {
+        "old_start": 119,
+        "old_end": 120,
+        "new_start": 165,
+        "new_end": 166
+      },
+      {
+        "old_start": 122,
+        "old_end": 123,
+        "new_start": 168,
+        "new_end": 169
+      },
+      {
+        "old_start": 125,
+        "old_end": 125,
+        "new_start": 171,
+        "new_end": 171
+      },
+      {
+        "old_start": 134,
+        "old_end": 139,
+        "new_start": 180,
+        "new_end": 180
+      },
+      {
+        "old_start": 141,
+        "old_end": 142,
+        "new_start": 182,
+        "new_end": 183
+      },
+      {
+        "old_start": 144,
+        "old_end": 144,
+        "new_start": 185,
+        "new_end": 185
+      },
+      {
+        "old_start": 146,
+        "old_end": 147,
+        "new_start": 187,
+        "new_end": 188
+      },
+      {
+        "old_start": 149,
+        "old_end": 152,
+        "new_start": 190,
+        "new_end": 193
+      },
+      {
+        "old_start": 156,
+        "old_end": 157,
+        "new_start": 197,
+        "new_end": 198
+      },
+      {
+        "old_start": 159,
+        "old_end": 159,
+        "new_start": 200,
+        "new_end": 200
+      },
+      {
+        "old_start": 168,
+        "old_end": 168,
+        "new_start": 209,
+        "new_end": 209
+      },
+      {
+        "old_start": 170,
+        "old_end": 171,
+        "new_start": 211,
+        "new_end": 212
+      },
+      {
+        "old_start": 181,
+        "old_end": 191,
+        "new_start": 222,
+        "new_end": 225
+      },
+      {
+        "old_start": 193,
+        "old_end": 195,
+        "new_start": 227,
+        "new_end": 229
+      },
+      {
+        "old_start": 197,
+        "old_end": 199,
+        "new_start": 231,
+        "new_end": 234
+      },
+      {
+        "old_start": 201,
+        "old_end": 201,
+        "new_start": 236,
+        "new_end": 236
+      },
+      {
+        "old_start": 203,
+        "old_end": 203,
+        "new_start": 238,
+        "new_end": 238
+      },
+      {
+        "old_start": 209,
+        "old_end": 209,
+        "new_start": 244,
+        "new_end": 244
+      },
+      {
+        "old_start": 217,
+        "old_end": 219,
+        "new_start": 252,
+        "new_end": 254
+      },
+      {
+        "old_start": 230,
+        "old_end": 235,
+        "new_start": 265,
+        "new_end": 266
+      },
+      {
+        "old_start": 277,
+        "old_end": 277,
+        "new_start": 309,
+        "new_end": 316
+      }
+    ]
+  },
+  {
+    "path": "internal/config/defaults_headerdef_test.go",
+    "change_type": "modified",
+    "added": "7",
+    "deleted": "7",
+    "hunks": [
+      {
+        "old_start": 52,
+        "old_end": 53,
+        "new_start": 52,
+        "new_end": 53
+      },
+      {
+        "old_start": 74,
+        "old_end": 74,
+        "new_start": 74,
+        "new_end": 74
+      },
+      {
+        "old_start": 83,
+        "old_end": 86,
+        "new_start": 83,
+        "new_end": 86
+      }
+    ]
+  },
+  {
+    "path": "internal/config/defaults_templates_test.go",
+    "change_type": "modified",
+    "added": "34",
+    "deleted": "14",
+    "hunks": [
+      {
+        "old_start": 13,
+        "old_end": 13,
+        "new_start": 13,
+        "new_end": 13
+      },
+      {
+        "old_start": 28,
+        "old_end": 28,
+        "new_start": 28,
+        "new_end": 28
+      },
+      {
+        "old_start": 37,
+        "old_end": 37,
+        "new_start": 37,
+        "new_end": 37
+      },
+      {
+        "old_start": 39,
+        "old_end": 39,
+        "new_start": 39,
+        "new_end": 39
+      },
+      {
+        "old_start": 56,
+        "old_end": 57,
+        "new_start": 56,
+        "new_end": 57
+      },
+      {
+        "old_start": 84,
+        "old_end": 84,
+        "new_start": 84,
+        "new_end": 84
+      },
+      {
+        "old_start": 93,
+        "old_end": 93,
+        "new_start": 93,
+        "new_end": 93
+      },
+      {
+        "old_start": 96,
+        "old_end": 98,
+        "new_start": 96,
+        "new_end": 98
+      },
+      {
+        "old_start": 101,
+        "old_end": 103,
+        "new_start": 101,
+        "new_end": 123
+      }
+    ]
+  },
+  {
+    "path": "internal/config/migration.go",
+    "change_type": "added",
+    "added": "115",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 115
+      }
+    ]
+  },
+  {
+    "path": "internal/config/migration_test.go",
+    "change_type": "added",
+    "added": "296",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 296
+      }
+    ]
+  },
+  {
+    "path": "internal/core/archive.go",
+    "change_type": "modified",
+    "added": "14",
+    "deleted": "12",
+    "hunks": [
+      {
+        "old_start": 35,
+        "old_end": 35,
+        "new_start": 35,
+        "new_end": 35
+      },
+      {
+        "old_start": 84,
+        "old_end": 87,
+        "new_start": 84,
+        "new_end": 87
+      },
+      {
+        "old_start": 93,
+        "old_end": 93,
+        "new_start": 93,
+        "new_end": 95
+      },
+      {
+        "old_start": 105,
+        "old_end": 105,
+        "new_start": 107,
+        "new_end": 108
+      },
+      {
+        "old_start": 125,
+        "old_end": 127,
+        "new_start": 128,
+        "new_end": 130
+      },
+      {
+        "old_start": 129,
+        "old_end": 129,
+        "new_start": 132,
+        "new_end": 132
+      },
+      {
+        "old_start": 195,
+        "old_end": 195,
+        "new_start": 197,
+        "new_end": 197
+      }
+    ]
+  },
+  {
+    "path": "internal/core/artifacts.go",
+    "change_type": "modified",
+    "added": "53",
+    "deleted": "38",
+    "hunks": [
+      {
+        "old_start": 20,
+        "old_end": 20,
+        "new_start": 21,
+        "new_end": 21
+      },
+      {
+        "old_start": 45,
+        "old_end": 45,
+        "new_start": 47,
+        "new_end": 51
+      },
+      {
+        "old_start": 101,
+        "old_end": 103,
+        "new_start": 107,
+        "new_end": 129
+      },
+      {
+        "old_start": 105,
+        "old_end": 106,
+        "new_start": 130,
+        "new_end": 130
+      },
+      {
+        "old_start": 115,
+        "old_end": 115,
+        "new_start": 139,
+        "new_end": 139
+      },
+      {
+        "old_start": 120,
+        "old_end": 120,
+        "new_start": 145,
+        "new_end": 145
+      },
+      {
+        "old_start": 147,
+        "old_end": 147,
+        "new_start": 172,
+        "new_end": 172
+      },
+      {
+        "old_start": 148,
+        "old_end": 148,
+        "new_start": 174,
+        "new_end": 176
+      },
+      {
+        "old_start": 152,
+        "old_end": 152,
+        "new_start": 180,
+        "new_end": 180
+      },
+      {
+        "old_start": 154,
+        "old_end": 155,
+        "new_start": 181,
+        "new_end": 181
+      },
+      {
+        "old_start": 156,
+        "old_end": 156,
+        "new_start": 183,
+        "new_end": 184
+      },
+      {
+        "old_start": 160,
+        "old_end": 160,
+        "new_start": 188,
+        "new_end": 188
+      },
+      {
+        "old_start": 162,
+        "old_end": 162,
+        "new_start": 190,
+        "new_end": 190
+      },
+      {
+        "old_start": 205,
+        "old_end": 206,
+        "new_start": 233,
+        "new_end": 234
+      },
+      {
+        "old_start": 290,
+        "old_end": 290,
+        "new_start": 318,
+        "new_end": 318
+      },
+      {
+        "old_start": 294,
+        "old_end": 294,
+        "new_start": 322,
+        "new_end": 322
+      },
+      {
+        "old_start": 296,
+        "old_end": 296,
+        "new_start": 324,
+        "new_end": 324
+      },
+      {
+        "old_start": 298,
+        "old_end": 298,
+        "new_start": 326,
+        "new_end": 326
+      },
+      {
+        "old_start": 301,
+        "old_end": 303,
+        "new_start": 329,
+        "new_end": 329
+      },
+      {
+        "old_start": 305,
+        "old_end": 305,
+        "new_start": 331,
+        "new_end": 331
+      },
+      {
+        "old_start": 307,
+        "old_end": 307,
+        "new_start": 333,
+        "new_end": 333
+      },
+      {
+        "old_start": 313,
+        "old_end": 321,
+        "new_start": 339,
+        "new_end": 339
+      },
+      {
+        "old_start": 329,
+        "old_end": 329,
+        "new_start": 347,
+        "new_end": 347
+      },
+      {
+        "old_start": 336,
+        "old_end": 340,
+        "new_start": 353,
+        "new_end": 353
+      },
+      {
+        "old_start": 352,
+        "old_end": 352,
+        "new_start": 366,
+        "new_end": 367
+      }
+    ]
+  },
+  {
+    "path": "internal/core/artifacts_expansion_test.go",
+    "change_type": "modified",
+    "added": "18",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 126,
+        "old_end": 126,
+        "new_start": 126,
+        "new_end": 126
+      },
+      {
+        "old_start": 137,
+        "old_end": 137,
+        "new_start": 138,
+        "new_end": 154
+      }
+    ]
+  },
+  {
+    "path": "internal/core/commits.go",
+    "change_type": "modified",
+    "added": "13",
+    "deleted": "10",
+    "hunks": [
+      {
+        "old_start": 9,
+        "old_end": 9,
+        "new_start": 8,
+        "new_end": 8
+      },
+      {
+        "old_start": 13,
+        "old_end": 13,
+        "new_start": 13,
+        "new_end": 13
+      },
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 26,
+        "new_end": 26
+      },
+      {
+        "old_start": 36,
+        "old_end": 39,
+        "new_start": 36,
+        "new_end": 39
+      },
+      {
+        "old_start": 49,
+        "old_end": 50,
+        "new_start": 49,
+        "new_end": 53
+      },
+      {
+        "old_start": 78,
+        "old_end": 79,
+        "new_start": 81,
+        "new_end": 82
+      }
+    ]
+  },
+  {
+    "path": "internal/core/hierarchy.go",
+    "change_type": "modified",
+    "added": "97",
+    "deleted": "6",
+    "hunks": [
+      {
+        "old_start": 3,
+        "old_end": 3,
+        "new_start": 4,
+        "new_end": 4
+      },
+      {
+        "old_start": 6,
+        "old_end": 6,
+        "new_start": 6,
+        "new_end": 6
+      },
+      {
+        "old_start": 25,
+        "old_end": 28,
+        "new_start": 25,
+        "new_end": 25
+      },
+      {
+        "old_start": 64,
+        "old_end": 64,
+        "new_start": 62,
+        "new_end": 120
+      },
+      {
+        "old_start": 77,
+        "old_end": 77,
+        "new_start": 133,
+        "new_end": 133
+      },
+      {
+        "old_start": 103,
+        "old_end": 103,
+        "new_start": 160,
+        "new_end": 194
+      }
+    ]
+  },
+  {
+    "path": "internal/core/hierarchy_test.go",
+    "change_type": "modified",
+    "added": "1",
+    "deleted": "1",
+    "hunks": [
+      {
+        "old_start": 124,
+        "old_end": 124,
+        "new_start": 124,
+        "new_end": 124
+      }
+    ]
+  },
+  {
+    "path": "internal/core/metadata_catalog.go",
+    "change_type": "added",
+    "added": "383",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 383
+      }
+    ]
+  },
+  {
+    "path": "internal/core/metadata_catalog_test.go",
+    "change_type": "added",
+    "added": "68",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 68
+      }
+    ]
+  },
+  {
+    "path": "internal/core/migrate_queue.go",
+    "change_type": "modified",
+    "added": "3",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 25,
+        "old_end": 25,
+        "new_start": 25,
+        "new_end": 25
+      },
+      {
+        "old_start": 39,
+        "old_end": 39,
+        "new_start": 39,
+        "new_end": 39
+      },
+      {
+        "old_start": 48,
+        "old_end": 48,
+        "new_start": 48,
+        "new_end": 48
+      }
+    ]
+  },
+  {
+    "path": "internal/core/naming.go",
+    "change_type": "modified",
+    "added": "1",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 32,
+        "old_end": 32,
+        "new_start": 33,
+        "new_end": 33
+      }
+    ]
+  },
+  {
+    "path": "internal/core/relocate.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "4",
+    "hunks": [
+      {
+        "old_start": 16,
+        "old_end": 16,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 29,
+        "new_end": 29
+      },
+      {
+        "old_start": 31,
+        "old_end": 31,
+        "new_start": 31,
+        "new_end": 31
+      },
+      {
+        "old_start": 39,
+        "old_end": 39,
+        "new_start": 39,
+        "new_end": 39
+      }
+    ]
+  },
+  {
+    "path": "internal/core/routing.go",
+    "change_type": "modified",
+    "added": "12",
+    "deleted": "12",
+    "hunks": [
+      {
+        "old_start": 16,
+        "old_end": 17,
+        "new_start": 16,
+        "new_end": 17
+      },
+      {
+        "old_start": 21,
+        "old_end": 22,
+        "new_start": 21,
+        "new_end": 22
+      },
+      {
+        "old_start": 27,
+        "old_end": 27,
+        "new_start": 27,
+        "new_end": 27
+      },
+      {
+        "old_start": 30,
+        "old_end": 32,
+        "new_start": 30,
+        "new_end": 32
+      },
+      {
+        "old_start": 34,
+        "old_end": 34,
+        "new_start": 34,
+        "new_end": 34
+      },
+      {
+        "old_start": 36,
+        "old_end": 36,
+        "new_start": 36,
+        "new_end": 36
+      },
+      {
+        "old_start": 40,
+        "old_end": 40,
+        "new_start": 40,
+        "new_end": 40
+      },
+      {
+        "old_start": 44,
+        "old_end": 44,
+        "new_start": 44,
+        "new_end": 44
+      }
+    ]
+  },
+  {
+    "path": "internal/core/stash.go",
+    "change_type": "added",
+    "added": "435",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 435
+      }
+    ]
+  },
+  {
+    "path": "internal/core/stash_test.go",
+    "change_type": "added",
+    "added": "71",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 71
+      }
+    ]
+  },
+  {
+    "path": "internal/core/templates/deliberation.go",
+    "change_type": "added",
+    "added": "104",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 104
+      }
+    ]
+  },
+  {
+    "path": "internal/core/templates/service_test.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "4",
+    "hunks": [
+      {
+        "old_start": 318,
+        "old_end": 318,
+        "new_start": 318,
+        "new_end": 318
+      },
+      {
+        "old_start": 343,
+        "old_end": 343,
+        "new_start": 343,
+        "new_end": 343
+      },
+      {
+        "old_start": 372,
+        "old_end": 372,
+        "new_start": 372,
+        "new_end": 372
+      },
+      {
+        "old_start": 395,
+        "old_end": 395,
+        "new_start": 395,
+        "new_end": 395
+      }
+    ]
+  },
+  {
+    "path": "internal/core/wit_metadata.go",
+    "change_type": "modified",
+    "added": "22",
+    "deleted": "8",
+    "hunks": [
+      {
+        "old_start": 4,
+        "old_end": 4,
+        "new_start": 5,
+        "new_end": 5
+      },
+      {
+        "old_start": 12,
+        "old_end": 12,
+        "new_start": 14,
+        "new_end": 14
+      },
+      {
+        "old_start": 15,
+        "old_end": 15,
+        "new_start": 18,
+        "new_end": 18
+      },
+      {
+        "old_start": 73,
+        "old_end": 73,
+        "new_start": 77,
+        "new_end": 77
+      },
+      {
+        "old_start": 75,
+        "old_end": 75,
+        "new_start": 80,
+        "new_end": 80
+      },
+      {
+        "old_start": 78,
+        "old_end": 79,
+        "new_start": 83,
+        "new_end": 85
+      },
+      {
+        "old_start": 89,
+        "old_end": 93,
+        "new_start": 95,
+        "new_end": 101
+      },
+      {
+        "old_start": 95,
+        "old_end": 95,
+        "new_start": 103,
+        "new_end": 103
+      },
+      {
+        "old_start": 115,
+        "old_end": 115,
+        "new_start": 124,
+        "new_end": 129
+      }
+    ]
+  },
+  {
+    "path": "internal/core/workspace.go",
+    "change_type": "modified",
+    "added": "12",
+    "deleted": "2",
+    "hunks": [
+      {
+        "old_start": 24,
+        "old_end": 24,
+        "new_start": 25,
+        "new_end": 34
+      },
+      {
+        "old_start": 27,
+        "old_end": 27,
+        "new_start": 37,
+        "new_end": 37
+      },
+      {
+        "old_start": 33,
+        "old_end": 33,
+        "new_start": 43,
+        "new_end": 43
+      }
+    ]
+  },
+  {
+    "path": "internal/db/logs.go",
+    "change_type": "added",
+    "added": "227",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 227
+      }
+    ]
+  },
+  {
+    "path": "internal/db/queries_expansion_test.go",
+    "change_type": "modified",
+    "added": "40",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 13,
+        "old_end": 13,
+        "new_start": 14,
+        "new_end": 14
+      },
+      {
+        "old_start": 168,
+        "old_end": 168,
+        "new_start": 170,
+        "new_end": 208
+      }
+    ]
+  },
+  {
+    "path": "internal/db/rehydration.go",
+    "change_type": "modified",
+    "added": "125",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 5,
+        "old_end": 5,
+        "new_start": 6,
+        "new_end": 6
+      },
+      {
+        "old_start": 12,
+        "old_end": 12,
+        "new_start": 14,
+        "new_end": 14
+      },
+      {
+        "old_start": 13,
+        "old_end": 13,
+        "new_start": 16,
+        "new_end": 16
+      },
+      {
+        "old_start": 20,
+        "old_end": 20,
+        "new_start": 24,
+        "new_end": 27
+      },
+      {
+        "old_start": 29,
+        "old_end": 29,
+        "new_start": 37,
+        "new_end": 39
+      },
+      {
+        "old_start": 43,
+        "old_end": 43,
+        "new_start": 54,
+        "new_end": 56
+      },
+      {
+        "old_start": 78,
+        "old_end": 78,
+        "new_start": 92,
+        "new_end": 99
+      },
+      {
+        "old_start": 144,
+        "old_end": 144,
+        "new_start": 166,
+        "new_end": 269
+      }
+    ]
+  },
+  {
+    "path": "internal/db/rehydration_expansion_test.go",
+    "change_type": "modified",
+    "added": "48",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 89,
+        "old_end": 89,
+        "new_start": 90,
+        "new_end": 137
+      }
+    ]
+  },
+  {
+    "path": "internal/db/schema.go",
+    "change_type": "modified",
+    "added": "61",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 62,
+        "old_end": 62,
+        "new_start": 63,
+        "new_end": 107
+      },
+      {
+        "old_start": 87,
+        "old_end": 87,
+        "new_start": 133,
+        "new_end": 146
+      },
+      {
+        "old_start": 105,
+        "old_end": 105,
+        "new_start": 165,
+        "new_end": 166
+      }
+    ]
+  },
+  {
+    "path": "internal/db/stash.go",
+    "change_type": "added",
+    "added": "160",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 160
+      }
+    ]
+  },
+  {
+    "path": "internal/events/reader.go",
+    "change_type": "modified",
+    "added": "13",
+    "deleted": "15",
+    "hunks": [
+      {
+        "old_start": 11,
+        "old_end": 13,
+        "new_start": 11,
+        "new_end": 13
+      },
+      {
+        "old_start": 17,
+        "old_end": 24,
+        "new_start": 17,
+        "new_end": 18
+      },
+      {
+        "old_start": 26,
+        "old_end": 26,
+        "new_start": 20,
+        "new_end": 20
+      },
+      {
+        "old_start": 29,
+        "old_end": 30,
+        "new_start": 23,
+        "new_end": 25
+      },
+      {
+        "old_start": 36,
+        "old_end": 36,
+        "new_start": 31,
+        "new_end": 31
+      },
+      {
+        "old_start": 50,
+        "old_end": 50,
+        "new_start": 46,
+        "new_end": 48
+      }
+    ]
+  },
+  {
+    "path": "internal/events/stream.go",
+    "change_type": "modified",
+    "added": "22",
+    "deleted": "9",
+    "hunks": [
+      {
+        "old_start": 7,
+        "old_end": 7,
+        "new_start": 8,
+        "new_end": 8
+      },
+      {
+        "old_start": 21,
+        "old_end": 21,
+        "new_start": 22,
+        "new_end": 22
+      },
+      {
+        "old_start": 23,
+        "old_end": 24,
+        "new_start": 24,
+        "new_end": 25
+      },
+      {
+        "old_start": 27,
+        "old_end": 29,
+        "new_start": 28,
+        "new_end": 30
+      },
+      {
+        "old_start": 32,
+        "old_end": 32,
+        "new_start": 33,
+        "new_end": 38
+      },
+      {
+        "old_start": 33,
+        "old_end": 33,
+        "new_start": 40,
+        "new_end": 42
+      },
+      {
+        "old_start": 43,
+        "old_end": 43,
+        "new_start": 52,
+        "new_end": 56
+      },
+      {
+        "old_start": 45,
+        "old_end": 45,
+        "new_start": 58,
+        "new_end": 58
+      }
+    ]
+  },
+  {
+    "path": "internal/events/stream_test.go",
+    "change_type": "modified",
+    "added": "3",
+    "deleted": "5",
+    "hunks": [
+      {
+        "old_start": 17,
+        "old_end": 18,
+        "new_start": 17,
+        "new_end": 17
+      },
+      {
+        "old_start": 31,
+        "old_end": 31,
+        "new_start": 30,
+        "new_end": 30
+      },
+      {
+        "old_start": 37,
+        "old_end": 37,
+        "new_start": 35,
+        "new_end": 35
+      },
+      {
+        "old_start": 40,
+        "old_end": 40,
+        "new_start": 38,
+        "new_end": 38
+      }
+    ]
+  },
+  {
+    "path": "internal/mcp/dynamic.go",
+    "change_type": "modified",
+    "added": "13",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 9,
+        "old_end": 9,
+        "new_start": 10,
+        "new_end": 10
+      },
+      {
+        "old_start": 58,
+        "old_end": 58,
+        "new_start": 60,
+        "new_end": 71
+      }
+    ]
+  },
+  {
+    "path": "internal/mcp/dynamic_test.go",
+    "change_type": "modified",
+    "added": "17",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 139,
+        "old_end": 139,
+        "new_start": 140,
+        "new_end": 156
+      }
+    ]
+  },
+  {
+    "path": "internal/mcp/metadata.go",
+    "change_type": "added",
+    "added": "103",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 103
+      }
+    ]
+  },
+  {
+    "path": "internal/mcp/server.go",
+    "change_type": "modified",
+    "added": "4",
+    "deleted": "2",
+    "hunks": [
+      {
+        "old_start": 28,
+        "old_end": 28,
+        "new_start": 29,
+        "new_end": 29
+      },
+      {
+        "old_start": 34,
+        "old_end": 34,
+        "new_start": 35,
+        "new_end": 35
+      },
+      {
+        "old_start": 38,
+        "old_end": 38,
+        "new_start": 39,
+        "new_end": 39
+      },
+      {
+        "old_start": 64,
+        "old_end": 64,
+        "new_start": 66,
+        "new_end": 66
+      }
+    ]
+  },
+  {
+    "path": "internal/mcp/tools.go",
+    "change_type": "modified",
+    "added": "189",
+    "deleted": "7",
+    "hunks": [
+      {
+        "old_start": 14,
+        "old_end": 14,
+        "new_start": 15,
+        "new_end": 15
+      },
+      {
+        "old_start": 35,
+        "old_end": 35,
+        "new_start": 36,
+        "new_end": 36
+      },
+      {
+        "old_start": 115,
+        "old_end": 115,
+        "new_start": 116,
+        "new_end": 116
+      },
+      {
+        "old_start": 147,
+        "old_end": 147,
+        "new_start": 148,
+        "new_end": 148
+      },
+      {
+        "old_start": 156,
+        "old_end": 156,
+        "new_start": 158,
+        "new_end": 171
+      },
+      {
+        "old_start": 210,
+        "old_end": 210,
+        "new_start": 226,
+        "new_end": 268
+      },
+      {
+        "old_start": 489,
+        "old_end": 489,
+        "new_start": 547,
+        "new_end": 547
+      },
+      {
+        "old_start": 515,
+        "old_end": 515,
+        "new_start": 574,
+        "new_end": 576
+      },
+      {
+        "old_start": 645,
+        "old_end": 647,
+        "new_start": 706,
+        "new_end": 708
+      },
+      {
+        "old_start": 843,
+        "old_end": 843,
+        "new_start": 905,
+        "new_end": 1025
+      }
+    ]
+  },
+  {
+    "path": "internal/parser/adapter.go",
+    "change_type": "added",
+    "added": "829",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 829
+      }
+    ]
+  },
+  {
+    "path": "internal/parser/adapter_test.go",
+    "change_type": "added",
+    "added": "355",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 355
+      }
+    ]
+  },
+  {
+    "path": "internal/parser/legacy_enhanced_test.go",
+    "change_type": "added",
+    "added": "245",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 245
+      }
+    ]
+  },
+  {
+    "path": "internal/parser/migrate_options_test.go",
+    "change_type": "added",
+    "added": "250",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 250
+      }
+    ]
+  },
+  {
+    "path": "internal/stash/stash.go",
+    "change_type": "added",
+    "added": "215",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 215
+      }
+    ]
+  },
+  {
+    "path": "internal/stash/stash_test.go",
+    "change_type": "added",
+    "added": "51",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 51
+      }
+    ]
+  },
+  {
+    "path": "tests/contract/queue_tools_test.go",
+    "change_type": "modified",
+    "added": "29",
+    "deleted": "12",
+    "hunks": [
+      {
+        "old_start": 9,
+        "old_end": 10,
+        "new_start": 9,
+        "new_end": 11
+      },
+      {
+        "old_start": 12,
+        "old_end": 13,
+        "new_start": 13,
+        "new_end": 15
+      },
+      {
+        "old_start": 15,
+        "old_end": 17,
+        "new_start": 17,
+        "new_end": 17
+      },
+      {
+        "old_start": 78,
+        "old_end": 79,
+        "new_start": 78,
+        "new_end": 79
+      },
+      {
+        "old_start": 82,
+        "old_end": 83,
+        "new_start": 82,
+        "new_end": 100
+      },
+      {
+        "old_start": 243,
+        "old_end": 243,
+        "new_start": 260,
+        "new_end": 260
+      }
+    ]
+  },
+  {
+    "path": "tests/contract/tools_expansion_test.go",
+    "change_type": "modified",
+    "added": "34",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 150,
+        "old_end": 150,
+        "new_start": 151,
+        "new_end": 184
+      }
+    ]
+  },
+  {
+    "path": "tests/contract/tools_real_test.go",
+    "change_type": "modified",
+    "added": "62",
+    "deleted": "3",
+    "hunks": [
+      {
+        "old_start": 18,
+        "old_end": 18,
+        "new_start": 17,
+        "new_end": 17
+      },
+      {
+        "old_start": 19,
+        "old_end": 19,
+        "new_start": 19,
+        "new_end": 19
+      },
+      {
+        "old_start": 109,
+        "old_end": 109,
+        "new_start": 109,
+        "new_end": 109
+      },
+      {
+        "old_start": 121,
+        "old_end": 121,
+        "new_start": 121,
+        "new_end": 121
+      },
+      {
+        "old_start": 177,
+        "old_end": 177,
+        "new_start": 178,
+        "new_end": 236
+      }
+    ]
+  },
+  {
+    "path": "tests/integration/migration_test.go",
+    "change_type": "added",
+    "added": "346",
+    "deleted": "0",
+    "hunks": [
+      {
+        "old_start": 0,
+        "old_end": 0,
+        "new_start": 1,
+        "new_end": 346
+      }
+    ]
+  },
+  {
+    "path": "tests/integration/workflow_test.go",
+    "change_type": "modified",
+    "added": "11",
+    "deleted": "10",
+    "hunks": [
+      {
+        "old_start": 88,
+        "old_end": 88,
+        "new_start": 88,
+        "new_end": 88
+      },
+      {
+        "old_start": 109,
+        "old_end": 109,
+        "new_start": 109,
+        "new_end": 109
+      },
+      {
+        "old_start": 129,
+        "old_end": 129,
+        "new_start": 129,
+        "new_end": 129
+      },
+      {
+        "old_start": 149,
+        "old_end": 149,
+        "new_start": 149,
+        "new_end": 149
+      },
+      {
+        "old_start": 170,
+        "old_end": 170,
+        "new_start": 170,
+        "new_end": 170
+      },
+      {
+        "old_start": 197,
+        "old_end": 197,
+        "new_start": 197,
+        "new_end": 197
+      },
+      {
+        "old_start": 218,
+        "old_end": 218,
+        "new_start": 218,
+        "new_end": 218
+      },
+      {
+        "old_start": 220,
+        "old_end": 220,
+        "new_start": 220,
+        "new_end": 220
+      },
+      {
+        "old_start": 229,
+        "old_end": 229,
+        "new_start": 230,
+        "new_end": 230
+      },
+      {
+        "old_start": 266,
+        "old_end": 266,
+        "new_start": 267,
+        "new_end": 267
+      },
+      {
+        "old_start": 291,
+        "old_end": 291,
+        "new_start": 292,
+        "new_end": 292
+      }
+    ]
+  }
+]

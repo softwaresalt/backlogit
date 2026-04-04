@@ -2,7 +2,7 @@
 name: MCP Protocol Reviewer
 description: "Reviews code changes for MCP protocol compliance including JSON-RPC correctness, tool visibility rules, and error handling consistency"
 user-invocable: false
-tools: [read, search]
+tools: [read, search, 'engram/*', 'backlogit/*']
 ---
 
 # MCP Protocol Reviewer

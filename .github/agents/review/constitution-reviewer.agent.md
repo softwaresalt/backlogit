@@ -2,7 +2,7 @@
 name: Constitution Reviewer
 description: "Reviews code changes for compliance with the 9 constitutional principles governing the backlogit codebase"
 user-invocable: false
-tools: [read, search]
+tools: [read, search, 'engram/*', 'backlogit/*']
 ---
 
 # Constitution Reviewer

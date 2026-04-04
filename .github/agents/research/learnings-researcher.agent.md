@@ -2,7 +2,7 @@
 name: Learnings Researcher
 description: "Searches .backlog/compound/ for relevant past solutions before new work begins. Surfaces institutional knowledge and prevents repeated mistakes."
 user-invocable: false
-tools: [read, search]
+tools: [read, search, 'engram/*', 'backlogit/*']
 model: Claude Haiku 4.5
 ---
 
