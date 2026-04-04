@@ -231,7 +231,8 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		fm["custom_fields"] = artifact.CustomFields
 	}
 	content := models.SerializeFrontmatter(fm, artifact.Description)
-	filePath := filepath.Join(dirAbs, artifact.ID+".md")
+	fileName := ResolveFileName(typeConfig, artifact.ID, title, ws.Config.MaxSlugLength)
+	filePath := filepath.Join(dirAbs, fileName+".md")
 
 	tmpPath := filePath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {

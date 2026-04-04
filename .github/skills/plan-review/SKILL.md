@@ -96,7 +96,7 @@ Broadcast the gate decision.
 
 ### Step 5: Write Review Artifact
 
-Write to `.backlog/reviews/{YYYY-MM-DD}-{slug}-plan-review.md`
+Write to `.backlogit/queue/{YYYY-MM-DD}-{slug}-plan-review.md`
 
 ```markdown
 ---

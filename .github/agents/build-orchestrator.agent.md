@@ -147,7 +147,7 @@ If a gate fails repeatedly after remediation attempts, call `transmit` with `pro
    - `migration-first` -- schema/data changes before code changes
    - `spike` -- skip harness, explore freely, report findings
    Broadcast: `[🛠️ ORCHESTRATOR] Execution posture for {task_id}: {posture}`
-5. **Invoke learnings-researcher**: Before delegating to build-feature, invoke `learnings-researcher` as a subagent to check `.backlog/compound/` for relevant past solutions. Pass any applicable learnings as additional context to the build-feature skill. Broadcast: `[🛠️ ORCHESTRATOR] Learnings check: {match_count} relevant solutions found`
+5. **Invoke learnings-researcher**: Before delegating to build-feature, invoke `learnings-researcher` as a subagent to check `docs/compound/` for relevant past solutions. Pass any applicable learnings as additional context to the build-feature skill. Broadcast: `[🛠️ ORCHESTRATOR] Learnings check: {match_count} relevant solutions found`
 6. `broadcast` at `info` level: `[🛠️ ORCHESTRATOR] Claimed task {task_id}: {title}`.
 7. Delegate execution to `.github/skills/build-feature/SKILL.md`, passing the `task-id` and `harness-cmd` for the selected feature subtask.
 
@@ -201,13 +201,22 @@ This check is blocking — the task MUST NOT be committed until all DoD items pa
 
 After Step 4b passes for the current task:
 
-1. Create a dedicated Git commit for that task only. Do not batch multiple backlogit items into one commit.
-2. Capture the resulting commit hash with `git rev-parse --short HEAD`.
-3. Record completion in backlogit:
-   * Call `backlogit_track_commit` with `item_id: {task_id}` and `sha: {full_commit_hash}`.
+1. Create a dedicated Git commit for the current task only. Do not batch sibling, parent, or future backlogit items into the implementation commit unless the same code change directly completes them and you are about to record that linkage explicitly.
+2. Capture commit metadata:
+   * `git rev-parse HEAD` for the full hash
+   * `git rev-parse --short HEAD` for the short hash
+   * `git log -1 --pretty=%s HEAD` for the commit subject
+   * `git log -1 --pretty=%an HEAD` for the commit author
+3. Determine the directly affected backlogit items for this commit:
+   * Start with `{task_id}`.
+   * Add a parent task, child subtask, or review artifact only when the current commit directly completes or materially updates that specific item.
+   * Never link the commit to the entire feature set or to untouched descendants just because they share the same feature root.
+4. Record completion in backlogit:
+   * For each item in `affected_item_ids`, call `backlogit_track_commit` with `item_id`, `sha: {full_commit_hash}`, `message: {commit_subject}`, and `author: {commit_author}`.
    * Call `backlogit_move_item` with `id: {task_id}` and `status: "done"` if the task is fully complete.
+   * Move any additional affected item to `done` only when its acceptance criteria and Definition of Done are fully satisfied by this same commit. Otherwise leave its status unchanged and only record the commit link.
    * If the item's template exposes an `implementation_notes` section, preserve the existing content and update that section via `backlogit_update_item` with a validation summary that includes the commit hash.
-4. `broadcast` at `success` level: `[🛠️ ORCHESTRATOR] Task {task_id} committed as {commit_hash} and recorded in backlogit`.
+5. `broadcast` at `success` level: `[🛠️ ORCHESTRATOR] Task {task_id} committed as {commit_hash} and linked to {affected_item_ids}`.
 
 ### Step 5a: Conditional Compound Capture
 
@@ -232,7 +241,7 @@ After each completed task, invoke the `memory` agent in checkpoint mode:
    - `errors-resolved`: test failures or type errors resolved
    - `review-findings`: findings from the review gate
    - `next-context`: context the next task will need
-3. The checkpoint is written to `.backlog/memory/{YYYY-MM-DD}/{task-id}-checkpoint.md`
+3. The checkpoint is written to `docs/memory/{YYYY-MM-DD}/{task-id}-checkpoint.md`
 4. Confirm the working tree is clean before advancing to another task.
 
 ### Step 6: Iterate or Exit
@@ -284,14 +293,25 @@ Invoke the `compound` skill to capture session learnings:
 
 1. `broadcast` at `info` level: `[🛠️ ORCHESTRATOR] Capturing session learnings via compound skill`
 2. Invoke the compound skill with context about what was built, what broke, what patterns were discovered, what SQLite/MCP/async gotchas were encountered.
-3. The compound skill writes to `.backlog/compound/{category}/`
+3. The compound skill writes to `docs/compound/{category}/`
 4. `broadcast` the written file path.
 
 #### 7c. Commit Compound and Memory Artifacts
 
-1. Stage compound and memory artifacts: `git add .backlog/compound/ .backlog/memory/ .backlog/reviews/`
+1. Stage compound and memory artifacts: `git add docs/compound/ docs/memory/ .backlogit/queue/`
 2. Commit: `git commit -m "docs: compound learnings and memory checkpoints from feature ${input:feature}"`
-3. `broadcast` the commit hash.
+3. Capture commit metadata:
+   * `git rev-parse HEAD` for the full hash
+   * `git rev-parse --short HEAD` for the short hash
+   * `git log -1 --pretty=%s HEAD` for the commit subject
+   * `git log -1 --pretty=%an HEAD` for the commit author
+4. Identify the backlogit artifacts directly touched by this artifact-only commit:
+   * Inspect the staged or committed paths under `.backlogit/queue/`.
+   * Exclude `.backlogit/queue/.stash.md`.
+   * Resolve each touched artifact file to its frontmatter `id` and build `affected_item_ids`.
+   * Do not create feature-wide commit links for this documentation commit. Only the review or queue artifacts actually modified in this commit should receive links.
+5. For each item in `affected_item_ids`, call `backlogit_track_commit` with `item_id`, `sha: {full_commit_hash}`, `message: {commit_subject}`, and `author: {commit_author}`.
+6. `broadcast` the commit hash and linked artifact IDs.
 
 #### 7d. Push Feature Branch
 

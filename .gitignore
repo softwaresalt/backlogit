@@ -18,3 +18,5 @@ logs/
 # Ephemeral SQLite databases (always regenerated; never commit)
 backlogit.db
 .backlogit/backlogit.db
+.backlogit/backlogit.db-shm
+.backlogit/backlogit.db-wal

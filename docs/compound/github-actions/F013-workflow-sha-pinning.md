@@ -1,4 +1,11 @@
-# Compound: GitHub Actions Workflow SHA Pinning (F013)
+---
+title: "Compound: GitHub Actions Workflow SHA Pinning (F013)"
+description: "Institutional knowledge captured from Feature 013 about GitHub Actions tag globs, Go version alignment, and SHA pinning."
+ms.date: 2026-04-04
+ms.topic: reference
+---
+
+## Compound: GitHub Actions Workflow SHA Pinning (F013)
 
 **Date**: 2026-04-04
 **Feature**: F013 — Release Pipeline Fix

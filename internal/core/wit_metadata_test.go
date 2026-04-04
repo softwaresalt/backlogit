@@ -89,3 +89,51 @@ func TestListTypes_ReturnsAllTypes(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(types), 2, "should return at least task and bug types")
 }
+
+func TestDescribeType_ReturnsReviewMetadataAtFeatureChildLevel(t *testing.T) {
+	headerDef := &config.HeaderDefConfig{
+		Defaults: config.SystemDefaults{
+			ID:          config.FieldDef{Type: "string", Immutable: true},
+			CreatedDate: config.FieldDef{Type: "datetime", Immutable: true},
+			UpdatedDate: config.FieldDef{Type: "datetime", Immutable: false},
+		},
+		Types: map[string]*config.TypeDefConfig{
+			"review": {
+				Prefix:   "R",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*config.FieldDef{
+					"source_branch": {Type: "string", Optional: true},
+				},
+			},
+		},
+	}
+	templates := []*config.TemplateConfig{
+		{
+			Name:         "review-template",
+			ArtifactType: "review",
+			Description:  "A review artifact tied to a feature branch lifecycle",
+			Sections: []config.SectionDef{
+				{Name: "summary", Required: true},
+				{Name: "findings"},
+				{Name: "decisions"},
+			},
+		},
+	}
+	layout := &core.QueueLayoutConfig{
+		RootDir:    "queue",
+		NameFormat: "{NNN}",
+		Levels: []core.HierarchyLevel{
+			{Level: 1, Types: []string{"feature"}},
+			{Level: 2, Types: []string{"review"}},
+		},
+	}
+
+	meta, err := core.DescribeType("review", headerDef, templates, layout)
+
+	require.NoError(t, err)
+	assert.Equal(t, "review", meta.TypeName)
+	assert.Equal(t, "R", meta.Prefix)
+	assert.Equal(t, 2, meta.HierarchyLevel)
+	assert.Contains(t, meta.Fields, "source_branch")
+	assert.Len(t, meta.Sections, 3)
+}

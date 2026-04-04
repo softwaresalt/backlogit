@@ -1,4 +1,11 @@
-# Memory Checkpoint: Feature 013 — Release Pipeline Fix
+---
+title: "Memory Checkpoint: Feature 013 - Release Pipeline Fix"
+description: "Long-lived memory checkpoint summarizing Feature 013 completion state, decisions, and validation outcomes."
+ms.date: 2026-04-04
+ms.topic: reference
+---
+
+## Memory Checkpoint: Feature 013 - Release Pipeline Fix
 
 **Date**: 2026-04-04
 **Feature**: F013 (batch mode, all 5 leaf subtasks complete)

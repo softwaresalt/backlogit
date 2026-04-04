@@ -34,6 +34,21 @@ func ResolveName(cfg *config.ArtifactTypeConfig, title string, nextID int, maxSl
 	return name
 }
 
+// ResolveFileName generates the on-disk filename stem for an artifact.
+// When no file_name_format is configured, the stable artifact ID is used.
+func ResolveFileName(cfg *config.ArtifactTypeConfig, artifactID string, title string, maxSlugLen int) string {
+	if cfg == nil || cfg.FileNameFormat == "" {
+		return artifactID
+	}
+
+	name := cfg.FileNameFormat
+	name = strings.ReplaceAll(name, "{id}", artifactID)
+	name = strings.ReplaceAll(name, "{prefix}", cfg.Prefix)
+	name = strings.ReplaceAll(name, "{title_slug}", Slugify(title, maxSlugLen))
+	name = strings.ReplaceAll(name, "{slug}", Slugify(title, maxSlugLen))
+	return name
+}
+
 // NextID queries for the next sequential artifact ID.
 func NextID(ctx context.Context, db *sql.DB, artifactType string) (int, error) {
 	var count int

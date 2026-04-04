@@ -206,14 +206,24 @@ This is a **hard gate**. All checks pass locally before proceeding to push. Run 
 
 Stage all changes, compose a descriptive commit message, and push to the remote.
 
-1. Run `git add -A` to stage all modified, created, and deleted files.
+1. Stage only the files that belong to the current CI or review fix. Use explicit paths when unrelated local changes exist. Use `git add -A` only when the full working tree is part of the same fix cycle.
 2. Compose a commit message following *Conventional Commits* format:
    * Subject: `fix(ci): resolve {check-names} failures`
    * Body: itemized list of fixes applied with brief descriptions of each change
    * Footer: `Refs: #{pr-number}`
 3. Run `git commit` with the composed message.
-4. Run `git push` to push the commit to the remote branch.
-5. Report the commit hash before proceeding to remote polling.
+4. Capture commit metadata:
+   * `git rev-parse HEAD` for the full hash
+   * `git rev-parse --short HEAD` for the short hash
+   * `git log -1 --pretty=%s HEAD` for the commit subject
+   * `git log -1 --pretty=%an HEAD` for the commit author
+5. Determine the directly resolved backlogit items for this fix commit:
+   * Include a review, bug, or task item only when the current fix cycle explicitly resolves or materially updates that specific item.
+   * Resolve touched `.backlogit/queue/*.md` artifact files to their frontmatter `id` values when the commit updates those artifacts.
+   * Do not attach the commit to every item in the feature or PR. Only items directly addressed by this fix commit should receive commit links.
+6. For each item in `affected_item_ids`, call `backlogit_track_commit` with `item_id`, `sha: {full_commit_hash}`, `message: {commit_subject}`, and `author: {commit_author}`.
+7. Run `git push` to push the commit to the remote branch.
+8. Report the commit hash and linked backlogit item IDs before proceeding to remote polling.
 
 ### Step 7: Poll Remote CI
 

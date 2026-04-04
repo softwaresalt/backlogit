@@ -37,7 +37,7 @@ func TestWriteDefaults_HeaderDefLoadable(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
-	assert.GreaterOrEqual(t, len(cfg.Types), 3)
+	assert.GreaterOrEqual(t, len(cfg.Types), 5)
 }
 
 func TestWriteDefaults_HeaderDefContainsAllTypes(t *testing.T) {
@@ -49,8 +49,8 @@ func TestWriteDefaults_HeaderDefContainsAllTypes(t *testing.T) {
 	cfg, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 
-	// Assert — initial 3 types must be present
-	expectedTypes := []string{"feature", "task", "subtask"}
+	// Assert — default workspace types must be present
+	expectedTypes := []string{"feature", "deliberation", "task", "review", "subtask"}
 	for _, typeName := range expectedTypes {
 		assert.Contains(t, cfg.Types, typeName, "missing type: %s", typeName)
 	}
@@ -83,6 +83,7 @@ func TestWriteDefaults_HeaderDefTypedPrefixes(t *testing.T) {
 	// Assert — default types use typed prefixes
 	assert.Equal(t, "F", cfg.Types["feature"].Prefix)
 	assert.Equal(t, "T", cfg.Types["task"].Prefix)
+	assert.Equal(t, "R", cfg.Types["review"].Prefix)
 	assert.Equal(t, "ST", cfg.Types["subtask"].Prefix)
 }
 

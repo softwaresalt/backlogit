@@ -45,6 +45,13 @@ types:
           - medium
           - high
         default: medium
+  review:
+    prefix: R
+    id_format: "{prefix}{NNN}"
+    fields:
+      source_branch:
+        type: string
+        optional: true
   subtask:
     prefix: ST
     id_format: "{prefix}{NNN}"

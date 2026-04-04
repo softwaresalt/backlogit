@@ -129,13 +129,22 @@ Once the isolated harness passes:
    * If new failures appear in the full suite, diagnose and fix them before committing.
    * `broadcast` at `success` level: `[BUILD] Workspace tests pass — task {task-id} complete`.
 2. **Lint verification**: Run `golangci-lint run` and `gofmt -l .`. Run `go vet ./...`. Fix any violations.
-3. **Commit**: Stage and commit validated changes:
-   * `git add -A`
+3. **Commit**: Stage and commit validated changes for the current work item only:
+   * Stage only the files required for `${input:task-id}`. Use explicit paths when unrelated local changes exist. Use `git add -A` only when the full working tree belongs to this same work item.
    * `git commit -m "feat: implement passing harness for ${input:task-id}"`
-   * `broadcast` at `success` level: `[BUILD] Task {task-id} complete — commit {short_hash} — {N} attempt(s)`. The attempt count is used by the build-orchestrator to decide whether to invoke compound knowledge capture.
-4. **State update**: Mark the task complete in backlogit:
-   * Call `backlogit_move_item` with `id: ${input:task-id}` and `status: "done"`
-   * Call `backlogit_track_commit` with `item_id: ${input:task-id}` and `sha: {full_commit_hash}`
+   * Capture commit metadata with:
+     * `git rev-parse HEAD` for the full hash
+     * `git rev-parse --short HEAD` for the short hash
+     * `git log -1 --pretty=%s HEAD` for the commit subject
+     * `git log -1 --pretty=%an HEAD` for the commit author
+   * Do not batch unrelated backlogit items into this implementation commit. If the working tree contains changes for sibling, parent, or future items that are not directly completed by this work, split them into a different commit before proceeding.
+   * `broadcast` at `success` level: `[BUILD] Task {task-id} complete, commit {short_hash}, {N} attempt(s)`. The attempt count is used by the build-orchestrator to decide whether to invoke compound knowledge capture.
+4. **State update**: Record commit traceability only for the items directly affected by this commit:
+   * Start `affected_item_ids` with `${input:task-id}`.
+   * Add another task, subtask, or review item only when this exact commit directly implements or finalizes that item. Never attach the commit to the full feature or to untouched descendants.
+   * For each item in `affected_item_ids`, call `backlogit_track_commit` with `item_id`, `sha: {full_commit_hash}`, `message: {commit_subject}`, and `author: {commit_author}` so the event log captures the precise work-to-commit link.
+   * Call `backlogit_move_item` with `id: ${input:task-id}` and `status: "done"`.
+   * Move any additional affected item to `done` only when its acceptance criteria and Definition of Done are fully satisfied by this commit. Otherwise leave its status unchanged and only record the commit link.
 
 ## Troubleshooting
 

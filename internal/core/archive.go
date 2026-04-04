@@ -105,10 +105,9 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
 	backlogDir := WorkspaceStorageRoot(ws.RootPath)
-	archiveDir := filepath.Join(backlogDir, "archive")
-	archivePath := filepath.Join(archiveDir, itemID+".md")
-	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		return fmt.Errorf("archived artifact not found: %s", itemID)
+	archivePath, err := FindArtifactPath(ctx, ws, itemID)
+	if err != nil {
+		return fmt.Errorf("find archived artifact: %w", err)
 	}
 
 	raw, err := os.ReadFile(archivePath)
