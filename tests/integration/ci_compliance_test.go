@@ -40,7 +40,13 @@ func findRepoRoot(t *testing.T) string {
 // ciWorkflow represents the subset of a GitHub Actions workflow file needed
 // for CI compliance validation.
 type ciWorkflow struct {
-	Jobs map[string]ciJob `yaml:"jobs"`
+	Concurrency ciConcurrency    `yaml:"concurrency"`
+	Jobs        map[string]ciJob `yaml:"jobs"`
+}
+
+type ciConcurrency struct {
+	Group            string `yaml:"group"`
+	CancelInProgress bool   `yaml:"cancel-in-progress"`
 }
 
 type ciJob struct {
@@ -48,9 +54,9 @@ type ciJob struct {
 }
 
 type ciStep struct {
-	Name string                 `yaml:"name"`
-	Uses string                 `yaml:"uses"`
-	With map[string]interface{} `yaml:"with"`
+	Name string         `yaml:"name"`
+	Uses string         `yaml:"uses"`
+	With map[string]any `yaml:"with"`
 }
 
 // readCIWorkflow parses a GitHub Actions workflow YAML file into a ciWorkflow.
@@ -112,6 +118,7 @@ func TestWorkflowGoVersionMatchesMod(t *testing.T) {
 			break
 		}
 	}
+	require.NoError(t, scanner.Err(), "scan go.mod")
 	require.NotEmpty(t, goVersion, "go.mod should declare a Go version")
 
 	// Extract major.minor (e.g., "1.24.0" → "1.24")
@@ -186,6 +193,9 @@ func TestAllActionsUseSHAPins(t *testing.T) {
 					if step.Uses == "" || strings.HasPrefix(step.Uses, "./") {
 						continue
 					}
+					if strings.HasPrefix(step.Uses, "docker://") {
+						continue
+					}
 
 					atIdx := strings.LastIndex(step.Uses, "@")
 					require.NotEqual(t, -1, atIdx,
@@ -224,9 +234,67 @@ func TestCheckoutStepsNoPersistCredentials(t *testing.T) {
 					assert.True(t, ok,
 						"job %s step %d: checkout should set persist-credentials", jobName, i)
 					if ok {
-						assert.Equal(t, false, persistCreds,
+						persistCredsBool, ok := persistCreds.(bool)
+						require.True(t, ok,
+							"job %s step %d: checkout persist-credentials should be a bool", jobName, i)
+						assert.False(t, persistCredsBool,
 							"job %s step %d: checkout persist-credentials should be false", jobName, i)
 					}
+				}
+			}
+		})
+	}
+}
+
+// TestWorkflowsDeclareConcurrency validates that both workflow files define a
+// concurrency block per workflows.instructions.md.
+func TestWorkflowsDeclareConcurrency(t *testing.T) {
+	ciPath, releasePath := workflowPaths(t)
+
+	testCases := []struct {
+		name             string
+		path             string
+		cancelInProgress bool
+	}{
+		{name: "ci.yml", path: ciPath, cancelInProgress: true},
+		{name: "release.yml", path: releasePath, cancelInProgress: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			wf := readCIWorkflow(t, tc.path)
+
+			assert.Equal(t, "${{ github.workflow }}-${{ github.ref }}", wf.Concurrency.Group,
+				"%s should use the standard concurrency group", tc.name)
+			assert.Equal(t, tc.cancelInProgress, wf.Concurrency.CancelInProgress,
+				"%s should set cancel-in-progress to the expected value", tc.name)
+		})
+	}
+}
+
+// TestGolangciLintVersionPinned validates that workflow files do not use a
+// floating golangci-lint binary version.
+func TestGolangciLintVersionPinned(t *testing.T) {
+	ciPath, releasePath := workflowPaths(t)
+	versionPattern := regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+	for _, wfPath := range []string{ciPath, releasePath} {
+		t.Run(filepath.Base(wfPath), func(t *testing.T) {
+			wf := readCIWorkflow(t, wfPath)
+
+			for jobName, job := range wf.Jobs {
+				for i, step := range job.Steps {
+					if !strings.Contains(step.Uses, "golangci/golangci-lint-action") {
+						continue
+					}
+
+					version, ok := step.With["version"]
+					require.True(t, ok,
+						"job %s step %d: golangci-lint-action should set a version", jobName, i)
+
+					versionStr := fmt.Sprintf("%v", version)
+					assert.Truef(t, versionPattern.MatchString(versionStr),
+						"job %s step %d: golangci-lint version should be pinned, got %q", jobName, i, versionStr)
 				}
 			}
 		})

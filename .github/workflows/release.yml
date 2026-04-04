@@ -5,8 +5,12 @@ on:
     tags:
       - "v*.*.*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -27,7 +31,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@2226d7cb06a077cd73e56eedd38eecad18e5d837 # v6.5.0
         with:
-          version: latest
+          version: v1.64.8
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -103,6 +107,8 @@ jobs:
     name: Publish GitHub Release
     needs: [changelog, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
