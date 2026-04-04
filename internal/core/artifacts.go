@@ -103,6 +103,9 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if !ok {
 		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
 	}
+	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {
+		return nil, err
+	}
 
 	artifactID := ""
 	if ws.Config.QueueLayout != nil {
@@ -244,6 +247,36 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 
 	return artifact, nil
+}
+
+func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
+	if artifactType != "review" {
+		return nil
+	}
+	if parentID == "" {
+		return fmt.Errorf("artifact type %q requires a parent_id", artifactType)
+	}
+
+	parentPath, err := FindArtifactPath(ctx, ws, parentID)
+	if err != nil {
+		return fmt.Errorf("find parent artifact %q: %w", parentID, err)
+	}
+	parentArtifact, _, err := parseFile(parentPath)
+	if err != nil {
+		return fmt.Errorf("parse parent artifact %q: %w", parentID, err)
+	}
+
+	parentCfg, ok := ws.Config.ArtifactTypes[parentArtifact.ArtifactType]
+	if !ok {
+		return fmt.Errorf("parent artifact type %q is not configured", parentArtifact.ArtifactType)
+	}
+	for _, allowedChild := range parentCfg.AllowedChildren {
+		if allowedChild == artifactType {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("artifact type %q is not allowed under parent type %q", artifactType, parentArtifact.ArtifactType)
 }
 
 // UpdateArtifact updates an existing artifact's fields.

@@ -87,6 +87,19 @@ func TestWriteDefaults_HeaderDefTypedPrefixes(t *testing.T) {
 	assert.Equal(t, "ST", cfg.Types["subtask"].Prefix)
 }
 
+func TestWriteDefaults_ReviewHeaderDefIncludesStatusAndSourceBranch(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, config.WriteDefaults(dir))
+
+	cfg, err := config.LoadHeaderDef(dir)
+	require.NoError(t, err)
+
+	reviewType, ok := cfg.Types["review"]
+	require.True(t, ok, "review type should exist in header-def")
+	assert.Contains(t, reviewType.Fields, "status")
+	assert.Contains(t, reviewType.Fields, "source_branch")
+}
+
 func TestWriteDefaults_DoesNotOverwriteExisting(t *testing.T) {
 	// Arrange
 	dir := t.TempDir()

@@ -121,7 +121,11 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 
 	originalPath, _ := fm["archived_from"].(string)
 	if originalPath == "" {
-		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
+		status, _ := fm["status"].(string)
+		if status != string(models.StatusArchived) {
+			return fmt.Errorf("item %s is not archived", itemID)
+		}
+		return fmt.Errorf("archived item %s is missing archived_from metadata", itemID)
 	}
 
 	// F-006: Validate the restore path is contained within .backlogit to prevent

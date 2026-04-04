@@ -11,6 +11,7 @@ logs/
 *.code-workspace
 
 .test-output.txt
+.copilot-tracking/pr/**/pr-reference.xml
 
 # Build artifacts
 *.exe

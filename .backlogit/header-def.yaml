@@ -49,6 +49,18 @@ types:
     prefix: R
     id_format: "{prefix}{NNN}"
     fields:
+      status:
+        type: enum
+        values:
+          - queued
+          - active
+          - blocked
+          - review
+          - done
+          - accepted
+          - rejected
+          - archived
+        default: queued
       source_branch:
         type: string
         optional: true

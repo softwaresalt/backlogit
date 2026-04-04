@@ -65,7 +65,7 @@ Skip this phase if `${input:skip_review}` is `true`.
 
 1. `broadcast` at `info` level: `[HARVEST] Phase 2: Invoking plan-review skill`
 2. Invoke the `plan-review` skill as a subagent, passing the plan file path from Phase 1.
-3. The plan-review skill writes its review to `.backlogit/queue/{YYYY-MM-DD}-{slug}-plan-review.md` and returns a gate decision.
+3. The plan-review skill writes its review to `.copilot-tracking/plan-review/{YYYY-MM-DD}-{slug}-plan-review.md` and returns a gate decision.
 4. Process the gate decision:
    - **PASS**: `broadcast` at `success` level, proceed to Phase 3.
    - **ADVISORY** (P2 findings only): `broadcast` at `info` level with findings summary. Proceed to Phase 3. Advisory findings do not block harvesting. Record P2 findings in the feature description.

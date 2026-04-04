@@ -9,7 +9,6 @@ package integration_test
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -67,6 +66,13 @@ func readCIWorkflow(t *testing.T, path string) ciWorkflow {
 	var wf ciWorkflow
 	require.NoError(t, yaml.Unmarshal(data, &wf), "parse workflow YAML: %s", path)
 	return wf
+}
+
+func requireYAMLString(t *testing.T, value any, label string) string {
+	t.Helper()
+	str, ok := value.(string)
+	require.Truef(t, ok, "%s should be a string, got %T", label, value)
+	return str
 }
 
 // workflowPaths returns the absolute paths to the CI and release workflow files.
@@ -165,7 +171,7 @@ func TestWorkflowGoVersionMatchesMod(t *testing.T) {
 			require.True(t, hasGoVersion, "setup-go step should have go-version")
 
 			// Assert
-			goVerStr := fmt.Sprintf("%v", goVer)
+			goVerStr := requireYAMLString(t, goVer, "setup-go go-version")
 			assert.Equal(t, modMinor, goVerStr,
 				"build job go-version should match go.mod (%s)", modMinor)
 		}
@@ -292,7 +298,7 @@ func TestGolangciLintVersionPinned(t *testing.T) {
 					require.True(t, ok,
 						"job %s step %d: golangci-lint-action should set a version", jobName, i)
 
-					versionStr := fmt.Sprintf("%v", version)
+					versionStr := requireYAMLString(t, version, "golangci-lint version")
 					assert.Truef(t, versionPattern.MatchString(versionStr),
 						"job %s step %d: golangci-lint version should be pinned, got %q", jobName, i, versionStr)
 				}

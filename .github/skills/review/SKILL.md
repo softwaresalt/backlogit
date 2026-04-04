@@ -37,7 +37,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | **Interactive** (default) | No mode token | Review, present findings, ask for decisions |
 | **Autofix** | `mode:autofix` | No user interaction. Apply `safe_auto` fixes only, write artifact, emit residual work |
-| **Report-only** | `mode:report-only` | Read-only. Report findings, no edits, no artifacts beyond review doc |
+| **Report-only** | `mode:report-only` | Read-only. Report findings with no edits, backlogit artifacts, or follow-up item creation |
 
 ### Autofix mode rules
 
@@ -53,6 +53,8 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 - Skip all user questions
 - Never edit files
 - Return structured findings to caller
+- Do not write a review artifact
+- Do not create backlogit follow-up items
 - Safe for the build orchestrator to invoke during the build loop
 
 ## Severity Scale
@@ -153,11 +155,11 @@ As each persona returns:
 **Report-only mode:**
 
 1. Return structured findings to caller
-2. No edits, no side effects beyond the review artifact
+2. No side effects: no edits, no review artifact, no follow-up items
 
 ### Step 5a: Log Follow-Up Work in backlogit
 
-For every unresolved actionable finding, log follow-up work in backlogit after the review artifact is written:
+In interactive and autofix modes, log follow-up work in backlogit for every unresolved actionable finding after the review artifact is written:
 
 1. Call `backlogit_list_types` or `backlogit_get_metadata_catalog` to determine whether the workspace defines a `bug` artifact type.
 2. For each unresolved `manual` finding, and for any `gated_auto` finding that was declined or left unapplied:
@@ -174,7 +176,7 @@ For every unresolved actionable finding, log follow-up work in backlogit after t
 
 ### Step 6: Write Review Artifact
 
-Create a backlogit artifact of type `review` instead of writing an ad hoc markdown file.
+In interactive and autofix modes, create a backlogit artifact of type `review` instead of writing an ad hoc markdown file. Skip this step in report-only mode.
 
 1. Determine whether the reviewed scope belongs to a known level-1 artifact such as a feature.
 2. When a level-1 artifact is known, create the review as its child with `parent_id` set to that artifact. This yields stable IDs such as `F013.R001`.

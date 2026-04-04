@@ -133,6 +133,16 @@ func TestUnarchiveItem_RestoresSuffixedFilenameByFrontmatterID(t *testing.T) {
 	assert.FileExists(t, suffixedPath)
 }
 
+func TestUnarchiveItem_RejectsActiveArtifact(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	err := core.UnarchiveItem(ctx, ws.DB, ws, "T001")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not archived")
+}
+
 func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {
 	// Arrange
 	ws := setupArchiveWorkspace(t)

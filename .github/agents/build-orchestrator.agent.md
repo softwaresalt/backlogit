@@ -162,7 +162,7 @@ After the build-feature skill finishes, verify that all mandatory gates were sat
    b. **Peripheral check**: Run `go test ./internal/... -v` to verify internal tests haven't regressed.
    c. **Full suite**: Run `go test ./...` only before the final commit that closes the task.
 
-3. **Commit gate**: Confirm that `git status` shows a clean working tree (all changes committed).
+3. **Working-tree gate**: Before committing, confirm the working tree contains only files for the current task plus any explicitly deferred `docs/compound/` or `docs/memory/` artifacts from prior completed tasks. If unrelated changes are mixed in, stop and separate them before proceeding.
 
 4. **Atomic milestone gate**: Confirm the task produced a verifiable state change. Every completed task MUST result in at least one of:
    - A passing test (harness test or unit test)
@@ -242,7 +242,7 @@ After each completed task, invoke the `memory` agent in checkpoint mode:
    - `review-findings`: findings from the review gate
    - `next-context`: context the next task will need
 3. The checkpoint is written to `docs/memory/{YYYY-MM-DD}/{task-id}-checkpoint.md`
-4. Confirm the working tree is clean before advancing to another task.
+4. Before advancing to another task, confirm that no implementation changes remain outside the just-completed commit. Pending `docs/memory/` or `docs/compound/` files may remain intentionally deferred for the session-end artifact commit in Step 7c.
 
 ### Step 6: Iterate or Exit
 
@@ -298,7 +298,7 @@ Invoke the `compound` skill to capture session learnings:
 
 #### 7c. Commit Compound and Memory Artifacts
 
-1. Stage compound and memory artifacts: `git add docs/compound/ docs/memory/ .backlogit/queue/`
+1. Stage only the specific compound, memory, and queue review artifacts created during this session. Do not blanket-add entire directories when unrelated queue items or prior session files are present.
 2. Commit: `git commit -m "docs: compound learnings and memory checkpoints from feature ${input:feature}"`
 3. Capture commit metadata:
    * `git rev-parse HEAD` for the full hash
@@ -306,7 +306,7 @@ Invoke the `compound` skill to capture session learnings:
    * `git log -1 --pretty=%s HEAD` for the commit subject
    * `git log -1 --pretty=%an HEAD` for the commit author
 4. Identify the backlogit artifacts directly touched by this artifact-only commit:
-   * Inspect the staged or committed paths under `.backlogit/queue/`.
+   * Inspect only the explicitly staged paths under `.backlogit/queue/`.
    * Exclude `.backlogit/queue/.stash.md`.
    * Resolve each touched artifact file to its frontmatter `id` and build `affected_item_ids`.
    * Do not create feature-wide commit links for this documentation commit. Only the review or queue artifacts actually modified in this commit should receive links.

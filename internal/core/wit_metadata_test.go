@@ -102,6 +102,7 @@ func TestDescribeType_ReturnsReviewMetadataAtFeatureChildLevel(t *testing.T) {
 				Prefix:   "R",
 				IDFormat: "{prefix}{NNN}",
 				Fields: map[string]*config.FieldDef{
+					"status":        {Type: "enum", Values: []string{"queued", "review", "done"}, Default: "queued"},
 					"source_branch": {Type: "string", Optional: true},
 				},
 			},
@@ -134,6 +135,7 @@ func TestDescribeType_ReturnsReviewMetadataAtFeatureChildLevel(t *testing.T) {
 	assert.Equal(t, "review", meta.TypeName)
 	assert.Equal(t, "R", meta.Prefix)
 	assert.Equal(t, 2, meta.HierarchyLevel)
+	assert.Contains(t, meta.Fields, "status")
 	assert.Contains(t, meta.Fields, "source_branch")
 	assert.Len(t, meta.Sections, 3)
 }
