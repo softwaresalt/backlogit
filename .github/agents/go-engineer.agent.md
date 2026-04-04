@@ -179,7 +179,7 @@ This project is **backlogit**, a file-backed task management system that persist
 | Persistence   | Markdown files with YAML frontmatter in state directories; SQLite as read-optimized index |
 | Models        | Go structs with `yaml`/`json` tags in `internal/models/`                                  |
 | MCP transport | stdio via `mcp-go` SDK; JSON-RPC dispatch through tool registry                          |
-| Config        | `registry.yaml` at workspace root, loaded with `gopkg.in/yaml.v3`                        |
+| Config        | `.backlogit/registry.yaml`, loaded with `gopkg.in/yaml.v3`                                |
 | Events        | JSONL append-only event log for audit trail and rehydration triggers                      |
 | Rehydration   | Auto-sync from Markdown files to SQLite index on workspace bind or file change detection  |
 | Query gate    | `internal/db/gate.go` rejects non-SELECT statements from the read path                   |
@@ -197,7 +197,7 @@ internal/
   errors/              # Sentinel and typed errors
   events/              # JSONL event streaming, event models
   mcp/                 # MCP server, tool registry, tool implementations
-  models/              # Go structs: Artifact, Task, Epic, Config
+  models/              # Go structs: Artifact, queue items, and config
   parser/              # Markdown+YAML frontmatter parser and serializer
 ```
 
@@ -210,17 +210,19 @@ The write path creates and modifies Markdown files with YAML frontmatter. The re
 
 ### File Routing via registry.yaml
 
-The `registry.yaml` file at the workspace root maps artifact states to directories:
+The `.backlogit/registry.yaml` file maps artifact states to directories inside `.backlogit/`:
 
 ```yaml
-states:
-  draft: drafts/
-  active: active/
-  done: done/
-  archived: archive/
+directories:
+  - path: archive
+    condition:
+      status: [done, accepted, rejected, archived]
+  - path: queue
+    condition:
+      status: [queued, active, blocked, review]
 ```
 
-State transitions move files between directories. The registry is the single source of truth for directory layout.
+State transitions move files between `.backlogit/queue` and `.backlogit/archive`. The registry is the single source of truth for directory layout.
 
 ### MCP Tool Registry
 

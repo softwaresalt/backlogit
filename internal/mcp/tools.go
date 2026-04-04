@@ -12,6 +12,7 @@ import (
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
 	"github.com/backlogit/backlogit/internal/models"
@@ -32,7 +33,7 @@ func (s *Server) RegisterTools() {
 		mcplib.NewTool("backlogit_create_item",
 			mcplib.WithDescription("Create a new backlogit artifact"),
 			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Artifact title")),
-			mcplib.WithString("artifact_type", mcplib.Required(), mcplib.Description("Artifact type (task, story, bug, epic)")),
+			mcplib.WithString("artifact_type", mcplib.Required(), mcplib.Description("Artifact type (feature, task, subtask)")),
 			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("queued")),
 			mcplib.WithString("description", mcplib.Description("Artifact description")),
 			mcplib.WithString("parent_id", mcplib.Description("Parent artifact ID")),
@@ -112,7 +113,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_append_comment",
-			mcplib.WithDescription("Append a comment event to events.jsonl"),
+			mcplib.WithDescription("Append a comment event to the item's JSONL log"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
 			mcplib.WithString("actor", mcplib.Required(), mcplib.Description("Actor name")),
 			mcplib.WithString("comment", mcplib.Required(), mcplib.Description("Comment text")),
@@ -144,7 +145,7 @@ func (s *Server) RegisterTools() {
 	s.addTool(
 		mcplib.NewTool("backlogit_get_wit_metadata",
 			mcplib.WithDescription("Get complete WIT metadata for an artifact type including fields, sections, and relationships"),
-			mcplib.WithString("type", mcplib.Required(), mcplib.Description("Artifact type (task, bug, epic, feature)")),
+			mcplib.WithString("type", mcplib.Required(), mcplib.Description("Artifact type (feature, task, subtask)")),
 		),
 		s.handleGetWITMetadata,
 	)
@@ -153,6 +154,20 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("List all configured WIT types with hierarchy levels and descriptions"),
 		),
 		s.handleListTypes,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_metadata_catalog",
+			mcplib.WithDescription("Get a unified workspace metadata catalog for agent discovery"),
+		),
+		s.handleGetMetadataCatalog,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_export_command_map",
+			mcplib.WithDescription("Write an agent-readable command map file into the workspace"),
+			mcplib.WithString("path", mcplib.Required(), mcplib.Description("Workspace-relative output path")),
+			mcplib.WithString("format", mcplib.Description("Output format: markdown or json"), mcplib.DefaultString("markdown")),
+		),
+		s.handleExportCommandMap,
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_add_dependency",
@@ -207,6 +222,49 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("author", mcplib.Description("Commit author")),
 		),
 		s.handleTrackCommit,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_fetch_stash",
+			mcplib.WithDescription("Fetch the current active stash entries from .backlogit/queue/.stash.md"),
+			mcplib.WithString("priority", mcplib.Description("Optional stash priority filter (low, medium, high, critical)")),
+			mcplib.WithBoolean("group_by_priority", mcplib.Description("Group stash entries by priority")),
+		),
+		s.handleFetchStash,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_stash",
+			mcplib.WithDescription("Add a deferred work item to the stash"),
+			mcplib.WithString("kind", mcplib.DefaultString("task"), mcplib.Description("Stash kind (feature, task, bug, epic)")),
+			mcplib.WithString("priority", mcplib.Description("Stash priority (low, medium, high, critical)"), mcplib.DefaultString("medium")),
+			mcplib.WithString("text", mcplib.Required(), mcplib.Description("Stash item text")),
+		),
+		s.handleStash,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_harvest_stash",
+			mcplib.WithDescription("Harvest a stash entry or all stash entries at a priority into backlogit work items"),
+			mcplib.WithString("stash_id", mcplib.Description("Stash entry ID")),
+			mcplib.WithString("priority", mcplib.Description("Harvest all stash entries at this priority (low, medium, high, critical)")),
+			mcplib.WithString("artifact_type", mcplib.DefaultString("task"), mcplib.Description("Target artifact type (feature, task, subtask)")),
+			mcplib.WithString("title", mcplib.Description("Override title for the harvested work item")),
+			mcplib.WithString("description", mcplib.Description("Description for the harvested work item")),
+			mcplib.WithString("status", mcplib.Description("Initial status"), mcplib.DefaultString("queued")),
+			mcplib.WithString("parent_id", mcplib.Description("Optional parent artifact ID")),
+		),
+		s.handleHarvestStash,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_deliberate",
+			mcplib.WithDescription("Create a deliberation artifact linked to an active stash entry"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID to deliberate")),
+			mcplib.WithString("title", mcplib.Description("Deliberation title (defaults to stash text)")),
+			mcplib.WithString("problem_frame", mcplib.Description("Problem frame content")),
+			mcplib.WithString("options", mcplib.Description("Options or alternatives considered")),
+			mcplib.WithString("chosen_direction", mcplib.Description("Chosen direction and rationale")),
+			mcplib.WithString("open_questions", mcplib.Description("Outstanding questions or risks")),
+			mcplib.WithString("notes", mcplib.Description("Supporting notes or research")),
+		),
+		s.handleDeliberate,
 	)
 }
 
@@ -486,7 +544,7 @@ func (s *Server) handleSyncIndex(ctx context.Context, _ mcplib.CallToolRequest) 
 	if !dirExists(backlogitDir) {
 		return WorkspaceNotInitialized(), nil
 	}
-	count, err := db.Rehydrate(ctx, s.Workspace.RootPath, s.Workspace.DB)
+	count, err := db.Rehydrate(ctx, core.WorkspaceStorageRoot(s.Workspace.RootPath), s.Workspace.DB)
 	if err != nil {
 		return InternalError(fmt.Sprintf("sync index: %v", err)), nil
 	}
@@ -512,6 +570,9 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 	}
 	if err := s.Events.AppendEvent(ctx, event); err != nil {
 		return InternalError(fmt.Sprintf("append comment: %v", err)), nil
+	}
+	if err := db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event); err != nil {
+		return InternalError(fmt.Sprintf("index comment log: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }
@@ -642,9 +703,9 @@ func (s *Server) queueLayout() *core.QueueLayoutConfig {
 	return &core.QueueLayoutConfig{
 		RootDir: "queue",
 		Levels: []core.HierarchyLevel{
-			{Level: 1, Types: []string{"feature", "epic"}},
-			{Level: 2, Types: []string{"task", "story", "bug"}},
-			{Level: 3, Types: []string{"sub-task"}},
+			{Level: 1, Types: []string{"feature"}},
+			{Level: 2, Types: []string{"task"}},
+			{Level: 3, Types: []string{"subtask"}},
 		},
 	}
 }
@@ -840,4 +901,125 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 		"sha":     sha,
 		"status":  "linked",
 	})
+}
+
+func (s *Server) handleFetchStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	priority, _ := request.Params.Arguments["priority"].(string)
+	groupByPriority, _ := request.Params.Arguments["group_by_priority"].(bool)
+	entries, err := core.FetchStash(ctx, s.Workspace, core.FetchStashOptions{
+		Priority:        priority,
+		GroupByPriority: groupByPriority,
+	})
+	if err != nil {
+		return domainError("fetch stash", err), nil
+	}
+	return toolResultJSON(entries)
+}
+
+func (s *Server) handleStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	kind, _ := request.Params.Arguments["kind"].(string)
+	if kind == "" {
+		return ValidationFailed("kind is required"), nil
+	}
+	priority, _ := request.Params.Arguments["priority"].(string)
+	text, _ := request.Params.Arguments["text"].(string)
+	if text == "" {
+		return ValidationFailed("text is required"), nil
+	}
+	entry, err := core.AddStashEntry(ctx, s.Workspace, kind, priority, text)
+	if err != nil {
+		return domainError("stash item", err), nil
+	}
+	return toolResultJSON(entry)
+}
+
+func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	priority, _ := request.Params.Arguments["priority"].(string)
+	artifactType, _ := request.Params.Arguments["artifact_type"].(string)
+	if artifactType == "" {
+		return ValidationFailed("artifact_type is required"), nil
+	}
+	if stashID == "" && priority == "" {
+		return ValidationFailed("stash_id or priority is required"), nil
+	}
+	if stashID != "" && priority != "" {
+		return ValidationFailed("stash_id and priority are mutually exclusive"), nil
+	}
+	title, _ := request.Params.Arguments["title"].(string)
+	description, _ := request.Params.Arguments["description"].(string)
+	status, _ := request.Params.Arguments["status"].(string)
+	parentID, _ := request.Params.Arguments["parent_id"].(string)
+	if priority != "" {
+		result, err := core.HarvestStashByPriority(ctx, s.Workspace, core.HarvestStashOptions{
+			Priority:     priority,
+			ArtifactType: artifactType,
+			Title:        title,
+			Description:  description,
+			Status:       status,
+			ParentID:     parentID,
+		})
+		if err != nil {
+			return domainError("harvest stash by priority", err), nil
+		}
+		return toolResultJSON(result)
+	}
+	result, err := core.HarvestStashEntry(ctx, s.Workspace, core.HarvestStashOptions{
+		StashID:      stashID,
+		ArtifactType: artifactType,
+		Title:        title,
+		Description:  description,
+		Status:       status,
+		ParentID:     parentID,
+	})
+	if err != nil {
+		return domainError("harvest stash", err), nil
+	}
+	return toolResultJSON(result)
+}
+
+func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+	if s.templateSvc == nil {
+		return InternalError("template service is unavailable"), nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	if stashID == "" {
+		return ValidationFailed("stash_id is required"), nil
+	}
+	title, _ := request.Params.Arguments["title"].(string)
+	problemFrame, _ := request.Params.Arguments["problem_frame"].(string)
+	options, _ := request.Params.Arguments["options"].(string)
+	chosenDirection, _ := request.Params.Arguments["chosen_direction"].(string)
+	openQuestions, _ := request.Params.Arguments["open_questions"].(string)
+	notes, _ := request.Params.Arguments["notes"].(string)
+
+	result, err := templates.CreateDeliberationFromStash(ctx, s.Workspace, s.templateSvc, templates.DeliberationInput{
+		StashID:         stashID,
+		Title:           title,
+		ProblemFrame:    problemFrame,
+		Options:         options,
+		ChosenDirection: chosenDirection,
+		OpenQuestions:   openQuestions,
+		Notes:           notes,
+	})
+	if err != nil {
+		return domainError("create deliberation", err), nil
+	}
+	return toolResultJSON(result)
 }

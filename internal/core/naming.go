@@ -30,6 +30,7 @@ func ResolveName(cfg *config.ArtifactTypeConfig, title string, nextID int, maxSl
 	name = strings.ReplaceAll(name, "{prefix}", cfg.Prefix)
 	name = strings.ReplaceAll(name, "{NNN}", fmt.Sprintf("%03d", nextID))
 	name = strings.ReplaceAll(name, "{title_slug}", Slugify(title, maxSlugLen))
+	name = strings.ReplaceAll(name, "{slug}", Slugify(title, maxSlugLen))
 	return name
 }
 

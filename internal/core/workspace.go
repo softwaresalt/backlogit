@@ -22,15 +22,25 @@ type Workspace struct {
 	Templates []*config.TemplateConfig
 }
 
+// WorkspaceStorageRoot returns the .backlogit directory for a workspace root.
+func WorkspaceStorageRoot(rootPath string) string {
+	return filepath.Join(rootPath, ".backlogit")
+}
+
+// WorkspaceLogsRoot returns the .backlogit\logs directory for a workspace root.
+func WorkspaceLogsRoot(rootPath string) string {
+	return filepath.Join(WorkspaceStorageRoot(rootPath), "logs")
+}
+
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
-	backlogitDir := filepath.Join(rootPath, ".backlogit")
+	backlogitDir := WorkspaceStorageRoot(rootPath)
 	cfg, err := config.Load(ctx, backlogitDir)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
-	dbPath := filepath.Join(rootPath, ".backlogit", "backlogit.db")
+	dbPath := filepath.Join(backlogitDir, "backlogit.db")
 	database, err := db.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -92,7 +102,8 @@ func SafeResolve(workspaceRoot, target string) (string, error) {
 	}
 	cleanRoot := filepath.Clean(absRoot)
 
-	abs, err := filepath.Abs(filepath.Join(absRoot, target))
+	normalizedTarget := strings.ReplaceAll(target, "\\", string(filepath.Separator))
+	abs, err := filepath.Abs(filepath.Join(absRoot, normalizedTarget))
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}

@@ -5,15 +5,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/backlogit/backlogit/internal/stash"
 	"gopkg.in/yaml.v3"
 )
 
 // defaultHeaderDef returns the default HeaderDefConfig for a new workspace.
-// Uses 3 initial artifact types: task, bug, epic (revision-3).
+// Uses 3 initial artifact types: feature, task, subtask.
 func defaultHeaderDef() *HeaderDefConfig {
 	statusField := &FieldDef{
 		Type:    "enum",
-		Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected"},
+		Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected", "archived"},
 		Default: "queued",
 	}
 	return &HeaderDefConfig{
@@ -23,39 +24,8 @@ func defaultHeaderDef() *HeaderDefConfig {
 			UpdatedDate: FieldDef{Type: "datetime", Immutable: true},
 		},
 		Types: map[string]*TypeDefConfig{
-			"task": {
-				Prefix:   "OP",
-				IDFormat: "{prefix}{NNN}",
-				Fields: map[string]*FieldDef{
-					"status": statusField,
-					"priority": {
-						Type:    "enum",
-						Values:  []string{"low", "medium", "high"},
-						Default: "medium",
-					},
-				},
-			},
-			"bug": {
-				Prefix:   "OP",
-				IDFormat: "{prefix}{NNN}",
-				Fields: map[string]*FieldDef{
-					"status": statusField,
-					"severity": {
-						Type:    "enum",
-						Values:  []string{"low", "medium", "high", "critical"},
-						Default: "medium",
-					},
-				},
-			},
-			"epic": {
-				Prefix:   "OP",
-				IDFormat: "{prefix}{NNN}",
-				Fields: map[string]*FieldDef{
-					"status": statusField,
-				},
-			},
 			"feature": {
-				Prefix:   "OP",
+				Prefix:   "F",
 				IDFormat: "{prefix}{NNN}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
@@ -67,6 +37,37 @@ func defaultHeaderDef() *HeaderDefConfig {
 					},
 				},
 			},
+			"deliberation": {
+				Prefix:   "DL",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+					"priority": {
+						Type:    "enum",
+						Values:  []string{"low", "medium", "high", "critical"},
+						Default: "medium",
+					},
+				},
+			},
+			"task": {
+				Prefix:   "T",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+					"priority": {
+						Type:    "enum",
+						Values:  []string{"low", "medium", "high", "critical"},
+						Default: "medium",
+					},
+				},
+			},
+			"subtask": {
+				Prefix:   "ST",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+				},
+			},
 		},
 	}
 }
@@ -74,6 +75,86 @@ func defaultHeaderDef() *HeaderDefConfig {
 // defaultTemplates returns the default template content for each artifact type.
 func defaultTemplates() map[string]string {
 	return map[string]string{
+		"feature": `---
+name: feature-template
+type: feature
+description: "A feature-level work item"
+sections:
+  - name: description
+    required: true
+    description: "Detailed description of the feature"
+  - name: goals
+    required: false
+    description: "Goals and intended outcomes"
+  - name: dod
+    required: false
+    description: "Definition of Done for this feature"
+---
+# {title}
+
+## Description
+
+<!-- BEGIN:description -->
+<!-- END:description -->
+
+## Goals
+
+<!-- BEGIN:goals -->
+<!-- END:goals -->
+
+## Definition of Done
+
+<!-- BEGIN:dod -->
+<!-- END:dod -->
+`,
+		"deliberation": `---
+name: deliberation-template
+type: deliberation
+description: "A collaborative deliberation artifact linked to a stashed idea or issue"
+sections:
+  - name: problem-frame
+    required: true
+    description: "The operator and agent's shared understanding of the problem"
+  - name: options
+    required: false
+    description: "Approaches or alternatives considered during deliberation"
+  - name: chosen-direction
+    required: false
+    description: "Selected direction and decision rationale"
+  - name: open-questions
+    required: false
+    description: "Questions or risks that remain unresolved"
+  - name: notes
+    required: false
+    description: "Supporting research, references, or follow-up notes"
+---
+# {title}
+
+## Problem Frame
+
+<!-- BEGIN:problem-frame -->
+<!-- END:problem-frame -->
+
+## Options
+
+<!-- BEGIN:options -->
+<!-- END:options -->
+
+## Chosen Direction
+
+<!-- BEGIN:chosen-direction -->
+<!-- END:chosen-direction -->
+
+## Open Questions
+
+<!-- BEGIN:open-questions -->
+<!-- END:open-questions -->
+
+## Notes
+
+<!-- BEGIN:notes -->
+<!-- END:notes -->
+`,
 		"task": `---
 name: task-template
 type: task
@@ -106,23 +187,17 @@ sections:
 <!-- BEGIN:implementation-notes -->
 <!-- END:implementation-notes -->
 `,
-		"bug": `---
-name: bug-template
-type: bug
-description: "A defect or issue to be resolved"
+		"subtask": `---
+name: subtask-template
+type: subtask
+description: "A discrete unit of work"
 sections:
   - name: description
     required: true
-    description: "Detailed description of the defect"
-  - name: steps-to-reproduce
-    required: true
-    description: "Steps to reproduce the issue"
-  - name: expected-behavior
+    description: "Detailed description of the discrete work item"
+  - name: implementation-notes
     required: false
-    description: "What should happen"
-  - name: actual-behavior
-    required: false
-    description: "What actually happens"
+    description: "Technical notes and implementation details"
 ---
 # {title}
 
@@ -131,44 +206,10 @@ sections:
 <!-- BEGIN:description -->
 <!-- END:description -->
 
-## Steps to Reproduce
+## Implementation Notes
 
-<!-- BEGIN:steps-to-reproduce -->
-<!-- END:steps-to-reproduce -->
-
-## Expected Behavior
-
-<!-- BEGIN:expected-behavior -->
-<!-- END:expected-behavior -->
-
-## Actual Behavior
-
-<!-- BEGIN:actual-behavior -->
-<!-- END:actual-behavior -->
-`,
-		"epic": `---
-name: epic-template
-type: epic
-description: "A large body of work that can be broken down into tasks"
-sections:
-  - name: description
-    required: true
-    description: "Detailed description of the epic"
-  - name: goals
-    required: false
-    description: "Goals and objectives for this epic"
----
-# {title}
-
-## Description
-
-<!-- BEGIN:description -->
-<!-- END:description -->
-
-## Goals
-
-<!-- BEGIN:goals -->
-<!-- END:goals -->
+<!-- BEGIN:implementation-notes -->
+<!-- END:implementation-notes -->
 `,
 	}
 }
@@ -178,35 +219,29 @@ func DefaultConfig() *WorkspaceConfig {
 	return &WorkspaceConfig{
 		MaxSlugLength: 60,
 		ArtifactTypes: map[string]*ArtifactTypeConfig{
-			"task": {
-				Prefix:     "T",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
-			},
-			"story": {
-				Prefix:     "S",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
-			},
-			"bug": {
-				Prefix:     "B",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
-			},
-			"epic": {
-				Prefix:     "E",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
-			},
 			"feature": {
-				Prefix:     "F",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
+				Prefix:          "F",
+				NameFormat:      "{prefix}{NNN}",
+				AllowedChildren: []string{"task"},
 			},
-			"sub-task": {
+			"deliberation": {
+				Prefix:     "DL",
+				NameFormat: "{prefix}{NNN}",
+			},
+			"task": {
+				Prefix:          "T",
+				NameFormat:      "{prefix}{NNN}",
+				AllowedChildren: []string{"subtask"},
+			},
+			"subtask": {
 				Prefix:     "ST",
-				NameFormat: "{prefix}{NNN}-{title_slug}",
+				NameFormat: "{prefix}{NNN}",
 			},
 		},
 		Fields: map[string]*FieldConfig{
 			"status": {
 				Type:    "enum",
-				Values:  []string{"queued", "active", "blocked", "review", "done"},
+				Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected", "archived"},
 				Default: "queued",
 			},
 		},
@@ -214,9 +249,9 @@ func DefaultConfig() *WorkspaceConfig {
 			RootDir:    "queue",
 			NameFormat: "{NNN}",
 			Levels: []HierarchyLevel{
-				{Level: 1, Types: []string{"feature", "epic"}},
-				{Level: 2, Types: []string{"task", "story", "bug"}},
-				{Level: 3, Types: []string{"sub-task"}},
+				{Level: 1, Types: []string{"feature", "deliberation"}},
+				{Level: 2, Types: []string{"task"}},
+				{Level: 3, Types: []string{"subtask"}},
 			},
 		},
 	}
@@ -227,12 +262,8 @@ func DefaultConfig() *WorkspaceConfig {
 func DefaultRegistry() *RegistryConfig {
 	return &RegistryConfig{
 		Directories: []DirectoryRule{
-			{Path: "archive", Condition: DirectoryCondition{Status: []string{"done", "accepted", "rejected"}}},
-			{Path: "review", Condition: DirectoryCondition{Status: []string{"review"}}},
-			{Path: "tasks", Condition: DirectoryCondition{Type: []string{"task"}}},
-			{Path: "stories", Condition: DirectoryCondition{Type: []string{"story"}}},
-			{Path: "bugs", Condition: DirectoryCondition{Type: []string{"bug"}}},
-			{Path: "epics", Condition: DirectoryCondition{Type: []string{"epic"}}},
+			{Path: "archive", Condition: DirectoryCondition{Status: []string{"done", "accepted", "rejected", "archived"}}},
+			{Path: "queue", Condition: DirectoryCondition{Status: []string{"queued", "active", "blocked", "review"}}},
 		},
 	}
 }
@@ -273,6 +304,14 @@ func WriteDefaults(workspacePath string) error {
 		if err := writeFileIfNotExists(path, []byte(content)); err != nil {
 			return fmt.Errorf("write template %s: %w", typeName, err)
 		}
+	}
+
+	queueDir := filepath.Join(workspacePath, "queue")
+	if err := os.MkdirAll(queueDir, 0o755); err != nil {
+		return fmt.Errorf("create queue dir: %w", err)
+	}
+	if err := writeFileIfNotExists(filepath.Join(queueDir, ".stash.md"), []byte(stash.DefaultContent())); err != nil {
+		return fmt.Errorf("write .stash.md: %w", err)
 	}
 
 	return nil

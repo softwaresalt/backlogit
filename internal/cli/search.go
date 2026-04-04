@@ -18,6 +18,11 @@ func newSearchCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Full-text search across artifacts",
+		Long: `Search the full-text index for matching artifacts.
+
+Use this when you want quick keyword lookup without writing SQL.`,
+		Example: `  backlogit search authentication
+  backlogit search "token rotation" --limit 10`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]

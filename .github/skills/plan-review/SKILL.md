@@ -1,12 +1,12 @@
 ---
 name: plan-review
-description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, coding standards compliance, and Python quality before the backlog harvester decomposes a plan into tasks."
+description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, and coding standards compliance before the backlog harvester decomposes a plan into backlogit work items."
 argument-hint: "[path to plan file in .backlog/exec-plans/]"
 ---
 
 # Plan Review Gate
 
-Validates implementation plans through multi-persona review before the backlog harvester decomposes them into tasks. This gate prevents flawed plans from generating flawed task hierarchies.
+Validates implementation plans through multi-persona review before the backlog harvester decomposes them into backlogit work items. This gate prevents flawed plans from generating flawed work hierarchies.
 
 ## Agent-Intercom Communication (NON-NEGOTIABLE)
 
@@ -41,7 +41,7 @@ Spawn all 4 personas. Use different models when available to force genuine diver
 | Persona Agent                | Focus                                                                                                                                  |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Constitution Reviewer**    | Map plan units against the project's core principles. Flag violations.                                                                 |
-| **Python Quality Reviewer**  | Evaluate proposed type signatures, error handling patterns, module boundaries. Will the plan produce code that passes mypy and ruff?   |
+| **Go Quality Reviewer**      | Evaluate proposed type signatures, error handling patterns, package boundaries, and verification steps. Will the plan produce code that passes gofmt, golangci-lint, go vet, and go test? |
 
 ### Cross-Model Personas (different model when available)
 
@@ -57,7 +57,7 @@ If cross-model invocation is not available, run all 4 with the caller's model. M
 ### Step 1: Load Plan and Context
 
 1. Read the plan file from `.backlog/exec-plans/`
-2. If the plan references an origin document in `.backlog/brainstorm/`, read that too
+2. If the plan references an origin document in `.backlogit/queue/` or `.backlog/research/`, read that too
 3. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 
 ### Step 2: Spawn Reviewer Subagents
@@ -104,7 +104,7 @@ title: "Plan Review: {plan_title}"
 date: YYYY-MM-DD
 plan: "{plan_path}"
 gate: pass|fail|advisory
-reviewers: [constitution-reviewer, python-quality-reviewer, architecture-strategist, scope-boundary-auditor]
+reviewers: [constitution-reviewer, go-quality-reviewer, architecture-strategist, scope-boundary-auditor]
 ---
 
 # Plan Review: {plan_title}
@@ -150,4 +150,4 @@ Broadcast the file path when written.
 
 - On **FAIL**: Present P0/P1 findings. Recommend specific plan revisions.
 - On **ADVISORY**: Present P2 findings. Ask user: "Revise the plan, or proceed to the backlog harvester?"
-- On **PASS**: Report clean pass. Suggest: "Run backlog-harvester to decompose this plan into tasks."
+- On **PASS**: Report clean pass. Suggest: "Run backlog-harvester to decompose this plan into backlogit work items."

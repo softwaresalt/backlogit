@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/client"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
@@ -106,7 +106,7 @@ func TestGetItem_Real_ReturnsArtifactData(t *testing.T) {
 	// Create an artifact first
 	createData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Get test artifact",
-		"artifact_type": "bug",
+		"artifact_type": "feature",
 	})
 	id := createData["id"].(string)
 
@@ -118,7 +118,7 @@ func TestGetItem_Real_ReturnsArtifactData(t *testing.T) {
 	// Assert — verify actual data, not just presence
 	assert.Equal(t, id, getData["id"])
 	assert.Equal(t, "Get test artifact", getData["title"])
-	assert.Equal(t, "bug", getData["artifact_type"])
+	assert.Equal(t, "feature", getData["artifact_type"])
 }
 
 // TASK-008.06: Update item modifies fields and returns updated artifact.
@@ -174,4 +174,63 @@ func TestGetItem_Real_MissingIDReturnsError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "missing item should produce error result")
+}
+
+func TestStash_Real_AddFetchAndHarvest(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	stashData := callToolAndParseJSON(t, s, "backlogit_stash", map[string]any{
+		"kind":     "feature",
+		"priority": "critical",
+		"text":     "Group security cleanup work",
+	})
+	stashID := stashData["id"].(string)
+	assert.NotEmpty(t, stashID)
+	assert.Equal(t, "critical", stashData["priority"])
+
+	fetchResult, err := callToolForTest(t, s, "backlogit_fetch_stash", map[string]any{"priority": "critical"})
+	require.NoError(t, err)
+	require.NotNil(t, fetchResult)
+	require.False(t, fetchResult.IsError)
+
+	harvestData := callToolAndParseJSON(t, s, "backlogit_harvest_stash", map[string]any{
+		"stash_id":      stashID,
+		"artifact_type": "feature",
+		"description":   "Harvested from stash",
+	})
+	entry := harvestData["entry"].(map[string]any)
+	artifact := harvestData["artifact"].(map[string]any)
+	assert.Equal(t, stashID, entry["id"])
+	assert.Equal(t, "critical", entry["priority"])
+	assert.Equal(t, "feature", artifact["artifact_type"])
+	assert.Equal(t, "critical", artifact["priority"])
+}
+
+func TestDeliberate_Real_CreatesLinkedArtifact(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	stashData := callToolAndParseJSON(t, s, "backlogit_stash", map[string]any{
+		"kind":     "feature",
+		"priority": "high",
+		"text":     "Capture audit split trade-offs",
+	})
+	stashID := stashData["id"].(string)
+
+	deliberationData := callToolAndParseJSON(t, s, "backlogit_deliberate", map[string]any{
+		"stash_id":         stashID,
+		"chosen_direction": "Split the dashboard work into two queue waves.",
+	})
+	entry := deliberationData["entry"].(map[string]any)
+	artifact := deliberationData["artifact"].(map[string]any)
+	assert.Equal(t, stashID, entry["id"])
+	assert.Equal(t, "deliberation", artifact["artifact_type"])
+	assert.Equal(t, artifact["id"], entry["deliberation_id"])
+
+	fetchData := callToolAndParseJSON(t, s, "backlogit_fetch_stash", map[string]any{"priority": "high"})
+	entries := fetchData["entries"].([]any)
+	require.Len(t, entries, 1)
+	fetchedEntry := entries[0].(map[string]any)
+	assert.Equal(t, artifact["id"], fetchedEntry["deliberation_id"])
+	linkedDeliberation := fetchedEntry["deliberation"].(map[string]any)
+	assert.Equal(t, artifact["id"], linkedDeliberation["id"])
 }

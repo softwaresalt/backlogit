@@ -22,7 +22,7 @@ type migrationStateEntry struct {
 }
 
 // MigrateFlatToHierarchical converts an existing flat per-type directory layout
-// (.backlogit/tasks/, bugs/, etc.) to the hierarchical .backlogit/queue/ structure.
+// to the flat .backlogit/queue/ structure.
 // When dryRun is true, no files are moved but the report reflects what would happen.
 func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, error) {
 	report := &MigrationReport{DryRun: dryRun}
@@ -36,7 +36,7 @@ func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, er
 	var moves []migrationStateEntry
 
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "queue" || entry.Name()[0] == '.' {
+		if !entry.IsDir() || entry.Name() == "queue" || entry.Name() == "archive" || entry.Name()[0] == '.' {
 			continue
 		}
 		srcDir := filepath.Join(backlogDir, entry.Name())
@@ -45,7 +45,7 @@ func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, er
 			report.Errors = append(report.Errors, fmt.Sprintf("read %s: %v", srcDir, err))
 			continue
 		}
-		queueDir := filepath.Join(backlogDir, "queue", entry.Name())
+		queueDir := filepath.Join(backlogDir, "queue")
 		for _, f := range files {
 			if f.IsDir() || filepath.Ext(f.Name()) != ".md" {
 				report.FilesSkipped++

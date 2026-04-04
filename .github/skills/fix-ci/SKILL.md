@@ -174,7 +174,7 @@ Common fix patterns by check type:
 * *golangci-lint run*: Address each lint violation individually — common issues include unused imports, missing type annotations, line length, and naming conventions. Auto-fix with `golangci-lint run --fix` where safe.
 * *gofmt*: Run `gofmt -w .` to auto-fix formatting, then verify with `gofmt -l .`.
 * *go vet*: Address type errors individually — common issues include missing type annotations, incompatible types, and missing return types. Fix the source code types rather than adding `# type: ignore`.
-* *go test*: Investigate test assertion failures, import errors in test code, and missing test fixtures. Fix the implementation rather than weakening the test, unless the test itself contains a bug.
+* *go test*: Investigate test assertion failures, import errors in test code, and missing test fixtures. Fix the implementation rather than weakening the test. If the test itself is wrong but cannot be safely corrected in the current CI repair scope, log a backlogit follow-up bug before halting.
 
 ### Step 4b: Address Copilot Review Comments
 
@@ -200,7 +200,7 @@ This is a **hard gate**. All checks pass locally before proceeding to push. Run 
 4. Run `go test -cover ./...`. Fix any failures, then re-run until all tests pass.
 5. If fixes applied in steps 2–4 cause an earlier check to fail, restart from step 1 and repeat the full cycle.
 6. All four checks exit 0 before proceeding.
-7. Report results: golangci-lint run exit code, gofmt exit code, mypy exit code, test counts and pass rate.
+7. Report results: golangci-lint run exit code, gofmt exit code, go vet exit code, test counts and pass rate.
 
 ### Step 6: Stage, Commit, and Push
 
@@ -225,7 +225,23 @@ After pushing, poll the PR's check statuses until all checks complete, then deci
 4. If all checks pass, re-check for new Copilot review comments (Step 2b). If no new unresolved comments, proceed to Step 8 with a success status. If new comments appeared, address them (Step 4b), re-run local gates, push, and re-poll.
 5. If any checks fail, increment the iteration counter.
    * If the counter is below `max-iterations` (default 5), loop back to Step 3 to reproduce the new failures locally and begin another fix cycle.
-   * If the counter has reached `max-iterations`, proceed to Step 8 with a failure status and the accumulated findings. `broadcast` at `error` level: `[FIX-CI] Max iterations ({max}) reached — halting`
+   * If the counter has reached `max-iterations`, log backlogit follow-up items for each unresolved actionable CI failure or unresolved Copilot comment before proceeding to Step 8 with a failure status and the accumulated findings. `broadcast` at `error` level: `[FIX-CI] Max iterations ({max}) reached — halting`
+
+### Step 7a: Log Unresolved CI or Review Defects in backlogit
+
+When unresolved failures remain after the repair loop, or when a Copilot review comment identifies a real issue that you intentionally defer:
+
+1. Call `backlogit_list_types` or `backlogit_get_metadata_catalog` to determine whether the workspace defines a `bug` artifact type.
+2. For each unresolved CI failure, flaky test issue, or deferred Copilot finding:
+   * Prefer `artifact_type: "bug"` when available.
+   * Otherwise create `artifact_type: "task"` with a `bug` label.
+3. Use `backlogit_create_item` with:
+   * `title`: concise failure summary
+   * `description`: failing check name, latest error output summary, affected files, PR number, and recommended follow-up
+   * `status: "queued"`
+   * `priority`: `high` for blocking CI failures, `medium` for deferred review findings, `low` for non-blocking cleanup
+   * `references`: PR URL or number, failing file paths, and any review artifact or log file paths
+4. Include the created backlogit item IDs in the completion report so the unresolved work is durable and traceable.
 
 ### Step 8: Completion Report
 

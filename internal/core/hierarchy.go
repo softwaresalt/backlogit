@@ -1,9 +1,9 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -22,10 +22,7 @@ func ResolveHierarchicalPath(layout *config.QueueLayoutConfig, parentID string, 
 	if _, err := LevelForType(layout, artifactType); err != nil {
 		return "", err
 	}
-	if parentID == "" {
-		return layout.RootDir, nil
-	}
-	return filepath.Join(layout.RootDir, parentID), nil
+	return layout.RootDir, nil
 }
 
 // NextHierarchicalID computes the next available ID at a given hierarchy level
@@ -62,6 +59,65 @@ func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutC
 	return parentID + "." + segment, nil
 }
 
+// NextTypedHierarchicalID computes the next available typed hierarchical ID for
+// the given artifact type and parent.
+func NextTypedHierarchicalID(
+	ctx context.Context,
+	db *sql.DB,
+	parentID string,
+	artifactType string,
+	typeCfg *config.ArtifactTypeConfig,
+	layout *config.QueueLayoutConfig,
+) (string, error) {
+	if typeCfg == nil {
+		return "", fmt.Errorf("artifact type config is required")
+	}
+	if _, err := LevelForType(layout, artifactType); err != nil {
+		return "", err
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if parentID == "" {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id FROM items WHERE parent_id IS NULL AND artifact_type = ?`,
+			artifactType,
+		)
+	} else {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id FROM items WHERE parent_id = ? AND artifact_type = ?`,
+			parentID, artifactType,
+		)
+	}
+	if err != nil {
+		return "", fmt.Errorf("query hierarchical ids: %w", err)
+	}
+	defer rows.Close()
+
+	maxOrdinal := 0
+	for rows.Next() {
+		var existingID string
+		if err := rows.Scan(&existingID); err != nil {
+			return "", fmt.Errorf("scan hierarchical id: %w", err)
+		}
+		ordinal, ok := typedSegmentOrdinal(lastIDSegment(existingID), typeCfg.Prefix)
+		if ok && ordinal > maxOrdinal {
+			maxOrdinal = ordinal
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate hierarchical ids: %w", err)
+	}
+
+	segment := formatTypedSegment(typeCfg.Prefix, maxOrdinal+1)
+	if parentID == "" {
+		return segment, nil
+	}
+	return parentID + "." + segment, nil
+}
+
 // ParseHierarchicalID splits a hierarchical ID (e.g., "001.002.003") into its
 // component level segments as integers.
 func ParseHierarchicalID(id string) ([]int, error) {
@@ -74,7 +130,7 @@ func ParseHierarchicalID(id string) ([]int, error) {
 		if p == "" {
 			return nil, fmt.Errorf("hierarchical ID has empty segment: %q", id)
 		}
-		n, err := strconv.Atoi(p)
+		n, err := strconv.Atoi(trailingDigits(p))
 		if err != nil {
 			return nil, fmt.Errorf("hierarchical ID segment %q is not numeric in %q", p, id)
 		}
@@ -100,4 +156,39 @@ func LevelForType(layout *config.QueueLayoutConfig, artifactType string) (int, e
 // the queue layout naming convention (e.g., 1 → "001").
 func FormatHierarchicalID(segment int, layout *config.QueueLayoutConfig) string {
 	return fmt.Sprintf("%03d", segment)
+}
+
+func formatTypedSegment(prefix string, ordinal int) string {
+	return fmt.Sprintf("%s%03d", prefix, ordinal)
+}
+
+func lastIDSegment(id string) string {
+	if idx := strings.LastIndex(id, "."); idx != -1 {
+		return id[idx+1:]
+	}
+	return id
+}
+
+func trailingDigits(value string) string {
+	for i, r := range value {
+		if r >= '0' && r <= '9' {
+			return value[i:]
+		}
+	}
+	return ""
+}
+
+func typedSegmentOrdinal(segment, prefix string) (int, bool) {
+	if !strings.HasPrefix(segment, prefix) {
+		return 0, false
+	}
+	numeric := strings.TrimPrefix(segment, prefix)
+	if numeric == "" {
+		return 0, false
+	}
+	ordinal, err := strconv.Atoi(numeric)
+	if err != nil {
+		return 0, false
+	}
+	return ordinal, true
 }

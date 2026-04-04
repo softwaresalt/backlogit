@@ -137,6 +137,23 @@ func TestSectionAwareTools_GetItemHasSectionParam(t *testing.T) {
 	assert.True(t, found, "backlogit_get_item must be registered with section param")
 }
 
+func TestStashTools_AreRegistered(t *testing.T) {
+	s, _ := setupSectionAwareServer(t)
+	tools := s.ListTools()
+
+	expected := []string{"backlogit_fetch_stash", "backlogit_stash", "backlogit_harvest_stash", "backlogit_deliberate"}
+	for _, name := range expected {
+		found := false
+		for _, tool := range tools {
+			if tool == name {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected stash tool %s to be registered", name)
+	}
+}
+
 func TestParseSectionsParam_JSONObject(t *testing.T) {
 	// Arrange
 	args := map[string]any{

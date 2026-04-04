@@ -32,7 +32,7 @@ type ArchivePolicy struct {
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
-	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogDir := WorkspaceStorageRoot(ws.RootPath)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact: %w", err)
@@ -81,16 +81,18 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
 
-	// Best-effort: log archive event to events.jsonl (non-fatal on failure).
-	eventsPath := filepath.Join(ws.RootPath, ".backlogit", "events.jsonl")
-	ew := events.NewEventWriter(eventsPath)
-	_ = ew.AppendEvent(ctx, events.Event{
+	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	ew := events.NewEventWriter(logsDir)
+	event := events.Event{
 		Timestamp: time.Now(),
 		Actor:     "backlogit",
 		ItemID:    itemID,
 		EventType: "archived",
 		Delta:     map[string]any{"archive_path": archivePath},
-	})
+	}
+	_ = ew.AppendEvent(ctx, event)
+	_ = db.IndexEvent(ctx, database, logsDir, event)
 
 	return &ArchiveRecord{
 		ID:           itemID,
@@ -102,7 +104,8 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
-	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	backlogDir := WorkspaceStorageRoot(ws.RootPath)
+	archiveDir := filepath.Join(backlogDir, "archive")
 	archivePath := filepath.Join(archiveDir, itemID+".md")
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		return fmt.Errorf("archived artifact not found: %s", itemID)
@@ -122,11 +125,11 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		return fmt.Errorf("archived_from not set in %s: cannot restore", itemID)
 	}
 
-	// F-006: Validate the restore path is contained within the workspace root to
-	// prevent path traversal when restoring artifacts from archive.
-	rel, relErr := filepath.Rel(ws.RootPath, originalPath)
+	// F-006: Validate the restore path is contained within .backlogit to prevent
+	// path traversal when restoring artifacts from archive.
+	rel, relErr := filepath.Rel(backlogDir, originalPath)
 	if relErr != nil || len(rel) >= 2 && rel[:2] == ".." {
-		return fmt.Errorf("archived_from path %q escapes workspace: cannot restore", originalPath)
+		return fmt.Errorf("archived_from path %q escapes workspace storage: cannot restore", originalPath)
 	}
 
 	// Restore frontmatter without the archived_from field.
@@ -192,4 +195,3 @@ func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *A
 	}
 	return count, nil
 }
-

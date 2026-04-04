@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	dbpkg "github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
 )
 
@@ -23,7 +23,7 @@ type CommitLinkInfo struct {
 }
 
 // LinkCommit associates a git commit SHA and author with an artifact in the SQLite index
-// and appends a commit_tracked event to events.jsonl for rehydration durability.
+// and appends a commit_tracked event to the item's JSONL log for rehydration durability.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
 	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
@@ -33,10 +33,10 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 		return fmt.Errorf("link commit: %w", err)
 	}
 
-	// Append to events.jsonl so rehydration can rebuild commit_links from the event stream.
-	eventsPath := filepath.Join(ws.RootPath, ".backlogit", "events.jsonl")
-	ew := events.NewEventWriter(eventsPath)
-	if evErr := ew.AppendEvent(ctx, events.Event{
+	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	ew := events.NewEventWriter(logsDir)
+	event := events.Event{
 		Timestamp: time.Now(),
 		Actor:     "backlogit",
 		ItemID:    itemID,
@@ -46,8 +46,11 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 			"message":    message,
 			"author":     author,
 		},
-	}); evErr != nil {
-		slog.Warn("link commit: failed to append to events.jsonl", "item_id", itemID, "sha", commitSHA, "error", evErr)
+	}
+	if evErr := ew.AppendEvent(ctx, event); evErr != nil {
+		slog.Warn("link commit: failed to append to item log", "item_id", itemID, "sha", commitSHA, "error", evErr)
+	} else if indexErr := dbpkg.IndexEvent(ctx, db, logsDir, event); indexErr != nil {
+		slog.Warn("link commit: failed to index item log", "item_id", itemID, "sha", commitSHA, "error", indexErr)
 	}
 
 	return nil
@@ -75,8 +78,8 @@ func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLin
 	return links, rows.Err()
 }
 
-// artifactIDPattern matches artifact IDs like T001, BUG003, US042.
-var artifactIDPattern = regexp.MustCompile(`\b([A-Z]{1,6}\d{3,})\b`)
+// artifactIDPattern matches typed hierarchical artifact IDs like F001 or F001.T001.ST001.
+var artifactIDPattern = regexp.MustCompile(`\b([A-Z]{1,6}\d{3,}(?:\.[A-Z]{1,6}\d{3,})*)\b`)
 
 // AutoLinkCommits scans recent git log messages for artifact ID references and
 // creates links automatically. depth=0 returns immediately with no links.

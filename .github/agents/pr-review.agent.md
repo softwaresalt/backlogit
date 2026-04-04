@@ -267,7 +267,7 @@ Present findings to the user grouped by severity (P0 first):
 - Track decisions in `in-progress-review.md`: Approved, Rejected, Deferred
 - Move approved items to the Approved for PR Comment section
 - Move rejected items to Rejected / No Action with rationale
-- Deferred items become backlog tasks
+- Deferred items become backlogit follow-up items. Prefer `bug` artifacts when the finding describes a defect, otherwise create queued tasks.
 
 ### Phase 4: PR Creation and Push
 

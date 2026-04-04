@@ -29,6 +29,15 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update artifact fields or sections",
+		Long: `Update frontmatter fields or template-backed body sections on an existing
+artifact.
+
+Use repeated --section name=value flags to update named sections without
+replacing the rest of the document body.`,
+		Example: `  backlogit update T001 --status review
+  backlogit update T001 --priority high
+  backlogit update F001 --section goals="Ship passwordless sign-in"
+  backlogit update F001 --harness-status passing`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idFlag != "" {

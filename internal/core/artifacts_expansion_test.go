@@ -123,7 +123,7 @@ func TestUpdateArtifact_RejectsParentIDChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act — DB sync to make artifact findable
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 
 	// Act — attempt to change parent_id via update (not immutable but tested for completeness)
@@ -134,4 +134,21 @@ func TestUpdateArtifact_RejectsParentIDChange(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, "active", string(updated.Status))
+}
+
+func TestCreateArtifact_WritesUnderBacklogitStorage(t *testing.T) {
+	// Arrange
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	// Act
+	artifact, err := core.CreateArtifact(ctx, ws, "Stored under backlogit", "task")
+	require.NoError(t, err)
+
+	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
+	require.NoError(t, err)
+
+	// Assert
+	assert.FileExists(t, filePath)
+	assert.Contains(t, filepath.ToSlash(filePath), "/.backlogit/")
 }

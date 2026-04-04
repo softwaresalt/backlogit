@@ -1,30 +1,31 @@
 
-<!-- BACKLOG.MD MCP GUIDELINES START -->
+<!-- BACKLOGIT MCP GUIDELINES START -->
 
 <CRITICAL_INSTRUCTION>
 
-## BACKLOG WORKFLOW INSTRUCTIONS
+## BACKLOGIT WORKFLOW INSTRUCTIONS
 
-This project uses Backlog.md MCP for all task and project management activities.
+This project uses backlogit MCP for all task and project management activities.
 
 **CRITICAL GUIDANCE**
 
-- If your client supports MCP resources, read `backlog://workflow/overview` to understand when and how to use Backlog for this project.
-- If your client only supports tools or the above request fails, call `backlog.get_workflow_overview()` tool to load the tool-oriented overview (it lists the matching guide tools).
+- Call `backlogit_get_metadata_catalog` to load the current backlogit workspace model, supported artifact types, status values, queue and stash conventions, and MCP tool inventory.
+- Call `backlogit_export_command_map` when you need a cached command reference in the workspace, for example `.github/instructions/backlogit-command-map.md`.
+- Use `backlogit_list_types`, `backlogit_list_templates`, and `backlogit_get_wit_metadata` when you need type-specific field, section, or hierarchy details before creating or updating items.
 
-- **First time working here?** Read the overview resource IMMEDIATELY to learn the workflow
-- **Already familiar?** You should have the overview cached ("## Backlog.md Overview (MCP)")
-- **When to read it**: BEFORE creating tasks, or when you're unsure whether to track work
+- **First time working here?** Call `backlogit_get_metadata_catalog` IMMEDIATELY to learn the active workflow surface.
+- **Already familiar?** Refresh the catalog before creating items if you are unsure whether config or templates changed.
+- **When to read it**: BEFORE creating work items, harvesting stash entries, or when you are unsure how to track work.
 
-These guides cover:
-- Decision framework for when to create tasks
-- Search-first workflow to avoid duplicates
-- Links to detailed guides for task creation, execution, and finalization
-- MCP tools reference
+These tools cover:
+- Search-first workflow support through queue, item, and SQL discovery
+- The configured feature, task, and subtask hierarchy
+- Template sections and type-specific metadata
+- The current backlogit CLI and MCP command surface
 
-You MUST read the overview resource to understand the complete workflow. The information is NOT summarized here.
+You MUST read the metadata catalog or the exported command map before relying on stale workflow assumptions.
 
 </CRITICAL_INSTRUCTION>
 
-<!-- BACKLOG.MD MCP GUIDELINES END -->
+<!-- BACKLOGIT MCP GUIDELINES END -->
 

@@ -1,0 +1,49 @@
+artifact_types:
+  feature:
+    prefix: F
+    name_format: "{prefix}{NNN}"
+    allowed_children:
+      - task
+  task:
+    prefix: T
+    name_format: "{prefix}{NNN}"
+    allowed_children:
+      - subtask
+  subtask:
+    prefix: ST
+    name_format: "{prefix}{NNN}"
+    allowed_children: []
+  bug:
+    prefix: B
+    name_format: "{prefix}{NNN}"
+    allowed_children: []
+fields:
+  status:
+    type: enum
+    values:
+      - queued
+      - active
+      - blocked
+      - review
+      - done
+      - accepted
+      - rejected
+      - archived
+    default: queued
+    optional: false
+    external_map: {}
+max_slug_length: 60
+queue_layout:
+  root_dir: queue
+  levels:
+    - level: 1
+      types:
+        - feature
+    - level: 2
+      types:
+        - task
+    - level: 3
+      types:
+        - subtask
+        - bug
+  name_format: "{NNN}"

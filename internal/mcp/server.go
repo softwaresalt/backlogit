@@ -26,16 +26,17 @@ type Server struct {
 	templateSvc *templates.Service
 	mcp         *mcpserver.MCPServer
 	toolNames   []string
+	toolDefs    []mcplib.Tool
 }
 
 // NewServer creates an MCP server from a workspace.
 func NewServer(ws *core.Workspace) *Server {
 	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
-	eventsPath := filepath.Join(backlogitDir, "events.jsonl")
+	logsDir := filepath.Join(backlogitDir, "logs")
 	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
 		Workspace: ws,
-		Events:    events.NewEventWriter(eventsPath),
+		Events:    events.NewEventWriter(logsDir),
 		Telemetry: events.NewTelemetryWriter(telemetryPath),
 	}
 	s.mcp = mcpserver.NewMCPServer(
@@ -62,6 +63,7 @@ func NewServer(ws *core.Workspace) *Server {
 func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
 	s.mcp.AddTool(tool, handler)
 	s.toolNames = append(s.toolNames, tool.Name)
+	s.toolDefs = append(s.toolDefs, tool)
 }
 
 // RunStdio starts the MCP server on stdio transport.

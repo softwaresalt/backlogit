@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/events"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -165,4 +166,43 @@ func TestSearchItems_MatchesLabels(t *testing.T) {
 	// Assert
 	assert.Len(t, results, 1)
 	assert.Equal(t, "T030", results[0].ID)
+}
+
+func TestIndexEvent_StoresItemLogRelationshipAndSearchableEntry(t *testing.T) {
+	// Arrange
+	database := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	logsDir := filepath.Join(t.TempDir(), "logs")
+
+	event := events.Event{
+		Timestamp: now,
+		Actor:     "alice",
+		ItemID:    "T040",
+		EventType: "comment",
+		Delta: map[string]any{
+			"comment": "investigated the queue migration path",
+		},
+	}
+
+	// Act
+	err := db.IndexEvent(ctx, database, logsDir, event)
+	require.NoError(t, err)
+
+	results, err := db.ListItemLogEntries(ctx, database, "T040", 10)
+	require.NoError(t, err)
+
+	searchResults, err := db.SearchItemLogEntries(ctx, database, "queue migration", 10)
+	require.NoError(t, err)
+
+	// Assert
+	require.Len(t, results, 1)
+	assert.Equal(t, "T040", results[0].ItemID)
+	assert.Equal(t, "alice", results[0].Actor)
+	assert.Equal(t, "comment", results[0].EventType)
+	assert.Contains(t, results[0].LogPath, "logs/T040.jsonl")
+	assert.Equal(t, "investigated the queue migration path", results[0].Delta["comment"])
+
+	require.Len(t, searchResults, 1)
+	assert.Equal(t, "T040", searchResults[0].ItemID)
 }

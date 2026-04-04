@@ -315,7 +315,7 @@ func TestUpdate_SectionContent(t *testing.T) {
 		"description": "Original content",
 	})
 	require.NoError(t, err)
-	_, err = db.Rehydrate(context.Background(), ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 
 	// Act — update only the description section
@@ -340,7 +340,7 @@ func TestUpdate_RejectsInvalidSection(t *testing.T) {
 
 	artifact, err := svc.Create(context.Background(), ws, "Bad update", "task", nil)
 	require.NoError(t, err)
-	_, err = db.Rehydrate(context.Background(), ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 
 	// Act
@@ -369,7 +369,7 @@ func TestGetSection_ExtractsContent(t *testing.T) {
 		"description": expectedContent,
 	})
 	require.NoError(t, err)
-	_, err = db.Rehydrate(context.Background(), ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 
 	// Act
@@ -392,7 +392,7 @@ func TestGetSection_NotFound(t *testing.T) {
 
 	artifact, err := svc.Create(context.Background(), ws, "Missing section", "task", nil)
 	require.NoError(t, err)
-	_, err = db.Rehydrate(context.Background(), ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 
 	// Act

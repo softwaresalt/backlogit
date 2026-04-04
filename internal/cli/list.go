@@ -28,6 +28,14 @@ func newListCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List artifacts in the workspace",
+		Long: `List artifacts from the backlogit index with optional filters.
+
+Use this command for quick operator views, grouped summaries, or JSON output
+that can be piped into other tooling.`,
+		Example: `  backlogit list
+  backlogit list --status active --type task
+  backlogit list --group-by status
+  backlogit list --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)

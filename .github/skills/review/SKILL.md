@@ -45,7 +45,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 - Apply only `safe_auto` findings
 - Leave `gated_auto`, `manual`, and `advisory` findings unresolved
 - Write a review artifact to `.backlog/reviews/`
-- Create backlog tasks for unresolved actionable findings
+- Create backlogit follow-up items for unresolved actionable findings
 - Never commit, push, or create a PR
 
 ### Report-only mode rules
@@ -61,7 +61,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | **P0** | Critical breakage, exploitable vulnerability, data corruption | Block commit |
 | **P1** | High-impact defect in normal usage, breaking contract | Block commit |
-| **P2** | Moderate issue (edge case, perf, maintainability) | Record as backlog task |
+| **P2** | Moderate issue (edge case, perf, maintainability) | Record as a backlogit follow-up item |
 | **P3** | Low-impact, minor improvement | User's discretion |
 
 ## Action Routing
@@ -70,7 +70,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | `safe_auto` | Review skill (autofix mode) | Deterministic local fix |
 | `gated_auto` | agent-intercom approval | Fix exists but changes behavior/contracts |
-| `manual` | Backlog task | Actionable work requiring human judgment |
+| `manual` | Backlogit follow-up item | Actionable work requiring human judgment |
 | `advisory` | Informational | Learnings, rollout notes, residual risk |
 
 Routing rules:
@@ -147,13 +147,30 @@ As each persona returns:
 **Autofix mode:**
 
 1. Apply all `safe_auto` findings automatically
-2. Create backlog tasks for `manual` findings
+2. Create backlogit follow-up items for unresolved actionable findings
 3. Write review artifact
 
 **Report-only mode:**
 
 1. Return structured findings to caller
 2. No edits, no side effects beyond the review artifact
+
+### Step 5a: Log Follow-Up Work in backlogit
+
+For every unresolved actionable finding, log follow-up work in backlogit after the review artifact is written:
+
+1. Call `backlogit_list_types` or `backlogit_get_metadata_catalog` to determine whether the workspace defines a `bug` artifact type.
+2. For each unresolved `manual` finding, and for any `gated_auto` finding that was declined or left unapplied:
+   * Prefer `artifact_type: "bug"` when `bug` is configured.
+   * Otherwise create `artifact_type: "task"` and add a `bug` label so the issue is still tracked explicitly.
+3. Use `backlogit_create_item` with:
+   * `title`: concise defect summary
+   * `description`: finding details, affected files, reproduction or review context, and recommended fix direction
+   * `status: "queued"`
+   * `priority`: map from severity, `P0/P1 -> high`, `P2 -> medium`, `P3 -> low`
+   * `references`: review artifact path plus any affected file paths or PR references
+4. When the reviewed change belongs under a known feature, set `parent_id` to that feature if doing so is safe and unambiguous.
+5. Include the created backlogit item IDs in the final review summary.
 
 ### Step 6: Write Review Artifact
 
@@ -176,7 +193,7 @@ reviewers: [{persona_list}]
 |---|---|---|
 | P0 | {n} | {blocked/fixed/deferred} |
 | P1 | {n} | {blocked/fixed/deferred} |
-| P2 | {n} | {backlog tasks created} |
+| P2 | {n} | {backlogit follow-up items created} |
 | P3 | {n} | {advisory} |
 
 ## Findings
@@ -190,6 +207,10 @@ reviewers: [{persona_list}]
 ## Residual Work
 
 {Findings not resolved in this review session}
+
+## Logged Follow-Up Items
+
+{Backlogit bug or task IDs created for unresolved actionable findings}
 ```
 
 Broadcast the file path when written.

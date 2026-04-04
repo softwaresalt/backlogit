@@ -26,7 +26,7 @@ func TestDeleteCommand_Force(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Delete me", "task")
 	require.NoError(t, err)
-	_, err = db.Rehydrate(ctx, ws.RootPath, ws.DB)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()
 

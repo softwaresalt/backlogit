@@ -24,6 +24,14 @@ func newAddCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a new artifact",
+		Long: `Create a new backlogit artifact in the current workspace.
+
+Artifacts are written as Markdown files under .backlogit\queue or the target
+directory selected by registry routing. Typed hierarchical IDs are assigned
+automatically when the configured queue layout supports the requested type.`,
+		Example: `  backlogit add --type feature --title "Authentication hardening"
+  backlogit add --type task --title "Add token rotation" --status active
+  backlogit add --type subtask --title "Write expiry tests" --section description="Cover refresh and expiry flows"`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if artifactType == "" {
 				return fmt.Errorf("--type is required")
@@ -70,7 +78,7 @@ func newAddCommand(cwd *string) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&artifactType, "type", "", "artifact type (task, bug, epic, …)")
+	cmd.Flags().StringVar(&artifactType, "type", "", "artifact type (feature, task, subtask, …)")
 	cmd.Flags().StringVar(&title, "title", "", "artifact title")
 	cmd.Flags().StringVar(&description, "description", "", "artifact description")
 	cmd.Flags().StringVar(&status, "status", "", "initial status (queued, active, …)")
