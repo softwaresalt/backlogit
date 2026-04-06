@@ -5,23 +5,36 @@ applyTo: '**'
 
 # Workflow Policy Registry
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 
 This registry defines the cross-agent policies that keep the backlogit harness predictable and safe.
+
+## Primary workflow
+
+The primary repository path is now `Groomer -> Shipper` across the lifecycle
+`STASH -> BACKLOG -> SHIPMENT -> SHIPPED`.
+
+* `Groomer` owns stash triage, deliberation, planning, review gating, and
+  harvest into backlog.
+* `Shipper` owns shipment claim, harness generation, implementation, review, CI
+  remediation, and pull request readiness.
+
+Legacy agents remain governed when explicitly invoked, but these policies should
+be read through the Groomer and Shipper path first.
 
 ## P-001: Single-feature completion
 
 | Field      | Value                |
 |------------|----------------------|
 | Policy ID  | P-001                |
-| Applies To | `build-orchestrator` |
+| Applies To | `shipper` |
 | Gate Point | Pre-flight           |
 
-**Statement**: The build orchestrator should finish one feature through a stable handoff before starting work on a different feature.
+**Statement**: The Shipper should finish one shipment through a stable handoff before starting work on a different shipment.
 
-**Precondition**: No backlog tasks with status `active` exist under a different feature unless the operator explicitly overrides the policy.
+**Precondition**: No other shipment with status `active` exists unless the operator explicitly overrides the policy.
 
-**Postcondition**: The current feature's executable work is complete or intentionally paused before a new feature is claimed.
+**Postcondition**: The current shipment's executable work is complete or intentionally paused before a new shipment is claimed.
 
 **Violation action**: Halt and ask for operator direction.
 
@@ -30,10 +43,10 @@ This registry defines the cross-agent policies that keep the backlogit harness p
 | Field      | Value                             |
 |------------|-----------------------------------|
 | Policy ID  | P-002                             |
-| Applies To | `build-orchestrator`, `harness-architect` |
+| Applies To | `shipper`, `harness-architect` |
 | Gate Point | Queue build and task claim        |
 
-**Statement**: The build orchestrator may only claim work after the harness architect confirmed a compilable red phase.
+**Statement**: The Shipper may only advance shipment work after the harness architect confirmed a compilable red phase.
 
 **Precondition**: The task carries the `harness-ready` label.
 
@@ -46,7 +59,7 @@ This registry defines the cross-agent policies that keep the backlogit harness p
 | Field      | Value               |
 |------------|---------------------|
 | Policy ID  | P-003               |
-| Applies To | `backlog-harvester` |
+| Applies To | `groomer`, `backlog-harvester` |
 | Gate Point | Pre-harvest         |
 
 **Statement**: Every decomposition stage must reference its source and parent context before creating backlog items.

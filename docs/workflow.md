@@ -2,7 +2,7 @@
 title: Workflow Guide
 description: Developer and agent workflows with backlogit
 author: backlogit contributors
-ms.date: 2026-04-01
+ms.date: 2026-04-06
 ms.topic: tutorial
 keywords:
   - backlogit
@@ -24,6 +24,50 @@ The lifecycle has six stages:
 4. List and query artifacts with `backlogit list` and `backlogit query`
 5. Update status and metadata with `backlogit update` and `backlogit move`
 6. Archive completed work with `backlogit archive`
+
+## Primary repository workflow
+
+This repository now uses a two-agent delivery path with progressive disclosure.
+`Groomer` owns the intake path from stash to reviewed backlog, and `Shipper`
+owns shipment execution from ready backlog to shipped pull request state. The
+durable lifecycle is `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`.
+
+Use the agent files for operational detail:
+
+* [Groomer](../.github/agents/groomer.agent.md): stash triage, deliberation,
+  planning, review gating, and harvest
+* [Shipper](../.github/agents/shipper.agent.md): shipment claim, harness,
+  implementation, review, CI remediation, and pull request flow
+
+Shipment is a first-class artifact. Use shipment-aware MCP tools to create,
+inspect, and maintain branch scope:
+
+Shipment IDs use the `S` prefix and normally move through `queued`, `active`,
+and `shipped`, with `abandoned` available when execution stops permanently.
+
+```text
+backlogit_create_shipment
+backlogit_get_shipment
+backlogit_list_shipments
+backlogit_claim_shipment
+backlogit_return_blocked
+backlogit_add_to_shipment
+```
+
+## Legacy orchestration path
+
+The older multi-agent path remains available for migration and targeted
+automation, but it is no longer the primary model for this repository.
+
+```text
+deliberate or spike
+-> impl-plan
+-> plan-review
+-> backlog-harvester
+-> harness-architect
+-> build-orchestrator
+-> review or pr-review
+```
 
 ## Developer CLI Workflow
 
@@ -200,6 +244,12 @@ backlogit_update_item  -- change status, title, or other fields
 backlogit_move_item    -- transition an artifact to a new status
 backlogit_search_items -- full-text search across all artifacts
 backlogit_get_queue    -- retrieve the prioritized work queue
+backlogit_create_shipment -- create a shipment artifact
+backlogit_get_shipment -- inspect a shipment by ID
+backlogit_list_shipments -- list shipment artifacts
+backlogit_claim_shipment -- move a queued shipment to active
+backlogit_return_blocked -- return a blocked item from a shipment to backlog
+backlogit_add_to_shipment -- attach backlog items to a shipment
 backlogit_fetch_stash  -- retrieve active stash entries from .stash.md, optionally filtered or grouped by priority, with linked deliberations when present
 backlogit_stash        -- add deferred work to the stash with kind and priority
 backlogit_deliberate   -- create a deliberation artifact linked to a stash entry

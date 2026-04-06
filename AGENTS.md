@@ -108,7 +108,29 @@ surface grows noisy.
 | Backlog workspace | `.backlogit/` |
 | Durable docs and knowledge | `docs/` |
 
+## Primary workflow
+
+The repository now uses a two-agent path:
+
+* `Groomer` owns `STASH -> BACKLOG`. It triages stash entries, routes
+  deliberation and plan review, and harvests shipment-aware backlog.
+* `Shipper` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
+  build, review, CI remediation, and pull request flow until the user approves
+  merge.
+
+Lifecycle summary: `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`
+
+Treat the linked agent files and `docs/workflow.md` as the durable source of
+detail. Keep this file as the brief map.
+
 ## Available agents
+
+| Agent | Purpose |
+|---|---|
+| `groomer` | Primary stash-to-backlog orchestrator |
+| `shipper` | Primary backlog-to-shipped orchestrator |
+
+### Supporting and legacy agents
 
 | Agent | Purpose |
 |---|---|
@@ -122,6 +144,9 @@ surface grows noisy.
 | `memory` | Persist and restore session context via `docs/memory/` |
 | `pr-review` | Manage PR review lifecycle and handoff |
 | `prompt-builder` | Create and refine prompts, agents, instructions, and skills |
+
+Legacy orchestration agents remain available for migration and targeted
+workflows, but they are no longer the primary repository path.
 
 ## Available skills
 
@@ -144,16 +169,21 @@ surface grows noisy.
 
 ```text
 Stash or idea
-	-> deliberate skill or spike skill
-	-> impl-plan skill
-	-> plan-review skill
-	-> backlog-harvester agent
-	-> harness-architect agent
-	-> build-orchestrator agent
-	-> review skill or pr-review agent
-	-> fix-ci skill
-	-> runtime-verification skill
-	-> operational-closure skill
+	-> Groomer
+	   -> deliberate or spike
+	   -> impl-plan
+	   -> plan-review
+	   -> harvest
+	-> ready backlog
+	-> shipment assembly
+	-> Shipper
+	   -> harness-architect
+	   -> build-feature
+	   -> review
+	   -> fix-ci
+	   -> pr-lifecycle
+	-> user-approved merge
+	-> SHIPPED
 ```
 
 ## Quality gates

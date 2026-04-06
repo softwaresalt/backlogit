@@ -5,7 +5,7 @@ maturity: stable
 
 # Backlogit Development Guidelines
 
-Last updated: 2026-04-05
+Last updated: 2026-04-06
 
 backlogit is a highly configurable, file-backed task management and agent
 operating system optimized for AI agent consumption through MCP and developer
@@ -17,6 +17,21 @@ The core design tension is simple: humans want readable, Git-friendly files,
 while agents want surgical, structured queries. backlogit resolves that tension
 through a CQRS architecture where Markdown is the source of truth, SQLite serves
 reads, and JSONL preserves append-only history.
+
+## Primary workflow
+
+The repository now uses a two-agent path:
+
+* `Groomer` owns `STASH -> BACKLOG`. It triages stash entries, routes
+  deliberation and plan review, and harvests shipment-aware backlog.
+* `Shipper` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
+  build, review, CI remediation, and pull request flow until the user approves
+  merge.
+
+Lifecycle summary: `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`
+
+Read `.github/agents/groomer.agent.md`, `.github/agents/shipper.agent.md`, and
+`docs/workflow.md` for the durable workflow map.
 
 ## Technology Stack
 
@@ -41,6 +56,13 @@ its own operational backlog.
 
 | Agent | Purpose |
 |---|---|
+| `groomer` | Primary stash-to-backlog orchestrator |
+| `shipper` | Primary backlog-to-shipped orchestrator |
+
+### Supporting and legacy agents
+
+| Agent | Purpose |
+|---|---|
 | `deliberator` | Routes idea work into deliberate or spike workflows |
 | `backlog-harvester` | Converts plans into backlogit work items |
 | `harness-architect` | Creates compilable but failing harnesses |
@@ -51,6 +73,9 @@ its own operational backlog.
 | `go-engineer` | Applies repository-specific Go standards |
 | `go-mcp-expert` | Advises on Go MCP server implementation |
 | `prompt-builder` | Maintains prompts, agents, instructions, and skills |
+
+Treat `backlog-harvester`, `build-orchestrator`, and `pr-review` as legacy or
+supporting surfaces unless the operator explicitly asks for the older path.
 
 ### Core skills
 
