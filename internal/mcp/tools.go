@@ -266,6 +266,52 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleDeliberate,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_create_shipment",
+			mcplib.WithDescription("Create a new shipment artifact"),
+			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Shipment title")),
+			mcplib.WithString("items", mcplib.Description("Optional comma-separated item IDs")),
+		),
+		s.handleCreateShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_shipment",
+			mcplib.WithDescription("Get a shipment by ID"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+		),
+		s.handleGetShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_list_shipments",
+			mcplib.WithDescription("List shipments with an optional status filter"),
+			mcplib.WithString("status", mcplib.Description("Optional shipment status filter")),
+		),
+		s.handleListShipments,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_claim_shipment",
+			mcplib.WithDescription("Move a queued shipment to active"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+		),
+		s.handleClaimShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_return_blocked",
+			mcplib.WithDescription("Return a blocked item from a shipment"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason the item is blocked")),
+		),
+		s.handleReturnBlocked,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_add_to_shipment",
+			mcplib.WithDescription("Add an item to a shipment"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
+		),
+		s.handleAddToShipment,
+	)
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1022,4 +1068,173 @@ func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRe
 		return domainError("create deliberation", err), nil
 	}
 	return toolResultJSON(result)
+}
+
+func (s *Server) handleCreateShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	title, _ := request.Params.Arguments["title"].(string)
+	if title == "" {
+		return ValidationFailed("title is required"), nil
+	}
+
+	items, _ := request.Params.Arguments["items"].(string)
+	logger.Info("shipment tool invoked", "tool", "backlogit_create_shipment", "title", title)
+
+	shipment, err := core.CreateShipment(ctx, s.Workspace, title, splitCommaSeparated(items))
+	if err != nil {
+		return domainError("create shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_get_shipment", "shipment_id", id)
+
+	shipment, err := core.GetShipment(ctx, s.Workspace, id)
+	if err != nil {
+		return domainError("get shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	status, _ := request.Params.Arguments["status"].(string)
+	logger.Info("shipment tool invoked", "tool", "backlogit_list_shipments", "status", status)
+
+	shipments, err := db.QueryItems(ctx, s.Workspace.DB, db.QueryFilters{
+		Type:   "shipment",
+		Status: status,
+	})
+	if err != nil {
+		return InternalError(fmt.Sprintf("list shipments: %v", err)), nil
+	}
+	return toolResultJSON(shipments)
+}
+
+func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_claim_shipment", "shipment_id", id)
+
+	if err := core.MoveShipmentStatus(ctx, s.Workspace, id, core.ShipmentActive); err != nil {
+		return domainError("claim shipment", err), nil
+	}
+
+	shipment, err := core.GetShipment(ctx, s.Workspace, id)
+	if err != nil {
+		return domainError("get claimed shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleReturnBlocked(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	shipmentID, _ := request.Params.Arguments["shipment_id"].(string)
+	if shipmentID == "" {
+		return ValidationFailed("shipment_id is required"), nil
+	}
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	if reason == "" {
+		return ValidationFailed("reason is required"), nil
+	}
+
+	logger.Info(
+		"shipment tool invoked",
+		"tool", "backlogit_return_blocked",
+		"shipment_id", shipmentID,
+		"item_id", itemID,
+	)
+
+	if err := core.ReturnBlockedItem(ctx, s.Workspace, shipmentID, itemID, reason); err != nil {
+		return domainError("return blocked item", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"shipment_id": shipmentID,
+		"item_id":     itemID,
+		"item_status": "blocked",
+		"reason":      reason,
+	})
+}
+
+func (s *Server) handleAddToShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	if !dirExists(backlogitDir) {
+		return WorkspaceNotInitialized(), nil
+	}
+
+	shipmentID, _ := request.Params.Arguments["shipment_id"].(string)
+	if shipmentID == "" {
+		return ValidationFailed("shipment_id is required"), nil
+	}
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+
+	logger.Info(
+		"shipment tool invoked",
+		"tool", "backlogit_add_to_shipment",
+		"shipment_id", shipmentID,
+		"item_id", itemID,
+	)
+
+	if err := core.AddItemToShipment(ctx, s.Workspace, shipmentID, itemID); err != nil {
+		return domainError("add item to shipment", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"shipment_id": shipmentID,
+		"item_id":     itemID,
+		"status":      "added",
+	})
+}
+
+func splitCommaSeparated(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }

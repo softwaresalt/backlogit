@@ -22,8 +22,8 @@ func NewRootCommand() *cobra.Command {
 	var logLevel string
 
 	root := &cobra.Command{
-		Use:          "backlogit",
-		Short:        "Backlogit — AI-native agile workspace",
+		Use:   "backlogit",
+		Short: "Backlogit — AI-native agile workspace",
 		Long: `backlogit manages a project-local work item workspace under .backlogit.
 
 It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
@@ -66,6 +66,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewDepCmd())
 	root.AddCommand(NewQueueCmd())
 	root.AddCommand(NewStashCmd(&cwd))
+	root.AddCommand(NewShipmentCmd())
 	root.AddCommand(newDeliberateCommand(&cwd))
 	root.AddCommand(NewMetadataCmd(&cwd))
 	root.AddCommand(newArchiveCommand(&cwd))
