@@ -23,7 +23,7 @@ func newSearchCommand(cwd *string) *cobra.Command {
 Use this when you want quick keyword lookup without writing SQL.`,
 		Example: `  backlogit search authentication
   backlogit search "token rotation" --limit 10`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]
 			ctx := context.Background()

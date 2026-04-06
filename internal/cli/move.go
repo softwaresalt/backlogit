@@ -21,7 +21,7 @@ func newMoveCommand(cwd *string) *cobra.Command {
 routing rules.`,
 		Example: `  backlogit move T001 --status review
   backlogit move F001 --status done`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if status == "" {
 				return fmt.Errorf("--status is required")

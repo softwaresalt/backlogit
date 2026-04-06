@@ -38,7 +38,7 @@ replacing the rest of the document body.`,
   backlogit update T001 --priority high
   backlogit update F001 --section goals="Ship passwordless sign-in"
   backlogit update F001 --harness-status passing`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idFlag != "" {
 				return fmt.Errorf("field \"id\" is immutable and cannot be changed")

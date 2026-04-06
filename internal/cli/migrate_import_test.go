@@ -208,4 +208,3 @@ Imported body
 	}))
 	assert.Len(t, markdownFiles, 7, "expected config templates plus exactly one imported artifact markdown file")
 }
-

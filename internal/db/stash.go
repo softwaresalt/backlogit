@@ -102,10 +102,10 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 	var records []StashRecord
 	for rows.Next() {
 		var (
-			record                StashRecord
-			updatedAt             string
-			deliberationID        sql.NullString
-			itemID, linked        sql.NullString
+			record         StashRecord
+			updatedAt      string
+			deliberationID sql.NullString
+			itemID, linked sql.NullString
 		)
 		if err := rows.Scan(&record.ID, &record.Priority, &record.Kind, &record.Text, &deliberationID, &record.State, &record.SourcePath, &updatedAt, &itemID, &linked); err != nil {
 			return nil, fmt.Errorf("scan stash entry: %w", err)

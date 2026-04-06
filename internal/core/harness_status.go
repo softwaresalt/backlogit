@@ -16,8 +16,8 @@ type StatusTransitionRule struct {
 
 // StatusConfig holds the complete status configuration for the workspace.
 type StatusConfig struct {
-	ValidStatuses []string                         `json:"valid_statuses" yaml:"valid_statuses"`
-	Transitions   []StatusTransitionRule           `json:"transitions"    yaml:"transitions"`
+	ValidStatuses []string                          `json:"valid_statuses" yaml:"valid_statuses"`
+	Transitions   []StatusTransitionRule            `json:"transitions"    yaml:"transitions"`
 	TypeOverrides map[string][]StatusTransitionRule `json:"type_overrides,omitempty" yaml:"type_overrides,omitempty"`
 }
 
