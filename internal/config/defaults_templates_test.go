@@ -34,9 +34,9 @@ func TestWriteDefaults_CreatesTemplates(t *testing.T) {
 	templatesDir := filepath.Join(dir, "templates")
 	templates, err := config.LoadTemplates(templatesDir)
 
-	// Assert — initial default types
+	// Assert — default types including shipment
 	require.NoError(t, err)
-	assert.Len(t, templates, 5)
+	assert.Len(t, templates, 6)
 }
 
 func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
@@ -53,8 +53,8 @@ func TestWriteDefaults_AllTemplateTypesPresent(t *testing.T) {
 		types[tmpl.ArtifactType] = true
 	}
 
-	// Assert — initial default types only
-	expectedTypes := []string{"feature", "deliberation", "task", "review", "subtask"}
+	// Assert — default types including shipment
+	expectedTypes := []string{"feature", "deliberation", "task", "review", "subtask", "shipment"}
 	for _, typeName := range expectedTypes {
 		assert.True(t, types[typeName], "missing template for type: %s", typeName)
 	}
