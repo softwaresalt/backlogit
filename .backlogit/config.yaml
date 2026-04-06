@@ -5,6 +5,9 @@ artifact_types:
     allowed_children:
       - task
       - review
+  deliberation:
+    prefix: DL
+    name_format: "{prefix}{NNN}"
   task:
     prefix: T
     name_format: "{prefix}{NNN}"
@@ -45,6 +48,7 @@ queue_layout:
     - level: 1
       types:
         - feature
+        - deliberation
     - level: 2
       types:
         - task

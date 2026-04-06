@@ -11,6 +11,12 @@ var (
 	ErrMigration   = errors.New("backlogit: migration error")
 	ErrMCP         = errors.New("backlogit: mcp error")
 	ErrNotFound    = errors.New("backlogit: not found")
+
+	// Shipment sentinel errors (F015 / T002 / ST011).
+	ErrShipmentNotFound    = errors.New("backlogit: shipment not found")
+	ErrItemAlreadyAssigned = errors.New("backlogit: item already assigned to a shipment")
+	ErrShipmentConflict    = errors.New("backlogit: shipment status conflict")
+	ErrCannotReturnItem    = errors.New("backlogit: cannot return item from shipment")
 )
 
 // ConfigError wraps a configuration failure with field context.

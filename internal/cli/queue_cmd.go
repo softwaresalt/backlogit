@@ -46,10 +46,14 @@ func NewQueueViewCmd() *cobra.Command {
 			defer ws.Close()
 
 			filter := &core.QueueFilter{
-				Types:   []string{artifactType},
-				Statuses: []string{status},
 				GroupBy: groupBy,
 				SortBy:  sortBy,
+			}
+			if artifactType != "" {
+				filter.Types = []string{artifactType}
+			}
+			if status != "" {
+				filter.Statuses = []string{status}
 			}
 			view, err := core.QueryQueue(ctx, ws.DB, filter)
 			if err != nil {
@@ -72,10 +76,10 @@ func NewQueueMoveCmd() *cobra.Command {
 	var position int
 
 	cmd := &cobra.Command{
-		Use:   "move <item-id>",
-		Short: "Reorder an item in the queue",
+		Use:     "move <item-id>",
+		Short:   "Reorder an item in the queue",
 		Example: `  backlogit queue move T001 --position 1`,
-		Args:  cobra.ExactArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, ".")
@@ -100,8 +104,8 @@ func NewQueueBulkStatusCmd() *cobra.Command {
 	var ids, status string
 
 	cmd := &cobra.Command{
-		Use:   "bulk-status",
-		Short: "Update status for multiple items",
+		Use:     "bulk-status",
+		Short:   "Update status for multiple items",
 		Example: `  backlogit queue bulk-status --ids T001,T002,T003 --status active`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ids == "" {

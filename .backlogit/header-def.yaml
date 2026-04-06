@@ -34,6 +34,18 @@ types:
           - failing
         default: pending
         optional: true
+  deliberation:
+    prefix: DL
+    id_format: "{prefix}{NNN}"
+    fields:
+      priority:
+        type: enum
+        values:
+          - low
+          - medium
+          - high
+          - critical
+        default: medium
   task:
     prefix: T
     id_format: "{prefix}{NNN}"

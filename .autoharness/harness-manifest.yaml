@@ -1,0 +1,131 @@
+schema_version: "1.0.0"
+installed_at: "2026-04-05T18:35:34.2669821Z"
+tuned_at: "2026-04-05T18:53:02.3114814Z"
+autoharness_version: "1.0.0"
+autoharness_home: "d:\\Source\\GitHub\\autoharness"
+profile_hash: "267c8ca6ccfcb790921db09641dcb23e67040d858c07345a4239dc39660a6e93"
+config_hash: "9e7e829367b4cb021a0becfac6a85aced97edef8e5e0917d5633149d6476b6b9"
+install_preset: full
+capability_packs:
+  - backlogit
+capability_pack_overlays:
+  - pack: backlogit
+    overlay_targets:
+      - backlog registry
+      - workspace backlog configuration
+      - workspace deliberation template
+      - foundation guidance docs
+      - agent definitions
+      - instruction files
+      - policy files
+      - skill workflows
+    verification_checks:
+      - "Deliberation artifact type exists in .backlogit/config.yaml"
+      - "Deliberation schema exists in .backlogit/header-def.yaml"
+      - "Deliberation template exists in .backlogit/templates/deliberation.md"
+      - "Deliberator agent exists in .github/agents/"
+      - "Backlogit workflow instructions exist in .github/instructions/"
+      - "Generic backlog integration instructions exist in .github/instructions/"
+      - "Foundation guidance exists in AGENTS.md and .github/copilot-instructions.md"
+      - "Spike, safety, runtime verification, and operational closure skills exist in .github/skills/"
+primitives_installed:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+artifacts:
+  - path: ".autoharness/backlog-registry.yaml"
+    primitive: 9
+    template: "templates/backlog/registries/backlogit.registry.yaml"
+    checksum: "00cabc35b7b4f9b76b276a75cfa214ff5a8352d676f2ce6c4554712dba262eb3"
+  - path: ".github/agents/deliberator.agent.md"
+    primitive: 4
+    template: "templates/agents/deliberator.agent.md.tmpl"
+    checksum: "65384a3b7c2887aeb91a9110529ccbee001bb15de5392923a78e1c91481e2172"
+  - path: ".github/instructions/backlogit.instructions.md"
+    primitive: 6
+    template: "templates/instructions/backlogit.instructions.md.tmpl"
+    checksum: "3f901f79168d85d3d2fbbc677df8d1ad14a4d05716c45faf9709350a682a6cc8"
+  - path: ".github/instructions/architecture-doc.instructions.md"
+    primitive: 9
+    template: "templates/instructions/architecture-doc.instructions.md.tmpl"
+    checksum: "13abaa41ec9f8424d89c5983cd25108c1f5658fcd7a3091d08a8f2da3bdc804b"
+  - path: ".github/instructions/backlog-integration.instructions.md"
+    primitive: 6
+    template: "templates/instructions/backlog-integration.instructions.md.tmpl"
+    checksum: "32e86231d699cfac8a9c90753099926f7750c465a028215bc5b956cb8e0da7b9"
+  - path: ".github/policies/workflow-policies.md"
+    primitive: 8
+    template: "templates/policies/workflow-policies.md.tmpl"
+    checksum: "ebe6d731cacb7288d6c5de7a94dd7093db51f4452345a57ff973414c69160d69"
+  - path: ".github/skills/spike/SKILL.md"
+    primitive: 4
+    template: "templates/skills/spike/SKILL.md.tmpl"
+    checksum: "b9de014773566abd57ac03b73951b9421c8e10d60ff572a3b704e463d215f944"
+  - path: ".github/skills/runtime-verification/SKILL.md"
+    primitive: 10
+    template: "templates/skills/runtime-verification/SKILL.md.tmpl"
+    checksum: "def02c59f5e0846a8d1f9c0c38826a8b5dc3b61e5938b6698709a30973fae313"
+  - path: ".github/skills/operational-closure/SKILL.md"
+    primitive: 10
+    template: "templates/skills/operational-closure/SKILL.md.tmpl"
+    checksum: "93269c38cad3923b21a7fa4a4aeea1b94f5026a1ffeb2e3a33f261a4c80bf2ca"
+  - path: ".github/skills/safety-modes/SKILL.md"
+    primitive: 5
+    template: "templates/skills/safety-modes/SKILL.md.tmpl"
+    checksum: "5590a54941bebcbe362fc847ab111ddacd15c9f0ed3222148cb84b3d246a6dba"
+  - path: ".backlogit/config.yaml"
+    primitive: 2
+    template: "workspace merge install"
+    checksum: "3dcd097c99ff64188439db1b2f10f9ec9ce24755fef9233ed95f32f69046716a"
+  - path: ".backlogit/header-def.yaml"
+    primitive: 2
+    template: "workspace merge install"
+    checksum: "8d0441b0964fcd8a4536070960e6c0763599a7680a6a72e6f40171c993277a36"
+  - path: ".backlogit/templates/deliberation.md"
+    primitive: 1
+    template: "workspace deliberation template"
+    checksum: "9e84be08edf26738df345c4a49e43caeca30276d6e5a25ecaa268b3818bfb25d"
+  - path: "AGENTS.md"
+    primitive: 9
+    template: "templates/foundation/AGENTS.md.tmpl"
+    checksum: "7bfac499cf7afc270b398191a071c92204f1f51876d031d569acfb4f4ed5b4ba"
+  - path: ".github/copilot-instructions.md"
+    primitive: 6
+    template: "templates/foundation/copilot-instructions.md.tmpl"
+    checksum: "51dffef83966913b782ef1b3151c50623de5e858b1639823aacdd80270aed17e"
+variables_used:
+  INSTALL_PRESET: "full"
+  CAPABILITY_PACKS: "backlogit"
+  BACKLOG_TOOL_NAME: "backlogit"
+  BACKLOG_DIRECTORY: ".backlogit"
+  PREFIX_FEATURE: "F"
+  PREFIX_TASK: "T"
+  PREFIX_DELIBERATION: "DL"
+  PREFIX_REVIEW: "R"
+  PREFIX_BUG: "B"
+  PREFIX_SUBTASK: "ST"
+  DOCS_ROOT: "docs"
+  DOCS_COMPOUND_DIR: "compound"
+  DOCS_PLANS_DIR: "exec-plans"
+  DOCS_DECISIONS_DIR: "decisions"
+  DOCS_MEMORY_DIR: "memory"
+  DOCS_CLOSURE_DIR: "closure"
+  DOCS_DESIGN_DOCS_DIR: "design-docs"
+  DOCS_PRODUCT_SPECS_DIR: "product-specs"
+  MODEL_ROUTING_TIER1: "Claude Haiku 4.5"
+  MODEL_ROUTING_TIER2: "Claude Sonnet 4.6"
+  MODEL_ROUTING_TIER3: "Claude Opus 4.6"
+tuning_history:
+  - at: "2026-04-05T18:53:02.3114814Z"
+    summary: "Adopted remaining worthwhile foundation drift by merging root guidance docs and generic backlog abstraction instructions into backlogit."
+    artifacts:
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".github/instructions/backlog-integration.instructions.md"

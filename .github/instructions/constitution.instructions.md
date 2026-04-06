@@ -111,41 +111,60 @@ binary download.
 
 ### VII. CQRS Data Architecture (NON-NEGOTIABLE)
 
-backlogit MUST maintain strict separation between its three storage
+backlogit MUST maintain strict separation between its four storage
 layers:
 
 1. **Markdown files** (source of truth): Individual `.md` files
-   with YAML frontmatter store current state. These files MUST
-   contain only the current state and description; no history,
-   comments, or agent traces.
+   with YAML frontmatter store current state for durable artifacts.
+   These files MUST contain only the current state and description;
+   no history, comments, or agent traces. The deliberation process
+   converts transient ideas into durable Markdown artifacts.
 2. **SQLite cache** (query engine): The `index.db` is ephemeral,
    gitignored, and disposable. The rehydration engine MUST be able
-   to rebuild it entirely from the Markdown files at any time.
+   to rebuild it entirely from the Markdown files and JSONL queues
+   at any time.
 3. **JSONL streams** (event history): `events.jsonl` captures
    state changes and comments. `telemetry.jsonl` captures agent
    metrics. Both are append-only.
+4. **JSONL queues** (transient intake): Data that has not yet
+   graduated into a durable artifact MAY be stored as JSONL. The
+   stash is the canonical example: entries are transient ideas on
+   their way to becoming artifacts through the deliberation
+   process. JSONL queues are Git-tracked, append-friendly, and
+   machine-parseable, but they are not sources of truth. An entry
+   in a JSONL queue becomes a source of truth only when
+   deliberation or another promotion workflow produces a Markdown
+   artifact from it.
 
 **Rationale**: This architecture allows humans to work with readable
 Markdown files in Git while agents query the SQLite cache for
 token-efficient lookups. The JSONL streams provide audit history
-without polluting the Markdown source of truth. The ephemeral
-cache ensures no data loss if `index.db` is deleted or corrupted.
+without polluting the Markdown source of truth. JSONL queues give
+transient, high-churn data a format optimized for append and
+machine parsing without pretending it has the durability guarantees
+of a Markdown artifact. The ephemeral cache ensures no data loss
+if `index.db` is deleted or corrupted.
 
 ### VIII. Git-Friendly Persistence
 
-All workspace state in `.backlogit/` MUST be serializable to
-human-readable, Git-mergeable files. Markdown with YAML frontmatter
-is the canonical format for artifacts. No binary files in
-`.backlogit/` (except the gitignored `index.db`). File formats MUST
-minimize merge conflicts (sorted YAML keys, stable field ordering
-in frontmatter, deterministic slug generation). File writes MUST
-use atomic temp-file-then-rename to prevent corruption.
+All durable workspace state in `.backlogit/` MUST be serializable
+to human-readable, Git-mergeable files. Markdown with YAML
+frontmatter is the canonical format for artifacts. JSONL queues
+(such as the stash) are Git-tracked and append-friendly but hold
+transient data that has not yet graduated into artifacts. No binary
+files in `.backlogit/` (except the gitignored `index.db`). File
+formats MUST minimize merge conflicts (sorted YAML keys, stable
+field ordering in frontmatter, deterministic slug generation,
+one-JSON-object-per-line for JSONL). File writes MUST use atomic
+temp-file-then-rename to prevent corruption.
 
 **Rationale**: Workspace state travels with the codebase in Git.
 Human-readable files enable code review of agent-managed state,
 conflict resolution during merges, and manual editing when needed.
-Atomic writes prevent half-written state from corrupting the
-workspace during crashes or concurrent access.
+JSONL queues trade some human readability for append efficiency on
+high-churn transient data that will be promoted to Markdown once
+it matures. Atomic writes prevent half-written state from
+corrupting the workspace during crashes or concurrent access.
 
 ### IX. Agent Context Efficiency
 
@@ -224,4 +243,4 @@ verify compliance with these principles.
   with the specific principle violated, the justification, and the
   simpler alternative that was rejected.
 
-**Version**: 2.0.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-03-29
+**Version**: 2.1.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-04-05
