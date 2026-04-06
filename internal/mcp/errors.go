@@ -31,6 +31,16 @@ func ValidationFailed(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("validation_failed", detail)
 }
 
+// NotFound returns an MCP error for missing resources.
+func NotFound(detail string) *mcplib.CallToolResult {
+	return makeErrorResult("not_found", detail)
+}
+
+// Conflict returns an MCP error for state conflicts.
+func Conflict(detail string) *mcplib.CallToolResult {
+	return makeErrorResult("conflict", detail)
+}
+
 // InternalError returns an MCP error for internal failures.
 func InternalError(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("internal", detail)
@@ -40,8 +50,14 @@ func InternalError(detail string) *mcplib.CallToolResult {
 // all other errors to InternalError. op is a short description prepended to
 // InternalError messages to aid diagnosis.
 func domainError(op string, err error) *mcplib.CallToolResult {
-	if errors.Is(err, corerrors.ErrNotFound) || errors.Is(err, corerrors.ErrValidation) {
+	switch {
+	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound):
+		return NotFound(err.Error())
+	case errors.Is(err, corerrors.ErrShipmentConflict), errors.Is(err, corerrors.ErrItemAlreadyAssigned), errors.Is(err, corerrors.ErrCannotReturnItem):
+		return Conflict(err.Error())
+	case errors.Is(err, corerrors.ErrValidation):
 		return ValidationFailed(err.Error())
+	default:
+		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}
-	return InternalError(fmt.Sprintf("%s: %v", op, err))
 }

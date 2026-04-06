@@ -1,15 +1,31 @@
+---
+name: shipment-template
+type: shipment
+description: "A shipment artifact representing a branch and pull request scope"
+sections:
+  - name: description
+    required: true
+    description: "Detailed description of the shipment scope"
+  - name: items
+    required: false
+    description: "Work items included in this shipment"
+  - name: blocked-returns
+    required: false
+    description: "Items removed from the shipment and returned to backlog"
+---
+# {title}
+
 ## Description
 
-Brief description of what this shipment contains and its purpose.
+<!-- BEGIN:description -->
+<!-- END:description -->
 
 ## Items
 
-List the backlog items included in this shipment:
-
-- [ ] Item ID: description
+<!-- BEGIN:items -->
+<!-- END:items -->
 
 ## Blocked Returns
 
-Items that were returned as blocked during this shipment:
-
-- None
+<!-- BEGIN:blocked-returns -->
+<!-- END:blocked-returns -->

@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/backlogit/backlogit/internal/config"
 	bldb "github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/events"
@@ -35,9 +39,9 @@ const (
 // the items list, set status to queued, generate ID with S prefix, write to queue
 // directory, and upsert into the database index.
 func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string) (*models.Artifact, error) {
-	items := append([]string(nil), itemIDs...)
-	if items == nil {
-		items = []string{}
+	items := uniqueNonEmptyStrings(itemIDs)
+	if err := validateShipmentItemIDs(ctx, ws, "", items); err != nil {
+		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}
 
 	shipment, err := CreateArtifact(ctx, ws, title, "shipment", WithFields(map[string]any{"items": items}))
@@ -126,22 +130,12 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 		return err
 	}
 
-	shipments, err := bldb.QueryItems(ctx, ws.DB, bldb.QueryFilters{Type: "shipment", IncludeArchived: true})
-	if err != nil {
-		return fmt.Errorf("list shipments: %w", err)
-	}
-	for _, existing := range shipments {
-		if existing.ID == shipmentID || existing.Status == models.StatusAbandoned {
-			continue
-		}
-		if containsString(shipmentItems(existing), itemID) {
-			return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, blerrors.ErrItemAlreadyAssigned)
-		}
-	}
-
 	items := shipmentItems(shipment)
 	if containsString(items, itemID) {
 		return nil
+	}
+	if err := validateShipmentItemIDs(ctx, ws, shipmentID, []string{itemID}); err != nil {
+		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, err)
 	}
 
 	items = append(items, itemID)
@@ -184,6 +178,8 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	if err != nil {
 		return fmt.Errorf("load item %s: %w", itemID, err)
 	}
+	originalShipment := cloneArtifact(shipment)
+	originalItem := cloneArtifact(item)
 
 	if shipment.CustomFields == nil {
 		shipment.CustomFields = map[string]any{}
@@ -198,11 +194,8 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	item.CustomFields["blocked_reason"] = reason
 	item.UpdatedAt = time.Now()
 
-	if err := persistArtifact(ctx, ws, shipment, false); err != nil {
-		return fmt.Errorf("update shipment %s: %w", shipmentID, err)
-	}
-	if err := persistArtifact(ctx, ws, item, true); err != nil {
-		return fmt.Errorf("update item %s: %w", itemID, err)
+	if err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, shipment, originalItem, item); err != nil {
+		return err
 	}
 
 	slog.InfoContext(ctx, "shipment item returned blocked", "shipment_id", shipmentID, "item_id", itemID)
@@ -269,7 +262,10 @@ func loadArtifact(ctx context.Context, ws *Workspace, id string) (*models.Artifa
 
 	artifact, findErr := findArtifact(ctx, ws, id)
 	if findErr != nil {
-		return nil, fmt.Errorf("load artifact %s: %w", id, blerrors.ErrNotFound)
+		if errors.Is(findErr, blerrors.ErrNotFound) {
+			return nil, fmt.Errorf("load artifact %s: %w", id, blerrors.ErrNotFound)
+		}
+		return nil, fmt.Errorf("load artifact %s: %w", id, findErr)
 	}
 	if upsertErr := bldb.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
 		return nil, fmt.Errorf("upsert artifact %s: %w", id, upsertErr)
@@ -289,23 +285,133 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 		return fmt.Errorf("validate artifact: %w", err)
 	}
 
-	filePath, err := FindArtifactPath(ctx, ws, artifact.ID)
+	currentPath, targetPath, err := resolveArtifactPersistPaths(ctx, ws, artifact, relocate)
 	if err != nil {
-		return fmt.Errorf("find artifact path: %w", err)
+		return err
 	}
-	if relocate {
-		filePath, err = RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status))
-		if err != nil {
-			return fmt.Errorf("relocate artifact: %w", err)
+
+	if currentPath != targetPath {
+		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("clear target artifact path: %w", err)
 		}
 	}
-	if err := WriteArtifactFile(artifact, filePath); err != nil {
+	if err := WriteArtifactFile(artifact, targetPath); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
+	}
+	if currentPath != targetPath {
+		if err := os.Remove(currentPath); err != nil {
+			cleanupErr := os.Remove(targetPath)
+			if cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+				return fmt.Errorf("remove old artifact file: %w; cleanup new artifact file: %v", err, cleanupErr)
+			}
+			return fmt.Errorf("remove old artifact file: %w", err)
+		}
 	}
 	if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
 		return fmt.Errorf("upsert item: %w", err)
 	}
 	return nil
+}
+
+func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) (string, string, error) {
+	currentPath, err := FindArtifactPath(ctx, ws, artifact.ID)
+	if err != nil {
+		return "", "", fmt.Errorf("find artifact path: %w", err)
+	}
+	if !relocate {
+		return currentPath, currentPath, nil
+	}
+
+	backlogitDir := WorkspaceStorageRoot(ws.RootPath)
+	registry, err := config.LoadRegistry(backlogitDir)
+	if err != nil {
+		return "", "", fmt.Errorf("load registry: %w", err)
+	}
+	targetDir := ResolveTargetDir(registry, artifact.ArtifactType, string(artifact.Status))
+
+	currentRel, err := filepath.Rel(backlogitDir, filepath.Dir(currentPath))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve relative path: %w", err)
+	}
+	if filepath.Clean(currentRel) == filepath.Clean(targetDir) {
+		return currentPath, currentPath, nil
+	}
+
+	targetDirAbs := filepath.Join(backlogitDir, targetDir)
+	if err := os.MkdirAll(targetDirAbs, 0o755); err != nil {
+		return "", "", fmt.Errorf("create directory %s: %w", targetDirAbs, err)
+	}
+	targetPath := filepath.Join(targetDirAbs, filepath.Base(currentPath))
+	return currentPath, targetPath, nil
+}
+
+func persistReturnedBlockedArtifacts(ctx context.Context, ws *Workspace, originalShipment, updatedShipment, originalItem, updatedItem *models.Artifact) error {
+	if err := persistArtifact(ctx, ws, updatedShipment, false); err != nil {
+		return fmt.Errorf("update shipment %s: %w", updatedShipment.ID, err)
+	}
+	if err := persistArtifact(ctx, ws, updatedItem, true); err != nil {
+		if rollbackErr := rollbackReturnedBlockedArtifacts(ctx, ws, originalShipment, originalItem); rollbackErr != nil {
+			return fmt.Errorf("update item %s: %w; rollback failed: %w", updatedItem.ID, err, rollbackErr)
+		}
+		return fmt.Errorf("update item %s: %w", updatedItem.ID, err)
+	}
+	return nil
+}
+
+func rollbackReturnedBlockedArtifacts(ctx context.Context, ws *Workspace, originalShipment, originalItem *models.Artifact) error {
+	var rollbackErrs []error
+	if err := persistArtifact(ctx, ws, originalItem, false); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("restore item %s: %w", originalItem.ID, err))
+	}
+	if err := persistArtifact(ctx, ws, originalShipment, false); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("restore shipment %s: %w", originalShipment.ID, err))
+	}
+	return errors.Join(rollbackErrs...)
+}
+
+func validateShipmentItemIDs(ctx context.Context, ws *Workspace, currentShipmentID string, itemIDs []string) error {
+	normalizedIDs := uniqueNonEmptyStrings(itemIDs)
+	if len(normalizedIDs) == 0 {
+		return nil
+	}
+
+	shipments, err := bldb.QueryItems(ctx, ws.DB, bldb.QueryFilters{Type: "shipment", IncludeArchived: true})
+	if err != nil {
+		return fmt.Errorf("list shipments: %w", err)
+	}
+
+	activeAssignments := make(map[string]string)
+	for _, existing := range shipments {
+		if existing.ID == currentShipmentID || !shipmentStatusBlocksAssignment(existing.Status) {
+			continue
+		}
+		for _, assignedItemID := range shipmentItems(existing) {
+			activeAssignments[assignedItemID] = existing.ID
+		}
+	}
+
+	for _, itemID := range normalizedIDs {
+		if itemID == currentShipmentID {
+			return fmt.Errorf("shipment %s cannot include itself: %w", currentShipmentID, blerrors.ErrValidation)
+		}
+
+		artifact, loadErr := loadArtifact(ctx, ws, itemID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if artifact.ArtifactType == "shipment" {
+			return fmt.Errorf("artifact %s is a shipment and cannot be nested in a shipment: %w", itemID, blerrors.ErrValidation)
+		}
+		if assignedShipmentID, ok := activeAssignments[itemID]; ok {
+			return fmt.Errorf("item %s already assigned to shipment %s: %w", itemID, assignedShipmentID, blerrors.ErrItemAlreadyAssigned)
+		}
+	}
+
+	return nil
+}
+
+func shipmentStatusBlocksAssignment(status models.ArtifactStatus) bool {
+	return status != models.StatusAbandoned && status != models.StatusShipped
 }
 
 func removeString(values []string, target string) []string {
@@ -342,4 +448,39 @@ func shipmentItems(artifact *models.Artifact) []string {
 	default:
 		return []string{}
 	}
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func cloneArtifact(artifact *models.Artifact) *models.Artifact {
+	if artifact == nil {
+		return nil
+	}
+
+	clone := *artifact
+	clone.Labels = append([]string(nil), artifact.Labels...)
+	clone.Dependencies = append([]string(nil), artifact.Dependencies...)
+	clone.References = append([]string(nil), artifact.References...)
+	if artifact.CustomFields != nil {
+		clone.CustomFields = maps.Clone(artifact.CustomFields)
+	}
+	return &clone
 }

@@ -101,7 +101,7 @@ func resolveWorkspaceRoot(rootPath string) (string, error) {
 
 	entries, err := os.ReadDir(cleanRoot)
 	if err != nil {
-		return cleanRoot, nil
+		return "", fmt.Errorf("read workspace root %s: %w", cleanRoot, err)
 	}
 
 	var matches []string

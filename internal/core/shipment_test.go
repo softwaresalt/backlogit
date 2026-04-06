@@ -5,11 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/config"
+	blerrors "github.com/backlogit/backlogit/internal/errors"
+	"github.com/backlogit/backlogit/internal/models"
 )
 
 // setupShipmentWorkspace creates a temp workspace directory with minimal config for
@@ -33,9 +36,13 @@ func TestCreateShipment_Success(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
+	taskOne, err := CreateArtifact(ctx, ws, "Shipment task 1", "task")
+	require.NoError(t, err)
+	taskTwo, err := CreateArtifact(ctx, ws, "Shipment task 2", "task")
+	require.NoError(t, err)
 
 	// Act
-	shipment, err := CreateShipment(ctx, ws, "Sprint 1 delivery", []string{"T001", "T002"})
+	shipment, err := CreateShipment(ctx, ws, "Sprint 1 delivery", []string{taskOne.ID, taskTwo.ID})
 
 	// Assert
 	require.NoError(t, err)
@@ -44,6 +51,24 @@ func TestCreateShipment_Success(t *testing.T) {
 	assert.Equal(t, "queued", string(shipment.Status))
 	assert.Contains(t, shipment.ID, "S")
 	assert.Equal(t, "Sprint 1 delivery", shipment.Title)
+}
+
+// T002 / ST012: Reject creating a shipment with an item already assigned to an active shipment.
+func TestCreateShipment_RejectsAlreadyAssignedItem(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	task, err := CreateArtifact(ctx, ws, "Assigned task", "task")
+	require.NoError(t, err)
+	_, err = CreateShipment(ctx, ws, "Shipment 1", []string{task.ID})
+	require.NoError(t, err)
+
+	// Act
+	_, err = CreateShipment(ctx, ws, "Shipment 2", []string{task.ID})
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrItemAlreadyAssigned)
 }
 
 // T002 / ST012: Move shipment from queued to active.
@@ -145,6 +170,47 @@ func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	_ = s2 // prevent unused
 }
 
+// T002 / ST013: Reject adding a missing item to a shipment.
+func TestAddItemToShipment_MissingItem(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "With items", nil)
+	require.NoError(t, err)
+
+	// Act
+	err = AddItemToShipment(ctx, ws, shipment.ID, "T999")
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrNotFound)
+}
+
+// T002 / ST013: Allow reassigning an item after its previous shipment is shipped.
+func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	task, err := CreateArtifact(ctx, ws, "Reusable task", "task")
+	require.NoError(t, err)
+	firstShipment, err := CreateShipment(ctx, ws, "Shipment 1", nil)
+	require.NoError(t, err)
+	secondShipment, err := CreateShipment(ctx, ws, "Shipment 2", nil)
+	require.NoError(t, err)
+	require.NoError(t, AddItemToShipment(ctx, ws, firstShipment.ID, task.ID))
+	require.NoError(t, MoveShipmentStatus(ctx, ws, firstShipment.ID, ShipmentActive))
+	require.NoError(t, MoveShipmentStatus(ctx, ws, firstShipment.ID, ShipmentShipped))
+
+	// Act
+	err = AddItemToShipment(ctx, ws, secondShipment.ID, task.ID)
+
+	// Assert
+	require.NoError(t, err)
+	updated, err := GetShipment(ctx, ws, secondShipment.ID)
+	require.NoError(t, err)
+	assert.Contains(t, shipmentItems(updated), task.ID)
+}
+
 // T002 / ST013: Return a blocked item from shipment.
 func TestReturnBlockedItem_Success(t *testing.T) {
 	// Arrange
@@ -186,12 +252,52 @@ func TestReturnBlockedItem_NotInShipment(t *testing.T) {
 	require.Error(t, err, "returning an item not in the shipment must fail")
 }
 
+// T002 / ST013: Roll back shipment changes when the item update fails.
+func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", nil)
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Rollback task", "task")
+	require.NoError(t, err)
+	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
+
+	currentShipment, err := GetShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	currentItem, err := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, err)
+
+	originalShipment := cloneArtifact(currentShipment)
+	originalItem := cloneArtifact(currentItem)
+
+	currentShipment.CustomFields["items"] = removeString(shipmentItems(currentShipment), task.ID)
+	currentShipment.UpdatedAt = time.Now()
+	currentItem.Status = models.StatusBlocked
+	currentItem.Title = ""
+	currentItem.UpdatedAt = time.Now()
+
+	// Act
+	err = persistReturnedBlockedArtifacts(ctx, ws, originalShipment, currentShipment, originalItem, currentItem)
+
+	// Assert
+	require.Error(t, err)
+	restoredShipment, loadShipmentErr := GetShipment(ctx, ws, shipment.ID)
+	require.NoError(t, loadShipmentErr)
+	assert.Contains(t, shipmentItems(restoredShipment), task.ID)
+	restoredItem, loadItemErr := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, loadItemErr)
+	assert.Equal(t, models.StatusQueued, restoredItem.Status)
+}
+
 // T002 / ST014: Verify shipment survives rehydration cycle.
 func TestShipment_RehydrationConsistency(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	shipment, err := CreateShipment(ctx, ws, "Rehydration test", []string{"T001"})
+	task, err := CreateArtifact(ctx, ws, "Rehydration task", "task")
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Rehydration test", []string{task.ID})
 	require.NoError(t, err)
 
 	// Force rehydration by closing and reopening workspace
