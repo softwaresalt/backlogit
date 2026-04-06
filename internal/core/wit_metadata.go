@@ -10,16 +10,16 @@ import (
 // WITMetadata represents complete metadata for a work item type, merging data
 // from header-def.yaml, template config, and workspace config.
 type WITMetadata struct {
-	TypeName       string                  `json:"type"`
-	Prefix         string                  `json:"prefix,omitempty"`
-	Description    string                  `json:"description"`
-	HierarchyLevel int                     `json:"hierarchy_level"`
-	IDFormat       string                  `json:"id_format"`
-	AllowedChildren []string               `json:"allowed_children,omitempty"`
-	Fields         map[string]WITFieldMeta `json:"fields"`
-	Sections       []WITSectionMeta        `json:"sections"`
-	Relationships  []WITRelationship       `json:"relationships"`
-	Directories    WITDirectoryMeta        `json:"directories"`
+	TypeName        string                  `json:"type"`
+	Prefix          string                  `json:"prefix,omitempty"`
+	Description     string                  `json:"description"`
+	HierarchyLevel  int                     `json:"hierarchy_level"`
+	IDFormat        string                  `json:"id_format"`
+	AllowedChildren []string                `json:"allowed_children,omitempty"`
+	Fields          map[string]WITFieldMeta `json:"fields"`
+	Sections        []WITSectionMeta        `json:"sections"`
+	Relationships   []WITRelationship       `json:"relationships"`
+	Directories     WITDirectoryMeta        `json:"directories"`
 }
 
 // WITFieldMeta describes a single field's metadata for agent consumption.
@@ -92,13 +92,13 @@ func DescribeType(
 	level, _ := LevelForType(layout, artifactType)
 
 	return &WITMetadata{
-		TypeName:        artifactType,
-		Prefix:          typeCfg.Prefix,
-		Description:     description,
-		HierarchyLevel:  level,
-		IDFormat:        typeCfg.IDFormat,
-		Fields:          fields,
-		Sections:        sections,
+		TypeName:       artifactType,
+		Prefix:         typeCfg.Prefix,
+		Description:    description,
+		HierarchyLevel: level,
+		IDFormat:       typeCfg.IDFormat,
+		Fields:         fields,
+		Sections:       sections,
 		Directories: WITDirectoryMeta{
 			Active:  "queue",
 			Archive: "archive",

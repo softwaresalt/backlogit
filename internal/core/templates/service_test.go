@@ -257,6 +257,8 @@ func TestCreate_WithSections(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, artifact.ID)
 	assert.Equal(t, "Section test", artifact.Title)
+	assert.Contains(t, artifact.Description, "# Section test")
+	assert.NotContains(t, artifact.Description, "{title}")
 }
 
 func TestCreate_RejectsInvalidSectionName(t *testing.T) {

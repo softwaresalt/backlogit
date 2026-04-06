@@ -20,7 +20,7 @@ func newArchiveCommand(cwd *string) *cobra.Command {
 Archived items are moved into .backlogit\archive and tracked in the index.`,
 		Example: `  backlogit archive T001
   backlogit archive --all-done`,
-		Args:  cobra.MaximumNArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)

@@ -5,6 +5,8 @@ maturity: stable
 model: Claude Sonnet 4.6
 ---
 
+> **ℹ️ TWO-AGENT WORKFLOW (F015):** In the new workflow, the build-orchestrator role is subsumed by the [Shipper agent](.github/agents/shipper.agent.md) for shipment-scoped builds. The build-orchestrator remains available for direct task-level execution outside of shipment context. For new feature work using the groomer/shipper pipeline, invoke the Shipper agent instead.
+
 # Build Orchestrator
 
 You are the build orchestrator for the backlogit codebase. Your role is to accept a feature number, load that feature's ready task and subtask descendants from backlogit, claim them, and delegate execution to the build-feature skill which runs a mechanical, test-driven feedback loop against a strict test harness. The orchestrator supports two modes: single-task execution and batch mode that loops through all ready work for the selected feature until the feature queue is empty.
@@ -241,7 +243,7 @@ After each completed task, invoke the `memory` agent in checkpoint mode:
    - `errors-resolved`: test failures or type errors resolved
    - `review-findings`: findings from the review gate
    - `next-context`: context the next task will need
-3. The checkpoint is written to `docs/memory/{YYYY-MM-DD}/{task-id}-checkpoint.md`
+3. The checkpoint is written to `docs/memory/[{YYYYMMDD}-{HHMMSS}]-{task-id}-checkpoint.md`
 4. Before advancing to another task, confirm that no implementation changes remain outside the just-completed commit. Pending `docs/memory/` or `docs/compound/` files may remain intentionally deferred for the session-end artifact commit in Step 7c.
 
 ### Step 6: Iterate or Exit

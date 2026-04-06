@@ -34,7 +34,12 @@ func WorkspaceLogsRoot(rootPath string) string {
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
-	backlogitDir := WorkspaceStorageRoot(rootPath)
+	resolvedRoot, err := resolveWorkspaceRoot(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace root: %w", err)
+	}
+
+	backlogitDir := WorkspaceStorageRoot(resolvedRoot)
 	cfg, err := config.Load(ctx, backlogitDir)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -75,13 +80,60 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		}
 	}
 
-	return &Workspace{
-		RootPath:  rootPath,
+	workspace := &Workspace{
+		RootPath:  resolvedRoot,
 		Config:    cfg,
 		DB:        database,
 		HeaderDef: headerDef,
 		Templates: templates,
-	}, nil
+	}
+	if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("recover shipment operations: %w", err)
+	}
+	return workspace, nil
+}
+
+func resolveWorkspaceRoot(rootPath string) (string, error) {
+	cleanRoot := filepath.Clean(rootPath)
+
+	if hasWorkspaceConfig(WorkspaceStorageRoot(cleanRoot)) {
+		return cleanRoot, nil
+	}
+	if filepath.Base(cleanRoot) == ".backlogit" && hasWorkspaceConfig(cleanRoot) {
+		return filepath.Dir(cleanRoot), nil
+	}
+
+	entries, err := os.ReadDir(cleanRoot)
+	if err != nil {
+		return "", fmt.Errorf("read workspace root %s: %w", cleanRoot, err)
+	}
+
+	var matches []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		candidateRoot := filepath.Join(cleanRoot, entry.Name())
+		if hasWorkspaceConfig(WorkspaceStorageRoot(candidateRoot)) {
+			matches = append(matches, candidateRoot)
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+
+	return cleanRoot, nil
+}
+
+func hasWorkspaceConfig(storageRoot string) bool {
+	info, err := os.Stat(filepath.Join(storageRoot, "config.yaml"))
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 // Close closes the database connection.

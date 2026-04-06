@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -13,7 +12,7 @@ import (
 )
 
 func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
+	backlogitDir := s.backlogitDir()
 	registry, err := config.LoadRegistry(backlogitDir)
 	if err != nil {
 		return nil, fmt.Errorf("load registry: %w", err)
@@ -53,9 +52,8 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 }
 
 func (s *Server) handleGetMetadataCatalog(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	catalog, err := s.loadMetadataCatalog(ctx)
@@ -66,9 +64,8 @@ func (s *Server) handleGetMetadataCatalog(ctx context.Context, _ mcplib.CallTool
 }
 
 func (s *Server) handleExportCommandMap(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	targetPath, _ := request.Params.Arguments["path"].(string)
@@ -82,7 +79,7 @@ func (s *Server) handleExportCommandMap(ctx context.Context, request mcplib.Call
 		return InternalError(fmt.Sprintf("load metadata catalog: %v", err)), nil
 	}
 
-	writtenPath, err := core.WriteCommandMap(s.Workspace.RootPath, targetPath, catalog, format)
+	writtenPath, err := core.WriteCommandMap(s.RootPath, targetPath, catalog, format)
 	if err != nil {
 		return InternalError(fmt.Sprintf("export command map: %v", err)), nil
 	}

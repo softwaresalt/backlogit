@@ -45,21 +45,24 @@ type QueueFilter struct {
 
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
 func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
+	statuses := compactStrings(filter.Statuses)
+	types := compactStrings(filter.Types)
+
 	// Build WHERE clauses
 	var conditions []string
 	var args []any
 
-	if len(filter.Statuses) > 0 {
-		placeholders := make([]string, len(filter.Statuses))
-		for i, s := range filter.Statuses {
+	if len(statuses) > 0 {
+		placeholders := make([]string, len(statuses))
+		for i, s := range statuses {
 			placeholders[i] = "?"
 			args = append(args, s)
 		}
 		conditions = append(conditions, "status IN ("+strings.Join(placeholders, ",")+")")
 	}
-	if len(filter.Types) > 0 {
-		placeholders := make([]string, len(filter.Types))
-		for i, t := range filter.Types {
+	if len(types) > 0 {
+		placeholders := make([]string, len(types))
+		for i, t := range types {
 			placeholders[i] = "?"
 			args = append(args, t)
 		}
@@ -136,6 +139,25 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	}
 
 	return view, nil
+}
+
+func compactStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	compacted := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		compacted = append(compacted, value)
+	}
+	if len(compacted) == 0 {
+		return nil
+	}
+	return compacted
 }
 
 // groupKey extracts the grouping key value from an artifact.

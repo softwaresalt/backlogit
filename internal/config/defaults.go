@@ -78,6 +78,25 @@ func defaultHeaderDef() *HeaderDefConfig {
 					"status": statusField,
 				},
 			},
+			"shipment": {
+				Prefix:   "S",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*FieldDef{
+					"status": {
+						Type:    "enum",
+						Values:  []string{"queued", "active", "shipped", "abandoned"},
+						Default: "queued",
+					},
+					"branch": {
+						Type:     "string",
+						Optional: true,
+					},
+					"items": {
+						Type:     "list",
+						Optional: true,
+					},
+				},
+			},
 		},
 	}
 }
@@ -253,6 +272,38 @@ sections:
 <!-- BEGIN:implementation-notes -->
 <!-- END:implementation-notes -->
 `,
+		"shipment": `---
+name: shipment-template
+type: shipment
+description: "A shipment artifact representing a branch and pull request scope"
+sections:
+  - name: description
+    required: true
+    description: "Detailed description of the shipment scope"
+  - name: items
+    required: false
+    description: "Work items included in this shipment"
+  - name: blocked-returns
+    required: false
+    description: "Items removed from the shipment and returned to backlog"
+---
+# {title}
+
+## Description
+
+<!-- BEGIN:description -->
+<!-- END:description -->
+
+## Items
+
+<!-- BEGIN:items -->
+<!-- END:items -->
+
+## Blocked Returns
+
+<!-- BEGIN:blocked-returns -->
+<!-- END:blocked-returns -->
+`,
 	}
 }
 
@@ -284,6 +335,10 @@ func DefaultConfig() *WorkspaceConfig {
 				Prefix:     "ST",
 				NameFormat: "{prefix}{NNN}",
 			},
+			"shipment": {
+				Prefix:     "S",
+				NameFormat: "{prefix}{NNN}",
+			},
 		},
 		Fields: map[string]*FieldConfig{
 			"status": {
@@ -296,7 +351,7 @@ func DefaultConfig() *WorkspaceConfig {
 			RootDir:    "queue",
 			NameFormat: "{NNN}",
 			Levels: []HierarchyLevel{
-				{Level: 1, Types: []string{"feature", "deliberation"}},
+				{Level: 1, Types: []string{"feature", "deliberation", "shipment"}},
 				{Level: 2, Types: []string{"task", "review"}},
 				{Level: 3, Types: []string{"subtask"}},
 			},

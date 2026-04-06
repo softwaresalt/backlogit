@@ -74,6 +74,23 @@ func TestQueryQueue_GroupByType(t *testing.T) {
 	assert.NotEmpty(t, view.Groups, "should have groups when GroupBy is set")
 }
 
+func TestQueryQueue_IgnoresBlankTypeAndStatusFilters(t *testing.T) {
+	// Arrange
+	ws := setupQueueWorkspace(t)
+	ctx := context.Background()
+	filter := &core.QueueFilter{
+		Types:    []string{""},
+		Statuses: []string{""},
+	}
+
+	// Act
+	view, err := core.QueryQueue(ctx, ws.DB, filter)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, 4, view.TotalCount, "blank filters should behave like no filter")
+}
+
 func TestMoveInQueue_ReturnsNotImplemented(t *testing.T) {
 	// Arrange
 	ws := setupQueueWorkspace(t)

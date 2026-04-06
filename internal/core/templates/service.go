@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
@@ -64,7 +65,7 @@ func (s *Service) Create(ctx context.Context, ws *core.Workspace, title string, 
 		return nil, err
 	}
 
-	body := tmpl.Body
+	body := renderTemplateBody(tmpl.Body, title)
 	if len(sections) > 0 {
 		newBody, writeErr := parser.WriteSections(body, sections)
 		if writeErr != nil {
@@ -115,7 +116,7 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
 		return nil, err
 	}
 
-	newBody, err := parser.WriteSections(body, sections)
+	newBody, err := parser.WriteSections(renderTemplateBody(body, artifact.Title), sections)
 	if err != nil {
 		return nil, fmt.Errorf("write sections: %w", err)
 	}
@@ -200,4 +201,8 @@ func validateSectionNames(tmpl *config.TemplateConfig, sections map[string]strin
 		}
 	}
 	return nil
+}
+
+func renderTemplateBody(body string, title string) string {
+	return strings.ReplaceAll(body, "{title}", title)
 }

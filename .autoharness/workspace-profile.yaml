@@ -1,0 +1,144 @@
+schema_version: "1.0.0"
+generated_at: "2026-04-05T00:00:00Z"
+workspace_path: "d:\\Source\\GitHub\\backlogit"
+
+languages:
+  primary: "Go"
+  version: "1.22+"
+  secondary: []
+
+frameworks: []
+
+build:
+  tool: "go"
+  command: "go build ./cmd/backlogit"
+  check_command: "go test -run=^$ -count=1 ./..."
+
+test:
+  runner: "go test"
+  command: "go test ./..."
+  directory: "tests/"
+
+lint:
+  tool: "golangci-lint"
+  command: "golangci-lint run"
+
+format:
+  tool: "gofmt"
+  command: "gofmt -l ."
+  check_command: "gofmt -l ."
+  fix_command: "gofmt -w ."
+
+ci:
+  platform: "GitHub Actions"
+  pipeline_steps:
+    - "build"
+    - "test"
+    - "lint"
+  quality_gates:
+    - "go test ./..."
+    - "go vet ./..."
+    - "golangci-lint run"
+
+structure:
+  source_layout: "cmd/, internal/, tests/"
+  test_layout: "tests/ and colocated *_test.go files"
+  doc_layout: "docs/"
+
+runtime_surfaces:
+  web_ui: false
+  public_api: false
+  background_jobs: false
+  deployment_manifests: []
+
+conventions:
+  code_style:
+    language: "Go"
+    docs_required: true
+    lint_zero_warnings: true
+  git:
+    commit_style: "conventional commits"
+  documentation:
+    durable_docs_root: "docs/"
+
+harness_recommendations:
+  preset: full
+  capability_packs:
+    - backlogit
+
+agent_intercom:
+  detected: false
+  mcp_configured: false
+  config_paths: []
+  instruction_markers: []
+  recommended: false
+
+agent_engram:
+  detected: false
+  mcp_configured: false
+  config_paths: []
+  instruction_markers: []
+  recommended: false
+
+existing_harness:
+  has_harness: true
+  artifacts:
+    - path: "AGENTS.md"
+      type: "foundation"
+      description: "Root repository navigation and operating instructions"
+    - path: ".github/copilot-instructions.md"
+      type: "instruction"
+      description: "Shared repository development guidance"
+    - path: ".github/agents/build-orchestrator.agent.md"
+      type: "agent"
+      description: "Primary implementation orchestrator"
+    - path: ".github/agents/backlog-harvester.agent.md"
+      type: "agent"
+      description: "Planning and backlog decomposition orchestrator"
+    - path: ".github/agents/deliberator.agent.md"
+      type: "agent"
+      description: "Decision and investigation router"
+    - path: ".github/skills/deliberate/SKILL.md"
+      type: "skill"
+      description: "Collaborative deliberation workflow"
+    - path: ".github/skills/spike/SKILL.md"
+      type: "skill"
+      description: "Time-boxed investigation workflow"
+    - path: ".github/instructions/backlogit.instructions.md"
+      type: "instruction"
+      description: "Backlogit-native workflow guidance"
+    - path: ".github/instructions/backlog-integration.instructions.md"
+      type: "instruction"
+      description: "Generic backlog abstraction guidance for the installed backlog surface"
+
+backlog_tool:
+  detected: true
+  tool_name: "backlogit"
+  directory: ".backlogit"
+  tool_type: "both"
+  mcp_registered: true
+  cli_available: true
+  config_path: ".backlogit/config.yaml"
+  registry_path: ".autoharness/backlog-registry.yaml"
+  status_values:
+    - "queued"
+    - "active"
+    - "blocked"
+    - "review"
+    - "done"
+    - "accepted"
+    - "rejected"
+    - "archived"
+  features:
+    sql_query: true
+    telemetry: true
+    memory: true
+    checkpoints: true
+    comments: true
+    dependencies: true
+    queue: true
+    sections: true
+    templates: true
+    commit_tracking: true
+
+drift_report: null

@@ -2,7 +2,7 @@
 title: Why backlogit
 description: Design rationale and agent harness value proposition
 author: backlogit contributors
-ms.date: 2026-04-01
+ms.date: 2026-04-06
 ms.topic: concept
 keywords:
   - backlogit
@@ -80,6 +80,16 @@ backlogit functions as an operating system for AI coding agents. It provides:
 - A type-metadata surface through `backlogit_get_wit_metadata`, `backlogit_list_types`, and template discovery so agents can inspect the configured workflow instead of guessing it
 
 An agent running inside Claude Code, GitHub Copilot CLI, or Cursor can query the backlogit workspace to understand what work is queued, what is blocked, and what dependencies exist before choosing its next action. This is qualitatively different from an agent that must infer project state from file contents alone.
+
+## Current repository orchestration model
+
+F015 simplified the repository harness to a two-agent path so future sessions do
+not have to reconstruct a larger top-level topology from scattered legacy docs.
+`Groomer` owns `STASH -> BACKLOG`, and `Shipper` owns `SHIPMENT -> SHIPPED`.
+
+The older `backlog-harvester`, `build-orchestrator`, and `pr-review` surfaces
+still exist as reusable migration or support tooling, but they are no longer the
+primary durable workflow description for this repository.
 
 ## MCP Protocol Bridge
 

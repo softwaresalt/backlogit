@@ -22,7 +22,7 @@ Only SELECT statements are allowed. Use this for token-efficient inspection of
 items, dependencies, logs, and indexed stash data.`,
 		Example: `  backlogit query "SELECT id, title, status FROM items ORDER BY updated_at DESC LIMIT 20"
   backlogit query "SELECT stash_id, kind, state FROM stash_entries ORDER BY updated_at DESC"`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sqlStr := args[0]
 			ctx := context.Background()

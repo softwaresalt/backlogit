@@ -35,7 +35,7 @@ func NewDepAddCmd() *cobra.Command {
 		Short: "Add a dependency edge",
 		Example: `  backlogit dep add T002 T001
   backlogit dep add T010 F002 --type blocks`,
-		Args:  cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
 			dependsOn := args[1]
@@ -62,10 +62,10 @@ func NewDepAddCmd() *cobra.Command {
 // NewDepRemoveCmd creates `backlogit dep remove <item-id> <depends-on>`.
 func NewDepRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "remove <item-id> <depends-on>",
-		Short: "Remove a dependency edge",
+		Use:     "remove <item-id> <depends-on>",
+		Short:   "Remove a dependency edge",
 		Example: `  backlogit dep remove T002 T001`,
-		Args:  cobra.ExactArgs(2),
+		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
 			dependsOn := args[1]
@@ -96,7 +96,7 @@ func NewDepListCmd() *cobra.Command {
 		Short: "List dependencies for an artifact",
 		Example: `  backlogit dep list T002
   backlogit dep list T001 --reverse`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
 

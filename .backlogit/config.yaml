@@ -5,6 +5,9 @@ artifact_types:
     allowed_children:
       - task
       - review
+  deliberation:
+    prefix: DL
+    name_format: "{prefix}{NNN}"
   task:
     prefix: T
     name_format: "{prefix}{NNN}"
@@ -23,6 +26,10 @@ artifact_types:
     prefix: B
     name_format: "{prefix}{NNN}"
     allowed_children: []
+  shipment:
+    prefix: S
+    name_format: "{prefix}{NNN}"
+    allowed_children: []
 fields:
   status:
     type: enum
@@ -35,6 +42,8 @@ fields:
       - accepted
       - rejected
       - archived
+      - shipped
+      - abandoned
     default: queued
     optional: false
     external_map: {}
@@ -45,6 +54,8 @@ queue_layout:
     - level: 1
       types:
         - feature
+        - deliberation
+        - shipment
     - level: 2
       types:
         - task

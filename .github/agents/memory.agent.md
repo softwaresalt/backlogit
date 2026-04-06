@@ -26,10 +26,10 @@ Call `ping` at session start (manual mode) or rely on parent's intercom state (c
 
 ## File Locations
 
-All memory files reside in `docs/memory/` organized by date.
+All memory files reside in a flat `docs/memory/` directory.
 
-* `docs/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md` -- Manual session memory
-* `docs/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md` -- Automatic task checkpoint
+* `docs/memory/[{{YYYYMMDD}}-{{HHMMSS}}]-{{short-description}}-memory.md` -- Manual session memory
+* `docs/memory/[{{YYYYMMDD}}-{{HHMMSS}}]-{{task-id}}-checkpoint.md` -- Automatic task checkpoint
 
 ## Mode Detection
 
@@ -67,7 +67,7 @@ Proceed to Phase 2 (save) or Phase 3 (continue) based on operation.
 #### File Creation
 
 * Generate a short kebab-case description from conversation topic
-* Create memory file at `docs/memory/{{YYYY-MM-DD}}/{{short-description}}-memory.md`
+* Create memory file at `docs/memory/[{{YYYYMMDD}}-{{HHMMSS}}]-{{short-description}}-memory.md`
 * Write content following the Memory File Structure below
 
 #### Content Guidance
@@ -117,7 +117,7 @@ Invoked by the build orchestrator as a subagent after each completed task. No us
 
 ### Output
 
-Write to `docs/memory/{{YYYY-MM-DD}}/{{task-id}}-checkpoint.md`.
+Write to `docs/memory/[{{YYYYMMDD}}-{{HHMMSS}}]-{{task-id}}-checkpoint.md`.
 
 After writing the checkpoint file, count checkpoint files in `docs/memory/` for the current feature (match by feature number pattern in filenames). If the count exceeds 10, append the following advisory to the checkpoint output:
 

@@ -32,7 +32,7 @@ JSON output, or a specific named body section.`,
 		Example: `  backlogit get F001
   backlogit get F001 --format json
   backlogit get F001 --section description`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			ctx := context.Background()

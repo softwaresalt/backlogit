@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
+	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -437,7 +438,7 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 			return found, nil
 		}
 	}
-	return "", fmt.Errorf("artifact not found: %s", id)
+	return "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
 }
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
@@ -525,7 +526,7 @@ func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact
 			return found, nil
 		}
 	}
-	return nil, fmt.Errorf("artifact not found: %s", id)
+	return nil, fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
 }
 
 func parseFile(path string) (*models.Artifact, string, error) {

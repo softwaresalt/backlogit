@@ -5,213 +5,226 @@ maturity: stable
 
 # Backlogit Development Guidelines
 
-Last updated: 2026-03-29
+Last updated: 2026-04-06
 
-backlogit is a highly configurable, file-backed task management and agent operating system optimized for AI Agent consumption via the Model Context Protocol (MCP) and developer consumption via CLI/TUI. It stores tasks, OKRs, bugs, and decisions as individual Markdown files with strictly typed YAML frontmatter, backed by an ephemeral SQLite cache for token-efficient querying and JSONL streams for event history and agent telemetry.
+backlogit is a highly configurable, file-backed task management and agent
+operating system optimized for AI agent consumption through MCP and developer
+consumption through CLI workflows. It stores tasks, bugs, decisions, and review
+artifacts as Markdown with typed YAML frontmatter, backed by an ephemeral SQLite
+cache for token-efficient querying and JSONL streams for history and telemetry.
 
-The fundamental design tension backlogit resolves is the conflict between human-centric tools and machine-centric requirements. Humans need readable, Git-friendly text files. AI agents need token-efficient, structured queries. backlogit bridges this gap through a Hybrid Data Architecture (CQRS): Markdown files are the source of truth, SQLite provides instant relational querying, and JSONL captures append-only event history.
+The core design tension is simple: humans want readable, Git-friendly files,
+while agents want surgical, structured queries. backlogit resolves that tension
+through a CQRS architecture where Markdown is the source of truth, SQLite serves
+reads, and JSONL preserves append-only history.
+
+## Primary workflow
+
+The repository now uses a two-agent path:
+
+* `Groomer` owns `STASH -> BACKLOG`. It triages stash entries, routes
+  deliberation and plan review, and harvests shipment-aware backlog.
+* `Shipper` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
+  build, review, CI remediation, and pull request flow until the user approves
+  merge.
+
+Lifecycle summary: `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`
+
+Read `.github/agents/groomer.agent.md`, `.github/agents/shipper.agent.md`, and
+`docs/workflow.md` for the durable workflow map.
 
 ## Technology Stack
 
-| Layer         | Technology                             | Notes                                                |
-|---------------|----------------------------------------|------------------------------------------------------|
-| Language      | Go 1.22+                              | Statically typed, single binary, goroutine-native    |
-| MCP Protocol  | mcp-go SDK                            | JSON-RPC 2.0 over stdio                             |
-| Database      | SQLite 3 (ephemeral cache)            | FTS5 for full-text search, WAL mode, gitignored      |
-| File Storage  | Markdown + YAML frontmatter           | Git-friendly source of truth for all artifacts       |
-| Event Stream  | JSONL (append-only)                   | events.jsonl, telemetry.jsonl                        |
-| Configuration | YAML                                  | config.yaml, registry.yaml, hooks.yaml               |
-| CLI           | Cobra                                 | `backlogit` command with subcommands                 |
-| TUI           | Bubble Tea (future)                   | Terminal UI for interactive board management         |
-| Testing       | go test, testify                      | TDD required; contract, integration, unit tests      |
-| Linting       | golangci-lint                         | Comprehensive static analysis and formatting         |
-| Packaging     | go.mod, go build                      | Single static binary distribution                    |
+| Layer | Technology | Notes |
+|---|---|---|
+| Language | Go 1.22+ | Statically typed, single binary, goroutine-native |
+| MCP Protocol | mcp-go SDK | JSON-RPC 2.0 over stdio |
+| Database | SQLite 3 | Ephemeral cache, WAL mode, FTS5 |
+| File Storage | Markdown + YAML frontmatter | Git-friendly source of truth |
+| Event Stream | JSONL | `events.jsonl`, `telemetry.jsonl` |
+| Configuration | YAML | `config.yaml`, `registry.yaml`, `hooks.yaml`, `header-def.yaml` |
+| CLI | Cobra | `backlogit` command with subcommands |
+| Testing | `go test`, `testify` | TDD, contract tests, integration tests |
+| Linting | `golangci-lint` | Zero-warning quality gate |
+
+## Harness Surface
+
+The repository carries an installed harness in `.github/` and uses backlogit as
+its own operational backlog.
+
+### Primary agents
+
+| Agent | Purpose |
+|---|---|
+| `groomer` | Primary stash-to-backlog orchestrator |
+| `shipper` | Primary backlog-to-shipped orchestrator |
+
+### Supporting and legacy agents
+
+| Agent | Purpose |
+|---|---|
+| `deliberator` | Routes idea work into deliberate or spike workflows |
+| `backlog-harvester` | Converts plans into backlogit work items |
+| `harness-architect` | Creates compilable but failing harnesses |
+| `build-orchestrator` | Claims and executes ready feature work |
+| `pr-review` | Manages review handoff and PR preparation |
+| `memory` | Persists and restores session context |
+| `doc-ops` | Maintains durable docs and documentation hygiene |
+| `go-engineer` | Applies repository-specific Go standards |
+| `go-mcp-expert` | Advises on Go MCP server implementation |
+| `prompt-builder` | Maintains prompts, agents, instructions, and skills |
+
+Treat `backlog-harvester`, `build-orchestrator`, and `pr-review` as legacy or
+supporting surfaces unless the operator explicitly asks for the older path.
+
+### Core skills
+
+| Skill | Purpose |
+|---|---|
+| `deliberate` | Collaborative idea shaping |
+| `spike` | Time-boxed technical investigation |
+| `impl-plan` | Implementation plan generation |
+| `plan-review` | Multi-persona plan gate |
+| `build-feature` | Test-driven implementation loop |
+| `review` | Structured code review |
+| `fix-ci` | CI and review-comment remediation |
+| `compound` | Durable learning capture |
+| `compact-context` | Tracking and memory compaction |
+| `runtime-verification` | Post-build runtime validation |
+| `operational-closure` | Closure, rollout, and rollback capture |
+| `safety-modes` | Elevated-risk workflow controls |
 
 ## Project Structure
 
 ```text
 cmd/
   backlogit/
-    main.go                 # CLI entrypoint
+    main.go
 internal/
   cli/
-    root.go                 # Cobra root command
-    init.go                 # `backlogit init` workspace scaffolding
-    create.go               # `backlogit create` artifact creation
-    sync.go                 # `backlogit sync` rehydration
-    query.go                # `backlogit query` SQL queries
-    mcp.go                  # `backlogit mcp` server start
   config/
-    loader.go               # Load and validate config.yaml, registry.yaml, hooks.yaml
-    schema.go               # Config struct definitions with validation tags
-    defaults.go             # Default config.yaml and registry.yaml templates
   core/
-    artifacts.go            # Artifact type definitions and hierarchy enforcement
-    fields.go               # Custom field handling, validation, and external_map
-    naming.go               # Name format templates ({prefix}{NNN}-{title_slug})
-    routing.go              # File routing based on registry.yaml state mappings
   db/
-    connection.go           # SQLite connection management, WAL mode, pragma tuning
-    schema.go               # CREATE TABLE statements, FTS5 indexes, trigger definitions
-    queries.go              # Parameterized read-only query execution
-    rehydration.go          # Auto-rehydration engine: scan → parse → rebuild index.db
-    gate.go                 # Read-only SQL query gate
   errors/
-    errors.go               # Sentinel and typed error definitions
   events/
-    stream.go               # JSONL append-only event writer (state changes, comments)
-    telemetry.go            # Agent telemetry logging (token usage, execution traces)
-    reader.go               # Efficient tail-read for recent events by item_id
   mcp/
-    server.go               # MCP stdio server setup and lifecycle
-    tools.go                # MCP tool definitions and dispatch
-    resources.go            # MCP resource definitions (sprint context, item detail)
   models/
-    artifact.go             # Artifact model: frontmatter + body
-    frontmatter.go          # YAML frontmatter parser and serializer
-    sprint.go               # Sprint container model with goal and date fields
   parser/
-    legacy.go               # Legacy backlog.md AST parser (section/checklist heuristics)
-    markdown.go             # Markdown file parser with frontmatter extraction
-    migration.go            # Transformation pipeline: legacy → atomic files
-go.mod
-go.sum
-Makefile
+tests/
+docs/
+.backlogit/
 ```
 
 ## Commands
 
 ```bash
 go test ./...                          # Run all tests
-go test ./internal/...                 # Run internal tests only
-go test -cover ./...                   # Run with coverage report
+go vet ./...                           # Vet for suspicious constructs
 golangci-lint run                      # Lint and static analysis
 gofmt -l .                             # Format check
-go vet ./...                           # Vet for suspicious constructs
 go build ./cmd/backlogit               # Build binary
-go install ./cmd/backlogit             # Install to GOPATH/bin
+go install ./cmd/backlogit             # Install binary
 backlogit init                         # Initialize .backlogit/ workspace
 backlogit create --type task --title "My task"  # Create artifact
+backlogit deliberate <stash-id>        # Create deliberation from stash
 backlogit sync                         # Force rehydration of index.db
 backlogit mcp                          # Start MCP stdio server
 ```
 
-## Hybrid Data Architecture (CQRS)
+## Hybrid Data Architecture
 
-backlogit separates reads from writes using three storage mechanisms to balance Git compatibility with agent token efficiency.
+### Source of truth
 
-### Source of Truth: Markdown & YAML Frontmatter
+Individual `.md` files in `.backlogit/` contain only current state via YAML
+frontmatter and the current body content. Historical comments and event trails
+do not belong in those files. The deliberation process converts transient ideas
+into durable Markdown artifacts.
 
-Individual `.md` files in `.backlogit/` contain only current state via YAML frontmatter and the current description body. Historical comments, state change logs, and agent thought processes are forbidden from these files. When an agent reads a task, it consumes a few hundred tokens rather than parsing a massive history log.
+### Query engine
 
-### Query Engine: SQLite (index.db) & Auto-Rehydration
+`.backlogit/index.db` is an ephemeral cache managed by backlogit. If it is
+deleted or stale, the rehydration engine can rebuild it from the Markdown files
+and JSONL queues.
 
-The `.backlogit/index.db` file is an ephemeral cache managed entirely by the backlogit core. It is gitignored and disposable. If deleted, after a `git pull` that changes ticket files, or after manual file edits, the rehydration engine walks the directory tree, parses all YAML frontmatter, and rebuilds the relational graph in milliseconds. Agents execute targeted queries like `backlogit_query_sql("SELECT id, title FROM items WHERE type='bug' AND status='in_progress'")` instead of dumping thousands of lines into the context window. FTS5 provides full-text search across the workspace.
+### Event stream
 
-### Event Stream: JSONL
+When status changes, comments are appended, or telemetry is recorded, backlogit
+stores those changes as JSONL entries for durable, append-only history.
 
-When a status changes or an agent adds a comment, a single JSON object is appended to `events.jsonl`. JSONL eliminates corruption risk during concurrent writes and supports efficient tail-reading for recent activity. `telemetry.jsonl` captures agent execution metrics separately.
+### Transient queues
 
-## Code Style and Conventions
+Data that has not yet graduated into a durable artifact may be stored as JSONL.
+The stash is the canonical example: entries are transient ideas on their way to
+becoming artifacts through deliberation. JSONL queues are Git-tracked,
+append-friendly, and machine-parseable, but they are not sources of truth.
 
-### Type Safety
+## Coding conventions
 
-* Go provides built-in static typing; all types are checked at compile time
-* Use Go structs with `go-playground/validator` tags for data crossing package boundaries
-* Use `golangci-lint` with zero errors as a CI gate
-* Use interfaces for abstraction; accept interfaces, return structs
-* Prefer generics (Go 1.18+) over `any` when they reduce duplication
+### Type safety
 
-### Error Handling
+* Use Go structs with validator tags for data crossing package boundaries.
+* Prefer explicit typing and standard Go interfaces over loosely typed maps.
+* Treat `golangci-lint` warnings as real defects.
 
-* Define sentinel errors and typed errors in `internal/errors/errors.go`
-* Sentinel errors: `ErrConfig`, `ErrValidation`, `ErrQuery`, `ErrRehydration`, `ErrMigration`, `ErrMCP`
-* No `panic()` in library code; all errors returned via `(result, error)` tuples
-* Wrap errors with context: `fmt.Errorf("operation context: %w", err)`
-* MCP tool errors return structured JSON-RPC error responses with descriptive messages
-* Use `log/slog` for structured error reporting, never `fmt.Println()`
+### Error handling
 
-### Naming
-
-* Packages: `lowercase` (e.g., `rehydration`, `legacy`)
-* Types and exported functions: `PascalCase` (e.g., `ArtifactType`, `SprintGoal`)
-* Unexported functions and variables: `camelCase` (e.g., `parseFrontmatter`, `itemID`)
-* Constants: `PascalCase` for exported, `camelCase` for unexported
-* Artifact IDs: prefixed strings matching config (e.g., `T105`, `US042`, `BUG019`, `ADR005`)
-* Status values: `snake_case` (e.g., `todo`, `in_progress`, `done`, `blocked`, `review`)
-
-### Documentation
-
-* All exported functions, types, and packages require GoDoc comments
-* Package-level comments in `doc.go` describe the package's purpose and architectural role
-* Use complete sentences starting with the name of the thing being documented
-
-### Database
-
-* One `*sql.DB` connection pool per workspace, opened in WAL mode for concurrent reads
-* Schema bootstrapped on every connection via `EnsureSchema()`
-* All queries go through parameterized functions in `internal/db/queries.go`, never raw SQL in tool handlers
-* Read-only query gate: reject INSERT, UPDATE, DELETE, DROP via the `backlogit_query_sql` MCP tool
-* FTS5 virtual table for full-text search across artifact titles and descriptions
-
-### MCP Tool Pattern
-
-Every MCP tool follows this pattern:
-
-1. Validate workspace is initialized (return descriptive error if `.backlogit/` missing)
-2. Parse parameters from the MCP request into a validated Go struct
-3. Acquire database connection from the connection pool
-4. Execute business logic through `internal/core/` and `internal/db/` packages
-5. Return structured JSON response or return an MCP error with descriptive message
+* Define sentinel and typed errors in `internal/errors/errors.go`.
+* Wrap errors with context using `fmt.Errorf("context: %w", err)`.
+* Do not use `panic()` in library code.
+* Use `log/slog` for structured diagnostics.
 
 ### Testing
 
-* TDD required: write tests first, verify they fail, then implement
-* Three test tiers:
-  * Unit tests: colocated `_test.go` files in each package
-  * Contract tests: `tests/contract/` for MCP tool input/output schema validation
-  * Integration tests: `tests/integration/` for end-to-end flows with temp workspaces and real SQLite
-* Test fixtures create temporary `.backlogit/` directories via `t.TempDir()`
-* Use table-driven tests for comprehensive edge case coverage
-* Target 90%+ code coverage for core packages
+* TDD is required.
+* Use colocated `_test.go` files for unit tests.
+* Use `tests/contract/` for MCP contract coverage.
+* Use `tests/integration/` for end-to-end and workspace-level flows.
 
-## MCP Tools Registry
+## Search and lookup strategy
 
-| Tool                         | Package | Purpose                                                  |
-|------------------------------|---------|----------------------------------------------------------|
-| `backlogit_create_item`      | mcp     | Create a new artifact (task, bug, story, etc.)           |
-| `backlogit_update_item`      | mcp     | Update artifact fields (status, priority, parent, etc.)  |
-| `backlogit_get_item`         | mcp     | Retrieve the current Markdown state of an artifact       |
-| `backlogit_get_item_history` | mcp     | Tail events.jsonl for recent activity on an item         |
-| `backlogit_query_sql`        | mcp     | Execute read-only parameterized SQL against index.db     |
-| `backlogit_sync_index`       | mcp     | Force rehydration: rescan Markdown, rebuild SQLite cache |
-| `backlogit_append_comment`   | mcp     | Append a comment event to events.jsonl                   |
-| `backlogit_log_telemetry`    | mcp     | Write agent telemetry to telemetry.jsonl                 |
-| `backlogit_save_memory`      | mcp     | Update agent semantic memory in memories.json            |
-| `backlogit_create_checkpoint`| mcp     | Save agent session state snapshot                        |
+Use the lightest lookup that answers the question.
 
-## Configuration
+### For backlog state
 
-backlogit uses three YAML configuration files in `.backlogit/`:
+Prefer backlogit-native operations before reading queue files directly:
 
-| File             | Purpose                                                              |
-|------------------|----------------------------------------------------------------------|
-| `config.yaml`    | Artifact types, hierarchy, naming templates, custom fields           |
-| `registry.yaml`  | Maps artifact states and types to specific directory paths           |
-| `hooks.yaml`     | External integration configuration (Jira, Azure DevOps sync)        |
+1. `backlogit_get_metadata_catalog` for the workspace model and tool surface
+2. queue-aware operations for ready work
+3. `backlogit_get_item` for a specific artifact
+4. `backlogit_query_sql` for targeted relational lookup
+5. direct file reads in `.backlogit/` only when the tool surface cannot answer
 
-### Environment Variables
+### For code search
 
-| Env Var                  | Default         | Description                              |
-|--------------------------|-----------------|------------------------------------------|
-| `BACKLOGIT_WORKSPACE`    | `.backlogit/`   | Workspace root directory                 |
-| `BACKLOGIT_LOG_LEVEL`    | `INFO`          | Logging verbosity                        |
-| `BACKLOGIT_LOG_FORMAT`   | `json`          | `json` or `text`                         |
+Prefer targeted grep, glob, or symbol-aware search over broad file dumping.
+Search first, then read only the files that matter.
+
+## Durable knowledge layout
+
+| Path | Purpose |
+|---|---|
+| `docs/compound/` | Reusable learnings and hard-won fixes |
+| `docs/exec-plans/` | Implementation plans |
+| `docs/decisions/` | Durable decisions and investigation outputs |
+| `docs/memory/` | Session memory and checkpoints |
+| `docs/closure/` | Review, runtime verification, and closure artifacts |
+| `docs/design-docs/` | Graduated architecture and design rationale |
+| `docs/product-specs/` | Product-oriented requirements |
+
+## Backlog workflow expectations
+
+When backlogit is the active backlog tool for this repository:
+
+* prefer queue-aware and dependency-aware operations over prose-only sequencing
+* use backlogit comments, checkpoints, and commit-tracking features when they add traceability
+* refresh the backlog index after out-of-band edits before trusting query results
+* avoid inventing parallel markdown trackers outside the backlogit tool surface
 
 ## Session Memory Requirements
 
-* All working agent sessions MUST persist their output to `.copilot-tracking/memory/` using the `memory` agent before the session ends.
+* All working agent sessions MUST persist their output to `docs/memory/` using the `memory` agent before the session ends.
 * When the context window reaches approximately 65% capacity, invoke the `memory` agent to checkpoint current work before continuing.
 * For long sessions, save memory checkpoints after completing each phase or major task group.
 * Every memory entry must include task IDs completed, files modified, decisions and rationale, failed approaches, and concrete next steps.
-* File convention: `.copilot-tracking/memory/{YYYY-MM-DD}/{descriptive-slug}-memory.md`.
+* File convention: `docs/memory/[{YYYYMMDD}-{HHMMSS}]-{descriptive-slug}-memory.md`.
+* Invoke `compact-context` when stale tracking or checkpoint volume starts hurting future sessions.

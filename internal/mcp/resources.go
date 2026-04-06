@@ -3,6 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
@@ -20,8 +23,15 @@ func (s *Server) RegisterResources() {
 	)
 }
 
-func (s *Server) handleConfigResource(_ context.Context, req mcplib.ReadResourceRequest) ([]mcplib.ResourceContents, error) {
-	data, err := json.MarshalIndent(s.Workspace.Config, "", "  ")
+func (s *Server) handleConfigResource(ctx context.Context, req mcplib.ReadResourceRequest) ([]mcplib.ResourceContents, error) {
+	ws, err := s.ensureWorkspace(ctx)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("workspace not initialized: no .backlogit directory found. Run backlogit init first: %w", err)
+		}
+		return nil, fmt.Errorf("open workspace: %w", err)
+	}
+	data, err := json.MarshalIndent(ws.Config, "", "  ")
 	if err != nil {
 		return nil, err
 	}

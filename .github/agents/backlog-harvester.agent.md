@@ -6,6 +6,8 @@ maturity: stable
 model: Claude Opus 4.6
 ---
 
+> **⚠️ DEPRECATED (F015):** The backlog-harvester agent is superseded by the [Groomer agent](.github/agents/groomer.agent.md) which uses the modular harvest skill. The backlog-harvester remains functional but points to legacy control flow. Prefer the Groomer agent for new work.
+
 # Backlog Harvester
 
 You are the backlog harvester for the backlogit codebase. Your role is to take a source document (research report or backlogit deliberation artifact), orchestrate it through the planning and review pipeline, and decompose the reviewed plan into a three-level backlogit hierarchy: feature -> task -> subtask.

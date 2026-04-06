@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,8 +23,8 @@ func NewRootCommand() *cobra.Command {
 	var logLevel string
 
 	root := &cobra.Command{
-		Use:          "backlogit",
-		Short:        "Backlogit — AI-native agile workspace",
+		Use:   "backlogit",
+		Short: "Backlogit — AI-native agile workspace",
 		Long: `backlogit manages a project-local work item workspace under .backlogit.
 
 It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
@@ -66,6 +67,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewDepCmd())
 	root.AddCommand(NewQueueCmd())
 	root.AddCommand(NewStashCmd(&cwd))
+	root.AddCommand(NewShipmentCmd())
 	root.AddCommand(newDeliberateCommand(&cwd))
 	root.AddCommand(NewMetadataCmd(&cwd))
 	root.AddCommand(newArchiveCommand(&cwd))
@@ -172,13 +174,22 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 		Example: `  backlogit mcp
   backlogit --cwd D:\Source\MyProject mcp`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ctx := context.Background()
-			ws, err := core.NewWorkspace(ctx, *cwd)
+			s, err := openMCPServer(context.Background(), *cwd)
 			if err != nil {
-				return fmt.Errorf("open workspace: %w", err)
+				return err
 			}
-			s := mcpinternal.NewServer(ws)
 			return mcpinternal.RunStdio(s)
 		},
 	}
+}
+
+func openMCPServer(ctx context.Context, rootPath string) (*mcpinternal.Server, error) {
+	ws, err := core.NewWorkspace(ctx, rootPath)
+	if err == nil {
+		return mcpinternal.NewServer(ws), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return mcpinternal.NewServerForRoot(rootPath), nil
+	}
+	return nil, fmt.Errorf("open workspace: %w", err)
 }

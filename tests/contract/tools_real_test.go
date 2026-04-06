@@ -234,3 +234,17 @@ func TestDeliberate_Real_CreatesLinkedArtifact(t *testing.T) {
 	linkedDeliberation := fetchedEntry["deliberation"].(map[string]any)
 	assert.Equal(t, artifact["id"], linkedDeliberation["id"])
 }
+
+func TestPreInitServer_ListsToolsAndReturnsWorkspaceNotInitialized(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	s := mcpinternal.NewServerForRoot(root)
+
+	// Act
+	tools := s.ListTools()
+	data := callToolAndParseError(t, s, "backlogit_list_items", map[string]any{})
+
+	// Assert
+	assert.Contains(t, tools, "backlogit_list_items")
+	assert.Equal(t, "workspace_not_initialized", data["error"])
+}
