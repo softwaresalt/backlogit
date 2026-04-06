@@ -92,3 +92,21 @@ types:
           - high
           - critical
         default: medium
+  shipment:
+    prefix: S
+    id_format: "{prefix}{NNN}"
+    fields:
+      status:
+        type: enum
+        values:
+          - queued
+          - active
+          - shipped
+          - abandoned
+        default: queued
+      branch:
+        type: string
+        optional: true
+      items:
+        type: string
+        optional: true

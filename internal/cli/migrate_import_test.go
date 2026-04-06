@@ -206,5 +206,6 @@ Imported body
 		}
 		return nil
 	}))
-	assert.Len(t, markdownFiles, 6, "expected config templates plus exactly one imported artifact markdown file")
+	assert.Len(t, markdownFiles, 7, "expected config templates plus exactly one imported artifact markdown file")
 }
+

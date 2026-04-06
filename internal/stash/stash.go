@@ -18,6 +18,8 @@ import (
 const (
 	// FileName is the canonical hidden stash file name in the queue directory.
 	FileName = ".stash.md"
+	// JSONLFileName is the canonical JSONL stash file name in the workspace root.
+	JSONLFileName = "stash.jsonl"
 	// DefaultTitle is the title used in the stash frontmatter.
 	DefaultTitle = "Stash"
 	// DefaultDescription describes the stash file purpose.

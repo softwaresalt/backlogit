@@ -89,9 +89,11 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		return count, fmt.Errorf("rehydrate walk: %w", err)
 	}
 
-	if err := rehydrateStash(ctx, workspacePath, db, harvestedStash); err != nil {
-		return count, err
+	stashCount, stashErr := rehydrateStash(ctx, workspacePath, db, harvestedStash)
+	if stashErr != nil {
+		return count, stashErr
 	}
+	count += stashCount
 
 	if err := rehydrateItemLogs(ctx, workspacePath, db); err != nil {
 		return count, err
@@ -221,19 +223,52 @@ func parseItemLogFile(path, itemID string) ([]events.Event, error) {
 	return result, nil
 }
 
-func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB, harvested map[string]StashRecord) error {
+func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB, harvested map[string]StashRecord) (int, error) {
+	// Read entries from legacy .stash.md if present.
 	stashPath := filepath.Join(workspacePath, "queue", stash.FileName)
 	activeEntries := []stash.Entry{}
 	if _, err := os.Stat(stashPath); err == nil {
 		_, entries, parseErr := stash.ParseFile(stashPath)
 		if parseErr != nil {
-			return fmt.Errorf("parse stash file: %w", parseErr)
+			return 0, fmt.Errorf("parse stash file: %w", parseErr)
 		}
 		activeEntries = entries
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat stash file: %w", err)
+		return 0, fmt.Errorf("stat stash file: %w", err)
 	}
-	return RehydrateStashIndex(ctx, database, activeEntries, filepath.ToSlash(filepath.Join("queue", stash.FileName)), harvested)
+
+	// Also read entries from stash.jsonl if present (new format).
+	jsonlPath := filepath.Join(workspacePath, stash.JSONLFileName)
+	if _, err := os.Stat(jsonlPath); err == nil {
+		f, openErr := os.Open(jsonlPath)
+		if openErr != nil {
+			return 0, fmt.Errorf("open stash jsonl: %w", openErr)
+		}
+		jsonlEntries, readErr := stash.ReadJSONL(f)
+		_ = f.Close()
+		if readErr != nil {
+			return 0, fmt.Errorf("read stash jsonl: %w", readErr)
+		}
+		// Merge: deduplicate by ID, preferring existing entries.
+		seen := make(map[string]struct{}, len(activeEntries))
+		for _, e := range activeEntries {
+			seen[e.ID] = struct{}{}
+		}
+		for _, e := range jsonlEntries {
+			if _, ok := seen[e.ID]; !ok {
+				activeEntries = append(activeEntries, e)
+				seen[e.ID] = struct{}{}
+			}
+		}
+		slog.Debug("merged stash jsonl entries", "count", len(jsonlEntries))
+	} else if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("stat stash jsonl: %w", err)
+	}
+
+	if err := RehydrateStashIndex(ctx, database, activeEntries, filepath.ToSlash(filepath.Join("queue", stash.FileName)), harvested); err != nil {
+		return 0, err
+	}
+	return len(activeEntries), nil
 }
 
 func stashRecordFromArtifact(artifact *models.Artifact) (StashRecord, bool) {
