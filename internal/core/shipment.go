@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -30,6 +31,17 @@ const (
 	// ShipmentAbandoned indicates the shipment was cancelled.
 	ShipmentAbandoned ShipmentStatus = "abandoned"
 )
+
+type fileSnapshot struct {
+	Path    string
+	Exists  bool
+	Content []byte
+}
+
+type returnBlockedJournal struct {
+	Shipment *models.Artifact `json:"shipment"`
+	Item     *models.Artifact `json:"item"`
+}
 
 // CreateShipment creates a new shipment artifact in the workspace with the given
 // title and associates the specified item IDs with it. The shipment owns the items
@@ -129,6 +141,9 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 	if err != nil {
 		return err
 	}
+	if shipmentMutationBlocked(shipment.Status) {
+		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, blerrors.ErrShipmentConflict)
+	}
 
 	items := shipmentItems(shipment)
 	if containsString(items, itemID) {
@@ -168,6 +183,9 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	if err != nil {
 		return err
 	}
+	if shipmentMutationBlocked(shipment.Status) {
+		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, blerrors.ErrShipmentConflict)
+	}
 
 	items := shipmentItems(shipment)
 	if !containsString(items, itemID) {
@@ -180,6 +198,9 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	}
 	originalShipment := cloneArtifact(shipment)
 	originalItem := cloneArtifact(item)
+	if err := writeReturnBlockedJournal(ws.RootPath, originalShipment, originalItem); err != nil {
+		return fmt.Errorf("journal return of item %s from shipment %s: %w", itemID, shipmentID, err)
+	}
 
 	if shipment.CustomFields == nil {
 		shipment.CustomFields = map[string]any{}
@@ -194,9 +215,14 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	item.CustomFields["blocked_reason"] = reason
 	item.UpdatedAt = time.Now()
 
-	if err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, shipment, originalItem, item); err != nil {
+	rolledBack, err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, shipment, originalItem, item)
+	if err != nil {
+		if rolledBack {
+			removeReturnBlockedJournal(ctx, ws.RootPath, originalShipment.ID, originalItem.ID)
+		}
 		return err
 	}
+	removeReturnBlockedJournal(ctx, ws.RootPath, originalShipment.ID, originalItem.ID)
 
 	slog.InfoContext(ctx, "shipment item returned blocked", "shipment_id", shipmentID, "item_id", itemID)
 	appendItemEvent(ctx, ws, shipmentID, "shipment_item_returned_blocked", map[string]any{
@@ -289,6 +315,14 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	if err != nil {
 		return err
 	}
+	currentSnapshot, err := snapshotFile(currentPath)
+	if err != nil {
+		return fmt.Errorf("snapshot current artifact file: %w", err)
+	}
+	targetSnapshot, err := snapshotFile(targetPath)
+	if err != nil {
+		return fmt.Errorf("snapshot target artifact file: %w", err)
+	}
 
 	if currentPath != targetPath {
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
@@ -308,6 +342,9 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 		}
 	}
 	if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
+		if restoreErr := restorePersistedArtifactFiles(currentSnapshot, targetSnapshot, currentPath, targetPath); restoreErr != nil {
+			return fmt.Errorf("upsert item: %w; restore files: %v", err, restoreErr)
+		}
 		return fmt.Errorf("upsert item: %w", err)
 	}
 	return nil
@@ -345,22 +382,22 @@ func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *m
 	return currentPath, targetPath, nil
 }
 
-func persistReturnedBlockedArtifacts(ctx context.Context, ws *Workspace, originalShipment, updatedShipment, originalItem, updatedItem *models.Artifact) error {
+func persistReturnedBlockedArtifacts(ctx context.Context, ws *Workspace, originalShipment, updatedShipment, originalItem, updatedItem *models.Artifact) (bool, error) {
 	if err := persistArtifact(ctx, ws, updatedShipment, false); err != nil {
-		return fmt.Errorf("update shipment %s: %w", updatedShipment.ID, err)
+		return false, fmt.Errorf("update shipment %s: %w", updatedShipment.ID, err)
 	}
 	if err := persistArtifact(ctx, ws, updatedItem, true); err != nil {
 		if rollbackErr := rollbackReturnedBlockedArtifacts(ctx, ws, originalShipment, originalItem); rollbackErr != nil {
-			return fmt.Errorf("update item %s: %w; rollback failed: %w", updatedItem.ID, err, rollbackErr)
+			return false, fmt.Errorf("update item %s: %w; rollback failed: %w", updatedItem.ID, err, rollbackErr)
 		}
-		return fmt.Errorf("update item %s: %w", updatedItem.ID, err)
+		return true, fmt.Errorf("update item %s: %w", updatedItem.ID, err)
 	}
-	return nil
+	return false, nil
 }
 
 func rollbackReturnedBlockedArtifacts(ctx context.Context, ws *Workspace, originalShipment, originalItem *models.Artifact) error {
 	var rollbackErrs []error
-	if err := persistArtifact(ctx, ws, originalItem, false); err != nil {
+	if err := persistArtifact(ctx, ws, originalItem, true); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("restore item %s: %w", originalItem.ID, err))
 	}
 	if err := persistArtifact(ctx, ws, originalShipment, false); err != nil {
@@ -411,7 +448,11 @@ func validateShipmentItemIDs(ctx context.Context, ws *Workspace, currentShipment
 }
 
 func shipmentStatusBlocksAssignment(status models.ArtifactStatus) bool {
-	return status != models.StatusAbandoned && status != models.StatusShipped
+	return status != models.StatusAbandoned && status != models.StatusShipped && status != models.StatusArchived
+}
+
+func shipmentMutationBlocked(status models.ArtifactStatus) bool {
+	return status == models.StatusShipped || status == models.StatusAbandoned || status == models.StatusArchived
 }
 
 func removeString(values []string, target string) []string {
@@ -483,4 +524,145 @@ func cloneArtifact(artifact *models.Artifact) *models.Artifact {
 		clone.CustomFields = maps.Clone(artifact.CustomFields)
 	}
 	return &clone
+}
+
+func snapshotFile(path string) (fileSnapshot, error) {
+	snapshot := fileSnapshot{Path: path}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return snapshot, nil
+		}
+		return snapshot, err
+	}
+	if info.IsDir() {
+		return snapshot, fmt.Errorf("%s is a directory", path)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Exists = true
+	snapshot.Content = content
+	return snapshot, nil
+}
+
+func restorePersistedArtifactFiles(currentSnapshot, targetSnapshot fileSnapshot, currentPath, targetPath string) error {
+	var errs []error
+	if currentPath == targetPath {
+		if err := restoreSnapshot(currentSnapshot); err != nil {
+			errs = append(errs, err)
+		}
+		return errors.Join(errs...)
+	}
+	if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
+		errs = append(errs, fmt.Errorf("remove target %s: %w", targetPath, err))
+	}
+	if err := restoreSnapshot(currentSnapshot); err != nil {
+		errs = append(errs, err)
+	}
+	if err := restoreSnapshot(targetSnapshot); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func restoreSnapshot(snapshot fileSnapshot) error {
+	if snapshot.Path == "" {
+		return nil
+	}
+	if !snapshot.Exists {
+		if err := os.Remove(snapshot.Path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", snapshot.Path, err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(snapshot.Path), 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", snapshot.Path, err)
+	}
+	if err := os.WriteFile(snapshot.Path, snapshot.Content, 0o644); err != nil {
+		return fmt.Errorf("restore %s: %w", snapshot.Path, err)
+	}
+	return nil
+}
+
+func shipmentOpsRoot(rootPath string) string {
+	return filepath.Join(WorkspaceStorageRoot(rootPath), "ops")
+}
+
+func returnBlockedJournalPath(rootPath, shipmentID, itemID string) string {
+	return filepath.Join(shipmentOpsRoot(rootPath), fmt.Sprintf("return-blocked-%s-%s.json", shipmentID, itemID))
+}
+
+func writeReturnBlockedJournal(rootPath string, shipment, item *models.Artifact) error {
+	journalPath := returnBlockedJournalPath(rootPath, shipment.ID, item.ID)
+	if err := os.MkdirAll(filepath.Dir(journalPath), 0o755); err != nil {
+		return fmt.Errorf("create journal directory: %w", err)
+	}
+	payload, err := json.MarshalIndent(returnBlockedJournal{
+		Shipment: cloneArtifact(shipment),
+		Item:     cloneArtifact(item),
+	}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal journal: %w", err)
+	}
+	tmpPath := journalPath + ".tmp"
+	if err := os.WriteFile(tmpPath, payload, 0o644); err != nil {
+		return fmt.Errorf("write journal temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, journalPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("commit journal: %w", err)
+	}
+	return nil
+}
+
+func removeReturnBlockedJournal(ctx context.Context, rootPath, shipmentID, itemID string) {
+	journalPath := returnBlockedJournalPath(rootPath, shipmentID, itemID)
+	if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
+		slog.WarnContext(ctx, "remove return-blocked journal", "path", journalPath, "error", err)
+	}
+}
+
+func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error {
+	entries, err := os.ReadDir(shipmentOpsRoot(ws.RootPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read shipment ops directory: %w", err)
+	}
+	var recoveryErrs []error
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), entry.Name())
+		if err := recoverReturnBlockedJournal(ctx, ws, journalPath); err != nil {
+			recoveryErrs = append(recoveryErrs, err)
+		}
+	}
+	return errors.Join(recoveryErrs...)
+}
+
+func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, journalPath string) error {
+	data, err := os.ReadFile(journalPath)
+	if err != nil {
+		return fmt.Errorf("read shipment journal %s: %w", journalPath, err)
+	}
+	var journal returnBlockedJournal
+	if err := json.Unmarshal(data, &journal); err != nil {
+		return fmt.Errorf("parse shipment journal %s: %w", journalPath, err)
+	}
+	if journal.Shipment == nil || journal.Item == nil {
+		return fmt.Errorf("shipment journal %s is incomplete", journalPath)
+	}
+	if err := persistArtifact(ctx, ws, journal.Shipment, false); err != nil {
+		return fmt.Errorf("restore shipment %s from journal: %w", journal.Shipment.ID, err)
+	}
+	if err := persistArtifact(ctx, ws, journal.Item, true); err != nil {
+		return fmt.Errorf("restore item %s from journal: %w", journal.Item.ID, err)
+	}
+	removeReturnBlockedJournal(ctx, ws.RootPath, journal.Shipment.ID, journal.Item.ID)
+	return nil
 }

@@ -211,6 +211,51 @@ func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
 	assert.Contains(t, shipmentItems(updated), task.ID)
 }
 
+// T002 / ST013: Reject adding an item to a shipped shipment.
+func TestAddItemToShipment_RejectsTerminalShipment(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	task, err := CreateArtifact(ctx, ws, "Terminal shipment task", "task")
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Terminal shipment", nil)
+	require.NoError(t, err)
+	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped))
+
+	// Act
+	err = AddItemToShipment(ctx, ws, shipment.ID, task.ID)
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+}
+
+// T002 / ST013: Allow reassigning an item after its previous shipment is archived.
+func TestAddItemToShipment_AllowsItemAfterArchivedShipment(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	task, err := CreateArtifact(ctx, ws, "Archived reusable task", "task")
+	require.NoError(t, err)
+	firstShipment, err := CreateShipment(ctx, ws, "Archived shipment 1", nil)
+	require.NoError(t, err)
+	secondShipment, err := CreateShipment(ctx, ws, "Archived shipment 2", nil)
+	require.NoError(t, err)
+	require.NoError(t, AddItemToShipment(ctx, ws, firstShipment.ID, task.ID))
+	_, err = ArchiveItem(ctx, ws.DB, ws, firstShipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	err = AddItemToShipment(ctx, ws, secondShipment.ID, task.ID)
+
+	// Assert
+	require.NoError(t, err)
+	updated, err := GetShipment(ctx, ws, secondShipment.ID)
+	require.NoError(t, err)
+	assert.Contains(t, shipmentItems(updated), task.ID)
+}
+
 // T002 / ST013: Return a blocked item from shipment.
 func TestReturnBlockedItem_Success(t *testing.T) {
 	// Arrange
@@ -252,6 +297,27 @@ func TestReturnBlockedItem_NotInShipment(t *testing.T) {
 	require.Error(t, err, "returning an item not in the shipment must fail")
 }
 
+// T002 / ST013: Reject returning a blocked item from an archived shipment.
+func TestReturnBlockedItem_RejectsTerminalShipment(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Archived return shipment", nil)
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Archived return task", "task")
+	require.NoError(t, err)
+	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
+	_, err = ArchiveItem(ctx, ws.DB, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	err = ReturnBlockedItem(ctx, ws, shipment.ID, task.ID, "archived shipment")
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+}
+
 // T002 / ST013: Roll back shipment changes when the item update fails.
 func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 	// Arrange
@@ -278,16 +344,80 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 	currentItem.UpdatedAt = time.Now()
 
 	// Act
-	err = persistReturnedBlockedArtifacts(ctx, ws, originalShipment, currentShipment, originalItem, currentItem)
+	rolledBack, err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, currentShipment, originalItem, currentItem)
 
 	// Assert
 	require.Error(t, err)
+	assert.True(t, rolledBack)
 	restoredShipment, loadShipmentErr := GetShipment(ctx, ws, shipment.ID)
 	require.NoError(t, loadShipmentErr)
 	assert.Contains(t, shipmentItems(restoredShipment), task.ID)
 	restoredItem, loadItemErr := loadArtifact(ctx, ws, task.ID)
 	require.NoError(t, loadItemErr)
 	assert.Equal(t, models.StatusQueued, restoredItem.Status)
+}
+
+// T002 / ST013: Restore the Markdown file when DB upsert fails after file write.
+func TestPersistArtifact_RestoresFileOnUpsertFailure(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "File restore shipment", nil)
+	require.NoError(t, err)
+	currentPath, err := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	originalContent, err := os.ReadFile(currentPath)
+	require.NoError(t, err)
+	shipment.Title = "Broken after file write"
+	shipment.UpdatedAt = time.Now()
+	require.NoError(t, ws.DB.Close())
+
+	// Act
+	err = persistArtifact(ctx, ws, shipment, false)
+
+	// Assert
+	require.Error(t, err)
+	restoredContent, readErr := os.ReadFile(currentPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, string(originalContent), string(restoredContent))
+}
+
+// T002 / ST013: Recover a journaled blocked-item return on workspace reopen.
+func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Recovered shipment", nil)
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Recovered task", "task")
+	require.NoError(t, err)
+	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
+	originalShipment, err := GetShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	originalItem, err := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, err)
+	updatedShipment := cloneArtifact(originalShipment)
+	updatedShipment.CustomFields["items"] = removeString(shipmentItems(updatedShipment), task.ID)
+	updatedShipment.UpdatedAt = time.Now()
+	require.NoError(t, writeReturnBlockedJournal(ws.RootPath, originalShipment, originalItem))
+	require.NoError(t, persistArtifact(ctx, ws, updatedShipment, false))
+	rootPath := ws.RootPath
+	require.NoError(t, ws.Close())
+
+	// Act
+	reopened, err := NewWorkspace(ctx, rootPath)
+	require.NoError(t, err)
+	defer reopened.Close()
+
+	// Assert
+	recoveredShipment, err := GetShipment(ctx, reopened, shipment.ID)
+	require.NoError(t, err)
+	assert.Contains(t, shipmentItems(recoveredShipment), task.ID)
+	recoveredItem, err := loadArtifact(ctx, reopened, task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, recoveredItem.Status)
+	_, statErr := os.Stat(returnBlockedJournalPath(rootPath, shipment.ID, task.ID))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
 // T002 / ST014: Verify shipment survives rehydration cycle.

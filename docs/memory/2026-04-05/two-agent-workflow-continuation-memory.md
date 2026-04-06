@@ -38,7 +38,7 @@ Persist progress from the two-agent workflow refactoring design session. Capture
 
 - **Sidecar bootstrap strategy** — Agents will use direct tool calls during harness execution; bootstrap happens between stash capture and deliberation creation
 - **Shipment as first-class artifact** — New `shipment` type required in config, frontmatter schema, and templates to track agent work units and routing decisions
-- **Stash migration to JSONL** — Stash entries moving from Markdown files to `.backlogit/events.jsonl` for better sequencing and append-only history
+- **Stash migration to JSONL** — Stash entries moving from Markdown files to `.backlogit/stash.jsonl` for better sequencing and append-only history
 - **Filename redesign deferred** — Original filename redesign (remove type prefix from queue files) moved out of scope; reserve for future refactor
 
 **In-Scope Boundaries**

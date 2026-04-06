@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -173,13 +174,22 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 		Example: `  backlogit mcp
   backlogit --cwd D:\Source\MyProject mcp`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ctx := context.Background()
-			ws, err := core.NewWorkspace(ctx, *cwd)
+			s, err := openMCPServer(context.Background(), *cwd)
 			if err != nil {
-				return fmt.Errorf("open workspace: %w", err)
+				return err
 			}
-			s := mcpinternal.NewServer(ws)
 			return mcpinternal.RunStdio(s)
 		},
 	}
+}
+
+func openMCPServer(ctx context.Context, rootPath string) (*mcpinternal.Server, error) {
+	ws, err := core.NewWorkspace(ctx, rootPath)
+	if err == nil {
+		return mcpinternal.NewServer(ws), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return mcpinternal.NewServerForRoot(rootPath), nil
+	}
+	return nil, fmt.Errorf("open workspace: %w", err)
 }

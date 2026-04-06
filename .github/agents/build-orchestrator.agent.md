@@ -243,7 +243,7 @@ After each completed task, invoke the `memory` agent in checkpoint mode:
    - `errors-resolved`: test failures or type errors resolved
    - `review-findings`: findings from the review gate
    - `next-context`: context the next task will need
-3. The checkpoint is written to `docs/memory/{YYYY-MM-DD}/{task-id}-checkpoint.md`
+3. The checkpoint is written to `docs/memory/[{YYYYMMDD}-{HHMMSS}]-{task-id}-checkpoint.md`
 4. Before advancing to another task, confirm that no implementation changes remain outside the just-completed commit. Pending `docs/memory/` or `docs/compound/` files may remain intentionally deferred for the session-end artifact commit in Step 7c.
 
 ### Step 6: Iterate or Exit

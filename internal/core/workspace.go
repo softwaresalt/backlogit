@@ -80,13 +80,18 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		}
 	}
 
-	return &Workspace{
+	workspace := &Workspace{
 		RootPath:  resolvedRoot,
 		Config:    cfg,
 		DB:        database,
 		HeaderDef: headerDef,
 		Templates: templates,
-	}, nil
+	}
+	if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("recover shipment operations: %w", err)
+	}
+	return workspace, nil
 }
 
 func resolveWorkspaceRoot(rootPath string) (string, error) {

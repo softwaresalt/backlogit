@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/stash"
 )
 
 // TASK-002.01.04: Update rehydration engine for new fields.
@@ -134,4 +135,45 @@ Body`
 	require.Len(t, searchResults, 1)
 	assert.Equal(t, "T003", searchResults[0].ItemID)
 	assert.Equal(t, "worklog", searchResults[0].EventType)
+}
+
+func TestRehydrate_StashJSONLOverridesLegacyAndTracksSourcePath(t *testing.T) {
+	// Arrange
+	ws := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "queue"), 0o755))
+	legacyContent := stash.RenderContent(nil, []stash.Entry{
+		{ID: "ABC12345", Priority: "low", Kind: "bug", Text: "legacy stash entry"},
+		{ID: "LEGACY01", Priority: "medium", Kind: "task", Text: "legacy only entry"},
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "queue", stash.FileName), []byte(legacyContent), 0o644))
+	jsonlFile, err := os.Create(filepath.Join(ws, stash.JSONLFileName))
+	require.NoError(t, err)
+	require.NoError(t, stash.WriteJSONL(jsonlFile, []stash.Entry{
+		{ID: "ABC12345", Priority: "critical", Kind: "bug", Text: "jsonl override entry"},
+		{ID: "JSONL001", Priority: "high", Kind: "feature", Text: "jsonl only entry"},
+	}))
+	require.NoError(t, jsonlFile.Close())
+
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	// Act
+	count, err := db.Rehydrate(ctx, ws, database)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+
+	entries, err := db.ListStashEntries(ctx, database, false)
+	require.NoError(t, err)
+
+	// Assert
+	require.Len(t, entries, 3)
+	byID := make(map[string]db.StashRecord, len(entries))
+	for _, entry := range entries {
+		byID[entry.ID] = entry
+	}
+	assert.Equal(t, "jsonl override entry", byID["ABC12345"].Text)
+	assert.Equal(t, "critical", byID["ABC12345"].Priority)
+	assert.Equal(t, stash.JSONLFileName, byID["ABC12345"].SourcePath)
+	assert.Equal(t, filepath.ToSlash(filepath.Join("queue", stash.FileName)), byID["LEGACY01"].SourcePath)
+	assert.Equal(t, stash.JSONLFileName, byID["JSONL001"].SourcePath)
 }

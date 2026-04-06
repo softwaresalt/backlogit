@@ -108,5 +108,5 @@ types:
         type: string
         optional: true
       items:
-        type: string
+        type: list
         optional: true

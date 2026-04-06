@@ -226,5 +226,5 @@ When backlogit is the active backlog tool for this repository:
 * When the context window reaches approximately 65% capacity, invoke the `memory` agent to checkpoint current work before continuing.
 * For long sessions, save memory checkpoints after completing each phase or major task group.
 * Every memory entry must include task IDs completed, files modified, decisions and rationale, failed approaches, and concrete next steps.
-* File convention: `docs/memory/{YYYY-MM-DD}/{descriptive-slug}-memory.md`.
+* File convention: `docs/memory/[{YYYYMMDD}-{HHMMSS}]-{descriptive-slug}-memory.md`.
 * Invoke `compact-context` when stale tracking or checkpoint volume starts hurting future sessions.

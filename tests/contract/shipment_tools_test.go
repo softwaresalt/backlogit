@@ -292,3 +292,32 @@ func TestAddToShipment_AlreadyAssignedUsesConflictErrorType(t *testing.T) {
 	// Assert
 	assert.Equal(t, "conflict", data["error"])
 }
+
+func TestAddToShipment_ShippedShipmentUsesConflictErrorType(t *testing.T) {
+	// Arrange
+	s := setupRealMCPServer(t)
+	shipment := callToolAndParseJSON(t, s, "backlogit_create_shipment", map[string]any{
+		"title": "Shipped shipment",
+	})
+	shipmentID := shipment["id"].(string)
+	_ = callToolAndParseJSON(t, s, "backlogit_claim_shipment", map[string]any{
+		"id": shipmentID,
+	})
+	_ = callToolAndParseJSON(t, s, "backlogit_move_item", map[string]any{
+		"id":     shipmentID,
+		"status": "shipped",
+	})
+	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Late shipment task",
+		"artifact_type": "task",
+	})
+
+	// Act
+	data := callToolAndParseError(t, s, "backlogit_add_to_shipment", map[string]any{
+		"shipment_id": shipmentID,
+		"item_id":     taskData["id"].(string),
+	})
+
+	// Assert
+	assert.Equal(t, "conflict", data["error"])
+}

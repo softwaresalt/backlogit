@@ -315,9 +315,8 @@ func (s *Server) RegisterTools() {
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	filters := db.QueryFilters{}
 	if v, ok := request.Params.Arguments["type"].(string); ok {
@@ -340,9 +339,8 @@ func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolReq
 }
 
 func (s *Server) handleSearchItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	query, _ := request.Params.Arguments["query"].(string)
 	if query == "" {
@@ -360,9 +358,8 @@ func (s *Server) handleSearchItems(ctx context.Context, request mcplib.CallToolR
 }
 
 func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -390,9 +387,8 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 }
 
 func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -413,9 +409,8 @@ func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRe
 }
 
 func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -455,9 +450,8 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 }
 
 func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	title, _ := request.Params.Arguments["title"].(string)
 	if title == "" {
@@ -521,9 +515,8 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 }
 
 func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -565,10 +558,9 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	return toolResultJSON(artifact)
 }
 
-func (s *Server) handleQuerySQL(_ context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+func (s *Server) handleQuerySQL(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	sqlStr, _ := request.Params.Arguments["sql"].(string)
 	if sqlStr == "" {
@@ -586,9 +578,8 @@ func (s *Server) handleQuerySQL(_ context.Context, request mcplib.CallToolReques
 }
 
 func (s *Server) handleSyncIndex(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	count, err := db.Rehydrate(ctx, core.WorkspaceStorageRoot(s.Workspace.RootPath), s.Workspace.DB)
 	if err != nil {
@@ -598,9 +589,8 @@ func (s *Server) handleSyncIndex(ctx context.Context, _ mcplib.CallToolRequest) 
 }
 
 func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	itemID, _ := request.Params.Arguments["item_id"].(string)
 	if itemID == "" {
@@ -624,9 +614,8 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 }
 
 func (s *Server) handleLogTelemetry(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	eventType, _ := request.Params.Arguments["event_type"].(string)
 	if eventType == "" {
@@ -649,9 +638,8 @@ func (s *Server) handleLogTelemetry(ctx context.Context, request mcplib.CallTool
 }
 
 func (s *Server) handleSaveMemory(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	key, _ := request.Params.Arguments["key"].(string)
 	if key == "" {
@@ -666,9 +654,8 @@ func (s *Server) handleSaveMemory(ctx context.Context, request mcplib.CallToolRe
 }
 
 func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	stateDump, _ := request.Params.Arguments["state_dump"].(string)
 	if stateDump == "" {
@@ -743,7 +730,7 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 // queueLayout returns the configured QueueLayoutConfig for the workspace,
 // falling back to a sensible default when none is configured.
 func (s *Server) queueLayout() *core.QueueLayoutConfig {
-	if s.Workspace.Config != nil && s.Workspace.Config.QueueLayout != nil {
+	if s.Workspace != nil && s.Workspace.Config != nil && s.Workspace.Config.QueueLayout != nil {
 		return s.Workspace.Config.QueueLayout
 	}
 	return &core.QueueLayoutConfig{
@@ -757,10 +744,10 @@ func (s *Server) queueLayout() *core.QueueLayoutConfig {
 }
 
 func (s *Server) handleGetWITMetadata(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
+	backlogitDir := s.backlogitDir()
 	artifactType, _ := request.Params.Arguments["type"].(string)
 	if artifactType == "" {
 		return ValidationFailed("type is required"), nil
@@ -782,10 +769,10 @@ func (s *Server) handleGetWITMetadata(ctx context.Context, request mcplib.CallTo
 }
 
 func (s *Server) handleListTypes(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
+	backlogitDir := s.backlogitDir()
 	headerDef, err := config.LoadHeaderDef(backlogitDir)
 	if err != nil {
 		return InternalError(fmt.Sprintf("load header-def: %v", err)), nil
@@ -803,9 +790,8 @@ func (s *Server) handleListTypes(ctx context.Context, _ mcplib.CallToolRequest) 
 }
 
 func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	itemID, _ := request.Params.Arguments["item_id"].(string)
 	if itemID == "" {
@@ -831,9 +817,8 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 }
 
 func (s *Server) handleRemoveDependency(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	itemID, _ := request.Params.Arguments["item_id"].(string)
 	if itemID == "" {
@@ -854,9 +839,8 @@ func (s *Server) handleRemoveDependency(ctx context.Context, request mcplib.Call
 }
 
 func (s *Server) handleGetDependencies(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -878,9 +862,8 @@ func (s *Server) handleGetDependencies(ctx context.Context, request mcplib.CallT
 }
 
 func (s *Server) handleArchiveItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	id, _ := request.Params.Arguments["id"].(string)
 	if id == "" {
@@ -894,9 +877,8 @@ func (s *Server) handleArchiveItem(ctx context.Context, request mcplib.CallToolR
 }
 
 func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	filter := &core.QueueFilter{}
 	if v, ok := request.Params.Arguments["type"].(string); ok && v != "" {
@@ -925,9 +907,8 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	itemID, _ := request.Params.Arguments["item_id"].(string)
 	if itemID == "" {
@@ -950,9 +931,8 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 }
 
 func (s *Server) handleFetchStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	priority, _ := request.Params.Arguments["priority"].(string)
 	groupByPriority, _ := request.Params.Arguments["group_by_priority"].(bool)
@@ -967,9 +947,8 @@ func (s *Server) handleFetchStash(ctx context.Context, request mcplib.CallToolRe
 }
 
 func (s *Server) handleStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	kind, _ := request.Params.Arguments["kind"].(string)
 	if kind == "" {
@@ -988,9 +967,8 @@ func (s *Server) handleStash(ctx context.Context, request mcplib.CallToolRequest
 }
 
 func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	stashID, _ := request.Params.Arguments["stash_id"].(string)
 	priority, _ := request.Params.Arguments["priority"].(string)
@@ -1037,9 +1015,8 @@ func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallTool
 }
 
 func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 	if s.templateSvc == nil {
 		return InternalError("template service is unavailable"), nil
@@ -1071,9 +1048,8 @@ func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRe
 }
 
 func (s *Server) handleCreateShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	title, _ := request.Params.Arguments["title"].(string)
@@ -1092,9 +1068,8 @@ func (s *Server) handleCreateShipment(ctx context.Context, request mcplib.CallTo
 }
 
 func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	id, _ := request.Params.Arguments["id"].(string)
@@ -1112,9 +1087,8 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 }
 
 func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	status, _ := request.Params.Arguments["status"].(string)
@@ -1131,9 +1105,8 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 }
 
 func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	id, _ := request.Params.Arguments["id"].(string)
@@ -1155,9 +1128,8 @@ func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToo
 }
 
 func (s *Server) handleReturnBlocked(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	shipmentID, _ := request.Params.Arguments["shipment_id"].(string)
@@ -1192,9 +1164,8 @@ func (s *Server) handleReturnBlocked(ctx context.Context, request mcplib.CallToo
 }
 
 func (s *Server) handleAddToShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	backlogitDir := filepath.Join(s.Workspace.RootPath, ".backlogit")
-	if !dirExists(backlogitDir) {
-		return WorkspaceNotInitialized(), nil
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
 	}
 
 	shipmentID, _ := request.Params.Arguments["shipment_id"].(string)

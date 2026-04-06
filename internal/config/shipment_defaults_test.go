@@ -54,6 +54,7 @@ func TestDefaultHeaderDef_ContainsShipmentSchema(t *testing.T) {
 	require.Contains(t, shipmentDef.Fields, "status")
 	require.Contains(t, shipmentDef.Fields, "branch")
 	require.Contains(t, shipmentDef.Fields, "items")
+	assert.Equal(t, "list", shipmentDef.Fields["items"].Type)
 }
 
 // T001 / ST003: Verify default template content for shipment is present.

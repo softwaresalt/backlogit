@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/backlogit/backlogit/internal/stash"
 )
 
 // StashRecord represents an indexed stash entry with any harvested link.
@@ -126,9 +124,9 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 	return records, rows.Err()
 }
 
-// RehydrateStashIndex rebuilds the stash index from the hidden stash file and artifact provenance.
+// RehydrateStashIndex rebuilds the stash index from the active stash records and artifact provenance.
 // The entire clear-and-rebuild sequence runs inside a single transaction to prevent partial state.
-func RehydrateStashIndex(ctx context.Context, database *sql.DB, stashEntries []stash.Entry, sourcePath string, harvested map[string]StashRecord) error {
+func RehydrateStashIndex(ctx context.Context, database *sql.DB, activeEntries []StashRecord, harvested map[string]StashRecord) error {
 	tx, err := database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin stash rehydration tx: %w", err)
@@ -159,9 +157,9 @@ func RehydrateStashIndex(ctx context.Context, database *sql.DB, stashEntries []s
 		   item_id = excluded.item_id,
 		   linked_at = excluded.linked_at`
 
-	for _, entry := range stashEntries {
+	for _, entry := range activeEntries {
 		if _, err := tx.ExecContext(ctx, upsertStashSQL,
-			entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", sourcePath, now.Format(time.RFC3339Nano),
+			entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", entry.SourcePath, now.Format(time.RFC3339Nano),
 		); err != nil {
 			return fmt.Errorf("upsert stash entry %s: %w", entry.ID, err)
 		}

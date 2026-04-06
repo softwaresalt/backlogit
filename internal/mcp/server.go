@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,6 +21,7 @@ var logger = slog.With("package", "mcp")
 
 // Server holds dependencies for MCP tool handlers.
 type Server struct {
+	RootPath    string
 	Workspace   *core.Workspace
 	Events      *events.EventWriter
 	Telemetry   *events.TelemetryWriter
@@ -31,10 +33,21 @@ type Server struct {
 
 // NewServer creates an MCP server from a workspace.
 func NewServer(ws *core.Workspace) *Server {
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	return newServer(ws.RootPath, ws)
+}
+
+// NewServerForRoot creates an MCP server bound to a repository root even when
+// the workspace has not been initialized yet.
+func NewServerForRoot(rootPath string) *Server {
+	return newServer(rootPath, nil)
+}
+
+func newServer(rootPath string, ws *core.Workspace) *Server {
+	backlogitDir := filepath.Join(rootPath, ".backlogit")
 	logsDir := filepath.Join(backlogitDir, "logs")
 	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
+		RootPath:  rootPath,
 		Workspace: ws,
 		Events:    events.NewEventWriter(logsDir),
 		Telemetry: events.NewTelemetryWriter(telemetryPath),
@@ -49,13 +62,7 @@ func NewServer(ws *core.Workspace) *Server {
 	s.RegisterTools()
 	s.RegisterResources()
 
-	// Construct a live template service for section-aware operations.
-	templatesDir := filepath.Join(ws.RootPath, ".backlogit", "templates")
-	svc, err := templates.NewService(context.Background(), templatesDir)
-	if err != nil {
-		logger.Warn("template service unavailable", "error", err)
-	}
-	RegisterSectionAwareTools(s, svc)
+	s.refreshTemplateService(context.Background())
 	return s
 }
 
@@ -70,6 +77,53 @@ func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
 func RunStdio(s *Server) error {
 	logger.Info("starting backlogit MCP server on stdio")
 	return mcpserver.ServeStdio(s.mcp)
+}
+
+func (s *Server) backlogitDir() string {
+	return filepath.Join(s.RootPath, ".backlogit")
+}
+
+func (s *Server) refreshTemplateService(ctx context.Context) {
+	if s.Workspace == nil {
+		RegisterSectionAwareTools(s, nil)
+		return
+	}
+
+	templatesDir := filepath.Join(s.backlogitDir(), "templates")
+	svc, err := templates.NewService(ctx, templatesDir)
+	if err != nil {
+		logger.Warn("template service unavailable", "error", err)
+		svc = nil
+	}
+	RegisterSectionAwareTools(s, svc)
+}
+
+func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
+	if s.Workspace != nil {
+		return s.Workspace, nil
+	}
+	if !dirExists(s.backlogitDir()) {
+		return nil, os.ErrNotExist
+	}
+
+	ws, err := core.NewWorkspace(ctx, s.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	s.Workspace = ws
+	s.refreshTemplateService(ctx)
+	return ws, nil
+}
+
+func (s *Server) requireWorkspace(ctx context.Context) (*core.Workspace, *mcplib.CallToolResult) {
+	ws, err := s.ensureWorkspace(ctx)
+	if err == nil {
+		return ws, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, WorkspaceNotInitialized()
+	}
+	return nil, InternalError(fmt.Sprintf("open workspace: %v", err))
 }
 
 // dirExists reports whether path is an existing directory.
