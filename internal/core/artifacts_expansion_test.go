@@ -153,6 +153,65 @@ func TestCreateArtifact_WritesUnderBacklogitStorage(t *testing.T) {
 	assert.Contains(t, filepath.ToSlash(filePath), "/.backlogit/")
 }
 
+func TestCreateArtifact_UsesHierarchicalTaskIDsUnderFeatureParent(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	featureOne, err := core.CreateArtifact(ctx, ws, "Feature one", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, featureOne))
+
+	firstTask, err := core.CreateArtifact(ctx, ws, "First child task", "task", core.WithParent(featureOne.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, firstTask))
+
+	secondTask, err := core.CreateArtifact(ctx, ws, "Second child task", "task", core.WithParent(featureOne.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, secondTask))
+
+	featureTwo, err := core.CreateArtifact(ctx, ws, "Feature two", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, featureTwo))
+
+	otherFeatureTask, err := core.CreateArtifact(ctx, ws, "Other feature child task", "task", core.WithParent(featureTwo.ID))
+	require.NoError(t, err)
+
+	assert.Equal(t, featureOne.ID+".T001", firstTask.ID)
+	assert.Equal(t, featureOne.ID+".T002", secondTask.ID)
+	assert.Equal(t, featureTwo.ID+".T001", otherFeatureTask.ID)
+}
+
+func TestCreateArtifact_UsesHierarchicalSubtaskIDsAndFilenamesUnderTaskParent(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature root", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := core.CreateArtifact(ctx, ws, "Task parent", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, task))
+
+	firstSubtask, err := core.CreateArtifact(ctx, ws, "First child subtask", "subtask", core.WithParent(task.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, firstSubtask))
+
+	secondSubtask, err := core.CreateArtifact(ctx, ws, "Second child subtask", "subtask", core.WithParent(task.ID))
+	require.NoError(t, err)
+
+	assert.Equal(t, task.ID+".ST001", firstSubtask.ID)
+	assert.Equal(t, task.ID+".ST002", secondSubtask.ID)
+
+	filePath, err := core.FindArtifactPath(ctx, ws, firstSubtask.ID)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "queue", firstSubtask.ID+".md"),
+		filePath,
+	)
+}
+
 func TestCreateArtifact_ReviewRequiresFeatureParent(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()

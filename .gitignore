@@ -21,3 +21,4 @@ backlogit.db
 .backlogit/backlogit.db
 .backlogit/backlogit.db-shm
 .backlogit/backlogit.db-wal
+*.exe~
