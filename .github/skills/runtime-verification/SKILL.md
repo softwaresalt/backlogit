@@ -1,6 +1,6 @@
 ---
 name: runtime-verification
-description: "Validate affected runtime surfaces after build and CI using the lightest verification that still provides confidence"
+description: "Validate affected runtime surfaces after build and CI using the lightest verification that still provides confidence - Brought to you by microsoft/hve-core"
 argument-hint: "surface={cli|api|browser|background-job|auto} [target=...] [mode={manual|api|browser|auto}]"
 ---
 
@@ -32,3 +32,5 @@ Write the verification report to `docs/closure/{YYYY-MM-DD}-{slug}-runtime-verif
 * Verification matches the surface actually changed.
 * Evidence is specific enough to reproduce.
 * Manual verification is used honestly when automation is not available.
+
+> Brought to you by microsoft/hve-core

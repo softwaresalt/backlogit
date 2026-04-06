@@ -1,6 +1,6 @@
 ---
 name: operational-closure
-description: "Produce release-readiness, monitoring, rollback, and follow-up artifacts after implementation and verification"
+description: "Produce release-readiness, monitoring, rollback, and follow-up artifacts after implementation and verification - Brought to you by microsoft/hve-core"
 argument-hint: "mode={pre-merge|post-merge|post-deploy} context=... [verification_report=...]"
 ---
 
@@ -30,3 +30,5 @@ Write the closure artifact to `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`.
 * Closure artifacts contain concrete signals.
 * Rollback triggers are actionable.
 * Ownership and validation windows are explicit.
+
+> Brought to you by microsoft/hve-core

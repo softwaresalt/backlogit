@@ -46,9 +46,10 @@ func InternalError(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("internal", detail)
 }
 
-// domainError routes not-found and validation errors to ValidationFailed and
-// all other errors to InternalError. op is a short description prepended to
-// InternalError messages to aid diagnosis.
+// domainError routes not-found errors to NotFound, conflict errors to
+// Conflict, validation errors to ValidationFailed, and all other errors to
+// InternalError. op is a short description prepended to InternalError
+// messages to aid diagnosis.
 func domainError(op string, err error) *mcplib.CallToolResult {
 	switch {
 	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound):
