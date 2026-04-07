@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/config"
+	bldb "github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
@@ -89,6 +90,37 @@ func TestMoveShipmentStatus_QueuedToActive(t *testing.T) {
 	assert.Equal(t, "active", string(updated.Status))
 }
 
+// T002 / ST012: Claiming a shipment activates included work and rolls feature status up.
+func TestClaimShipment_ActivatesIncludedScope(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	feature, err := CreateArtifact(ctx, ws, "Claim lifecycle feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+	task, err := CreateArtifact(ctx, ws, "Claim lifecycle task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+	shipment, err := CreateShipment(ctx, ws, "Claim lifecycle shipment", []string{task.ID})
+	require.NoError(t, err)
+
+	// Act
+	claimed, err := ClaimShipment(ctx, ws, shipment.ID)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	assert.Equal(t, models.StatusActive, claimed.Status)
+
+	updatedTask, err := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusActive, updatedTask.Status)
+
+	updatedFeature, err := loadArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusActive, updatedFeature.Status)
+}
+
 // T002 / ST012: Move shipment from active to shipped.
 func TestMoveShipmentStatus_ActiveToShipped(t *testing.T) {
 	// Arrange
@@ -106,6 +138,90 @@ func TestMoveShipmentStatus_ActiveToShipped(t *testing.T) {
 	updated, err := GetShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "shipped", string(updated.Status))
+}
+
+// T002 / ST012: Shipping a release archives completed scope, returns untouched work
+// to backlog, archives linked deliberation, and records the merge commit in logs.
+func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	deliberation, err := CreateArtifact(ctx, ws, "Release cleanup deliberation", "deliberation")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, deliberation))
+
+	feature, err := CreateArtifact(
+		ctx,
+		ws,
+		"Release cleanup feature",
+		"feature",
+		WithDescription("Origin: "+deliberation.ID),
+	)
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	releasedTask, err := CreateArtifact(ctx, ws, "Released task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, releasedTask))
+
+	futureTask, err := CreateArtifact(ctx, ws, "Future task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, futureTask))
+
+	shipment, err := CreateShipment(ctx, ws, "Release cleanup shipment", []string{releasedTask.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	commit := &CommitMetadata{
+		SHA:     "deadbeefcafebabe",
+		Message: "merge: release cleanup feature",
+		Author:  "tester@example.com",
+	}
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, commit)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, shipment.ID, result.ShipmentID)
+	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
+	assert.Contains(t, result.ArchivedIDs, shipment.ID)
+	assert.Contains(t, result.ArchivedIDs, feature.ID)
+	assert.Contains(t, result.ArchivedIDs, releasedTask.ID)
+	assert.Contains(t, result.ArchivedIDs, deliberation.ID)
+	assert.Contains(t, result.ReturnedIDs, futureTask.ID)
+
+	archivedFeature, err := loadArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusArchived, archivedFeature.Status)
+
+	archivedReleasedTask, err := loadArtifact(ctx, ws, releasedTask.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusArchived, archivedReleasedTask.Status)
+
+	queuedFutureTask, err := loadArtifact(ctx, ws, futureTask.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, queuedFutureTask.Status)
+	assert.Empty(t, queuedFutureTask.ParentID, "returned item should have parent_id cleared")
+
+	archivedDeliberation, err := loadArtifact(ctx, ws, deliberation.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusArchived, archivedDeliberation.Status)
+
+	for _, itemID := range []string{shipment.ID, feature.ID, releasedTask.ID, deliberation.ID} {
+		entries, logErr := bldb.ListItemLogEntries(ctx, ws.DB, itemID, 0)
+		require.NoError(t, logErr)
+		found := false
+		for _, entry := range entries {
+			if entry.EventType == "commit_tracked" {
+				found = true
+				assert.Equal(t, commit.SHA, entry.Delta["commit_sha"])
+			}
+		}
+		assert.True(t, found, "expected commit_tracked entry for %s", itemID)
+	}
 }
 
 // T002 / ST012: Reject invalid status transition (queued -> shipped).
@@ -443,4 +559,122 @@ func TestShipment_RehydrationConsistency(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, shipment.ID, recovered.ID)
 	assert.Equal(t, shipment.Title, recovered.Title)
+}
+
+func TestAdoptItem_Success(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Original feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := CreateArtifact(ctx, ws, "Orphan candidate", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+
+	// Simulate orphaning: clear parent_id.
+	require.NoError(t, clearParentID(ctx, ws, task.ID))
+	orphaned, err := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, err)
+	assert.True(t, IsOrphan(orphaned), "task should be orphaned after clearParentID")
+
+	newFeature, err := CreateArtifact(ctx, ws, "New feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, newFeature))
+
+	// Act
+	result, err := AdoptItem(ctx, ws, task.ID, newFeature.ID)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, task.ID, result.ItemID)
+	assert.Equal(t, newFeature.ID, result.NewParentID)
+	assert.True(t, result.IsOrphan, "should report item was orphaned")
+	assert.NotEmpty(t, result.OriginFeature, "should capture origin feature from ID prefix")
+
+	adopted, err := loadArtifact(ctx, ws, task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, newFeature.ID, adopted.ParentID)
+	assert.Equal(t, feature.ID, adopted.CustomFields["origin_feature"])
+	assert.False(t, IsOrphan(adopted), "adopted item should no longer be orphan")
+}
+
+func TestAdoptItem_RejectsArchivedItem(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := CreateArtifact(ctx, ws, "Archived task", "task")
+	require.NoError(t, err)
+	task.Status = models.StatusArchived
+	task.UpdatedAt = time.Now()
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+	require.NoError(t, WriteArtifactFile(task, findArtifactPathDirect(ws, task.ID)))
+
+	_, err = AdoptItem(ctx, ws, task.ID, feature.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "archived")
+}
+
+func TestAdoptItem_RejectsMissingParent(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	task, err := CreateArtifact(ctx, ws, "Lonely task", "task")
+	require.NoError(t, err)
+
+	_, err = AdoptItem(ctx, ws, task.ID, "NONEXISTENT")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NONEXISTENT")
+}
+
+func TestIsOrphan(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       string
+		parentID string
+		want     bool
+	}{
+		{"orphaned hierarchical ID", "F015.T009", "", true},
+		{"parented hierarchical ID", "F015.T009", "F015", false},
+		{"top-level ID no parent", "T001", "", false},
+		{"deep orphan", "F015.T001.ST003", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &models.Artifact{ID: tt.id, ParentID: tt.parentID}
+			assert.Equal(t, tt.want, IsOrphan(a))
+		})
+	}
+}
+
+func TestExtractIDPrefix(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"F015.T009", "F015"},
+		{"F015.T001.ST003", "F015.T001"},
+		{"T001", ""},
+		{"F015", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractIDPrefix(tt.id))
+		})
+	}
+}
+
+// findArtifactPathDirect is a test helper to locate an artifact file.
+func findArtifactPathDirect(ws *Workspace, id string) string {
+	ctx := context.Background()
+	p, err := FindArtifactPath(ctx, ws, id)
+	if err != nil {
+		return ""
+	}
+	return p
 }

@@ -116,6 +116,16 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 		items = filterByResolvedDependencies(ctx, db, items)
 	}
 
+	// Annotate orphan status for items whose ID implies a parent but parent_id is empty.
+	for _, item := range items {
+		if IsOrphan(item) {
+			if item.CustomFields == nil {
+				item.CustomFields = map[string]any{}
+			}
+			item.CustomFields["is_orphan"] = true
+		}
+	}
+
 	view := &QueueView{
 		Items:      items,
 		TotalCount: len(items),

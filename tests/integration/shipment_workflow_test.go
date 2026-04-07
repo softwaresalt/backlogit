@@ -142,6 +142,63 @@ func TestShipmentWorkflow_RehydrationConsistency(t *testing.T) {
 	assert.Equal(t, shipment.Title, recovered.Title)
 }
 
+// T008 / ST031: Shipping a shipment archives released scope and returns untouched
+// feature descendants to backlog in a real workspace.
+func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
+	// Arrange
+	_, ws := setupShipmentIntegrationWorkspace(t)
+	ctx := context.Background()
+
+	deliberation, err := core.CreateArtifact(ctx, ws, "Integration deliberation", "deliberation")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, deliberation))
+
+	feature, err := core.CreateArtifact(
+		ctx,
+		ws,
+		"Integration feature",
+		"feature",
+		core.WithDescription("Origin: "+deliberation.ID),
+	)
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	releasedTask, err := core.CreateArtifact(ctx, ws, "Released integration task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, releasedTask))
+
+	futureTask, err := core.CreateArtifact(ctx, ws, "Future integration task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, futureTask))
+
+	shipment, err := core.CreateShipment(ctx, ws, "Integration release shipment", []string{releasedTask.ID})
+	require.NoError(t, err)
+	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	result, err := core.ShipShipment(ctx, ws, shipment.ID, &core.CommitMetadata{
+		SHA:     "feedface12345678",
+		Message: "merge: integration shipment release",
+		Author:  "tester@example.com",
+	})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Contains(t, result.ArchivedIDs, feature.ID)
+	assert.Contains(t, result.ArchivedIDs, releasedTask.ID)
+	assert.Contains(t, result.ArchivedIDs, shipment.ID)
+	assert.Contains(t, result.ReturnedIDs, futureTask.ID)
+
+	archivedFeature, err := db.GetItem(ctx, ws.DB, feature.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "archived", string(archivedFeature.Status))
+
+	queuedFutureTask, err := db.GetItem(ctx, ws.DB, futureTask.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", string(queuedFutureTask.Status))
+}
+
 // T008 / ST029: Migrate checked-in stash from .stash.md to stash.jsonl.
 func TestShipmentWorkflow_StashMigration(t *testing.T) {
 	// Arrange
