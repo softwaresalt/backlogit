@@ -33,6 +33,7 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 	}
 
 	applyEnvOverrides(&cfg)
+	applyBugLevelConfig(&cfg)
 
 	if err := cfg.Validate(); err != nil {
 		var validationErrs validator.ValidationErrors

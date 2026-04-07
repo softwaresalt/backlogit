@@ -71,5 +71,4 @@ queue_layout:
     - level: 3
       types:
         - subtask
-        - bug
   name_format: "{NNN}"

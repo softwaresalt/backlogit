@@ -328,6 +328,12 @@ sections:
 
 // DefaultConfig returns a sensible default workspace configuration.
 func DefaultConfig() *WorkspaceConfig {
+	cfg := defaultConfigBase()
+	applyBugLevelConfig(cfg)
+	return cfg
+}
+
+func defaultConfigBase() *WorkspaceConfig {
 	return &WorkspaceConfig{
 		BugLevel:      3,
 		MaxSlugLength: 60,
@@ -384,7 +390,7 @@ func DefaultConfig() *WorkspaceConfig {
 			Levels: []HierarchyLevel{
 				{Level: 1, Types: []string{"feature", "deliberation", "shipment"}},
 				{Level: 2, Types: []string{"task", "review"}},
-				{Level: 3, Types: []string{"subtask", "bug"}},
+				{Level: 3, Types: []string{"subtask"}},
 			},
 		},
 	}
@@ -404,7 +410,7 @@ func DefaultRegistry() *RegistryConfig {
 // WriteDefaults serializes DefaultConfig and DefaultRegistry to the workspace directory.
 // Also writes header-def.yaml and default templates. Existing files are not overwritten.
 func WriteDefaults(workspacePath string) error {
-	cfgData, err := yaml.Marshal(DefaultConfig())
+	cfgData, err := yaml.Marshal(defaultConfigBase())
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
