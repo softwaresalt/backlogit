@@ -2,12 +2,14 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 
+	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,9 +28,21 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	if cfg.BugLevel == 0 {
+		cfg.BugLevel = 3
+	}
+
 	applyEnvOverrides(&cfg)
 
 	if err := cfg.Validate(); err != nil {
+		var validationErrs validator.ValidationErrors
+		if errors.As(err, &validationErrs) {
+			for _, validationErr := range validationErrs {
+				if validationErr.StructField() == "BugLevel" {
+					return nil, fmt.Errorf("validate config: bug_level must be 2 or 3: %w", err)
+				}
+			}
+		}
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 

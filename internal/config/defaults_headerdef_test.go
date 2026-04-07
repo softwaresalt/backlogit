@@ -87,6 +87,22 @@ func TestWriteDefaults_HeaderDefTypedPrefixes(t *testing.T) {
 	assert.Equal(t, "ST", cfg.Types["subtask"].Prefix)
 }
 
+func TestWriteDefaults_HeaderDefUsesNumericSuffixFormats(t *testing.T) {
+	// Arrange
+	dir := t.TempDir()
+	require.NoError(t, config.WriteDefaults(dir))
+
+	// Act
+	cfg, err := config.LoadHeaderDef(dir)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, "{NNN}{suffix}", cfg.Types["feature"].IDFormat)
+	assert.Equal(t, "{NNN}{suffix}", cfg.Types["task"].IDFormat)
+	assert.Equal(t, "{NNN}{suffix}", cfg.Types["review"].IDFormat)
+	assert.Equal(t, "{NNN}{suffix}", cfg.Types["shipment"].IDFormat)
+}
+
 func TestWriteDefaults_ReviewHeaderDefIncludesStatusAndSourceBranch(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
