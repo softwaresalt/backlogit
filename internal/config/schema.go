@@ -1,8 +1,17 @@
 package config
 
-import "github.com/go-playground/validator/v10"
+import (
+	"strings"
+
+	"github.com/go-playground/validator/v10"
+)
 
 var validate = validator.New()
+
+func init() {
+	validate.RegisterStructValidation(validateArtifactTypeConfig, ArtifactTypeConfig{})
+	validate.RegisterStructValidation(validateArtifactTypeConfig, &ArtifactTypeConfig{})
+}
 
 // Validate checks all struct tags and returns a descriptive error on failure.
 func (c *WorkspaceConfig) Validate() error {
@@ -13,6 +22,7 @@ func (c *WorkspaceConfig) Validate() error {
 type WorkspaceConfig struct {
 	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
 	Fields        map[string]*FieldConfig        `yaml:"fields"`
+	BugLevel      int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
 	MaxSlugLength int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
 	QueueLayout   *QueueLayoutConfig             `yaml:"queue_layout"`
 }
@@ -20,9 +30,24 @@ type WorkspaceConfig struct {
 // ArtifactTypeConfig defines an artifact type's behavior.
 type ArtifactTypeConfig struct {
 	Prefix          string   `yaml:"prefix" validate:"required"`
+	Suffix          string   `yaml:"suffix,omitempty"`
 	NameFormat      string   `yaml:"name_format" validate:"required"`
 	FileNameFormat  string   `yaml:"file_name_format,omitempty"`
 	AllowedChildren []string `yaml:"allowed_children"`
+}
+
+func validateArtifactTypeConfig(sl validator.StructLevel) {
+	cfg, ok := sl.Current().Interface().(ArtifactTypeConfig)
+	if !ok {
+		ptr, ok := sl.Current().Interface().(*ArtifactTypeConfig)
+		if !ok || ptr == nil {
+			return
+		}
+		cfg = *ptr
+	}
+	if strings.Contains(cfg.NameFormat, "{suffix}") && strings.TrimSpace(cfg.Suffix) == "" {
+		sl.ReportError(cfg.Suffix, "suffix", "Suffix", "suffixrequired", "")
+	}
 }
 
 // FieldConfig defines a custom field's schema.

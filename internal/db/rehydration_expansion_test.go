@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -176,4 +177,64 @@ func TestRehydrate_StashJSONLOverridesLegacyAndTracksSourcePath(t *testing.T) {
 	assert.Equal(t, stash.JSONLFileName, byID["ABC12345"].SourcePath)
 	assert.Equal(t, filepath.ToSlash(filepath.Join("queue", stash.FileName)), byID["LEGACY01"].SourcePath)
 	assert.Equal(t, stash.JSONLFileName, byID["JSONL001"].SourcePath)
+}
+
+func TestRehydrate_SuffixHierarchicalIDs_PopulatesLevelAndNumericHierarchyPath(t *testing.T) {
+	// Arrange
+	ws := t.TempDir()
+	queueDir := filepath.Join(ws, "queue")
+	require.NoError(t, os.MkdirAll(queueDir, 0o755))
+
+	feature := `---
+id: 001-F
+title: Feature root
+status: queued
+artifact_type: feature
+---
+
+Feature body`
+	task := `---
+id: 001.002-T
+title: Child task
+status: queued
+artifact_type: task
+parent_id: 001-F
+---
+
+Task body`
+
+	require.NoError(t, os.WriteFile(filepath.Join(queueDir, "001-F.md"), []byte(feature), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(queueDir, "001.002-T.md"), []byte(task), 0o644))
+
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	// Act
+	count, err := db.Rehydrate(ctx, ws, database)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	row := database.QueryRowContext(ctx, `SELECT level, hierarchy_path FROM items WHERE id = ?`, "001.002-T")
+	var level sql.NullInt64
+	var hierarchyPath sql.NullString
+	require.NoError(t, row.Scan(&level, &hierarchyPath))
+
+	// Assert
+	assert.True(t, level.Valid)
+	assert.EqualValues(t, 2, level.Int64)
+	assert.True(t, hierarchyPath.Valid)
+	assert.Equal(t, "001/001.002", hierarchyPath.String)
+}
+
+func TestEnsureSchema_CreatesItemLinksTable(t *testing.T) {
+	// Arrange
+	database := setupTestDB(t)
+
+	// Act
+	var count int
+	err := database.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'item_links'`).Scan(&count)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }

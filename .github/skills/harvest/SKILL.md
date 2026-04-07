@@ -1,7 +1,7 @@
 ---
 name: harvest
 description: "Decomposes a reviewed implementation plan into backlogit feature/task/subtask hierarchy"
-argument-hint: "plan=.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md"
+argument-hint: "plan=docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md"
 input:
   properties:
     plan:
@@ -84,8 +84,8 @@ Map the plan into the backlogit hierarchy:
 * one or more subtasks per file group, verification slice, or explicit
   execution step inside the unit
 
-Before creating anything, apply the same backlog shaping rules used by the
-legacy harvester:
+Before creating anything, apply the same backlog shaping rules that governed the
+legacy decomposition path:
 
 1. Keep tasks small enough to fit a focused implementation session.
 2. Keep each task within a single skill domain.

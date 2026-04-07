@@ -35,6 +35,7 @@ type FieldDef struct {
 // TypeDefConfig defines a single artifact type's field schema.
 type TypeDefConfig struct {
 	Prefix   string               `yaml:"prefix" validate:"required"`
+	Suffix   string               `yaml:"suffix,omitempty"`
 	IDFormat string               `yaml:"id_format" validate:"required"`
 	Fields   map[string]*FieldDef `yaml:"fields" validate:"required"`
 }

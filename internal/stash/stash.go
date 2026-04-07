@@ -26,7 +26,7 @@ const (
 	DefaultDescription = "Candidate backlog ideas, issues, risks, and tasks for future planning"
 )
 
-var entryPattern = regexp.MustCompile(`(?i)^\s*-\s+\[\s*\]\s+\[([A-Z0-9]{1,8})\](?:\s+\[priority:([a-z]+)\])?(?:\s+\[deliberation:([A-Z0-9.]+)\])?\s+([a-z]+):\s+(.+?)\s*$`)
+var entryPattern = regexp.MustCompile(`(?i)^\s*-\s+\[\s*\]\s+\[([A-Z0-9]{1,8})\](?:\s+\[priority:([a-z]+)\])?(?:\s+\[deliberation:([A-Z0-9.-]+)\])?\s+([a-z]+):\s+(.+?)\s*$`)
 
 // Entry represents a single active stash item stored in the stash file.
 type Entry struct {

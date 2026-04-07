@@ -25,7 +25,8 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Types: map[string]*TypeDefConfig{
 			"feature": {
 				Prefix:   "F",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-F",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
 					"harness_status": {
@@ -38,7 +39,8 @@ func defaultHeaderDef() *HeaderDefConfig {
 			},
 			"deliberation": {
 				Prefix:   "DL",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-DL",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
 					"priority": {
@@ -50,7 +52,8 @@ func defaultHeaderDef() *HeaderDefConfig {
 			},
 			"task": {
 				Prefix:   "T",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-T",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
 					"priority": {
@@ -62,7 +65,8 @@ func defaultHeaderDef() *HeaderDefConfig {
 			},
 			"review": {
 				Prefix:   "R",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-R",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
 					"source_branch": {
@@ -73,14 +77,29 @@ func defaultHeaderDef() *HeaderDefConfig {
 			},
 			"subtask": {
 				Prefix:   "ST",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-ST",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": statusField,
 				},
 			},
+			"bug": {
+				Prefix:   "B",
+				Suffix:   "-B",
+				IDFormat: "{NNN}{suffix}",
+				Fields: map[string]*FieldDef{
+					"status": statusField,
+					"severity": {
+						Type:    "enum",
+						Values:  []string{"low", "medium", "high", "critical"},
+						Default: "medium",
+					},
+				},
+			},
 			"shipment": {
 				Prefix:   "S",
-				IDFormat: "{prefix}{NNN}",
+				Suffix:   "-S",
+				IDFormat: "{NNN}{suffix}",
 				Fields: map[string]*FieldDef{
 					"status": {
 						Type:    "enum",
@@ -309,35 +328,53 @@ sections:
 
 // DefaultConfig returns a sensible default workspace configuration.
 func DefaultConfig() *WorkspaceConfig {
+	cfg := defaultConfigBase()
+	applyBugLevelConfig(cfg)
+	return cfg
+}
+
+func defaultConfigBase() *WorkspaceConfig {
 	return &WorkspaceConfig{
+		BugLevel:      3,
 		MaxSlugLength: 60,
 		ArtifactTypes: map[string]*ArtifactTypeConfig{
 			"feature": {
 				Prefix:          "F",
-				NameFormat:      "{prefix}{NNN}",
+				Suffix:          "-F",
+				NameFormat:      "{NNN}{suffix}",
 				AllowedChildren: []string{"task", "review"},
 			},
 			"deliberation": {
 				Prefix:     "DL",
-				NameFormat: "{prefix}{NNN}",
+				Suffix:     "-DL",
+				NameFormat: "{NNN}{suffix}",
 			},
 			"task": {
 				Prefix:          "T",
-				NameFormat:      "{prefix}{NNN}",
+				Suffix:          "-T",
+				NameFormat:      "{NNN}{suffix}",
 				AllowedChildren: []string{"subtask"},
 			},
 			"review": {
 				Prefix:         "R",
-				NameFormat:     "{prefix}{NNN}",
+				Suffix:         "-R",
+				NameFormat:     "{NNN}{suffix}",
 				FileNameFormat: "{id}-{title_slug}",
 			},
 			"subtask": {
 				Prefix:     "ST",
-				NameFormat: "{prefix}{NNN}",
+				Suffix:     "-ST",
+				NameFormat: "{NNN}{suffix}",
+			},
+			"bug": {
+				Prefix:     "B",
+				Suffix:     "-B",
+				NameFormat: "{NNN}{suffix}",
 			},
 			"shipment": {
 				Prefix:     "S",
-				NameFormat: "{prefix}{NNN}",
+				Suffix:     "-S",
+				NameFormat: "{NNN}{suffix}",
 			},
 		},
 		Fields: map[string]*FieldConfig{
@@ -373,7 +410,7 @@ func DefaultRegistry() *RegistryConfig {
 // WriteDefaults serializes DefaultConfig and DefaultRegistry to the workspace directory.
 // Also writes header-def.yaml and default templates. Existing files are not overwritten.
 func WriteDefaults(workspacePath string) error {
-	cfgData, err := yaml.Marshal(DefaultConfig())
+	cfgData, err := yaml.Marshal(defaultConfigBase())
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}

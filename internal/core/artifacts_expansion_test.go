@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,6 +24,27 @@ func setupTestWorkspace(t *testing.T) *core.Workspace {
 	backlogitDir := filepath.Join(root, ".backlogit")
 	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
 	require.NoError(t, config.WriteDefaults(backlogitDir))
+
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { ws.Close() })
+	return ws
+}
+
+func setupTestWorkspaceWithBugLevel(t *testing.T, level int) *core.Workspace {
+	t.Helper()
+
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+
+	configPath := filepath.Join(backlogitDir, "config.yaml")
+	configContent, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	updated := strings.Replace(string(configContent), "bug_level: 3", "bug_level: "+strconv.Itoa(level), 1)
+	require.NoError(t, os.WriteFile(configPath, []byte(updated), 0o644))
 
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
@@ -117,8 +140,12 @@ func TestUpdateArtifact_RejectsParentIDChange(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
+	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, parent))
+
 	artifact, err := core.CreateArtifact(ctx, ws, "Parent test", "task",
-		core.WithParent("E001"),
+		core.WithParent(parent.ID),
 	)
 	require.NoError(t, err)
 
@@ -176,9 +203,9 @@ func TestCreateArtifact_UsesHierarchicalTaskIDsUnderFeatureParent(t *testing.T) 
 	otherFeatureTask, err := core.CreateArtifact(ctx, ws, "Other feature child task", "task", core.WithParent(featureTwo.ID))
 	require.NoError(t, err)
 
-	assert.Equal(t, featureOne.ID+".T001", firstTask.ID)
-	assert.Equal(t, featureOne.ID+".T002", secondTask.ID)
-	assert.Equal(t, featureTwo.ID+".T001", otherFeatureTask.ID)
+	assert.Equal(t, "001.001-T", firstTask.ID)
+	assert.Equal(t, "001.002-T", secondTask.ID)
+	assert.Equal(t, "002.001-T", otherFeatureTask.ID)
 }
 
 func TestCreateArtifact_UsesHierarchicalSubtaskIDsAndFilenamesUnderTaskParent(t *testing.T) {
@@ -200,8 +227,8 @@ func TestCreateArtifact_UsesHierarchicalSubtaskIDsAndFilenamesUnderTaskParent(t 
 	secondSubtask, err := core.CreateArtifact(ctx, ws, "Second child subtask", "subtask", core.WithParent(task.ID))
 	require.NoError(t, err)
 
-	assert.Equal(t, task.ID+".ST001", firstSubtask.ID)
-	assert.Equal(t, task.ID+".ST002", secondSubtask.ID)
+	assert.Equal(t, "001.001.001-ST", firstSubtask.ID)
+	assert.Equal(t, "001.001.002-ST", secondSubtask.ID)
 
 	filePath, err := core.FindArtifactPath(ctx, ws, firstSubtask.ID)
 	require.NoError(t, err)
@@ -247,4 +274,69 @@ func TestCreateArtifact_ReviewAllowsFeatureParent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, feature.ID, review.ParentID)
 	assert.Equal(t, "review", review.ArtifactType)
+}
+
+func TestCreateArtifact_BugRejectsFeatureParentWhenBugLevelThree(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+
+	_, err = core.CreateArtifact(ctx, ws, "Feature bug", "bug", core.WithParent(feature.ID))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `artifact type "bug" is not allowed under parent type "feature"`)
+}
+
+func TestCreateArtifact_BugAllowsTaskParentWhenBugLevelThree(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := core.CreateArtifact(ctx, ws, "Task parent", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	bug, err := core.CreateArtifact(ctx, ws, "Task bug", "bug", core.WithParent(task.ID))
+
+	require.NoError(t, err)
+	assert.Equal(t, task.ID, bug.ParentID)
+	assert.Equal(t, "001.001.001-B", bug.ID)
+}
+
+func TestCreateArtifact_BugAllowsFeatureParentWhenBugLevelTwo(t *testing.T) {
+	ws := setupTestWorkspaceWithBugLevel(t, 2)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+
+	bug, err := core.CreateArtifact(ctx, ws, "Feature bug", "bug", core.WithParent(feature.ID))
+
+	require.NoError(t, err)
+	assert.Equal(t, feature.ID, bug.ParentID)
+	assert.Equal(t, "001.001-B", bug.ID)
+	level, levelErr := core.LevelForType(ws.Config.QueueLayout, "bug")
+	require.NoError(t, levelErr)
+	assert.Equal(t, 2, level)
+}
+
+func TestCreateArtifact_BugRejectsTaskParentWhenBugLevelTwo(t *testing.T) {
+	ws := setupTestWorkspaceWithBugLevel(t, 2)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := core.CreateArtifact(ctx, ws, "Task parent", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	_, err = core.CreateArtifact(ctx, ws, "Task bug", "bug", core.WithParent(task.ID))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `artifact type "bug" is not allowed under parent type "task"`)
 }

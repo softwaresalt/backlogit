@@ -1,34 +1,41 @@
 artifact_types:
   feature:
     prefix: F
-    name_format: "{prefix}{NNN}"
+    suffix: "-F"
+    name_format: "{NNN}{suffix}"
     allowed_children:
       - task
       - review
   deliberation:
     prefix: DL
-    name_format: "{prefix}{NNN}"
+    suffix: "-DL"
+    name_format: "{NNN}{suffix}"
   task:
     prefix: T
-    name_format: "{prefix}{NNN}"
+    suffix: "-T"
+    name_format: "{NNN}{suffix}"
     allowed_children:
       - subtask
   review:
     prefix: R
-    name_format: "{prefix}{NNN}"
+    suffix: "-R"
+    name_format: "{NNN}{suffix}"
     file_name_format: "{id}-{title_slug}"
     allowed_children: []
   subtask:
     prefix: ST
-    name_format: "{prefix}{NNN}"
+    suffix: "-ST"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
   bug:
     prefix: B
-    name_format: "{prefix}{NNN}"
+    suffix: "-B"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
   shipment:
     prefix: S
-    name_format: "{prefix}{NNN}"
+    suffix: "-S"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
 fields:
   status:
@@ -48,6 +55,7 @@ fields:
     optional: false
     external_map: {}
 max_slug_length: 60
+bug_level: 3
 queue_layout:
   root_dir: queue
   levels:
@@ -63,5 +71,4 @@ queue_layout:
     - level: 3
       types:
         - subtask
-        - bug
   name_format: "{NNN}"

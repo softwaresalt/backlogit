@@ -18,7 +18,8 @@ func TestDefaultConfig_ContainsShipmentType(t *testing.T) {
 	// Assert
 	require.True(t, exists, "shipment must be present in DefaultConfig().ArtifactTypes")
 	assert.Equal(t, "S", shipment.Prefix)
-	assert.Equal(t, "{prefix}{NNN}", shipment.NameFormat)
+	assert.Equal(t, "-S", shipment.Suffix)
+	assert.Equal(t, "{NNN}{suffix}", shipment.NameFormat)
 }
 
 // T001 / ST001: Verify shipment appears in queue layout at the correct level.
@@ -51,6 +52,8 @@ func TestDefaultHeaderDef_ContainsShipmentSchema(t *testing.T) {
 	// Assert
 	require.True(t, exists, "shipment must be present in defaultHeaderDef().Types")
 	assert.Equal(t, "S", shipmentDef.Prefix)
+	assert.Equal(t, "-S", shipmentDef.Suffix)
+	assert.Equal(t, "{NNN}{suffix}", shipmentDef.IDFormat)
 	require.Contains(t, shipmentDef.Fields, "status")
 	require.Contains(t, shipmentDef.Fields, "branch")
 	require.Contains(t, shipmentDef.Fields, "items")

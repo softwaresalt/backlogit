@@ -1,12 +1,17 @@
 package core_test
 
 import (
+	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+
+	_ "modernc.org/sqlite"
 )
 
 func defaultQueueLayout() *core.QueueLayoutConfig {
@@ -19,6 +24,27 @@ func defaultQueueLayout() *core.QueueLayoutConfig {
 			{Level: 3, Types: []string{"subtask"}},
 		},
 	}
+}
+
+func openHierarchyTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	_, err = db.Exec(`
+		CREATE TABLE items (
+			id TEXT PRIMARY KEY,
+			parent_id TEXT,
+			artifact_type TEXT
+		);
+	`)
+	require.NoError(t, err)
+
+	return db
 }
 
 func TestParseHierarchicalID(t *testing.T) {
@@ -140,4 +166,85 @@ func TestResolveHierarchicalPath(t *testing.T) {
 			assert.Contains(t, path, tt.wantContains)
 		})
 	}
+}
+
+func TestNextTypedHierarchicalID_RootUsesSuffixFormat(t *testing.T) {
+	db := openHierarchyTestDB(t)
+
+	typeCfg := &config.ArtifactTypeConfig{
+		Prefix:     "F",
+		Suffix:     "-F",
+		NameFormat: "{NNN}{suffix}",
+	}
+
+	got, err := core.NextTypedHierarchicalID(
+		context.Background(),
+		db,
+		"",
+		"feature",
+		typeCfg,
+		defaultQueueLayout(),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "001-F", got)
+}
+
+func TestNextTypedHierarchicalID_ChildUsesSuffixOrdinal(t *testing.T) {
+	db := openHierarchyTestDB(t)
+
+	_, err := db.Exec(`
+		INSERT INTO items (id, parent_id, artifact_type) VALUES
+			('001-F', NULL, 'feature'),
+			('001.001-T', '001-F', 'task'),
+			('001.002-T', '001-F', 'task');
+	`)
+	require.NoError(t, err)
+
+	typeCfg := &config.ArtifactTypeConfig{
+		Prefix:     "T",
+		Suffix:     "-T",
+		NameFormat: "{NNN}{suffix}",
+	}
+
+	got, err := core.NextTypedHierarchicalID(
+		context.Background(),
+		db,
+		"001-F",
+		"task",
+		typeCfg,
+		defaultQueueLayout(),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "001.003-T", got)
+}
+
+func TestNextTypedHierarchicalID_LegacyParentErrors(t *testing.T) {
+	db := openHierarchyTestDB(t)
+
+	typeCfg := &config.ArtifactTypeConfig{
+		Prefix:     "T",
+		Suffix:     "-T",
+		NameFormat: "{NNN}{suffix}",
+	}
+
+	_, err := core.NextTypedHierarchicalID(
+		context.Background(),
+		db,
+		"F016",
+		"task",
+		typeCfg,
+		defaultQueueLayout(),
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `parse hierarchical parent "F016"`)
+}
+
+func TestParseHierarchicalID_TypedSegments(t *testing.T) {
+	got, err := core.ParseHierarchicalID("001-F.002-T.003-ST")
+
+	require.NoError(t, err)
+	assert.Equal(t, []int{1, 2, 3}, got)
 }

@@ -28,6 +28,7 @@ func Slugify(title string, maxLen int) string {
 func ResolveName(cfg *config.ArtifactTypeConfig, title string, nextID int, maxSlugLen int) string {
 	name := cfg.NameFormat
 	name = strings.ReplaceAll(name, "{prefix}", cfg.Prefix)
+	name = strings.ReplaceAll(name, "{suffix}", cfg.Suffix)
 	name = strings.ReplaceAll(name, "{NNN}", fmt.Sprintf("%03d", nextID))
 	name = strings.ReplaceAll(name, "{title_slug}", Slugify(title, maxSlugLen))
 	name = strings.ReplaceAll(name, "{slug}", Slugify(title, maxSlugLen))

@@ -37,7 +37,7 @@ Use the agent files for operational detail:
 * [Groomer](../.github/agents/groomer.agent.md): stash triage, deliberation,
   planning, review gating, and harvest
 * [Shipper](../.github/agents/shipper.agent.md): shipment claim, harness,
-  implementation, review, CI remediation, and pull request flow
+  implementation, review, CI remediation, release cleanup, and pull request flow
 
 Shipment is a first-class artifact. Use shipment-aware MCP tools to create,
 inspect, and maintain branch scope:
@@ -50,6 +50,7 @@ backlogit_create_shipment
 backlogit_get_shipment
 backlogit_list_shipments
 backlogit_claim_shipment
+backlogit_ship_shipment
 backlogit_return_blocked
 backlogit_add_to_shipment
 ```
@@ -248,6 +249,7 @@ backlogit_create_shipment -- create a shipment artifact
 backlogit_get_shipment -- inspect a shipment by ID
 backlogit_list_shipments -- list shipment artifacts
 backlogit_claim_shipment -- move a queued shipment to active
+backlogit_ship_shipment -- close a released shipment, archive released scope, and record merge commit traceability
 backlogit_return_blocked -- return a blocked item from a shipment to backlog
 backlogit_add_to_shipment -- attach backlog items to a shipment
 backlogit_fetch_stash  -- retrieve active stash entries from .stash.md, optionally filtered or grouped by priority, with linked deliberations when present

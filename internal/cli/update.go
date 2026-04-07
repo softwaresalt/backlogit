@@ -34,10 +34,10 @@ artifact.
 
 Use repeated --section name=value flags to update named sections without
 replacing the rest of the document body.`,
-		Example: `  backlogit update T001 --status review
-  backlogit update T001 --priority high
-  backlogit update F001 --section goals="Ship passwordless sign-in"
-  backlogit update F001 --harness-status passing`,
+		Example: `  backlogit update 001-T --status review
+  backlogit update 001-T --priority high
+  backlogit update 001-F --section goals="Ship passwordless sign-in"
+  backlogit update 001-F --harness-status passing`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idFlag != "" {

@@ -71,6 +71,16 @@ func EnsureSchema(db *sql.DB) error {
 			updated_at  DATETIME NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_stash_entries_state ON stash_entries(state)`,
+		`CREATE TABLE IF NOT EXISTS item_links (
+			source_id  TEXT NOT NULL,
+			target_id  TEXT NOT NULL,
+			link_type  TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (source_id, target_id, link_type)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_item_links_source ON item_links(source_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_item_links_target ON item_links(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_item_links_type ON item_links(link_type)`,
 		`CREATE TABLE IF NOT EXISTS stash_links (
 			stash_id    TEXT PRIMARY KEY,
 			item_id     TEXT NOT NULL,

@@ -23,7 +23,8 @@ defaults:
 types:
   feature:
     prefix: F
-    id_format: "{prefix}{NNN}"
+    suffix: "-F"
+    id_format: "{NNN}{suffix}"
     fields:
       harness_status:
         type: enum
@@ -36,7 +37,8 @@ types:
         optional: true
   deliberation:
     prefix: DL
-    id_format: "{prefix}{NNN}"
+    suffix: "-DL"
+    id_format: "{NNN}{suffix}"
     fields:
       priority:
         type: enum
@@ -48,7 +50,8 @@ types:
         default: medium
   task:
     prefix: T
-    id_format: "{prefix}{NNN}"
+    suffix: "-T"
+    id_format: "{NNN}{suffix}"
     fields:
       priority:
         type: enum
@@ -59,7 +62,8 @@ types:
         default: medium
   review:
     prefix: R
-    id_format: "{prefix}{NNN}"
+    suffix: "-R"
+    id_format: "{NNN}{suffix}"
     fields:
       status:
         type: enum
@@ -78,11 +82,13 @@ types:
         optional: true
   subtask:
     prefix: ST
-    id_format: "{prefix}{NNN}"
+    suffix: "-ST"
+    id_format: "{NNN}{suffix}"
     fields:
   bug:
     prefix: B
-    id_format: "{prefix}{NNN}"
+    suffix: "-B"
+    id_format: "{NNN}{suffix}"
     fields:
       severity:
         type: enum
@@ -94,7 +100,8 @@ types:
         default: medium
   shipment:
     prefix: S
-    id_format: "{prefix}{NNN}"
+    suffix: "-S"
+    id_format: "{NNN}{suffix}"
     fields:
       status:
         type: enum

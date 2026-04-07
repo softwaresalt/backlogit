@@ -27,6 +27,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentGetCmd())
 	cmd.AddCommand(newShipmentListCmd())
 	cmd.AddCommand(newShipmentClaimCmd())
+	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
 	return cmd
 }
@@ -39,7 +40,7 @@ func newShipmentCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "create",
 		Short:   "Create a shipment",
-		Example: `  backlogit shipment create --title "Sprint 1" --items T001,T002`,
+		Example: `  backlogit shipment create --title "Sprint 1" --items 001-T,002-T`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			slog.Info("shipment command invoked", "operation", "shipment-create")
@@ -71,7 +72,7 @@ func newShipmentGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "get <id>",
 		Short:   "Get a shipment by ID",
-		Example: `  backlogit shipment get S001`,
+		Example: `  backlogit shipment get 001-S`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -136,7 +137,7 @@ func newShipmentClaimCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "claim <id>",
 		Short:   "Claim a queued shipment",
-		Example: `  backlogit shipment claim S001`,
+		Example: `  backlogit shipment claim 001-S`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -149,13 +150,9 @@ func newShipmentClaimCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			if err := core.MoveShipmentStatus(ctx, ws, shipmentID, core.ShipmentActive); err != nil {
-				return fmt.Errorf("claim shipment: %w", err)
-			}
-
-			shipment, err := core.GetShipment(ctx, ws, shipmentID)
+			shipment, err := core.ClaimShipment(ctx, ws, shipmentID)
 			if err != nil {
-				return fmt.Errorf("get claimed shipment: %w", err)
+				return fmt.Errorf("claim shipment: %w", err)
 			}
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
@@ -163,6 +160,48 @@ func newShipmentClaimCmd() *cobra.Command {
 			return enc.Encode(shipment)
 		},
 	}
+}
+
+// newShipmentShipCmd returns the `backlogit shipment ship <id>` subcommand.
+func newShipmentShipCmd() *cobra.Command {
+	var sha string
+	var message string
+	var author string
+
+	cmd := &cobra.Command{
+		Use:     "ship <id>",
+		Short:   "Close a released shipment and archive the released scope",
+		Example: `  backlogit shipment ship 001-S --sha deadbeef --message "merge: release" --author "dev@example.com"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			shipmentID := args[0]
+			slog.Info("shipment command invoked", "operation", "shipment-ship", "shipment_id", shipmentID)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			result, err := core.ShipShipment(ctx, ws, shipmentID, &core.CommitMetadata{
+				SHA:     sha,
+				Message: message,
+				Author:  author,
+			})
+			if err != nil {
+				return fmt.Errorf("ship shipment: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(result)
+		},
+	}
+	cmd.Flags().StringVar(&sha, "sha", "", "merge commit SHA to record on released artifacts")
+	cmd.Flags().StringVar(&message, "message", "", "merge commit message to record on released artifacts")
+	cmd.Flags().StringVar(&author, "author", "", "merge commit author to record on released artifacts")
+	return cmd
 }
 
 // newShipmentReturnBlockedCmd returns the `backlogit shipment return-blocked` subcommand.
@@ -174,7 +213,7 @@ func newShipmentReturnBlockedCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "return-blocked",
 		Short:   "Return a blocked item from a shipment",
-		Example: `  backlogit shipment return-blocked --shipment S001 --item T001 --reason "blocked"`,
+		Example: `  backlogit shipment return-blocked --shipment 001-S --item 001-T --reason "blocked"`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			slog.Info(

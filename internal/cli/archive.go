@@ -18,7 +18,7 @@ func newArchiveCommand(cwd *string) *cobra.Command {
 		Long: `Archive one completed artifact or bulk-archive all terminal artifacts.
 
 Archived items are moved into .backlogit\archive and tracked in the index.`,
-		Example: `  backlogit archive T001
+		Example: `  backlogit archive 001-T
   backlogit archive --all-done`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

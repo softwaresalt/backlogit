@@ -45,7 +45,7 @@ Scan `.copilot-tracking/` to determine whether compaction is needed and identify
 
 3. **Identify stale files**: For each subdirectory, identify files with a last-modified date older than `${input:threshold-days}` days from today. Group stale files by subdirectory.
 
-4. **Cross-reference active tasks**: Read `.backlog/tasks/` and scan task descriptions and implementation notes for file path references matching `.copilot-tracking/` paths. Any tracking file referenced by an active task (status: "To Do" or "In Progress") is excluded from compaction regardless of age.
+4. **Cross-reference active backlog items**: Query backlogit for active or queued work items and scan their descriptions and implementation notes for file path references matching `.copilot-tracking/` paths. Any tracking file referenced by an active backlog item is excluded from compaction regardless of age.
 
 5. **Build compaction manifest**: For each subdirectory with stale files, record:
    - Subdirectory name

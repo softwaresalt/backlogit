@@ -296,6 +296,16 @@ func (s *Server) RegisterTools() {
 		s.handleClaimShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_ship_shipment",
+			mcplib.WithDescription("Close a released shipment, archive the released scope, and record merge commit traceability"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("sha", mcplib.Description("Optional merge commit SHA to record on released artifacts")),
+			mcplib.WithString("message", mcplib.Description("Optional merge commit message")),
+			mcplib.WithString("author", mcplib.Description("Optional merge commit author")),
+		),
+		s.handleShipShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_return_blocked",
 			mcplib.WithDescription("Return a blocked item from a shipment"),
 			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
@@ -311,6 +321,14 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
 		),
 		s.handleAddToShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_adopt_item",
+			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),
+			mcplib.WithString("new_parent_id", mcplib.Required(), mcplib.Description("New parent feature ID")),
+		),
+		s.handleAdoptItem,
 	)
 }
 
@@ -1116,15 +1134,37 @@ func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToo
 
 	logger.Info("shipment tool invoked", "tool", "backlogit_claim_shipment", "shipment_id", id)
 
-	if err := core.MoveShipmentStatus(ctx, s.Workspace, id, core.ShipmentActive); err != nil {
+	shipment, err := core.ClaimShipment(ctx, s.Workspace, id)
+	if err != nil {
 		return domainError("claim shipment", err), nil
 	}
-
-	shipment, err := core.GetShipment(ctx, s.Workspace, id)
-	if err != nil {
-		return domainError("get claimed shipment", err), nil
-	}
 	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleShipShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	sha, _ := request.Params.Arguments["sha"].(string)
+	message, _ := request.Params.Arguments["message"].(string)
+	author, _ := request.Params.Arguments["author"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_ship_shipment", "shipment_id", id)
+
+	result, err := core.ShipShipment(ctx, s.Workspace, id, &core.CommitMetadata{
+		SHA:     sha,
+		Message: message,
+		Author:  author,
+	})
+	if err != nil {
+		return domainError("ship shipment", err), nil
+	}
+	return toolResultJSON(result)
 }
 
 func (s *Server) handleReturnBlocked(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1208,4 +1248,27 @@ func splitCommaSeparated(value string) []string {
 		}
 	}
 	return result
+}
+
+func (s *Server) handleAdoptItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	itemID, _ := request.Params.Arguments["item_id"].(string)
+	if itemID == "" {
+		return ValidationFailed("item_id is required"), nil
+	}
+	newParentID, _ := request.Params.Arguments["new_parent_id"].(string)
+	if newParentID == "" {
+		return ValidationFailed("new_parent_id is required"), nil
+	}
+
+	logger.Info("adopt tool invoked", "tool", "backlogit_adopt_item", "item_id", itemID, "new_parent_id", newParentID)
+
+	result, err := core.AdoptItem(ctx, s.Workspace, itemID, newParentID)
+	if err != nil {
+		return domainError("adopt item", err), nil
+	}
+	return toolResultJSON(result)
 }

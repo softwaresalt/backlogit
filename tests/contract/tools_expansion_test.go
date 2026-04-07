@@ -49,7 +49,7 @@ func TestCreateItem_AcceptsNewFields(t *testing.T) {
 		"assigned_to":   "alice",
 		"owner":         "bob",
 		"labels":        "backend,urgent",
-		"dependencies":  "T002",
+		"dependencies":  "001.002-T",
 		"references":    "docs/spec.md",
 		"commit":        "abc123",
 	}
@@ -64,7 +64,7 @@ func TestUpdateItem_AcceptsNewFields(t *testing.T) {
 	request := mcplib.CallToolRequest{}
 	request.Params.Name = "backlogit_update_item"
 	request.Params.Arguments = map[string]any{
-		"id":          "T001",
+		"id":          "001-T",
 		"assigned_to": "charlie",
 		"owner":       "dave",
 		"labels":      "updated",
@@ -227,7 +227,7 @@ func TestGetItem_ContractAcceptsSectionParam(t *testing.T) {
 	request := mcplib.CallToolRequest{}
 	request.Params.Name = "backlogit_get_item"
 	request.Params.Arguments = map[string]any{
-		"id":      "T001",
+		"id":      "001-T",
 		"section": "description",
 	}
 
@@ -240,7 +240,7 @@ func TestUpdateItem_ContractAcceptsSectionsParam(t *testing.T) {
 	request := mcplib.CallToolRequest{}
 	request.Params.Name = "backlogit_update_item"
 	request.Params.Arguments = map[string]any{
-		"id": "T001",
+		"id": "001-T",
 		"sections": map[string]any{
 			"description": "Updated body",
 		},

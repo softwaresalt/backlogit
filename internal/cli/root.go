@@ -37,7 +37,7 @@ stash follow-up work for later planning.`,
 		Example: `  backlogit init
   backlogit add --type feature --title "Authentication hardening"
   backlogit list --status active
-  backlogit get F001 --format json
+  backlogit get 001-F --format json
   backlogit queue view --group-by status
   backlogit stash add "Defer audit dashboard split" --kind feature
   backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
@@ -72,6 +72,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewMetadataCmd(&cwd))
 	root.AddCommand(newArchiveCommand(&cwd))
 	root.AddCommand(newMigrateCommand(&cwd))
+	root.AddCommand(newAdoptCommand(&cwd))
 
 	return root
 }

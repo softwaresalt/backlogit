@@ -82,7 +82,7 @@ Map each changed file and function against these 9 principles. Flag violations w
 
 - All task state serializable to human-readable Markdown+YAML files
 - JSONL event log is append-only and human-readable
-- No binary files in `.backlog/`
+- No binary files in `.backlogit/`
 - File formats minimize merge conflicts (sorted keys, stable ordering)
 
 ### IX. Agent Context Efficiency

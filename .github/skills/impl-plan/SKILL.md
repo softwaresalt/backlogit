@@ -1,19 +1,19 @@
 ---
 name: impl-plan
 description: "Transform backlogit deliberation artifacts, feature descriptions, or research documents into structured implementation plans grounded in repo patterns and research. Use when the user says 'plan this', 'create a plan', 'how should we build', 'break this down', or when a deliberate session is ready for technical planning."
-argument-hint: "source=.backlogit/queue/DL...md or source=.backlog/research/{file}.md"
+argument-hint: "source=.backlogit/queue/DL...md or source=docs/research/{file}.md"
 input:
   properties:
     source:
       type: string
-      description: "Path to the source document to plan from. Accepted locations: .backlogit/queue/DL...md (deliberation artifacts) or .backlog/research/{file}.md (research reports)."
+      description: "Path to the source document to plan from. Accepted locations: .backlogit/queue/DL...md (deliberation artifacts) or docs/research/{file}.md (research reports)."
   required:
     - source
 ---
 
 # Create Implementation Plan
 
-The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `backlog-harvester` agent decomposes the plan into backlogit work items.
+The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `harvest` skill decomposes the reviewed plan into backlogit work items for the Groomer workflow.
 
 This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
 
@@ -39,7 +39,7 @@ Call `ping` at session start. If agent-intercom is reachable, broadcast at every
 3. **Research before structuring** -- Explore the codebase and institutional learnings before finalizing the plan.
 4. **Right-size the artifact** -- Small work gets a compact plan. Large work gets more structure.
 5. **Separate planning from execution discovery** -- Resolve planning-time questions here. Defer execution-time unknowns to implementation.
-6. **Keep the plan portable** -- The plan should work as a living document, review artifact, or backlog harvester input.
+6. **Keep the plan portable** -- The plan should work as a living document, review artifact, or `harvest` skill input.
 7. **Enforce task granularity** -- Every implementation unit must be scoped to roughly 2 hours of human-equivalent effort. Units that appear larger must be split. Units must not mix skill domains (e.g., Python code + documentation, database migration + API changes). Every unit must produce a verifiable state (passing test, successful build, or measurable output).
 
 ## Plan Quality Bar
@@ -65,7 +65,7 @@ A plan is ready when an implementer can start confidently without needing the pl
 
 * `${input:source}`: (Required) Path to the source document to plan from. Accepted locations:
   - `.backlogit/queue/DL...md` — Deliberation artifacts produced by the deliberate skill or `backlogit deliberate`
-  - `.backlog/research/{filename}.md` — External research, evaluation reports, or design explorations
+  - `docs/research/{filename}.md` — External research, evaluation reports, or design explorations
 
 ## Workflow
 
@@ -73,7 +73,7 @@ A plan is ready when an implementer can start confidently without needing the pl
 
 #### 0.1 Resume Existing Plan Work
 
-If the user references an existing plan file or there is an obvious recent matching plan in `.backlog/exec-plans/`:
+If the user references an existing plan file or there is an obvious recent matching plan in `docs/exec-plans/`:
 
 - Read it
 - Confirm whether to update in place or create new
@@ -83,7 +83,7 @@ If the user references an existing plan file or there is an obvious recent match
 
 Read the source document at `${input:source}` in full.
 
-1. Validate the file exists and is in an accepted location (`.backlogit/queue/` for deliberations or `.backlog/research/`).
+1. Validate the file exists and is in an accepted location (`.backlogit/queue/` for deliberations or `docs/research/`).
 2. If the file does not exist, list available files in both directories and halt.
 3. Determine the source type from the file path:
    - **Deliberation**: Structured format with YAML frontmatter and sections such as `## Problem Frame`, `## Options`, `## Chosen Direction`, `## Open Questions`, and `## Notes`
@@ -123,7 +123,7 @@ If the origin doc has "Resolve Before Planning" questions:
 
 ### Phase 2: Structure the Plan
 
-Write to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
+Write to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
 
 ```markdown
 ---
@@ -207,11 +207,11 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 ### Phase 3: Complete
 
-1. Confirm the plan file was written to `.backlog/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
+1. Confirm the plan file was written to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
 2. Return the plan file path to the caller.
 
-When invoked standalone (not as a subagent of backlog-harvester), present next steps:
+When invoked standalone (not as a subagent of Groomer), present next steps:
 
-1. "Run backlog-harvester to decompose this plan into backlogit feature, task, and subtask items" (Recommended)
+1. "Run harvest to decompose this reviewed plan into backlogit feature, task, and subtask items" (Recommended)
 2. "Run plan-review to validate this plan with multi-persona review first"
 3. "Revise specific sections"

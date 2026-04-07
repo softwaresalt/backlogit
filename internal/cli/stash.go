@@ -94,7 +94,7 @@ func newStashHarvestCommand(cwd *string) *cobra.Command {
 		Use:   "harvest [stash-id]",
 		Short: "Harvest a stash item into a planned work item",
 		Example: `  backlogit stash harvest ABCD1234 --type feature
-  backlogit stash harvest ABCD1234 --type task --parent-id F001 --status active
+  backlogit stash harvest ABCD1234 --type task --parent-id 001-F --status active
   backlogit stash harvest --priority critical --type task`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

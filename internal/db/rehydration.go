@@ -147,8 +147,19 @@ func isHierarchicalID(id string) bool {
 		if seg == "" {
 			return false
 		}
-		for _, ch := range seg {
-			if ch < '0' || ch > '9' {
+		numeric := leadingDigits(seg)
+		if numeric == "" {
+			return false
+		}
+		suffix := strings.TrimPrefix(seg, numeric)
+		if suffix == "" {
+			continue
+		}
+		if !strings.HasPrefix(suffix, "-") {
+			return false
+		}
+		for _, ch := range strings.TrimPrefix(suffix, "-") {
+			if (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') {
 				return false
 			}
 		}
@@ -160,11 +171,26 @@ func isHierarchicalID(id string) bool {
 // "001.002.003" → "001/001.002/001.002.003".
 func hierarchyPathFromID(id string) string {
 	parts := strings.Split(id, ".")
-	segments := make([]string, len(parts))
+	numericParts := make([]string, len(parts))
 	for i := range parts {
-		segments[i] = strings.Join(parts[:i+1], ".")
+		numericParts[i] = leadingDigits(parts[i])
+	}
+	segments := make([]string, len(parts))
+	for i := range numericParts {
+		segments[i] = strings.Join(numericParts[:i+1], ".")
 	}
 	return strings.Join(segments, "/")
+}
+
+func leadingDigits(value string) string {
+	var digits strings.Builder
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			break
+		}
+		digits.WriteRune(ch)
+	}
+	return digits.String()
 }
 
 func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.DB) error {

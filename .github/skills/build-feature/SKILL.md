@@ -138,7 +138,7 @@ Once the isolated harness passes:
      * `git log -1 --pretty=%s HEAD` for the commit subject
      * `git log -1 --pretty=%an HEAD` for the commit author
    * Do not batch unrelated backlogit items into this implementation commit. If the working tree contains changes for sibling, parent, or future items that are not directly completed by this work, split them into a different commit before proceeding.
-   * `broadcast` at `success` level: `[BUILD] Task {task-id} complete, commit {short_hash}, {N} attempt(s)`. The attempt count is used by the build-orchestrator to decide whether to invoke compound knowledge capture.
+   * `broadcast` at `success` level: `[BUILD] Task {task-id} complete, commit {short_hash}, {N} attempt(s)`. The attempt count is used by the invoking workflow, typically Shipper, to decide whether to invoke compound knowledge capture.
 4. **State update**: Record commit traceability only for the items directly affected by this commit:
    * Start `affected_item_ids` with `${input:task-id}`.
    * Add another task, subtask, or review item only when this exact commit directly implements or finalizes that item. Never attach the commit to the full feature or to untouched descendants.

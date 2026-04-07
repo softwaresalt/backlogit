@@ -130,23 +130,29 @@ detail. Keep this file as the brief map.
 | `groomer` | Primary stash-to-backlog orchestrator |
 | `shipper` | Primary backlog-to-shipped orchestrator |
 
-### Supporting and legacy agents
+### Supporting agents
 
 | Agent | Purpose |
 |---|---|
-| `backlog-harvester` | Decompose plans and deliberation artifacts into backlogit work items |
-| `build-orchestrator` | Claim ready work under a feature and drive the build loop |
-| `deliberator` | Route idea work between deliberate and spike workflows |
-| `doc-ops` | Maintain durable docs and reduce documentation drift |
 | `go-engineer` | Apply repository-specific Go engineering standards |
 | `go-mcp-expert` | Advise on Go MCP server design and implementation |
-| `harness-architect` | Create compilable but failing harnesses for selected work |
-| `memory` | Persist and restore session context via `docs/memory/` |
-| `pr-review` | Manage PR review lifecycle and handoff |
 | `prompt-builder` | Create and refine prompts, agents, instructions, and skills |
 
-Legacy orchestration agents remain available for migration and targeted
-workflows, but they are no longer the primary repository path.
+### Deprecated agents
+
+Deprecated agents live in `.github/agents/deprecated/` and are excluded from
+the default Copilot agent picker. They remain available for reference or
+targeted invocation when needed.
+
+| Agent | Purpose | Superseded by |
+|---|---|---|
+| `backlog-harvester` | Decompose plans into backlogit work items | `groomer` + `harvest` skill |
+| `build-orchestrator` | Claim and execute ready feature work | `shipper` + `build-feature` skill |
+| `deliberator` | Route idea work into deliberation | `groomer` + `deliberate` / `spike` skills |
+| `doc-ops` | Documentation quality assurance | `shipper` post-merge closure protocol |
+| `harness-architect` | Create failing test harnesses | `shipper` + `harness-architect` skill |
+| `memory` | Session context persistence | Groomer and Shipper session continuity protocols |
+| `pr-review` | Manage PR review lifecycle | `shipper` + `pr-lifecycle` skill |
 
 ## Available skills
 
@@ -221,8 +227,8 @@ gofmt -l .
 
 Before ending a meaningful work session:
 
-* persist memory to `docs/memory/`
+* follow the Session Continuity protocol defined in your agent file (groomer or
+  shipper) to persist memory, capture learnings, and compact tracking context
 * update backlogit task state through the tool surface
-* capture compound learnings when the work uncovered reusable lessons
 * leave the branch and working tree in a reviewable state
 
