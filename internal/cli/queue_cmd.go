@@ -78,7 +78,7 @@ func NewQueueMoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "move <item-id>",
 		Short:   "Reorder an item in the queue",
-		Example: `  backlogit queue move T001 --position 1`,
+		Example: `  backlogit queue move 001-T --position 1`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -99,14 +99,14 @@ func NewQueueMoveCmd() *cobra.Command {
 	return cmd
 }
 
-// NewQueueBulkStatusCmd creates `backlogit queue bulk-status --ids T001,T002 --status active`.
+// NewQueueBulkStatusCmd creates `backlogit queue bulk-status --ids 001-T,002-T --status active`.
 func NewQueueBulkStatusCmd() *cobra.Command {
 	var ids, status string
 
 	cmd := &cobra.Command{
 		Use:     "bulk-status",
 		Short:   "Update status for multiple items",
-		Example: `  backlogit queue bulk-status --ids T001,T002,T003 --status active`,
+		Example: `  backlogit queue bulk-status --ids 001-T,002-T,003-T --status active`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ids == "" {
 				return fmt.Errorf("--ids is required")

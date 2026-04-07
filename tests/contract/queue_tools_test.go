@@ -107,7 +107,7 @@ func TestExportCommandMap_WritesWorkspaceFile(t *testing.T) {
 func TestAddDependency_MissingItemID(t *testing.T) {
 	s := setupRealMCPServer(t)
 	result, err := callToolForTest(t, s, "backlogit_add_dependency", map[string]any{
-		"depends_on": "T002",
+		"depends_on": "001.002-T",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -117,7 +117,7 @@ func TestAddDependency_MissingItemID(t *testing.T) {
 func TestAddDependency_MissingDependsOn(t *testing.T) {
 	s := setupRealMCPServer(t)
 	result, err := callToolForTest(t, s, "backlogit_add_dependency", map[string]any{
-		"item_id": "T001",
+		"item_id": "001-T",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -148,7 +148,7 @@ func TestAddDependency_Success(t *testing.T) {
 func TestRemoveDependency_MissingParams(t *testing.T) {
 	s := setupRealMCPServer(t)
 	result, err := callToolForTest(t, s, "backlogit_remove_dependency", map[string]any{
-		"item_id": "T001",
+		"item_id": "001-T",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -239,7 +239,7 @@ func TestTrackCommit_MissingItemID(t *testing.T) {
 func TestTrackCommit_MissingSHA(t *testing.T) {
 	s := setupRealMCPServer(t)
 	result, err := callToolForTest(t, s, "backlogit_track_commit", map[string]any{
-		"item_id": "T001",
+		"item_id": "001-T",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)

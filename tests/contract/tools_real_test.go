@@ -143,6 +143,53 @@ func TestUpdateItem_Real_ModifiesFields(t *testing.T) {
 	assert.Equal(t, "Updated title", updateData["title"])
 }
 
+func TestSuffixIDLifecycle_Real_RoundTripsAcrossHandlers(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	featureData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Numeric feature",
+		"artifact_type": "feature",
+	})
+	featureID := featureData["id"].(string)
+	assert.Equal(t, "001-F", featureID)
+
+	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Numeric child task",
+		"artifact_type": "task",
+		"parent_id":     featureID,
+		"status":        "queued",
+	})
+	taskID := taskData["id"].(string)
+	assert.Equal(t, "001.001-T", taskID)
+
+	getData := callToolAndParseJSON(t, s, "backlogit_get_item", map[string]any{
+		"id": taskID,
+	})
+	assert.Equal(t, taskID, getData["id"])
+	assert.Equal(t, featureID, getData["parent_id"])
+
+	moveData := callToolAndParseJSON(t, s, "backlogit_move_item", map[string]any{
+		"id":     taskID,
+		"status": "active",
+	})
+	assert.Equal(t, taskID, moveData["id"])
+	assert.Equal(t, "active", moveData["status"])
+
+	updateData := callToolAndParseJSON(t, s, "backlogit_update_item", map[string]any{
+		"id":    taskID,
+		"title": "Numeric child task updated",
+	})
+	assert.Equal(t, taskID, updateData["id"])
+	assert.Equal(t, "Numeric child task updated", updateData["title"])
+
+	rows := callToolAndParseJSONSlice(t, s, "backlogit_query_sql", map[string]any{
+		"sql": fmt.Sprintf("SELECT id, parent_id FROM items WHERE id = '%s'", taskID),
+	})
+	require.Len(t, rows, 1)
+	assert.Equal(t, taskID, rows[0]["id"])
+	assert.Equal(t, featureID, rows[0]["parent_id"])
+}
+
 // TASK-008.06: Invalid artifact type returns an error result.
 func TestCreateItem_Real_InvalidTypeReturnsError(t *testing.T) {
 	// Arrange
@@ -167,7 +214,7 @@ func TestGetItem_Real_MissingIDReturnsError(t *testing.T) {
 
 	// Act
 	result, err := callToolForTest(t, s, "backlogit_get_item", map[string]any{
-		"id": "NONEXISTENT999",
+		"id": "999-F",
 	})
 
 	// Assert

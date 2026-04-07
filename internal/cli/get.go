@@ -29,9 +29,9 @@ func newGetCommand(cwd *string) *cobra.Command {
 		Short: "Retrieve an artifact by ID",
 		Long: `Retrieve a single artifact and print either a human-readable detail view,
 JSON output, or a specific named body section.`,
-		Example: `  backlogit get F001
-  backlogit get F001 --format json
-  backlogit get F001 --section description`,
+		Example: `  backlogit get 001-F
+  backlogit get 001-F --format json
+  backlogit get 001-F --section description`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]

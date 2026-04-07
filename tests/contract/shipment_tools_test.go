@@ -91,7 +91,7 @@ func TestGetShipment_NotFound(t *testing.T) {
 
 	// Act
 	result, err := callToolForTest(t, s, "backlogit_get_shipment", map[string]any{
-		"id": "S999",
+		"id": "999-S",
 	})
 
 	// Assert
@@ -106,7 +106,7 @@ func TestGetShipment_NotFoundUsesNotFoundErrorType(t *testing.T) {
 
 	// Act
 	data := callToolAndParseError(t, s, "backlogit_get_shipment", map[string]any{
-		"id": "S999",
+		"id": "999-S",
 	})
 
 	// Assert
@@ -247,6 +247,57 @@ func TestReturnBlocked_Success(t *testing.T) {
 	assert.Equal(t, "blocked", data["item_status"], "returned item must be blocked")
 }
 
+// ---------------------------------------------------------------------------
+// backlogit_ship_shipment
+// ---------------------------------------------------------------------------
+
+func TestShipShipment_MissingID(t *testing.T) {
+	// Arrange
+	s := setupRealMCPServer(t)
+
+	// Act
+	result, err := callToolForTest(t, s, "backlogit_ship_shipment", map[string]any{})
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "missing id should return error")
+}
+
+func TestShipShipment_Success(t *testing.T) {
+	// Arrange
+	s := setupRealMCPServer(t)
+	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Ship task",
+		"artifact_type": "task",
+		"status":        "queued",
+	})
+	taskID := taskData["id"].(string)
+	created := callToolAndParseJSON(t, s, "backlogit_create_shipment", map[string]any{
+		"title": "Shippable shipment",
+		"items": taskID,
+	})
+	shipmentID := created["id"].(string)
+	_ = callToolAndParseJSON(t, s, "backlogit_claim_shipment", map[string]any{
+		"id": shipmentID,
+	})
+
+	// Act
+	data := callToolAndParseJSON(t, s, "backlogit_ship_shipment", map[string]any{
+		"id":      shipmentID,
+		"sha":     "deadbeef1234567890",
+		"message": "merge: ship shipment",
+		"author":  "tester@example.com",
+	})
+
+	// Assert
+	assert.Equal(t, shipmentID, data["shipment_id"])
+	assert.Equal(t, "shipped", data["shipment_status"])
+	archivedIDs, ok := data["archived_ids"].([]any)
+	require.True(t, ok, "archived_ids must be a list")
+	assert.NotEmpty(t, archivedIDs)
+}
+
 func TestAddToShipment_MissingItemUsesNotFoundErrorType(t *testing.T) {
 	// Arrange
 	s := setupRealMCPServer(t)
@@ -258,7 +309,7 @@ func TestAddToShipment_MissingItemUsesNotFoundErrorType(t *testing.T) {
 	// Act
 	data := callToolAndParseError(t, s, "backlogit_add_to_shipment", map[string]any{
 		"shipment_id": shipmentID,
-		"item_id":     "T999",
+		"item_id":     "999-T",
 	})
 
 	// Assert
@@ -320,4 +371,61 @@ func TestAddToShipment_ShippedShipmentUsesConflictErrorType(t *testing.T) {
 
 	// Assert
 	assert.Equal(t, "conflict", data["error"])
+}
+
+// ---------------------------------------------------------------------------
+// backlogit_adopt_item
+// ---------------------------------------------------------------------------
+
+func TestAdoptItemMCP_MissingItemID(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	result, err := callToolForTest(t, s, "backlogit_adopt_item", map[string]any{
+		"new_parent_id": "001-F",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError, "should fail without item_id")
+}
+
+func TestAdoptItemMCP_MissingParentID(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	result, err := callToolForTest(t, s, "backlogit_adopt_item", map[string]any{
+		"item_id": "001-T",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError, "should fail without new_parent_id")
+}
+
+func TestAdoptItemMCP_Success(t *testing.T) {
+	s := setupRealMCPServer(t)
+
+	featureData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Adopt target feature",
+		"artifact_type": "feature",
+	})
+	featureID := featureData["id"].(string)
+
+	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Adoptable task",
+		"artifact_type": "task",
+		"parent_id":     featureID,
+	})
+	taskID := taskData["id"].(string)
+
+	newFeatureData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "New parent feature",
+		"artifact_type": "feature",
+	})
+	newFeatureID := newFeatureData["id"].(string)
+
+	adoptData := callToolAndParseJSON(t, s, "backlogit_adopt_item", map[string]any{
+		"item_id":       taskID,
+		"new_parent_id": newFeatureID,
+	})
+
+	assert.Equal(t, taskID, adoptData["item_id"])
+	assert.Equal(t, newFeatureID, adoptData["new_parent_id"])
 }
