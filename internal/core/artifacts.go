@@ -251,11 +251,15 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
-	if artifactType != "review" {
+	allowedParents := allowedParentTypes(ws, artifactType)
+	if parentID == "" {
+		if artifactType == "review" && len(allowedParents) > 0 {
+			return fmt.Errorf("artifact type %q requires a parent_id", artifactType)
+		}
 		return nil
 	}
-	if parentID == "" {
-		return fmt.Errorf("artifact type %q requires a parent_id", artifactType)
+	if len(allowedParents) == 0 {
+		return nil
 	}
 
 	parentPath, err := FindArtifactPath(ctx, ws, parentID)
@@ -267,17 +271,41 @@ func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType str
 		return fmt.Errorf("parse parent artifact %q: %w", parentID, err)
 	}
 
-	parentCfg, ok := ws.Config.ArtifactTypes[parentArtifact.ArtifactType]
-	if !ok {
+	if _, ok := ws.Config.ArtifactTypes[parentArtifact.ArtifactType]; !ok {
 		return fmt.Errorf("parent artifact type %q is not configured", parentArtifact.ArtifactType)
 	}
-	for _, allowedChild := range parentCfg.AllowedChildren {
-		if allowedChild == artifactType {
-			return nil
-		}
+	if _, ok := allowedParents[parentArtifact.ArtifactType]; ok {
+		return nil
 	}
 
 	return fmt.Errorf("artifact type %q is not allowed under parent type %q", artifactType, parentArtifact.ArtifactType)
+}
+
+func allowedParentTypes(ws *Workspace, artifactType string) map[string]struct{} {
+	allowed := map[string]struct{}{}
+	if ws == nil || ws.Config == nil {
+		return allowed
+	}
+	for parentType, parentCfg := range ws.Config.ArtifactTypes {
+		if parentCfg == nil {
+			continue
+		}
+		for _, allowedChild := range parentCfg.AllowedChildren {
+			if allowedChild == artifactType {
+				allowed[parentType] = struct{}{}
+				break
+			}
+		}
+	}
+	if artifactType == "bug" {
+		switch ws.Config.BugLevel {
+		case 2:
+			allowed["feature"] = struct{}{}
+		case 3:
+			allowed["task"] = struct{}{}
+		}
+	}
+	return allowed
 }
 
 // UpdateArtifact updates an existing artifact's fields.

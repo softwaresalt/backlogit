@@ -117,8 +117,12 @@ func TestUpdateArtifact_RejectsParentIDChange(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
+	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, parent))
+
 	artifact, err := core.CreateArtifact(ctx, ws, "Parent test", "task",
-		core.WithParent("E001"),
+		core.WithParent(parent.ID),
 	)
 	require.NoError(t, err)
 
@@ -247,4 +251,35 @@ func TestCreateArtifact_ReviewAllowsFeatureParent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, feature.ID, review.ParentID)
 	assert.Equal(t, "review", review.ArtifactType)
+}
+
+func TestCreateArtifact_BugRejectsFeatureParentWhenBugLevelThree(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+
+	_, err = core.CreateArtifact(ctx, ws, "Feature bug", "bug", core.WithParent(feature.ID))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `artifact type "bug" is not allowed under parent type "feature"`)
+}
+
+func TestCreateArtifact_BugAllowsTaskParentWhenBugLevelThree(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature parent", "feature")
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	task, err := core.CreateArtifact(ctx, ws, "Task parent", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	bug, err := core.CreateArtifact(ctx, ws, "Task bug", "bug", core.WithParent(task.ID))
+
+	require.NoError(t, err)
+	assert.Equal(t, task.ID, bug.ParentID)
+	assert.Equal(t, "001.001.001-B", bug.ID)
 }
