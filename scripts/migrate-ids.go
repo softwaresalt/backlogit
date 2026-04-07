@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,7 +54,10 @@ func runMigration(root string) error {
 	if err := applyArtifactMigration(artifacts, mapping); err != nil {
 		return err
 	}
-	if err := applyLogMigration(filepath.Join(root, "logs"), mapping); err != nil {
+	if err := applyStashMigration(filepath.Join(workspaceDir, "queue", ".stash.md"), mapping); err != nil {
+		return err
+	}
+	if err := applyLogMigration(core.WorkspaceLogsRoot(root), mapping); err != nil {
 		return err
 	}
 	return nil
@@ -154,7 +158,7 @@ func collectArtifactPaths(roots ...string) ([]string, error) {
 
 func applyArtifactMigration(artifacts []artifactMigration, mapping map[string]string) error {
 	for _, artifact := range artifacts {
-		fm := cloneMap(artifact.Frontmatter)
+		fm := rewriteMapStringValues(cloneMap(artifact.Frontmatter), mapping)
 		fm["id"] = artifact.NewID
 
 		if parentID, ok := fm["parent_id"].(string); ok && parentID != "" {
@@ -169,10 +173,30 @@ func applyArtifactMigration(artifacts []artifactMigration, mapping map[string]st
 			fm["archived_from"] = filepath.Join(filepath.Dir(archivedFrom), filepath.Base(artifact.NewPath))
 		}
 
-		content := models.SerializeFrontmatter(fm, artifact.Body)
+		content := models.SerializeFrontmatter(fm, rewriteMappedText(artifact.Body, mapping))
 		if err := writeMigratedFile(artifact.OldPath, artifact.NewPath, []byte(content)); err != nil {
 			return fmt.Errorf("rewrite artifact %q: %w", artifact.OldID, err)
 		}
+	}
+	return nil
+}
+
+func applyStashMigration(stashPath string, mapping map[string]string) error {
+	if _, err := os.Stat(stashPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	raw, err := os.ReadFile(stashPath)
+	if err != nil {
+		return fmt.Errorf("read stash %q: %w", stashPath, err)
+	}
+	fm, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return fmt.Errorf("parse stash %q: %w", stashPath, err)
+	}
+	content := models.SerializeFrontmatter(rewriteMapStringValues(cloneMap(fm), mapping), rewriteMappedText(body, mapping))
+	if err := writeMigratedFile(stashPath, stashPath, []byte(content)); err != nil {
+		return fmt.Errorf("rewrite stash %q: %w", stashPath, err)
 	}
 	return nil
 }
@@ -353,6 +377,61 @@ func writeMigratedFile(oldPath string, newPath string, content []byte) error {
 
 func samePath(left string, right string) bool {
 	return filepath.Clean(left) == filepath.Clean(right)
+}
+
+func rewriteMapStringValues(input map[string]any, mapping map[string]string) map[string]any {
+	cloned := cloneMap(input)
+	for key, value := range cloned {
+		cloned[key] = rewriteMappedValue(value, mapping)
+	}
+	return cloned
+}
+
+func rewriteMappedValue(value any, mapping map[string]string) any {
+	switch v := value.(type) {
+	case string:
+		return rewriteMappedText(v, mapping)
+	case []string:
+		rewritten := make([]string, len(v))
+		for i, item := range v {
+			rewritten[i] = rewriteMappedText(item, mapping)
+		}
+		return rewritten
+	case []any:
+		rewritten := make([]any, len(v))
+		for i, item := range v {
+			rewritten[i] = rewriteMappedValue(item, mapping)
+		}
+		return rewritten
+	case map[string]any:
+		return rewriteMapStringValues(v, mapping)
+	default:
+		return value
+	}
+}
+
+func rewriteMappedText(text string, mapping map[string]string) string {
+	if text == "" || len(mapping) == 0 {
+		return text
+	}
+
+	keys := make([]string, 0, len(mapping))
+	for oldID := range mapping {
+		keys = append(keys, oldID)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if len(keys[i]) == len(keys[j]) {
+			return keys[i] < keys[j]
+		}
+		return len(keys[i]) > len(keys[j])
+	})
+
+	rewritten := text
+	for _, oldID := range keys {
+		pattern := regexp.MustCompile(`(^|[^A-Za-z0-9])(` + regexp.QuoteMeta(oldID) + `)($|[^A-Za-z0-9])`)
+		rewritten = pattern.ReplaceAllString(rewritten, `${1}`+mapping[oldID]+`${3}`)
+	}
+	return rewritten
 }
 
 func cloneMap(input map[string]any) map[string]any {

@@ -221,7 +221,7 @@ func typedSegmentOrdinal(segment, prefix string, suffix string) (int, bool) {
 func numericParentPath(parentID string, layout *config.QueueLayoutConfig) (string, error) {
 	segments, err := ParseHierarchicalID(parentID)
 	if err != nil {
-		return parentID, nil
+		return "", fmt.Errorf("parse hierarchical parent %q: %w", parentID, err)
 	}
 	formatted := make([]string, 0, len(segments))
 	for _, segment := range segments {

@@ -220,6 +220,28 @@ func TestNextTypedHierarchicalID_ChildUsesSuffixOrdinal(t *testing.T) {
 	assert.Equal(t, "001.003-T", got)
 }
 
+func TestNextTypedHierarchicalID_LegacyParentErrors(t *testing.T) {
+	db := openHierarchyTestDB(t)
+
+	typeCfg := &config.ArtifactTypeConfig{
+		Prefix:     "T",
+		Suffix:     "-T",
+		NameFormat: "{NNN}{suffix}",
+	}
+
+	_, err := core.NextTypedHierarchicalID(
+		context.Background(),
+		db,
+		"F016",
+		"task",
+		typeCfg,
+		defaultQueueLayout(),
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `parse hierarchical parent "F016"`)
+}
+
 func TestParseHierarchicalID_TypedSegments(t *testing.T) {
 	got, err := core.ParseHierarchicalID("001-F.002-T.003-ST")
 
