@@ -80,7 +80,11 @@ func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutC
 	if parentID == "" {
 		return segment, nil
 	}
-	return parentID + "." + segment, nil
+	numParent, err := numericParentPath(parentID, layout)
+	if err != nil {
+		return "", fmt.Errorf("normalize parent id: %w", err)
+	}
+	return numParent + "." + segment, nil
 }
 
 // NextTypedHierarchicalID computes the next available typed hierarchical ID for

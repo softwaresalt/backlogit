@@ -234,7 +234,7 @@ func TestNextHierarchicalID_ChildOrdinalPastNine(t *testing.T) {
 	got, err := core.NextHierarchicalID(db, "001-F", defaultQueueLayout())
 
 	require.NoError(t, err)
-	assert.Equal(t, "001-F.011", got)
+	assert.Equal(t, "001.011", got)
 }
 
 func TestNextTypedHierarchicalID_LegacyParentErrors(t *testing.T) {
