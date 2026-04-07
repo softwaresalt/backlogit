@@ -35,7 +35,7 @@ shipment state, and do not merge without user approval.
 
 ## Inputs
 
-* `${input:shipment_id}`: (Required) Shipment artifact ID such as `S001`
+* `${input:shipment_id}`: (Required) Shipment artifact ID such as `001-S`
 
 The shipment is the source of truth for branch and pull request scope. Use
 shipment-aware commands or their MCP equivalents to load and maintain that

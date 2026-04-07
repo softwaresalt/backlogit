@@ -125,7 +125,7 @@ func BuildMetadataCatalog(
 			ArchivePath:   filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive"),
 			LogsPath:      WorkspaceLogsRoot(ws.RootPath),
 			DatabasePath:  filepath.Join(WorkspaceStorageRoot(ws.RootPath), "backlogit.db"),
-			StashPath:     filepath.Join(WorkspaceStorageRoot(ws.RootPath), "queue", ".stash.md"),
+			StashPath:     filepath.Join(WorkspaceStorageRoot(ws.RootPath), stash.JSONLFileName),
 			TemplatesPath: filepath.Join(WorkspaceStorageRoot(ws.RootPath), "templates"),
 			QueueRootDir:  ws.Config.QueueLayout.RootDir,
 		},
@@ -133,7 +133,7 @@ func BuildMetadataCatalog(
 		Registry:      registryRoutes(registry),
 		Templates:     templateInfos,
 		Stash: MetadataStashInfo{
-			Path:                 filepath.Join(WorkspaceStorageRoot(ws.RootPath), "queue", ".stash.md"),
+			Path:                 filepath.Join(WorkspaceStorageRoot(ws.RootPath), stash.JSONLFileName),
 			SupportedKinds:       stash.AllowedKinds(),
 			SupportedPriorities:  stash.AllowedPriorities(),
 			DefaultPriority:      stash.DefaultPriority,

@@ -6,7 +6,7 @@ argument-hint: "[feature idea or problem to explore]"
 
 # Deliberate on a Feature or Improvement
 
-Deliberation answers **WHAT** to build through collaborative dialogue. It precedes deeper planning work. The durable output is backlogit-native: a stash entry in `.backlogit/queue/.stash.md` plus a linked `deliberation` artifact in `.backlogit/queue` so later harvest and planning flows can recover the full discussion.
+Deliberation answers **WHAT** to build through collaborative dialogue. It precedes deeper planning work. The durable output is backlogit-native: a stash entry in `.backlogit/stash.jsonl` plus a linked `deliberation` artifact in `.backlogit/queue` so later harvest and planning flows can recover the full discussion.
 
 ## Agent-Intercom Communication (NON-NEGOTIABLE)
 

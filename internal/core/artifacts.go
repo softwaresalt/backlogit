@@ -126,7 +126,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		}
 	}
 	if artifactID == "" {
-		nextID, err := NextID(ctx, ws.DB, artifactType)
+		nextID, err := NextID(ctx, ws.DB, artifactType, typeConfig)
 		if err != nil {
 			return nil, fmt.Errorf("get next id: %w", err)
 		}

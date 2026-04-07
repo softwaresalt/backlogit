@@ -31,26 +31,50 @@ func ResolveHierarchicalPath(layout *config.QueueLayoutConfig, parentID string, 
 // with non-numeric IDs such as legacy prefix IDs ("T001", "BUG-3") are excluded
 // from the ordinal computation.
 func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutConfig) (string, error) {
-	var maxOrdinal sql.NullInt64
-	var err error
+	var (
+		rows *sql.Rows
+		err  error
+	)
 	if parentID == "" {
-		// Restrict to purely numeric IDs (hierarchical format) to avoid CAST("T001" AS INTEGER) = 0.
-		err = db.QueryRow(
-			`SELECT MAX(CAST(id AS INTEGER)) FROM items WHERE parent_id IS NULL AND id GLOB '[0-9]*'`,
-		).Scan(&maxOrdinal)
+		rows, err = db.Query(`SELECT id FROM items WHERE parent_id IS NULL`)
 	} else {
-		err = db.QueryRow(
-			`SELECT MAX(CAST(SUBSTR(id, LENGTH(?)+2) AS INTEGER)) FROM items WHERE parent_id = ?`,
-			parentID, parentID,
-		).Scan(&maxOrdinal)
+		rows, err = db.Query(`SELECT id FROM items WHERE parent_id = ?`, parentID)
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil {
 		return "", fmt.Errorf("next hierarchical id: %w", err)
+	}
+	defer rows.Close()
+
+	maxOrdinal := 0
+	for rows.Next() {
+		var existingID string
+		if err := rows.Scan(&existingID); err != nil {
+			return "", fmt.Errorf("scan hierarchical id: %w", err)
+		}
+		segment := lastIDSegment(existingID)
+		numeric := leadingDigits(segment)
+		if numeric == "" {
+			continue
+		}
+		remainder := strings.TrimPrefix(segment, numeric)
+		if remainder != "" && !strings.HasPrefix(remainder, "-") {
+			continue
+		}
+		ordinal, err := strconv.Atoi(numeric)
+		if err != nil {
+			continue
+		}
+		if ordinal > maxOrdinal {
+			maxOrdinal = ordinal
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate hierarchical ids: %w", err)
 	}
 
 	next := 1
-	if maxOrdinal.Valid {
-		next = int(maxOrdinal.Int64) + 1
+	if maxOrdinal > 0 {
+		next = maxOrdinal + 1
 	}
 	segment := FormatHierarchicalID(next, layout)
 	if parentID == "" {

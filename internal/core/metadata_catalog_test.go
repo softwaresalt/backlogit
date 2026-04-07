@@ -52,7 +52,7 @@ func TestWriteCommandMap_WritesInsideWorkspace(t *testing.T) {
 			QueuePath:   filepath.Join(root, ".backlogit", "queue"),
 			ArchivePath: filepath.Join(root, ".backlogit", "archive"),
 			LogsPath:    filepath.Join(root, ".backlogit", "logs"),
-			StashPath:   filepath.Join(root, ".backlogit", "queue", ".stash.md"),
+			StashPath:   filepath.Join(root, ".backlogit", "stash.jsonl"),
 		},
 	}
 

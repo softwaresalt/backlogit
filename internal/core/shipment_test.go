@@ -639,10 +639,10 @@ func TestIsOrphan(t *testing.T) {
 		parentID string
 		want     bool
 	}{
-		{"orphaned hierarchical ID", "F015.T009", "", true},
-		{"parented hierarchical ID", "F015.T009", "F015", false},
-		{"top-level ID no parent", "T001", "", false},
-		{"deep orphan", "F015.T001.ST003", "", true},
+		{"orphaned hierarchical ID", "015.009-T", "", true},
+		{"parented hierarchical ID", "015.009-T", "015-F", false},
+		{"top-level ID no parent", "001-T", "", false},
+		{"deep orphan", "015.001.003-ST", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -657,10 +657,10 @@ func TestExtractIDPrefix(t *testing.T) {
 		id   string
 		want string
 	}{
-		{"F015.T009", "F015"},
-		{"F015.T001.ST003", "F015.T001"},
-		{"T001", ""},
-		{"F015", ""},
+		{"015.009-T", "015"},
+		{"015.001.003-ST", "015.001"},
+		{"001-T", ""},
+		{"015-F", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.id, func(t *testing.T) {

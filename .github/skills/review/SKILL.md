@@ -179,20 +179,20 @@ In interactive and autofix modes, log follow-up work in backlogit for every unre
 In interactive and autofix modes, create a backlogit artifact of type `review` instead of writing an ad hoc markdown file. Skip this step in report-only mode.
 
 1. Determine whether the reviewed scope belongs to a known level-1 artifact such as a feature.
-2. When a level-1 artifact is known, create the review as its child with `parent_id` set to that artifact. This yields stable IDs such as `F013.R001`.
+2. When a level-1 artifact is known, create the review as its child with `parent_id` set to that artifact. This yields stable IDs such as `013.001-R`.
 3. Use a short, descriptive review title so the configured filename format yields grouped files such as:
-   * `F013.R001-branch-review.md`
-   * `F013.R002-followup-review.md`
+   * `013.001-R-branch-review.md`
+   * `013.002-R-followup-review.md`
 4. Set `status: "review"` and include branch metadata in `custom_fields.source_branch` when available.
 5. Write the merged review content as the artifact body.
 
 ```markdown
 ---
-id: F013.R001
+id: 013.001-R
 title: "Branch review"
 status: review
 artifact_type: review
-parent_id: F013
+parent_id: 013-F
 created_at: YYYY-MM-DDTHH:MM:SSZ
 updated_at: YYYY-MM-DDTHH:MM:SSZ
 custom_fields:

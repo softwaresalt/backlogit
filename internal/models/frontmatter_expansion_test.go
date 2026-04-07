@@ -88,3 +88,35 @@ func TestSerializeFrontmatter_NewFieldsRoundTrip(t *testing.T) {
 	assert.Equal(t, []string{"docs/spec.md"}, artifact.References)
 	assert.Equal(t, "abc123", artifact.Commit)
 }
+
+func TestArtifactFromFrontmatter_DerivesHierarchyMetadataFromID(t *testing.T) {
+	fm := map[string]any{
+		"id":            "016.002-T",
+		"title":         "Test",
+		"status":        "queued",
+		"artifact_type": "task",
+	}
+
+	artifact, err := models.ArtifactFromFrontmatter(fm, "description")
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, artifact.Level)
+	assert.Equal(t, "016/016.002", artifact.HierarchyPath)
+}
+
+func TestArtifactFromFrontmatter_PreservesExplicitHierarchyMetadata(t *testing.T) {
+	fm := map[string]any{
+		"id":             "016.002-T",
+		"title":          "Test",
+		"status":         "queued",
+		"artifact_type":  "task",
+		"level":          7,
+		"hierarchy_path": "custom/path",
+	}
+
+	artifact, err := models.ArtifactFromFrontmatter(fm, "description")
+
+	require.NoError(t, err)
+	assert.Equal(t, 7, artifact.Level)
+	assert.Equal(t, "custom/path", artifact.HierarchyPath)
+}
