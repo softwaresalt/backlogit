@@ -61,3 +61,15 @@ func TestResolveFileName_UsesConfiguredFormat(t *testing.T) {
 
 	assert.Equal(t, "F013.R001-followup-review", name)
 }
+
+func TestResolveName_SuffixFormat(t *testing.T) {
+	cfg := &config.ArtifactTypeConfig{
+		Prefix:     "F",
+		Suffix:     "-F",
+		NameFormat: "{NNN}{suffix}",
+	}
+
+	name := core.ResolveName(cfg, "Artifact Identity", 1, 60)
+
+	assert.Equal(t, "001-F", name)
+}

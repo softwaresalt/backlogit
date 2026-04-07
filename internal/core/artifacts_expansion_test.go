@@ -176,9 +176,9 @@ func TestCreateArtifact_UsesHierarchicalTaskIDsUnderFeatureParent(t *testing.T) 
 	otherFeatureTask, err := core.CreateArtifact(ctx, ws, "Other feature child task", "task", core.WithParent(featureTwo.ID))
 	require.NoError(t, err)
 
-	assert.Equal(t, featureOne.ID+".T001", firstTask.ID)
-	assert.Equal(t, featureOne.ID+".T002", secondTask.ID)
-	assert.Equal(t, featureTwo.ID+".T001", otherFeatureTask.ID)
+	assert.Equal(t, "001.001-T", firstTask.ID)
+	assert.Equal(t, "001.002-T", secondTask.ID)
+	assert.Equal(t, "002.001-T", otherFeatureTask.ID)
 }
 
 func TestCreateArtifact_UsesHierarchicalSubtaskIDsAndFilenamesUnderTaskParent(t *testing.T) {
@@ -200,8 +200,8 @@ func TestCreateArtifact_UsesHierarchicalSubtaskIDsAndFilenamesUnderTaskParent(t 
 	secondSubtask, err := core.CreateArtifact(ctx, ws, "Second child subtask", "subtask", core.WithParent(task.ID))
 	require.NoError(t, err)
 
-	assert.Equal(t, task.ID+".ST001", firstSubtask.ID)
-	assert.Equal(t, task.ID+".ST002", secondSubtask.ID)
+	assert.Equal(t, "001.001.001-ST", firstSubtask.ID)
+	assert.Equal(t, "001.001.002-ST", secondSubtask.ID)
 
 	filePath, err := core.FindArtifactPath(ctx, ws, firstSubtask.ID)
 	require.NoError(t, err)
