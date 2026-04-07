@@ -225,7 +225,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_fetch_stash",
-			mcplib.WithDescription("Fetch the current active stash entries from .backlogit/queue/.stash.md"),
+			mcplib.WithDescription("Fetch the current active stash entries from .backlogit/stash.jsonl"),
 			mcplib.WithString("priority", mcplib.Description("Optional stash priority filter (low, medium, high, critical)")),
 			mcplib.WithBoolean("group_by_priority", mcplib.Description("Group stash entries by priority")),
 		),
@@ -234,7 +234,7 @@ func (s *Server) RegisterTools() {
 	s.addTool(
 		mcplib.NewTool("backlogit_stash",
 			mcplib.WithDescription("Add a deferred work item to the stash"),
-			mcplib.WithString("kind", mcplib.DefaultString("task"), mcplib.Description("Stash kind (feature, task, bug, epic)")),
+			mcplib.WithString("kind", mcplib.DefaultString("task"), mcplib.Description("Stash kind (feature, task, bug, epic, unknown)")),
 			mcplib.WithString("priority", mcplib.Description("Stash priority (low, medium, high, critical)"), mcplib.DefaultString("medium")),
 			mcplib.WithString("text", mcplib.Required(), mcplib.Description("Stash item text")),
 		),

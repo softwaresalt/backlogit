@@ -1,26 +1,32 @@
 package core_test
 
 import (
+	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/core"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestResolveName_TaskFormat(t *testing.T) {
 	// Arrange
 	cfg := &config.ArtifactTypeConfig{
 		Prefix:     "T",
-		NameFormat: "{prefix}{NNN}-{title_slug}",
+		Suffix:     "-T",
+		NameFormat: "{NNN}{suffix}-{title_slug}",
 	}
 
 	// Act
 	name := core.ResolveName(cfg, "Implement JWT", 1, 60)
 
 	// Assert
-	assert.Equal(t, "T001-implement-jwt", name)
+	assert.Equal(t, "001-T-implement-jwt", name)
 }
 
 func TestSlugify_Basic(t *testing.T) {
@@ -42,24 +48,26 @@ func TestSlugify_Truncation(t *testing.T) {
 func TestResolveFileName_DefaultsToArtifactID(t *testing.T) {
 	cfg := &config.ArtifactTypeConfig{
 		Prefix:     "T",
-		NameFormat: "{prefix}{NNN}",
+		Suffix:     "-T",
+		NameFormat: "{NNN}{suffix}",
 	}
 
-	name := core.ResolveFileName(cfg, "T001", "Implement JWT", 60)
+	name := core.ResolveFileName(cfg, "001-T", "Implement JWT", 60)
 
-	assert.Equal(t, "T001", name)
+	assert.Equal(t, "001-T", name)
 }
 
 func TestResolveFileName_UsesConfiguredFormat(t *testing.T) {
 	cfg := &config.ArtifactTypeConfig{
 		Prefix:         "R",
-		NameFormat:     "{prefix}{NNN}",
+		Suffix:         "-R",
+		NameFormat:     "{NNN}{suffix}",
 		FileNameFormat: "{id}-{title_slug}",
 	}
 
-	name := core.ResolveFileName(cfg, "F013.R001", "Followup Review", 60)
+	name := core.ResolveFileName(cfg, "013.001-R", "Followup Review", 60)
 
-	assert.Equal(t, "F013.R001-followup-review", name)
+	assert.Equal(t, "013.001-R-followup-review", name)
 }
 
 func TestResolveName_SuffixFormat(t *testing.T) {
@@ -72,4 +80,32 @@ func TestResolveName_SuffixFormat(t *testing.T) {
 	name := core.ResolveName(cfg, "Artifact Identity", 1, 60)
 
 	assert.Equal(t, "001-F", name)
+}
+
+func TestNextID_UsesHighestOrdinalInsteadOfCount(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	_, err = db.Exec(`
+		CREATE TABLE items (
+			id TEXT PRIMARY KEY,
+			artifact_type TEXT
+		);
+		INSERT INTO items (id, artifact_type) VALUES
+			('001-S', 'shipment'),
+			('003-S', 'shipment');
+	`)
+	require.NoError(t, err)
+
+	next, err := core.NextID(context.Background(), db, "shipment", &config.ArtifactTypeConfig{
+		Prefix:     "S",
+		Suffix:     "-S",
+		NameFormat: "{NNN}{suffix}",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, next)
 }

@@ -333,13 +333,16 @@ func stashRecordFromArtifact(artifact *models.Artifact) (StashRecord, bool) {
 		Kind:           kind,
 		Text:           text,
 		State:          "harvested",
-		SourcePath:     filepath.ToSlash(filepath.Join("queue", stash.FileName)),
+		SourcePath:     filepath.ToSlash(stash.JSONLFileName),
 		ItemID:         artifact.ID,
 		UpdatedAt:      artifact.UpdatedAt,
 		DeliberationID: "",
 	}
 	if priority, _ := artifact.CustomFields["source_stash_priority"].(string); priority != "" {
 		record.Priority = priority
+	}
+	if sourcePath, _ := artifact.CustomFields["source_stash_path"].(string); strings.TrimSpace(sourcePath) != "" {
+		record.SourcePath = filepath.ToSlash(strings.TrimSpace(sourcePath))
 	}
 	if deliberationID, _ := artifact.CustomFields["source_deliberation_id"].(string); deliberationID != "" {
 		record.DeliberationID = deliberationID

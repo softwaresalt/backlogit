@@ -109,8 +109,13 @@ func TestRunMigration_RewritesArtifactsLogsLinksAndArchivedFrom(t *testing.T) {
 		0o644,
 	))
 	require.NoError(t, os.WriteFile(
+		filepath.Join(workspaceDir, "stash.jsonl"),
+		[]byte("{\"id\":\"3C7BCC11\",\"kind\":\"task\",\"text\":\"Link this stash entry to deliberation DL003.\",\"deliberation_id\":\"DL003\"}\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
 		filepath.Join(logsDir, "F016.T001.jsonl"),
-		[]byte("{\"timestamp\":\"2026-04-07T00:00:00Z\",\"actor\":\"tester\",\"item_id\":\"F016.T001\",\"event_type\":\"comment\",\"delta\":{\"message\":\"migrate me\"}}\n"),
+		[]byte("{\"timestamp\":\"2026-04-07T00:00:00Z\",\"actor\":\"tester\",\"item_id\":\"F016.T001\",\"event_type\":\"comment\",\"delta\":{\"message\":\"migrate me\",\"archive_path\":\".backlogit\\\\archive\\\\F013.R001-branch-review.md\"}}\n"),
 		0o644,
 	))
 
@@ -148,18 +153,23 @@ func TestRunMigration_RewritesArtifactsLogsLinksAndArchivedFrom(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		filepath.Join(".backlogit", "queue", "013.001-R-branch-review.md"),
+		".backlogit/queue/013.001-R-branch-review.md",
 		reviewFM["archived_from"],
 	)
 
 	logContent, err := os.ReadFile(filepath.Join(logsDir, "016.001-T.jsonl"))
 	require.NoError(t, err)
 	assert.Contains(t, string(logContent), "\"item_id\":\"016.001-T\"")
+	assert.Contains(t, string(logContent), "\"archive_path\":\".backlogit/archive/013.001-R-branch-review.md\"")
 
 	stashContent, err := os.ReadFile(filepath.Join(queueDir, ".stash.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(stashContent), "[deliberation:003-DL]")
 	assert.Contains(t, string(stashContent), "deliberation 003-DL")
+
+	stashJSONLContent, err := os.ReadFile(filepath.Join(workspaceDir, "stash.jsonl"))
+	require.NoError(t, err)
+	assert.Contains(t, string(stashJSONLContent), "\"deliberation_id\":\"003-DL\"")
 
 	require.NoError(t, runMigration(root))
 	assert.FileExists(t, filepath.Join(queueDir, "016.001-T.md"))

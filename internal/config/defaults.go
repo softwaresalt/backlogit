@@ -449,8 +449,8 @@ func WriteDefaults(workspacePath string) error {
 	if err := os.MkdirAll(queueDir, 0o755); err != nil {
 		return fmt.Errorf("create queue dir: %w", err)
 	}
-	if err := writeFileIfNotExists(filepath.Join(queueDir, ".stash.md"), []byte(stash.DefaultContent())); err != nil {
-		return fmt.Errorf("write .stash.md: %w", err)
+	if err := writeFileIfNotExists(filepath.Join(workspacePath, stash.JSONLFileName), []byte("")); err != nil {
+		return fmt.Errorf("write %s: %w", stash.JSONLFileName, err)
 	}
 
 	return nil

@@ -25,6 +25,7 @@ func TestNewShipmentCmd_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "get")
 	assert.Contains(t, names, "list")
 	assert.Contains(t, names, "claim")
+	assert.Contains(t, names, "ship")
 	assert.Contains(t, names, "return-blocked")
 }
 
@@ -48,6 +49,18 @@ func TestShipmentReturnBlockedCmd_HasFlags(t *testing.T) {
 	assert.NotNil(t, cmd.Flags().Lookup("shipment"), "return-blocked must have --shipment flag")
 	assert.NotNil(t, cmd.Flags().Lookup("item"), "return-blocked must have --item flag")
 	assert.NotNil(t, cmd.Flags().Lookup("reason"), "return-blocked must have --reason flag")
+}
+
+// T003 / ST016: Verify shipment ship has commit-tracking flags.
+func TestShipmentShipCmd_HasFlags(t *testing.T) {
+	// Arrange & Act
+	cmd := newShipmentShipCmd()
+
+	// Assert
+	require.NotNil(t, cmd)
+	assert.NotNil(t, cmd.Flags().Lookup("sha"), "ship must have --sha flag")
+	assert.NotNil(t, cmd.Flags().Lookup("message"), "ship must have --message flag")
+	assert.NotNil(t, cmd.Flags().Lookup("author"), "ship must have --author flag")
 }
 
 // T003 / ST016: Verify shipment commands have Short and Example populated.
@@ -88,5 +101,6 @@ func TestShipmentCmd_HelpOutput(t *testing.T) {
 	// Assert
 	output := buf.String()
 	assert.Contains(t, output, "create")
+	assert.Contains(t, output, "ship")
 	assert.Contains(t, output, "return-blocked")
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/models"
 )
 
 func TestFetchStash_ReturnsEmptyOnFreshWorkspace(t *testing.T) {
@@ -37,6 +38,11 @@ func TestAddAndHarvestStashEntry(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, entry.ID, result.Entry.ID)
+	require.IsType(t, &models.Artifact{}, result.Artifact)
+
+	artifact := result.Artifact.(*models.Artifact)
+	require.NotNil(t, artifact.CustomFields)
+	assert.Equal(t, "stash.jsonl", artifact.CustomFields["source_stash_path"])
 
 	remaining, err := core.FetchStash(ctx, ws, core.FetchStashOptions{})
 	require.NoError(t, err)

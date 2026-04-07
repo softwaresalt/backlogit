@@ -1,7 +1,7 @@
 ---
 name: harness-architect
 description: "Scaffolds compilable but failing Go test harnesses for backlogit tasks"
-argument-hint: "feature=F015 tasks=T001,T002"
+argument-hint: "feature=015-F tasks=015.001-T,015.002-T"
 input:
   properties:
     feature:
@@ -28,7 +28,7 @@ It does not implement production logic.
 
 ## Inputs
 
-* `${input:feature}`: (Required) Feature ID such as `F015`
+* `${input:feature}`: (Required) Feature ID such as `015-F`
 * `${input:tasks}`: (Optional) Comma-separated task IDs to scaffold. When
   omitted, use all ready tasks under the feature
 

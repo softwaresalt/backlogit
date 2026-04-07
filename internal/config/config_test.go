@@ -235,6 +235,6 @@ func TestWriteDefaults_CreatesFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(ws, "config.yaml"))
 	assert.FileExists(t, filepath.Join(ws, "registry.yaml"))
-	assert.FileExists(t, filepath.Join(ws, "queue", ".stash.md"))
+	assert.FileExists(t, filepath.Join(ws, "stash.jsonl"))
 	assert.FileExists(t, filepath.Join(ws, "templates", "deliberation.md"))
 }

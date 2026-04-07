@@ -55,7 +55,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	if fm == nil {
 		fm = map[string]any{}
 	}
-	fm["archived_from"] = currentPath
+	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
 
@@ -89,7 +89,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		Actor:     "backlogit",
 		ItemID:    itemID,
 		EventType: "archived",
-		Delta:     map[string]any{"archive_path": archivePath},
+		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
 	}
 	_ = ew.AppendEvent(ctx, event)
 	_ = db.IndexEvent(ctx, database, logsDir, event)
@@ -127,6 +127,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		}
 		return fmt.Errorf("archived item %s is missing archived_from metadata", itemID)
 	}
+	originalPath = resolveWorkspacePath(ws.RootPath, originalPath)
 
 	// F-006: Validate the restore path is contained within .backlogit to prevent
 	// path traversal when restoring artifacts from archive.
@@ -163,6 +164,24 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		}
 	}
 	return nil
+}
+
+func workspaceRelativePath(rootPath string, target string) string {
+	rel, err := filepath.Rel(rootPath, target)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(target))
+	}
+	return filepath.ToSlash(rel)
+}
+
+func resolveWorkspacePath(rootPath string, trackedPath string) string {
+	if trackedPath == "" {
+		return ""
+	}
+	if filepath.IsAbs(trackedPath) {
+		return filepath.Clean(trackedPath)
+	}
+	return filepath.Join(rootPath, filepath.FromSlash(trackedPath))
 }
 
 // AutoArchive scans for items in terminal statuses past the retention window and

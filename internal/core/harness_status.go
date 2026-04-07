@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
+	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -89,6 +91,14 @@ func ComputeParentStatus(ctx context.Context, db *sql.DB, parentID string) (mode
 
 // CascadeStatusUpdate propagates a status change to parent artifacts up the hierarchy.
 func CascadeStatusUpdate(ctx context.Context, db *sql.DB, ws *Workspace, itemID string) error {
+	if ws != nil {
+		if err := cascadePersistedParentStatuses(ctx, ws, itemID); err == nil {
+			return nil
+		} else if !errors.Is(err, blerrors.ErrNotFound) {
+			return err
+		}
+	}
+
 	var parentID sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT parent_id FROM items WHERE id = ?`, itemID).Scan(&parentID)
 	if err == sql.ErrNoRows {

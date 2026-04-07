@@ -510,7 +510,7 @@ func setupWorkspace(t *testing.T) (string, *sql.DB) {
         CREATE TABLE items (
             id TEXT PRIMARY KEY, title TEXT, status TEXT, type TEXT
         );
-        INSERT INTO items VALUES ('T001', 'Sample task', 'todo', 'task');
+        INSERT INTO items VALUES ('001-T', 'Sample task', 'todo', 'task');
     `)
     require.NoError(t, err)
 

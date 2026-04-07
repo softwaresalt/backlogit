@@ -144,11 +144,11 @@ Implement rate limiting on the public API.
 <!-- SECTION:DESCRIPTION:END -->
 ```
 
-**Resulting backlogit artifact (`T001.md`):**
+**Resulting backlogit artifact (`001-T.md`):**
 
 ```markdown
 ---
-id: T001
+id: 001-T
 title: Example task
 type: task
 status: active
@@ -168,7 +168,7 @@ Implement rate limiting on the public API.
 <!-- SECTION:DESCRIPTION:END -->
 ```
 
-The imported artifact receives a new backlogit ID, keeps the migrated body, and stores source-trace metadata so you can map it back to the original Backlog.md file. Nested imports use typed hierarchical IDs such as `F001.T001` and `F001.T001.ST001`, and the filename matches the ID exactly.
+The imported artifact receives a new backlogit ID, keeps the migrated body, and stores source-trace metadata so you can map it back to the original Backlog.md file. Nested imports use typed hierarchical IDs such as `001-F`, `001.001-T`, and `001.001.001-ST`, and the filename matches the ID exactly.
 
 ## Status Mapping
 
@@ -235,7 +235,7 @@ The migration command reads `.backlogit/migration.yaml` automatically when it ex
 After migration, you may want to refine the artifact types assigned to migrated items. Task-like items default to `task`, milestone files default to `feature`, and explicit source task types are mapped when backlogit has a compatible target type. To change the type of a specific artifact:
 
 ```bash
-backlogit update T042 --type bug
+backlogit update 042-T --type bug
 ```
 
 To configure custom artifact types for future use, edit `.backlogit/config.yaml`:

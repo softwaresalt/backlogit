@@ -36,13 +36,13 @@ Running `backlogit init` creates a workspace rooted at `.backlogit/` with these 
 
 * Active artifacts live in `.backlogit/queue`
 * Terminal artifacts live in `.backlogit/archive`
-* Deferred planning ideas live in `.backlogit/queue/.stash.md`
+* Deferred planning ideas live in `.backlogit/stash.jsonl`
 * Per-item history lives in `.backlogit/logs/{item-id}.jsonl`
 * The disposable cache lives in `.backlogit/backlogit.db`
 * Default artifact types are `feature`, `task`, `subtask`, and `deliberation`
-* Default ID segments are `F`, `T`, `ST`, and `DL`
+* Default typed suffixes are `-F`, `-T`, `-ST`, and `-DL`
 
-The default hierarchy yields IDs such as `F001`, `F001.T001`, and `F001.T001.ST001`.
+The default hierarchy yields IDs such as `001-F`, `001.001-T`, and `001.001.001-ST`.
 
 ## Agent Discovery Surfaces
 
@@ -80,7 +80,7 @@ Use the MCP tools when an agent is connected through the backlogit MCP server:
 
 ## Stash conventions
 
-Deferred planning work lives in `.backlogit/queue/.stash.md`. The current stash implementation supports:
+Deferred planning work lives in `.backlogit/stash.jsonl`. The current stash implementation supports:
 
 * kinds: `feature`, `task`, `bug`, `epic`
 * priorities: `low`, `medium`, `high`, `critical`
@@ -90,7 +90,7 @@ Deferred planning work lives in `.backlogit/queue/.stash.md`. The current stash 
 Each stash line is stored in a programmatically readable format:
 
 ```text
-- [ ] [ABCD1234] [priority:high] [deliberation:DL001] feature: Split audit dashboard into a later feature set
+- [ ] [ABCD1234] [priority:high] [deliberation:001-DL] feature: Split audit dashboard into a later feature set
 ```
 
 Older stash lines without a priority tag are still accepted and normalize to `medium` when read.
@@ -132,21 +132,25 @@ This is the stash metadata that also appears in `backlogit metadata catalog` and
 artifact_types:
   feature:
     prefix: F
-    name_format: "{prefix}{NNN}"
+    suffix: "-F"
+    name_format: "{NNN}{suffix}"
     allowed_children:
       - task
   task:
     prefix: T
-    name_format: "{prefix}{NNN}"
+    suffix: "-T"
+    name_format: "{NNN}{suffix}"
     allowed_children:
       - subtask
   subtask:
     prefix: ST
-    name_format: "{prefix}{NNN}"
+    suffix: "-ST"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
   deliberation:
     prefix: DL
-    name_format: "{prefix}{NNN}"
+    suffix: "-DL"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
 fields:
   status:
@@ -185,6 +189,7 @@ queue_layout:
 `artifact_types` defines the available artifact types. Each type declares:
 
 * `prefix`: the typed ID segment prefix
+* `suffix`: the typed ID segment suffix used by the default numeric-first naming
 * `name_format`: the pattern used when a non-hierarchical fallback name must be resolved
 * `allowed_children`: documentation and future-policy metadata for parent-child structure
 
@@ -202,12 +207,14 @@ queue_layout:
 artifact_types:
   feature:
     prefix: F
-    name_format: "{prefix}{NNN}"
+    suffix: "-F"
+    name_format: "{NNN}{suffix}"
     allowed_children:
       - task
   task:
     prefix: T
-    name_format: "{prefix}{NNN}"
+    suffix: "-T"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
 fields:
   status:
@@ -223,7 +230,7 @@ queue_layout:
       types: [task]
 ```
 
-This produces IDs such as `F001` and `F001.T001`.
+This produces IDs such as `001-F` and `001.001-T`.
 
 #### Feature/task/subtask with an added bug type
 
@@ -231,19 +238,23 @@ This produces IDs such as `F001` and `F001.T001`.
 artifact_types:
   feature:
     prefix: F
-    name_format: "{prefix}{NNN}"
+    suffix: "-F"
+    name_format: "{NNN}{suffix}"
     allowed_children: [task, bug]
   task:
     prefix: T
-    name_format: "{prefix}{NNN}"
+    suffix: "-T"
+    name_format: "{NNN}{suffix}"
     allowed_children: [subtask]
   subtask:
     prefix: ST
-    name_format: "{prefix}{NNN}"
+    suffix: "-ST"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
   bug:
     prefix: B
-    name_format: "{prefix}{NNN}"
+    suffix: "-B"
+    name_format: "{NNN}{suffix}"
     allowed_children: []
 fields:
   status:
@@ -286,7 +297,8 @@ defaults:
 types:
   feature:
     prefix: F
-    id_format: "{prefix}{NNN}"
+    suffix: "-F"
+    id_format: "{NNN}{suffix}"
     fields:
       harness_status:
         type: enum
@@ -311,7 +323,8 @@ types:
         default: queued
   task:
     prefix: T
-    id_format: "{prefix}{NNN}"
+    suffix: "-T"
+    id_format: "{NNN}{suffix}"
     fields:
       priority:
         type: enum
@@ -335,7 +348,8 @@ types:
         default: queued
   subtask:
     prefix: ST
-    id_format: "{prefix}{NNN}"
+    suffix: "-ST"
+    id_format: "{NNN}{suffix}"
     fields:
       status:
         type: enum
@@ -355,7 +369,7 @@ types:
 
 `config.yaml` defines the workspace model. `header-def.yaml` defines per-type field rules. In practice:
 
-* `config.yaml` says a `task` exists and has prefix `T`
+* `config.yaml` says a `task` exists and uses prefix `T` with suffix `-T`
 * `header-def.yaml` says a `task` may have `priority` and `status`, and what values are valid
 
 If you add a new artifact type in `config.yaml`, add the matching type block in `header-def.yaml` as well.
@@ -366,7 +380,8 @@ If you add a new artifact type in `config.yaml`, add the matching type block in 
 types:
   bug:
     prefix: B
-    id_format: "{prefix}{NNN}"
+    suffix: "-B"
+    id_format: "{NNN}{suffix}"
     fields:
       severity:
         type: enum
@@ -699,7 +714,8 @@ fields:
 artifact_types:
   feature:
     prefix: F
-    name_format: "{prefix}{NNN}"
+    suffix: "-F"
+    name_format: "{NNN}{suffix}"
     allowed_children: [task]
     external_map:
       jira:

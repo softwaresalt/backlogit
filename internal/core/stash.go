@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -56,21 +57,53 @@ type FetchedStashResult struct {
 
 // StashFilePath returns the canonical hidden stash file path for a workspace root.
 func StashFilePath(rootPath string) string {
+	return filepath.Join(WorkspaceStorageRoot(rootPath), stash.JSONLFileName)
+}
+
+func legacyStashFilePath(rootPath string) string {
 	return filepath.Join(WorkspaceStorageRoot(rootPath), "queue", stash.FileName)
 }
 
-// EnsureStashFile creates the hidden stash file if it does not already exist.
+// EnsureStashFile creates the canonical stash storage if it does not already exist.
 func EnsureStashFile(rootPath string) error {
 	path := StashFilePath(rootPath)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create stash dir: %w", err)
 	}
+
+	jsonlEntries := make([]stash.Entry, 0)
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		entries, err := readStashEntries(path)
+		if err != nil {
+			return err
+		}
+		jsonlEntries = entries
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat stash file: %w", err)
 	}
-	return writeStringAtomically(path, stash.DefaultContent())
+
+	legacyPath := legacyStashFilePath(rootPath)
+	legacyExists := false
+	if _, err := os.Stat(legacyPath); err == nil {
+		legacyExists = true
+		_, legacyEntries, err := stash.ParseFile(legacyPath)
+		if err != nil {
+			return err
+		}
+		jsonlEntries = mergeStashEntries(jsonlEntries, legacyEntries)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat legacy stash file: %w", err)
+	}
+
+	if err := writeStashEntries(path, jsonlEntries); err != nil {
+		return err
+	}
+	if legacyExists {
+		if err := os.Remove(legacyPath); err != nil {
+			return fmt.Errorf("remove legacy stash file: %w", err)
+		}
+	}
+	return nil
 }
 
 // FetchStash returns the currently active stash entries.
@@ -81,7 +114,7 @@ func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*Fe
 	if err := EnsureStashFile(ws.RootPath); err != nil {
 		return nil, err
 	}
-	_, entries, err := stash.ParseFile(StashFilePath(ws.RootPath))
+	entries, err := readStashEntries(StashFilePath(ws.RootPath))
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +174,7 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	}
 
 	path := StashFilePath(ws.RootPath)
-	fm, entries, err := stash.ParseFile(path)
+	entries, err := readStashEntries(path)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +188,7 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	}
 	entry := stash.Entry{ID: id, Priority: normalizedPriority, Kind: normalizedKind, Text: trimmedText}
 	entries = append(entries, entry)
-	content := stash.RenderContent(fm, entries)
-	if err := writeStringAtomically(path, content); err != nil {
+	if err := writeStashEntries(path, entries); err != nil {
 		return nil, err
 	}
 	if ws.DB != nil {
@@ -191,7 +223,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	if strings.TrimSpace(harvestOpts.ArtifactType) == "" {
 		return nil, fmt.Errorf("artifact type is required")
 	}
-	entry, remaining, fm, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
+	entry, remaining, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,25 +232,17 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	if itemTitle == "" {
 		itemTitle = entry.Text
 	}
-	createOpts := []Option{
-		WithFields(map[string]any{
-			"source_stash_id":       entry.ID,
-			"source_stash_priority": entry.Priority,
-			"source_stash_kind":     entry.Kind,
-			"source_stash_text":     entry.Text,
-		}),
+	fields := map[string]any{
+		"source_stash_id":       entry.ID,
+		"source_stash_priority": entry.Priority,
+		"source_stash_kind":     entry.Kind,
+		"source_stash_text":     entry.Text,
+		"source_stash_path":     stashRelativePath(),
 	}
 	if entry.DeliberationID != "" {
-		createOpts = []Option{
-			WithFields(map[string]any{
-				"source_stash_id":        entry.ID,
-				"source_stash_priority":  entry.Priority,
-				"source_stash_kind":      entry.Kind,
-				"source_stash_text":      entry.Text,
-				"source_deliberation_id": entry.DeliberationID,
-			}),
-		}
+		fields["source_deliberation_id"] = entry.DeliberationID
 	}
+	createOpts := []Option{WithFields(fields)}
 	if entry.Priority != "" {
 		createOpts = append(createOpts, WithPriority(entry.Priority))
 	}
@@ -233,7 +257,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	}
 
 	// Rewrite the stash file first to prevent double-harvest if artifact creation fails.
-	if err := writeStringAtomically(StashFilePath(ws.RootPath), stash.RenderContent(fm, remaining)); err != nil {
+	if err := writeStashEntries(StashFilePath(ws.RootPath), remaining); err != nil {
 		return nil, fmt.Errorf("rewrite stash file: %w", err)
 	}
 
@@ -295,14 +319,14 @@ func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStas
 	return &HarvestedStashBatchResult{Priority: priority, Results: results}, nil
 }
 
-func removeStashEntry(rootPath, stashID string) (stash.Entry, []stash.Entry, map[string]any, error) {
+func removeStashEntry(rootPath, stashID string) (stash.Entry, []stash.Entry, error) {
 	if err := EnsureStashFile(rootPath); err != nil {
-		return stash.Entry{}, nil, nil, err
+		return stash.Entry{}, nil, err
 	}
 	path := StashFilePath(rootPath)
-	fm, entries, err := stash.ParseFile(path)
+	entries, err := readStashEntries(path)
 	if err != nil {
-		return stash.Entry{}, nil, nil, err
+		return stash.Entry{}, nil, err
 	}
 	needle := strings.ToUpper(strings.TrimSpace(stashID))
 	remaining := make([]stash.Entry, 0, len(entries))
@@ -317,9 +341,9 @@ func removeStashEntry(rootPath, stashID string) (stash.Entry, []stash.Entry, map
 		remaining = append(remaining, entry)
 	}
 	if !found {
-		return stash.Entry{}, nil, nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
+		return stash.Entry{}, nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
-	return matched, remaining, fm, nil
+	return matched, remaining, nil
 }
 
 // GetStashEntry returns a single active stash entry enriched with any linked deliberation.
@@ -330,7 +354,7 @@ func GetStashEntry(ctx context.Context, ws *Workspace, stashID string) (*StashEn
 	if err := EnsureStashFile(ws.RootPath); err != nil {
 		return nil, err
 	}
-	_, entries, err := stash.ParseFile(StashFilePath(ws.RootPath))
+	entries, err := readStashEntries(StashFilePath(ws.RootPath))
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +383,7 @@ func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, d
 		return nil, err
 	}
 	path := StashFilePath(ws.RootPath)
-	fm, entries, err := stash.ParseFile(path)
+	entries, err := readStashEntries(path)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +404,7 @@ func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, d
 	if !found {
 		return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
-	if err := writeStringAtomically(path, stash.RenderContent(fm, entries)); err != nil {
+	if err := writeStashEntries(path, entries); err != nil {
 		return nil, err
 	}
 	if ws.DB != nil {
@@ -408,7 +432,46 @@ func writeStringAtomically(path, content string) error {
 }
 
 func stashRelativePath() string {
-	return filepath.ToSlash(filepath.Join("queue", stash.FileName))
+	return filepath.ToSlash(stash.JSONLFileName)
+}
+
+func readStashEntries(path string) ([]stash.Entry, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open stash file: %w", err)
+	}
+	defer file.Close()
+
+	entries, err := stash.ReadJSONL(file)
+	if err != nil {
+		return nil, fmt.Errorf("read stash jsonl: %w", err)
+	}
+	return entries, nil
+}
+
+func writeStashEntries(path string, entries []stash.Entry) error {
+	var buf bytes.Buffer
+	if err := stash.WriteJSONL(&buf, entries); err != nil {
+		return fmt.Errorf("serialize stash entries: %w", err)
+	}
+	return writeStringAtomically(path, buf.String())
+}
+
+func mergeStashEntries(primary []stash.Entry, fallback []stash.Entry) []stash.Entry {
+	merged := append([]stash.Entry(nil), primary...)
+	seen := make(map[string]struct{}, len(primary))
+	for _, entry := range primary {
+		seen[strings.ToUpper(entry.ID)] = struct{}{}
+	}
+	for _, entry := range fallback {
+		key := strings.ToUpper(entry.ID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, entry)
+	}
+	return merged
 }
 
 func expandStashEntries(ctx context.Context, ws *Workspace, entries []stash.Entry) ([]StashEntryView, error) {

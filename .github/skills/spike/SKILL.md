@@ -26,7 +26,7 @@ Do not use it for feature decisions that can be resolved through conversation al
 
 Write the findings artifact to `docs/decisions/{YYYY-MM-DD}-{slug}-spike.md`.
 
-In this workspace, queue promotion should append or update a stash entry in `.backlogit/queue/.stash.md`. Backlogit currently provides first-class deliberation artifacts here, but not a first-class `spike` artifact type in the live workspace configuration.
+In this workspace, queue promotion should append or update a stash entry in `.backlogit/stash.jsonl`. Backlogit currently provides first-class deliberation artifacts here, but not a first-class `spike` artifact type in the live workspace configuration.
 
 ## Required protocol
 
@@ -43,7 +43,7 @@ Before investigating, search:
 
 * `docs/compound/` for prior learnings
 * `docs/decisions/` for earlier spike or decision artifacts
-* `.backlogit/queue/.stash.md` and related backlog items for linked work
+* `.backlogit/stash.jsonl` and related backlog items for linked work
 
 ### Phase 3: Investigate
 
@@ -68,7 +68,7 @@ Also rate confidence as `high`, `medium`, or `low`.
 
 When `promote_to` includes `plan`, invoke `impl-plan` with the spike artifact as source context. If the operator wants backlog creation after review, route the resulting plan through `harvest` or the Groomer workflow.
 
-When `promote_to` includes `queue`, record the follow-up in `.backlogit/queue/.stash.md` using a concise stash entry that references the spike artifact path.
+When `promote_to` includes `queue`, record the follow-up in `.backlogit/stash.jsonl` using a concise stash entry that references the spike artifact path.
 
 When `promote_to` includes `learnings`, invoke `compound` with the spike artifact as source material.
 

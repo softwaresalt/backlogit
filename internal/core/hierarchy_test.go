@@ -220,6 +220,23 @@ func TestNextTypedHierarchicalID_ChildUsesSuffixOrdinal(t *testing.T) {
 	assert.Equal(t, "001.003-T", got)
 }
 
+func TestNextHierarchicalID_ChildOrdinalPastNine(t *testing.T) {
+	db := openHierarchyTestDB(t)
+
+	_, err := db.Exec(`
+		INSERT INTO items (id, parent_id, artifact_type) VALUES
+			('001-F', NULL, 'feature'),
+			('001.009-T', '001-F', 'task'),
+			('001.010-T', '001-F', 'task');
+	`)
+	require.NoError(t, err)
+
+	got, err := core.NextHierarchicalID(db, "001-F", defaultQueueLayout())
+
+	require.NoError(t, err)
+	assert.Equal(t, "001.011", got)
+}
+
 func TestNextTypedHierarchicalID_LegacyParentErrors(t *testing.T) {
 	db := openHierarchyTestDB(t)
 

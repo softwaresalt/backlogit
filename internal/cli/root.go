@@ -27,9 +27,9 @@ func NewRootCommand() *cobra.Command {
 		Short: "Backlogit — AI-native agile workspace",
 		Long: `backlogit manages a project-local work item workspace under .backlogit.
 
-It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
-per-item history in .backlogit\logs\{item-id}.jsonl, and deferred planning work
-in .backlogit\queue\.stash.md.
+	It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
+	per-item history in .backlogit\logs\{item-id}.jsonl, and deferred planning work
+	in .backlogit\stash.jsonl.
 
 Use backlogit to initialize a workspace, create and update artifacts, query the
 SQLite cache, migrate from supported backlog sources, manage the work queue, and
@@ -107,8 +107,8 @@ func newInitCommand(cwd *string) *cobra.Command {
 		Short: "Initialize a new backlogit workspace",
 		Long: `Initialize a backlogit workspace in the target directory.
 
-This creates the .backlogit storage root, logs directory, queue stash file,
-default YAML configuration files, and default artifact templates.`,
+This creates the .backlogit storage root, logs directory, canonical stash JSONL
+file, default YAML configuration files, and default artifact templates.`,
 		Example: `  backlogit init
   backlogit init D:\Source\MyProject`,
 		RunE: func(cmd *cobra.Command, args []string) error {
