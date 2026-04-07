@@ -17,7 +17,7 @@ The primary repository path is now `Groomer -> Shipper` across the lifecycle
 * `Groomer` owns stash triage, deliberation, planning, review gating, and
   harvest into backlog.
 * `Shipper` owns shipment claim, harness generation, implementation, review, CI
-  remediation, and pull request readiness.
+  remediation, pull request readiness, and release closure.
 
 Legacy agents remain governed when explicitly invoked, but these policies should
 be read through the Groomer and Shipper path first.
@@ -59,7 +59,7 @@ be read through the Groomer and Shipper path first.
 | Field      | Value               |
 |------------|---------------------|
 | Policy ID  | P-003               |
-| Applies To | `groomer`, `backlog-harvester` |
+| Applies To | `groomer`, `harvest` |
 | Gate Point | Pre-harvest         |
 
 **Statement**: Every decomposition stage must reference its source and parent context before creating backlog items.

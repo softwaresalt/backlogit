@@ -44,6 +44,7 @@ scope:
 * `backlogit shipment get {shipment_id}`
 * `backlogit shipment list`
 * `backlogit shipment claim {shipment_id}`
+* `backlogit shipment ship {shipment_id} [--sha <merge-sha> --message "<merge-message>" --author "<author>"]`
 * `backlogit shipment return-blocked {shipment_id} --item <artifact-id> --reason "<reason>"`
 
 ## Shipment Lifecycle
@@ -162,13 +163,76 @@ is degraded and continue locally.
 Use `transmit` when a blocked shipment, risky rollback, or merge decision needs
 explicit operator attention.
 
+## Session Continuity (mandatory)
+
+Memory, learnings capture, and documentation hygiene are built-in workflow
+steps, not optional standalone agents.
+
+### Session start
+
+1. Scan `docs/memory/` for the most recent memory or checkpoint file relevant to
+   the current shipment.
+2. If a relevant memory file exists, restore context: shipment state, completed
+   items, branch context, PR status, and prior build decisions.
+3. Broadcast `[SHIP] Restored session context from {memory_file}` or
+   `[SHIP] No prior session context found`.
+
+### Mid-session checkpoints
+
+Write a checkpoint to `docs/memory/` after any of these milestones:
+
+* harness generation completes
+* a build-feature cycle completes for a work item
+* review gate produces findings
+* CI remediation resolves or blocks
+
+Each checkpoint captures: shipment ID, items completed, items blocked, branch
+state, decisions with rationale, errors encountered and how they were resolved,
+and next steps.
+
+### Learnings capture
+
+After build execution (Step 3) and CI remediation (Step 5), evaluate whether
+the work uncovered reusable solutions:
+
+* novel error resolutions, unexpected gotchas, or pattern discoveries that would
+  save time on future occurrences
+* invoke the `compound` skill to capture these in `docs/compound/` while context
+  is fresh
+* do not capture routine work that follows established patterns
+
+### Post-merge closure (mandatory after user-approved merge)
+
+After the user approves merge and the shipment transitions to shipped:
+
+1. Invoke the `operational-closure` skill in `mode=post-merge` to produce
+   release-readiness, monitoring, and rollback artifacts in `docs/closure/`.
+2. Evaluate whether product documentation in `docs/` needs updates for the
+   shipped feature scope. Check:
+   * `docs/ARCHITECTURE.md` for structural changes
+   * `README.md` for user-facing capability changes
+   * `docs/design-docs/` for graduated design decisions
+   * `docs/product-specs/` for requirement updates
+3. Apply documentation updates directly. Do not defer them to a separate agent.
+4. If `.copilot-tracking/` tracking files have accumulated, invoke the
+   `compact-context` skill.
+5. Broadcast `[SHIP] Post-merge closure complete`.
+
+### Session end
+
+1. Write a final memory file to `docs/memory/` capturing: shipment status,
+   completed items, blocked returns, branch state, PR status, and any pending
+   merge approval.
+2. Broadcast `[SHIP] Memory persisted: {memory_file}`.
+
 ## Session Completion
 
 Before ending the session:
 
-1. Summarize shipment status, completed items, blocked returns, branch state,
+1. Complete the Session Continuity protocol above, including post-merge closure
+   when a merge occurred during this session.
+2. Summarize shipment status, completed items, blocked returns, branch state,
    and pull request status.
-2. Persist memory or a checkpoint when the available tool surface supports it.
 3. Leave shipment, backlog items, and pull request state in an explicit and
    resumable condition.
 4. If merge approval is still pending, state clearly that no merge occurred.

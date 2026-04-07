@@ -59,23 +59,28 @@ its own operational backlog.
 | `groomer` | Primary stash-to-backlog orchestrator |
 | `shipper` | Primary backlog-to-shipped orchestrator |
 
-### Supporting and legacy agents
+### Supporting agents
 
 | Agent | Purpose |
 |---|---|
-| `deliberator` | Routes idea work into deliberate or spike workflows |
-| `backlog-harvester` | Converts plans into backlogit work items |
-| `harness-architect` | Creates compilable but failing harnesses |
-| `build-orchestrator` | Claims and executes ready feature work |
-| `pr-review` | Manages review handoff and PR preparation |
-| `memory` | Persists and restores session context |
-| `doc-ops` | Maintains durable docs and documentation hygiene |
 | `go-engineer` | Applies repository-specific Go standards |
 | `go-mcp-expert` | Advises on Go MCP server implementation |
 | `prompt-builder` | Maintains prompts, agents, instructions, and skills |
 
-Treat `backlog-harvester`, `build-orchestrator`, and `pr-review` as legacy or
-supporting surfaces unless the operator explicitly asks for the older path.
+### Deprecated agents
+
+Deprecated agents live in `.github/agents/deprecated/` and are excluded from
+the default Copilot agent picker.
+
+| Agent | Superseded by |
+|---|---|
+| `backlog-harvester` | `groomer` + `harvest` skill |
+| `build-orchestrator` | `shipper` + `build-feature` skill |
+| `deliberator` | `groomer` + `deliberate` / `spike` skills |
+| `doc-ops` | `shipper` post-merge closure protocol |
+| `harness-architect` | `shipper` + `harness-architect` skill |
+| `memory` | Groomer and Shipper session continuity protocols |
+| `pr-review` | `shipper` + `pr-lifecycle` skill |
 
 ### Core skills
 

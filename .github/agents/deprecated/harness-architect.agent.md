@@ -111,7 +111,7 @@ For each task or subtask in the work queue (from Step 2):
 
 1. Extract the task title, description, acceptance criteria, and file references from the subtask payload loaded in Step 2.
 2. Cross-reference with the feature-level acceptance criteria to identify which feature criteria this work item satisfies.
-3. **Granularity check (advisory)**: Evaluate whether the work item is appropriately sized. If the task description references more than 3 files, more than 5 functions or methods, or would require more than 4 test scenarios in the harness, `broadcast` at `warning` level: `[📐 ARCHITECT] Granularity warning: {task_id} appears oversized ({file_count} files, {fn_count} functions) — consider re-running backlog-harvester to split`. This is an advisory check; the backlog-harvester performs the authoritative granularity validation. Do not block harness generation on this warning.
+3. **Granularity check (advisory)**: Evaluate whether the work item is appropriately sized. If the task description references more than 3 files, more than 5 functions or methods, or would require more than 4 test scenarios in the harness, `broadcast` at `warning` level: `[📐 ARCHITECT] Granularity warning: {task_id} appears oversized ({file_count} files, {fn_count} functions) — consider re-running Groomer or harvest to split`. This is an advisory check; the reviewed-plan-to-harvest path performs the authoritative granularity validation. Do not block harness generation on this warning.
 4. Identify the domain classes, functions, protocols, and tests required based on the task description.
 5. Map the feature's blast radius using grep/glob to search the codebase:
 
@@ -159,7 +159,7 @@ For each task or subtask in the work queue (from Step 2):
    relevant code, prior decisions, and TODO comments.
 
 6. Determine the test file path (`internal/{package}/{feature}_test.go` or `tests/{tier}/{feature}_test.go`) and the source stub path (`internal/{package}/{feature}.go`).
-7. **Execution posture from plan**: Check `.backlog/exec-plans/` for a plan file matching this feature. If a plan exists, read the `Execution note:` field for each implementation unit and carry the posture signal forward into the task's harness command. Valid postures: `test-first` (default), `characterization-first`, `migration-first`, `spike`. Broadcast: `[📐 ARCHITECT] Execution posture for {task_id}: {posture}`
+7. **Execution posture from plan**: Check `docs/exec-plans/` for a plan file matching this feature. If a plan exists, read the `Execution note:` field for each implementation unit and carry the posture signal forward into the task's harness command. Valid postures: `test-first` (default), `characterization-first`, `migration-first`, `spike`. Broadcast: `[📐 ARCHITECT] Execution posture for {task_id}: {posture}`
 
 ### Step 5: Generate the Harness
 
@@ -239,7 +239,7 @@ Following the build-harness rules:
 
 ### Step 6: Operator Approval Gate
 
-Before registering harness metadata in backlogit, the operator must approve the generated harness. This prevents the build-orchestrator from claiming tasks before the harness has been reviewed.
+Before registering harness metadata in backlogit, the operator must approve the generated harness. This prevents the Shipper workflow from invoking shipment execution before the harness has been reviewed.
 
 1. `broadcast` a summary at `info` level listing the test file path, stub file path(s), test count, and import/red-phase status.
 2. If agent-intercom is active, call `transmit` with `prompt_type: "approval"` and a message summarizing the harness for review:
@@ -255,7 +255,7 @@ Before registering harness metadata in backlogit, the operator must approve the 
 
 ### Step 7: Update backlogit Work Items with Harness Commands
 
-Since the target task and subtask items already exist in backlogit (loaded in Step 2), update each work item with the harness command the build-orchestrator needs. Do NOT create new items, the backlog-harvester already created them.
+Since the target task and subtask items already exist in backlogit (loaded in Step 2), update each work item with the harness command the Shipper workflow needs. Do NOT create new items, the Groomer and harvest flow already created them.
 
 For each queued task or subtask that has a corresponding test function in the harness:
 
@@ -271,7 +271,7 @@ If a work item is already marked done (discovered during Step 2), skip it, do no
 
 ### Step 8: Write Harness Manifest
 
-Write a harness manifest document to `.copilot-tracking/harness/F${input:feature}-harness.md`. This persists the complete test-to-task mapping so the build-orchestrator and future sessions can reference it without re-analyzing the harness.
+Write a harness manifest document to `.copilot-tracking/harness/F${input:feature}-harness.md`. This persists the complete test-to-task mapping so the Shipper workflow and future sessions can reference it without re-analyzing the harness.
 
 The manifest content follows this structure:
 
@@ -340,10 +340,10 @@ func setupWorkspace(t *testing.T) string {
 1. Confirm `go test -run=^$ -count=1 ./internal/{package}/...` succeeds (compilation and test discovery).
 2. Confirm `go test ./internal/{package}/... -v` fails with `panic: not implemented` (red phase).
 3. Report the harness manifest document path.
-4. Report which task and subtask items have harness coverage and their commands for the build-orchestrator.
+4. Report which task and subtask items have harness coverage and their commands for the Shipper workflow.
 5. Report any queued descendants that were skipped (already Done) or could not be harnessed.
 6. Report whether agent-intercom was active for the run or whether execution fell back to local-only mode.
-7. Suggest the next step: "Run the build-orchestrator agent to begin implementation against these harnesses." This is the standard next step in the workflow pipeline.
+7. Suggest the next step: "Return to the Shipper workflow to begin shipment-scoped implementation against these harnesses." This is the standard next step in the workflow pipeline.
 
 ## Response Format
 

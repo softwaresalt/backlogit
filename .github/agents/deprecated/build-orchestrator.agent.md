@@ -342,7 +342,7 @@ Summarize the build results:
 * Compound artifacts written
 * Whether agent-intercom was active or the run fell back to local-only mode
 * `broadcast` the final summary at `success` level: `[🛠️ ORCHESTRATOR] Build complete — {tasks_done} tasks, {commits} commits`.
-* Suggest next step: "Run pr-review to create a PR for feature ${input:feature}, then fix-ci to handle Copilot comments and CI failures."
+* Suggest next step: "Return to the Shipper workflow for shipment review, PR lifecycle, and any CI remediation tied to feature ${input:feature}."
 
 ---
 

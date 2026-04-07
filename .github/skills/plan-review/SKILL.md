@@ -1,12 +1,12 @@
 ---
 name: plan-review
-description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, and coding standards compliance before the backlog harvester decomposes a plan into backlogit work items."
-argument-hint: "[path to plan file in .backlog/exec-plans/]"
+description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, and coding standards compliance before the harvest skill decomposes a plan into backlogit work items."
+argument-hint: "[path to plan file in docs/exec-plans/]"
 ---
 
 # Plan Review Gate
 
-Validates implementation plans through multi-persona review before the backlog harvester decomposes them into backlogit work items. This gate prevents flawed plans from generating flawed work hierarchies.
+Validates implementation plans through multi-persona review before the harvest skill decomposes them into backlogit work items. This gate prevents flawed plans from generating flawed work hierarchies.
 
 ## Agent-Intercom Communication (NON-NEGOTIABLE)
 
@@ -28,9 +28,9 @@ This skill spawns reviewer subagents. Those subagents are leaf executors and MUS
 
 ## Inputs
 
-The user provides the path to a plan file in `.backlog/exec-plans/` when invoking this skill.
+The user provides the path to a plan file in `docs/exec-plans/` when invoking this skill.
 
-If no path is provided, search `.backlog/exec-plans/` for the most recent `*-plan.md` file and confirm with the user.
+If no path is provided, search `docs/exec-plans/` for the most recent `*-plan.md` file and confirm with the user.
 
 ## Reviewer Personas
 
@@ -56,8 +56,8 @@ If cross-model invocation is not available, run all 4 with the caller's model. M
 
 ### Step 1: Load Plan and Context
 
-1. Read the plan file from `.backlog/exec-plans/`
-2. If the plan references an origin document in `.backlogit/queue/` or `.backlog/research/`, read that too
+1. Read the plan file from `docs/exec-plans/`
+2. If the plan references an origin document in `.backlogit/queue/` or `docs/research/`, read that too
 3. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 
 ### Step 2: Spawn Reviewer Subagents
@@ -87,10 +87,10 @@ As each persona returns:
 
 | Condition             | Decision     | Action                                                                         |
 | --------------------- | ------------ | ------------------------------------------------------------------------------ |
-| Any P0 or P1 findings | **FAIL**     | Present findings to user. Plan must be revised before proceeding to harvester. |
+| Any P0 or P1 findings | **FAIL**     | Present findings to user. Plan must be revised before proceeding to `harvest`. |
 | P2 findings only      | **ADVISORY** | Present findings to user. User decides: revise or proceed.                     |
-| P3 findings only      | **PASS**     | Log findings as advisory. Proceed to harvester.                                |
-| No findings           | **PASS**     | Plan is clean. Proceed to harvester.                                           |
+| P3 findings only      | **PASS**     | Log findings as advisory. Proceed to `harvest`.                                |
+| No findings           | **PASS**     | Plan is clean. Proceed to `harvest`.                                           |
 
 Broadcast the gate decision.
 
@@ -143,7 +143,7 @@ reviewers: [constitution-reviewer, go-quality-reviewer, architecture-strategist,
 
 ## Next Steps
 
-{Based on gate decision: revise plan, proceed to harvester, or user decides}
+{Based on gate decision: revise plan, proceed to `harvest`, or let the user decide}
 ```
 
 Broadcast the file path when written.
@@ -151,5 +151,5 @@ Broadcast the file path when written.
 ### Step 6: Present Results
 
 - On **FAIL**: Present P0/P1 findings. Recommend specific plan revisions.
-- On **ADVISORY**: Present P2 findings. Ask user: "Revise the plan, or proceed to the backlog harvester?"
-- On **PASS**: Report clean pass. Suggest: "Run backlog-harvester to decompose this plan into backlogit work items."
+- On **ADVISORY**: Present P2 findings. Ask user: "Revise the plan, or proceed to harvest?"
+- On **PASS**: Report clean pass. Suggest: "Run harvest to decompose this plan into backlogit work items."
