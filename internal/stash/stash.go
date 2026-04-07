@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// FileName is the canonical hidden stash file name in the queue directory.
+	// FileName is the legacy hidden stash markdown file name in the queue directory.
 	FileName = ".stash.md"
 	// JSONLFileName is the canonical JSONL stash file name in the workspace root.
 	JSONLFileName = "stash.jsonl"
@@ -37,17 +37,17 @@ type Entry struct {
 	Text           string `json:"text"`
 }
 
-var allowedKinds = []string{"feature", "task", "bug", "epic"}
+var allowedKinds = []string{"feature", "task", "bug", "epic", "unknown"}
 var allowedPriorities = []string{"low", "medium", "high", "critical"}
 
 const DefaultPriority = "medium"
 
-// DefaultContent returns the default hidden stash markdown file contents.
+// DefaultContent returns the default legacy stash markdown file contents.
 func DefaultContent() string {
 	return models.SerializeFrontmatter(defaultFrontmatter(), "## Stash\n")
 }
 
-// ParseFile reads and parses active stash entries from a stash markdown file.
+// ParseFile reads and parses active stash entries from a legacy stash markdown file.
 func ParseFile(path string) (map[string]any, []Entry, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -56,7 +56,7 @@ func ParseFile(path string) (map[string]any, []Entry, error) {
 	return ParseContent(string(raw))
 }
 
-// ParseContent parses stash frontmatter and active entries from markdown content.
+// ParseContent parses stash frontmatter and active entries from legacy markdown content.
 func ParseContent(content string) (map[string]any, []Entry, error) {
 	fm, body, err := models.ParseFrontmatter(content)
 	if err != nil {
@@ -160,7 +160,7 @@ func GenerateID(existingIDs map[string]struct{}) (string, error) {
 func NormalizeKind(kind string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(kind))
 	switch normalized {
-	case "feature", "task", "bug", "epic":
+	case "feature", "task", "bug", "epic", "unknown":
 		return normalized, nil
 	default:
 		return "", fmt.Errorf("unsupported stash kind %q: %w", kind, blErrors.ErrValidation)

@@ -15,7 +15,7 @@ func NewStashCmd(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stash",
 		Short: "Manage the deferred work stash",
-		Long: `Manage deferred work in .backlogit\queue\.stash.md.
+		Long: `Manage deferred work in .backlogit\stash.jsonl.
 
 Use the stash to capture ideas, issues, risks, and follow-up work that should
 be planned later and harvested into formal work items when ready.`,
@@ -49,7 +49,7 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(entry)
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "task", "stash item kind (feature, task, bug, epic)")
+	cmd.Flags().StringVar(&kind, "kind", "task", "stash item kind (feature, task, bug, epic, unknown)")
 	cmd.Flags().StringVar(&priority, "priority", "medium", "stash priority (low, medium, high, critical)")
 	return cmd
 }

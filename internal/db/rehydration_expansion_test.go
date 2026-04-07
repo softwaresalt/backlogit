@@ -179,6 +179,46 @@ func TestRehydrate_StashJSONLOverridesLegacyAndTracksSourcePath(t *testing.T) {
 	assert.Equal(t, stash.JSONLFileName, byID["JSONL001"].SourcePath)
 }
 
+func TestRehydrate_HarvestedStashUsesCanonicalSourcePath(t *testing.T) {
+	// Arrange
+	ws := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "queue"), 0o755))
+	artifact := `---
+id: 001-F
+title: Harvested feature
+status: queued
+artifact_type: feature
+custom_fields:
+  source_stash_id: ABC12345
+  source_stash_priority: high
+  source_stash_kind: feature
+  source_stash_text: Canonical stash entry
+  source_stash_path: stash.jsonl
+---
+
+Feature body`
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "queue", "001-F.md"), []byte(artifact), 0o644))
+
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	// Act
+	count, err := db.Rehydrate(ctx, ws, database)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	entries, err := db.ListStashEntries(ctx, database, true)
+	require.NoError(t, err)
+
+	// Assert
+	require.Len(t, entries, 1)
+	assert.Equal(t, "ABC12345", entries[0].ID)
+	assert.Equal(t, "harvested", entries[0].State)
+	assert.Equal(t, stash.JSONLFileName, entries[0].SourcePath)
+	assert.Equal(t, "001-F", entries[0].ItemID)
+	require.NotNil(t, entries[0].LinkedAt)
+}
+
 func TestRehydrate_SuffixHierarchicalIDs_PopulatesLevelAndNumericHierarchyPath(t *testing.T) {
 	// Arrange
 	ws := t.TempDir()

@@ -20,7 +20,7 @@ The lifecycle has six stages:
 
 1. Initialize the workspace with `backlogit init`
 2. Create artifacts with `backlogit add`
-3. Stash deferred work in `.backlogit/queue/.stash.md`
+3. Stash deferred work in `.backlogit/stash.jsonl`
 4. List and query artifacts with `backlogit list` and `backlogit query`
 5. Update status and metadata with `backlogit update` and `backlogit move`
 6. Archive completed work with `backlogit archive`
@@ -78,7 +78,7 @@ deliberate or spike
 backlogit init
 ```
 
-This creates the `.backlogit/` directory with default `config.yaml`, `header-def.yaml`, `registry.yaml`, `migration.yaml`, and template files. It also creates `.backlogit/queue/.stash.md` so deferred work can be captured before it is ready to become a formal work item. The SQLite cache (`backlogit.db`) is created on first use.
+This creates the `.backlogit/` directory with default `config.yaml`, `header-def.yaml`, `registry.yaml`, `migration.yaml`, and template files. It also creates `.backlogit/stash.jsonl` so deferred work can be captured before it is ready to become a formal work item. The SQLite cache (`backlogit.db`) is created on first use.
 
 **Add artifacts:**
 
@@ -252,7 +252,7 @@ backlogit_claim_shipment -- move a queued shipment to active
 backlogit_ship_shipment -- close a released shipment, archive released scope, and record merge commit traceability
 backlogit_return_blocked -- return a blocked item from a shipment to backlog
 backlogit_add_to_shipment -- attach backlog items to a shipment
-backlogit_fetch_stash  -- retrieve active stash entries from .stash.md, optionally filtered or grouped by priority, with linked deliberations when present
+backlogit_fetch_stash  -- retrieve active stash entries from stash.jsonl, optionally filtered or grouped by priority, with linked deliberations when present
 backlogit_stash        -- add deferred work to the stash with kind and priority
 backlogit_deliberate   -- create a deliberation artifact linked to a stash entry
 backlogit_harvest_stash -- promote one stash entry or a whole priority band into planned work items
@@ -289,7 +289,7 @@ For a complete setup guide, examples, and current limitations, see [Configuratio
 
 The `.backlogit/` directory is committed to your repository. Markdown artifact files are Git-friendly: they have stable field ordering in their YAML frontmatter, deterministic ID-based filenames, and no binary content. The only gitignored file is `backlogit.db`.
 
-When multiple developers or agents make concurrent changes, Markdown files merge cleanly because each artifact is a separate file. Work-item history is appended to `.backlogit/logs/{item-id}.jsonl`, and the stash remains a single hidden planning surface in `.backlogit/queue/.stash.md`.
+When multiple developers or agents make concurrent changes, Markdown files merge cleanly because each artifact is a separate file. Work-item history is appended to `.backlogit/logs/{item-id}.jsonl`, and the stash remains a single hidden planning surface in `.backlogit/stash.jsonl`.
 
 Associate a commit with an artifact using the MCP tool or the CLI:
 
