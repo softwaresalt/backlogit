@@ -4,8 +4,7 @@ package db_test
 //
 // These tests verify that UpsertItemsTx writes multiple artifacts within a
 // single SQL transaction and that a partial failure leaves the database in its
-// original state.  The production function UpsertItemsTx does not yet exist;
-// running this file will fail to compile until the stub is added.
+// original state.
 
 import (
 	"context"
@@ -131,9 +130,5 @@ func TestReturnBlockedItem_DBAndFileAreConsistent(t *testing.T) {
 }
 
 // setupTestDB is provided by the existing test helpers in the db_test package.
-// If it is not already declared in a sibling file, add it here.
-func init() {
-	// Guard: setupTestDB is declared in another file in the db_test package;
-	// this init exists only to surface a compiler error if it moves.
-	var _ func(t *testing.T) *sql.DB = setupTestDB
-}
+// Guard: this package-scope assignment surfaces a compiler error if setupTestDB moves.
+var _ func(t *testing.T) *sql.DB = setupTestDB

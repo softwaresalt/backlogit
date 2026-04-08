@@ -6,9 +6,10 @@ package core
 // consistent state: the DB and the on-disk Markdown files agree after both a
 // successful return and after a rolled-back attempt.
 //
-// The production fix wraps both bldb.UpsertItem calls inside a single SQL
-// transaction using bldb.UpsertItemsTx so that a failure during the second
-// write does not leave the shipment and the item out of sync.
+// The current production implementation persists the shipment and item
+// separately and uses compensating rollback logic if a later write fails.
+// These tests verify the resulting consistency guarantees rather than
+// asserting that both writes occur inside a shared SQL transaction.
 
 import (
 	"context"

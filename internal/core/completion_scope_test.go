@@ -2,18 +2,13 @@ package core
 
 // 017.012-T: Completion-scope status reconciliation harness.
 //
-// These tests specify the behaviour of ReconcileCompletionScope, a new
-// function that enforces two invariants when work transitions to done:
+// These tests specify the behaviour of ReconcileCompletionScope, which
+// enforces two invariants when work transitions to done:
 //
 //  1. Every queued or active descendant of a done parent is also marked done.
 //  2. No item may remain done when it has descendants that are still queued
 //     or active (a parent cannot be "done" ahead of its children without an
 //     explicit reconciliation call).
-//
-// ReconcileCompletionScope does not yet exist; this file defines its contract.
-// A production stub with panic("not implemented: ReconcileCompletionScope")
-// must be added to workspace.go (or a new completion_scope.go) to make the
-// repository compile.
 
 import (
 	"context"

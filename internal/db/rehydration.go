@@ -279,9 +279,12 @@ func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB,
 		}
 		var readErr error
 		jsonlEntries, readErr = stash.ReadJSONL(f)
-		_ = f.Close()
+		closeErr := f.Close()
 		if readErr != nil {
 			return 0, fmt.Errorf("read stash jsonl: %w", readErr)
+		}
+		if closeErr != nil {
+			return 0, fmt.Errorf("close stash jsonl: %w", closeErr)
 		}
 	} else if !os.IsNotExist(statErr) {
 		return 0, fmt.Errorf("stat stash jsonl: %w", statErr)
