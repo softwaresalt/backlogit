@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
+	"github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
@@ -247,6 +248,14 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("rename artifact file: %w", err)
 	}
 
+	// Upsert to the SQLite index so that NextID and query-based callers see
+	// the new artifact immediately without requiring an explicit rehydration.
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
+		}
+	}
+
 	return artifact, nil
 }
 
@@ -352,6 +361,9 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if v, ok := updates["commit"].(string); ok {
 		artifact.Commit = v
 	}
+	if v, ok := updates["parent_id"].(string); ok {
+		artifact.ParentID = v
+	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
 		artifact.CustomFields = v
 	}
@@ -372,6 +384,24 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
+	}
+
+	// Persist to SQLite so that any query-based caller (e.g. CheckChildrenTerminal)
+	// sees the updated state without requiring a full rehydration cycle.
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			return nil, fmt.Errorf("upsert item %s: %w", id, upsertErr)
+		}
+	}
+
+	// Write the updated artifact to its current disk location so that the
+	// on-disk state stays in sync with SQLite. Callers that need file relocation
+	// (e.g. CLI move, MCP handleMoveItem) write again after calling this function;
+	// the double-write is idempotent and harmless.
+	if filePath, pathErr := FindArtifactPath(ctx, ws, id); pathErr == nil {
+		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
+			return nil, fmt.Errorf("write artifact file %s: %w", id, writeErr)
+		}
 	}
 
 	return artifact, nil
