@@ -138,6 +138,10 @@ func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*Fe
 		return nil, err
 	}
 
+	if opts.Limit > 0 && len(views) > opts.Limit {
+		views = views[:opts.Limit]
+	}
+
 	result := &FetchedStashResult{Entries: views}
 	if opts.GroupByPriority {
 		result.GroupBy = "priority"
