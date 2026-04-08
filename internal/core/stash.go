@@ -174,11 +174,20 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	if trimmedText == "" {
 		return nil, fmt.Errorf("stash text is required")
 	}
+
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
+	// EnsureStashFile is called inside the lock because it also writes the file
+	// atomically. Calling it outside would race with concurrent writers on Windows.
 	if err := EnsureStashFile(ws.RootPath); err != nil {
 		return nil, err
 	}
 
-	path := StashFilePath(ws.RootPath)
 	entries, err := readStashEntries(path)
 	if err != nil {
 		return nil, err
