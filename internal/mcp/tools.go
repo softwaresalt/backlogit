@@ -330,6 +330,32 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleAdoptItem,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_add_link",
+			mcplib.WithDescription("Add a directed semantic link between two artifacts"),
+			mcplib.WithString("source_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("target_id", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithString("link_type", mcplib.Required(), mcplib.Description("Link type: related_to, duplicate_of, informs, supersedes, spike_ref")),
+		),
+		s.handleAddLink,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_links",
+			mcplib.WithDescription("Get all outgoing semantic links from an artifact"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("link_type", mcplib.Description("Optional filter by link type")),
+		),
+		s.handleGetLinks,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_remove_link",
+			mcplib.WithDescription("Remove a directed semantic link between two artifacts"),
+			mcplib.WithString("source_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("target_id", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithString("link_type", mcplib.Required(), mcplib.Description("Link type to remove")),
+		),
+		s.handleRemoveLink,
+	)
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
