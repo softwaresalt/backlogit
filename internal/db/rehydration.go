@@ -251,8 +251,9 @@ func parseItemLogFile(path, itemID string) ([]events.Event, error) {
 }
 
 func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB, harvested map[string]StashRecord) (int, error) {
-	// Read entries from legacy .stash.md if present.
 	stashPath := filepath.Join(workspacePath, "queue", stash.FileName)
+	jsonlPath := filepath.Join(workspacePath, stash.JSONLFileName)
+
 	activeEntries := []StashRecord{}
 	activeIndex := make(map[string]int)
 	appendActive := func(entry StashRecord) {
@@ -264,38 +265,54 @@ func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB,
 		activeEntries = append(activeEntries, entry)
 	}
 	now := time.Now().UTC()
-	if _, err := os.Stat(stashPath); err == nil {
-		_, entries, parseErr := stash.ParseFile(stashPath)
-		if parseErr != nil {
-			return 0, fmt.Errorf("parse stash file: %w", parseErr)
-		}
-		legacySource := filepath.ToSlash(filepath.Join("queue", stash.FileName))
-		for _, entry := range entries {
-			appendActive(activeStashRecord(entry, legacySource, now))
-		}
-	} else if !os.IsNotExist(err) {
-		return 0, fmt.Errorf("stat stash file: %w", err)
-	}
 
-	// Also read entries from stash.jsonl if present (new format).
-	jsonlPath := filepath.Join(workspacePath, stash.JSONLFileName)
-	if _, err := os.Stat(jsonlPath); err == nil {
+	// Attempt to read stash.jsonl. When it contains at least one entry the
+	// workspace is considered migrated and the file is used exclusively.
+	// An empty stash.jsonl (e.g. created by backlogit init on a legacy
+	// workspace) is treated as absent so that .stash.md entries are not
+	// silently lost.
+	var jsonlEntries []stash.Entry
+	if _, statErr := os.Stat(jsonlPath); statErr == nil {
 		f, openErr := os.Open(jsonlPath)
 		if openErr != nil {
 			return 0, fmt.Errorf("open stash jsonl: %w", openErr)
 		}
-		jsonlEntries, readErr := stash.ReadJSONL(f)
-		_ = f.Close()
+		var readErr error
+		jsonlEntries, readErr = stash.ReadJSONL(f)
+		closeErr := f.Close()
 		if readErr != nil {
 			return 0, fmt.Errorf("read stash jsonl: %w", readErr)
 		}
-		// Merge: deduplicate by ID, preferring JSONL entries when duplicates exist.
+		if closeErr != nil {
+			return 0, fmt.Errorf("close stash jsonl: %w", closeErr)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return 0, fmt.Errorf("stat stash jsonl: %w", statErr)
+	}
+
+	if len(jsonlEntries) > 0 {
+		// Migrated workspace: stash.jsonl has entries; use it exclusively.
+		if _, err := os.Stat(stashPath); err == nil {
+			slog.Debug("skipping legacy stash.md: stash.jsonl has entries", "workspace", workspacePath)
+		}
 		for _, e := range jsonlEntries {
 			appendActive(activeStashRecord(e, filepath.ToSlash(stash.JSONLFileName), now))
 		}
-		slog.Debug("merged stash jsonl entries", "count", len(jsonlEntries))
-	} else if !os.IsNotExist(err) {
-		return 0, fmt.Errorf("stat stash jsonl: %w", err)
+		slog.Debug("indexed stash from jsonl", "count", len(jsonlEntries))
+	} else {
+		// Legacy or fresh workspace: stash.jsonl absent or empty — read .stash.md.
+		if _, err := os.Stat(stashPath); err == nil {
+			_, entries, parseErr := stash.ParseFile(stashPath)
+			if parseErr != nil {
+				return 0, fmt.Errorf("parse stash file: %w", parseErr)
+			}
+			legacySource := filepath.ToSlash(filepath.Join("queue", stash.FileName))
+			for _, entry := range entries {
+				appendActive(activeStashRecord(entry, legacySource, now))
+			}
+		} else if !os.IsNotExist(err) {
+			return 0, fmt.Errorf("stat stash file: %w", err)
+		}
 	}
 
 	if err := RehydrateStashIndex(ctx, database, activeEntries, harvested); err != nil {

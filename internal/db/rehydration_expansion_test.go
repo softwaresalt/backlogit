@@ -161,13 +161,15 @@ func TestRehydrate_StashJSONLOverridesLegacyAndTracksSourcePath(t *testing.T) {
 	// Act
 	count, err := db.Rehydrate(ctx, ws, database)
 	require.NoError(t, err)
-	assert.Equal(t, 3, count)
+	// When stash.jsonl is present, .stash.md is skipped entirely.
+	// Only the 2 JSONL entries are indexed; LEGACY01 is excluded.
+	assert.Equal(t, 2, count)
 
 	entries, err := db.ListStashEntries(ctx, database, false)
 	require.NoError(t, err)
 
 	// Assert
-	require.Len(t, entries, 3)
+	require.Len(t, entries, 2)
 	byID := make(map[string]db.StashRecord, len(entries))
 	for _, entry := range entries {
 		byID[entry.ID] = entry
@@ -175,7 +177,8 @@ func TestRehydrate_StashJSONLOverridesLegacyAndTracksSourcePath(t *testing.T) {
 	assert.Equal(t, "jsonl override entry", byID["ABC12345"].Text)
 	assert.Equal(t, "critical", byID["ABC12345"].Priority)
 	assert.Equal(t, stash.JSONLFileName, byID["ABC12345"].SourcePath)
-	assert.Equal(t, filepath.ToSlash(filepath.Join("queue", stash.FileName)), byID["LEGACY01"].SourcePath)
+	// LEGACY01 must not appear — .stash.md is skipped when stash.jsonl exists.
+	assert.NotContains(t, byID, "LEGACY01", "LEGACY01 must be excluded in a migrated workspace")
 	assert.Equal(t, stash.JSONLFileName, byID["JSONL001"].SourcePath)
 }
 
