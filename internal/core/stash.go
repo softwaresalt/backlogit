@@ -25,6 +25,7 @@ const (
 type FetchStashOptions struct {
 	Priority        string `json:"priority,omitempty"`
 	GroupByPriority bool   `json:"group_by_priority,omitempty"`
+	Limit           int    `json:"limit,omitempty"` // max entries to return (0 = no limit)
 }
 
 // HarvestStashOptions controls single-entry and batch priority harvest behavior.

@@ -22,6 +22,8 @@ type QueryFilters struct {
 	Owner           string
 	Priority        string
 	IncludeArchived bool // when false (default), archived items are excluded from results
+	Limit           int  // max results to return (0 = no limit)
+	Offset          int  // number of results to skip for pagination
 }
 
 const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit", level, hierarchy_path`
