@@ -120,7 +120,7 @@ func TestReturnBlockedItem_RejectsItemNotInShipment(t *testing.T) {
 	// Task must remain untouched.
 	dbTask, getErr := bldb.GetItem(ctx, ws.DB, task.ID)
 	require.NoError(t, getErr)
-	assert.Equal(t, models.StatusActive, dbTask.Status, "task must remain active after rejected return")
+	assert.Equal(t, models.StatusQueued, dbTask.Status, "task must remain queued after rejected return")
 }
 
 // TestReturnBlockedItem_MultipleReturnsAreIdempotentOnItems verifies that
