@@ -26,6 +26,15 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	if err := DeleteAllItemLogs(ctx, db); err != nil {
 		return 0, err
 	}
+	// Clear the item index before rebuilding so that deleted Markdown files do not
+	// leave ghost entries. item_links is intentionally preserved because it is
+	// populated by tool calls (not rehydration) and must survive full rehydration cycles.
+	if _, err := db.ExecContext(ctx, `DELETE FROM items`); err != nil {
+		return 0, fmt.Errorf("clear items for rehydration: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM item_deps`); err != nil {
+		return 0, fmt.Errorf("clear item_deps for rehydration: %w", err)
+	}
 
 	err := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
