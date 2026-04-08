@@ -15,5 +15,14 @@ type CompactArtifact struct {
 
 // Compact returns a reduced projection of the artifact suitable for list views.
 func (a *Artifact) Compact() CompactArtifact {
-	return CompactArtifact{}
+	return CompactArtifact{
+		ID:           a.ID,
+		Title:        a.Title,
+		Status:       a.Status,
+		ArtifactType: a.ArtifactType,
+		ParentID:     a.ParentID,
+		Priority:     a.Priority,
+		AssignedTo:   a.AssignedTo,
+		Owner:        a.Owner,
+	}
 }
