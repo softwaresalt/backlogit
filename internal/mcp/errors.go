@@ -7,6 +7,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/backlogit/backlogit/internal/core"
 	corerrors "github.com/backlogit/backlogit/internal/errors"
 )
 
@@ -61,4 +62,29 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}
+}
+
+// blockingChildrenResult returns a structured error response when a parent
+// artifact cannot move to a terminal status because non-terminal children exist.
+func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult {
+	type childEntry struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	type resp struct {
+		Error    string       `json:"error"`
+		Message  string       `json:"message"`
+		Children []childEntry `json:"children"`
+	}
+	entries := make([]childEntry, len(children))
+	for i, c := range children {
+		entries[i] = childEntry{ID: c.ID, Status: c.Status}
+	}
+	r := resp{
+		Error:    "blocking_children",
+		Message:  fmt.Sprintf("%d non-terminal child(ren) are blocking this status transition", len(children)),
+		Children: entries,
+	}
+	data, _ := json.Marshal(r)
+	return mcplib.NewToolResultError(string(data))
 }

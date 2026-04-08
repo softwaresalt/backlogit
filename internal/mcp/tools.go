@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -413,6 +414,24 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	if status == "" {
 		return ValidationFailed("status is required"), nil
 	}
+
+	// Check that all children are in terminal statuses before allowing the
+	// parent to move to a terminal status. This prevents orphaned in-progress
+	// work from being silently buried under a "done" parent.
+	terminalSet := make(map[string]bool, len(core.TerminalStatuses))
+	for _, ts := range core.TerminalStatuses {
+		terminalSet[ts] = true
+	}
+	if terminalSet[status] {
+		if err := core.CheckChildrenTerminal(ctx, s.Workspace.DB, id); err != nil {
+			var blockErr *core.ChildBlockingError
+			if errors.As(err, &blockErr) {
+				return blockingChildrenResult(blockErr.Children), nil
+			}
+			return InternalError(fmt.Sprintf("check children: %v", err)), nil
+		}
+	}
+
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, map[string]any{"status": status})
 	if err != nil {
 		return InternalError(fmt.Sprintf("move item: %v", err)), nil
