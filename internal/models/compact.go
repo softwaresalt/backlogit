@@ -1,7 +1,8 @@
 package models
 
 // CompactArtifact is a reduced projection of an Artifact for token-efficient agent consumption.
-// It omits description, timestamps, labels, dependencies, references, and custom fields.
+// It omits description, timestamps, labels, dependencies, references, and custom fields,
+// retaining the identity and assignment fields most useful for queue and triage views.
 type CompactArtifact struct {
 	ID           string         `json:"id"`
 	Title        string         `json:"title"`

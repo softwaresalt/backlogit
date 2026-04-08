@@ -15,7 +15,7 @@ type DuplicateGroup struct {
 }
 
 // FindDuplicates returns groups of artifacts that share identical normalized titles.
-// Normalization lowercases the title and collapses whitespace before comparison.
+// Normalization lowercases the title and trims surrounding whitespace before comparison.
 // Groups with only one member are excluded from the result.
 func FindDuplicates(ctx context.Context, db *sql.DB) ([]DuplicateGroup, error) {
 	const query = `

@@ -5,8 +5,6 @@ origin: ".backlogit/queue/004-DL.md"
 status: reviewed
 ---
 
-# Data Quality & Tool Efficiency
-
 ## Problem Frame
 
 MCP tools return oversized payloads that consume agent context windows.

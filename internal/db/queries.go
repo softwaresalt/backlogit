@@ -257,7 +257,8 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	}
 
 	if filters.Limit > 0 {
-		query += " LIMIT ?"
+		// ORDER BY is required for stable, non-overlapping pages across calls.
+		query += " ORDER BY id ASC LIMIT ?"
 		args = append(args, filters.Limit)
 		if filters.Offset > 0 {
 			query += " OFFSET ?"
