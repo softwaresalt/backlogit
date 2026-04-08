@@ -256,6 +256,15 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
+	if filters.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filters.Limit)
+		if filters.Offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, filters.Offset)
+		}
+	}
+
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query items: %w", err)
