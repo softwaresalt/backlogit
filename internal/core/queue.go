@@ -30,17 +30,18 @@ type QueueGroup struct {
 
 // QueueFilter defines the filter criteria for queue queries.
 type QueueFilter struct {
-	Types      []string `json:"types,omitempty"`
-	Statuses   []string `json:"statuses,omitempty"`
-	ParentID   string   `json:"parent_id,omitempty"`
-	Sprint     string   `json:"sprint,omitempty"`
-	AssignedTo string   `json:"assigned_to,omitempty"`
-	Labels     []string `json:"labels,omitempty"`
-	GroupBy    string   `json:"group_by,omitempty"`
-	SortBy     string   `json:"sort_by,omitempty"`
-	SortOrder  string   `json:"sort_order,omitempty"`
-	Limit      int      `json:"limit,omitempty"`
-	Offset     int      `json:"offset,omitempty"`
+	Types       []string `json:"types,omitempty"`
+	Statuses    []string `json:"statuses,omitempty"`
+	ParentID    string   `json:"parent_id,omitempty"`
+	Sprint      string   `json:"sprint,omitempty"`
+	AssignedTo  string   `json:"assigned_to,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+	GroupBy     string   `json:"group_by,omitempty"`
+	SortBy      string   `json:"sort_by,omitempty"`
+	SortOrder   string   `json:"sort_order,omitempty"`
+	Limit       int      `json:"limit,omitempty"`
+	Offset      int      `json:"offset,omitempty"`
+	OrphansOnly bool     `json:"orphans_only,omitempty"` // when true, return only orphaned items
 }
 
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
@@ -124,6 +125,17 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 			}
 			item.CustomFields["is_orphan"] = true
 		}
+	}
+
+	// Filter to orphans only after annotation so callers always get the annotation.
+	if filter.OrphansOnly {
+		filtered := items[:0]
+		for _, item := range items {
+			if IsOrphan(item) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 	}
 
 	view := &QueueView{

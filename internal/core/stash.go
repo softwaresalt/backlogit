@@ -25,6 +25,7 @@ const (
 type FetchStashOptions struct {
 	Priority        string `json:"priority,omitempty"`
 	GroupByPriority bool   `json:"group_by_priority,omitempty"`
+	Limit           int    `json:"limit,omitempty"` // max entries to return (0 = no limit)
 }
 
 // HarvestStashOptions controls single-entry and batch priority harvest behavior.
@@ -137,6 +138,10 @@ func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*Fe
 		return nil, err
 	}
 
+	if opts.Limit > 0 && len(views) > opts.Limit {
+		views = views[:opts.Limit]
+	}
+
 	result := &FetchedStashResult{Entries: views}
 	if opts.GroupByPriority {
 		result.GroupBy = "priority"
@@ -169,11 +174,20 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	if trimmedText == "" {
 		return nil, fmt.Errorf("stash text is required")
 	}
+
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
+	// EnsureStashFile is called inside the lock because it also writes the file
+	// atomically. Calling it outside would race with concurrent writers on Windows.
 	if err := EnsureStashFile(ws.RootPath); err != nil {
 		return nil, err
 	}
 
-	path := StashFilePath(ws.RootPath)
 	entries, err := readStashEntries(path)
 	if err != nil {
 		return nil, err
@@ -223,10 +237,26 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	if strings.TrimSpace(harvestOpts.ArtifactType) == "" {
 		return nil, fmt.Errorf("artifact type is required")
 	}
+
+	// Lock the stash file for the full read-modify-write cycle to prevent concurrent
+	// harvests from reading the same entry and producing duplicate artifacts.
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
 	entry, remaining, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
 	if err != nil {
+		_ = unlock()
 		return nil, err
 	}
+	// Rewrite the stash file inside the lock to prevent double-harvest if artifact
+	// creation fails. The lock is released after the file is written.
+	if err := writeStashEntries(path, remaining); err != nil {
+		_ = unlock()
+		return nil, fmt.Errorf("rewrite stash file: %w", err)
+	}
+	_ = unlock()
 
 	itemTitle := strings.TrimSpace(harvestOpts.Title)
 	if itemTitle == "" {
@@ -254,11 +284,6 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	}
 	if harvestOpts.ParentID != "" {
 		createOpts = append(createOpts, WithParent(harvestOpts.ParentID))
-	}
-
-	// Rewrite the stash file first to prevent double-harvest if artifact creation fails.
-	if err := writeStashEntries(StashFilePath(ws.RootPath), remaining); err != nil {
-		return nil, fmt.Errorf("rewrite stash file: %w", err)
 	}
 
 	artifact, err := CreateArtifact(ctx, ws, itemTitle, harvestOpts.ArtifactType, createOpts...)
@@ -379,10 +404,16 @@ func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, d
 	if normalizedDeliberationID == "" {
 		return nil, fmt.Errorf("deliberation id is required")
 	}
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
 	if err := EnsureStashFile(ws.RootPath); err != nil {
 		return nil, err
 	}
-	path := StashFilePath(ws.RootPath)
 	entries, err := readStashEntries(path)
 	if err != nil {
 		return nil, err
