@@ -22,6 +22,8 @@ type QueryFilters struct {
 	Owner           string
 	Priority        string
 	IncludeArchived bool // when false (default), archived items are excluded from results
+	Limit           int  // max results to return (0 = no limit)
+	Offset          int  // number of results to skip for pagination
 }
 
 const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit", level, hierarchy_path`
@@ -252,6 +254,16 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	if filters.Limit > 0 {
+		// ORDER BY is required for stable, non-overlapping pages across calls.
+		query += " ORDER BY id ASC LIMIT ?"
+		args = append(args, filters.Limit)
+		if filters.Offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, filters.Offset)
+		}
 	}
 
 	rows, err := db.QueryContext(ctx, query, args...)

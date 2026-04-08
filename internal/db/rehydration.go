@@ -20,6 +20,11 @@ import (
 // Rehydrate walks the workspace directory tree and rebuilds the SQLite index
 // from the Markdown source files. Files that fail to parse are skipped with a
 // debug log entry. Returns the number of artifacts successfully indexed.
+//
+// The clear + rebuild of the items and item_deps tables is wrapped in a single
+// transaction so a crash or parse failure mid-walk does not leave a partial
+// (empty) index. If any step fails, the transaction is rolled back and the
+// previous index remains intact.
 func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, error) {
 	count := 0
 	harvestedStash := make(map[string]StashRecord)
@@ -27,7 +32,28 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		return 0, err
 	}
 
-	err := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin rehydration transaction: %w", err)
+	}
+	// rolled back on any non-nil error path; nil'd after Commit to skip on success.
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// Clear the item index before rebuilding so that deleted Markdown files do not
+	// leave ghost entries. item_links is intentionally preserved because it is
+	// populated by tool calls (not rehydration) and must survive full rehydration cycles.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM items`); err != nil {
+		return 0, fmt.Errorf("clear items for rehydration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_deps`); err != nil {
+		return 0, fmt.Errorf("clear item_deps for rehydration: %w", err)
+	}
+
+	err = filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			slog.Debug("walk error, skipping", "path", path, "error", walkErr)
 			return nil
@@ -48,7 +74,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 			return nil
 		}
 
-		if upsertErr := UpsertItem(ctx, db, artifact); upsertErr != nil {
+		if upsertErr := upsertItemTx(ctx, tx, artifact); upsertErr != nil {
 			slog.Warn("failed to upsert artifact", "path", path, "error", upsertErr)
 			return nil
 		}
@@ -62,7 +88,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		if artifact.Level == 0 && isHierarchicalID(artifact.ID) {
 			level := strings.Count(artifact.ID, ".") + 1
 			hierarchyPath := hierarchyPathFromID(artifact.ID)
-			if _, execErr := db.ExecContext(ctx,
+			if _, execErr := tx.ExecContext(ctx,
 				`UPDATE items SET level = ?, hierarchy_path = ? WHERE id = ?`,
 				level, hierarchyPath, artifact.ID,
 			); execErr != nil {
@@ -77,7 +103,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 					continue
 				}
 				// Best-effort: skip if target doesn't exist yet (will be linked on subsequent rehydration).
-				if depErr := upsertDependencyBestEffort(ctx, db, artifact.ID, depID); depErr != nil {
+				if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
 					slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
 				}
 			}
@@ -89,6 +115,11 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	if err != nil {
 		return count, fmt.Errorf("rehydrate walk: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit rehydration: %w", err)
+	}
+	tx = nil // prevent deferred rollback
 
 	stashCount, stashErr := rehydrateStash(ctx, workspacePath, db, harvestedStash)
 	if stashErr != nil {
@@ -128,8 +159,8 @@ func parseMarkdownArtifact(path string) (*models.Artifact, error) {
 	return artifact, nil
 }
 
-func upsertDependencyBestEffort(ctx context.Context, db *sql.DB, itemID, dependsOn string) error {
-	_, err := db.ExecContext(ctx,
+func upsertDependencyTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn string) error {
+	_, err := tx.ExecContext(ctx,
 		`INSERT OR IGNORE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, 'blocks')`,
 		itemID, dependsOn,
 	)
