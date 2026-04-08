@@ -158,3 +158,34 @@ func TestRehydrate_EmptyWorkspace_ProducesNoStashEntries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }
+
+// TestRehydrate_EmptyJSONL_FallsBackToLegacyStash verifies that an empty
+// stash.jsonl (as created by backlogit init) does not suppress legacy
+// .stash.md entries. The JSONL file must have at least one entry before it
+// is treated as authoritative.
+func TestRehydrate_EmptyJSONL_FallsBackToLegacyStash(t *testing.T) {
+	ws := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "queue"), 0o755))
+
+	// Legacy entries in .stash.md.
+	legacyContent := stash.RenderContent(nil, []stash.Entry{
+		{ID: "LEG001", Priority: "high", Kind: "task", Text: "legacy high priority task"},
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "queue", stash.FileName), []byte(legacyContent), 0o644))
+
+	// Empty stash.jsonl — as created by backlogit init on a legacy workspace.
+	require.NoError(t, os.WriteFile(filepath.Join(ws, stash.JSONLFileName), []byte(""), 0o644))
+
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	count, err := db.Rehydrate(ctx, ws, database)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "empty stash.jsonl must not suppress legacy stash entries")
+
+	entries, err := db.ListStashEntries(ctx, database, false)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "LEG001", entries[0].ID)
+	assert.Equal(t, filepath.ToSlash(filepath.Join("queue", stash.FileName)), entries[0].SourcePath)
+}

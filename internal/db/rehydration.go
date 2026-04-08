@@ -266,18 +266,38 @@ func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB,
 	}
 	now := time.Now().UTC()
 
-	// When stash.jsonl is present the workspace has been migrated. Use the JSONL
-	// file exclusively; skip .stash.md so legacy-only entries do not re-appear
-	// in the index with incorrect provenance.
-	jsonlPresent := false
-	if _, err := os.Stat(jsonlPath); err == nil {
-		jsonlPresent = true
-	} else if !os.IsNotExist(err) {
-		return 0, fmt.Errorf("stat stash jsonl: %w", err)
+	// Attempt to read stash.jsonl. When it contains at least one entry the
+	// workspace is considered migrated and the file is used exclusively.
+	// An empty stash.jsonl (e.g. created by backlogit init on a legacy
+	// workspace) is treated as absent so that .stash.md entries are not
+	// silently lost.
+	var jsonlEntries []stash.Entry
+	if _, statErr := os.Stat(jsonlPath); statErr == nil {
+		f, openErr := os.Open(jsonlPath)
+		if openErr != nil {
+			return 0, fmt.Errorf("open stash jsonl: %w", openErr)
+		}
+		var readErr error
+		jsonlEntries, readErr = stash.ReadJSONL(f)
+		_ = f.Close()
+		if readErr != nil {
+			return 0, fmt.Errorf("read stash jsonl: %w", readErr)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return 0, fmt.Errorf("stat stash jsonl: %w", statErr)
 	}
 
-	if !jsonlPresent {
-		// Legacy workspace: read entries from .stash.md if present.
+	if len(jsonlEntries) > 0 {
+		// Migrated workspace: stash.jsonl has entries; use it exclusively.
+		if _, err := os.Stat(stashPath); err == nil {
+			slog.Debug("skipping legacy stash.md: stash.jsonl has entries", "workspace", workspacePath)
+		}
+		for _, e := range jsonlEntries {
+			appendActive(activeStashRecord(e, filepath.ToSlash(stash.JSONLFileName), now))
+		}
+		slog.Debug("indexed stash from jsonl", "count", len(jsonlEntries))
+	} else {
+		// Legacy or fresh workspace: stash.jsonl absent or empty — read .stash.md.
 		if _, err := os.Stat(stashPath); err == nil {
 			_, entries, parseErr := stash.ParseFile(stashPath)
 			if parseErr != nil {
@@ -290,22 +310,6 @@ func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB,
 		} else if !os.IsNotExist(err) {
 			return 0, fmt.Errorf("stat stash file: %w", err)
 		}
-	}
-
-	if jsonlPresent {
-		f, openErr := os.Open(jsonlPath)
-		if openErr != nil {
-			return 0, fmt.Errorf("open stash jsonl: %w", openErr)
-		}
-		jsonlEntries, readErr := stash.ReadJSONL(f)
-		_ = f.Close()
-		if readErr != nil {
-			return 0, fmt.Errorf("read stash jsonl: %w", readErr)
-		}
-		for _, e := range jsonlEntries {
-			appendActive(activeStashRecord(e, filepath.ToSlash(stash.JSONLFileName), now))
-		}
-		slog.Debug("indexed stash from jsonl", "count", len(jsonlEntries))
 	}
 
 	if err := RehydrateStashIndex(ctx, database, activeEntries, harvested); err != nil {

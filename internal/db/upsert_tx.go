@@ -25,6 +25,9 @@ func UpsertItemsTx(ctx context.Context, tx *sql.Tx, artifacts ...*models.Artifac
 // upsertItemTx executes a single artifact INSERT OR REPLACE inside tx using
 // the same field mapping as UpsertItem.
 func upsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
+	if artifact == nil {
+		return fmt.Errorf("upsert item in tx: nil artifact")
+	}
 	cf, err := json.Marshal(artifact.CustomFields)
 	if err != nil {
 		return fmt.Errorf("marshal custom fields: %w", err)
