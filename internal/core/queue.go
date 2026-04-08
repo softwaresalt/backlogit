@@ -127,6 +127,17 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 		}
 	}
 
+	// Filter to orphans only after annotation so callers always get the annotation.
+	if filter.OrphansOnly {
+		filtered := items[:0]
+		for _, item := range items {
+			if IsOrphan(item) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
 	view := &QueueView{
 		Items:      items,
 		TotalCount: len(items),
