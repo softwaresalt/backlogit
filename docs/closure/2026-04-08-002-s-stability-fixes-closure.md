@@ -43,10 +43,10 @@ Four correctness issues surfaced during post-F015 stabilization were addressed:
 
 | Check | Outcome |
 |---|---|
-| `test (1.23)` | ✅ passed |
-| `test (1.24)` | ✅ passed |
-| `golangci-lint` | ✅ clean (local gate) |
-| `go vet` | ✅ clean (local gate) |
+| `test (1.23)` | passed |
+| `test (1.24)` | passed |
+| `golangci-lint` | clean (local gate) |
+| `go vet` | clean (local gate) |
 
 All 14 packages passed `go test ./...`. 26 new tests added across `internal/db`, `internal/core`, and `internal/mcp`.
 
@@ -93,7 +93,7 @@ Roll back to `main@132c7bf` (pre-shipment) if any of the following occur within 
 * A multi-artifact `UpsertItemsTx` write partially commits (item visible without matching shipment update or vice versa).
 * `ReconcileCompletionScope` recurses beyond expected depth or produces incorrect final status on a valid hierarchy.
 
-Rollback method: `git revert 311c82fd` on main, or revert to `132c7bff` via forced branch reset (coordinate with active contributors first).
+Rollback method: `git revert 311c82fd` on `main`. If additional follow-up commits must also be unwound, use coordinated `git revert` commits for the affected range rather than rewriting branch history.
 
 ## Validation window
 
