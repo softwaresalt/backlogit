@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	idb "github.com/backlogit/backlogit/internal/db"
@@ -176,12 +175,16 @@ func writeTelemetryJSONL(
 	toolStats map[toolKey]toolStat,
 	events []TelemetryEvent,
 	harvestedAt time.Time,
-) error {
+) (retErr error) {
 	f, err := os.Create(jsonlPath)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", jsonlPath, err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && retErr == nil {
+			retErr = fmt.Errorf("close %s: %w", jsonlPath, closeErr)
+		}
+	}()
 
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
@@ -191,7 +194,7 @@ func writeTelemetryJSONL(
 		serverCalls := make(map[string]int)
 		for _, e := range events {
 			if e.Kind == EventKindToolCall && e.ToolCall != nil &&
-				strings.EqualFold(e.ToolCall.SessionID, s.SessionID) {
+				e.ToolCall.SessionID == s.SessionID {
 				server := AttributeTool(e.ToolCall.ToolName)
 				serverCalls[server]++
 			}

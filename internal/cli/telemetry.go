@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -24,8 +26,8 @@ func newTelemetryHarvestCmd(_ *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "harvest",
 		Short: "Parse Copilot CLI logs and write telemetry-sessions.jsonl",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			panic("not implemented: telemetry harvest")
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("telemetry harvest: not yet implemented as CLI; use MCP tool backlogit_telemetry_harvest instead")
 		},
 	}
 }
@@ -34,8 +36,8 @@ func newTelemetryListCmd(_ *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List harvested session summaries",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			panic("not implemented: telemetry list")
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("telemetry list: not yet implemented")
 		},
 	}
 }
@@ -44,8 +46,8 @@ func newTelemetryTopCmd(_ *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "top",
 		Short: "Show top N tool calls by token usage",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			panic("not implemented: telemetry top")
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("telemetry top: not yet implemented")
 		},
 	}
 }
