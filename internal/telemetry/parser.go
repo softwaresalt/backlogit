@@ -40,7 +40,7 @@ type rawToolCall struct {
 
 // CopilotCLIParser parses Copilot CLI process log files by scanning
 // line-by-line for cli.model_call and cli.tool_call JSON telemetry events.
-// Malformed lines are skipped with a slog warning rather than aborting the parse.
+// Malformed lines are skipped with a slog debug log rather than aborting the parse.
 type CopilotCLIParser struct{}
 
 // NewCopilotCLIParser returns a new CopilotCLIParser.
@@ -53,6 +53,9 @@ func NewCopilotCLIParser() *CopilotCLIParser {
 // that contain malformed JSON are skipped with a slog debug log.
 func (p *CopilotCLIParser) Parse(r io.Reader, emit func(TelemetryEvent) error) error {
 	scanner := bufio.NewScanner(r)
+	// Copilot CLI log lines can contain large JSON payloads. The default 64KB
+	// scanner buffer is too small; set a 1MB buffer to avoid ErrTooLong.
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		idx := strings.Index(line, telemetryMarker)

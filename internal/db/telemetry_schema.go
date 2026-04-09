@@ -38,7 +38,8 @@ type rawTelemetryRecord struct {
 }
 
 // EnsureTelemetrySchema creates the telemetry_sessions and telemetry_tool_usage
-// tables idempotently. Called from EnsureSchema during workspace initialization.
+// tables idempotently. Called lazily by the telemetry harvest handler on first use
+// rather than during workspace initialization; tables are created on demand.
 //
 // telemetry_tool_usage uses a composite primary key (session_id, server_name,
 // tool_name) — no AUTOINCREMENT (Plan Review F7). This enforces uniqueness per

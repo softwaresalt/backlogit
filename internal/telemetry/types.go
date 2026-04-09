@@ -91,7 +91,7 @@ type SessionSummary struct {
 
 // LogParser is the streaming interface for parsing telemetry log sources.
 // Implementations call emit for each parsed TelemetryEvent. Malformed input
-// lines are skipped with a slog warning; the parse continues on error-free lines.
+// lines are skipped with a slog debug log; the parse continues on error-free lines.
 type LogParser interface {
 	Parse(r io.Reader, emit func(TelemetryEvent) error) error
 }

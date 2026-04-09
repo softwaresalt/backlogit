@@ -1324,7 +1324,7 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB)
 	if err != nil {
 		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
-			return InternalError(fmt.Sprintf("telemetry source missing: %v", err)), nil
+			return ValidationFailed(fmt.Sprintf("telemetry source missing — run 'backlogit mcp' from a workspace that contains a .copilot directory: %v", err)), nil
 		}
 		return InternalError(fmt.Sprintf("harvest telemetry: %v", err)), nil
 	}

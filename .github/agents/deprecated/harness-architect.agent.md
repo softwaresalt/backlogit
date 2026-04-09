@@ -5,7 +5,7 @@ maturity: stable
 model: Claude Opus 4.6
 ---
 
-> **⚠️ DEPRECATED (F015):** The harness-architect agent is superseded by the [Ship agent](.github/agents/ship.agent.md) which uses the modular harness-architect skill. The agent remains functional but is no longer the primary entry point. Prefer the Ship agent for new work.
+> **⚠️ DEPRECATED (F015):** The harness-architect agent is superseded by the [Ship agent](../ship.agent.md) which uses the modular harness-architect skill. The agent remains functional but is no longer the primary entry point. Prefer the Ship agent for new work.
 
 # Harness Architect
 
