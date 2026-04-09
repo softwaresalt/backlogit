@@ -1,5 +1,6 @@
 ---
-title: "Windows-1252 Mojibake in UTF-8 JSONL — Detection and Fix with PowerShell"
+title: "Windows-1252 Mojibake in UTF-8 JSONL: Detection and Fix with PowerShell"
+description: "How to detect and fix Windows-1252 mojibake bytes written into UTF-8 JSONL files by PowerShell's default system-codepage encoding on Windows."
 problem_type: runtime_error
 category: runtime_error
 component: event_log

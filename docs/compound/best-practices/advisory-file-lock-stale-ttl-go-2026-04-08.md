@@ -1,5 +1,6 @@
 ---
-title: "Advisory File Lock with Stale TTL — Go Pattern for Crash-Safe Sidecar Locks"
+title: "Advisory File Lock with Stale TTL: Go Pattern for Crash-Safe Sidecar Locks"
+description: "Go pattern for advisory sidecar file locks with TTL-based stale detection that handles crash-left lock files safely without manual cleanup."
 problem_type: best_practice
 category: best_practice
 component: task_manager

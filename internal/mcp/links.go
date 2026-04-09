@@ -31,6 +31,13 @@ func (s *Server) handleAddLink(ctx context.Context, request mcplib.CallToolReque
 		return ValidationFailed("link_type is required"), nil
 	}
 
+	if _, err := db.GetItem(ctx, ws.DB, sourceID); err != nil {
+		return domainError("add link source_id", err), nil
+	}
+	if _, err := db.GetItem(ctx, ws.DB, targetID); err != nil {
+		return domainError("add link target_id", err), nil
+	}
+
 	if err := db.AddLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
 		return domainError("add link", err), nil
 	}

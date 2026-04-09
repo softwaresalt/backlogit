@@ -36,7 +36,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - FTS5 full-text search across artifact titles and descriptions via the `search` command and `backlogit_search_items` MCP tool
 - Dependency tracking between artifacts with `dep add`, `dep list`, and `backlogit_get_dependencies`
 - Work queue prioritization via `backlogit queue` and `backlogit_get_queue`, with stable pagination (`ORDER BY id ASC`), orphan filtering (excludes items whose parent feature is done or archived), and a compact list mode that returns only `id`, `title`, `status`, `type`, and `parent_id` for token-efficient agent queries
-- Duplicate title detection via `backlogit_query_sql` to surface items with matching titles across different IDs — useful after migrations and manual edits
+- Duplicate title detection via `backlogit_query_sql` to surface items with matching titles across different IDs, useful after migrations and manual edits
 - Stash workflow for deferred work in `.backlogit/stash.jsonl`, including priority-tagged entries, linked deliberation artifacts, filtered or grouped fetch, and single-item or batch harvest flows for feature-set planning
 - Unified metadata discovery for agents via `backlogit metadata catalog`, `backlogit metadata export-command-map`, and matching MCP tools
 - Agent memory and checkpoint persistence through `backlogit_save_memory` and `backlogit_create_checkpoint`

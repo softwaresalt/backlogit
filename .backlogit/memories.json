@@ -1,4 +1,4 @@
-﻿{
+{
   "groom-group-g-complete": "Feature 019-F (Data Quality \u0026 Tool Efficiency) fully groomed with 7 independent tasks (019.001-T through 019.007-T). Plan reviewed (PASS with advisories). Remaining stash: 10 active entries in Groups H, I, J. Session memory at docs/memory/[20260408-124500]-groom-group-g-data-quality.md.",
   "merge approval prompt": "After fix-ci resolves all Copilot review comments and CI is green, explicitly prompt the user for merge approval with a clear \"Ready to merge -- approve?\" question. Do not wait for the user to notice the PR is clean and volunteer approval. This applies to both the fix-ci and pr-lifecycle skill workflows.",
   "ship-004-s-019-f-complete": "Shipment 004-S (019-F Data Quality \u0026 Tool Efficiency) shipped at merge commit e4b3289 (PR #13). All 7 tasks archived. 3 follow-up tasks (001-T, 002-T, 003-T) resolved in fix commit bbb9691 and marked done. Post-merge closure PR #14 (chore/ship-004-s-post-merge) carries archive renames, 3 compound learnings, and operational closure record. PR #14 CI pending as of session end. Session memory at docs/memory/[20260408-235900]-ship-019-f-post-merge-closure.md.",

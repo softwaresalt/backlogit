@@ -7,6 +7,8 @@ package mcp
 //
 //   - backlogit_add_link accepts source_id, target_id, link_type and creates a row
 //   - backlogit_add_link rejects an invalid link_type with error="validation_failed"
+//   - backlogit_add_link rejects a non-existent source_id with error="not_found"
+//   - backlogit_add_link rejects a non-existent target_id with error="not_found"
 //   - backlogit_get_links returns all links for a given item ID
 //   - backlogit_get_links with link_type filter returns only matching links
 //   - backlogit_remove_link removes the specified edge
@@ -74,6 +76,42 @@ func TestHandleAddLink_MissingSourceID_ValidationFailed(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "validation_failed", linkErrorField(t, result))
+}
+
+func TestHandleAddLink_NonExistentSourceID_NotFound(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+
+	tgt, err := core.CreateArtifact(ctx, ws, "Target", "task")
+	require.NoError(t, err)
+
+	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
+		"source_id": "DOES-NOT-EXIST",
+		"target_id": tgt.ID,
+		"link_type": "informs",
+	}))
+
+	require.NoError(t, err)
+	assert.Equal(t, "not_found", linkErrorField(t, result),
+		"non-existent source_id must surface as not_found")
+}
+
+func TestHandleAddLink_NonExistentTargetID_NotFound(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+
+	src, err := core.CreateArtifact(ctx, ws, "Source", "task")
+	require.NoError(t, err)
+
+	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
+		"source_id": src.ID,
+		"target_id": "DOES-NOT-EXIST",
+		"link_type": "informs",
+	}))
+
+	require.NoError(t, err)
+	assert.Equal(t, "not_found", linkErrorField(t, result),
+		"non-existent target_id must surface as not_found")
 }
 
 func TestHandleGetLinks_ReturnsLinks(t *testing.T) {

@@ -1,5 +1,6 @@
 ---
-title: "Atomic SQLite Rehydration — Wrap DELETE + WalkDir in a Single Transaction"
+title: "Atomic SQLite Rehydration: Wrap DELETE + WalkDir in a Single Transaction"
+description: "How to wrap SQLite rehydration (DELETE then WalkDir rebuild) in a single transaction to prevent an empty index on process crash mid-walk."
 problem_type: database_issue
 category: database_issue
 component: db_cache
