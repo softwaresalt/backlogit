@@ -26,14 +26,23 @@ func WriteJSONL(w io.Writer, entries []Entry) error {
 	return nil
 }
 
+// utf8BOM is the byte-order mark prepended by some Windows editors.
+var utf8BOM = "\xef\xbb\xbf"
+
 // ReadJSONL deserializes stash entries from a JSONL reader.
 // Each line must be a valid JSON object representing one Entry.
-// Empty lines are skipped. Returns an error on malformed JSON.
+// Empty lines are skipped. A leading UTF-8 BOM on the first line is stripped.
+// Returns an error on malformed JSON.
 func ReadJSONL(r io.Reader) ([]Entry, error) {
 	var entries []Entry
 	scanner := bufio.NewScanner(r)
+	first := true
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		if first {
+			line = strings.TrimPrefix(line, utf8BOM)
+			first = false
+		}
 		if line == "" {
 			continue
 		}
