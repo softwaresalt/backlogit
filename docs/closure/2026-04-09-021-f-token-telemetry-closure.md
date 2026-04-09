@@ -1,5 +1,5 @@
 ---
-title: "021-F Token Telemetry Harvest — Post-Merge Closure"
+title: "021-F Token Telemetry Harvest: Post-Merge Closure"
 description: "Operational closure record for shipment 009-S, PR #15, merge commit 2c5f4df"
 ms.date: 2026-04-09
 ms.topic: reference
@@ -9,7 +9,7 @@ ms.topic: reference
 
 | Field | Value |
 |---|---|
-| Feature | 021-F — Token Telemetry Harvest |
+| Feature | 021-F: Token Telemetry Harvest |
 | Shipment | 009-S |
 | PR | [#15](https://github.com/softwaresalt/backlogit/pull/15) |
 | Merge commit | `2c5f4dfc923c8cf8d8b03d78b5408ee7702e36e1` |
@@ -27,12 +27,12 @@ on both Go 1.23 and 1.24.
 
 | Task | Title | Package(s) |
 |---|---|---|
-| 021.001-T | CopilotCLIParser — streaming log line parser | `internal/telemetry` |
-| 021.002-T | SessionMeta loader — session-state/ and session-store.db | `internal/telemetry` |
-| 021.003-T | Correlate — join events into per-session SessionSummary | `internal/telemetry` |
-| 021.004-T | AttributeTool — prefix-based MCP server attribution | `internal/telemetry` |
-| 021.005-T | HarvestTelemetry — top-level orchestrator | `internal/telemetry` |
-| 021.006-T | EnsureTelemetrySchema + RehydrateTelemetry — SQLite tables | `internal/db` |
+| 021.001-T | CopilotCLIParser: streaming log line parser | `internal/telemetry` |
+| 021.002-T | SessionMeta loader: session-state/ and session-store.db | `internal/telemetry` |
+| 021.003-T | Correlate: join events into per-session SessionSummary | `internal/telemetry` |
+| 021.004-T | AttributeTool: prefix-based MCP server attribution | `internal/telemetry` |
+| 021.005-T | HarvestTelemetry: top-level orchestrator | `internal/telemetry` |
+| 021.006-T | EnsureTelemetrySchema + RehydrateTelemetry: SQLite tables | `internal/db` |
 | 021.007-T | CLI: `backlogit telemetry harvest` | `internal/cli` |
 | 021.008-T | MCP: `backlogit_telemetry_harvest` tool | `internal/mcp` |
 
@@ -72,13 +72,12 @@ the already-built `toolStats` map in a single O(T) pass rather than a nested O(S
 loop over all events per session.
 
 **Field rename:** `TokensByServer` → `ToolCallsByServer` / `tool_calls_by_server`
-throughout `SessionSummaryRecord` and `rawTelemetryRecord` — the field stores call
+throughout `SessionSummaryRecord` and `rawTelemetryRecord`: the field stores call
 counts, not token sums.
 
 ## New Telemetry Architecture
 
-```
-.copilot/logs/*.log
+```text
     ↓ CopilotCLIParser (streaming, 1MB buffer)
 []TelemetryEvent
     ↓ Correlate() + loadCompletedTasks (.backlogit/logs/*.jsonl)
@@ -106,15 +105,15 @@ Agent queries
 
 ### Failure signals
 
-* `backlogit telemetry harvest` exits non-zero or returns `ErrTelemetrySourceMissing`
-  — `.copilot/logs/` does not exist or is empty.
-* `telemetry_sessions` has zero rows after a harvest that reported `sessions_harvested > 0`
-  — RehydrateTelemetry transaction failed silently (check `slog.Warn` output).
-* `tokens_per_task` is always null — `loadCompletedTasks` found no `done` events;
+* `backlogit telemetry harvest` exits non-zero or returns `ErrTelemetrySourceMissing`:
+  `.copilot/logs/` does not exist or is empty.
+* `telemetry_sessions` has zero rows after a harvest that reported `sessions_harvested > 0`:
+  RehydrateTelemetry transaction failed silently (check `slog.Warn` output).
+* `tokens_per_task` is always null: `loadCompletedTasks` found no `done` events;
   verify `.backlogit/logs/*.jsonl` contains `status_changed` events.
-* `.backlogit/telemetry-sessions.jsonl.tmp` exists — a prior harvest crashed mid-write;
+* `.backlogit/telemetry-sessions.jsonl.tmp` exists, indicating a prior harvest crashed mid-write;
   safe to delete, the `tmp` file is stale.
-* Scanner errors in `RehydrateTelemetry` logs — a JSONL line exceeds 1MB; investigate
+* Scanner errors in `RehydrateTelemetry` logs: a JSONL line exceeds 1MB; investigate
   anomalous `completed_tasks` array sizes.
 
 ## Rollback Plan
@@ -132,7 +131,7 @@ artifacts, queue state, or core CQRS paths.
 2. Delete `.backlogit/telemetry-sessions.jsonl` if present
 3. Run `backlogit sync` to rebuild `index.db` (telemetry tables will not exist)
 4. The `telemetry_sessions` and `telemetry_tool_usage` tables are created lazily
-   on first harvest — their absence does not affect any other backlogit operation
+   on first harvest; their absence does not affect any other backlogit operation
 
 **Risk level:** Low. Telemetry is purely additive. No existing command, MCP tool,
 or data file is modified by the harvest pipeline.
@@ -144,7 +143,7 @@ These items are stashed or identified as natural next steps:
 | Item | Description | Priority |
 |---|---|---|
 | Incremental harvest | Currently full re-harvest on every run (Plan Review F2 deferral) | medium |
-| Session-scoped task completion | `completedTasks` is workspace-scoped, not session-scoped (intentional per plan D5 — revisit if per-session attribution is needed) | low |
+| Session-scoped task completion | `completedTasks` is workspace-scoped, not session-scoped (intentional per plan D5; revisit if per-session attribution is needed) | low |
 | Telemetry query examples | Add sample `backlogit_query_sql` patterns for token spend analysis to docs | low |
 
 ## Validation Window
