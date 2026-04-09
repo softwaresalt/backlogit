@@ -6,7 +6,7 @@ maturity: stable
 model: Claude Opus 4.6
 ---
 
-> **⚠️ DEPRECATED (F015):** The backlog-harvester agent is superseded by the [Groomer agent](.github/agents/groomer.agent.md) which uses the modular harvest skill. The backlog-harvester remains functional but points to legacy control flow. Prefer the Groomer agent for new work.
+> **⚠️ DEPRECATED (F015):** The backlog-harvester agent is superseded by the [Stage agent](.github/agents/stage.agent.md) which uses the modular harvest skill. The backlog-harvester remains functional but points to legacy control flow. Prefer the Stage agent for new work.
 
 # Backlog Harvester
 

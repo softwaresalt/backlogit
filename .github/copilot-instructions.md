@@ -22,15 +22,15 @@ reads, and JSONL preserves append-only history.
 
 The repository now uses a two-agent path:
 
-* `Groomer` owns `STASH -> BACKLOG`. It triages stash entries, routes
+* `Stage` owns `STASH -> BACKLOG`. It triages stash entries, routes
   deliberation and plan review, and harvests shipment-aware backlog.
-* `Shipper` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
+* `Ship` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
   build, review, CI remediation, and pull request flow until the user approves
   merge.
 
 Lifecycle summary: `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`
 
-Read `.github/agents/groomer.agent.md`, `.github/agents/shipper.agent.md`, and
+Read `.github/agents/stage.agent.md`, `.github/agents/ship.agent.md`, and
 `docs/workflow.md` for the durable workflow map.
 
 ## Technology Stack
@@ -56,8 +56,8 @@ its own operational backlog.
 
 | Agent | Purpose |
 |---|---|
-| `groomer` | Primary stash-to-backlog orchestrator |
-| `shipper` | Primary backlog-to-shipped orchestrator |
+| `stage` | Primary stash-to-backlog orchestrator |
+| `ship` | Primary backlog-to-shipped orchestrator |
 
 ### Supporting agents
 
@@ -74,13 +74,13 @@ the default Copilot agent picker.
 
 | Agent | Superseded by |
 |---|---|
-| `backlog-harvester` | `groomer` + `harvest` skill |
-| `build-orchestrator` | `shipper` + `build-feature` skill |
-| `deliberator` | `groomer` + `deliberate` / `spike` skills |
-| `doc-ops` | `shipper` post-merge closure protocol |
-| `harness-architect` | `shipper` + `harness-architect` skill |
-| `memory` | Groomer and Shipper session continuity protocols |
-| `pr-review` | `shipper` + `pr-lifecycle` skill |
+| `backlog-harvester` | `stage` + `harvest` skill |
+| `build-orchestrator` | `ship` + `build-feature` skill |
+| `deliberator` | `stage` + `deliberate` / `spike` skills |
+| `doc-ops` | `ship` post-merge closure protocol |
+| `harness-architect` | `ship` + `harness-architect` skill |
+| `memory` | Stage and Ship session continuity protocols |
+| `pr-review` | `ship` + `pr-lifecycle` skill |
 
 ### Core skills
 

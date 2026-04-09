@@ -28,15 +28,15 @@ The lifecycle has six stages:
 ## Primary repository workflow
 
 This repository now uses a two-agent delivery path with progressive disclosure.
-`Groomer` owns the intake path from stash to reviewed backlog, and `Shipper`
+`Stage` owns the intake path from stash to reviewed backlog, and `Ship`
 owns shipment execution from ready backlog to shipped pull request state. The
 durable lifecycle is `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`.
 
 Use the agent files for operational detail:
 
-* [Groomer](../.github/agents/groomer.agent.md): stash triage, deliberation,
+* [Stage](../.github/agents/stage.agent.md): stash triage, deliberation,
   planning, review gating, and harvest
-* [Shipper](../.github/agents/shipper.agent.md): shipment claim, harness,
+* [Ship](../.github/agents/ship.agent.md): shipment claim, harness,
   implementation, review, CI remediation, release cleanup, and pull request flow
 
 Shipment is a first-class artifact. Use shipment-aware MCP tools to create,

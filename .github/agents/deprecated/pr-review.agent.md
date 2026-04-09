@@ -3,7 +3,7 @@ description: "Pull Request lifecycle manager. Handles diff analysis, delegates c
 model: Claude Sonnet 4.6
 ---
 
-> **⚠️ DEPRECATED (F015):** The pr-review agent is superseded by the [Shipper agent](.github/agents/shipper.agent.md) which uses the modular pr-lifecycle skill. The agent remains functional but points to legacy control flow. Prefer the Shipper agent for new work.
+> **⚠️ DEPRECATED (F015):** The pr-review agent is superseded by the [Ship agent](../ship.agent.md) which uses the modular pr-lifecycle skill. The agent remains functional but points to legacy control flow. Prefer the Ship agent for new work.
 
 # PR Review Assistant
 

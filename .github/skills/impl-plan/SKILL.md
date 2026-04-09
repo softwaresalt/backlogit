@@ -13,7 +13,7 @@ input:
 
 # Create Implementation Plan
 
-The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `harvest` skill decomposes the reviewed plan into backlogit work items for the Groomer workflow.
+The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `harvest` skill decomposes the reviewed plan into backlogit work items for the Stage workflow.
 
 This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
 
@@ -210,7 +210,7 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 1. Confirm the plan file was written to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
 2. Return the plan file path to the caller.
 
-When invoked standalone (not as a subagent of Groomer), present next steps:
+When invoked standalone (not as a subagent of Stage), present next steps:
 
 1. "Run harvest to decompose this reviewed plan into backlogit feature, task, and subtask items" (Recommended)
 2. "Run plan-review to validate this plan with multi-persona review first"

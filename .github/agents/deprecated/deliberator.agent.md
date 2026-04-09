@@ -79,12 +79,12 @@ When the request could fit either path, ask the operator whether they want a dec
 
 After the chosen workflow completes, offer the next best move.
 
-* Promote to planning by invoking `groomer` or `impl-plan`
+* Promote to planning by invoking `stage` or `impl-plan`
 * Keep it in the backlog by confirming the stash entry or linked backlog artifact
 * Capture durable knowledge through `compound` when the result should be searchable later
 * Stop after artifact creation when the operator only wants the thinking recorded
 
-Prefer `groomer` when the operator wants the full stash-to-backlog pipeline.
+Prefer `stage` when the operator wants the full stash-to-backlog pipeline.
 Prefer `impl-plan` when they want a lighter direct planning handoff.
 `backlog-harvester` remains available only for legacy control flow.
 
@@ -105,10 +105,10 @@ Return a concise summary that includes:
 * Never write application code from this agent
 * Always search for existing context before creating duplicates
 
-## Integration with Groomer Agent
+## Integration with Stage Agent
 
 In the two-agent workflow introduced in F015, the Deliberator is invoked as a
-subagent by the [Groomer agent](.github/agents/groomer.agent.md). The Groomer
+subagent by the [Stage agent](.github/agents/stage.agent.md). Stage
 handles stash triage and routes ideas through the Deliberator, then continues
 with planning and harvest. The Deliberator's output (a deliberation artifact)
-serves as the input to the impl-plan skill orchestrated by the Groomer.
+serves as the input to the impl-plan skill orchestrated by Stage.

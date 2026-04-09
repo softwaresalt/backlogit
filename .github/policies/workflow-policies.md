@@ -11,26 +11,26 @@ This registry defines the cross-agent policies that keep the backlogit harness p
 
 ## Primary workflow
 
-The primary repository path is now `Groomer -> Shipper` across the lifecycle
+The primary repository path is now `Stage -> Ship` across the lifecycle
 `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`.
 
-* `Groomer` owns stash triage, deliberation, planning, review gating, and
+* `Stage` owns stash triage, deliberation, planning, review gating, and
   harvest into backlog.
-* `Shipper` owns shipment claim, harness generation, implementation, review, CI
+* `Ship` owns shipment claim, harness generation, implementation, review, CI
   remediation, pull request readiness, and release closure.
 
 Legacy agents remain governed when explicitly invoked, but these policies should
-be read through the Groomer and Shipper path first.
+be read through the Stage and Ship path first.
 
 ## P-001: Single-feature completion
 
 | Field      | Value                |
 |------------|----------------------|
 | Policy ID  | P-001                |
-| Applies To | `shipper` |
+| Applies To | `ship` |
 | Gate Point | Pre-flight           |
 
-**Statement**: The Shipper should finish one shipment through a stable handoff before starting work on a different shipment.
+**Statement**: Ship should finish one shipment through a stable handoff before starting work on a different shipment.
 
 **Precondition**: No other shipment with status `active` exists unless the operator explicitly overrides the policy.
 
@@ -43,10 +43,10 @@ be read through the Groomer and Shipper path first.
 | Field      | Value                             |
 |------------|-----------------------------------|
 | Policy ID  | P-002                             |
-| Applies To | `shipper`, `harness-architect` |
+| Applies To | `ship`, `harness-architect` |
 | Gate Point | Queue build and task claim        |
 
-**Statement**: The Shipper may only advance shipment work after the harness architect confirmed a compilable red phase.
+**Statement**: Ship may only advance shipment work after the harness architect confirmed a compilable red phase.
 
 **Precondition**: The task carries the `harness-ready` label.
 
@@ -59,7 +59,7 @@ be read through the Groomer and Shipper path first.
 | Field      | Value               |
 |------------|---------------------|
 | Policy ID  | P-003               |
-| Applies To | `groomer`, `harvest` |
+| Applies To | `stage`, `harvest` |
 | Gate Point | Pre-harvest         |
 
 **Statement**: Every decomposition stage must reference its source and parent context before creating backlog items.
