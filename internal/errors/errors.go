@@ -23,6 +23,10 @@ var (
 
 	// Link sentinel errors (F018 / T001).
 	ErrInvalidLinkType = errors.New("backlogit: invalid link type")
+
+	// Telemetry sentinel errors (021-F).
+	ErrTelemetrySourceMissing = errors.New("backlogit: telemetry source missing")
+	ErrTelemetryParseFailed   = errors.New("backlogit: telemetry parse failed")
 )
 
 // ConfigError wraps a configuration failure with field context.
