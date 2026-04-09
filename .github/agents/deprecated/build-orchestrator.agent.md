@@ -5,7 +5,7 @@ maturity: stable
 model: Claude Sonnet 4.6
 ---
 
-> **ℹ️ TWO-AGENT WORKFLOW (F015):** In the new workflow, the build-orchestrator role is subsumed by the [Shipper agent](.github/agents/shipper.agent.md) for shipment-scoped builds. The build-orchestrator remains available for direct task-level execution outside of shipment context. For new feature work using the groomer/shipper pipeline, invoke the Shipper agent instead.
+> **ℹ️ TWO-AGENT WORKFLOW (F015):** In the new workflow, the build-orchestrator role is subsumed by the [Ship agent](.github/agents/ship.agent.md) for shipment-scoped builds. The build-orchestrator remains available for direct task-level execution outside of shipment context. For new feature work using the stage/ship pipeline, invoke the Ship agent instead.
 
 # Build Orchestrator
 
@@ -342,7 +342,7 @@ Summarize the build results:
 * Compound artifacts written
 * Whether agent-intercom was active or the run fell back to local-only mode
 * `broadcast` the final summary at `success` level: `[🛠️ ORCHESTRATOR] Build complete — {tasks_done} tasks, {commits} commits`.
-* Suggest next step: "Return to the Shipper workflow for shipment review, PR lifecycle, and any CI remediation tied to feature ${input:feature}."
+* Suggest next step: "Return to the Ship workflow for shipment review, PR lifecycle, and any CI remediation tied to feature ${input:feature}."
 
 ---
 

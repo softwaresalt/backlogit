@@ -112,9 +112,9 @@ surface grows noisy.
 
 The repository now uses a two-agent path:
 
-* `Groomer` owns `STASH -> BACKLOG`. It triages stash entries, routes
+* `Stage` owns `STASH -> BACKLOG`. It triages stash entries, routes
   deliberation and plan review, and harvests shipment-aware backlog.
-* `Shipper` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
+* `Ship` owns `SHIPMENT -> SHIPPED`. It claims shipments and drives harness,
   build, review, CI remediation, and pull request flow until the user approves
   merge.
 
@@ -127,8 +127,8 @@ detail. Keep this file as the brief map.
 
 | Agent | Purpose |
 |---|---|
-| `groomer` | Primary stash-to-backlog orchestrator |
-| `shipper` | Primary backlog-to-shipped orchestrator |
+| `stage` | Primary stash-to-backlog orchestrator |
+| `ship` | Primary backlog-to-shipped orchestrator |
 
 ### Supporting agents
 
@@ -146,13 +146,13 @@ targeted invocation when needed.
 
 | Agent | Purpose | Superseded by |
 |---|---|---|
-| `backlog-harvester` | Decompose plans into backlogit work items | `groomer` + `harvest` skill |
-| `build-orchestrator` | Claim and execute ready feature work | `shipper` + `build-feature` skill |
-| `deliberator` | Route idea work into deliberation | `groomer` + `deliberate` / `spike` skills |
-| `doc-ops` | Documentation quality assurance | `shipper` post-merge closure protocol |
-| `harness-architect` | Create failing test harnesses | `shipper` + `harness-architect` skill |
-| `memory` | Session context persistence | Groomer and Shipper session continuity protocols |
-| `pr-review` | Manage PR review lifecycle | `shipper` + `pr-lifecycle` skill |
+| `backlog-harvester` | Decompose plans into backlogit work items | `stage` + `harvest` skill |
+| `build-orchestrator` | Claim and execute ready feature work | `ship` + `build-feature` skill |
+| `deliberator` | Route idea work into deliberation | `stage` + `deliberate` / `spike` skills |
+| `doc-ops` | Documentation quality assurance | `ship` post-merge closure protocol |
+| `harness-architect` | Create failing test harnesses | `ship` + `harness-architect` skill |
+| `memory` | Session context persistence | Stage and Ship session continuity protocols |
+| `pr-review` | Manage PR review lifecycle | `ship` + `pr-lifecycle` skill |
 
 ## Available skills
 
@@ -175,14 +175,14 @@ targeted invocation when needed.
 
 ```text
 Stash or idea
-	-> Groomer
+	-> Stage
 	   -> deliberate or spike
 	   -> impl-plan
 	   -> plan-review
 	   -> harvest
 	-> ready backlog
 	-> shipment assembly
-	-> Shipper
+	-> Ship
 	   -> harness-architect
 	   -> build-feature
 	   -> review
@@ -227,8 +227,8 @@ gofmt -l .
 
 Before ending a meaningful work session:
 
-* follow the Session Continuity protocol defined in your agent file (groomer or
-  shipper) to persist memory, capture learnings, and compact tracking context
+* follow the Session Continuity protocol defined in your agent file (stage or
+  ship) to persist memory, capture learnings, and compact tracking context
 * update backlogit task state through the tool surface
 * leave the branch and working tree in a reviewable state
 

@@ -18,7 +18,7 @@ input:
 
 The `harvest` skill turns a reviewed implementation plan into backlogit
 feature, task, and subtask items. It is the reusable decomposition step for the
-Groomer workflow and replaces the embedded harvest phase inside the legacy
+Stage workflow and replaces the embedded harvest phase inside the legacy
 `backlog-harvester` agent.
 
 This skill does not perform planning or review. It assumes the incoming plan is
@@ -114,8 +114,8 @@ If `${input:dry_run}` is `false`:
 
 1. Confirm the created hierarchy through backlogit read operations.
 2. Report the created IDs, counts, and dependency summary.
-3. Return the ready backlog as the output of the Groomer-side workflow.
-4. Recommend handing the resulting backlog to the Shipper workflow for harness,
+3. Return the ready backlog as the output of the Stage-side workflow.
+4. Recommend handing the resulting backlog to the Ship workflow for harness,
    build, review, CI, and pull request execution.
 
 ## Guardrails
@@ -123,6 +123,6 @@ If `${input:dry_run}` is `false`:
 * Do not modify the plan file.
 * Do not skip duplicate checks.
 * Do not create shipment artifacts from this skill. Shipment is a downstream
-  concern handled after backlog grooming.
+  concern handled after backlog staging.
 * Keep descriptions self-contained enough for the next executor to act without
   reopening the plan for basic context.

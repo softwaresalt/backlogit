@@ -85,7 +85,7 @@ An agent running inside Claude Code, GitHub Copilot CLI, or Cursor can query the
 
 F015 simplified the repository harness to a two-agent path so future sessions do
 not have to reconstruct a larger top-level topology from scattered legacy docs.
-`Groomer` owns `STASH -> BACKLOG`, and `Shipper` owns `SHIPMENT -> SHIPPED`.
+`Stage` owns `STASH -> BACKLOG`, and `Ship` owns `SHIPMENT -> SHIPPED`.
 
 The older `backlog-harvester`, `build-orchestrator`, and `pr-review` surfaces
 still exist as reusable migration or support tooling, but they are no longer the

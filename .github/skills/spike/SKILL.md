@@ -66,7 +66,7 @@ Also rate confidence as `high`, `medium`, or `low`.
 
 ### Phase 5: Route the outcome
 
-When `promote_to` includes `plan`, invoke `impl-plan` with the spike artifact as source context. If the operator wants backlog creation after review, route the resulting plan through `harvest` or the Groomer workflow.
+When `promote_to` includes `plan`, invoke `impl-plan` with the spike artifact as source context. If the operator wants backlog creation after review, route the resulting plan through `harvest` or the Stage workflow.
 
 When `promote_to` includes `queue`, record the follow-up in `.backlogit/stash.jsonl` using a concise stash entry that references the spike artifact path.
 
