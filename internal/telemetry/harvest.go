@@ -24,7 +24,7 @@ type HarvestResult struct {
 // HarvestTelemetry is the top-level harvest orchestrator. It:
 //  1. Parses process logs from copilotPath (.copilot/logs/)
 //  2. Loads session metadata from copilotPath (.copilot/session-state/, session-store.db)
-//  3. Correlates events with backlogit task completions via workspacePath/.backlogit/events.jsonl
+//  3. Correlates events with backlogit task completions via per-item logs in workspacePath/.backlogit/logs/
 //  4. Attributes tool calls to MCP servers via the attribution registry
 //  5. Writes typed records to workspacePath/.backlogit/telemetry-sessions.jsonl
 //  6. Triggers RehydrateTelemetry to rebuild SQLite telemetry tables
@@ -69,10 +69,19 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		toolStats[key] = s
 	}
 
+	// Derive per-session server call counts from toolStats (O(T), not O(S×E)).
+	serverCallsPerSession := make(map[string]map[string]int)
+	for key, stat := range toolStats {
+		if serverCallsPerSession[key.sessionID] == nil {
+			serverCallsPerSession[key.sessionID] = make(map[string]int)
+		}
+		serverCallsPerSession[key.sessionID][key.serverName] += stat.count
+	}
+
 	// Write typed records to telemetry-sessions.jsonl.
 	harvestedAt := time.Now().UTC()
 	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
-	if err := writeTelemetryJSONL(jsonlPath, summaries, toolStats, events, harvestedAt); err != nil {
+	if err := writeTelemetryJSONL(jsonlPath, summaries, toolStats, serverCallsPerSession, harvestedAt); err != nil {
 		return HarvestResult{}, fmt.Errorf("write telemetry-sessions.jsonl: %w", err)
 	}
 
@@ -169,55 +178,45 @@ type toolKey struct {
 type toolStat struct{ count, durMs int }
 
 // writeTelemetryJSONL writes session summary and tool usage records to the JSONL file.
+// Uses a temp-file-then-rename atomic write to prevent a corrupt file on crash.
 func writeTelemetryJSONL(
 	jsonlPath string,
 	summaries []SessionSummary,
 	toolStats map[toolKey]toolStat,
-	events []TelemetryEvent,
+	serverCallsPerSession map[string]map[string]int,
 	harvestedAt time.Time,
-) (retErr error) {
-	f, err := os.Create(jsonlPath)
+) error {
+	tmpPath := jsonlPath + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", jsonlPath, err)
+		return fmt.Errorf("create temp %s: %w", tmpPath, err)
 	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && retErr == nil {
-			retErr = fmt.Errorf("close %s: %w", jsonlPath, closeErr)
-		}
-	}()
 
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 
 	for _, s := range summaries {
-		// Compute server → call count for the session summary record.
-		serverCalls := make(map[string]int)
-		for _, e := range events {
-			if e.Kind == EventKindToolCall && e.ToolCall != nil &&
-				e.ToolCall.SessionID == s.SessionID {
-				server := AttributeTool(e.ToolCall.ToolName)
-				serverCalls[server]++
-			}
-		}
 		rec := SessionSummaryRecord{
-			RecordType:       "session_summary",
-			HarvestedAt:      harvestedAt,
-			SessionID:        s.SessionID,
-			Branch:           s.Branch,
-			Repository:       s.Repository,
-			TotalTokens:      s.TotalTokens,
-			PromptTokens:     s.PromptTokens,
-			CompletionTokens: s.CompletionTokens,
-			CachedTokens:     s.CachedTokens,
-			ModelCalls:       s.ModelCalls,
-			ToolCalls:        s.ToolCalls,
-			TokensByModel:    s.TokensByModel,
-			TokensByServer:   serverCalls,
-			CompletedTasks:   s.CompletedTasks,
-			TokensPerTask:    s.TokensPerTask,
-			CompactionCount:  len(s.CompactionEvents),
+			RecordType:        "session_summary",
+			HarvestedAt:       harvestedAt,
+			SessionID:         s.SessionID,
+			Branch:            s.Branch,
+			Repository:        s.Repository,
+			TotalTokens:       s.TotalTokens,
+			PromptTokens:      s.PromptTokens,
+			CompletionTokens:  s.CompletionTokens,
+			CachedTokens:      s.CachedTokens,
+			ModelCalls:        s.ModelCalls,
+			ToolCalls:         s.ToolCalls,
+			TokensByModel:     s.TokensByModel,
+			ToolCallsByServer: serverCallsPerSession[s.SessionID],
+			CompletedTasks:    s.CompletedTasks,
+			TokensPerTask:     s.TokensPerTask,
+			CompactionCount:   len(s.CompactionEvents),
 		}
 		if err := enc.Encode(rec); err != nil {
+			f.Close()
+			os.Remove(tmpPath)
 			return fmt.Errorf("encode session summary %q: %w", s.SessionID, err)
 		}
 	}
@@ -233,8 +232,19 @@ func writeTelemetryJSONL(
 			TotalDurMs:  stat.durMs,
 		}
 		if err := enc.Encode(rec); err != nil {
+			f.Close()
+			os.Remove(tmpPath)
 			return fmt.Errorf("encode tool usage %q/%q: %w", key.sessionID, key.toolName, err)
 		}
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close %s: %w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, jsonlPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("commit %s: %w", jsonlPath, err)
 	}
 	return nil
 }

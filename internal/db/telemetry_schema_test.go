@@ -99,7 +99,7 @@ func TestTelemetryTablesQueryableViaGate(t *testing.T) {
 // writeSampleTelemetryJSONL writes a minimal telemetry-sessions.jsonl fixture.
 func writeSampleTelemetryJSONL(t *testing.T, backlogitDir string) {
 	t.Helper()
-	content := `{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","branch":"main","repository":"test/repo","total_tokens":1500,"prompt_tokens":1000,"completion_tokens":500,"cached_tokens":200,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-sonnet-4":1500},"tokens_by_server":{"backlogit":1500},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}
+	content := `{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","branch":"main","repository":"test/repo","total_tokens":1500,"prompt_tokens":1000,"completion_tokens":500,"cached_tokens":200,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-sonnet-4":1500},"tool_calls_by_server":{"backlogit":2},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}
 {"record_type":"tool_usage","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","server_name":"backlogit","tool_name":"backlogit_create_item","call_count":1,"total_duration_ms":45}
 {"record_type":"tool_usage","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","server_name":"engram","tool_name":"engram-query_memory","call_count":1,"total_duration_ms":30}
 `

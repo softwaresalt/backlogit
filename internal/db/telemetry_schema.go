@@ -14,22 +14,22 @@ import (
 
 // rawTelemetryRecord is the union type for decoding mixed telemetry JSONL.
 type rawTelemetryRecord struct {
-	RecordType       string         `json:"record_type"`
-	HarvestedAt      time.Time      `json:"harvested_at"`
-	SessionID        string         `json:"session_id"`
-	Branch           string         `json:"branch"`
-	Repository       string         `json:"repository"`
-	TotalTokens      int            `json:"total_tokens"`
-	PromptTokens     int            `json:"prompt_tokens"`
-	CompletionTokens int            `json:"completion_tokens"`
-	CachedTokens     int            `json:"cached_tokens"`
-	ModelCalls       int            `json:"model_calls"`
-	ToolCalls        int            `json:"tool_calls"`
-	TokensPerTask    *float64       `json:"tokens_per_task"`
-	CompactionCount  int            `json:"compaction_count"`
-	CompletedTasks   []string       `json:"completed_tasks"`
-	TokensByModel    map[string]int `json:"tokens_by_model"`
-	TokensByServer   map[string]int `json:"tokens_by_server"`
+	RecordType        string         `json:"record_type"`
+	HarvestedAt       time.Time      `json:"harvested_at"`
+	SessionID         string         `json:"session_id"`
+	Branch            string         `json:"branch"`
+	Repository        string         `json:"repository"`
+	TotalTokens       int            `json:"total_tokens"`
+	PromptTokens      int            `json:"prompt_tokens"`
+	CompletionTokens  int            `json:"completion_tokens"`
+	CachedTokens      int            `json:"cached_tokens"`
+	ModelCalls        int            `json:"model_calls"`
+	ToolCalls         int            `json:"tool_calls"`
+	TokensPerTask     *float64       `json:"tokens_per_task"`
+	CompactionCount   int            `json:"compaction_count"`
+	CompletedTasks    []string       `json:"completed_tasks"`
+	TokensByModel     map[string]int `json:"tokens_by_model"`
+	ToolCallsByServer map[string]int `json:"tool_calls_by_server"`
 	// tool_usage fields
 	ServerName string `json:"server_name"`
 	ToolName   string `json:"tool_name"`
@@ -115,6 +115,7 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 	}
 
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
