@@ -252,6 +252,9 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	// the new artifact immediately without requiring an explicit rehydration.
 	if ws.DB != nil {
 		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			// Remove the file we just wrote so we don't leave an orphaned artifact
+			// on disk that cannot be found via the DB index.
+			os.Remove(filePath)
 			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
 		}
 	}
@@ -386,21 +389,20 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
-	// Persist to SQLite so that any query-based caller (e.g. CheckChildrenTerminal)
-	// sees the updated state without requiring a full rehydration cycle.
-	if ws.DB != nil {
-		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-			return nil, fmt.Errorf("upsert item %s: %w", id, upsertErr)
-		}
-	}
-
-	// Write the updated artifact to its current disk location so that the
-	// on-disk state stays in sync with SQLite. Callers that need file relocation
-	// (e.g. CLI move, MCP handleMoveItem) write again after calling this function;
-	// the double-write is idempotent and harmless.
+	// Write to disk first so Markdown remains the source of truth. If the upsert
+	// below fails, the file already reflects the update and a subsequent
+	// rehydration will re-sync the cache.
 	if filePath, pathErr := FindArtifactPath(ctx, ws, id); pathErr == nil {
 		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
 			return nil, fmt.Errorf("write artifact file %s: %w", id, writeErr)
+		}
+	}
+
+	// Persist to SQLite so that query-based callers (e.g. CheckChildrenTerminal)
+	// see the updated state without requiring a full rehydration cycle.
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			return nil, fmt.Errorf("upsert item %s: %w", id, upsertErr)
 		}
 	}
 
