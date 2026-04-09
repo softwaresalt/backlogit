@@ -436,16 +436,6 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	if err != nil {
 		return InternalError(fmt.Sprintf("move item: %v", err)), nil
 	}
-	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
-	if err != nil {
-		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
-	}
-	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
-		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
-	}
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
-	}
 	return toolResultJSON(artifact)
 }
 
@@ -571,9 +561,6 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 		}
 	}
 
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
-	}
 	return toolResultJSON(artifact)
 }
 
@@ -602,21 +589,13 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	if err != nil {
 		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
 	}
-	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
-	if err != nil {
-		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
-	}
-	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
-		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
-	}
-	// Write section content when sections are provided.
+	// Write section content when provided. UpdateArtifact already wrote the
+	// frontmatter file and upserted the DB index; sections are markdown body
+	// only and do not require a follow-up upsert.
 	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
 		}
-	}
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }
