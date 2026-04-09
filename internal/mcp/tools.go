@@ -15,9 +15,11 @@ import (
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/db"
+	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/events"
 	"github.com/backlogit/backlogit/internal/models"
 	"github.com/backlogit/backlogit/internal/parser"
+	"github.com/backlogit/backlogit/internal/telemetry"
 )
 
 // RegisterTools adds all backlogit tools to the MCP server.
@@ -356,6 +358,13 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("link_type", mcplib.Required(), mcplib.Description("Link type to remove")),
 		),
 		s.handleRemoveLink,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_telemetry_harvest",
+			mcplib.WithDescription("Parse Copilot CLI logs, correlate token usage by session and tool, write telemetry-sessions.jsonl, and rehydrate telemetry tables"),
+			mcplib.WithString("copilot_path", mcplib.Description("Path to the .copilot directory (defaults to auto-detect)")),
+		),
+		s.handleTelemetryHarvest,
 	)
 }
 
@@ -1295,4 +1304,34 @@ func (s *Server) handleAdoptItem(ctx context.Context, request mcplib.CallToolReq
 		return domainError("adopt item", err), nil
 	}
 	return toolResultJSON(result)
+}
+
+// handleTelemetryHarvest implements the backlogit_telemetry_harvest MCP tool.
+// It parses Copilot CLI process logs and session events, correlates them into
+// per-session summaries, writes telemetry-sessions.jsonl, and rehydrates the
+// telemetry tables in the SQLite index.
+func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+
+	copilotPath, _ := request.Params.Arguments["copilot_path"].(string)
+	if copilotPath == "" {
+		copilotPath = filepath.Join(ws.RootPath, ".copilot")
+	}
+
+	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB)
+	if err != nil {
+		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
+			return InternalError(fmt.Sprintf("telemetry source missing: %v", err)), nil
+		}
+		return InternalError(fmt.Sprintf("harvest telemetry: %v", err)), nil
+	}
+
+	return toolResultJSON(map[string]any{
+		"sessions_harvested": hr.SessionsHarvested,
+		"tool_calls_indexed": hr.ToolCallsIndexed,
+		"total_tokens":       hr.TotalTokens,
+	})
 }
