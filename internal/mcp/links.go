@@ -2,9 +2,7 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -34,10 +32,7 @@ func (s *Server) handleAddLink(ctx context.Context, request mcplib.CallToolReque
 	}
 
 	if err := db.AddLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		if strings.Contains(err.Error(), "invalid link_type") {
-			return ValidationFailed(err.Error()), nil
-		}
-		return InternalError(fmt.Sprintf("add link: %v", err)), nil
+		return domainError("add link", err), nil
 	}
 
 	resp := map[string]string{
@@ -45,8 +40,7 @@ func (s *Server) handleAddLink(ctx context.Context, request mcplib.CallToolReque
 		"target_id": targetID,
 		"link_type": linkType,
 	}
-	data, _ := json.Marshal(resp)
-	return mcplib.NewToolResultText(string(data)), nil
+	return toolResultJSON(resp)
 }
 
 // handleGetLinks is the MCP handler for backlogit_get_links.
@@ -86,8 +80,7 @@ func (s *Server) handleGetLinks(ctx context.Context, request mcplib.CallToolRequ
 		"id":    id,
 		"links": edges,
 	}
-	data, _ := json.Marshal(resp)
-	return mcplib.NewToolResultText(string(data)), nil
+	return toolResultJSON(resp)
 }
 
 // handleRemoveLink is the MCP handler for backlogit_remove_link.
@@ -122,6 +115,5 @@ func (s *Server) handleRemoveLink(ctx context.Context, request mcplib.CallToolRe
 		"link_type": linkType,
 		"status":    "removed",
 	}
-	data, _ := json.Marshal(resp)
-	return mcplib.NewToolResultText(string(data)), nil
+	return toolResultJSON(resp)
 }

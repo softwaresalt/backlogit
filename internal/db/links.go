@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	corerrors "github.com/backlogit/backlogit/internal/errors"
 )
 
 // LinkEdge represents a directed semantic link between two backlogit artifacts.
@@ -39,7 +41,7 @@ func isValidLinkType(lt string) bool {
 // ignored via INSERT OR IGNORE.
 func AddLink(ctx context.Context, database *sql.DB, sourceID, targetID, linkType string) error {
 	if !isValidLinkType(linkType) {
-		return fmt.Errorf("invalid link_type %q: must be one of %v", linkType, ValidLinkTypes)
+		return fmt.Errorf("%w: %q is not one of %v", corerrors.ErrInvalidLinkType, linkType, ValidLinkTypes)
 	}
 	_, err := database.ExecContext(ctx,
 		`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,

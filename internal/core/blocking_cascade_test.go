@@ -2,8 +2,8 @@ package core_test
 
 // 018.004-T: blocking downward cascade harness.
 //
-// These tests are deliberately failing because CheckChildrenTerminal panics.
-// They define the expected behaviour before the implementation is written:
+// Implementation complete. These tests validate the blocking cascade contract
+// for CheckChildrenTerminal:
 //
 //   - parent cannot move to "done" while non-terminal children exist
 //   - *ChildBlockingError contains the blocking child IDs and statuses

@@ -20,6 +20,9 @@ var (
 
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")
+
+	// Link sentinel errors (F018 / T001).
+	ErrInvalidLinkType = errors.New("backlogit: invalid link type")
 )
 
 // ConfigError wraps a configuration failure with field context.

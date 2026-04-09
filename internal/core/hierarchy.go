@@ -109,11 +109,12 @@ func NextTypedHierarchicalID(
 		err  error
 	)
 	if parentID == "" {
-		// Query ALL items of this type (not just those with NULL parent) so that
-		// ordinals stay globally unique even when an item's parent_id is changed
-		// after creation via UpdateArtifact.
+		// Restrict to root-level IDs (no dot separator) so that child IDs like
+		// "019.001-T" are not counted when computing the next root ordinal.
+		// IDs are immutable after creation, so filtering by ID structure is
+		// reliable even when parent_id changes via UpdateArtifact.
 		rows, err = db.QueryContext(ctx,
-			`SELECT id FROM items WHERE artifact_type = ?`,
+			`SELECT id FROM items WHERE artifact_type = ? AND id NOT LIKE '%.%'`,
 			artifactType,
 		)
 	} else {

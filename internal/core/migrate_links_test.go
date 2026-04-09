@@ -2,8 +2,8 @@ package core_test
 
 // 018.003-T: custom-field link migration harness.
 //
-// These tests are deliberately failing because MigrateCustomFieldLinks panics.
-// They define the expected contract before the implementation is written:
+// Implementation complete. These tests validate the contract for
+// MigrateCustomFieldLinks:
 //
 //   - linked_deliberation_id on an artifact becomes an item_links row (informs)
 //   - linked_stash_id is skipped when the stash ID is not an item ID

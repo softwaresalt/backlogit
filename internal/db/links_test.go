@@ -2,9 +2,8 @@ package db_test
 
 // 018.001-T: item_links core function harness.
 //
-// These tests are deliberately failing because the implementation stubs panic.
-// They define the expected contract for AddLink, RemoveLink, GetLinks, and
-// GetLinksByType before production code is written.
+// Implementation complete. These tests validate the contract for AddLink,
+// RemoveLink, GetLinks, and GetLinksByType.
 
 import (
 	"context"
@@ -65,7 +64,7 @@ func TestAddLink_AllValidTypes_Accepted(t *testing.T) {
 			err := db.AddLink(ctx, database, "A001", "A002", lt)
 			require.NoError(t, err, "valid link_type %q must be accepted", lt)
 			// Clean up for next sub-test.
-			_ = db.RemoveLink(ctx, database, "A001", "A002", lt)
+			require.NoError(t, db.RemoveLink(ctx, database, "A001", "A002", lt))
 		})
 	}
 }

@@ -2,9 +2,8 @@ package mcp
 
 // 018.002-T: MCP link tool harness.
 //
-// These tests are deliberately failing because handleAddLink and handleGetLinks
-// do not exist yet. They define the expected handler contract before the
-// implementation is written:
+// Implementation complete. These tests validate the handler contract for
+// backlogit_add_link, backlogit_get_links, and backlogit_remove_link:
 //
 //   - backlogit_add_link accepts source_id, target_id, link_type and creates a row
 //   - backlogit_add_link rejects an invalid link_type with error="validation_failed"

@@ -19,16 +19,16 @@ Group A for immediate processing.
 
 ## Artifacts Created
 
-| ID | Type | Title |
-|---|---|---|
-| 018-F | feature | Artifact Relationships, Links & Orphan Management |
-| 018.001-T | task | item_links DB Table and Core Functions |
-| 018.002-T | task | MCP and CLI Link Tools |
-| 018.003-T | task | Migrate Custom Fields to Item Links |
-| 018.004-T | task | Blocking Cascade Logic |
-| 018.005-T | task | MCP Tool Update for Blocking Errors |
-| 018.006-T | task | Adopt/Reparent Operation |
-| 018.007-T | task | MCP/CLI Orphan Tools and Queue Indicator |
+| ID         | Type    | Title                                                     |
+|------------|---------|-----------------------------------------------------------|
+| 018-F      | feature | Artifact Relationships, Links & Orphan Management         |
+| 018.001-T  | task    | item_links DB Table and Core Functions                    |
+| 018.002-T  | task    | MCP and CLI Link Tools                                    |
+| 018.003-T  | task    | Migrate Custom Fields to Item Links                       |
+| 018.004-T  | task    | Blocking Cascade Logic                                    |
+| 018.005-T  | task    | MCP Tool Update for Blocking Errors                       |
+| 018.006-T  | task    | Adopt/Reparent Operation                                  |
+| 018.007-T  | task    | MCP/CLI Orphan Tools and Queue Indicator                  |
 
 ## Dependencies Wired
 
@@ -45,21 +45,21 @@ Group A for immediate processing.
 
 ## Stash Entries Processed
 
-| Stash ID | Disposition |
-|---|---|
-| 6A545842 | Covered by 018.001-T through 018.003-T |
-| AA10AF37 | Covered by 018.001-T through 018.003-T |
-| 51B11D29 | Covered by 018.006-T, 018.007-T, DL002 |
-| BA3DB37B | Deferred — separate future feature |
+| Stash ID | Disposition                                        |
+|----------|----------------------------------------------------|
+| 6A545842 | Covered by 018.001-T through 018.003-T             |
+| AA10AF37 | Covered by 018.001-T through 018.003-T             |
+| 51B11D29 | Covered by 018.006-T, 018.007-T, DL002            |
+| BA3DB37B | Deferred -- separate future feature                |
 
 ## New Stash Entries Created
 
-| Stash ID | Priority | Summary |
-|---|---|---|
-| 64CFF524 | high | MCP tool pagination and projection |
-| 40BB859A | high | Orphan detection tool |
-| 0CBEE7D8 | medium | Duplicate artifact detection |
-| B9AD4DFF | medium | Rehydration ghost entry bug |
+| Stash ID | Priority | Summary                                    |
+|----------|----------|--------------------------------------------|
+| 64CFF524 | high     | MCP tool pagination and projection         |
+| 40BB859A | high     | Orphan detection tool                      |
+| 0CBEE7D8 | medium   | Duplicate artifact detection               |
+| B9AD4DFF | medium   | Rehydration ghost entry bug                |
 
 ## Deferred Groups
 
