@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -328,6 +329,9 @@ func linkedDeliberationIDs(ctx context.Context, ws *Workspace, feature *models.A
 	for _, id := range unique {
 		item, err := loadArtifact(ctx, ws, id)
 		if err != nil {
+			if errors.Is(err, blerrors.ErrNotFound) {
+				continue
+			}
 			return nil, err
 		}
 		if item.ArtifactType == "deliberation" {

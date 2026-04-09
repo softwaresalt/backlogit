@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
+	"github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/models"
 )
@@ -247,6 +248,17 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("rename artifact file: %w", err)
 	}
 
+	// Upsert to the SQLite index so that NextID and query-based callers see
+	// the new artifact immediately without requiring an explicit rehydration.
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			// Remove the file we just wrote so we don't leave an orphaned artifact
+			// on disk that cannot be found via the DB index.
+			os.Remove(filePath)
+			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
+		}
+	}
+
 	return artifact, nil
 }
 
@@ -352,6 +364,9 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if v, ok := updates["commit"].(string); ok {
 		artifact.Commit = v
 	}
+	if v, ok := updates["parent_id"].(string); ok {
+		artifact.ParentID = v
+	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
 		artifact.CustomFields = v
 	}
@@ -372,6 +387,23 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 
 	if err := artifact.Validate(); err != nil {
 		return nil, fmt.Errorf("validate artifact: %w", err)
+	}
+
+	// Write to disk first so Markdown remains the source of truth. If the upsert
+	// below fails, the file already reflects the update and a subsequent
+	// rehydration will re-sync the cache.
+	if filePath, pathErr := FindArtifactPath(ctx, ws, id); pathErr == nil {
+		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
+			return nil, fmt.Errorf("write artifact file %s: %w", id, writeErr)
+		}
+	}
+
+	// Persist to SQLite so that query-based callers (e.g. CheckChildrenTerminal)
+	// see the updated state without requiring a full rehydration cycle.
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+			return nil, fmt.Errorf("upsert item %s: %w", id, upsertErr)
+		}
 	}
 
 	return artifact, nil

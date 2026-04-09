@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -330,6 +331,32 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleAdoptItem,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_add_link",
+			mcplib.WithDescription("Add a directed semantic link between two artifacts"),
+			mcplib.WithString("source_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("target_id", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithString("link_type", mcplib.Required(), mcplib.Description("Link type: related_to, duplicate_of, informs, supersedes, spike_ref")),
+		),
+		s.handleAddLink,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_links",
+			mcplib.WithDescription("Get all outgoing semantic links from an artifact"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("link_type", mcplib.Description("Optional filter by link type")),
+		),
+		s.handleGetLinks,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_remove_link",
+			mcplib.WithDescription("Remove a directed semantic link between two artifacts"),
+			mcplib.WithString("source_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
+			mcplib.WithString("target_id", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithString("link_type", mcplib.Required(), mcplib.Description("Link type to remove")),
+		),
+		s.handleRemoveLink,
+	)
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -387,19 +414,27 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	if status == "" {
 		return ValidationFailed("status is required"), nil
 	}
+
+	// Check that all children are in terminal statuses before allowing the
+	// parent to move to a terminal status. This prevents orphaned in-progress
+	// work from being silently buried under a "done" parent.
+	terminalSet := make(map[string]bool, len(core.TerminalStatuses))
+	for _, ts := range core.TerminalStatuses {
+		terminalSet[ts] = true
+	}
+	if terminalSet[status] {
+		if err := core.CheckChildrenTerminal(ctx, s.Workspace.DB, id); err != nil {
+			var blockErr *core.ChildBlockingError
+			if errors.As(err, &blockErr) {
+				return blockingChildrenResult(blockErr.Children), nil
+			}
+			return InternalError(fmt.Sprintf("check children: %v", err)), nil
+		}
+	}
+
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, map[string]any{"status": status})
 	if err != nil {
 		return InternalError(fmt.Sprintf("move item: %v", err)), nil
-	}
-	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
-	if err != nil {
-		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
-	}
-	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
-		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
-	}
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }
@@ -526,9 +561,6 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 		}
 	}
 
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("index artifact: %v", err)), nil
-	}
 	return toolResultJSON(artifact)
 }
 
@@ -557,21 +589,13 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	if err != nil {
 		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
 	}
-	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
-	if err != nil {
-		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
-	}
-	if err := core.WriteArtifactFile(artifact, filePath); err != nil {
-		return InternalError(fmt.Sprintf("write artifact: %v", err)), nil
-	}
-	// Write section content when sections are provided.
+	// Write section content when provided. UpdateArtifact already wrote the
+	// frontmatter file and upserted the DB index; sections are markdown body
+	// only and do not require a follow-up upsert.
 	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
 		}
-	}
-	if err := db.UpsertItem(ctx, s.Workspace.DB, artifact); err != nil {
-		return InternalError(fmt.Sprintf("upsert item: %v", err)), nil
 	}
 	return toolResultJSON(artifact)
 }

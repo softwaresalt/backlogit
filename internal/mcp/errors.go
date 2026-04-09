@@ -7,6 +7,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/backlogit/backlogit/internal/core"
 	corerrors "github.com/backlogit/backlogit/internal/errors"
 )
 
@@ -17,7 +18,11 @@ type errorResponse struct {
 
 func makeErrorResult(errType, message string) *mcplib.CallToolResult {
 	resp := errorResponse{Error: errType, Message: message}
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		// Fallback to manually formatted JSON to avoid recursive error handling.
+		return mcplib.NewToolResultError(fmt.Sprintf(`{"error":%q,"message":%q}`, errType, message))
+	}
 	return mcplib.NewToolResultError(string(data))
 }
 
@@ -56,9 +61,37 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		return NotFound(err.Error())
 	case errors.Is(err, corerrors.ErrShipmentConflict), errors.Is(err, corerrors.ErrItemAlreadyAssigned), errors.Is(err, corerrors.ErrCannotReturnItem):
 		return Conflict(err.Error())
-	case errors.Is(err, corerrors.ErrValidation):
+	case errors.Is(err, corerrors.ErrValidation), errors.Is(err, corerrors.ErrInvalidLinkType):
 		return ValidationFailed(err.Error())
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}
+}
+
+// blockingChildrenResult returns a structured error response when a parent
+// artifact cannot move to a terminal status because non-terminal children exist.
+func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult {
+	type childEntry struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	type resp struct {
+		Error    string       `json:"error"`
+		Message  string       `json:"message"`
+		Children []childEntry `json:"children"`
+	}
+	entries := make([]childEntry, len(children))
+	for i, c := range children {
+		entries[i] = childEntry{ID: c.ID, Status: c.Status}
+	}
+	r := resp{
+		Error:    "blocking_children",
+		Message:  fmt.Sprintf("%d non-terminal child(ren) are blocking this status transition", len(children)),
+		Children: entries,
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		return InternalError(fmt.Sprintf("marshal blocking children response: %v", err))
+	}
+	return mcplib.NewToolResultError(string(data))
 }
