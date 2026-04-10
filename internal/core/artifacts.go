@@ -263,10 +263,16 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
-	// Enforce hierarchy: level-2+ artifact types require parent_id when layout is configured.
-	if parentID == "" && ws.Config != nil && ws.Config.QueueLayout != nil {
-		level, levelErr := LevelForType(ws.Config.QueueLayout, artifactType)
-		if levelErr == nil && level >= 2 {
+	// Enforce hierarchy: level-2+ artifact types require parent_id.
+	// Prefer QueueLayout for level lookup; fall back to allowedChildren membership
+	// so enforcement applies even when QueueLayout is not configured.
+	if parentID == "" && ws.Config != nil {
+		if ws.Config.QueueLayout != nil {
+			if level, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil && level >= 2 {
+				return fmt.Errorf("artifact type %q requires parent_id: %w", artifactType, blerrors.ErrValidation)
+			}
+		} else if len(allowedParentTypes(ws, artifactType)) > 0 {
+			// No QueueLayout configured: infer child status from allowedChildren membership.
 			return fmt.Errorf("artifact type %q requires parent_id: %w", artifactType, blerrors.ErrValidation)
 		}
 	}

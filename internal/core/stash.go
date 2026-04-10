@@ -305,7 +305,12 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	}
 
 	// Artifact created — commit the stash removal atomically under the still-held lock.
+	// On writeStashEntries failure, best-effort artifact cleanup prevents duplicate
+	// harvests on retry (the stash entry remains intact for the retry to succeed).
 	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
+		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
+			_ = os.Remove(artifactPath)
+		}
 		_ = unlock()
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
 	}
