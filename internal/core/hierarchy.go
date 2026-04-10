@@ -184,8 +184,11 @@ func ParseHierarchicalID(id string) ([]int, error) {
 }
 
 // LevelForType returns the hierarchy level number for the given artifact type
-// based on the QueueLayoutConfig mapping.
+// based on the QueueLayoutConfig mapping. Returns (0, error) when layout is nil.
 func LevelForType(layout *config.QueueLayoutConfig, artifactType string) (int, error) {
+	if layout == nil {
+		return 0, fmt.Errorf("queue layout is nil")
+	}
 	for _, lvl := range layout.Levels {
 		for _, t := range lvl.Types {
 			if t == artifactType {

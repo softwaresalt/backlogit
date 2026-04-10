@@ -226,6 +226,8 @@ func joinLines(lines []string) string {
 }
 
 // findFileWithPrefix searches dir for any file whose base name starts with prefix.
+//
+//nolint:unused // used in pending TestDoctor tests
 func findFileWithPrefix(t *testing.T, dir, prefix string) string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

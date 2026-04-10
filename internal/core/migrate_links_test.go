@@ -45,7 +45,10 @@ func TestMigrateCustomFieldLinks_DeliberationID_CreatesInformsLink(t *testing.T)
 	deliberation, err := core.CreateArtifact(ctx, ws, "DL001 Deliberation", "deliberation")
 	require.NoError(t, err)
 
-	task, err := core.CreateArtifact(ctx, ws, "Task linked to deliberation", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Task linked to deliberation", "task",
+		core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, task.ID, map[string]any{
 		"custom_fields": map[string]any{
@@ -70,7 +73,9 @@ func TestMigrateCustomFieldLinks_StashID_Skipped(t *testing.T) {
 	ws := setupMigrateLinksWorkspace(t)
 	ctx := context.Background()
 
-	task, err := core.CreateArtifact(ctx, ws, "Task with stash ref", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Stash ref feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Task with stash ref", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, task.ID, map[string]any{
 		"custom_fields": map[string]any{
@@ -96,7 +101,9 @@ func TestMigrateCustomFieldLinks_PreservesOriginalCustomFields(t *testing.T) {
 	deliberation, err := core.CreateArtifact(ctx, ws, "DL Migration DL", "deliberation")
 	require.NoError(t, err)
 
-	task, err := core.CreateArtifact(ctx, ws, "Task to migrate", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Migration feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Task to migrate", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, task.ID, map[string]any{
 		"custom_fields": map[string]any{
@@ -124,7 +131,9 @@ func TestMigrateCustomFieldLinks_IdempotentOnRerun(t *testing.T) {
 	deliberation, err := core.CreateArtifact(ctx, ws, "DL Idempotent", "deliberation")
 	require.NoError(t, err)
 
-	task, err := core.CreateArtifact(ctx, ws, "Idempotent task", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Idempotent feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Idempotent task", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, task.ID, map[string]any{
 		"custom_fields": map[string]any{"linked_deliberation_id": deliberation.ID},

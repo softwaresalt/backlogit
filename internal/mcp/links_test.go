@@ -30,9 +30,9 @@ func TestHandleAddLink_Success(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Source artifact", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Source artifact", "feature")
 	require.NoError(t, err)
-	tgt, err := core.CreateArtifact(ctx, ws, "Target artifact", "task")
+	tgt, err := core.CreateArtifact(ctx, ws, "Target artifact", "feature")
 	require.NoError(t, err)
 
 	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -49,9 +49,9 @@ func TestHandleAddLink_InvalidLinkType_ValidationFailed(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Src", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Src", "feature")
 	require.NoError(t, err)
-	tgt, err := core.CreateArtifact(ctx, ws, "Tgt", "task")
+	tgt, err := core.CreateArtifact(ctx, ws, "Tgt", "feature")
 	require.NoError(t, err)
 
 	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -82,7 +82,7 @@ func TestHandleAddLink_NonExistentSourceID_NotFound(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	tgt, err := core.CreateArtifact(ctx, ws, "Target", "task")
+	tgt, err := core.CreateArtifact(ctx, ws, "Target", "feature")
 	require.NoError(t, err)
 
 	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -100,7 +100,7 @@ func TestHandleAddLink_NonExistentTargetID_NotFound(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Source", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Source", "feature")
 	require.NoError(t, err)
 
 	result, err := s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -118,9 +118,9 @@ func TestHandleGetLinks_ReturnsLinks(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Source", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Source", "feature")
 	require.NoError(t, err)
-	tgt, err := core.CreateArtifact(ctx, ws, "Target", "task")
+	tgt, err := core.CreateArtifact(ctx, ws, "Target", "feature")
 	require.NoError(t, err)
 
 	_, err = s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -155,11 +155,11 @@ func TestHandleGetLinks_WithTypeFilter(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Source", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Source", "feature")
 	require.NoError(t, err)
-	tgt1, err := core.CreateArtifact(ctx, ws, "Target1", "task")
+	tgt1, err := core.CreateArtifact(ctx, ws, "Target1", "feature")
 	require.NoError(t, err)
-	tgt2, err := core.CreateArtifact(ctx, ws, "Target2", "task")
+	tgt2, err := core.CreateArtifact(ctx, ws, "Target2", "feature")
 	require.NoError(t, err)
 
 	_, err = s.handleAddLink(ctx, linkRequest(map[string]any{
@@ -192,9 +192,9 @@ func TestHandleRemoveLink_Success(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
 
-	src, err := core.CreateArtifact(ctx, ws, "Src", "task")
+	src, err := core.CreateArtifact(ctx, ws, "Src", "feature")
 	require.NoError(t, err)
-	tgt, err := core.CreateArtifact(ctx, ws, "Tgt", "task")
+	tgt, err := core.CreateArtifact(ctx, ws, "Tgt", "feature")
 	require.NoError(t, err)
 
 	_, err = s.handleAddLink(ctx, linkRequest(map[string]any{

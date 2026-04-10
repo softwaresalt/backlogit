@@ -263,6 +263,13 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
+	// Enforce hierarchy: level-2+ artifact types require parent_id when layout is configured.
+	if parentID == "" && ws.Config.QueueLayout != nil {
+		level, levelErr := LevelForType(ws.Config.QueueLayout, artifactType)
+		if levelErr == nil && level >= 2 {
+			return fmt.Errorf("artifact type %q requires parent_id: %w", artifactType, blerrors.ErrValidation)
+		}
+	}
 	allowedParents := allowedParentTypes(ws, artifactType)
 	if parentID == "" {
 		if artifactType == "review" && len(allowedParents) > 0 {

@@ -45,9 +45,9 @@ func TestCheckChildrenTerminal_AllDone_NoError(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
 	require.NoError(t, err)
 
-	child, err := core.CreateArtifact(ctx, ws, "Done child", "task")
+	child, err := core.CreateArtifact(ctx, ws, "Done child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"parent_id": parent.ID, "status": "done"})
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 
 	err = core.CheckChildrenTerminal(ctx, ws.DB, parent.ID)
@@ -62,9 +62,9 @@ func TestCheckChildrenTerminal_NonTerminalChild_ReturnsBlockingError(t *testing.
 	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
 	require.NoError(t, err)
 
-	active, err := core.CreateArtifact(ctx, ws, "Active child", "task")
+	active, err := core.CreateArtifact(ctx, ws, "Active child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, active.ID, map[string]any{"parent_id": parent.ID, "status": "active"})
+	_, err = core.UpdateArtifact(ctx, ws, active.ID, map[string]any{"status": "active"})
 	require.NoError(t, err)
 
 	err = core.CheckChildrenTerminal(ctx, ws.DB, parent.ID)
@@ -88,14 +88,14 @@ func TestCheckChildrenTerminal_MultipleNonTerminal_AllReported(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent", "feature")
 	require.NoError(t, err)
 
-	child1, err := core.CreateArtifact(ctx, ws, "Active child 1", "task")
+	child1, err := core.CreateArtifact(ctx, ws, "Active child 1", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, child1.ID, map[string]any{"parent_id": parent.ID, "status": "active"})
+	_, err = core.UpdateArtifact(ctx, ws, child1.ID, map[string]any{"status": "active"})
 	require.NoError(t, err)
 
-	child2, err := core.CreateArtifact(ctx, ws, "Blocked child 2", "task")
+	child2, err := core.CreateArtifact(ctx, ws, "Blocked child 2", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, child2.ID, map[string]any{"parent_id": parent.ID, "status": "blocked"})
+	_, err = core.UpdateArtifact(ctx, ws, child2.ID, map[string]any{"status": "blocked"})
 	require.NoError(t, err)
 
 	err = core.CheckChildrenTerminal(ctx, ws.DB, parent.ID)
@@ -124,9 +124,9 @@ func TestCheckChildrenTerminal_SkipChildCheck_BypassesCheck(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent", "feature")
 	require.NoError(t, err)
 
-	active, err := core.CreateArtifact(ctx, ws, "Active child", "task")
+	active, err := core.CreateArtifact(ctx, ws, "Active child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, active.ID, map[string]any{"parent_id": parent.ID, "status": "active"})
+	_, err = core.UpdateArtifact(ctx, ws, active.ID, map[string]any{"status": "active"})
 	require.NoError(t, err)
 
 	err = core.CheckChildrenTerminal(ctx, ws.DB, parent.ID, core.SkipChildCheck())
@@ -141,9 +141,9 @@ func TestCheckChildrenTerminal_AcceptedStatus_IsTerminal(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent", "feature")
 	require.NoError(t, err)
 
-	child, err := core.CreateArtifact(ctx, ws, "Accepted child", "task")
+	child, err := core.CreateArtifact(ctx, ws, "Accepted child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
-	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"parent_id": parent.ID, "status": "accepted"})
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "accepted"})
 	require.NoError(t, err)
 
 	err = core.CheckChildrenTerminal(ctx, ws.DB, parent.ID)

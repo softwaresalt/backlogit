@@ -43,8 +43,12 @@ func TestUpdate_SyncsDBAfterSectionWrite(t *testing.T) {
 	ws, svc := setupServiceSyncWorkspace(t)
 	ctx := context.Background()
 
+	// Create feature parent required by hierarchy enforcement
+	feat, err := core.CreateArtifact(ctx, ws, "Sync feature", "feature")
+	require.NoError(t, err)
+
 	// Create artifact via template service
-	artifact, err := svc.Create(ctx, ws, "Sync test task", "task", nil)
+	artifact, err := svc.Create(ctx, ws, "Sync test task", "task", nil, core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	// Record pre-update DB state
@@ -75,7 +79,9 @@ func TestUpdate_SetsUpdatedAtInFrontmatter(t *testing.T) {
 	ws, svc := setupServiceSyncWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := svc.Create(ctx, ws, "Timestamp test", "task", nil)
+	feat, err := core.CreateArtifact(ctx, ws, "Timestamp feature", "feature")
+	require.NoError(t, err)
+	artifact, err := svc.Create(ctx, ws, "Timestamp test", "task", nil, core.WithParent(feat.ID))
 	require.NoError(t, err)
 	createdAt := artifact.CreatedAt
 

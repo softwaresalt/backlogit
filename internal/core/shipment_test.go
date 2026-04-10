@@ -37,9 +37,11 @@ func TestCreateShipment_Success(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	taskOne, err := CreateArtifact(ctx, ws, "Shipment task 1", "task")
+	feat, err := CreateArtifact(ctx, ws, "Shipment feature", "feature")
 	require.NoError(t, err)
-	taskTwo, err := CreateArtifact(ctx, ws, "Shipment task 2", "task")
+	taskOne, err := CreateArtifact(ctx, ws, "Shipment task 1", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	taskTwo, err := CreateArtifact(ctx, ws, "Shipment task 2", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 
 	// Act
@@ -59,7 +61,9 @@ func TestCreateShipment_RejectsAlreadyAssignedItem(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	task, err := CreateArtifact(ctx, ws, "Assigned task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Assigned feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Assigned task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = CreateShipment(ctx, ws, "Shipment 1", []string{task.ID})
 	require.NoError(t, err)
@@ -248,7 +252,9 @@ func TestAddItemToShipment_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a task artifact for the item
-	task, err := CreateArtifact(ctx, ws, "Test task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Shipment feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Test task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 
 	// Act
@@ -273,7 +279,9 @@ func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	s2, err := CreateShipment(ctx, ws, "Shipment 2", nil)
 	require.NoError(t, err)
 
-	task, err := CreateArtifact(ctx, ws, "Contested task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Contested feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Contested task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 
 	require.NoError(t, AddItemToShipment(ctx, ws, s1.ID, task.ID))
@@ -307,7 +315,9 @@ func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	task, err := CreateArtifact(ctx, ws, "Reusable task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Reusable feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Reusable task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	firstShipment, err := CreateShipment(ctx, ws, "Shipment 1", nil)
 	require.NoError(t, err)
@@ -332,7 +342,9 @@ func TestAddItemToShipment_RejectsTerminalShipment(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	task, err := CreateArtifact(ctx, ws, "Terminal shipment task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Terminal feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Terminal shipment task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	shipment, err := CreateShipment(ctx, ws, "Terminal shipment", nil)
 	require.NoError(t, err)
@@ -352,7 +364,9 @@ func TestAddItemToShipment_AllowsItemAfterArchivedShipment(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	task, err := CreateArtifact(ctx, ws, "Archived reusable task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Archived reusable feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Archived reusable task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	firstShipment, err := CreateShipment(ctx, ws, "Archived shipment 1", nil)
 	require.NoError(t, err)
@@ -380,7 +394,9 @@ func TestReturnBlockedItem_Success(t *testing.T) {
 	shipment, err := CreateShipment(ctx, ws, "Blocked test", nil)
 	require.NoError(t, err)
 
-	task, err := CreateArtifact(ctx, ws, "Blockable task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Blockable feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Blockable task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 
@@ -420,7 +436,9 @@ func TestReturnBlockedItem_RejectsTerminalShipment(t *testing.T) {
 	ctx := context.Background()
 	shipment, err := CreateShipment(ctx, ws, "Archived return shipment", nil)
 	require.NoError(t, err)
-	task, err := CreateArtifact(ctx, ws, "Archived return task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Archived return feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Archived return task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 	_, err = ArchiveItem(ctx, ws.DB, ws, shipment.ID)
@@ -441,7 +459,9 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 	ctx := context.Background()
 	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", nil)
 	require.NoError(t, err)
-	task, err := CreateArtifact(ctx, ws, "Rollback task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Rollback feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Rollback task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 
@@ -505,7 +525,9 @@ func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
 	ctx := context.Background()
 	shipment, err := CreateShipment(ctx, ws, "Recovered shipment", nil)
 	require.NoError(t, err)
-	task, err := CreateArtifact(ctx, ws, "Recovered task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Recovered feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Recovered task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 	originalShipment, err := GetShipment(ctx, ws, shipment.ID)
@@ -541,7 +563,9 @@ func TestShipment_RehydrationConsistency(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
-	task, err := CreateArtifact(ctx, ws, "Rehydration task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Rehydration feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Rehydration task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	shipment, err := CreateShipment(ctx, ws, "Rehydration test", []string{task.ID})
 	require.NoError(t, err)
@@ -608,7 +632,7 @@ func TestAdoptItem_RejectsArchivedItem(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
 
-	task, err := CreateArtifact(ctx, ws, "Archived task", "task")
+	task, err := CreateArtifact(ctx, ws, "Archived task", "task", WithParent(feature.ID))
 	require.NoError(t, err)
 	task.Status = models.StatusArchived
 	task.UpdatedAt = time.Now()
@@ -624,7 +648,9 @@ func TestAdoptItem_RejectsMissingParent(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	task, err := CreateArtifact(ctx, ws, "Lonely task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Parent feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Lonely task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 
 	_, err = AdoptItem(ctx, ws, task.ID, "NONEXISTENT")

@@ -84,10 +84,18 @@ func TestCreateItem_Real_CreatesArtifactFile(t *testing.T) {
 	// Arrange
 	s := setupRealMCPServer(t)
 
+	// Create parent feature first
+	featData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
+		"title":         "Parent feature for task",
+		"artifact_type": "feature",
+	})
+	featID := featData["id"].(string)
+
 	// Act
 	data := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Real contract test task",
 		"artifact_type": "task",
+		"parent_id":     featID,
 		"status":        "queued",
 		"description":   "Created by contract test",
 	})
@@ -127,7 +135,7 @@ func TestUpdateItem_Real_ModifiesFields(t *testing.T) {
 	s := setupRealMCPServer(t)
 	createData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Update target",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 	})
 	id := createData["id"].(string)
 

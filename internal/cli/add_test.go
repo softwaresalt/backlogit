@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,20 @@ import (
 )
 
 // TASK-002.04.01: Implement CLI add command.
+
+// extractID extracts the artifact ID from "Created <type>: <id>" output.
+func extractID(t *testing.T, output string) string {
+	t.Helper()
+	// Output format: "Created feature: 001-F\n"
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) == 2 {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	t.Fatalf("could not extract ID from output: %q", output)
+	return ""
+}
 
 func setupCLIWorkspace(t *testing.T) string {
 	t.Helper()
@@ -27,11 +42,20 @@ func setupCLIWorkspace(t *testing.T) string {
 func TestAddCommand_CreatesArtifact(t *testing.T) {
 	// Arrange
 	root := setupCLIWorkspace(t)
+	// Create parent feature first
+	featCmd := cli.NewRootCommand()
+	featBuf := new(bytes.Buffer)
+	featCmd.SetOut(featBuf)
+	featCmd.SetErr(featBuf)
+	featCmd.SetArgs([]string{"--cwd", root, "add", "--type", "feature", "--title", "Parent feature"})
+	require.NoError(t, featCmd.Execute())
+	featID := extractID(t, featBuf.String())
+
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Test task"})
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Test task", "--parent", featID})
 
 	// Act
 	err := cmd.Execute()
@@ -44,11 +68,19 @@ func TestAddCommand_CreatesArtifact(t *testing.T) {
 func TestAddCommand_WithDescription(t *testing.T) {
 	// Arrange
 	root := setupCLIWorkspace(t)
+	featCmd := cli.NewRootCommand()
+	featBuf := new(bytes.Buffer)
+	featCmd.SetOut(featBuf)
+	featCmd.SetErr(featBuf)
+	featCmd.SetArgs([]string{"--cwd", root, "add", "--type", "feature", "--title", "Desc feature"})
+	require.NoError(t, featCmd.Execute())
+	featID := extractID(t, featBuf.String())
+
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Described task", "--description", "A detailed description"})
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Described task", "--parent", featID, "--description", "A detailed description"})
 
 	// Act
 	err := cmd.Execute()
@@ -92,11 +124,20 @@ func TestAddCommand_MissingTitle(t *testing.T) {
 func TestAddCommand_CreatesMarkdownFile(t *testing.T) {
 	// Arrange
 	root := setupCLIWorkspace(t)
+	// Create parent feature first
+	featCmd := cli.NewRootCommand()
+	featBuf := new(bytes.Buffer)
+	featCmd.SetOut(featBuf)
+	featCmd.SetErr(featBuf)
+	featCmd.SetArgs([]string{"--cwd", root, "add", "--type", "feature", "--title", "File feature"})
+	require.NoError(t, featCmd.Execute())
+	featID := extractID(t, featBuf.String())
+
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "File check"})
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "File check", "--parent", featID})
 
 	// Act
 	err := cmd.Execute()

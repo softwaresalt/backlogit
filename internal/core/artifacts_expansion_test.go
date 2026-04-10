@@ -59,7 +59,10 @@ func TestCreateArtifact_WithNewOptions(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
+	feat, err := core.CreateArtifact(ctx, ws, "Test feature", "feature")
+	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Test task", "task",
+		core.WithParent(feat.ID),
 		core.WithAssignedTo("alice"),
 		core.WithOwner("bob"),
 		core.WithLabels([]string{"backend", "urgent"}),
@@ -83,7 +86,9 @@ func TestUpdateArtifact_NewFields(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Update test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Update feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Update test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	// Act — update new fields
@@ -107,7 +112,9 @@ func TestUpdateArtifact_IDImmutability(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Immutable ID test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Immutable feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Immutable ID test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	// Act — attempt to change ID
@@ -125,8 +132,10 @@ func TestCreateArtifact_WithoutNewOptions(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
-	// Act — no new options
-	artifact, err := core.CreateArtifact(ctx, ws, "Plain task", "task")
+	// Act — no new options; must now provide a parent for a level-2 task
+	feat, err := core.CreateArtifact(ctx, ws, "Plain feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Plain task", "task", core.WithParent(feat.ID))
 
 	// Assert
 	require.NoError(t, err)
@@ -169,7 +178,9 @@ func TestCreateArtifact_WritesUnderBacklogitStorage(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	artifact, err := core.CreateArtifact(ctx, ws, "Stored under backlogit", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Storage feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Stored under backlogit", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
@@ -246,14 +257,16 @@ func TestCreateArtifact_ReviewRequiresFeatureParent(t *testing.T) {
 	_, err := core.CreateArtifact(ctx, ws, "Branch review", "review")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `artifact type "review" requires a parent_id`)
+	assert.Contains(t, err.Error(), `requires parent_id`)
 }
 
 func TestCreateArtifact_ReviewRejectsDisallowedParentType(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
-	task, err := core.CreateArtifact(ctx, ws, "Parent task", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Disallowed parent feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Parent task", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	_, err = core.CreateArtifact(ctx, ws, "Task review", "review", core.WithParent(task.ID))

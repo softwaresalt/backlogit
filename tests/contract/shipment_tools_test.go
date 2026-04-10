@@ -226,7 +226,7 @@ func TestReturnBlocked_Success(t *testing.T) {
 
 	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Returnable task",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 		"status":        "queued",
 	})
 	taskID := taskData["id"].(string)
@@ -269,7 +269,7 @@ func TestShipShipment_Success(t *testing.T) {
 	s := setupRealMCPServer(t)
 	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Ship task",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 		"status":        "queued",
 	})
 	taskID := taskData["id"].(string)
@@ -327,7 +327,7 @@ func TestAddToShipment_AlreadyAssignedUsesConflictErrorType(t *testing.T) {
 	})
 	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Contested task",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 	})
 	_ = callToolAndParseJSON(t, s, "backlogit_add_to_shipment", map[string]any{
 		"shipment_id": firstShipment["id"].(string),
@@ -360,7 +360,7 @@ func TestAddToShipment_ShippedShipmentUsesConflictErrorType(t *testing.T) {
 	})
 	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Late shipment task",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 	})
 
 	// Act

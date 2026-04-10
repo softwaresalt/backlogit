@@ -29,11 +29,10 @@ func TestHandleMoveItem_BlockedByChildren_ReturnsStructuredError(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
 	require.NoError(t, err)
 
-	child, err := core.CreateArtifact(ctx, ws, "In-progress child", "task")
+	child, err := core.CreateArtifact(ctx, ws, "In-progress child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{
-		"parent_id": parent.ID,
-		"status":    "active",
+		"status": "active",
 	})
 	require.NoError(t, err)
 
@@ -58,11 +57,10 @@ func TestHandleMoveItem_BlockedByChildren_BodyContainsChildIDs(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
 	require.NoError(t, err)
 
-	child, err := core.CreateArtifact(ctx, ws, "Blocking child", "task")
+	child, err := core.CreateArtifact(ctx, ws, "Blocking child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{
-		"parent_id": parent.ID,
-		"status":    "active",
+		"status": "active",
 	})
 	require.NoError(t, err)
 
@@ -104,11 +102,10 @@ func TestHandleMoveItem_AllChildrenDone_Succeeds(t *testing.T) {
 	parent, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
 	require.NoError(t, err)
 
-	child, err := core.CreateArtifact(ctx, ws, "Done child", "task")
+	child, err := core.CreateArtifact(ctx, ws, "Done child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{
-		"parent_id": parent.ID,
-		"status":    "done",
+		"status": "done",
 	})
 	require.NoError(t, err)
 

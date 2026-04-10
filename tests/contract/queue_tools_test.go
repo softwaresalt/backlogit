@@ -17,14 +17,14 @@ import (
 	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
 )
 
-// setupServerWithArtifact creates a real workspace and a single task artifact,
+// setupServerWithArtifact creates a real workspace and a single feature artifact,
 // returning the server and the artifact ID.
 func setupServerWithArtifact(t *testing.T) (*mcpinternal.Server, string) {
 	t.Helper()
 	s := setupRealMCPServer(t)
 	data := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Queue contract test artifact",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 		"status":        "queued",
 	})
 	id, ok := data["id"].(string)
@@ -128,7 +128,7 @@ func TestAddDependency_Success(t *testing.T) {
 	s, id := setupServerWithArtifact(t)
 	data2 := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Dependency target",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 	})
 	id2 := data2["id"].(string)
 
@@ -173,7 +173,7 @@ func TestGetDependencies_ReturnsEdgeSlice(t *testing.T) {
 	// Add a dependency so the edge list is non-empty.
 	data2 := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Dep target for edge test",
-		"artifact_type": "task",
+		"artifact_type": "feature",
 	})
 	id2 := data2["id"].(string)
 	callToolAndParseJSON(t, s, "backlogit_add_dependency", map[string]any{

@@ -38,7 +38,9 @@ func TestUpdateCommand_SectionWrite_SyncsDB(t *testing.T) {
 	root, ws := setupUpdateTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Update sync test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Sync feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Update sync test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 
@@ -74,7 +76,9 @@ func TestUpdateCommand_SectionWrite_BumpsUpdatedAt(t *testing.T) {
 	root, ws := setupUpdateTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Timestamp bump test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Bump feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Timestamp bump test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 
