@@ -1,52 +1,68 @@
 ---
-title: "008-S Harness Complete — Build Phase Starting"
-description: "Session memory for shipment 008-S workspace governance and archival integrity — harness generated, build phase beginning."
+title: "008-S Complete — Awaiting Merge Approval"
+description: "Final session memory for shipment 008-S — all CI green, all review comments replied to, PR #19 ready for user merge approval."
 date: 2026-04-10
 origin: session-memory
-status: active
+status: merge-pending
 ---
 
-## Context
+## Shipment Status
 
-Shipment 008-S (Governance and Archival Policies) is active on branch
-`025-workspace-governance-integrity` (commit 8304e72).
+**Shipment 008-S** (Workspace Governance and Archival Policies) is complete and
+awaiting user merge approval.
 
-## Harness Phase Complete
+- **Branch:** `025-workspace-governance-integrity`
+- **PR:** https://github.com/softwaresalt/backlogit/pull/19
+- **Latest commit:** `9faa03f`
+- **CI:** ✅ Go 1.23 + 1.24 both passing
+- **Mergeable:** Yes
+- **Copilot review comment rounds:** 2 rounds (16 total comments replied to)
 
-All harness files created and committed. Build order:
+## All Units Complete
 
-1. **Parallel** (no deps): 025.014-T ✅ done, 025.013-T, 025.016-T, 025.011-T, 025.012-T
-2. **After Unit 2**: 025.015-T
-3. **After Unit 1** (already done): 025.018-T
-4. **After Unit 4**: 025.017-T
+| Task       | Unit | Description                          | Status |
+|------------|------|--------------------------------------|--------|
+| 025.014-T  | 4    | Archive lifecycle                    | ✅ done |
+| 025.013-T  | 2    | Hierarchy enforcement                | ✅ done |
+| 025.015-T  | 3    | Stash concurrency P0 fix             | ✅ done |
+| 025.016-T  | 1    | Doctor workspace diagnostics         | ✅ done |
+| 025.017-T  | 7    | Doctor MCP tool                      | ✅ done |
+| 025.018-T  | 6    | Post-ship consistency verification   | ✅ done |
+| 025.011-T  | 5    | ShipShipment lifecycle               | ✅ done |
+| 025.012-T  | 8    | Integration harness                  | ✅ done |
 
-## Harness File Map
+## Review Comment History
 
-| Task     | Harness File(s)                                      | Cmd Pattern                                                |
-|----------|------------------------------------------------------|------------------------------------------------------------|
-| 025.014-T | `025_archive_harness_test.go`                       | DONE — all 3 GREEN                                         |
-| 025.013-T | `025_hierarchy_harness_test.go`                     | `-run "TestCreateArtifact_RejectsLevel2|TestLevelForType_NilLayout"` |
-| 025.015-T | `025_harvest_safety_harness_test.go`                | `-run "TestHarvestStashEntry_(Rejects|Preserves)"` |
-| 025.016-T | `doctor.go` stub + `025_doctor_harness_test.go`     | `-run "TestDoctor_"` |
-| 025.017-T | `025_doctor_contract_harness_test.go`               | `./tests/contract/... -run "TestDoctorTool_"` |
-| 025.018-T | `shipment_verify.go` stub + `025_postship_verify_harness_test.go` | `-run "TestShipShipment_(Fails|Succeeds)WhenQueue"` |
+### Round 1 (IDs 3062940..., commit f942b2e)
 
-## Key Technical Context
+8 comments fixed and replied to. Fixes included: `wrapError` → `fmt.Errorf`,
+removed `hasReturnedToBacklogEvent` early `os.Open` error suppression, duplicate
+stale-file check consolidation, and test cleanup.
 
-- `validateArtifactParent` (artifacts.go:265): extend to check `LevelForType >= 2` requires parent_id
-- `LevelForType` (hierarchy.go:188): add nil-guard before `layout.Levels` iteration
-- `HarvestStashEntry` (stash.go:265-276): move `removeStashEntry`+`writeStashEntries` AFTER `CreateArtifact`
-- `Doctor` (doctor.go): implement orphan detection + duplicate detection; check event log for `returned_to_backlog`
-- `VerifyPostShipConsistency` (shipment_verify.go): walk queue dir, check no file has prefix matching archived IDs
-- After Unit 4 Doctor is done: register `backlogit_doctor` tool in `internal/mcp/tools.go`
-- After all implementation: call `ShipShipment` → `VerifyPostShipConsistency` at end (Unit 6 wires it in)
+### Round 2 (IDs 3065281..., commit 9faa03f)
 
-## Stash State
+8 comments fixed and replied to. Fixes included:
+- Two-lock stash harvest race consolidated into single lock
+- `bufio.Scanner` (64KB limit) replaced with `json.Decoder` in `doctor.go`
+- `VerifyPostShipConsistency` wired into `ShipShipment` (was not called in production)
+- Test functions renamed `TestShipShipment_*` → `TestVerifyPostShipConsistency_*`
+- `description:` frontmatter added to memory doc
+- `.test-out.txt` and `.pr-comments.json` deleted + added to `.gitignore`
 
-Entry `02601E73` was harvested in prior session. No remaining relevant stash entries.
+## Protocol Improvements This Session
 
-## Branch / Commit
+- **fix-ci SKILL.md Step 4c** added as standalone hard gate: "Post Replies to
+  All Review Comment Threads — HARD GATE — NON-NEGOTIABLE". Commit `4dba37a`.
+- **Compound doc** updated at
+  `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
 
-- Branch: `025-workspace-governance-integrity`
-- Last commit: 8304e72 (harness scaffold)
-- Base: main
+## Post-Merge Next Steps
+
+After user approves merge:
+
+1. Run `backlogit shipment ship 008-S --sha <merge-sha> --message "<merge-message>" --author "<author>"`
+2. Invoke `operational-closure` skill in `mode=post-merge`
+3. Evaluate `docs/ARCHITECTURE.md` for Doctor + VerifyPostShipConsistency entries
+4. Check `README.md` for user-facing changes (Doctor command)
+5. Graduate stash concurrency fix pattern to `docs/design-docs/` if warranted
+6. Run `compact-context` if `.copilot-tracking/` has accumulated artifacts
