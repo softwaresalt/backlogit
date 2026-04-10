@@ -188,7 +188,14 @@ For each unresolved Copilot review comment (from Step 2b):
    - **Valid suggestion**: Apply the fix. `broadcast` at `info` level: `[FIX-CI] Addressed comment on {file}: {summary}`. Resolve the comment thread if the GitHub API supports it.
    - **Partially valid**: Apply the applicable portion, leave a reply explaining what was and was not applied.
    - **Invalid or disagreeable**: Do NOT apply. Leave a reply comment explaining why the suggestion was declined with technical rationale. `broadcast` at `info` level: `[FIX-CI] Declined comment on {file}: {reason}`
-4. After addressing all comments, re-run local CI gates to verify no regressions were introduced.
+4. **REQUIRED — Reply to every comment thread (NON-NEGOTIABLE):** After pushing the fix commit, post a reply to each addressed comment thread using the GitHub API. A fix commit alone is insufficient — the reviewer cannot trace which commit addressed which comment without a reply in the thread. Use this format:
+   ```
+   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies \
+       --method POST \
+       -f body="Fixed in commit {short_sha}. {explanation of what changed and why.}"
+   ```
+   Post the reply **after** the fix commit is pushed so the commit hash is accurate.
+5. After addressing all comments, re-run local CI gates to verify no regressions were introduced.
 
 ### Step 5: Local CI Gate
 
