@@ -2,7 +2,7 @@
 title: backlogit
 description: AI-native agile workspace with MCP and CLI interfaces
 author: backlogit contributors
-ms.date: 2026-04-08
+ms.date: 2026-04-10
 ms.topic: overview
 keywords:
   - backlogit
@@ -32,12 +32,12 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 
 - Hybrid CQRS architecture keeps human-readable Markdown files as the source of truth while SQLite serves token-efficient agent queries
 - MCP server exposes backlog, queue, stash, search, and planning tools over JSON-RPC 2.0 for integration with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
-- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `fetch-stash`, `harvest`), and `deliberate`
+- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `list`, `get`, `edit`, `remove`, `fetch-stash`, `harvest`), and `deliberate`
 - FTS5 full-text search across artifact titles and descriptions via the `search` command and `backlogit_search_items` MCP tool
 - Dependency tracking between artifacts with `dep add`, `dep list`, and `backlogit_get_dependencies`
 - Work queue prioritization via `backlogit queue` and `backlogit_get_queue`, with stable pagination (`ORDER BY id ASC`), orphan filtering (excludes items whose parent feature is done or archived), and a compact list mode that returns only `id`, `title`, `status`, `type`, and `parent_id` for token-efficient agent queries
 - Duplicate title detection via `backlogit_query_sql` to surface items with matching titles across different IDs, useful after migrations and manual edits
-- Stash workflow for deferred work in `.backlogit/stash.jsonl`, including priority-tagged entries, linked deliberation artifacts, filtered or grouped fetch, and single-item or batch harvest flows for feature-set planning
+- Stash workflow for deferred work in `.backlogit/stash.jsonl`, including priority-tagged entries, linked deliberation artifacts, full CRUD operations (`add`, `list`, `get`, `edit`, `remove`), filtered or grouped fetch, and single-item or batch harvest flows for feature-set planning
 - Unified metadata discovery for agents via `backlogit metadata catalog`, `backlogit metadata export-command-map`, and matching MCP tools
 - Agent memory and checkpoint persistence through `backlogit_save_memory` and `backlogit_create_checkpoint`
 - Migration from current Backlog.md workspaces and legacy checklist files with `backlogit migrate --source`
@@ -70,9 +70,13 @@ backlogit add --type task --title "Implement authentication" --status active
 
 ```bash
 backlogit stash add "Capture follow-up hardening ideas" --kind feature --priority high
+backlogit stash list --kind feature
+backlogit stash get ABCD1234
+backlogit stash edit ABCD1234 --priority critical
 backlogit deliberate ABCD1234 --chosen-direction "Keep the initial scope narrow and defer follow-up polish"
 backlogit stash fetch-stash --group-by-priority
 backlogit stash harvest --priority critical --type task
+backlogit stash remove ABCD1234
 ```
 
 **Discover metadata and export an agent command map:**
