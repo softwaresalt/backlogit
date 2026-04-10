@@ -267,12 +267,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		_ = unlock()
 		return nil, err
 	}
-	// Rewrite the stash file inside the lock to prevent double-harvest if artifact
-	// creation fails. The lock is released after the file is written.
-	if err := writeStashEntries(path, remaining); err != nil {
-		_ = unlock()
-		return nil, fmt.Errorf("rewrite stash file: %w", err)
-	}
+	// Release lock here; stash is not written until artifact creation succeeds.
 	_ = unlock()
 
 	itemTitle := strings.TrimSpace(harvestOpts.Title)
@@ -307,6 +302,19 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	if err != nil {
 		return nil, fmt.Errorf("create artifact from stash: %w", err)
 	}
+
+	// Artifact created successfully — now commit the stash removal so the entry
+	// is not consumed until we know creation succeeded (fixes P0 data-loss F-003).
+	unlock2, lockErr := lockStashFile(path)
+	if lockErr != nil {
+		return nil, fmt.Errorf("acquire stash lock for commit: %w", lockErr)
+	}
+	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
+		_ = unlock2()
+		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
+	}
+	_ = unlock2()
+
 	if ws.DB != nil {
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
 			return nil, fmt.Errorf("index harvested artifact: %w", err)
