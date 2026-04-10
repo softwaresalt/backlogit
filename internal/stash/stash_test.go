@@ -1,7 +1,9 @@
 package stash_test
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,4 +50,38 @@ func TestFormatEntry_IncludesPriority(t *testing.T) {
 	})
 
 	assert.Equal(t, "- [ ] [A1B2C3D4] [priority:critical] [deliberation:DL001] bug: Fix broken harness", line)
+}
+
+func TestEntry_CreatedAt_JSONRoundTrip(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	entry := stash.Entry{
+		ID:        "AABBCCDD",
+		Priority:  "high",
+		Kind:      "feature",
+		Text:      "Round-trip test",
+		CreatedAt: &now,
+	}
+
+	data, err := json.Marshal(entry)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "created_at")
+
+	var decoded stash.Entry
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, entry.ID, decoded.ID)
+	require.NotNil(t, decoded.CreatedAt)
+	assert.Equal(t, entry.CreatedAt.Unix(), decoded.CreatedAt.Unix())
+}
+
+func TestEntry_CreatedAt_OmittedWhenZero(t *testing.T) {
+	entry := stash.Entry{
+		ID:       "DEADBEEF",
+		Priority: "low",
+		Kind:     "task",
+		Text:     "No timestamp",
+	}
+
+	data, err := json.Marshal(entry)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "created_at")
 }
