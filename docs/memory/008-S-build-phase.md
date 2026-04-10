@@ -1,6 +1,6 @@
 ---
-title: "008-S Complete — Awaiting Merge Approval"
-description: "Final session memory for shipment 008-S — all CI green, all review comments replied to, PR #19 ready for user merge approval."
+title: "008-S Complete — Awaiting Merge Approval (Round 3 fixes done)"
+description: "Final session memory for shipment 008-S — three rounds of Copilot review fixes complete, CI green, PR #19 ready for user merge approval."
 date: 2026-04-10
 origin: session-memory
 status: merge-pending
@@ -13,10 +13,10 @@ awaiting user merge approval.
 
 - **Branch:** `025-workspace-governance-integrity`
 - **PR:** https://github.com/softwaresalt/backlogit/pull/19
-- **Latest commit:** `9faa03f`
+- **Latest commit:** `5d8891e`
 - **CI:** ✅ Go 1.23 + 1.24 both passing
 - **Mergeable:** Yes
-- **Copilot review comment rounds:** 2 rounds (16 total comments replied to)
+- **Copilot review comment rounds:** 3 rounds (20 total comments, all replied to)
 
 ## All Units Complete
 
@@ -35,25 +35,34 @@ awaiting user merge approval.
 
 ### Round 1 (IDs 3062940..., commit f942b2e)
 
-8 comments fixed and replied to. Fixes included: `wrapError` → `fmt.Errorf`,
-removed `hasReturnedToBacklogEvent` early `os.Open` error suppression, duplicate
-stale-file check consolidation, and test cleanup.
+8 comments fixed and replied to. Fixes: `wrapError` → `fmt.Errorf`, early
+`os.Open` error suppression removal, duplicate stale-file check consolidation,
+and test cleanup.
 
 ### Round 2 (IDs 3065281..., commit 9faa03f)
 
-8 comments fixed and replied to. Fixes included:
-- Two-lock stash harvest race consolidated into single lock
-- `bufio.Scanner` (64KB limit) replaced with `json.Decoder` in `doctor.go`
-- `VerifyPostShipConsistency` wired into `ShipShipment` (was not called in production)
-- Test functions renamed `TestShipShipment_*` → `TestVerifyPostShipConsistency_*`
-- `description:` frontmatter added to memory doc
-- `.test-out.txt` and `.pr-comments.json` deleted + added to `.gitignore`
+8 comments fixed and replied to. Fixes: two-lock stash harvest race → single
+lock; `bufio.Scanner` → `json.Decoder`; `VerifyPostShipConsistency` wired into
+`ShipShipment`; test functions renamed; `description:` frontmatter added;
+`.test-out.txt` and `.pr-comments.json` deleted + added to `.gitignore`.
+
+### Round 3 (IDs 3065412..., commit 5d8891e)
+
+4 comments fixed and replied to:
+- **stash.go**: best-effort `os.Remove` on `writeStashEntries` failure to
+  prevent duplicate harvests on retry
+- **shipment_verify.go** (nil guard): `if ws == nil` returns descriptive error
+  instead of panicking
+- **shipment_verify.go** (routing): replaced `QueueLayout.RootDir`-only scan
+  with `artifactSearchDirs(ws)` (registry-aware), excluding archive dir
+- **artifacts.go**: hierarchy enforcement now falls back to `allowedParentTypes`
+  when `QueueLayout` is nil, so level-2+ types always require `parent_id`
 
 ## Protocol Improvements This Session
 
-- **fix-ci SKILL.md Step 4c** added as standalone hard gate: "Post Replies to
-  All Review Comment Threads — HARD GATE — NON-NEGOTIABLE". Commit `4dba37a`.
-- **Compound doc** updated at
+- **fix-ci SKILL.md Step 4c** added as standalone hard gate: post replies to
+  all review comment threads — NON-NEGOTIABLE. Commit `4dba37a`.
+- **Compound doc** at
   `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
 
 ## Post-Merge Next Steps
@@ -64,5 +73,4 @@ After user approves merge:
 2. Invoke `operational-closure` skill in `mode=post-merge`
 3. Evaluate `docs/ARCHITECTURE.md` for Doctor + VerifyPostShipConsistency entries
 4. Check `README.md` for user-facing changes (Doctor command)
-5. Graduate stash concurrency fix pattern to `docs/design-docs/` if warranted
-6. Run `compact-context` if `.copilot-tracking/` has accumulated artifacts
+5. Run `compact-context` if `.copilot-tracking/` has accumulated artifacts
