@@ -24,7 +24,9 @@ func TestGetCommand_DisplaysArtifact(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Get test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Get feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Get test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -51,7 +53,9 @@ func TestGetCommand_JSONOutput(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "JSON get test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "JSON feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "JSON get test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -78,7 +82,10 @@ func TestGetCommand_SectionExtraction(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
+	feat, err := core.CreateArtifact(ctx, ws, "Section feature", "feature")
+	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Section test", "task",
+		core.WithParent(feat.ID),
 		core.WithDescription("<!-- BEGIN:description -->\nSection content\n<!-- END:description -->"),
 	)
 	require.NoError(t, err)

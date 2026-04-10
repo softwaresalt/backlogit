@@ -42,6 +42,8 @@ Call `ping` at session start. If agent-intercom is reachable, broadcast at every
 | Fix applied | info | `[FIX-CI] Fixed: {description}` |
 | Comment addressed | info | `[FIX-CI] Addressed comment on {file}: {summary}` |
 | Comment declined | info | `[FIX-CI] Declined comment on {file}: {reason}` |
+| Reply posted | info | `[FIX-CI] Replied to comment {id} on {file}` |
+| All replies posted | success | `[FIX-CI] All {count} comment threads have replies` |
 | Local gate passed | success | `[FIX-CI] Local CI gates pass` |
 | Push and poll | info | `[FIX-CI] Pushed, polling cycle {N}/{max}` |
 | All checks pass | success | `[FIX-CI] All CI checks pass, all comments resolved` |
@@ -185,10 +187,39 @@ For each unresolved Copilot review comment (from Step 2b):
    - Search for the affected symbol's usage across the codebase
    - Search for the module structure around the comment
 3. Evaluate whether the suggestion is valid:
-   - **Valid suggestion**: Apply the fix. `broadcast` at `info` level: `[FIX-CI] Addressed comment on {file}: {summary}`. Resolve the comment thread if the GitHub API supports it.
-   - **Partially valid**: Apply the applicable portion, leave a reply explaining what was and was not applied.
-   - **Invalid or disagreeable**: Do NOT apply. Leave a reply comment explaining why the suggestion was declined with technical rationale. `broadcast` at `info` level: `[FIX-CI] Declined comment on {file}: {reason}`
+   - **Valid suggestion**: Apply the fix. `broadcast` at `info` level: `[FIX-CI] Addressed comment on {file}: {summary}`.
+   - **Partially valid**: Apply the applicable portion. Note what was and was not applied for the reply in Step 4c.
+   - **Invalid or disagreeable**: Do NOT apply. Note the technical rationale for the reply in Step 4c. `broadcast` at `info` level: `[FIX-CI] Declined comment on {file}: {reason}`
 4. After addressing all comments, re-run local CI gates to verify no regressions were introduced.
+
+### Step 4c: Post Replies to All Review Comment Threads (HARD GATE — NON-NEGOTIABLE)
+
+This is a **hard gate**. The step is not complete until every top-level review comment thread has a reply. A pushed fix commit is invisible at the comment-thread level — reviewers cannot trace which commit addressed which comment without an explicit reply.
+
+Run **after** Step 6 (push) so the commit hash is accurate. For every top-level comment:
+
+**Addressed comments:**
+```powershell
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies `
+    --method POST `
+    -f body="Fixed in commit {short_sha}. {specific explanation of what changed and why.}"
+```
+
+**Declined comments:**
+```powershell
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies `
+    --method POST `
+    -f body="Not applied. {technical rationale for declining the suggestion.}"
+```
+
+**To find top-level comment IDs (filter out replies):**
+```powershell
+$comments = (gh api repos/{owner}/{repo}/pulls/{pr_number}/comments | ConvertFrom-Json)
+$topLevel = $comments | Where-Object { $_.in_reply_to_id -eq $null }
+$topLevel | Select-Object id, path, line
+```
+
+Verify the reply count matches the top-level comment count before proceeding. Do NOT call task_complete or report success until this step is done.
 
 ### Step 5: Local CI Gate
 

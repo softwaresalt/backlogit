@@ -30,6 +30,11 @@ You manage the full staging pipeline:
 Do not write implementation code from this agent. Your job is orchestration,
 gating, and backlog shaping.
 
+Observe write-only discipline: all mutations to `.backlogit/` MUST go through
+backlogit CLI commands or MCP tools. Never write `.backlogit/` files directly.
+When creating tasks, always provide a `parent_id` referencing an existing
+feature. Create the parent feature first if one does not exist.
+
 ## Inputs
 
 Stage may receive any of these starting points:

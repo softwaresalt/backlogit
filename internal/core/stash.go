@@ -255,8 +255,10 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		return nil, fmt.Errorf("artifact type is required")
 	}
 
-	// Lock the stash file for the full read-modify-write cycle to prevent concurrent
-	// harvests from reading the same entry and producing duplicate artifacts.
+	// Lock the stash file for the entire harvest: read → create artifact → write removal.
+	// Holding a single lock prevents a concurrent harvest from reading the same entry
+	// before either goroutine commits the removal, which would produce duplicate artifacts.
+	// On CreateArtifact failure the lock is released without writing, preserving the entry.
 	path := StashFilePath(ws.RootPath)
 	unlock, err := lockStashFile(path)
 	if err != nil {
@@ -267,13 +269,6 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		_ = unlock()
 		return nil, err
 	}
-	// Rewrite the stash file inside the lock to prevent double-harvest if artifact
-	// creation fails. The lock is released after the file is written.
-	if err := writeStashEntries(path, remaining); err != nil {
-		_ = unlock()
-		return nil, fmt.Errorf("rewrite stash file: %w", err)
-	}
-	_ = unlock()
 
 	itemTitle := strings.TrimSpace(harvestOpts.Title)
 	if itemTitle == "" {
@@ -305,8 +300,22 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 
 	artifact, err := CreateArtifact(ctx, ws, itemTitle, harvestOpts.ArtifactType, createOpts...)
 	if err != nil {
+		_ = unlock()
 		return nil, fmt.Errorf("create artifact from stash: %w", err)
 	}
+
+	// Artifact created — commit the stash removal atomically under the still-held lock.
+	// On writeStashEntries failure, best-effort artifact cleanup prevents duplicate
+	// harvests on retry (the stash entry remains intact for the retry to succeed).
+	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
+		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
+			_ = os.Remove(artifactPath)
+		}
+		_ = unlock()
+		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
+	}
+	_ = unlock()
+
 	if ws.DB != nil {
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
 			return nil, fmt.Errorf("index harvested artifact: %w", err)

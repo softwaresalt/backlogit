@@ -77,7 +77,9 @@ func TestAddItemToShipment_AlreadyAssignedReturnsConflict(t *testing.T) {
 	s, ws := setupShipmentErrorServer(t)
 	ctx := context.Background()
 
-	task, err := core.CreateArtifact(ctx, ws, "Already assigned task", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Assignment feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Already assigned task", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	_, err = core.CreateShipment(ctx, ws, "Shipment 1", []string{task.ID})
@@ -101,7 +103,9 @@ func TestReturnBlockedItem_NotInShipmentReturnsConflict(t *testing.T) {
 	s, ws := setupShipmentErrorServer(t)
 	ctx := context.Background()
 
-	task, err := core.CreateArtifact(ctx, ws, "Standalone task", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Return feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Standalone task", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 
 	shipment, err := core.CreateShipment(ctx, ws, "Empty shipment", nil)

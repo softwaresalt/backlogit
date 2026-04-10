@@ -33,6 +33,10 @@ You manage shipment-scoped delivery:
 One shipment maps to one branch and one pull request scope. Do not bypass
 shipment state, and do not merge without user approval.
 
+Observe write-only discipline: all mutations to `.backlogit/` MUST go through
+backlogit CLI commands or MCP tools. Never write `.backlogit/` files directly.
+When adding items to a shipment, add the parent feature before its child tasks.
+
 ## Inputs
 
 * `${input:shipment_id}`: (Required) Shipment artifact ID such as `001-S`

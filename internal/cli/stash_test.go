@@ -13,6 +13,16 @@ import (
 
 func TestStashCommand_AddFetchAndHarvest(t *testing.T) {
 	root := setupCLIWorkspace(t)
+
+	// Create a parent feature for task harvesting
+	featCmd := cli.NewRootCommand()
+	featBuf := new(bytes.Buffer)
+	featCmd.SetOut(featBuf)
+	featCmd.SetErr(featBuf)
+	featCmd.SetArgs([]string{"--cwd", root, "add", "--type", "feature", "--title", "Stash feature"})
+	require.NoError(t, featCmd.Execute())
+	featID := extractID(t, featBuf.String())
+
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
@@ -33,7 +43,7 @@ func TestStashCommand_AddFetchAndHarvest(t *testing.T) {
 	assert.Contains(t, buf.String(), "Deferred planner item")
 
 	buf.Reset()
-	cmd.SetArgs([]string{"--cwd", root, "stash", "harvest", stashID, "--type", "task"})
+	cmd.SetArgs([]string{"--cwd", root, "stash", "harvest", stashID, "--type", "task", "--parent-id", featID})
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), stashID)
 }

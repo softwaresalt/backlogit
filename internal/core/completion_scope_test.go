@@ -138,7 +138,10 @@ func TestReconcileCompletionScope_LeafItemWithNoChildrenSucceeds(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	task, err := CreateArtifact(ctx, ws, "Leaf task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Leaf feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	task, err := CreateArtifact(ctx, ws, "Leaf task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	task.Status = models.StatusDone
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))

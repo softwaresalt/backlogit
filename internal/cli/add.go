@@ -18,6 +18,7 @@ func newAddCommand(cwd *string) *cobra.Command {
 		title        string
 		description  string
 		status       string
+		parentID     string
 		sections     []string
 	)
 
@@ -30,8 +31,8 @@ Artifacts are written as Markdown files under .backlogit\queue or the target
 directory selected by registry routing. Typed hierarchical IDs are assigned
 automatically when the configured queue layout supports the requested type.`,
 		Example: `  backlogit add --type feature --title "Authentication hardening"
-  backlogit add --type task --title "Add token rotation" --status active
-  backlogit add --type subtask --title "Write expiry tests" --section description="Cover refresh and expiry flows"`,
+  backlogit add --type task --title "Add token rotation" --parent 001-F
+  backlogit add --type subtask --title "Write expiry tests" --parent 001.001-T --section description="Cover refresh and expiry flows"`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if artifactType == "" {
 				return fmt.Errorf("--type is required")
@@ -53,6 +54,9 @@ automatically when the configured queue layout supports the requested type.`,
 			}
 			if status != "" {
 				opts = append(opts, core.WithStatus(status))
+			}
+			if parentID != "" {
+				opts = append(opts, core.WithParent(parentID))
 			}
 
 			// Apply --section name=value pairs as description overrides when applicable.
@@ -82,6 +86,7 @@ automatically when the configured queue layout supports the requested type.`,
 	cmd.Flags().StringVar(&title, "title", "", "artifact title")
 	cmd.Flags().StringVar(&description, "description", "", "artifact description")
 	cmd.Flags().StringVar(&status, "status", "", "initial status (queued, active, …)")
+	cmd.Flags().StringVar(&parentID, "parent", "", "parent artifact ID (required for level-2+ types such as task, review)")
 	cmd.Flags().StringArrayVar(&sections, "section", nil, "section content as name=value (repeatable)")
 	return cmd
 }

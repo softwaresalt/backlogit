@@ -93,6 +93,14 @@ legacy decomposition path:
 4. Preserve plan references so downstream shipment assembly can trace work back
    to the plan.
 
+**Parent-first ordering (NON-NEGOTIABLE):** Tasks require a `parent_id`
+referencing an existing feature. The root feature MUST be created before any
+tasks are created. Within each feature group, the parent feature MUST be added
+to a shipment before its child tasks. If the harvest context does not include an
+existing parent feature for task-kind work items, create or identify one before
+proceeding. Omitting `parent_id` for task-kind artifacts will be rejected by the
+hierarchy enforcement layer.
+
 ### Phase 4: Execute or preview
 
 If `${input:dry_run}` is `true`:

@@ -21,7 +21,9 @@ func TestUpdateCommand_StatusChange(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Update test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Update feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Update test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -47,7 +49,9 @@ func TestUpdateCommand_TitleChange(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Original title", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Title feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Original title", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -73,7 +77,9 @@ func TestUpdateCommand_IDChangeRejected(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "ID test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "ID feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "ID test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)

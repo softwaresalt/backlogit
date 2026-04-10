@@ -115,6 +115,10 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: archive release scope: %w", shipmentID, err)
 	}
 
+	if err := VerifyPostShipConsistency(ctx, ws, archivedIDs); err != nil {
+		return nil, fmt.Errorf("ship shipment %s: post-ship consistency: %w", shipmentID, err)
+	}
+
 	return &ShipShipmentResult{
 		ShipmentID:     shipmentID,
 		ShipmentStatus: string(ShipmentShipped),

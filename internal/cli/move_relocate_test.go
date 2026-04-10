@@ -38,7 +38,9 @@ func TestMoveCommand_RelocatesFileToTargetDir(t *testing.T) {
 	root, ws := setupMoveTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Relocate test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Relocate feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Relocate test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 
@@ -74,7 +76,9 @@ func TestMoveCommand_CreatesTargetDirIfMissing(t *testing.T) {
 	root, ws := setupMoveTestWorkspace(t)
 	ctx := context.Background()
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Dir creation test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "DirCreation feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Dir creation test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 

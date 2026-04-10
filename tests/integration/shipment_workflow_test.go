@@ -71,9 +71,9 @@ func TestShipmentWorkflow_CreateShipmentFromBacklog(t *testing.T) {
 	_, ws := setupShipmentIntegrationWorkspace(t)
 	ctx := context.Background()
 
-	task1, err := core.CreateArtifact(ctx, ws, "Implement feature A", "task")
+	task1, err := core.CreateArtifact(ctx, ws, "Implement feature A", "feature")
 	require.NoError(t, err)
-	task2, err := core.CreateArtifact(ctx, ws, "Implement feature B", "task")
+	task2, err := core.CreateArtifact(ctx, ws, "Implement feature B", "feature")
 	require.NoError(t, err)
 
 	// Act
@@ -92,7 +92,7 @@ func TestShipmentWorkflow_ReturnBlockedItem(t *testing.T) {
 	_, ws := setupShipmentIntegrationWorkspace(t)
 	ctx := context.Background()
 
-	task, err := core.CreateArtifact(ctx, ws, "Blockable task", "task")
+	task, err := core.CreateArtifact(ctx, ws, "Blockable task", "feature")
 	require.NoError(t, err)
 	shipment, err := core.CreateShipment(ctx, ws, "Block test", []string{task.ID})
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestShipmentWorkflow_RehydrationConsistency(t *testing.T) {
 	shipment, err := core.CreateShipment(ctx, ws, "Rehydration test", nil)
 	require.NoError(t, err)
 
-	task, err := core.CreateArtifact(ctx, ws, "Rehydration task", "task")
+	task, err := core.CreateArtifact(ctx, ws, "Rehydration task", "feature")
 	require.NoError(t, err)
 	require.NoError(t, core.AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 
@@ -275,9 +275,9 @@ func TestShipmentWorkflow_ClaimActivatesIncludedItems(t *testing.T) {
 	_, ws := setupShipmentIntegrationWorkspace(t)
 	ctx := context.Background()
 
-	task1, err := core.CreateArtifact(ctx, ws, "Claimable task 1", "task")
+	task1, err := core.CreateArtifact(ctx, ws, "Claimable task 1", "feature")
 	require.NoError(t, err)
-	task2, err := core.CreateArtifact(ctx, ws, "Claimable task 2", "task")
+	task2, err := core.CreateArtifact(ctx, ws, "Claimable task 2", "feature")
 	require.NoError(t, err)
 
 	// Verify precondition: tasks are queued.

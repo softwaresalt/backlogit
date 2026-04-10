@@ -50,7 +50,7 @@ func setupBugFixServer(t *testing.T) (*Server, *core.Workspace) {
 func seedArtifactWithSections(t *testing.T, ws *core.Workspace) *models.Artifact {
 	t.Helper()
 	ctx := context.Background()
-	artifact, err := core.CreateArtifact(ctx, ws, "Task with sections", "task")
+	artifact, err := core.CreateArtifact(ctx, ws, "Feature with sections", "feature")
 	require.NoError(t, err)
 
 	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
@@ -132,7 +132,7 @@ func TestHandleGetItem_WithoutSection_ReturnsFull(t *testing.T) {
 	// Arrange
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
-	artifact, err := core.CreateArtifact(ctx, ws, "Normal task", "task")
+	artifact, err := core.CreateArtifact(ctx, ws, "Normal feature", "feature")
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 
@@ -149,7 +149,7 @@ func TestHandleGetItem_WithoutSection_ReturnsFull(t *testing.T) {
 	require.NoError(t, err)
 	data := extractResultJSON(t, result)
 	assert.Equal(t, artifact.ID, data["id"])
-	assert.Equal(t, "Normal task", data["title"])
+	assert.Equal(t, "Normal feature", data["title"])
 }
 
 // TASK-008.02: handleCreateItem with sections param writes section content to file.
@@ -161,8 +161,8 @@ func TestHandleCreateItem_WithSections_WritesContent(t *testing.T) {
 	request := mcplib.CallToolRequest{}
 	request.Params.Name = "backlogit_create_item"
 	request.Params.Arguments = map[string]any{
-		"title":         "Task with sections",
-		"artifact_type": "task",
+		"title":         "Feature with sections",
+		"artifact_type": "feature",
 		"sections": map[string]any{
 			"description":         "This is the task description",
 			"acceptance-criteria": "- [ ] Must pass all tests",

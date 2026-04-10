@@ -250,8 +250,11 @@ func TestCreate_WithSections(t *testing.T) {
 		"acceptance-criteria": "- [ ] Criteria met",
 	}
 
+	feat, err := core.CreateArtifact(context.Background(), ws, "Section feature", "feature")
+	require.NoError(t, err)
+
 	// Act
-	artifact, err := svc.Create(context.Background(), ws, "Section test", "task", sections)
+	artifact, err := svc.Create(context.Background(), ws, "Section test", "task", sections, core.WithParent(feat.ID))
 
 	// Assert
 	require.NoError(t, err)
@@ -294,7 +297,9 @@ func TestCreate_WithEmptySections(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act — no sections provided
-	artifact, err := svc.Create(context.Background(), ws, "No sections", "task", nil)
+	feat, err := core.CreateArtifact(context.Background(), ws, "No-sections feature", "feature")
+	require.NoError(t, err)
+	artifact, err := svc.Create(context.Background(), ws, "No sections", "task", nil, core.WithParent(feat.ID))
 
 	// Assert
 	require.NoError(t, err)
@@ -313,9 +318,11 @@ func TestUpdate_SectionContent(t *testing.T) {
 	svc, err := templates.NewService(context.Background(), templatesDir)
 	require.NoError(t, err)
 
+	feat, err := core.CreateArtifact(context.Background(), ws, "Section-content feature", "feature")
+	require.NoError(t, err)
 	artifact, err := svc.Create(context.Background(), ws, "Update sections", "task", map[string]string{
 		"description": "Original content",
-	})
+	}, core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -340,7 +347,9 @@ func TestUpdate_RejectsInvalidSection(t *testing.T) {
 	svc, err := templates.NewService(context.Background(), templatesDir)
 	require.NoError(t, err)
 
-	artifact, err := svc.Create(context.Background(), ws, "Bad update", "task", nil)
+	feat, err := core.CreateArtifact(context.Background(), ws, "Bad-update feature", "feature")
+	require.NoError(t, err)
+	artifact, err := svc.Create(context.Background(), ws, "Bad update", "task", nil, core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -367,9 +376,11 @@ func TestGetSection_ExtractsContent(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedContent := "This is the description"
+	feat, err := core.CreateArtifact(context.Background(), ws, "GetSection feature", "feature")
+	require.NoError(t, err)
 	artifact, err := svc.Create(context.Background(), ws, "Get section", "task", map[string]string{
 		"description": expectedContent,
-	})
+	}, core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -392,7 +403,9 @@ func TestGetSection_NotFound(t *testing.T) {
 	svc, err := templates.NewService(context.Background(), templatesDir)
 	require.NoError(t, err)
 
-	artifact, err := svc.Create(context.Background(), ws, "Missing section", "task", nil)
+	feat, err := core.CreateArtifact(context.Background(), ws, "Missing-section feature", "feature")
+	require.NoError(t, err)
+	artifact, err := svc.Create(context.Background(), ws, "Missing section", "task", nil, core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(context.Background(), core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)

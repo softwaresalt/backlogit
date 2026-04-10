@@ -31,7 +31,10 @@ func TestReturnBlockedItem_ShipmentAndItemAreConsistentInDB(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	task, err := CreateArtifact(ctx, ws, "Blocking task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Blocking feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	task, err := CreateArtifact(ctx, ws, "Blocking task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
@@ -71,7 +74,10 @@ func TestReturnBlockedItem_FileAndDBAgreeAfterReturn(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	task, err := CreateArtifact(ctx, ws, "Agree task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Agree feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	task, err := CreateArtifact(ctx, ws, "Agree task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
@@ -104,7 +110,10 @@ func TestReturnBlockedItem_RejectsItemNotInShipment(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	task, err := CreateArtifact(ctx, ws, "Outside task", "task")
+	feat, err := CreateArtifact(ctx, ws, "Outside feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	task, err := CreateArtifact(ctx, ws, "Outside task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
@@ -131,10 +140,13 @@ func TestReturnBlockedItem_MultipleReturnsAreIndependent(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	taskA, err := CreateArtifact(ctx, ws, "Task A", "task")
+	feat, err := CreateArtifact(ctx, ws, "Multi-return feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	taskA, err := CreateArtifact(ctx, ws, "Task A", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskA))
-	taskB, err := CreateArtifact(ctx, ws, "Task B", "task")
+	taskB, err := CreateArtifact(ctx, ws, "Task B", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskB))
 

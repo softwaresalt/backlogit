@@ -24,7 +24,9 @@ func TestDeleteCommand_Force(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Delete me", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Delete feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Delete me", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)

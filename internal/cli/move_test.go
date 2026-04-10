@@ -22,7 +22,9 @@ func TestMoveCommand_ChangesStatus(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Move test", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Move feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Move test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -48,7 +50,9 @@ func TestMoveCommand_MissingStatus(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Move no status", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Missing-status feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Move no status", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	ws.Close()
 
@@ -89,7 +93,9 @@ func TestMoveCommand_OutputContainsConfirmation(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	artifact, err := core.CreateArtifact(ctx, ws, "Move confirm", "task")
+	feat, err := core.CreateArtifact(ctx, ws, "Confirm feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Move confirm", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
