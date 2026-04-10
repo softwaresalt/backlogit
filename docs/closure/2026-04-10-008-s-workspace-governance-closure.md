@@ -65,13 +65,13 @@ review rounds (commits `f942b2e`, `9faa03f`, `5d8891e`, `9ed13fb`).
 ## Failure Signals
 
 * **Orphaned artifacts:** `backlogit_doctor` returns findings with
-  `type: "orphaned_artifact"` — indicates level-2+ items were created without a
-  `parent_id` and no returned-to-backlog event exists.
+  `type: "orphaned_artifact"` (indicates level-2+ items were created without a
+  `parent_id` and no returned-to-backlog event exists).
 * **Duplicate IDs:** `backlogit_doctor` returns findings with
-  `type: "duplicate_id"` — indicates the same artifact ID appears in multiple
-  directories (regression in file routing or archive logic).
+  `type: "duplicate_id"` (indicates the same artifact ID appears in multiple
+  directories, regression in file routing or archive logic).
 * **Stale post-ship files:** `ShipShipment` returns a non-nil error containing
-  `"stale artifact IDs"` — archive operation did not complete cleanly.
+  `"stale artifact IDs"`: archive operation did not complete cleanly.
 * **Hierarchy rejection:** `backlogit add --type task` with no `--parent`
   returns an error; if it does NOT return an error, hierarchy enforcement
   regressed.
@@ -96,8 +96,8 @@ workspace, or `ShipShipment` begins erroring on valid inputs in production.
 1. Revert to the prior release tag via `git revert a058efe` or by creating a
    hotfix branch from `bb71b3d` (the pre-008-S main HEAD).
 2. Rebuild and redeploy the binary.
-3. The stash and artifact Markdown files are not altered by this change —
-   no data migration reversal is required.
+3. The stash and artifact Markdown files are not altered by this change.
+   No data migration reversal is required.
 4. File an incident item in the backlog with the specific error + reproduction
    steps before reverting.
 
@@ -116,7 +116,7 @@ silently creating an orphan.
 
 ## Follow-up Items
 
-* Stash 1393A037 (staleness detection) still open — not part of this shipment.
+* Stash 1393A037 (staleness detection) still open (not part of this shipment).
 * `Doctor` currently scans all registry-routed directories; a future improvement
   could parallelize the walk for large workspaces.
 * `VerifyPostShipConsistency` is called inside `ShipShipment` but not yet
@@ -126,8 +126,8 @@ silently creating an orphan.
 ## Learnings
 
 Captured in:
-* `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
-  — PR review comment reply protocol (hard gate in `fix-ci` Step 4c)
+* `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`:
+  PR review comment reply protocol (hard gate in `fix-ci` Step 4c)
 
 Key pattern: Registry-awareness matters for archive path exclusion. Hardcoded
 `"archive"` directory paths create a subtle correctness gap when users configure

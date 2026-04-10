@@ -1,6 +1,6 @@
 ---
-title: "008-S SHIPPED — Post-Merge Closure Complete"
-description: "Final session memory for shipment 008-S — shipped, archived, closure PR #20 open and CI green."
+title: "008-S Post-Merge Closure Complete"
+description: "Final session memory for shipment 008-S. Shipped, archived, closure PR #20 open and CI green."
 date: 2026-04-10
 origin: session-memory
 status: shipped
@@ -10,9 +10,9 @@ status: shipped
 
 **Shipment 008-S** (Workspace Governance and Archival Policies) is **shipped**.
 
-- **Branch (feature):** `025-workspace-governance-integrity` — merged to `main` as `a058efe`
-- **PR (feature):** https://github.com/softwaresalt/backlogit/pull/19 — merged
-- **PR (closure):** https://github.com/softwaresalt/backlogit/pull/20 — CI green, awaiting merge
+- **Branch (feature):** `025-workspace-governance-integrity`, merged to `main` as `a058efe`
+- **PR (feature):** https://github.com/softwaresalt/backlogit/pull/19 (merged)
+- **PR (closure):** https://github.com/softwaresalt/backlogit/pull/20 (CI green, awaiting merge)
 - **Latest commit (closure branch):** `a458dbe`
 - **Shipment status:** `shipped` (via `backlogit shipment ship 008-S --sha a058efe`)
 
@@ -40,14 +40,14 @@ status: shipped
 
 ## Post-Merge Closure
 
-- ✅ `backlogit shipment ship 008-S` — all 11 items archived
-- ✅ `docs/closure/2026-04-10-008-s-workspace-governance-closure.md` — written
-- ✅ `README.md` — updated with doctor, hierarchy enforcement, post-ship verification
-- ⏳ PR #20 — CI green, awaiting user merge approval
+- ✅ `backlogit shipment ship 008-S`: all 11 items archived
+- ✅ `docs/closure/2026-04-10-008-s-workspace-governance-closure.md`: written
+- ✅ `README.md`: updated with doctor, hierarchy enforcement, post-ship verification
+- ⏳ PR #20: CI green, awaiting user merge approval
 
 ## Protocol Improvements This Session
 
-- **fix-ci SKILL.md Step 4c** — hard gate: post replies to ALL review comment
+- **fix-ci SKILL.md Step 4c**: hard gate: post replies to ALL review comment
   threads after every push
 - **Compound doc:** `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
 
@@ -96,14 +96,14 @@ lock; `bufio.Scanner` → `json.Decoder`; `VerifyPostShipConsistency` wired into
 
 2 comments fixed and replied to:
 - **shipment_verify.go** (archive dir): replaced hardcoded `"archive"` exclusion
-  with registry-derived set — loads registry rules, collects dirs whose status
+  with registry-derived set. Loads registry rules, collects dirs whose status
   condition includes `"archived"`, falls back to `"archive"` only if none found
 - **doctor.go** (orphan check): removed `QueueLayout != nil` gate; when
   QueueLayout is absent falls back to `allowedParentTypes(ws, artifactType)`,
   mirroring the round-3 fix to `validateArtifactParent` exactly
 
 - **fix-ci SKILL.md Step 4c** added as standalone hard gate: post replies to
-  all review comment threads — NON-NEGOTIABLE. Commit `4dba37a`.
+  all review comment threads (NON-NEGOTIABLE). Commit `4dba37a`.
 - **Compound doc** at
   `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
 
