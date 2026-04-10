@@ -31,8 +31,11 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 ## Features
 
 - Hybrid CQRS architecture keeps human-readable Markdown files as the source of truth while SQLite serves token-efficient agent queries
-- MCP server exposes backlog, queue, stash, search, and planning tools over JSON-RPC 2.0 for integration with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
+- MCP server exposes backlog, queue, stash, search, planning, and integrity tools over JSON-RPC 2.0 for integration with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
 - CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `list`, `get`, `edit`, `remove`, `fetch-stash`, `harvest`), and `deliberate`
+- Workspace integrity diagnostics via `backlogit_doctor` MCP tool: detects orphaned level-2+ artifacts (tasks and subtasks missing a parent) and duplicate artifact IDs across workspace directories, with an exemption for items that were intentionally returned to the backlog
+- Hierarchy enforcement ensures level-2+ artifact types always require a `parent_id` at creation time, catching orphaned work items before they enter the queue
+- Post-shipment consistency verification runs automatically inside `ShipShipment`: after archiving, every archived ID is confirmed absent from active queue directories to detect partial archive failures early
 - FTS5 full-text search across artifact titles and descriptions via the `search` command and `backlogit_search_items` MCP tool
 - Dependency tracking between artifacts with `dep add`, `dep list`, and `backlogit_get_dependencies`
 - Work queue prioritization via `backlogit queue` and `backlogit_get_queue`, with stable pagination (`ORDER BY id ASC`), orphan filtering (excludes items whose parent feature is done or archived), and a compact list mode that returns only `id`, `title`, `status`, `type`, and `parent_id` for token-efficient agent queries
