@@ -391,6 +391,14 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleTelemetryHarvest,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_doctor",
+			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Returns a DoctorReport with findings and checked_at timestamp."),
+			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
+			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
+		),
+		s.handleDoctor,
+	)
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1419,4 +1427,33 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 		"tool_calls_indexed": hr.ToolCallsIndexed,
 		"total_tokens":       hr.TotalTokens,
 	})
+}
+
+// handleDoctor implements the backlogit_doctor MCP tool.
+// It scans the workspace for structural integrity issues (orphaned artifacts,
+// duplicate IDs) and returns a compact JSON DoctorReport.
+func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+
+	checkOrphans := true
+	checkDuplicates := true
+	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
+		checkOrphans = v
+	}
+	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
+		checkDuplicates = v
+	}
+
+	opts := &core.DoctorOptions{
+		CheckOrphans:    checkOrphans,
+		CheckDuplicates: checkDuplicates,
+	}
+	report, err := core.Doctor(ctx, ws, opts)
+	if err != nil {
+		return InternalError(fmt.Sprintf("doctor: %v", err)), nil
+	}
+	return toolResultJSON(report)
 }

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -77,11 +78,11 @@ func TestDoctorTool_ReturnsCompactJSON(t *testing.T) {
 	require.False(t, result.IsError, "tool call must not return an error result on an initialised workspace")
 	require.NotEmpty(t, result.Content)
 
-	tc, ok := result.Content[0].(interface{ GetText() string })
+	tc, ok := result.Content[0].(mcplib.TextContent)
 	require.True(t, ok, "result content must be text")
 
 	var data map[string]any
-	require.NoError(t, json.Unmarshal([]byte(tc.GetText()), &data),
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &data),
 		"backlogit_doctor must return valid JSON")
 
 	assert.Contains(t, data, "findings", "response JSON must include 'findings' key")
@@ -100,11 +101,11 @@ func TestDoctorTool_CleanWorkspaceEmptyFindings(t *testing.T) {
 	require.False(t, result.IsError)
 	require.NotEmpty(t, result.Content)
 
-	tc, ok := result.Content[0].(interface{ GetText() string })
+	tc, ok := result.Content[0].(mcplib.TextContent)
 	require.True(t, ok)
 
 	var data map[string]any
-	require.NoError(t, json.Unmarshal([]byte(tc.GetText()), &data))
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &data))
 
 	findings, ok := data["findings"].([]any)
 	require.True(t, ok, "'findings' must be a JSON array")
