@@ -111,10 +111,21 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 
-	if opts.CheckOrphans && ws.Config != nil && ws.Config.QueueLayout != nil {
+	if opts.CheckOrphans && ws.Config != nil {
 		for _, info := range artifacts {
-			level, levelErr := LevelForType(ws.Config.QueueLayout, info.artifactType)
-			if levelErr != nil || level < 2 {
+			// Determine whether this artifact type is a child type (level >= 2
+			// or has allowed parents). When QueueLayout is present, use hierarchy
+			// level; otherwise fall back to allowedParentTypes so the check works
+			// even when QueueLayout is nil — matching validateArtifactParent logic.
+			isChildType := false
+			if ws.Config.QueueLayout != nil {
+				if level, levelErr := LevelForType(ws.Config.QueueLayout, info.artifactType); levelErr == nil && level >= 2 {
+					isChildType = true
+				}
+			} else {
+				isChildType = len(allowedParentTypes(ws, info.artifactType)) > 0
+			}
+			if !isChildType {
 				continue
 			}
 			if info.parentID != "" {
