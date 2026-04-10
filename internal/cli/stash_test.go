@@ -116,6 +116,30 @@ func TestStashCommand_Edit(t *testing.T) {
 	assert.Contains(t, buf.String(), "high")
 }
 
+func TestStashCommand_Edit_NoFlags(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	cmd.SetArgs([]string{"--cwd", root, "stash", "add", "Some text", "--kind", "task"})
+	require.NoError(t, cmd.Execute())
+	var added map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &added))
+	stashID, _ := added["id"].(string)
+	require.NotEmpty(t, stashID)
+
+	buf.Reset()
+	cmd2 := cli.NewRootCommand()
+	cmd2.SetOut(buf)
+	cmd2.SetErr(buf)
+	cmd2.SetArgs([]string{"--cwd", root, "stash", "edit", stashID})
+	err := cmd2.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one of --text, --kind, or --priority is required")
+}
+
 func TestStashCommand_Remove(t *testing.T) {
 	root := setupCLIWorkspace(t)
 	cmd := cli.NewRootCommand()

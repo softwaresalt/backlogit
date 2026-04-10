@@ -48,7 +48,7 @@ type StashEntryView struct {
 	DeliberationID string           `json:"deliberation_id,omitempty"`
 	Kind           string           `json:"kind"`
 	Text           string           `json:"text"`
-	AgeDays        int              `json:"age_days,omitempty"`
+	AgeDays        *int             `json:"age_days,omitempty"`
 	Deliberation   *models.Artifact `json:"deliberation,omitempty"`
 }
 
@@ -543,7 +543,11 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 		Text:           entry.Text,
 	}
 	if entry.CreatedAt != nil {
-		view.AgeDays = int(time.Since(*entry.CreatedAt).Hours() / 24)
+		ageDays := int(time.Since(*entry.CreatedAt).Hours() / 24)
+		if ageDays < 0 {
+			ageDays = 0
+		}
+		view.AgeDays = &ageDays
 	}
 	if ws != nil && ws.DB != nil && entry.DeliberationID != "" {
 		artifact, err := db.GetItem(ctx, ws.DB, entry.DeliberationID)

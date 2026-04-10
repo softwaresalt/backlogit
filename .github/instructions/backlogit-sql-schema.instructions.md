@@ -9,7 +9,7 @@ The SQLite index at `.backlogit/index.db` is an ephemeral, read-only query cache
 
 ## Tables
 
-### `items` — Work artifacts
+### `items`: Work artifacts
 
 The primary table for all backlogit artifacts (features, tasks, subtasks, deliberations, shipments).
 
@@ -35,9 +35,9 @@ The primary table for all backlogit artifacts (features, tasks, subtasks, delibe
 | `level` | INTEGER | Hierarchy depth: `1`=feature, `2`=task, `3`=subtask |
 | `hierarchy_path` | TEXT | Path without type suffix: `001`, `001.001`, `001.001.001` |
 
-**FTS5 virtual table**: `items_fts` — columns: `id`, `title`, `description`, `labels`. Linked to `items` via `rowid`.
+**FTS5 virtual table**: `items_fts` (columns: `id`, `title`, `description`, `labels`). Linked to `items` via `rowid`.
 
-### `item_deps` — Dependencies
+### `item_deps`: Dependencies
 
 | Column | Type | Notes |
 |---|---|---|
@@ -45,7 +45,7 @@ The primary table for all backlogit artifacts (features, tasks, subtasks, delibe
 | `depends_on` | TEXT | Target artifact ID |
 | `dep_type` | TEXT | `blocks`, `relates_to`, `parent_of` |
 
-### `item_links` — Relationships
+### `item_links`: Relationships
 
 Explicit typed links between artifacts.
 
@@ -53,10 +53,10 @@ Explicit typed links between artifacts.
 |---|---|---|
 | `source_id` | TEXT | Source artifact ID |
 | `target_id` | TEXT | Target artifact ID |
-| `link_type` | TEXT | `blocks`, `relates_to`, `parent_of` |
+| `link_type` | TEXT | `related_to`, `duplicate_of`, `informs`, `supersedes`, `spike_ref` |
 | `created_at` | DATETIME | Link creation timestamp |
 
-### `stash_entries` — Stash items
+### `stash_entries`: Stash items
 
 | Column | Type | Notes |
 |---|---|---|
@@ -69,7 +69,7 @@ Explicit typed links between artifacts.
 | `source_path` | TEXT | Relative JSONL path |
 | `updated_at` | DATETIME | Last state update |
 
-### `stash_links` — Stash-to-artifact harvest links
+### `stash_links`: Stash-to-artifact harvest links
 
 | Column | Type | Notes |
 |---|---|---|
@@ -77,7 +77,7 @@ Explicit typed links between artifacts.
 | `item_id` | TEXT | Harvested artifact ID |
 | `linked_at` | DATETIME | Harvest timestamp |
 
-### `commit_links` — Commit traceability
+### `commit_links`: Commit traceability
 
 | Column | Type | Notes |
 |---|---|---|
@@ -86,7 +86,7 @@ Explicit typed links between artifacts.
 | `message` | TEXT | Commit message |
 | `author` | TEXT | Commit author |
 
-### `item_logs` — JSONL log registry
+### `item_logs`: JSONL log registry
 
 | Column | Type | Notes |
 |---|---|---|
@@ -94,7 +94,7 @@ Explicit typed links between artifacts.
 | `log_path` | TEXT | Relative path to the `.jsonl` log file |
 | `updated_at` | DATETIME | Log file last-updated timestamp |
 
-### `item_log_entries` — Individual log events
+### `item_log_entries`: Individual log events
 
 | Column | Type | Notes |
 |---|---|---|
@@ -107,16 +107,16 @@ Explicit typed links between artifacts.
 | `content` | TEXT | Human-readable event text |
 | `delta_json` | TEXT | JSON payload for the event |
 
-**FTS5 virtual table**: `item_log_entries_fts` — columns: `item_id`, `actor`, `event_type`, `content`. Linked to `item_log_entries` via `rowid`.
+**FTS5 virtual table**: `item_log_entries_fts` (columns: `item_id`, `actor`, `event_type`, `content`). Linked to `item_log_entries` via `rowid`.
 
-### `telemetry_sessions` — Agent telemetry sessions
+### `telemetry_sessions`: Agent telemetry sessions
 
 | Column | Type | Notes |
 |---|---|---|
 | `session_id` | TEXT PK | Unique session identifier |
 | (additional columns) | | See telemetry schema |
 
-### `telemetry_tool_usage` — Per-session tool call stats
+### `telemetry_tool_usage`: Per-session tool call stats
 
 Tracks tool invocation counts and token usage per session.
 
@@ -150,7 +150,7 @@ WHERE status IN ('queued', 'active')
 ORDER BY level ASC, priority DESC, created_at ASC
 ```
 
-### Find items without a parent (orphaned tasks — should be investigated)
+### Find items without a parent (orphaned tasks, should be investigated)
 
 ```sql
 SELECT id, title, artifact_type, status

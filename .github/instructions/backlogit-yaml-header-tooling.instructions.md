@@ -17,7 +17,7 @@ The table below covers every field present in artifact frontmatter (features, ta
 | `title` | Yes | `backlogit_update_item` | `title` param |
 | `artifact_type` | No | None | Determined at creation; changing type would violate WIT hierarchy |
 | `status` | Yes | `backlogit_move_item` | Prefer `backlogit_move_item` for status transitions; `backlogit_update_item` also accepts `status` |
-| `parent_id` | Yes | `backlogit_adopt_item` | Assigns or re-parents an item; generates a new hierarchical ID |
+| `parent_id` | Yes | `backlogit_adopt_item` | Assigns or re-parents an item; updates `parent_id` and records `origin_feature` only (does not rewrite the item ID or rename files) |
 | `sprint` | Yes | `backlogit_update_item` | `sprint` param |
 | `priority` | Yes | `backlogit_update_item` | `priority` param; values: `low`, `medium`, `high`, `critical` |
 | `description` | Yes | `backlogit_update_item` | `description` param (main body text) |

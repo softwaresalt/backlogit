@@ -128,6 +128,9 @@ func newStashEditCommand(cwd *string) *cobra.Command {
   backlogit stash edit ABCD1234 --text "Updated description"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if text == "" && kind == "" && priority == "" {
+				return fmt.Errorf("at least one of --text, --kind, or --priority is required")
+			}
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
