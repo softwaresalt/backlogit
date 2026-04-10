@@ -55,6 +55,14 @@ When work changes backlog state materially:
 2. Associate commits with task IDs when commit tracking is supported.
 3. Keep comments focused on operational facts.
 
+## Write-only discipline
+
+Agents MUST NOT write directly to `.backlogit/` files. All mutations must go through backlogit CLI commands or MCP tools. Direct file edits bypass validation, event logging, index maintenance, and naming conventions enforced by the tool surface.
+
+## Hierarchy ordering rule
+
+When creating tasks, you MUST provide a `parent_id` referencing an existing feature. Create the parent feature first if one does not exist. When adding items to a shipment, always add the parent feature before its child tasks so dependency and hierarchy constraints resolve correctly.
+
 ## Index freshness rule
 
 If `.backlogit/` content was edited outside the usual backlogit mutation flow, refresh the index before relying on query or queue output.

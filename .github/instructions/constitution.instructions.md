@@ -69,10 +69,26 @@ tool MUST enforce a read-only gate: only `SELECT` statements are
 permitted. No secrets or credentials MUST appear in `.backlogit/`
 files (which may be committed to Git).
 
+Write discipline is enforced at two complementary layers:
+
+* **Tool-level**: `SafeResolve` and path validation in core code
+  enforce containment at the file-operation boundary. This prevents
+  any write that escapes the workspace regardless of the caller.
+* **Agent-level**: Instructions and skill protocols enforce that
+  agents use the backlogit CLI or MCP tool surface rather than
+  writing `.backlogit/` files directly. Direct file edits bypass
+  validation, event logging, index maintenance, and naming
+  conventions. Agents MUST NOT mutate `.backlogit/` files outside
+  the tool surface.
+
 **Rationale**: backlogit operates on files that travel with the
 codebase in Git. Without strict containment, a misbehaving agent
 could write outside the workspace, execute destructive SQL, or
-leak sensitive information through serialized state.
+leak sensitive information through serialized state. The two-layer
+model provides defense in depth: tool-level enforcement is a hard
+boundary, and agent-level discipline is a quality boundary that
+keeps workflow state consistent across rehydration and index
+rebuild cycles.
 
 ### V. Structured Observability
 
