@@ -36,7 +36,7 @@ via full CI on both Go 1.23 and 1.24.
 | 025.011-T | ShipShipment lifecycle with archive integration | `internal/core` |
 | 025.012-T | Integration harness for full lifecycle | `tests/integration`, `tests/contract` |
 
-**Net change:** 64 files, +2779 / −158 lines.
+**Net change:** 64 files, +2779 / -158 lines.
 
 ## CI Status
 

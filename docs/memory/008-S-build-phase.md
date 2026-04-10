@@ -11,8 +11,8 @@ status: shipped
 **Shipment 008-S** (Workspace Governance and Archival Policies) is **shipped**.
 
 - **Branch (feature):** `025-workspace-governance-integrity`, merged to `main` as `a058efe`
-- **PR (feature):** https://github.com/softwaresalt/backlogit/pull/19 (merged)
-- **PR (closure):** https://github.com/softwaresalt/backlogit/pull/20 (CI green, awaiting merge)
+- **PR (feature):** [PR #19](https://github.com/softwaresalt/backlogit/pull/19) (merged)
+- **PR (closure):** [PR #20](https://github.com/softwaresalt/backlogit/pull/20) (CI green, awaiting merge)
 - **Latest commit (closure branch):** `a458dbe`
 - **Shipment status:** `shipped` (via `backlogit shipment ship 008-S --sha a058efe`)
 
@@ -51,19 +51,6 @@ status: shipped
   threads after every push
 - **Compound doc:** `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
 
-
-## All Units Complete
-
-| Task       | Unit | Description                          | Status |
-|------------|------|--------------------------------------|--------|
-| 025.014-T  | 4    | Archive lifecycle                    | ✅ done |
-| 025.013-T  | 2    | Hierarchy enforcement                | ✅ done |
-| 025.015-T  | 3    | Stash concurrency P0 fix             | ✅ done |
-| 025.016-T  | 1    | Doctor workspace diagnostics         | ✅ done |
-| 025.017-T  | 7    | Doctor MCP tool                      | ✅ done |
-| 025.018-T  | 6    | Post-ship consistency verification   | ✅ done |
-| 025.011-T  | 5    | ShipShipment lifecycle               | ✅ done |
-| 025.012-T  | 8    | Integration harness                  | ✅ done |
 
 ## Review Comment History
 
@@ -106,13 +93,3 @@ lock; `bufio.Scanner` → `json.Decoder`; `VerifyPostShipConsistency` wired into
   all review comment threads (NON-NEGOTIABLE). Commit `4dba37a`.
 - **Compound doc** at
   `docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md`
-
-## Post-Merge Next Steps
-
-After user approves merge:
-
-1. Run `backlogit shipment ship 008-S --sha <merge-sha> --message "<merge-message>" --author "<author>"`
-2. Invoke `operational-closure` skill in `mode=post-merge`
-3. Evaluate `docs/ARCHITECTURE.md` for Doctor + VerifyPostShipConsistency entries
-4. Check `README.md` for user-facing changes (Doctor command)
-5. Run `compact-context` if `.copilot-tracking/` has accumulated artifacts
