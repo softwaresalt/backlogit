@@ -30,11 +30,12 @@ var entryPattern = regexp.MustCompile(`(?i)^\s*-\s+\[\s*\]\s+\[([A-Z0-9]{1,8})\]
 
 // Entry represents a single active stash item stored in the stash file.
 type Entry struct {
-	ID             string `json:"id"`
-	Priority       string `json:"priority"`
-	DeliberationID string `json:"deliberation_id,omitempty"`
-	Kind           string `json:"kind"`
-	Text           string `json:"text"`
+	ID             string     `json:"id"`
+	Priority       string     `json:"priority"`
+	DeliberationID string     `json:"deliberation_id,omitempty"`
+	Kind           string     `json:"kind"`
+	Text           string     `json:"text"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
 }
 
 var allowedKinds = []string{"feature", "task", "bug", "epic", "unknown"}

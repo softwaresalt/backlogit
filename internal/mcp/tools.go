@@ -230,6 +230,7 @@ func (s *Server) RegisterTools() {
 		mcplib.NewTool("backlogit_fetch_stash",
 			mcplib.WithDescription("Fetch the current active stash entries from .backlogit/stash.jsonl"),
 			mcplib.WithString("priority", mcplib.Description("Optional stash priority filter (low, medium, high, critical)")),
+			mcplib.WithString("kind", mcplib.Description("Optional stash kind filter (feature, task, bug, epic, unknown)")),
 			mcplib.WithBoolean("group_by_priority", mcplib.Description("Group stash entries by priority")),
 		),
 		s.handleFetchStash,
@@ -255,6 +256,30 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("parent_id", mcplib.Description("Optional parent artifact ID")),
 		),
 		s.handleHarvestStash,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_stash_get",
+			mcplib.WithDescription("Get a single stash entry by ID"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID")),
+		),
+		s.handleStashGet,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_stash_edit",
+			mcplib.WithDescription("Edit a stash entry's text, kind, or priority"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID")),
+			mcplib.WithString("text", mcplib.Description("New stash item text")),
+			mcplib.WithString("kind", mcplib.Description("New stash item kind (feature, task, bug, epic, unknown)")),
+			mcplib.WithString("priority", mcplib.Description("New stash priority (low, medium, high, critical)")),
+		),
+		s.handleStashEdit,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_stash_remove",
+			mcplib.WithDescription("Remove an active stash entry"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID")),
+		),
+		s.handleStashRemove,
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_deliberate",
@@ -986,9 +1011,11 @@ func (s *Server) handleFetchStash(ctx context.Context, request mcplib.CallToolRe
 		return result, nil
 	}
 	priority, _ := request.Params.Arguments["priority"].(string)
+	kind, _ := request.Params.Arguments["kind"].(string)
 	groupByPriority, _ := request.Params.Arguments["group_by_priority"].(bool)
 	entries, err := core.FetchStash(ctx, s.Workspace, core.FetchStashOptions{
 		Priority:        priority,
+		Kind:            kind,
 		GroupByPriority: groupByPriority,
 	})
 	if err != nil {
@@ -1063,6 +1090,64 @@ func (s *Server) handleHarvestStash(ctx context.Context, request mcplib.CallTool
 		return domainError("harvest stash", err), nil
 	}
 	return toolResultJSON(result)
+}
+
+func (s *Server) handleStashGet(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	if stashID == "" {
+		return ValidationFailed("stash_id is required"), nil
+	}
+	entry, err := core.GetStashEntry(ctx, s.Workspace, stashID)
+	if err != nil {
+		return domainError("get stash entry", err), nil
+	}
+	return toolResultJSON(entry)
+}
+
+func (s *Server) handleStashEdit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	if stashID == "" {
+		return ValidationFailed("stash_id is required"), nil
+	}
+	text, _ := request.Params.Arguments["text"].(string)
+	kind, _ := request.Params.Arguments["kind"].(string)
+	priority, _ := request.Params.Arguments["priority"].(string)
+	if text == "" && kind == "" && priority == "" {
+		return ValidationFailed("at least one of text, kind, or priority must be provided"), nil
+	}
+	entry, err := core.EditStashEntry(ctx, s.Workspace, stashID, core.EditStashOptions{
+		Text:     text,
+		Kind:     kind,
+		Priority: priority,
+	})
+	if err != nil {
+		return domainError("edit stash entry", err), nil
+	}
+	return toolResultJSON(entry)
+}
+
+func (s *Server) handleStashRemove(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	stashID, _ := request.Params.Arguments["stash_id"].(string)
+	if stashID == "" {
+		return ValidationFailed("stash_id is required"), nil
+	}
+	entry, err := core.RemoveStashEntry(ctx, s.Workspace, stashID)
+	if err != nil {
+		return domainError("remove stash entry", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"id":     entry.ID,
+		"status": "removed",
+	})
 }
 
 func (s *Server) handleDeliberate(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

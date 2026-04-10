@@ -21,7 +21,10 @@ Use the stash to capture ideas, issues, risks, and follow-up work that should
 be planned later and harvested into formal work items when ready.`,
 	}
 	cmd.AddCommand(newStashAddCommand(cwd))
-	cmd.AddCommand(newStashFetchCommand(cwd))
+	cmd.AddCommand(newStashListCommand(cwd))
+	cmd.AddCommand(newStashGetCommand(cwd))
+	cmd.AddCommand(newStashEditCommand(cwd))
+	cmd.AddCommand(newStashRemoveCommand(cwd))
 	cmd.AddCommand(newStashHarvestCommand(cwd))
 	return cmd
 }
@@ -54,15 +57,17 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 	return cmd
 }
 
-func newStashFetchCommand(cwd *string) *cobra.Command {
-	var priority string
+func newStashListCommand(cwd *string) *cobra.Command {
+	var priority, kind string
 	var groupByPriority bool
 	cmd := &cobra.Command{
-		Use:   "fetch-stash",
-		Short: "Fetch the current active stash entries",
-		Example: `  backlogit stash fetch-stash
-  backlogit stash fetch-stash --priority high
-  backlogit stash fetch-stash --group-by-priority`,
+		Use:     "list",
+		Aliases: []string{"fetch-stash"},
+		Short:   "List the current active stash entries",
+		Example: `  backlogit stash list
+  backlogit stash list --priority high
+  backlogit stash list --kind feature
+  backlogit stash list --group-by-priority`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
@@ -70,9 +75,9 @@ func newStashFetchCommand(cwd *string) *cobra.Command {
 				return fmt.Errorf("open workspace: %w", err)
 			}
 			defer ws.Close()
-
 			entries, err := core.FetchStash(ctx, ws, core.FetchStashOptions{
 				Priority:        priority,
+				Kind:            kind,
 				GroupByPriority: groupByPriority,
 			})
 			if err != nil {
@@ -84,8 +89,95 @@ func newStashFetchCommand(cwd *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")
+	cmd.Flags().StringVar(&kind, "kind", "", "filter stash entries by kind (feature, task, bug, epic, unknown)")
 	cmd.Flags().BoolVar(&groupByPriority, "group-by-priority", false, "group stash entries by priority")
 	return cmd
+}
+
+func newStashGetCommand(cwd *string) *cobra.Command {
+	return &cobra.Command{
+		Use:     "get <stash-id>",
+		Short:   "Get a stash entry by ID",
+		Example: `  backlogit stash get ABCD1234`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+			entry, err := core.GetStashEntry(ctx, ws, args[0])
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(entry)
+		},
+	}
+}
+
+func newStashEditCommand(cwd *string) *cobra.Command {
+	var text, kind, priority string
+	cmd := &cobra.Command{
+		Use:   "edit <stash-id>",
+		Short: "Edit a stash entry's text, kind, or priority",
+		Example: `  backlogit stash edit ABCD1234 --kind feature
+  backlogit stash edit ABCD1234 --priority high
+  backlogit stash edit ABCD1234 --text "Updated description"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+			entry, err := core.EditStashEntry(ctx, ws, args[0], core.EditStashOptions{
+				Text:     text,
+				Kind:     kind,
+				Priority: priority,
+			})
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(entry)
+		},
+	}
+	cmd.Flags().StringVar(&text, "text", "", "new stash item text")
+	cmd.Flags().StringVar(&kind, "kind", "", "new stash item kind (feature, task, bug, epic, unknown)")
+	cmd.Flags().StringVar(&priority, "priority", "", "new stash priority (low, medium, high, critical)")
+	return cmd
+}
+
+func newStashRemoveCommand(cwd *string) *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <stash-id>",
+		Short:   "Remove an active stash entry",
+		Example: `  backlogit stash remove ABCD1234`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+			entry, err := core.RemoveStashEntry(ctx, ws, args[0])
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]any{
+				"id":     entry.ID,
+				"status": "removed",
+			})
+		},
+	}
 }
 
 func newStashHarvestCommand(cwd *string) *cobra.Command {

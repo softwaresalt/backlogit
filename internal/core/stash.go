@@ -19,11 +19,13 @@ import (
 const (
 	stashStateActive    = "active"
 	stashStateHarvested = "harvested"
+	stashStateRemoved   = "removed"
 )
 
 // FetchStashOptions controls stash fetch filtering and grouping.
 type FetchStashOptions struct {
 	Priority        string `json:"priority,omitempty"`
+	Kind            string `json:"kind,omitempty"`
 	GroupByPriority bool   `json:"group_by_priority,omitempty"`
 	Limit           int    `json:"limit,omitempty"` // max entries to return (0 = no limit)
 }
@@ -46,6 +48,7 @@ type StashEntryView struct {
 	DeliberationID string           `json:"deliberation_id,omitempty"`
 	Kind           string           `json:"kind"`
 	Text           string           `json:"text"`
+	AgeDays        int              `json:"age_days,omitempty"`
 	Deliberation   *models.Artifact `json:"deliberation,omitempty"`
 }
 
@@ -132,6 +135,19 @@ func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*Fe
 		}
 		entries = filtered
 	}
+	if opts.Kind != "" {
+		kind, err := stash.NormalizeKind(opts.Kind)
+		if err != nil {
+			return nil, err
+		}
+		filtered := make([]stash.Entry, 0, len(entries))
+		for _, entry := range entries {
+			if entry.Kind == kind {
+				filtered = append(filtered, entry)
+			}
+		}
+		entries = filtered
+	}
 
 	views, err := expandStashEntries(ctx, ws, entries)
 	if err != nil {
@@ -200,7 +216,8 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	if err != nil {
 		return nil, err
 	}
-	entry := stash.Entry{ID: id, Priority: normalizedPriority, Kind: normalizedKind, Text: trimmedText}
+	now := time.Now().UTC()
+	entry := stash.Entry{ID: id, Priority: normalizedPriority, Kind: normalizedKind, Text: trimmedText, CreatedAt: &now}
 	entries = append(entries, entry)
 	if err := writeStashEntries(path, entries); err != nil {
 		return nil, err
@@ -525,6 +542,9 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 		Kind:           entry.Kind,
 		Text:           entry.Text,
 	}
+	if entry.CreatedAt != nil {
+		view.AgeDays = int(time.Since(*entry.CreatedAt).Hours() / 24)
+	}
 	if ws != nil && ws.DB != nil && entry.DeliberationID != "" {
 		artifact, err := db.GetItem(ctx, ws.DB, entry.DeliberationID)
 		if err == nil {
@@ -534,4 +554,115 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 		}
 	}
 	return view, nil
+}
+
+// RemoveStashEntry permanently removes an active stash entry by ID.
+// The entry is removed from the JSONL file and marked as removed in the DB index.
+func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stash.Entry, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
+	if err := EnsureStashFile(ws.RootPath); err != nil {
+		return nil, err
+	}
+	entry, remaining, err := removeStashEntry(ws.RootPath, stashID)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeStashEntries(path, remaining); err != nil {
+		return nil, fmt.Errorf("rewrite stash file: %w", err)
+	}
+	if ws.DB != nil {
+		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateRemoved, stashRelativePath(), time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
+	return &entry, nil
+}
+
+// EditStashOptions controls which fields to update on a stash entry.
+type EditStashOptions struct {
+	Text     string `json:"text,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Priority string `json:"priority,omitempty"`
+}
+
+// EditStashEntry updates mutable fields of an active stash entry.
+// Only non-empty option fields are applied.
+func EditStashEntry(ctx context.Context, ws *Workspace, stashID string, opts EditStashOptions) (*StashEntryView, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	if stashID == "" {
+		return nil, fmt.Errorf("stash id is required")
+	}
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
+	if err := EnsureStashFile(ws.RootPath); err != nil {
+		return nil, err
+	}
+	entries, err := readStashEntries(path)
+	if err != nil {
+		return nil, err
+	}
+	needle := strings.ToUpper(strings.TrimSpace(stashID))
+	found := false
+	var updated stash.Entry
+	for i := range entries {
+		if !strings.EqualFold(entries[i].ID, needle) {
+			continue
+		}
+		found = true
+		if opts.Text != "" {
+			trimmed := strings.TrimSpace(opts.Text)
+			if trimmed == "" {
+				return nil, fmt.Errorf("text cannot be empty")
+			}
+			entries[i].Text = trimmed
+		}
+		if opts.Kind != "" {
+			kind, err := stash.NormalizeKind(opts.Kind)
+			if err != nil {
+				return nil, err
+			}
+			entries[i].Kind = kind
+		}
+		if opts.Priority != "" {
+			priority, err := stash.NormalizePriority(opts.Priority)
+			if err != nil {
+				return nil, err
+			}
+			entries[i].Priority = priority
+		}
+		updated = entries[i]
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
+	}
+	if err := writeStashEntries(path, entries); err != nil {
+		return nil, fmt.Errorf("rewrite stash file: %w", err)
+	}
+	if ws.DB != nil {
+		if err := db.UpsertStashEntry(ctx, ws.DB, updated.ID, updated.Priority, updated.Kind, updated.Text, updated.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
+	view, err := expandStashEntry(ctx, ws, updated)
+	if err != nil {
+		return nil, err
+	}
+	return &view, nil
 }
