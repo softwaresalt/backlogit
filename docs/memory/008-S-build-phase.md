@@ -1,6 +1,6 @@
 ---
-title: "008-S Complete — Awaiting Merge Approval (Round 3 fixes done)"
-description: "Final session memory for shipment 008-S — three rounds of Copilot review fixes complete, CI green, PR #19 ready for user merge approval."
+title: "008-S Complete — Awaiting Merge Approval (Round 4 fixes done)"
+description: "Final session memory for shipment 008-S — four rounds of Copilot review fixes complete, CI pending on 9ed13fb, PR #19 ready for user merge approval."
 date: 2026-04-10
 origin: session-memory
 status: merge-pending
@@ -13,10 +13,10 @@ awaiting user merge approval.
 
 - **Branch:** `025-workspace-governance-integrity`
 - **PR:** https://github.com/softwaresalt/backlogit/pull/19
-- **Latest commit:** `5d8891e`
+- **Latest commit:** `9ed13fb`
 - **CI:** ✅ Go 1.23 + 1.24 both passing
 - **Mergeable:** Yes
-- **Copilot review comment rounds:** 3 rounds (20 total comments, all replied to)
+- **Copilot review comment rounds:** 4 rounds (22 total comments, all replied to)
 
 ## All Units Complete
 
@@ -58,7 +58,15 @@ lock; `bufio.Scanner` → `json.Decoder`; `VerifyPostShipConsistency` wired into
 - **artifacts.go**: hierarchy enforcement now falls back to `allowedParentTypes`
   when `QueueLayout` is nil, so level-2+ types always require `parent_id`
 
-## Protocol Improvements This Session
+### Round 4 (IDs 3065518..., commit 9ed13fb)
+
+2 comments fixed and replied to:
+- **shipment_verify.go** (archive dir): replaced hardcoded `"archive"` exclusion
+  with registry-derived set — loads registry rules, collects dirs whose status
+  condition includes `"archived"`, falls back to `"archive"` only if none found
+- **doctor.go** (orphan check): removed `QueueLayout != nil` gate; when
+  QueueLayout is absent falls back to `allowedParentTypes(ws, artifactType)`,
+  mirroring the round-3 fix to `validateArtifactParent` exactly
 
 - **fix-ci SKILL.md Step 4c** added as standalone hard gate: post replies to
   all review comment threads — NON-NEGOTIABLE. Commit `4dba37a`.
