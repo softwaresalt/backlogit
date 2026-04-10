@@ -1,11 +1,12 @@
 package core_test
 
 // 025.018-T (Unit 6): Post-shipment queue-path consistency verification.
-// VerifyPostShipConsistency is implemented in internal/core/shipment_verify.go.
+// VerifyPostShipConsistency is implemented in internal/core/shipment_verify.go
+// and is wired into ShipShipment after archiveItems.
 //
 // Tests:
-//   - TestShipShipment_FailsOnStaleQueueFile   — verifies error on stale queue file after archive
-//   - TestShipShipment_SucceedsWhenQueueClean  — verifies success when queue is clean after archive
+//   - TestVerifyPostShipConsistency_FailsOnStaleQueueFile — verifies error on stale queue file after archive
+//   - TestVerifyPostShipConsistency_SucceedsWhenQueueClean — verifies success when queue is clean after archive
 
 import (
 	"context"
@@ -19,13 +20,10 @@ import (
 	bldb "github.com/backlogit/backlogit/internal/db"
 )
 
-// TestShipShipment_FailsOnStaleQueueFile verifies that if a queue file survives
-// archiving (simulated by writing it back after ArchiveItem), ShipShipment returns
-// an error identifying the stale path rather than silently succeeding.
-//
-// After Unit 6, ShipShipment calls VerifyPostShipConsistency; this test exercises
-// that path directly by patching the filesystem after shipment.
-func TestShipShipment_FailsOnStaleQueueFile(t *testing.T) {
+// TestVerifyPostShipConsistency_FailsOnStaleQueueFile verifies that if a queue file survives
+// archiving (simulated by writing it back after ArchiveItem), VerifyPostShipConsistency returns
+// an error identifying the stale artifact ID.
+func TestVerifyPostShipConsistency_FailsOnStaleQueueFile(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 
@@ -50,9 +48,6 @@ func TestShipShipment_FailsOnStaleQueueFile(t *testing.T) {
 
 	// Simulate a stale queue file by writing it back between archive and verify.
 	// This mimics what happens if ArchiveItem's os.Remove fails silently.
-	// The test intercepts BEFORE ShipShipment to write the stale file beforehand;
-	// ShipShipment's integrated VerifyPostShipConsistency should catch it.
-	// Strategy: archive manually, re-inject stale file, then call ShipShipment.
 	_, archiveErr := core.ArchiveItem(ctx, ws.DB, ws, task.ID)
 	require.NoError(t, archiveErr)
 	require.NoError(t, os.WriteFile(taskPath, taskContent, 0o644)) // re-inject stale file
@@ -64,9 +59,9 @@ func TestShipShipment_FailsOnStaleQueueFile(t *testing.T) {
 	assert.Contains(t, err.Error(), task.ID, "error must identify the artifact with a stale queue file")
 }
 
-// TestShipShipment_SucceedsWhenQueueClean verifies that VerifyPostShipConsistency
+// TestVerifyPostShipConsistency_SucceedsWhenQueueClean verifies that VerifyPostShipConsistency
 // returns nil when all provided artifact IDs are absent from the queue directory.
-func TestShipShipment_SucceedsWhenQueueClean(t *testing.T) {
+func TestVerifyPostShipConsistency_SucceedsWhenQueueClean(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
 

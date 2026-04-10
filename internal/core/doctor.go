@@ -6,7 +6,6 @@ package core
 // and nil-layout guard failures.
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -172,10 +171,10 @@ func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
 	var ev struct {
 		EventType string `json:"event_type"`
 	}
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if jsonErr := json.Unmarshal(scanner.Bytes(), &ev); jsonErr != nil {
-			continue
+	dec := json.NewDecoder(f)
+	for {
+		if decErr := dec.Decode(&ev); decErr != nil {
+			break
 		}
 		if ev.EventType == "returned_to_backlog" {
 			return true
