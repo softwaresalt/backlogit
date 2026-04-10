@@ -1,11 +1,11 @@
 package core_test
 
 // 025.018-T (Unit 6): Post-shipment queue-path consistency verification.
-// All tests in this file are RED until VerifyPostShipConsistency is implemented (it panics).
+// VerifyPostShipConsistency is implemented in internal/core/shipment_verify.go.
 //
 // Tests:
-//   - TestShipShipment_FailsOnStaleQueueFile   — RED: VerifyPostShipConsistency panics
-//   - TestShipShipment_SucceedsWhenQueueClean  — RED: VerifyPostShipConsistency panics
+//   - TestShipShipment_FailsOnStaleQueueFile   — verifies error on stale queue file after archive
+//   - TestShipShipment_SucceedsWhenQueueClean  — verifies success when queue is clean after archive
 
 import (
 	"context"

@@ -1,15 +1,14 @@
 package contract_test
 
 // 025.017-T (Unit 5): backlogit_doctor MCP tool contract tests.
-// All tests in this file are RED until the backlogit_doctor tool is registered
-// in internal/mcp/tools.go.
+// The backlogit_doctor tool is registered in internal/mcp/tools.go.
 //
 // Tests:
-//   - TestDoctorTool_SchemaValid                  — RED: tool not registered
-//   - TestDoctorTool_AlwaysVisible                — RED: tool not registered
-//   - TestDoctorTool_DescriptivePreInitError      — RED: tool not registered
-//   - TestDoctorTool_ReturnsCompactJSON           — RED: tool not registered
-//   - TestDoctorTool_CleanWorkspaceEmptyFindings  — RED: tool not registered
+//   - TestDoctorTool_SchemaValid                  — verifies tool schema
+//   - TestDoctorTool_AlwaysVisible                — verifies unconditional visibility
+//   - TestDoctorTool_DescriptivePreInitError      — verifies pre-init error message
+//   - TestDoctorTool_ReturnsCompactJSON           — verifies compact JSON output
+//   - TestDoctorTool_CleanWorkspaceEmptyFindings  — verifies clean workspace returns no findings
 
 import (
 	"encoding/json"

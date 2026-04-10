@@ -1,14 +1,14 @@
 package core_test
 
 // 025.016-T (Unit 4): Doctor workspace integrity diagnostics.
-// All tests in this file are RED until Doctor is implemented (it panics).
+// Doctor is implemented in internal/core/doctor.go.
 //
 // Tests:
-//   - TestDoctor_DetectsOrphanedTask          — RED: Doctor panics
-//   - TestDoctor_IgnoresIntentionalOrphans    — RED: Doctor panics
-//   - TestDoctor_DetectsDuplicateAcrossQueueArchive — RED: Doctor panics
-//   - TestDoctor_CleanWorkspaceNoFindings     — RED: Doctor panics
-//   - TestDoctor_NilLayoutDoesNotPanic        — RED: Doctor panics
+//   - TestDoctor_DetectsOrphanedTask          — verifies orphan detection
+//   - TestDoctor_IgnoresIntentionalOrphans    — verifies returned_to_backlog exemption
+//   - TestDoctor_DetectsDuplicateAcrossQueueArchive — verifies duplicate ID detection
+//   - TestDoctor_CleanWorkspaceNoFindings     — verifies clean workspace returns no findings
+//   - TestDoctor_NilLayoutDoesNotPanic        — verifies nil layout safety
 
 import (
 	"context"

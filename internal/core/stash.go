@@ -262,7 +262,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	if err != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}
-	entry, remaining, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
+	entry, _, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
 	if err != nil {
 		_ = unlock()
 		return nil, err
@@ -305,11 +305,20 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 
 	// Artifact created successfully — now commit the stash removal so the entry
 	// is not consumed until we know creation succeeded (fixes P0 data-loss F-003).
+	// Re-read the stash under the second lock to capture any concurrent additions
+	// (e.g., AddStashEntry) that occurred while CreateArtifact was running. Writing
+	// the stale `remaining` snapshot from the first read would silently drop those
+	// concurrent entries.
 	unlock2, lockErr := lockStashFile(path)
 	if lockErr != nil {
 		return nil, fmt.Errorf("acquire stash lock for commit: %w", lockErr)
 	}
-	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
+	_, freshRemaining, removeErr := removeStashEntry(ws.RootPath, harvestOpts.StashID)
+	if removeErr != nil {
+		_ = unlock2()
+		return nil, fmt.Errorf("re-read stash for commit: %w", removeErr)
+	}
+	if writeErr := writeStashEntries(path, freshRemaining); writeErr != nil {
 		_ = unlock2()
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
 	}

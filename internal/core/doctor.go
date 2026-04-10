@@ -25,8 +25,9 @@ const (
 	// and no evidence of intentional orphaning (e.g., returned_to_backlog event).
 	FindingOrphanedArtifact DoctorFindingType = "orphaned_artifact"
 
-	// FindingDuplicateID indicates the same artifact ID exists in both the
-	// queue directory and the archive directory simultaneously.
+	// FindingDuplicateID indicates the same artifact ID appears in two or more
+	// workspace directories simultaneously (e.g., both queue and archive, or
+	// across multiple registry-routed directories).
 	FindingDuplicateID DoctorFindingType = "duplicate_id"
 )
 
@@ -137,10 +138,19 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if len(paths) < 2 || reported[id] {
 				continue
 			}
+			// Convert to workspace-relative paths to keep the report portable.
+			relPaths := make([]string, 0, len(paths))
+			for _, p := range paths {
+				if rel, relErr := filepath.Rel(ws.RootPath, p); relErr == nil {
+					relPaths = append(relPaths, rel)
+				} else {
+					relPaths = append(relPaths, p)
+				}
+			}
 			report.Findings = append(report.Findings, DoctorFinding{
 				Type:        FindingDuplicateID,
 				ArtifactID:  id,
-				Description: fmt.Sprintf("artifact ID %q appears in %d locations: %v", id, len(paths), paths),
+				Description: fmt.Sprintf("artifact ID %q appears in %d locations: %v", id, len(relPaths), relPaths),
 			})
 			reported[id] = true
 		}

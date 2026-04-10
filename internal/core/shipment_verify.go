@@ -13,7 +13,7 @@ import (
 
 // VerifyPostShipConsistency verifies that all items in archivedIDs are absent
 // from the workspace queue directory. It returns an error listing any stale
-// queue paths found, indicating a partial or failed archive operation.
+// artifact IDs found, indicating a partial or failed archive operation.
 func VerifyPostShipConsistency(_ context.Context, ws *Workspace, archivedIDs []string) error {
 	if len(archivedIDs) == 0 {
 		return nil
