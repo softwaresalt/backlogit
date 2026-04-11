@@ -13,7 +13,7 @@ keywords:
 
 ## Prerequisites
 
-backlogit requires Go 1.22 or later. It runs on Linux, macOS, and Windows. Because the SQLite driver uses a pure-Go implementation with no CGo, no C toolchain or system SQLite library is needed.
+backlogit requires Go 1.24 or later. It runs on Linux, macOS, and Windows. Because the SQLite driver uses a pure-Go implementation with no CGo, no C toolchain or system SQLite library is needed.
 
 Confirm your Go version before installing:
 
@@ -21,7 +21,7 @@ Confirm your Go version before installing:
 go version
 ```
 
-The output should show `go1.22` or higher.
+The output should show `go1.24` or higher.
 
 ## Method 1: Install with go install
 
@@ -68,11 +68,10 @@ Move-Item backlogit.exe C:\Windows\System32\
 Confirm the installation succeeded:
 
 ```bash
-backlogit --version
-backlogit --help
+backlogit help
 ```
 
-You should see the version string and a list of available commands. If the binary is not found, check that the install directory is in your `PATH`.
+You should see a list of available commands. If the binary is not found, check that the install directory is in your `PATH`.
 
 ## Shell Completion
 
@@ -117,7 +116,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 
 **Build fails with a Go version error**
 
-The module requires Go 1.22 or later. Run `go version` and upgrade your toolchain if needed. The official [Go downloads page](https://go.dev/dl/) has installers for all platforms.
+The module requires Go 1.24 or later. Run `go version` and upgrade your toolchain if needed. The official [Go downloads page](https://go.dev/dl/) has installers for all platforms.
 
 **Binary runs but cannot find the workspace**
 

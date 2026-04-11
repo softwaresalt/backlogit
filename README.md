@@ -32,7 +32,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 
 - Hybrid CQRS architecture keeps human-readable Markdown files as the source of truth while SQLite serves token-efficient agent queries
 - MCP server exposes backlog, queue, stash, search, planning, and integrity tools over JSON-RPC 2.0 for integration with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
-- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `list`, `get`, `edit`, `remove`, `fetch-stash`, `harvest`), and `deliberate`
+- CLI commands cover the full artifact lifecycle plus stash workflows: create, list, query, update, move, archive, migrate, the `stash` command group (`add`, `list`, `get`, `edit`, `remove`, `harvest`), and `deliberate`
 - Workspace integrity diagnostics via `backlogit_doctor` MCP tool: detects orphaned level-2+ artifacts (tasks and subtasks missing a parent) and duplicate artifact IDs across workspace directories, with an exemption for items that were intentionally returned to the backlog
 - Hierarchy enforcement ensures level-2+ artifact types always require a `parent_id` at creation time, catching orphaned work items before they enter the queue
 - Post-shipment consistency verification runs automatically inside `ShipShipment`: after archiving, every archived ID is confirmed absent from active queue directories to detect partial archive failures early
@@ -78,7 +78,7 @@ backlogit stash list --kind feature
 backlogit stash get ABCD1234
 backlogit stash edit ABCD1234 --priority critical
 backlogit deliberate ABCD1234 --chosen-direction "Keep the initial scope narrow and defer follow-up polish"
-backlogit stash fetch-stash --group-by-priority
+backlogit stash list --group-by-priority
 backlogit stash harvest --priority critical --type task
 backlogit stash remove ABCD1234
 ```

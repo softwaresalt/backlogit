@@ -100,8 +100,8 @@ Older stash lines without a priority tag are still accepted and normalize to `me
 ```text
 backlogit stash add "Capture follow-up hardening ideas" --kind feature --priority high
 backlogit deliberate ABCD1234 --problem-frame "Clarify the trade-offs before this becomes a planned feature."
-backlogit stash fetch-stash --priority critical
-backlogit stash fetch-stash --group-by-priority
+backlogit stash list --priority critical
+backlogit stash list --group-by-priority
 backlogit stash harvest ABCD1234 --type feature
 backlogit stash harvest --priority high --type task
 ```

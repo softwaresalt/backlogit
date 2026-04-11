@@ -171,4 +171,3 @@ func TestOpen_RehydrationPreservesPragmas(t *testing.T) {
 	_, err = database.ExecContext(ctx, `INSERT INTO child (id, parent_id) VALUES ('child-1', 'missing-parent')`)
 	require.Error(t, err)
 }
-

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/backlogit/backlogit/internal/cli"
 	"github.com/backlogit/backlogit/internal/config"
+	"github.com/backlogit/backlogit/internal/core"
+	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/models"
 )
 
 // TASK-002.04.01: Implement CLI add command.
@@ -155,4 +159,158 @@ func TestAddCommand_CreatesMarkdownFile(t *testing.T) {
 		return nil
 	}))
 	assert.True(t, found, "expected at least one .md file created")
+}
+
+// readArtifactFile walks the .backlogit directory and returns the raw content of the
+// Markdown file whose base name contains id. Fails the test if no such file is found.
+func readArtifactFile(t *testing.T, root, id string) string {
+	t.Helper()
+	var content string
+	found := false
+	err := filepath.WalkDir(filepath.Join(root, ".backlogit"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if filepath.Ext(path) == ".md" && strings.Contains(filepath.Base(path), id) {
+			raw, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			content = string(raw)
+			found = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, found, "artifact file not found for ID %s", id)
+	return content
+}
+
+// createFeatureAndGetID creates a parent feature via CLI and returns its ID.
+func createFeatureAndGetID(t *testing.T, root, title string) string {
+	t.Helper()
+	featCmd := cli.NewRootCommand()
+	featBuf := new(bytes.Buffer)
+	featCmd.SetOut(featBuf)
+	featCmd.SetErr(featBuf)
+	featCmd.SetArgs([]string{"--cwd", root, "add", "--type", "feature", "--title", title})
+	require.NoError(t, featCmd.Execute())
+	return extractID(t, featBuf.String())
+}
+
+// getArtifactFromCLIWorkspace opens a fresh workspace, rehydrates, and returns the artifact.
+func getArtifactFromCLIWorkspace(t *testing.T, root, id string) *models.Artifact {
+	t.Helper()
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { ws.Close() })
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+	require.NoError(t, err)
+	artifact, err := db.GetItem(ctx, ws.DB, id)
+	require.NoError(t, err)
+	return artifact
+}
+
+func TestAddCommand_Priority(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	featID := createFeatureAndGetID(t, root, "Priority feature")
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Priority task", "--parent", featID, "--priority", "high"})
+
+	require.NoError(t, cmd.Execute())
+
+	id := extractID(t, buf.String())
+	artifact := getArtifactFromCLIWorkspace(t, root, id)
+	assert.Equal(t, "high", artifact.Priority)
+}
+
+func TestAddCommand_AssignedTo(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	featID := createFeatureAndGetID(t, root, "Assigned feature")
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Assigned task", "--parent", featID, "--assigned-to", "agent-x"})
+
+	require.NoError(t, cmd.Execute())
+
+	id := extractID(t, buf.String())
+	artifact := getArtifactFromCLIWorkspace(t, root, id)
+	assert.Equal(t, "agent-x", artifact.AssignedTo)
+}
+
+func TestAddCommand_Labels(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	featID := createFeatureAndGetID(t, root, "Labels feature")
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Labels task", "--parent", featID, "--labels", "a,b,c"})
+
+	require.NoError(t, cmd.Execute())
+
+	id := extractID(t, buf.String())
+	artifact := getArtifactFromCLIWorkspace(t, root, id)
+	assert.Equal(t, []string{"a", "b", "c"}, artifact.Labels)
+}
+
+func TestAddCommand_EmptyLabels(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	featID := createFeatureAndGetID(t, root, "Empty labels feature")
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "add", "--type", "task", "--title", "Empty labels task", "--parent", featID, "--labels", ""})
+
+	require.NoError(t, cmd.Execute())
+
+	id := extractID(t, buf.String())
+	artifact := getArtifactFromCLIWorkspace(t, root, id)
+	assert.Empty(t, artifact.Labels, "empty --labels should not persist any label entries")
+}
+
+func TestAddCommand_AllFlags(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	featID := createFeatureAndGetID(t, root, "All-flags feature")
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"--cwd", root, "add",
+		"--type", "task",
+		"--title", "All-flags task",
+		"--parent", featID,
+		"--priority", "medium",
+		"--sprint", "s1",
+		"--assigned-to", "bot",
+		"--owner", "team",
+		"--labels", "x,y",
+		"--dependencies", "001-F",
+		"--references", "docs/foo.md",
+		"--commit", "abc123",
+	})
+
+	require.NoError(t, cmd.Execute())
+
+	id := extractID(t, buf.String())
+	artifact := getArtifactFromCLIWorkspace(t, root, id)
+	assert.Equal(t, "medium", artifact.Priority)
+	assert.Equal(t, "s1", artifact.Sprint)
+	assert.Equal(t, "bot", artifact.AssignedTo)
+	assert.Equal(t, "team", artifact.Owner)
+	assert.Equal(t, []string{"x", "y"}, artifact.Labels)
+	assert.Equal(t, "abc123", artifact.Commit)
 }

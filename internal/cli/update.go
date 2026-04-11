@@ -24,6 +24,12 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		idFlag        string
 		sections      []string
 		harnessStatus string
+		description   string
+		sprint        string
+		assignedTo    string
+		owner         string
+		labels        string
+		commit        string
 	)
 
 	cmd := &cobra.Command{
@@ -66,6 +72,24 @@ replacing the rest of the document body.`,
 			if cmd.Flags().Changed("harness-status") {
 				updates["harness_status"] = harnessStatus
 			}
+			if cmd.Flags().Changed("description") {
+				updates["description"] = description
+			}
+			if cmd.Flags().Changed("sprint") {
+				updates["sprint"] = sprint
+			}
+			if cmd.Flags().Changed("assigned-to") {
+				updates["assigned_to"] = assignedTo
+			}
+			if cmd.Flags().Changed("owner") {
+				updates["owner"] = owner
+			}
+			if cmd.Flags().Changed("labels") {
+				updates["labels"] = splitCSV(labels)
+			}
+			if cmd.Flags().Changed("commit") {
+				updates["commit"] = commit
+			}
 
 			// Parse section updates: name=value pairs.
 			sectionUpdates := map[string]string{}
@@ -81,28 +105,22 @@ replacing the rest of the document body.`,
 				return fmt.Errorf("no updates specified")
 			}
 
-			// Find the artifact file.
-			filePath, err := core.FindArtifactPath(ctx, ws, id)
-			if err != nil {
-				return err
-			}
-
 			// Apply frontmatter updates if any.
 			if len(updates) > 0 {
-				artifact, updateErr := core.UpdateArtifact(ctx, ws, id, updates)
+				_, updateErr := core.UpdateArtifact(ctx, ws, id, updates)
 				if updateErr != nil {
 					return updateErr
-				}
-				if writeErr := core.WriteArtifactFile(artifact, filePath); writeErr != nil {
-					return writeErr
-				}
-				if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-					return upsertErr
 				}
 			}
 
 			// Apply section updates if any.
 			if len(sectionUpdates) > 0 {
+				// Resolve the file path after any frontmatter-driven relocation
+				// (e.g., a status change moving the file from queue/ to archive/).
+				filePath, err := core.FindArtifactPath(ctx, ws, id)
+				if err != nil {
+					return err
+				}
 				raw, readErr := os.ReadFile(filePath)
 				if readErr != nil {
 					return fmt.Errorf("read artifact file: %w", readErr)
@@ -156,5 +174,11 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&idFlag, "id", "", "artifact ID (immutable, always rejected)")
 	cmd.Flags().StringArrayVar(&sections, "section", nil, "section update as name=value (repeatable)")
 	cmd.Flags().StringVar(&harnessStatus, "harness-status", "", "harness status (pending, scaffolded, passing, failing)")
+	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&sprint, "sprint", "", "sprint ID")
+	cmd.Flags().StringVar(&assignedTo, "assigned-to", "", "assignee")
+	cmd.Flags().StringVar(&owner, "owner", "", "owner")
+	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
+	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	return cmd
 }

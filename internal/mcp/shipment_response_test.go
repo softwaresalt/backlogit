@@ -145,7 +145,7 @@ func TestListShipments_EmptyItems_NeverNull(t *testing.T) {
 func TestNormalizeShipmentItems_AllCases(t *testing.T) {
 	tests := []struct {
 		name  string
-		input any    // value to set in custom_fields["items"], or nil for absent key
+		input any // value to set in custom_fields["items"], or nil for absent key
 		want  []string
 	}{
 		{name: "nil custom_fields map", input: nil, want: []string{}},
