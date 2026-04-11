@@ -2,6 +2,7 @@
 title: "012-S Closure: Build, Docs & CLI Parity"
 description: Post-merge closure record for shipment 012-S
 ms.date: 2026-04-11
+ms.topic: reference
 ---
 
 ## Shipment
