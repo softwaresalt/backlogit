@@ -1,4 +1,8 @@
-# Ship 012-S: PR Ready — Awaiting Merge Approval
+---
+title: Ship 012-S PR Ready — Awaiting Merge Approval
+description: Session memory for shipment 012-S after all quality gates pass and PR is open
+ms.date: 2026-04-11
+---
 
 **Date**: 2026-04-11
 **Shipment**: 012-S — Build, Docs & CLI Parity

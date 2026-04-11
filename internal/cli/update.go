@@ -84,7 +84,7 @@ replacing the rest of the document body.`,
 			if cmd.Flags().Changed("owner") {
 				updates["owner"] = owner
 			}
-			if cmd.Flags().Changed("labels") {
+			if cmd.Flags().Changed("labels") && labels != "" {
 				updates["labels"] = splitCSV(labels)
 			}
 			if cmd.Flags().Changed("commit") {

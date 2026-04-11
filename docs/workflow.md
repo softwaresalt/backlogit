@@ -163,8 +163,9 @@ backlogit move T042 --status done
 
 **Add a dependency between artifacts:**
 
-Dependencies are managed through the MCP tool surface (`backlogit_add_link`) or
-by setting `--dependencies` on `backlogit add` and `backlogit update`.
+Dependencies are managed through the MCP tool surface
+(`backlogit_add_dependency`) or with the CLI dependency commands such as
+`backlogit dep add T042 T017 --type blocks` and `backlogit dep remove T042 T017`.
 
 **Archive a completed artifact:**
 

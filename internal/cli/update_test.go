@@ -195,7 +195,8 @@ func TestUpdateCommand_EmptyLabels(t *testing.T) {
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
 
-	feat, err := core.CreateArtifact(ctx, ws, "Empty label feature", "feature")
+	// Create feature with pre-existing labels to verify --labels "" is a no-op.
+	feat, err := core.CreateArtifact(ctx, ws, "Empty label feature", "feature", core.WithLabels([]string{"keep-me"}))
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
@@ -205,11 +206,14 @@ func TestUpdateCommand_EmptyLabels(t *testing.T) {
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--cwd", root, "update", feat.ID, "--labels", ""})
+	// --labels "" alongside a real update: the title changes but labels must remain untouched.
+	cmd.SetArgs([]string{"--cwd", root, "update", feat.ID, "--title", "Updated title", "--labels", ""})
 
-	err = cmd.Execute()
+	require.NoError(t, cmd.Execute())
 
-	require.NoError(t, err)
+	// Empty --labels "" must not clear existing labels (no-op guard in update.go).
+	content := readArtifactFile(t, root, feat.ID)
+	assert.Contains(t, content, "keep-me", "existing label must survive --labels \"\" no-op")
 }
 
 func TestUpdateCommand_StatusAndSection(t *testing.T) {
@@ -228,11 +232,14 @@ func TestUpdateCommand_StatusAndSection(t *testing.T) {
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--cwd", root, "update", feat.ID, "--status", "active", "--section", "description=Updated description after relocation"})
+	// Transition active→done triggers relocation (queue/→archive/); section must be written in the new location.
+	cmd.SetArgs([]string{"--cwd", root, "update", feat.ID, "--status", "done", "--section", "description=Updated after relocation"})
 
-	err = cmd.Execute()
+	require.NoError(t, cmd.Execute())
 
-	require.NoError(t, err)
+	// readArtifactFile walks the entire .backlogit tree, so it finds the file regardless of where it was relocated.
+	content := readArtifactFile(t, root, feat.ID)
+	assert.Contains(t, content, "Updated after relocation", "section content must be present in the relocated file")
 }
 
 func TestUpdateCommand_NoDuplicateWrites(t *testing.T) {
