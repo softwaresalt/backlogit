@@ -101,17 +101,9 @@ func (s *Server) refreshTemplateService(ctx context.Context) {
 }
 
 func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
-	// Fast path: already initialised. A concurrent writer holding workspaceMu
-	// will have set s.Workspace before releasing, so this read is safe once
-	// the store is visible via the Go memory model (happens-before the unlock).
-	if s.Workspace != nil {
-		return s.Workspace, nil
-	}
-
 	s.workspaceMu.Lock()
 	defer s.workspaceMu.Unlock()
 
-	// Double-check: another goroutine may have initialised while we waited.
 	if s.Workspace != nil {
 		return s.Workspace, nil
 	}
