@@ -453,7 +453,39 @@ func WriteDefaults(workspacePath string) error {
 		return fmt.Errorf("write %s: %w", stash.JSONLFileName, err)
 	}
 
+	hooksData, err := defaultHooksYAML()
+	if err != nil {
+		return fmt.Errorf("marshal hooks.yaml: %w", err)
+	}
+	if err := writeFileIfNotExists(filepath.Join(workspacePath, "hooks.yaml"), hooksData); err != nil {
+		return fmt.Errorf("write hooks.yaml: %w", err)
+	}
+
 	return nil
+}
+
+// DefaultHooksConfig returns the default v1 HooksConfig with blocked_stale threshold
+// and subscriptions for the Stage and Ship agents.
+func DefaultHooksConfig() *HooksConfig {
+	return &HooksConfig{
+		Enabled: true,
+		EventThresholds: HookEventThresholds{
+			BlockedStaleDays: 7,
+		},
+		AgentSubscriptions: map[string][]string{
+			"stage": {"feature_review_ready", "blocked_stale"},
+			"ship":  {"post_merge_closure", "feature_review_ready"},
+		},
+	}
+}
+
+// defaultHooksYAML marshals the default HooksConfig to YAML bytes.
+func defaultHooksYAML() ([]byte, error) {
+	data, err := yaml.Marshal(DefaultHooksConfig())
+	if err != nil {
+		return nil, fmt.Errorf("marshal hooks config: %w", err)
+	}
+	return data, nil
 }
 
 // writeFileIfNotExists writes data to path only if the file does not already exist.
