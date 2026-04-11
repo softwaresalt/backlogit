@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -29,6 +30,7 @@ type Server struct {
 	mcp         *mcpserver.MCPServer
 	toolNames   []string
 	toolDefs    []mcplib.Tool
+	workspaceMu sync.Mutex
 }
 
 // NewServer creates an MCP server from a workspace.
@@ -99,15 +101,22 @@ func (s *Server) refreshTemplateService(ctx context.Context) {
 }
 
 func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
+	s.workspaceMu.Lock()
+	defer s.workspaceMu.Unlock()
+
 	if s.Workspace != nil {
 		return s.Workspace, nil
 	}
+
+	// dirExists is checked inside the lock so a concurrent creation of the
+	// .backlogit directory is visible and a failed init can be retried.
 	if !dirExists(s.backlogitDir()) {
 		return nil, os.ErrNotExist
 	}
 
 	ws, err := core.NewWorkspace(ctx, s.RootPath)
 	if err != nil {
+		// Do NOT cache the failure — allow the next caller to retry.
 		return nil, err
 	}
 	s.Workspace = ws

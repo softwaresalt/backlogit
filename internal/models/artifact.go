@@ -24,6 +24,12 @@ const (
 	StatusAbandoned ArtifactStatus = "abandoned"
 )
 
+// ArtifactLink represents a durable outgoing semantic link stored in artifact frontmatter.
+type ArtifactLink struct {
+	TargetID string `json:"target_id" yaml:"target_id"`
+	LinkType string `json:"link_type" yaml:"link_type"`
+}
+
 // Artifact holds the current state of a backlogit work item.
 type Artifact struct {
 	ID            string         `json:"id" yaml:"id" validate:"required"`
@@ -38,6 +44,7 @@ type Artifact struct {
 	Owner         string         `json:"owner,omitempty" yaml:"owner,omitempty"`
 	Labels        []string       `json:"labels,omitempty" yaml:"labels,omitempty"`
 	Dependencies  []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Links         []ArtifactLink `json:"links,omitempty" yaml:"links,omitempty"`
 	References    []string       `json:"references,omitempty" yaml:"references,omitempty"`
 	Commit        string         `json:"commit,omitempty" yaml:"commit,omitempty"`
 	CustomFields  map[string]any `json:"custom_fields,omitempty" yaml:"custom_fields,omitempty"`

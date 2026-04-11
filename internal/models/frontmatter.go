@@ -97,6 +97,9 @@ func ArtifactFromFrontmatter(fm map[string]any, body string) (*Artifact, error) 
 	if v, ok := fm["dependencies"]; ok {
 		a.Dependencies = toStringSlice(v)
 	}
+	if v, ok := fm["links"]; ok {
+		a.Links = toArtifactLinks(v)
+	}
 	if v, ok := fm["references"]; ok {
 		a.References = toStringSlice(v)
 	}
@@ -140,6 +143,54 @@ func toStringSlice(v any) []string {
 		return result
 	}
 	return nil
+}
+
+func toArtifactLinks(v any) []ArtifactLink {
+	if v == nil {
+		return nil
+	}
+	if links, ok := v.([]ArtifactLink); ok {
+		return links
+	}
+	if rawLinks, ok := v.([]map[string]any); ok {
+		result := make([]ArtifactLink, 0, len(rawLinks))
+		for _, raw := range rawLinks {
+			result = append(result, artifactLinkFromMap(raw))
+		}
+		return result
+	}
+	rawLinks, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]ArtifactLink, 0, len(rawLinks))
+	for _, raw := range rawLinks {
+		switch item := raw.(type) {
+		case map[string]any:
+			result = append(result, artifactLinkFromMap(item))
+		case map[any]any:
+			normalized := make(map[string]any, len(item))
+			for key, value := range item {
+				normalized[fmt.Sprintf("%v", key)] = value
+			}
+			result = append(result, artifactLinkFromMap(normalized))
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func artifactLinkFromMap(fields map[string]any) ArtifactLink {
+	link := ArtifactLink{}
+	if v, ok := fields["target_id"].(string); ok {
+		link.TargetID = v
+	}
+	if v, ok := fields["link_type"].(string); ok {
+		link.LinkType = v
+	}
+	return link
 }
 
 func asInt(v any) (int, bool) {

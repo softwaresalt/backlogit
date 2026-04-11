@@ -206,10 +206,66 @@ func GetItem(ctx context.Context, db *sql.DB, id string) (*models.Artifact, erro
 }
 
 // DeleteItem removes an artifact from the index.
+// DeleteItem removes an artifact from the index together with all related rows
+// in a single atomic transaction. It delegates to DeleteItemCascade.
+//
+// Deprecated: call DeleteItemCascade directly; this shim exists for callsite
+// compatibility only.
 func DeleteItem(ctx context.Context, db *sql.DB, id string) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+	return DeleteItemCascade(ctx, db, id)
+}
+
+// deleteStep describes one table/column pair to delete during a cascade.
+type deleteStep struct {
+	table string
+	col   string
+}
+
+// cascadeSteps is the ordered sequence of DELETE operations performed when an
+// item is removed. Dependent rows are removed before the item row itself to
+// respect FK semantics in databases that enforce them.
+var cascadeSteps = []deleteStep{
+	{table: "item_log_entries", col: "item_id"},
+	{table: "item_logs", col: "item_id"},
+	{table: "item_links", col: "source_id"},
+	{table: "item_links", col: "target_id"},
+	{table: "item_deps", col: "item_id"},
+	{table: "item_deps", col: "depends_on"},
+	{table: "stash_links", col: "item_id"},
+	{table: "commit_links", col: "item_id"},
+}
+
+// DeleteItemCascade removes an artifact and all its related rows (deps, links,
+// logs, events, stash links, commit links) from the index in a single atomic
+// transaction. It returns ErrNotFound when no items row matched id.
+func DeleteItemCascade(ctx context.Context, database *sql.DB, id string) error {
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete item %s: begin cascade transaction: %w", id, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, step := range cascadeSteps {
+		stmt := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", step.table, step.col)
+		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
+			return fmt.Errorf("delete item %s: cascade %s.%s: %w", id, step.table, step.col, err)
+		}
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete item %s: %w", id, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete item %s: rows affected: %w", id, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("delete item %s: %w", id, blErrors.ErrNotFound)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete item %s: commit cascade transaction: %w", id, err)
 	}
 	return nil
 }

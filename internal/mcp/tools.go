@@ -489,7 +489,17 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, map[string]any{"status": status})
 	if err != nil {
-		return InternalError(fmt.Sprintf("move item: %v", err)), nil
+		return domainError("move item", err), nil
+	}
+
+	// Belt-and-suspenders relocation: UpdateArtifact already relocates the file
+	// via persistArtifact, but an explicit call ensures the file is in the
+	// registry-mapped directory even if the registry was updated after the write.
+	// RelocateArtifactFile is idempotent and validates path containment (F-13).
+	// Failure is non-fatal — rehydration will recover consistency (F-8).
+	if _, relocErr := core.RelocateArtifactFile(ctx, s.Workspace, artifact.ArtifactType, id, status); relocErr != nil {
+		logger.WarnContext(ctx, "move item: file relocation check failed, rehydration will recover",
+			"id", id, "status", status, "error", relocErr)
 	}
 
 	// Emit a status_changed event with commit traceability when commit_sha is provided.
@@ -527,14 +537,14 @@ func (s *Server) handleDeleteItem(ctx context.Context, request mcplib.CallToolRe
 	}
 	filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
 	if err != nil {
-		return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+		return domainError("find artifact", err), nil
 	}
 	// Delete the file first; only remove from index if file deletion succeeds.
 	if err := os.Remove(filePath); err != nil {
 		return InternalError(fmt.Sprintf("delete file: %v", err)), nil
 	}
-	if err := db.DeleteItem(ctx, s.Workspace.DB, id); err != nil {
-		return InternalError(fmt.Sprintf("delete from index: %v", err)), nil
+	if err := db.DeleteItemCascade(ctx, s.Workspace.DB, id); err != nil {
+		return domainError("delete item", err), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }
@@ -552,7 +562,7 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	if section, ok := request.Params.Arguments["section"].(string); ok && section != "" {
 		filePath, err := core.FindArtifactPath(ctx, s.Workspace, id)
 		if err != nil {
-			return InternalError(fmt.Sprintf("find artifact: %v", err)), nil
+			return domainError("find artifact", err), nil
 		}
 		raw, err := os.ReadFile(filePath)
 		if err != nil {
@@ -575,7 +585,7 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 
 	artifact, err := db.GetItem(ctx, s.Workspace.DB, id)
 	if err != nil {
-		return InternalError(fmt.Sprintf("get item: %v", err)), nil
+		return domainError("get item", err), nil
 	}
 	return toolResultJSON(artifact)
 }
@@ -665,7 +675,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	}
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
 	if err != nil {
-		return InternalError(fmt.Sprintf("update artifact: %v", err)), nil
+		return domainError("update artifact", err), nil
 	}
 	// Write section content when provided. UpdateArtifact already wrote the
 	// frontmatter file and upserted the DB index; sections are markdown body
@@ -997,7 +1007,7 @@ func (s *Server) handleArchiveItem(ctx context.Context, request mcplib.CallToolR
 	}
 	record, err := core.ArchiveItem(ctx, s.Workspace.DB, s.Workspace, id, opts...)
 	if err != nil {
-		return InternalError(fmt.Sprintf("archive item: %v", err)), nil
+		return domainError("archive item", err), nil
 	}
 	return toolResultJSON(record)
 }
@@ -1272,6 +1282,38 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 	return toolResultJSON(shipment)
 }
 
+// normalizeShipmentItems ensures that the custom_fields["items"] field of a
+// shipment artifact is always a []string, matching the canonical shape produced
+// by core.GetShipment. Both []string and []any source values are handled, and a
+// nil CustomFields map is initialised before writing.
+func normalizeShipmentItems(shipment *models.Artifact) {
+	if shipment.CustomFields == nil {
+		shipment.CustomFields = map[string]any{}
+	}
+	raw, ok := shipment.CustomFields["items"]
+	if !ok || raw == nil {
+		shipment.CustomFields["items"] = []string{}
+		return
+	}
+	switch items := raw.(type) {
+	case []string:
+		// Already the correct type — clone to avoid aliasing.
+		out := make([]string, len(items))
+		copy(out, items)
+		shipment.CustomFields["items"] = out
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		shipment.CustomFields["items"] = out
+	default:
+		shipment.CustomFields["items"] = []string{}
+	}
+}
+
 func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
@@ -1285,7 +1327,10 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 		Status: status,
 	})
 	if err != nil {
-		return InternalError(fmt.Sprintf("list shipments: %v", err)), nil
+		return domainError("list shipments", err), nil
+	}
+	for _, shipment := range shipments {
+		normalizeShipmentItems(shipment)
 	}
 	return toolResultJSON(shipments)
 }
@@ -1461,7 +1506,7 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
 			return ValidationFailed(fmt.Sprintf("telemetry source missing — run 'backlogit mcp' from a workspace that contains a .copilot directory: %v", err)), nil
 		}
-		return InternalError(fmt.Sprintf("harvest telemetry: %v", err)), nil
+		return domainError("harvest telemetry", err), nil
 	}
 
 	return toolResultJSON(map[string]any{

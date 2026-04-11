@@ -204,52 +204,43 @@ func MoveInQueue(_ context.Context, _ *sql.DB, _ string, _ int) error {
 	return fmt.Errorf("queue position reordering is not yet implemented")
 }
 
-// BulkUpdateStatus changes the status of multiple items in a single transaction,
-// and attempts to sync the updated status back to each artifact's Markdown file.
-func BulkUpdateStatus(ctx context.Context, database *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (int, error) {
-	tx, err := database.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
+// BulkUpdateResult summarises the outcome of a BulkUpdateStatus operation.
+// Succeeded counts items whose Markdown file and DB index were both updated.
+// Failed lists item IDs that could not be updated (e.g., missing Markdown file).
+// Err carries a non-nil value only for workspace-level failures that prevent the
+// batch from starting at all (nil workspace, etc.).
+type BulkUpdateResult struct {
+	Succeeded int      `json:"succeeded"`
+	Failed    []string `json:"failed"`
+	Err       error    `json:"error,omitempty"`
+}
 
-	count := 0
+// BulkUpdateStatus changes the status of multiple items using a Markdown-first
+// write path. Each item is updated independently: failures are collected in
+// BulkUpdateResult.Failed rather than aborting the entire batch. The SQLite
+// index is updated only after the Markdown file has been successfully written.
+func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (*BulkUpdateResult, error) {
+	result := &BulkUpdateResult{}
 	for _, id := range itemIDs {
-		res, err := tx.ExecContext(ctx, `UPDATE items SET status = ?, updated_at = ? WHERE id = ?`, newStatus, time.Now(), id)
+		artifact, err := findArtifact(ctx, ws, id)
 		if err != nil {
-			return 0, fmt.Errorf("update item %s: %w", id, err)
-		}
-		n, _ := res.RowsAffected()
-		count += int(n)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit bulk update: %w", err)
-	}
-
-	// Best-effort sync to Markdown files: skip items whose file does not exist.
-	// CQRS note: the DB transaction commits first (DB-authoritative for now). A future
-	// migration should flip this to Markdown-first per Constitution §VII.
-	for _, id := range itemIDs {
-		artifact, findErr := findArtifact(ctx, ws, id)
-		if findErr != nil {
-			slog.Warn("bulk update: artifact file not found, DB updated but Markdown not synced",
-				"id", id, "error", findErr)
+			slog.WarnContext(ctx, "bulk update status: artifact not found, skipping",
+				"id", id, "error", err)
+			result.Failed = append(result.Failed, id)
 			continue
 		}
+		previousStatus := artifact.Status
 		artifact.Status = models.ArtifactStatus(newStatus)
 		artifact.UpdatedAt = time.Now()
-		filePath, pathErr := FindArtifactPath(ctx, ws, id)
-		if pathErr != nil {
-			slog.Warn("bulk update: could not locate artifact path for Markdown sync",
-				"id", id, "error", pathErr)
+		if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
+			slog.WarnContext(ctx, "bulk update status: persist failed, skipping",
+				"id", id, "error", err)
+			result.Failed = append(result.Failed, id)
 			continue
 		}
-		if syncErr := WriteArtifactFile(artifact, filePath); syncErr != nil {
-			slog.Warn("bulk update: failed to sync status to Markdown file",
-				"id", id, "path", filePath, "error", syncErr)
-		}
+		result.Succeeded++
 	}
-	return count, nil
+	return result, nil
 }
 
 // filterByResolvedDependencies removes items from the queue whose blocking dependencies

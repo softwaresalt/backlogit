@@ -551,13 +551,8 @@ func extractOriginFeatureID(ws *Workspace, id string) string {
 	return digits + featureCfg.Suffix
 }
 
-func shouldRelocateOnStatusChange(_ models.ArtifactStatus, next models.ArtifactStatus) bool {
-	switch next {
-	case models.StatusQueued, models.StatusActive, models.StatusBlocked, models.StatusReview:
-		return true
-	default:
-		return false
-	}
+func shouldRelocateOnStatusChange(previous models.ArtifactStatus, next models.ArtifactStatus) bool {
+	return previous != next
 }
 
 func isTerminalReleaseStatus(status models.ArtifactStatus) bool {

@@ -6,6 +6,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/db"
 )
 
@@ -38,7 +39,7 @@ func (s *Server) handleAddLink(ctx context.Context, request mcplib.CallToolReque
 		return domainError("add link target_id", err), nil
 	}
 
-	if err := db.AddLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
+	if err := core.AddArtifactLink(ctx, ws, sourceID, targetID, linkType); err != nil {
 		return domainError("add link", err), nil
 	}
 
@@ -112,8 +113,8 @@ func (s *Server) handleRemoveLink(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed("link_type is required"), nil
 	}
 
-	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		return InternalError(fmt.Sprintf("remove link: %v", err)), nil
+	if err := core.RemoveArtifactLink(ctx, ws, sourceID, targetID, linkType); err != nil {
+		return domainError("remove link", err), nil
 	}
 
 	resp := map[string]string{

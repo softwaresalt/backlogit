@@ -105,14 +105,70 @@ func TestMoveInQueue_ReturnsNotImplemented(t *testing.T) {
 }
 
 func TestBulkUpdateStatus(t *testing.T) {
-	// Arrange
-	ws := setupQueueWorkspace(t)
+	ws := setupTestWorkspace(t)
 	ctx := context.Background()
+	feature, err := core.CreateArtifact(ctx, ws, "Bulk update feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Bulk update task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
 
 	// Act
-	count, err := core.BulkUpdateStatus(ctx, ws.DB, ws, []string{"T001", "B001"}, "active")
+	result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, []string{task.ID}, "active")
 
 	// Assert
 	require.NoError(t, err)
-	assert.Equal(t, 2, count, "should update both queued items")
+	assert.Equal(t, 1, result.Succeeded, "should update the queued item")
+	assert.Empty(t, result.Failed)
+
+	updated, err := db.GetItem(ctx, ws.DB, task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusActive, updated.Status)
+}
+
+func TestBulkUpdateStatus_MarkdownFirst_WritesBeforeDB(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := core.CreateArtifact(ctx, ws, "Feature to archive", "feature")
+	require.NoError(t, err)
+
+	result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, []string{feat.ID}, "done")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Succeeded)
+	assert.Empty(t, result.Failed)
+
+	// Markdown file must reflect the new status.
+	filePath, pathErr := core.FindArtifactPath(ctx, ws, feat.ID)
+	require.NoError(t, pathErr)
+	data, readErr := os.ReadFile(filePath)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(data), "status: done", "Markdown must be updated")
+
+	// DB index must also reflect the new status.
+	item, getErr := db.GetItem(ctx, ws.DB, feat.ID)
+	require.NoError(t, getErr)
+	assert.Equal(t, models.StatusDone, item.Status, "DB index must match Markdown after bulk update")
+}
+
+func TestBulkUpdateStatus_PartialFailure_ReportsAccurately(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := core.CreateArtifact(ctx, ws, "Parent feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Orphaned task", "task", core.WithParent(feat.ID))
+	require.NoError(t, err)
+
+	// Remove the task's Markdown file to simulate a missing artifact on disk.
+	filePath, pathErr := core.FindArtifactPath(ctx, ws, task.ID)
+	require.NoError(t, pathErr)
+	require.NoError(t, os.Remove(filePath))
+
+	result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, []string{feat.ID, task.ID}, "done")
+
+	require.NoError(t, err, "partial failure must not propagate as a function error")
+	assert.Equal(t, 1, result.Succeeded, "feature without missing file should succeed")
+	assert.Len(t, result.Failed, 1, "task with missing file should be reported as failed")
+	assert.Contains(t, result.Failed, task.ID)
 }
