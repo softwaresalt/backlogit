@@ -88,8 +88,10 @@ it is ready for user merge authorization.
 
 At session start, before shipment validation, poll for unacknowledged hook events
 using `backlogit_poll_hook_events` with `consumer_id: ship`. Treat these events as
-higher-priority signals than the work queue. After processing all events, acknowledge
-the highest consumed sequence number with `backlogit_ack_hook_events`.
+higher-priority signals than the work queue. After processing all events, compute
+the highest `seq` from the `events` array and acknowledge it with
+`backlogit_ack_hook_events`; skip the ack call when `events` is empty.
+Derived signals (`derived_signals`) carry `seq: 0` and are never acknowledged.
 
 | Signal | Expected response |
 |---|---|

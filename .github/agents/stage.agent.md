@@ -129,7 +129,9 @@ coherent shipment:
 At session start, before stash triage, poll for unacknowledged hook events using
 `backlogit_poll_hook_events` with `consumer_id: stage`. Treat these events as
 higher-priority signals than the raw stash queue. After processing all events,
-acknowledge the highest consumed sequence number with `backlogit_ack_hook_events`.
+compute the highest `seq` from the `events` array and acknowledge it with
+`backlogit_ack_hook_events`; skip the ack call when `events` is empty.
+Derived signals (`derived_signals`) carry `seq: 0` and are never acknowledged.
 
 | Signal | Expected response |
 |---|---|

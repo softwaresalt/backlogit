@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -111,6 +112,9 @@ func (s *Server) handleAckHookEvents(
 	seqFloat, ok := seqRaw.(float64)
 	if !ok {
 		return ValidationFailed("seq must be a number"), nil
+	}
+	if seqFloat != math.Trunc(seqFloat) {
+		return ValidationFailed("seq must be an integer"), nil
 	}
 	seq := int64(seqFloat)
 	if seq < 1 {

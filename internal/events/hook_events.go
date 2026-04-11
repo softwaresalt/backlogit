@@ -124,6 +124,8 @@ func (w *HookEventWriter) ReadHookEvents(_ context.Context) ([]HookEvent, error)
 
 	var evs []HookEvent
 	scanner := bufio.NewScanner(qf)
+	// Raise the default 64 KiB token limit to 1 MiB to handle large event payloads.
+	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {

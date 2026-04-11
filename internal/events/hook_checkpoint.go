@@ -5,9 +5,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
 )
+
+// consumerLocks serialises concurrent SaveCheckpoint calls for the same
+// consumer ID within a single process. It maps consumer IDs to *sync.Mutex.
+var consumerLocks sync.Map
+
+// getConsumerLock returns (or lazily creates) the per-consumer mutex.
+func getConsumerLock(consumerID string) *sync.Mutex {
+	mu, _ := consumerLocks.LoadOrStore(consumerID, new(sync.Mutex))
+	return mu.(*sync.Mutex)
+}
 
 // CheckpointStore persists per-consumer acknowledgement positions as JSON files.
 // Files are stored under .backlogit/runtime/hooks/{consumer_id}.checkpoint.json.
@@ -52,7 +63,12 @@ func (s *CheckpointStore) LoadCheckpoint(consumerID string) (int64, error) {
 // Returns an error wrapping ErrValidation if seq is strictly less than the current
 // checkpoint (monotonic enforcement: ack positions must never go backward).
 // Saving the same seq twice (idempotent ack) is allowed.
+// Per-consumer in-process locking prevents concurrent read-modify-write races.
 func (s *CheckpointStore) SaveCheckpoint(consumerID string, seq int64) error {
+	mu := getConsumerLock(consumerID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	current, err := s.LoadCheckpoint(consumerID)
 	if err != nil {
 		return fmt.Errorf("load checkpoint before save: %w", err)

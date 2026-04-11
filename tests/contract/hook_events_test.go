@@ -2,7 +2,6 @@ package contract_test
 
 // 027.006-T: Poll and Ack MCP tools — contract tests.
 // These tests verify tool registration, schema, and handler behavior.
-// Handler tests will fail (panic) until production implementations are in place.
 
 import (
 	"context"
