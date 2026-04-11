@@ -91,7 +91,15 @@ type HierarchyLevel struct {
 	Types []string `yaml:"types" validate:"required,min=1"`
 }
 
-// HooksConfig is a minimal stub for external integration hooks (deferred scope).
+// HooksConfig configures the agent hook event system.
 type HooksConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled          bool                       `yaml:"enabled"`
+	EventThresholds  HookEventThresholds        `yaml:"event_thresholds,omitempty"`
+	AgentSubscriptions map[string][]string      `yaml:"agent_subscriptions,omitempty"`
+}
+
+// HookEventThresholds controls derived signal computation for v1 event types.
+// Deferred signals (stash_overflow, shipment_ready) will add thresholds in v2.
+type HookEventThresholds struct {
+	BlockedStaleDays int `yaml:"blocked_stale_days" validate:"gte=0"`
 }

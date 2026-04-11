@@ -124,6 +124,23 @@ coherent shipment:
 * keep task scopes small enough to be assembled into a shipment cleanly
 * wire dependencies clearly so shipment assembly does not guess execution order
 
+## Hook Event Consumption
+
+At session start, before stash triage, poll for unacknowledged hook events using
+`backlogit_poll_hook_events` with `consumer_id: stage`. Treat these events as
+higher-priority signals than the raw stash queue. After processing all events,
+compute the highest `seq` from the `events` array and acknowledge it with
+`backlogit_ack_hook_events`; skip the ack call when `events` is empty.
+Derived signals (`derived_signals`) carry `seq: 0` and are never acknowledged.
+
+| Signal | Expected response |
+|---|---|
+| `feature_review_ready` | Promote the referenced feature to the top of the triage queue; check whether a plan already exists and route directly to the review gate if so. |
+| `blocked_stale` | Surface the blocked item to the operator as an urgent unblocking candidate; include it in the session triage summary with the stale reason. |
+
+Skip processing gracefully when the hook queue is empty or `hooks_queue.jsonl`
+does not yet exist. Never fail the session on a missing queue file.
+
 ## Remote Operator Integration (agent-intercom)
 
 Call `ping` at session start. If `agent-intercom` is reachable, broadcast at

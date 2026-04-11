@@ -26,6 +26,7 @@ type Server struct {
 	Workspace   *core.Workspace
 	Events      *events.EventWriter
 	Telemetry   *events.TelemetryWriter
+	HookEvents  *events.HookEventWriter
 	templateSvc *templates.Service
 	mcp         *mcpserver.MCPServer
 	toolNames   []string
@@ -49,10 +50,11 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	logsDir := filepath.Join(backlogitDir, "logs")
 	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
-		RootPath:  rootPath,
-		Workspace: ws,
-		Events:    events.NewEventWriter(logsDir),
-		Telemetry: events.NewTelemetryWriter(telemetryPath),
+		RootPath:   rootPath,
+		Workspace:  ws,
+		Events:     events.NewEventWriter(logsDir),
+		Telemetry:  events.NewTelemetryWriter(telemetryPath),
+		HookEvents: events.NewHookEventWriter(backlogitDir),
 	}
 	s.mcp = mcpserver.NewMCPServer(
 		"backlogit",

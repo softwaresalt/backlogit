@@ -84,6 +84,23 @@ Ship exits only after all of these outcomes are explicit:
 When merge approval is still pending, leave the shipment active and report that
 it is ready for user merge authorization.
 
+## Hook Event Consumption
+
+At session start, before shipment validation, poll for unacknowledged hook events
+using `backlogit_poll_hook_events` with `consumer_id: ship`. Treat these events as
+higher-priority signals than the work queue. After processing all events, compute
+the highest `seq` from the `events` array and acknowledge it with
+`backlogit_ack_hook_events`; skip the ack call when `events` is empty.
+Derived signals (`derived_signals`) carry `seq: 0` and are never acknowledged.
+
+| Signal | Expected response |
+|---|---|
+| `post_merge_closure` | Trigger the post-merge closure protocol immediately for the referenced shipment. |
+| `feature_review_ready` | Note that the referenced feature has cleared review and is eligible for shipment pick-up in the next session. |
+
+Skip processing gracefully when the hook queue is empty or `hooks_queue.jsonl`
+does not yet exist. Never fail the session on a missing queue file.
+
 ## Execution Pipeline
 
 ### Step 1: Shipment validation

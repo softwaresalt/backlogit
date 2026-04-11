@@ -18,6 +18,7 @@ When the workspace exposes these operations, use them instead of inventing a par
 * comment operations for notable execution outcomes
 * sync or rehydrate operations after out-of-band edits
 * commit tracking for traceability
+* hook event polling for priority signals at session start (`backlogit_poll_hook_events`, `backlogit_ack_hook_events`)
 
 ## Query-first protocol
 
