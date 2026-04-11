@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -646,8 +647,11 @@ func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, lin
 	if err := persistArtifact(ctx, ws, source, false); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
+	// SQLite cache update is best-effort: the Markdown write above is authoritative.
+	// A cache miss here is self-healing on the next rehydration cycle.
 	if err := db.AddLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		return fmt.Errorf("update link cache %s→%s (%s): %w", sourceID, targetID, linkType, err)
+		slog.Warn("link cache update failed; rehydration will recover",
+			"op", "add_link", "source", sourceID, "target", targetID, "type", linkType, "error", err)
 	}
 	return nil
 }
@@ -680,8 +684,11 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	if err := persistArtifact(ctx, ws, source, false); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
+	// SQLite cache update is best-effort: the Markdown write above is authoritative.
+	// A cache miss here is self-healing on the next rehydration cycle.
 	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		return fmt.Errorf("update link cache %s→%s (%s): %w", sourceID, targetID, linkType, err)
+		slog.Warn("link cache update failed; rehydration will recover",
+			"op", "remove_link", "source", sourceID, "target", targetID, "type", linkType, "error", err)
 	}
 	return nil
 }
