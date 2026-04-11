@@ -350,7 +350,12 @@ func TestMoveItem_WithCommitSHA_EmitsTrackedEvent(t *testing.T) {
 	logPath := filepath.Join(logsDir, id+".jsonl")
 	raw, err := os.ReadFile(logPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(raw), "aabbccdd11223344", "commit_sha should appear in move event")
+	logContent := string(raw)
+	assert.Contains(t, logContent, "aabbccdd11223344", "commit_sha should appear in move event")
+	// Verify delta schema matches core pattern: {from, to, reason}
+	assert.Contains(t, logContent, `"to"`, "delta should contain 'to' field matching core status_changed schema")
+	assert.Contains(t, logContent, `"from"`, "delta should contain 'from' field matching core status_changed schema")
+	assert.Contains(t, logContent, `"reason"`, "delta should contain 'reason' field matching core status_changed schema")
 }
 
 func TestMoveItem_WithoutCommitSHA_NoExtraEvent(t *testing.T) {

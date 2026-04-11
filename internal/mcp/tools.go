@@ -462,6 +462,14 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	}
 	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
 
+	// Capture previous status before the update for event delta consistency.
+	var previousStatus string
+	if commitSHA != "" {
+		if existing, getErr := db.GetItem(ctx, s.Workspace.DB, id); getErr == nil {
+			previousStatus = string(existing.Status)
+		}
+	}
+
 	// Check that all children are in terminal statuses before allowing the
 	// parent to move to a terminal status. This prevents orphaned in-progress
 	// work from being silently buried under a "done" parent.
@@ -485,17 +493,25 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	}
 
 	// Emit a status_changed event with commit traceability when commit_sha is provided.
+	// Delta schema matches core setArtifactStatus pattern: {from, to, reason}.
 	if commitSHA != "" {
 		event := events.Event{
 			Timestamp: time.Now(),
 			Actor:     "backlogit",
 			ItemID:    id,
 			EventType: "status_changed",
-			Delta:     map[string]any{"status": status},
+			Delta: map[string]any{
+				"from":   previousStatus,
+				"to":     status,
+				"reason": "move_item_with_commit_sha",
+			},
 			CommitSHA: commitSHA,
 		}
-		_ = s.Events.AppendEvent(ctx, event)
-		_ = db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event)
+		if appendErr := s.Events.AppendEvent(ctx, event); appendErr != nil {
+			logger.Warn("move item: failed to append commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", appendErr)
+		} else if indexErr := db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event); indexErr != nil {
+			logger.Warn("move item: failed to index commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", indexErr)
+		}
 	}
 
 	return toolResultJSON(artifact)

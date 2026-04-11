@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -99,6 +100,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	}
 
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
+	// Errors are logged for diagnosability, matching the pattern in commits.go.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	ew := events.NewEventWriter(logsDir)
 	event := events.Event{
@@ -109,8 +111,11 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
 		CommitSHA: cfg.commitSHA,
 	}
-	_ = ew.AppendEvent(ctx, event)
-	_ = db.IndexEvent(ctx, database, logsDir, event)
+	if evErr := ew.AppendEvent(ctx, event); evErr != nil {
+		slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
+	} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
+		slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
+	}
 
 	return &ArchiveRecord{
 		ID:           itemID,
