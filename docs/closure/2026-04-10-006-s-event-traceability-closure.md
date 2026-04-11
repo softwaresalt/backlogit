@@ -84,6 +84,7 @@ breaks, or downstream telemetry correlator errors related to `status_changed`
 delta format.
 
 **Rollback steps:**
+
 1. Revert to the prior release tag via `git revert 8e0dd27` or by creating a
    hotfix branch from `34ad6ce` (the pre-006-S main HEAD).
 2. Rebuild and redeploy the binary.
@@ -94,6 +95,7 @@ delta format.
 
 **Blast radius:** All changes are additive. No existing event fields, MCP tool
 parameters, or core function signatures were removed. The only new behavior is:
+
 - `Event` struct has one additional optional field
 - `ArchiveItem` accepts variadic options (existing callers pass zero args)
 - Three MCP tools accept one additional optional parameter

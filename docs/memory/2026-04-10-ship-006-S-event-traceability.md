@@ -1,5 +1,6 @@
 ---
 title: "Ship session — 006-S event traceability (SHIPPED)"
+description: "Final session memory for shipment 006-S: commit traceability shipped, PR #21 merged, all items archived"
 ms.date: 2026-04-10
 session_type: ship
 shipment_id: 006-S
@@ -13,9 +14,9 @@ outcome: shipped
 - **Status:** shipped → archived
 - **Items:** 023-F (archived), 023.008-T (archived)
 - **Branch:** ship/006-s-event-traceability (merged)
-- **PR:** #21 — https://github.com/softwaresalt/backlogit/pull/21 (merged)
-- **Merge commit:** 8e0dd27899ef00f68a95ae717f4d48b7a8c967a9
-- **CI:** ✅ All checks passed (Go 1.23, Go 1.24) — both commits
+- **PR:** [#21](https://github.com/softwaresalt/backlogit/pull/21) (merged)
+- **Merge commit:** `8e0dd27899ef00f68a95ae717f4d48b7a8c967a9`
+- **CI:** All checks passed (Go 1.23, Go 1.24), both commits
 
 ## Completed Work
 
