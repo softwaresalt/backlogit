@@ -9,7 +9,7 @@ ms.date: 2026-04-11
 **Shipment**: 011-S (Agent-Automation Hooks for MCP Event Signals)
 **Feature**: 027-F
 **Branch**: `ship/011-S-agent-automation-hooks`
-**PR**: #25 — https://github.com/softwaresalt/backlogit/pull/25
+**PR**: [#25](https://github.com/softwaresalt/backlogit/pull/25)
 **Status**: OPEN, CI green, all review threads resolved
 
 ## Items Completed

@@ -263,7 +263,7 @@ backlogit_poll_hook_events -- poll for unacknowledged hook events since the cons
 backlogit_ack_hook_events -- acknowledge processing of hook events up to and including seq
 ```
 
-The `backlogit_query_sql` tool only accepts `SELECT` statements.Write operations go through the dedicated mutation tools to preserve data integrity.
+The `backlogit_query_sql` tool only accepts `SELECT` statements. Write operations go through the dedicated mutation tools to preserve data integrity.
 
 ## Hook Event Consumption
 
