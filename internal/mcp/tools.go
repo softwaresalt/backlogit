@@ -403,6 +403,7 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleDoctor,
 	)
+	s.registerHookTools()
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

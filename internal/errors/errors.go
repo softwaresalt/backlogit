@@ -28,6 +28,9 @@ var (
 	// Telemetry sentinel errors (021-F).
 	ErrTelemetrySourceMissing = errors.New("backlogit: telemetry source missing")
 	ErrTelemetryParseFailed   = errors.New("backlogit: telemetry parse failed")
+
+	// Hook event sentinel errors (027-F).
+	ErrHookEvent = errors.New("backlogit: hook event error")
 )
 
 // ConfigError wraps a configuration failure with field context.
