@@ -7,6 +7,7 @@ package contract_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -257,4 +258,116 @@ func TestTrackCommit_Success(t *testing.T) {
 	assert.Equal(t, id, data["item_id"])
 	assert.Equal(t, "deadbeef1234567890", data["sha"])
 	assert.Equal(t, "linked", data["status"])
+}
+
+// ---------------------------------------------------------------------------
+// commit_sha parameter on mutation tools (006-S event traceability)
+// ---------------------------------------------------------------------------
+
+func TestArchiveItem_WithCommitSHA_PopulatesEvent(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	data := callToolAndParseJSON(t, s, "backlogit_archive_item", map[string]any{
+		"id":         id,
+		"commit_sha": "cafe0123456789ab",
+	})
+	assert.Equal(t, id, data["id"])
+	assert.NotEmpty(t, data["archive_path"])
+
+	// Verify the archived event in the JSONL log includes commit_sha
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	assert.FileExists(t, logPath)
+
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "cafe0123456789ab", "commit_sha should appear in JSONL log")
+}
+
+func TestArchiveItem_WithoutCommitSHA_OmitsFromEvent(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	_ = callToolAndParseJSON(t, s, "backlogit_archive_item", map[string]any{
+		"id": id,
+	})
+
+	// Verify the archived event in the JSONL log omits commit_sha
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "commit_sha", "commit_sha should be omitted when not provided")
+}
+
+func TestAppendComment_WithCommitSHA_PopulatesEvent(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	result, err := callToolForTest(t, s, "backlogit_append_comment", map[string]any{
+		"item_id":    id,
+		"actor":      "test-agent",
+		"comment":    "commit-linked comment",
+		"commit_sha": "deadbeef00001111",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+
+	// Verify the comment event in the JSONL log includes commit_sha
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "deadbeef00001111", "commit_sha should appear in comment event")
+}
+
+func TestAppendComment_WithoutCommitSHA_WorksIdentically(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	result, err := callToolForTest(t, s, "backlogit_append_comment", map[string]any{
+		"item_id": id,
+		"actor":   "test-agent",
+		"comment": "plain comment",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "commit_sha", "commit_sha should be omitted when not provided")
+}
+
+func TestMoveItem_WithCommitSHA_EmitsTrackedEvent(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	data := callToolAndParseJSON(t, s, "backlogit_move_item", map[string]any{
+		"id":         id,
+		"status":     "active",
+		"commit_sha": "aabbccdd11223344",
+	})
+	assert.Equal(t, id, data["id"])
+	assert.Equal(t, "active", data["status"])
+
+	// Verify a status_changed event with commit_sha appears in the JSONL log
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "aabbccdd11223344", "commit_sha should appear in move event")
+}
+
+func TestMoveItem_WithoutCommitSHA_NoExtraEvent(t *testing.T) {
+	s, id := setupServerWithArtifact(t)
+	data := callToolAndParseJSON(t, s, "backlogit_move_item", map[string]any{
+		"id":     id,
+		"status": "active",
+	})
+	assert.Equal(t, id, data["id"])
+	assert.Equal(t, "active", data["status"])
+
+	// Verify no commit_sha-bearing event was emitted
+	logsDir := filepath.Join(s.RootPath, ".backlogit", "logs")
+	logPath := filepath.Join(logsDir, id+".jsonl")
+
+	// Log file may not exist at all if no events were emitted (which is fine)
+	if raw, err := os.ReadFile(logPath); err == nil {
+		assert.NotContains(t, string(raw), "commit_sha", "commit_sha should not appear without parameter")
+	}
 }

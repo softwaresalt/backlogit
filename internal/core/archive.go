@@ -29,9 +29,26 @@ type ArchivePolicy struct {
 	ArchiveDir       string   `json:"archive_dir" yaml:"archive_dir"`
 }
 
+// ArchiveOpt configures optional behavior for ArchiveItem.
+type ArchiveOpt func(*archiveConfig)
+
+type archiveConfig struct {
+	commitSHA string
+}
+
+// WithCommitSHA attaches a git commit SHA to the archive event for traceability.
+func WithCommitSHA(sha string) ArchiveOpt {
+	return func(c *archiveConfig) { c.commitSHA = sha }
+}
+
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
-func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
+func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, opts ...ArchiveOpt) (*ArchiveRecord, error) {
+	var cfg archiveConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	backlogDir := WorkspaceStorageRoot(ws.RootPath)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
@@ -90,6 +107,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		ItemID:    itemID,
 		EventType: "archived",
 		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
+		CommitSHA: cfg.commitSHA,
 	}
 	_ = ew.AppendEvent(ctx, event)
 	_ = db.IndexEvent(ctx, database, logsDir, event)
