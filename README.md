@@ -47,6 +47,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - Single CGo-free static binary built with `modernc.org/sqlite`
 - Workspace containment: all operations stay within `.backlogit/` with path traversal rejection
 - Token telemetry harvest via `backlogit telemetry harvest` and `backlogit_telemetry_harvest` MCP tool: parses Copilot CLI session logs, correlates model calls and tool calls into per-session summaries, attributes tool calls to MCP servers, writes typed JSONL records, and rehydrates queryable `telemetry_sessions` and `telemetry_tool_usage` SQLite tables
+- Commit traceability on event log entries: MCP mutation tools (`backlogit_move_item`, `backlogit_archive_item`, `backlogit_append_comment`) accept an optional `commit_sha` parameter that is recorded on the emitted JSONL event, enabling external tooling to correlate backlogit state changes with git history
 
 ## Quick Start
 
