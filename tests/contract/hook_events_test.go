@@ -149,3 +149,36 @@ func TestAckHookEvents_Handler_MissingSeq_ReturnsError(t *testing.T) {
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "missing seq must return an error")
 }
+
+func TestAckHookEvents_Handler_ZeroSeq_ReturnsError(t *testing.T) {
+	s := setupHookMCPServer(t)
+
+	result, err := callToolForTest(t, s, "backlogit_ack_hook_events", map[string]any{
+		"consumer_id": "stage",
+		"seq":         float64(0),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "seq=0 must return a validation error")
+}
+
+func TestAckHookEvents_Handler_RegressionSeq_ReturnsError(t *testing.T) {
+	s := setupHookMCPServer(t)
+
+	// First ack establishes checkpoint at seq=2.
+	first, err := callToolForTest(t, s, "backlogit_ack_hook_events", map[string]any{
+		"consumer_id": "stage",
+		"seq":         float64(2),
+	})
+	require.NoError(t, err)
+	require.False(t, first.IsError, "first ack should succeed")
+
+	// Acking a lower seq must be rejected (seq=1 < current=2).
+	result, err := callToolForTest(t, s, "backlogit_ack_hook_events", map[string]any{
+		"consumer_id": "stage",
+		"seq":         float64(1),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "regression ack (seq < checkpoint) must return a validation error")
+}

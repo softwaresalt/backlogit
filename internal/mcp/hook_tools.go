@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/events"
 )
 
@@ -111,9 +113,15 @@ func (s *Server) handleAckHookEvents(
 		return ValidationFailed("seq must be a number"), nil
 	}
 	seq := int64(seqFloat)
+	if seq < 1 {
+		return ValidationFailed("seq must be >= 1"), nil
+	}
 
 	cs := events.NewCheckpointStore(s.backlogitDir())
 	if ackErr := events.AckHookEvents(ctx, cs, consumerID, seq); ackErr != nil {
+		if errors.Is(ackErr, backlogiterrors.ErrValidation) {
+			return ValidationFailed(fmt.Sprintf("ack hook events: %v", ackErr)), nil
+		}
 		return InternalError(fmt.Sprintf("ack hook events: %v", ackErr)), nil
 	}
 	return toolResultJSON(AckHookEventsResponse{AckedSeq: seq})
