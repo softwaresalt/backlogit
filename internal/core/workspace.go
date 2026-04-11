@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,14 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		HeaderDef: headerDef,
 		Templates: templates,
 	}
+
+	// F-7 migration guard: write any DB-only links to Markdown frontmatter
+	// BEFORE any rehydration that would clear item_links. This is idempotent
+	// and best-effort — failures are logged but do not abort initialization.
+	if _, migrateErr := MigrateDBOnlyLinks(ctx, workspace); migrateErr != nil {
+		slog.WarnContext(ctx, "migrate db-only links failed during workspace init", "error", migrateErr)
+	}
+
 	if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
 		database.Close()
 		return nil, fmt.Errorf("recover shipment operations: %w", err)

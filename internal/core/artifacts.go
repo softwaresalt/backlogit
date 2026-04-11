@@ -343,6 +343,7 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	if err != nil {
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
 	}
+	previousStatus := artifact.Status
 
 	if v, ok := updates["title"].(string); ok {
 		artifact.Title = v
@@ -370,6 +371,9 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	}
 	if v, ok := updates["dependencies"].([]string); ok {
 		artifact.Dependencies = v
+	}
+	if v, ok := updates["links"].([]models.ArtifactLink); ok {
+		artifact.Links = v
 	}
 	if v, ok := updates["references"].([]string); ok {
 		artifact.References = v
@@ -402,21 +406,8 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
-	// Write to disk first so Markdown remains the source of truth. If the upsert
-	// below fails, the file already reflects the update and a subsequent
-	// rehydration will re-sync the cache.
-	if filePath, pathErr := FindArtifactPath(ctx, ws, id); pathErr == nil {
-		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
-			return nil, fmt.Errorf("write artifact file %s: %w", id, writeErr)
-		}
-	}
-
-	// Persist to SQLite so that query-based callers (e.g. CheckChildrenTerminal)
-	// see the updated state without requiring a full rehydration cycle.
-	if ws.DB != nil {
-		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-			return nil, fmt.Errorf("upsert item %s: %w", id, upsertErr)
-		}
+	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
+		return nil, fmt.Errorf("persist artifact %s: %w", id, err)
 	}
 
 	return artifact, nil
@@ -545,6 +536,9 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	if len(artifact.Dependencies) > 0 {
 		fm["dependencies"] = artifact.Dependencies
 	}
+	if len(artifact.Links) > 0 {
+		fm["links"] = artifact.Links
+	}
 	if len(artifact.References) > 0 {
 		fm["references"] = artifact.References
 	}
@@ -616,4 +610,78 @@ func parseFile(path string) (*models.Artifact, string, error) {
 		return nil, "", err
 	}
 	return artifact, body, nil
+}
+
+// AddArtifactLink persists an outgoing semantic link to Markdown first and then the SQLite cache.
+func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, linkType string) error {
+	valid := false
+	for _, allowed := range db.ValidLinkTypes {
+		if allowed == linkType {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("%w: %q", blerrors.ErrInvalidLinkType, linkType)
+	}
+
+	source, err := findArtifact(ctx, ws, sourceID)
+	if err != nil {
+		return fmt.Errorf("find source artifact %s: %w", sourceID, err)
+	}
+	if _, err := loadArtifact(ctx, ws, targetID); err != nil {
+		return fmt.Errorf("load target artifact %s: %w", targetID, err)
+	}
+	for _, link := range source.Links {
+		if link.TargetID == targetID && link.LinkType == linkType {
+			return nil
+		}
+	}
+
+	source.Links = append(source.Links, models.ArtifactLink{
+		TargetID: targetID,
+		LinkType: linkType,
+	})
+	source.UpdatedAt = time.Now()
+	if err := persistArtifact(ctx, ws, source, false); err != nil {
+		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
+	}
+	if err := db.AddLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
+		return fmt.Errorf("update link cache %s→%s (%s): %w", sourceID, targetID, linkType, err)
+	}
+	return nil
+}
+
+// RemoveArtifactLink removes an outgoing semantic link from Markdown first and then the SQLite cache.
+func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, linkType string) error {
+	source, err := findArtifact(ctx, ws, sourceID)
+	if err != nil {
+		return fmt.Errorf("find source artifact %s: %w", sourceID, err)
+	}
+	filtered := source.Links[:0]
+	removed := false
+	for _, link := range source.Links {
+		if link.TargetID == targetID && link.LinkType == linkType {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, link)
+	}
+	if !removed {
+		return nil
+	}
+
+	if len(filtered) == 0 {
+		source.Links = nil
+	} else {
+		source.Links = filtered
+	}
+	source.UpdatedAt = time.Now()
+	if err := persistArtifact(ctx, ws, source, false); err != nil {
+		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
+	}
+	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
+		return fmt.Errorf("update link cache %s→%s (%s): %w", sourceID, targetID, linkType, err)
+	}
+	return nil
 }

@@ -51,17 +51,39 @@ func InternalError(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("internal", detail)
 }
 
-// domainError routes not-found errors to NotFound, conflict errors to
-// Conflict, validation errors to ValidationFailed, and all other errors to
-// InternalError. op is a short description prepended to InternalError
-// messages to aid diagnosis.
+// domainError routes domain sentinel errors to the correct MCP error category
+// and falls back to InternalError for unknown failures.
+//
+// Error mapping table (sentinel → MCP error type):
+//
+//	Sentinel                  | MCP Type           | HTTP analogue
+//	--------------------------|--------------------|---------------
+//	ErrNotFound               | not_found          | 404
+//	ErrShipmentNotFound       | not_found          | 404
+//	ErrShipmentConflict       | conflict           | 409
+//	ErrItemAlreadyAssigned    | conflict           | 409
+//	ErrCannotReturnItem       | conflict           | 409
+//	ErrChildrenNotTerminal    | conflict           | 409
+//	ErrValidation             | validation_failed  | 422
+//	ErrInvalidLinkType        | validation_failed  | 422
+//	ErrTelemetrySourceMissing | validation_failed  | 422
+//	ErrTelemetryParseFailed   | internal           | 500
+//	(all others)              | internal           | 500
+//
+// op is a short camelCase description of the operation, prepended to
+// InternalError messages to aid diagnosis (e.g. "archive item").
 func domainError(op string, err error) *mcplib.CallToolResult {
 	switch {
 	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound):
 		return NotFound(err.Error())
-	case errors.Is(err, corerrors.ErrShipmentConflict), errors.Is(err, corerrors.ErrItemAlreadyAssigned), errors.Is(err, corerrors.ErrCannotReturnItem):
+	case errors.Is(err, corerrors.ErrShipmentConflict),
+		errors.Is(err, corerrors.ErrItemAlreadyAssigned),
+		errors.Is(err, corerrors.ErrCannotReturnItem),
+		errors.Is(err, corerrors.ErrChildrenNotTerminal):
 		return Conflict(err.Error())
-	case errors.Is(err, corerrors.ErrValidation), errors.Is(err, corerrors.ErrInvalidLinkType):
+	case errors.Is(err, corerrors.ErrValidation),
+		errors.Is(err, corerrors.ErrInvalidLinkType),
+		errors.Is(err, corerrors.ErrTelemetrySourceMissing):
 		return ValidationFailed(err.Error())
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))

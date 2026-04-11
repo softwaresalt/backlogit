@@ -13,6 +13,10 @@ import (
 	"github.com/backlogit/backlogit/internal/events"
 )
 
+type execContexter interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // ItemLogEntry represents an indexed event log entry for a work item.
 type ItemLogEntry struct {
 	ID        int64
@@ -89,10 +93,14 @@ func InsertItemLogEntry(ctx context.Context, database *sql.DB, logPath string, e
 
 // DeleteAllItemLogs clears indexed item log relationships and entries before rehydration.
 func DeleteAllItemLogs(ctx context.Context, database *sql.DB) error {
-	if _, err := database.ExecContext(ctx, `DELETE FROM item_logs`); err != nil {
+	return deleteAllItemLogs(ctx, database)
+}
+
+func deleteAllItemLogs(ctx context.Context, execer execContexter) error {
+	if _, err := execer.ExecContext(ctx, `DELETE FROM item_logs`); err != nil {
 		return fmt.Errorf("clear item logs: %w", err)
 	}
-	if _, err := database.ExecContext(ctx, `DELETE FROM item_log_entries`); err != nil {
+	if _, err := execer.ExecContext(ctx, `DELETE FROM item_log_entries`); err != nil {
 		return fmt.Errorf("clear item log entries: %w", err)
 	}
 	return nil

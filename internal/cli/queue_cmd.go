@@ -122,11 +122,14 @@ func NewQueueBulkStatusCmd() *cobra.Command {
 			defer ws.Close()
 
 			itemIDs := strings.Split(ids, ",")
-			updated, err := core.BulkUpdateStatus(ctx, ws.DB, ws, itemIDs, status)
+			result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, itemIDs, status)
 			if err != nil {
 				return fmt.Errorf("bulk update status: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated %d items to status %q\n", updated, status)
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated %d items to status %q\n", result.Succeeded, status)
+			if len(result.Failed) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", "))
+			}
 			return nil
 		},
 	}

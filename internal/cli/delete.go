@@ -42,7 +42,7 @@ This is a destructive operation and requires --force.`,
 				return fmt.Errorf("use --force to delete %s", id)
 			}
 
-			if err := db.DeleteItem(ctx, ws.DB, id); err != nil {
+			if err := db.DeleteItemCascade(ctx, ws.DB, id); err != nil {
 				return fmt.Errorf("delete from index: %w", err)
 			}
 			if err := os.Remove(filePath); err != nil {

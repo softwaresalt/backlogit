@@ -28,9 +28,6 @@ import (
 func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, error) {
 	count := 0
 	harvestedStash := make(map[string]StashRecord)
-	if err := DeleteAllItemLogs(ctx, db); err != nil {
-		return 0, err
-	}
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -43,14 +40,20 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		}
 	}()
 
+	if err := deleteAllItemLogs(ctx, tx); err != nil {
+		return 0, err
+	}
+
 	// Clear the item index before rebuilding so that deleted Markdown files do not
-	// leave ghost entries. item_links is intentionally preserved because it is
-	// populated by tool calls (not rehydration) and must survive full rehydration cycles.
+	// leave ghost entries.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM items`); err != nil {
 		return 0, fmt.Errorf("clear items for rehydration: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM item_deps`); err != nil {
 		return 0, fmt.Errorf("clear item_deps for rehydration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_links`); err != nil {
+		return 0, fmt.Errorf("clear item_links for rehydration: %w", err)
 	}
 
 	err = filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
@@ -106,6 +109,17 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 				if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
 					slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
 				}
+			}
+		}
+		for _, link := range artifact.Links {
+			if strings.TrimSpace(link.TargetID) == "" || strings.TrimSpace(link.LinkType) == "" {
+				continue
+			}
+			if _, execErr := tx.ExecContext(ctx,
+				`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
+				artifact.ID, link.TargetID, link.LinkType,
+			); execErr != nil {
+				slog.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
 			}
 		}
 

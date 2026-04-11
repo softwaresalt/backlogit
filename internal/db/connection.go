@@ -3,28 +3,65 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite" // SQLite driver registration
 )
 
-// Open returns a configured SQLite connection in WAL mode.
+// Open returns a configured *sql.DB backed by the SQLite file at dbPath.
 //
-// Worker: Implement SQLite connection with WAL mode, foreign keys, and busy timeout.
+// PRAGMAs are injected via DSN query parameters so the driver applies them on
+// every new physical connection opened from the pool:
+//
+//   - journal_mode=WAL   — WAL journal enables concurrent readers alongside writers.
+//   - foreign_keys=1     — Enforces FK constraints (SQLite disables them by default).
+//   - busy_timeout=5000  — Waits up to 5 s before returning SQLITE_BUSY.
+//
+// Pool sizing: SetMaxOpenConns(4) / SetMaxIdleConns(4).
+// WAL mode supports multiple simultaneous readers so a pool > 1 is safe and
+// beneficial when the MCP server and CLI share a process.  4 is a conservative
+// ceiling for a single-user tool; raising it further would add contention on the
+// write lock without meaningful throughput gain.  (F-19)
 func Open(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// Build a canonical file: URI accepted by modernc.org/sqlite v1.34.0.
+	//
+	// filepath.ToSlash on Windows converts "C:\path\db" → "C:/path/db".
+	// A path that does not start with "/" is interpreted as *relative* by the
+	// SQLite URI parser, which would create a file in the current working
+	// directory instead of the intended location.  Prepend "/" to produce the
+	// triple-slash form "file:///C:/path/db" that SQLite treats as absolute on
+	// all platforms.
+	slashPath := filepath.ToSlash(dbPath)
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+
+	q := url.Values{}
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "busy_timeout(5000)")
+
+	dsn := (&url.URL{
+		Scheme:   "file",
+		Path:     slashPath,
+		RawQuery: q.Encode(),
+	}).String()
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	pragmas := []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA foreign_keys=ON",
-		"PRAGMA busy_timeout=5000",
-	}
-	for _, p := range pragmas {
-		if _, err := db.Exec(p); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("set pragma %q: %w", p, err)
-		}
+
+	// WAL allows concurrent readers; match idle to open so the pool does not
+	// discard connections that are immediately reacquired under load.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
+
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
 	return db, nil
 }

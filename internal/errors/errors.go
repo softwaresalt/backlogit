@@ -21,8 +21,9 @@ var (
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")
 
-	// Link sentinel errors (F018 / T001).
+	// Link sentinel errors (F018 / T001, 026-F).
 	ErrInvalidLinkType = errors.New("backlogit: invalid link type")
+	ErrLinkNotFound    = errors.New("backlogit: link not found")
 
 	// Telemetry sentinel errors (021-F).
 	ErrTelemetrySourceMissing = errors.New("backlogit: telemetry source missing")
