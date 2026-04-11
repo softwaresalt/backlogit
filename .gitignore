@@ -24,5 +24,8 @@ backlogit.db
 .backlogit/backlogit.db
 .backlogit/backlogit.db-shm
 .backlogit/backlogit.db-wal
+
+# Runtime state (per-consumer checkpoints, not committed)
+.backlogit/runtime/
 *.exe~
 prompt.md
