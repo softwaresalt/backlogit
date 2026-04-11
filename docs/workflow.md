@@ -259,9 +259,58 @@ backlogit_harvest_stash -- promote one stash entry or a whole priority band into
 backlogit_save_memory  -- persist agent memory to memories.json
 backlogit_create_checkpoint -- save a session state snapshot
 backlogit_track_commit -- associate a git commit with an artifact
+backlogit_poll_hook_events -- poll for unacknowledged hook events since the consumer's last checkpoint
+backlogit_ack_hook_events -- acknowledge processing of hook events up to and including seq
 ```
 
 The `backlogit_query_sql` tool only accepts `SELECT` statements. Write operations go through the dedicated mutation tools to preserve data integrity.
+
+## Hook Event Consumption
+
+Agents subscribed to workflow automation can poll a JSONL-backed event queue
+for signals emitted by the backlogit lifecycle. Two MCP tools support this:
+
+```
+backlogit_poll_hook_events -- poll for unacknowledged events since the consumer's last checkpoint
+backlogit_ack_hook_events  -- advance the consumer's checkpoint to the highest processed seq
+```
+
+At session start, an agent polls with its consumer ID:
+
+```json
+{
+  "tool": "backlogit_poll_hook_events",
+  "arguments": { "consumer_id": "stage" }
+}
+```
+
+The response contains two arrays:
+
+* `events` — durable queue entries, each with a monotonic `seq` field.
+* `derived_signals` — ephemeral computed signals (always `seq: 0`, never acked).
+
+After processing all `events`, acknowledge the highest seq:
+
+```json
+{
+  "tool": "backlogit_ack_hook_events",
+  "arguments": { "consumer_id": "stage", "seq": 7 }
+}
+```
+
+Skip the ack call when `events` is empty. Derived signals are never acked.
+
+Checkpoint files live at `.backlogit/runtime/hooks/{consumer_id}.checkpoint.json`
+and are ephemeral (gitignored). Deleting them resets a consumer to seq=0 for
+idempotent replay.
+
+Supported v1 event types:
+
+| Type | Emitted when |
+|---|---|
+| `feature_review_ready` | A feature clears the review gate and is ready for shipment |
+| `post_merge_closure` | A shipment is merged and closure tasks are due |
+| `blocked_stale` | A blocked item has exceeded `BlockedStaleDays` without resolution |
 
 ## CQRS in Practice
 
