@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -91,6 +92,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Change an artifact's status"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID")),
 			mcplib.WithString("status", mcplib.Required(), mcplib.Description("New status")),
+			mcplib.WithString("commit_sha", mcplib.Description("Optional git commit SHA for event traceability")),
 		),
 		s.handleMoveItem,
 	)
@@ -120,6 +122,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID")),
 			mcplib.WithString("actor", mcplib.Required(), mcplib.Description("Actor name")),
 			mcplib.WithString("comment", mcplib.Required(), mcplib.Description("Comment text")),
+			mcplib.WithString("commit_sha", mcplib.Description("Optional git commit SHA for event traceability")),
 		),
 		s.handleAppendComment,
 	)
@@ -201,6 +204,7 @@ func (s *Server) RegisterTools() {
 		mcplib.NewTool("backlogit_archive_item",
 			mcplib.WithDescription("Archive a completed artifact to the archive directory"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Artifact ID to archive")),
+			mcplib.WithString("commit_sha", mcplib.Description("Optional git commit SHA for event traceability")),
 		),
 		s.handleArchiveItem,
 	)
@@ -456,6 +460,15 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	if status == "" {
 		return ValidationFailed("status is required"), nil
 	}
+	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
+
+	// Capture previous status before the update for event delta consistency.
+	var previousStatus string
+	if commitSHA != "" {
+		if existing, getErr := db.GetItem(ctx, s.Workspace.DB, id); getErr == nil {
+			previousStatus = string(existing.Status)
+		}
+	}
 
 	// Check that all children are in terminal statuses before allowing the
 	// parent to move to a terminal status. This prevents orphaned in-progress
@@ -478,6 +491,29 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	if err != nil {
 		return InternalError(fmt.Sprintf("move item: %v", err)), nil
 	}
+
+	// Emit a status_changed event with commit traceability when commit_sha is provided.
+	// Delta schema matches core setArtifactStatus pattern: {from, to, reason}.
+	if commitSHA != "" {
+		event := events.Event{
+			Timestamp: time.Now(),
+			Actor:     "backlogit",
+			ItemID:    id,
+			EventType: "status_changed",
+			Delta: map[string]any{
+				"from":   previousStatus,
+				"to":     status,
+				"reason": "move_item_with_commit_sha",
+			},
+			CommitSHA: commitSHA,
+		}
+		if appendErr := s.Events.AppendEvent(ctx, event); appendErr != nil {
+			logger.Warn("move item: failed to append commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", appendErr)
+		} else if indexErr := db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event); indexErr != nil {
+			logger.Warn("move item: failed to index commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", indexErr)
+		}
+	}
+
 	return toolResultJSON(artifact)
 }
 
@@ -682,11 +718,13 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 	}
 	actor, _ := request.Params.Arguments["actor"].(string)
 	comment, _ := request.Params.Arguments["comment"].(string)
+	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
 	event := events.Event{
 		Actor:     actor,
 		ItemID:    itemID,
 		EventType: "comment",
 		Delta:     map[string]any{"comment": comment},
+		CommitSHA: commitSHA,
 	}
 	if err := s.Events.AppendEvent(ctx, event); err != nil {
 		return InternalError(fmt.Sprintf("append comment: %v", err)), nil
@@ -953,7 +991,11 @@ func (s *Server) handleArchiveItem(ctx context.Context, request mcplib.CallToolR
 	if id == "" {
 		return ValidationFailed("id is required"), nil
 	}
-	record, err := core.ArchiveItem(ctx, s.Workspace.DB, s.Workspace, id)
+	var opts []core.ArchiveOpt
+	if sha, _ := request.Params.Arguments["commit_sha"].(string); sha != "" {
+		opts = append(opts, core.WithCommitSHA(sha))
+	}
+	record, err := core.ArchiveItem(ctx, s.Workspace.DB, s.Workspace, id, opts...)
 	if err != nil {
 		return InternalError(fmt.Sprintf("archive item: %v", err)), nil
 	}

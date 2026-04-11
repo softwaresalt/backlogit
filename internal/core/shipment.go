@@ -238,6 +238,10 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 }
 
 func appendItemEvent(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) {
+	appendItemEventWithCommit(ctx, ws, itemID, eventType, delta, "")
+}
+
+func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any, commitSHA string) {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
 		Timestamp: time.Now(),
@@ -245,6 +249,7 @@ func appendItemEvent(ctx context.Context, ws *Workspace, itemID, eventType strin
 		ItemID:    itemID,
 		EventType: eventType,
 		Delta:     delta,
+		CommitSHA: commitSHA,
 	}
 
 	writer := events.NewEventWriter(logsDir)

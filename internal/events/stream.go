@@ -17,6 +17,7 @@ type Event struct {
 	ItemID    string         `json:"item_id"`
 	EventType string         `json:"event_type"`
 	Delta     map[string]any `json:"delta"`
+	CommitSHA string         `json:"commit_sha,omitempty"`
 }
 
 // EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.

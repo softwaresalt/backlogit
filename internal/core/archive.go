@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,9 +30,26 @@ type ArchivePolicy struct {
 	ArchiveDir       string   `json:"archive_dir" yaml:"archive_dir"`
 }
 
+// ArchiveOpt configures optional behavior for ArchiveItem.
+type ArchiveOpt func(*archiveConfig)
+
+type archiveConfig struct {
+	commitSHA string
+}
+
+// WithCommitSHA attaches a git commit SHA to the archive event for traceability.
+func WithCommitSHA(sha string) ArchiveOpt {
+	return func(c *archiveConfig) { c.commitSHA = sha }
+}
+
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
-func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) (*ArchiveRecord, error) {
+func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, opts ...ArchiveOpt) (*ArchiveRecord, error) {
+	var cfg archiveConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	backlogDir := WorkspaceStorageRoot(ws.RootPath)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
@@ -82,6 +100,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	}
 
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
+	// Errors are logged for diagnosability, matching the pattern in commits.go.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	ew := events.NewEventWriter(logsDir)
 	event := events.Event{
@@ -90,9 +109,13 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		ItemID:    itemID,
 		EventType: "archived",
 		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
+		CommitSHA: cfg.commitSHA,
 	}
-	_ = ew.AppendEvent(ctx, event)
-	_ = db.IndexEvent(ctx, database, logsDir, event)
+	if evErr := ew.AppendEvent(ctx, event); evErr != nil {
+		slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
+	} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
+		slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
+	}
 
 	return &ArchiveRecord{
 		ID:           itemID,
