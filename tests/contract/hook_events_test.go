@@ -46,7 +46,6 @@ func parseToolResultJSON(t *testing.T, result *mcplib.CallToolResult) map[string
 	return data
 }
 
-
 // --- Registration contract tests (must pass as part of harness) ---
 
 func TestPollHookEvents_ToolExists(t *testing.T) {

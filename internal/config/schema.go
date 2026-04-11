@@ -93,9 +93,9 @@ type HierarchyLevel struct {
 
 // HooksConfig configures the agent hook event system.
 type HooksConfig struct {
-	Enabled          bool                       `yaml:"enabled"`
-	EventThresholds  HookEventThresholds        `yaml:"event_thresholds,omitempty"`
-	AgentSubscriptions map[string][]string      `yaml:"agent_subscriptions,omitempty"`
+	Enabled            bool                `yaml:"enabled"`
+	EventThresholds    HookEventThresholds `yaml:"event_thresholds,omitempty"`
+	AgentSubscriptions map[string][]string `yaml:"agent_subscriptions,omitempty"`
 }
 
 // HookEventThresholds controls derived signal computation for v1 event types.

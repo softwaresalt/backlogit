@@ -8,8 +8,19 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/db"
 )
+
+// splitCSV splits s on commas, trims whitespace from each entry, and drops empty entries.
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 // newAddCommand creates the `backlogit add` command.
 func newAddCommand(cwd *string) *cobra.Command {
@@ -20,6 +31,14 @@ func newAddCommand(cwd *string) *cobra.Command {
 		status       string
 		parentID     string
 		sections     []string
+		priority     string
+		sprint       string
+		assignedTo   string
+		owner        string
+		labels       string
+		dependencies string
+		references   string
+		commit       string
 	)
 
 	cmd := &cobra.Command{
@@ -58,6 +77,30 @@ automatically when the configured queue layout supports the requested type.`,
 			if parentID != "" {
 				opts = append(opts, core.WithParent(parentID))
 			}
+			if priority != "" {
+				opts = append(opts, core.WithPriority(priority))
+			}
+			if sprint != "" {
+				opts = append(opts, core.WithSprint(sprint))
+			}
+			if assignedTo != "" {
+				opts = append(opts, core.WithAssignedTo(assignedTo))
+			}
+			if owner != "" {
+				opts = append(opts, core.WithOwner(owner))
+			}
+			if labels != "" {
+				opts = append(opts, core.WithLabels(splitCSV(labels)))
+			}
+			if dependencies != "" {
+				opts = append(opts, core.WithDependencies(splitCSV(dependencies)))
+			}
+			if references != "" {
+				opts = append(opts, core.WithReferences(splitCSV(references)))
+			}
+			if commit != "" {
+				opts = append(opts, core.WithCommit(commit))
+			}
 
 			// Apply --section name=value pairs as description overrides when applicable.
 			for _, sec := range sections {
@@ -74,9 +117,6 @@ automatically when the configured queue layout supports the requested type.`,
 			if err != nil {
 				return fmt.Errorf("create artifact: %w", err)
 			}
-			if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
-				return fmt.Errorf("index artifact: %w", err)
-			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created %s: %s\n", artifact.ArtifactType, artifact.ID)
 			return nil
 		},
@@ -88,5 +128,13 @@ automatically when the configured queue layout supports the requested type.`,
 	cmd.Flags().StringVar(&status, "status", "", "initial status (queued, active, …)")
 	cmd.Flags().StringVar(&parentID, "parent", "", "parent artifact ID (required for level-2+ types such as task, review)")
 	cmd.Flags().StringArrayVar(&sections, "section", nil, "section content as name=value (repeatable)")
+	cmd.Flags().StringVar(&priority, "priority", "", "priority (low, medium, high, critical)")
+	cmd.Flags().StringVar(&sprint, "sprint", "", "sprint ID")
+	cmd.Flags().StringVar(&assignedTo, "assigned-to", "", "assignee")
+	cmd.Flags().StringVar(&owner, "owner", "", "owner")
+	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
+	cmd.Flags().StringVar(&dependencies, "dependencies", "", "comma-separated dependency IDs")
+	cmd.Flags().StringVar(&references, "references", "", "comma-separated reference paths")
+	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	return cmd
 }

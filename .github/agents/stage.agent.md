@@ -151,12 +151,19 @@ is degraded and continue locally.
 |---|---|---|---|
 | Session start | `broadcast` | `info` | `[STAGE] Starting stash-to-backlog workflow` |
 | Triage start | `broadcast` | `info` | `[STAGE] Reviewing stash entry: {stash_id}` |
+| Stale entry removed | `broadcast` | `warning` | `[STAGE] Stale: {stash_id} — {reason}` |
+| Shipment candidate | `broadcast` | `info` | `[STAGE] 📦 SHIPMENT {letter}: "{name}" — {entry_ids_with_priority_kind_and_summary}` |
+| Triage recommendation | `broadcast` | `info` | `[STAGE] 🔢 PRIORITY: {ordered_list_with_rationale}. Awaiting operator selection.` |
 | Deliberation handoff | `broadcast` | `info` | `[STAGE] Routing to deliberate skill: {stash_id}` |
 | Plan written | `broadcast` | `success` | `[STAGE] Plan written: {plan_path}` |
 | Review gate | `broadcast` | `info` | `[STAGE] Review gate: {PASS\|ADVISORY\|FAIL}` |
 | Harvest start | `broadcast` | `info` | `[STAGE] Invoking harvest skill: {plan_path}` |
 | Harvest complete | `broadcast` | `success` | `[STAGE] Backlog ready: {feature_count} features, {task_count} tasks, {subtask_count} subtasks` |
 | Session complete | `broadcast` | `success` | `[STAGE] Complete: stash triage finished` |
+
+Shipment candidate broadcasts MUST include each stash entry's ID, priority,
+kind, and a one-line summary so the operator can select a candidate from the
+broadcast channel alone without reading the chat transcript.
 
 ## Session Continuity (mandatory)
 

@@ -39,7 +39,7 @@ backlogit is both the product and the workflow system used to manage work in
 this repository. Agents should treat the repository as a CQRS environment:
 
 * Markdown artifacts in `.backlogit/` are the source of truth for current state.
-* `.backlogit/index.db` is an ephemeral query cache.
+* `.backlogit/backlogit.db` is an ephemeral query cache.
 * JSONL streams capture append-only history and telemetry.
 * Durable knowledge belongs in `docs/`, not in backlog artifacts.
 

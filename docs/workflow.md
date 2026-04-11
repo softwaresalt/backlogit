@@ -102,8 +102,8 @@ backlogit list --status active
 # List features only
 backlogit list --type feature
 
-# List items with a specific label
-backlogit list --label security
+# List tasks
+backlogit list --type task --status active
 ```
 
 **Search by keyword:**
@@ -132,8 +132,8 @@ backlogit stash add "Split audit dashboard into a later feature set" --kind feat
 backlogit deliberate ABCD1234 --options "- Keep the current feature set narrow\n- Pull the work into the next feature wave"
 
 # Fetch active stash entries for grouping and planning
-backlogit stash fetch-stash --group-by-priority
-backlogit stash fetch-stash --priority critical
+backlogit stash list --group-by-priority
+backlogit stash list --priority critical
 
 # Harvest a stash entry into a real work item, carrying any linked deliberation lineage
 backlogit stash harvest ABCD1234 --type feature --description "Pulled into the current feature wave"
@@ -158,14 +158,14 @@ backlogit update T042 --title "Add rate limiting to public API"
 **Move an artifact to a new status:**
 
 ```bash
-backlogit move T042 done
+backlogit move T042 --status done
 ```
 
 **Add a dependency between artifacts:**
 
-```bash
-backlogit dep add T042 --depends-on T038
-```
+Dependencies are managed through the MCP tool surface
+(`backlogit_add_dependency`) or with the CLI dependency commands such as
+`backlogit dep add T042 T017 --type blocks` and `backlogit dep remove T042 T017`.
 
 **Archive a completed artifact:**
 
