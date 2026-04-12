@@ -34,7 +34,8 @@ If no path is provided, search `docs/exec-plans/` for the most recent `*-plan.md
 
 ## Reviewer Personas
 
-Spawn all 4 personas. Use different models when available to force genuine diversity of critique.
+Spawn all always-on personas and any triggered cross-model personas. Use different
+models when available to force genuine diversity of critique.
 
 ### Always-On Personas (same model as caller)
 
@@ -42,27 +43,32 @@ Spawn all 4 personas. Use different models when available to force genuine diver
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Constitution Reviewer**    | Map plan units against the project's core principles. Flag violations.                                                                 |
 | **Go Quality Reviewer**      | Evaluate proposed type signatures, error handling patterns, package boundaries, and verification steps. Will the plan produce code that passes gofmt, golangci-lint, go vet, and go test? |
+| **Scope Boundary Auditor**   | Scope creep, YAGNI, unnecessary complexity, verification criteria completeness.           |
+| **Learnings Researcher**     | Confirm the plan is not ignoring relevant prior solutions.                                                                             |
 
 ### Cross-Model Personas (different model when available)
 
 | Persona Agent               | Focus                                                                                     | Suggested Model                            |
 | --------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------ |
 | **Architecture Strategist** | Cohesion, coupling, module boundaries, dependency chains. Are the dependencies realistic? | GPT-5.4 or Gemini                          |
-| **Scope Boundary Auditor**  | Scope creep, YAGNI, unnecessary complexity, verification criteria completeness.           | GPT-5.4 Medium |
+| **Agent-Native Parity Reviewer** | Plans that expose MCP tools, agent-facing actions, or user/agent parity-sensitive workflows. | GPT-5.4 Medium |
 
-If cross-model invocation is not available, run all 4 with the caller's model. Multi-model is preferred but not blocking.
+If cross-model invocation is not available, run all personas with the caller's model. Multi-model is preferred but not blocking.
 
 ## Workflow
 
 ### Step 1: Load Plan and Context
 
 1. Read the plan file from `docs/exec-plans/`
-2. If the plan references an origin document in `.backlogit/queue/` or `docs/research/`, read that too
-3. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
+2. Extract implementation units, dependency graph, decisions, risks, hardening signals, and whether a `## Plan Hardening` section is present.
+3. When `strict-safety` is enabled and the plan contains a `## Plan Hardening` section, also extract any `ProposedAction` / `ActionRisk` entries.
+4. If the plan references an origin document in `.backlogit/queue/` or `docs/research/`, read that too
+5. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 
 ### Step 2: Spawn Reviewer Subagents
 
-Spawn all 4 persona subagents. Each receives:
+Spawn all always-on personas plus the cross-model personas whose trigger
+conditions are met. Each receives:
 
 - The full plan content
 - The origin requirements doc (if any)
@@ -87,6 +93,8 @@ As each persona returns:
 
 | Condition             | Decision     | Action                                                                         |
 | --------------------- | ------------ | ------------------------------------------------------------------------------ |
+| Plan shows hardening signals but lacks plan hardening or equivalent high-risk detail | **FAIL** | Return the plan to `plan-harden` or manual revision before `harvest`. |
+| Strict-safety enabled, hardening present, but risky actions lack `ProposedAction` / `ActionRisk` classification | **FAIL** | Plans with hardening signals must classify risky actions explicitly when strict-safety is active. |
 | Any P0 or P1 findings | **FAIL**     | Present findings to user. Plan must be revised before proceeding to `harvest`. |
 | P2 findings only      | **ADVISORY** | Present findings to user. User decides: revise or proceed.                     |
 | P3 findings only      | **PASS**     | Log findings as advisory. Proceed to `harvest`.                                |
@@ -94,11 +102,22 @@ As each persona returns:
 
 Broadcast the gate decision.
 
-### Step 5: Write Review Tracking Artifact
+### Step 5: Append Review to Plan
 
-Write to `.copilot-tracking/plan-review/{YYYY-MM-DD}-{slug}-plan-review.md`
+Review findings are **appended to the plan file** as a `## Plan Review` section,
+not written as a separate file. The plan-review skill produces a gate decision
+(`PASS`, `ADVISORY`, or `FAIL`) that is recorded in the appended section.
 
-This output is a tracking artifact, not a backlogit `review` work item. Plan reviews run before a feature branch lifecycle artifact exists, so they should not create malformed queue items.
+Append a `## Plan Review` section to the plan file with:
+
+* Gate decision and rationale
+* Whether plan hardening was required and whether that requirement was satisfied
+* All findings organized by severity
+* Specific recommendations for addressing P0/P1 issues
+* Acknowledgment of P2/P3 items for awareness
+* Runtime verification and operational closure gaps called out explicitly when missing
+
+A separate tracking artifact may also be written to `.copilot-tracking/plan-review/` for compaction-friendly reference.
 
 ```markdown
 ---
@@ -106,7 +125,7 @@ title: "Plan Review: {plan_title}"
 date: YYYY-MM-DD
 plan: "{plan_path}"
 gate: pass|fail|advisory
-reviewers: [constitution-reviewer, go-quality-reviewer, architecture-strategist, scope-boundary-auditor]
+reviewers: [constitution-reviewer, go-quality-reviewer, scope-boundary-auditor, learnings-researcher, architecture-strategist, agent-native-parity-reviewer]
 ---
 
 # Plan Review: {plan_title}

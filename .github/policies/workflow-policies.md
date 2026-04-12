@@ -104,3 +104,24 @@ be read through the Stage and Ship path first.
 * Broadcast the violation with the policy ID and a short summary.
 * Record the violation in memory checkpoints when it affects ongoing work.
 * Include notable policy deviations in PR or review context when relevant.
+
+## P-006: Plan hardening gate
+
+| Field      | Value                                    |
+|------------|------------------------------------------|
+| Policy ID  | P-006                                    |
+| Applies To | `stage`                                  |
+| Gate Point | Post-planning, pre-review (Step 3→4)     |
+
+**Statement**: Plans that declare hardening signals must invoke plan-harden before plan-review can gate them. Plans that skip this step when hardening is required must be rejected.
+
+**Precondition**: One of the following must be true:
+
+1. The impl-plan output contains `Requires plan hardening: no`
+2. The plan-harden skill has been invoked and has appended a `## Plan Hardening` section to the plan
+
+If the impl-plan output does not contain a `Requires plan hardening` conclusion, treat hardening as required (fail-safe).
+
+**Postcondition**: The plan entering plan-review either carries a `## Plan Hardening` section (when hardening was required) or an explicit `Requires plan hardening: no` conclusion.
+
+**Violation action**: Halt. Do not proceed to plan-review or harvest. Broadcast a P-005 violation event.

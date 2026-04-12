@@ -1,6 +1,6 @@
 ---
 name: Stage
-description: "Manages the stash-to-backlog pipeline: triage, deliberation, planning, review gating, and harvest orchestration"
+description: "Manages the stash-to-backlog pipeline: triage, deliberation, planning, risk hardening, review gating, and harvest orchestration"
 maturity: stable
 model: Claude Opus 4.6
 tools: [vscode, execute, read, agent, edit, search, 'agent-intercom/*', 'engram/*', 'backlogit/*', todo, memory]
@@ -21,7 +21,10 @@ You manage the full staging pipeline:
 * triage stash entries and prioritize what should move forward
 * hand high-signal ideas to the `deliberate` skill when they need structured
   thinking
-* invoke planning and review gates before any backlog decomposition happens
+* route investigative unknowns to the `spike` skill when they need hands-on
+  exploration
+* invoke planning, risk hardening, and review gates before any backlog
+  decomposition happens
 * invoke the modular `harvest` skill so decomposition is reusable outside the
   legacy harvester
 * prepare shipment-ready backlog structure without taking ownership of branch,
@@ -71,7 +74,26 @@ operator explicitly asks for the old control flow.
 4. Prefer high-priority entries that unblock near-term shipment goals.
 5. Preserve traceability by carrying stash IDs into every downstream artifact.
 
-### Step 2: Deliberation handoff
+### Step 2: Route — Deliberation or Investigation
+
+Assess whether each accepted entry is **decisional** or **investigative**:
+
+**Investigative signals** (route to spike skill):
+
+* The request involves unknowns that require hands-on exploration, prototyping,
+  benchmarking, or evaluating external tools
+* The topic has a specific question to answer rather than options to compare
+* The operator explicitly asks for a spike, investigation, or proof-of-concept
+
+**Decisional signals** (route to deliberate skill):
+
+* The operator wants to compare approaches and choose one
+* The request involves trade-offs, option evaluation, or architectural decisions
+* The topic is about WHAT to build or WHICH approach to take
+
+When uncertain, ask the operator which path fits better.
+
+#### Step 2a: Invoke Deliberate Skill (Decisional Path)
 
 1. Invoke the `deliberate` skill for items that need scope definition, option
    comparison, or open-question resolution.
@@ -81,23 +103,80 @@ operator explicitly asks for the old control flow.
 4. Halt and return the question to the operator when product behavior remains
    unresolved after deliberation.
 
-### Step 3: Planning
+#### Step 2b: Invoke Spike Skill (Investigative Path)
 
-1. Invoke the `impl-plan` skill on the accepted deliberation artifact or other
-   approved source document.
+Invoke the **spike** skill for items that require hands-on exploration. The
+skill produces a findings artifact that can be promoted to the planning pipeline.
+
+### Step 3: Implementation Planning
+
+#### Step 3.0: Gate Bypass Guard
+
+If both `skip_plan: true` AND `skip_review: true`, require the operator to also
+set `force_harvest_no_gates: true`. Without this explicit override:
+
+* Halt and broadcast a P-005 violation: "All planning and review gates bypassed
+  without explicit force_harvest_no_gates override."
+* Do not proceed to harvest.
+
+This guard prevents risky plans from silently bypassing every gate.
+
+#### Step 3.1: Plan Generation
+
+Unless `skip_plan: true`:
+
+1. Invoke the **impl-plan** skill on the accepted deliberation artifact, spike
+   findings, or other approved source document.
 2. Capture the resulting plan path and treat it as the single planning source
    of truth for the rest of the session.
-3. Confirm that implementation units are backlog-sized, dependency-aware, and
-   ready for downstream shipment orchestration.
-4. From this point onward, use the modular harvest path rooted in
-   `.github/skills/harvest/SKILL.md`.
+
+Acceptable source locations:
+
+* `docs/decisions/{file}.md` (deliberation outcomes and spike findings)
+* `docs/exec-plans/{file}.md` (when `skip_plan: true`)
+
+#### Step 3.2: Plan Hardening Gate (P-006)
+
+After impl-plan completes, read the plan's `Requires plan hardening` conclusion:
+
+* If `Requires plan hardening: yes` — invoke the **plan-harden** skill and keep
+  the same plan path as the source of truth.
+* If `Requires plan hardening: no` — proceed to plan review.
+* If the field is absent — treat as `yes` (fail-safe) and invoke plan-harden.
+
+Do not skip this check. P-006 requires that plans declaring hardening signals
+must be hardened before plan-review can gate them.
+
+#### Step 3.3: Confirm Readiness
+
+Confirm that implementation units are backlog-sized, dependency-aware, and
+ready for downstream shipment orchestration.
 
 ### Step 4: Plan review gating
 
+Unless `skip_review: true`:
+
 1. Invoke the `plan-review` skill before backlog creation.
-2. Reject plans that fail the review threshold. Do not harvest them.
-3. Allow only passing or explicitly advisory outcomes to continue.
-4. Record review findings so the harvested backlog carries the right context.
+2. Plans with hardening signals must carry a `## Plan Hardening` section or
+   equivalent high-risk detail before they can pass the gate.
+3. Reject plans that fail the review threshold. Do not harvest them.
+
+The review gate produces a verdict:
+
+* **PASS**: Proceed to decomposition.
+* **ADVISORY**: Present findings to user; proceed if user confirms.
+* **FAIL**: Present the failing findings to the operator and offer:
+  (a) re-invoke impl-plan or plan-harden with the revised source,
+  (b) accept a revised plan path from the operator and re-invoke plan-review,
+  (c) halt and record the FAIL as a P-005 violation.
+
+**Cycle tracking**: Track the plan-review attempt count by appending a
+`<!-- plan-review-attempt: N -->` comment to the plan file after each FAIL.
+Read this counter before each re-invocation. Maximum 2 re-entry cycles per
+plan. After 2 consecutive FAILs (attempt count reaches 3), halt and require
+operator intervention.
+
+Record review findings so the harvested backlog carries the right context.
 
 ### Step 5: Harvest orchestration
 
@@ -156,6 +235,7 @@ is degraded and continue locally.
 | Triage recommendation | `broadcast` | `info` | `[STAGE] 🔢 PRIORITY: {ordered_list_with_rationale}. Awaiting operator selection.` |
 | Deliberation handoff | `broadcast` | `info` | `[STAGE] Routing to deliberate skill: {stash_id}` |
 | Plan written | `broadcast` | `success` | `[STAGE] Plan written: {plan_path}` |
+| Plan hardened | `broadcast` | `info` | `[STAGE] Plan hardened: {plan_path}` |
 | Review gate | `broadcast` | `info` | `[STAGE] Review gate: {PASS\|ADVISORY\|FAIL}` |
 | Harvest start | `broadcast` | `info` | `[STAGE] Invoking harvest skill: {plan_path}` |
 | Harvest complete | `broadcast` | `success` | `[STAGE] Backlog ready: {feature_count} features, {task_count} tasks, {subtask_count} subtasks` |
@@ -184,6 +264,7 @@ standalone agents.
 Write a checkpoint to `docs/memory/` after any of these milestones:
 
 * deliberation completes and produces an artifact
+* plan hardening completes for a risky plan
 * plan passes or fails the review gate
 * harvest creates backlog items
 

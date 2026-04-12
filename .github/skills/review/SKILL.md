@@ -102,6 +102,8 @@ caller's model.
 | **MCP Protocol Reviewer** | `internal/mcp/`, MCP-related code | GPT-5.4 or Gemini |
 | **SQLite Reviewer** | `internal/db/`, database queries, schema files | GPT-5.4 or Gemini |
 | **Markdown/YAML Reviewer** | `internal/parser/`, frontmatter handling, YAML schemas | GPT-5.4 or Gemini |
+| **Concurrency Reviewer** | goroutine, channel, sync.Mutex, errgroup, context cancellation patterns | GPT-5.4 or Gemini |
+| **Agent-Native Parity Reviewer** | `internal/mcp/`, MCP tool definitions, agent-facing workflows | GPT-5.4 or Gemini |
 
 ## Workflow
 
