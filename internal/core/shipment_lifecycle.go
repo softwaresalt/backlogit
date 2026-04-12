@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -449,15 +451,17 @@ func clearParentID(ctx context.Context, ws *Workspace, itemID string) error {
 // AdoptItemResult summarizes the outcome of an adopt operation.
 type AdoptItemResult struct {
 	ItemID        string `json:"item_id"`
+	NewID         string `json:"new_id,omitempty"`
 	NewParentID   string `json:"new_parent_id"`
 	OriginFeature string `json:"origin_feature,omitempty"`
 	IsOrphan      bool   `json:"was_orphan"`
 }
 
 // AdoptItem sets an orphaned or unparented item's parent_id to a new feature,
-// preserving the original hierarchical ID as provenance. If the item had a
-// previous parent encoded in its ID prefix, that prefix is recorded in the
-// origin_feature custom field for lineage.
+// atomically rewriting its hierarchical ID, renaming files, updating dependency
+// and link edges, and syncing the index. The return value includes the new ID
+// so callers can update their own references. Adoption rewrites internal
+// backlogit references only; external references are the caller's responsibility.
 func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (*AdoptItemResult, error) {
 	if newParentID == "" {
 		return nil, fmt.Errorf("adopt item %s: new_parent_id is required", itemID)
@@ -478,7 +482,6 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	}
 
 	wasOrphan := IsOrphan(artifact)
-	previousParent := artifact.ParentID
 
 	// Record origin_feature from the ID prefix if not already set.
 	originFeature := extractOriginFeatureID(ws, itemID)
@@ -489,21 +492,129 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		artifact.CustomFields["origin_feature"] = originFeature
 	}
 
-	artifact.ParentID = newParentID
-	artifact.UpdatedAt = time.Now()
-
-	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		return nil, fmt.Errorf("adopt item %s: persist: %w", itemID, err)
+	// Step 1: Generate the new hierarchical ID under the new parent.
+	oldID := artifact.ID
+	newID := oldID // fallback: keep old ID if we can't generate a new one
+	if ws.Config != nil && ws.Config.QueueLayout != nil {
+		typeCfg, typeOK := ws.Config.ArtifactTypes[artifact.ArtifactType]
+		if typeOK && typeCfg != nil {
+			generatedID, idErr := NextTypedHierarchicalID(
+				ctx, ws.DB, newParentID, artifact.ArtifactType,
+				typeCfg, ws.Config.QueueLayout,
+			)
+			if idErr == nil {
+				newID = generatedID
+			}
+		}
 	}
 
-	appendItemEvent(ctx, ws, itemID, "adopted", map[string]any{
-		"new_parent_id":   newParentID,
-		"previous_parent": previousParent,
-		"origin_feature":  originFeature,
+	// Update the artifact with new parent and ID.
+	artifact.ParentID = newParentID
+	artifact.ID = newID
+	artifact.UpdatedAt = time.Now()
+
+	// Step 2: Begin DB transaction for edge rewrites and index sync.
+	if ws.DB != nil && newID != oldID {
+		tx, txErr := ws.DB.BeginTx(ctx, nil)
+		if txErr != nil {
+			return nil, fmt.Errorf("adopt item %s: begin tx: %w", oldID, txErr)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		// Rewrite dependency and link edges.
+		if err := bldb.RewriteDependencyEdges(ctx, tx, oldID, newID); err != nil {
+			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
+		}
+		if err := bldb.RewriteLinkEdges(ctx, tx, oldID, newID); err != nil {
+			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
+		}
+
+		// Delete old index row and insert new one.
+		// Use a non-cascading delete — edges are already rewritten above.
+		if _, delErr := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, oldID); delErr != nil {
+			return nil, fmt.Errorf("adopt item %s: delete old index: %w", oldID, delErr)
+		}
+		if err := bldb.UpsertItemTx(ctx, tx, artifact); err != nil {
+			return nil, fmt.Errorf("adopt item %s: upsert new index: %w", oldID, err)
+		}
+
+		// Step 3: File operations — rename .md and .jsonl files.
+		oldMDPath, findErr := FindArtifactPath(ctx, ws, oldID)
+		if findErr != nil && !errors.Is(findErr, blerrors.ErrNotFound) {
+			return nil, fmt.Errorf("adopt item %s: find old md: %w", oldID, findErr)
+		}
+
+		var renamedMD, renamedLog bool
+		var newMDPath, oldLogPath, newLogPath string
+
+		if findErr == nil {
+			// Compute new path based on new ID.
+			dir := filepath.Dir(oldMDPath)
+			newMDPath = filepath.Join(dir, newID+".md")
+
+			// Write updated artifact content (with new ID in frontmatter) to new path.
+			if writeErr := WriteArtifactFile(artifact, newMDPath); writeErr != nil {
+				return nil, fmt.Errorf("adopt item %s: write new md: %w", oldID, writeErr)
+			}
+			if newMDPath != oldMDPath {
+				if rmErr := os.Remove(oldMDPath); rmErr != nil && !os.IsNotExist(rmErr) {
+					// Rollback: remove the new file we just wrote
+					_ = os.Remove(newMDPath)
+					return nil, fmt.Errorf("adopt item %s: remove old md: %w", oldID, rmErr)
+				}
+				renamedMD = true
+			}
+		}
+
+		// Rename log file if it exists.
+		logsDir := WorkspaceLogsRoot(ws.RootPath)
+		oldLogPath = filepath.Join(logsDir, oldID+".jsonl")
+		newLogPath = filepath.Join(logsDir, newID+".jsonl")
+		if _, statErr := os.Stat(oldLogPath); statErr == nil {
+			if renameErr := os.Rename(oldLogPath, newLogPath); renameErr != nil {
+				// Rollback MD rename
+				if renamedMD {
+					_ = os.Rename(newMDPath, oldMDPath)
+				}
+				return nil, fmt.Errorf("adopt item %s: rename log: %w", oldID, renameErr)
+			}
+			renamedLog = true
+		}
+
+		// Step 4: Commit the transaction now that all file ops succeeded.
+		if commitErr := tx.Commit(); commitErr != nil {
+			// Rollback file operations
+			if renamedLog {
+				_ = os.Rename(newLogPath, oldLogPath)
+			}
+			if renamedMD {
+				_ = os.Rename(newMDPath, oldMDPath)
+			}
+			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
+		}
+	} else {
+		// No ID change or no DB — just persist the artifact with updated parent.
+		if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+			return nil, fmt.Errorf("adopt item %s: persist: %w", itemID, err)
+		}
+		if ws.DB != nil {
+			if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
+				return nil, fmt.Errorf("adopt item %s: index: %w", itemID, err)
+			}
+		}
+	}
+
+	appendItemEvent(ctx, ws, newID, "adopted", map[string]any{
+		"old_id":         oldID,
+		"new_id":         newID,
+		"new_parent_id":  newParentID,
+		"origin_feature": originFeature,
+		"was_orphan":     wasOrphan,
 	})
 
 	return &AdoptItemResult{
-		ItemID:        itemID,
+		ItemID:        oldID,
+		NewID:         newID,
 		NewParentID:   newParentID,
 		OriginFeature: originFeature,
 		IsOrphan:      wasOrphan,

@@ -5,7 +5,7 @@ applyTo: '**'
 
 # Backlogit SQL Schema Reference
 
-The SQLite index at `.backlogit/index.db` is an ephemeral, read-only query cache. The Markdown files under `.backlogit/` are the source of truth. Use `backlogit_query_sql` to run `SELECT` statements against this cache. Rebuild the cache at any time with `backlogit_sync_index`.
+The SQLite index at `.backlogit/backlogit.db` is an ephemeral, read-only query cache. The Markdown files under `.backlogit/` are the source of truth. Use `backlogit_query_sql` to run `SELECT` statements against this cache. Rebuild the cache at any time with `backlogit_sync_index`.
 
 ## Tables
 

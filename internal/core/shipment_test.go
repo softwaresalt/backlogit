@@ -617,11 +617,22 @@ func TestAdoptItem_Success(t *testing.T) {
 	assert.True(t, result.IsOrphan, "should report item was orphaned")
 	assert.NotEmpty(t, result.OriginFeature, "should capture origin feature from ID prefix")
 
-	adopted, err := loadArtifact(ctx, ws, task.ID)
+	// After adoption with ID rewrite, look up by the new ID.
+	lookupID := result.NewID
+	if lookupID == "" {
+		lookupID = task.ID
+	}
+	adopted, err := loadArtifact(ctx, ws, lookupID)
 	require.NoError(t, err)
 	assert.Equal(t, newFeature.ID, adopted.ParentID)
 	assert.Equal(t, feature.ID, adopted.CustomFields["origin_feature"])
 	assert.False(t, IsOrphan(adopted), "adopted item should no longer be orphan")
+
+	// Verify old ID is no longer in the index when ID was rewritten.
+	if result.NewID != "" && result.NewID != task.ID {
+		_, oldErr := bldb.GetItem(ctx, ws.DB, task.ID)
+		assert.Error(t, oldErr, "old ID should be removed from index after adoption")
+	}
 }
 
 func TestAdoptItem_RejectsArchivedItem(t *testing.T) {

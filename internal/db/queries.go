@@ -390,3 +390,119 @@ func nullString(s string) sql.NullString {
 func nullInt64(n int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(n), Valid: n != 0}
 }
+
+// RewriteDependencyEdges updates all item_deps rows that reference oldID,
+// changing them to reference newID. Both item_id and depends_on columns are
+// rewritten. This function operates within an existing transaction.
+func RewriteDependencyEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) error {
+	_, err := tx.ExecContext(ctx,
+		`UPDATE item_deps SET item_id = ? WHERE item_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite dep edges item_id %s→%s: %w", oldID, newID, err)
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE item_deps SET depends_on = ? WHERE depends_on = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite dep edges depends_on %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
+// RewriteLinkEdges updates all item_links rows that reference oldID,
+// changing them to reference newID. Both source_id and target_id columns are
+// rewritten. This function operates within an existing transaction.
+func RewriteLinkEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) error {
+	_, err := tx.ExecContext(ctx,
+		`UPDATE item_links SET source_id = ? WHERE source_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite link edges source_id %s→%s: %w", oldID, newID, err)
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE item_links SET target_id = ? WHERE target_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite link edges target_id %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
+// DeleteItemTx removes an item from the items table within an existing
+// transaction. Returns ErrNotFound when no row matched the ID.
+func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
+	result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete item %s: %w", id, err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("delete item %s: %w", id, blErrors.ErrNotFound)
+	}
+	return nil
+}
+
+// UpsertItemTx inserts or replaces an artifact in the items table within an
+// existing transaction.
+func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
+	customJSON := "{}"
+	if artifact.CustomFields != nil {
+		b, err := json.Marshal(artifact.CustomFields)
+		if err != nil {
+			return fmt.Errorf("marshal custom fields: %w", err)
+		}
+		customJSON = string(b)
+	}
+	labelsJSON := "[]"
+	if len(artifact.Labels) > 0 {
+		b, err := json.Marshal(artifact.Labels)
+		if err != nil {
+			return fmt.Errorf("marshal labels: %w", err)
+		}
+		labelsJSON = string(b)
+	}
+	refsJSON := "[]"
+	if len(artifact.References) > 0 {
+		b, err := json.Marshal(artifact.References)
+		if err != nil {
+			return fmt.Errorf("marshal references: %w", err)
+		}
+		refsJSON = string(b)
+	}
+	depsJSON := "[]"
+	if len(artifact.Dependencies) > 0 {
+		b, err := json.Marshal(artifact.Dependencies)
+		if err != nil {
+			return fmt.Errorf("marshal dependencies: %w", err)
+		}
+		depsJSON = string(b)
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT OR REPLACE INTO items (
+			id, title, status, artifact_type, parent_id, sprint, priority,
+			description, custom_fields, assigned_to, owner, labels,
+			dependencies, "references", "commit", level,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		artifact.ID,
+		artifact.Title,
+		string(artifact.Status),
+		artifact.ArtifactType,
+		nullString(artifact.ParentID),
+		nullString(artifact.Sprint),
+		nullString(artifact.Priority),
+		nullString(artifact.Description),
+		customJSON,
+		nullString(artifact.AssignedTo),
+		nullString(artifact.Owner),
+		labelsJSON,
+		depsJSON,
+		refsJSON,
+		nullString(artifact.Commit),
+		nullInt64(artifact.Level),
+		artifact.CreatedAt,
+		artifact.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
+	}
+	return nil
+}

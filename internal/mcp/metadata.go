@@ -79,7 +79,7 @@ func (s *Server) handleExportCommandMap(ctx context.Context, request mcplib.Call
 		return InternalError(fmt.Sprintf("load metadata catalog: %v", err)), nil
 	}
 
-	writtenPath, err := core.WriteCommandMap(s.RootPath, targetPath, catalog, format)
+	writtenPath, err := core.WriteCommandMap(s.backlogitDir(), targetPath, catalog, format)
 	if err != nil {
 		return InternalError(fmt.Sprintf("export command map: %v", err)), nil
 	}

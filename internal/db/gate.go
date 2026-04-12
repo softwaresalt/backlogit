@@ -27,14 +27,60 @@ type GateResult struct {
 	Reason  string
 }
 
+// stripStringLiterals removes the content of single-quoted SQL string literals
+// so that structural pattern checks (like the semicolon guard) do not trigger
+// on values embedded inside strings. The function handles SQL escaped quotes
+// (”) and conservatively rejects unterminated string literals.
+func stripStringLiterals(sql string) (string, error) {
+	// Step 1: Replace escaped quotes ('') with a placeholder that cannot
+	// appear in valid SQL identifiers or string content.
+	const placeholder = "\x00\x00"
+	normalized := strings.ReplaceAll(sql, "''", placeholder)
+
+	// Step 2: Strip content between remaining single-quote pairs.
+	var result strings.Builder
+	result.Grow(len(normalized))
+	inString := false
+	for i := 0; i < len(normalized); i++ {
+		if normalized[i] == '\'' {
+			inString = !inString
+			// Write the quote itself — we only strip the content between them.
+			result.WriteByte('\'')
+			continue
+		}
+		if !inString {
+			result.WriteByte(normalized[i])
+		}
+	}
+
+	// Step 3: If we ended inside a string, reject conservatively.
+	if inString {
+		return "", fmt.Errorf("unterminated string literal")
+	}
+
+	return result.String(), nil
+}
+
 // ValidateQuery checks whether a SQL statement is safe for read-only execution.
 func ValidateQuery(sqlStr string) GateResult {
 	stripped := strings.TrimSpace(sqlStr)
 	if !strings.HasPrefix(strings.ToUpper(stripped), "SELECT") {
 		return GateResult{Allowed: false, Reason: "Only SELECT statements are permitted"}
 	}
-	for _, pattern := range forbiddenPatterns {
-		if loc := pattern.FindString(stripped); loc != "" {
+
+	for i, pattern := range forbiddenPatterns {
+		// For the semicolon pattern (index 4), strip string literals first
+		// so that semicolons inside SQL values like '%key;value%' pass.
+		checkStr := stripped
+		if i == 4 {
+			literalStripped, err := stripStringLiterals(stripped)
+			if err != nil {
+				return GateResult{Allowed: false, Reason: fmt.Sprintf("Invalid query: %s", err)}
+			}
+			checkStr = literalStripped
+		}
+
+		if loc := pattern.FindString(checkStr); loc != "" {
 			// Allow whitelisted PRAGMA statements
 			if strings.EqualFold(loc, "PRAGMA") {
 				lowerSQL := strings.ToLower(stripped)

@@ -255,18 +255,22 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		return nil, fmt.Errorf("artifact type is required")
 	}
 
-	// Lock the stash file for the entire harvest: read → create artifact → write removal.
-	// Holding a single lock prevents a concurrent harvest from reading the same entry
-	// before either goroutine commits the removal, which would produce duplicate artifacts.
-	// On CreateArtifact failure the lock is released without writing, preserving the entry.
 	path := StashFilePath(ws.RootPath)
 	unlock, err := lockStashFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}
+	defer func() { _ = unlock() }()
+
+	return harvestStashEntryLocked(ctx, ws, harvestOpts, path)
+}
+
+// harvestStashEntryLocked is the internal harvest implementation that assumes the
+// caller already holds the stash lock. It must not acquire the lock itself to
+// avoid deadlock on the non-reentrant sync.Mutex.
+func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts HarvestStashOptions, path string) (*HarvestedStashResult, error) {
 	entry, remaining, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
 	if err != nil {
-		_ = unlock()
 		return nil, err
 	}
 
@@ -300,21 +304,16 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 
 	artifact, err := CreateArtifact(ctx, ws, itemTitle, harvestOpts.ArtifactType, createOpts...)
 	if err != nil {
-		_ = unlock()
 		return nil, fmt.Errorf("create artifact from stash: %w", err)
 	}
 
 	// Artifact created — commit the stash removal atomically under the still-held lock.
-	// On writeStashEntries failure, best-effort artifact cleanup prevents duplicate
-	// harvests on retry (the stash entry remains intact for the retry to succeed).
 	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
 		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
 			_ = os.Remove(artifactPath)
 		}
-		_ = unlock()
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
 	}
-	_ = unlock()
 
 	if ws.DB != nil {
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
@@ -340,6 +339,8 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 }
 
 // HarvestStashByPriority harvests all active stash entries matching a priority.
+// It acquires the stash lock once for the entire batch to prevent TOCTOU races
+// between reading the entry list and harvesting individual entries.
 func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStashOptions) (*HarvestedStashBatchResult, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
@@ -348,20 +349,28 @@ func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStas
 	if err != nil {
 		return nil, err
 	}
+
+	path := StashFilePath(ws.RootPath)
+	unlock, err := lockStashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock for batch harvest: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
 	fetched, err := FetchStash(ctx, ws, FetchStashOptions{Priority: priority})
 	if err != nil {
 		return nil, err
 	}
 	results := make([]HarvestedStashResult, 0, len(fetched.Entries))
 	for _, entry := range fetched.Entries {
-		result, err := HarvestStashEntry(ctx, ws, HarvestStashOptions{
+		result, err := harvestStashEntryLocked(ctx, ws, HarvestStashOptions{
 			StashID:      entry.ID,
 			ArtifactType: opts.ArtifactType,
 			Title:        opts.Title,
 			Description:  opts.Description,
 			Status:       opts.Status,
 			ParentID:     opts.ParentID,
-		})
+		}, path)
 		if err != nil {
 			return nil, err
 		}

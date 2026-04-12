@@ -176,7 +176,7 @@ func RegisterTools(s *server.MCPServer) {
 
     s.AddTool(
         mcp.NewTool("backlogit_query_sql",
-            mcp.WithDescription("Execute a read-only SQL query against index.db"),
+            mcp.WithDescription("Execute a read-only SQL query against backlogit.db"),
             mcp.WithString("sql",
                 mcp.Required(),
                 mcp.Description("SELECT statement to execute"),
@@ -215,7 +215,7 @@ func handleCreateItem(
     description := request.GetString("description", "")
 
     // 3. Get DB connection
-    conn, err := GetConnection(workspace + "/index.db")
+    conn, err := GetConnection(workspace + "/backlogit.db")
     if err != nil {
         return internalError(fmt.Sprintf("database open failed: %v", err)), nil
     }
@@ -501,7 +501,7 @@ func setupWorkspace(t *testing.T) (string, *sql.DB) {
         0o644,
     ))
 
-    dbPath := filepath.Join(ws, "index.db")
+    dbPath := filepath.Join(ws, "backlogit.db")
     db, err := sql.Open("sqlite", dbPath)
     require.NoError(t, err)
     t.Cleanup(func() { db.Close() })

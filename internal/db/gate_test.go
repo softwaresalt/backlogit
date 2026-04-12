@@ -61,3 +61,43 @@ func TestValidateQuery_RejectsNonSelect(t *testing.T) {
 	result := db.ValidateQuery("PRAGMA table_info(items)")
 	assert.False(t, result.Allowed)
 }
+
+func TestValidateQuery_AllowsSemicolonInStringLiteral(t *testing.T) {
+	tests := []string{
+		"SELECT * FROM items WHERE description LIKE '%key;value%'",
+		"SELECT * FROM items WHERE x = 'a;b;c'",
+		"SELECT * FROM items WHERE x = 'semi;colon' AND y = 1",
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			result := db.ValidateQuery(sql)
+			assert.True(t, result.Allowed, "expected allowed for: %s, reason: %s", sql, result.Reason)
+		})
+	}
+}
+
+func TestValidateQuery_RejectsMultiStatement(t *testing.T) {
+	tests := []string{
+		"SELECT 1; DROP TABLE items",
+		"SELECT * FROM items; DELETE FROM items",
+		"SELECT 1; SELECT 2",
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			result := db.ValidateQuery(sql)
+			assert.False(t, result.Allowed, "expected rejected for: %s", sql)
+		})
+	}
+}
+
+func TestValidateQuery_RejectsUnterminatedStringLiteral(t *testing.T) {
+	result := db.ValidateQuery("SELECT * FROM items WHERE x = 'unterminated")
+	assert.False(t, result.Allowed)
+	assert.Contains(t, result.Reason, "unterminated")
+}
+
+func TestValidateQuery_HandlesEscapedQuotes(t *testing.T) {
+	// SQL escaped quotes ('') should not break string literal detection
+	result := db.ValidateQuery("SELECT * FROM items WHERE x = 'it''s a;test'")
+	assert.True(t, result.Allowed, "escaped quotes with semicolons should be allowed, reason: %s", result.Reason)
+}
