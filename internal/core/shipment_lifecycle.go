@@ -521,10 +521,12 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 		defer tx.Rollback() //nolint:errcheck
 
-		// Compute log paths for ancillary reference rewriting.
+		// Compute log paths: absolute paths for filesystem ops, relative
+		// (to .backlogit/) paths for the DB to match IndexEvent's convention.
 		logsDir := WorkspaceLogsRoot(ws.RootPath)
 		oldLogPath := filepath.Join(logsDir, oldID+".jsonl")
 		newLogPath := filepath.Join(logsDir, newID+".jsonl")
+		newRelLogPath := filepath.ToSlash(filepath.Join("logs", newID+".jsonl"))
 
 		// Rewrite dependency and link edges.
 		if err := bldb.RewriteDependencyEdges(ctx, tx, oldID, newID); err != nil {
@@ -536,7 +538,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 
 		// Rewrite ancillary references (commit_links, stash_links, item_logs,
 		// item_log_entries) so the index remains fully self-consistent.
-		if err := bldb.RewriteAncillaryReferences(ctx, tx, oldID, newID, oldLogPath, newLogPath); err != nil {
+		if err := bldb.RewriteAncillaryReferences(ctx, tx, oldID, newID, newRelLogPath); err != nil {
 			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
 		}
 

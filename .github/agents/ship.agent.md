@@ -105,20 +105,25 @@ does not yet exist. Never fail the session on a missing queue file.
 
 ### Step 1: Shipment validation
 
-1. Start with shipment inspection through `backlogit shipment get` or the
-   matching MCP read surface.
-2. Confirm the shipment is in `queued` or `active` state.
-3. If the shipment is still `queued`, claim it through the shipment command
-   surface before build work begins.
-4. Resolve the shipment's item list, dependency order, branch context, and any
+1. Call `ping` when `agent-intercom` is available, then broadcast
+   `[SHIP] Starting shipment workflow: {shipment_id}`. If intercom is
+   unreachable, warn the operator that visibility is degraded and continue.
+2. Start with shipment inspection through `backlogit shipment get` or the
+   matching MCP read surface. Broadcast `[SHIP] Validating shipment: {shipment_id}`.
+3. Confirm the shipment is in `queued` or `active` state.
+4. If the shipment is still `queued`, claim it through the shipment command
+   surface before build work begins. Broadcast `[SHIP] Shipment active: {shipment_id}`.
+5. Resolve the shipment's item list, dependency order, branch context, and any
    already-open pull request.
-5. If an item cannot stay in the shipment, remove it with
+6. If an item cannot stay in the shipment, remove it with
    `backlogit shipment return-blocked` and preserve the blocked reason.
+   Broadcast `[SHIP] Returned blocked item from shipment: {item_id}`.
 
 ### Step 2: Harness generation
 
-1. Invoke the `harness-architect` skill for the feature or ready task set
-   represented in the shipment.
+1. Broadcast `[SHIP] Invoking harness-architect skill`, then invoke the
+   `harness-architect` skill for the feature or ready task set represented in
+   the shipment.
 2. Limit scaffolding to ready items that still belong in the shipment.
 3. Require compilable but failing harnesses, structural stubs, and successful
    `go build ./...` verification after scaffolding.
@@ -128,8 +133,8 @@ does not yet exist. Never fail the session on a missing queue file.
 ### Step 3: Build execution
 
 1. Execute shipment items in dependency order.
-2. Invoke the `build-feature` skill once per task or subtask using the
-   registered harness command for that work item.
+2. For each work item, broadcast `[SHIP] Invoking build-feature for {item_id}`,
+   then invoke the `build-feature` skill using the registered harness command.
 3. Keep shipment state authoritative while work progresses. Do not track task
    status only in prose.
 4. If a work item blocks mid-shipment, remove it from shipment scope and return
@@ -137,8 +142,9 @@ does not yet exist. Never fail the session on a missing queue file.
 
 ### Step 4: Review gate
 
-1. Invoke the `review` skill in `mode:report-only` against the shipment branch
-   or the exact changed files.
+1. Broadcast `[SHIP] Invoking review gate for shipment branch`, then invoke the
+   `review` skill in `mode:report-only` against the shipment branch or the
+   exact changed files.
 2. Treat P0 and P1 findings as blocking for the shipment.
 3. Resolve blocking findings before moving to pull request creation.
 4. Record any non-blocking residual work as explicit follow-up rather than
@@ -146,7 +152,8 @@ does not yet exist. Never fail the session on a missing queue file.
 
 ### Step 5: CI remediation
 
-1. If branch checks or pull request checks fail, invoke the `fix-ci` skill.
+1. If branch checks or pull request checks fail, broadcast
+   `[SHIP] Invoking fix-ci for shipment PR`, then invoke the `fix-ci` skill.
 2. Reuse the shipment branch and pull request context across remediation loops.
 3. Continue until CI is clean, the operator stops the loop, or the shipment is
    explicitly marked blocked.
@@ -156,10 +163,13 @@ does not yet exist. Never fail the session on a missing queue file.
 1. Invoke the `pr-lifecycle` skill for the shipment branch.
 2. Create or update the pull request, respond to Copilot review comments, and
    loop with `fix-ci` when further remediation is required.
-3. Present the pull request state to the operator when the branch is reviewable.
-4. Never merge automatically. Await explicit user approval before any merge.
-5. After a user-approved merge, update shipment state to shipped and perform
-   optional cleanup only when the operator requests it.
+3. When the branch is reviewable, broadcast `[SHIP] PR ready for review: {pr_url}`
+   and present the pull request state to the operator.
+4. Never merge automatically. Broadcast `[WAIT] Awaiting user merge approval for
+   shipment {shipment_id}` and await explicit user approval before any merge.
+5. After a user-approved merge, update shipment state to shipped and broadcast
+   `[SHIP] Shipment session complete: {outcome}`. Perform optional cleanup only
+   when the operator requests it.
 
 ## Remote Operator Integration (agent-intercom)
 

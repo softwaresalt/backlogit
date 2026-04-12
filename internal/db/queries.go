@@ -427,9 +427,12 @@ func RewriteLinkEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) erro
 
 // RewriteAncillaryReferences updates item_id references in commit_links,
 // stash_links, item_logs, and item_log_entries. For item_logs and
-// item_log_entries the log_path column is also updated from oldLogPath to
-// newLogPath. This function operates within an existing transaction.
-func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, oldLogPath, newLogPath string) error {
+// RewriteAncillaryReferences updates item_id columns in commit_links,
+// stash_links, item_logs, and item_log_entries from oldID to newID. For
+// item_logs and item_log_entries the log_path column is also set to
+// newLogPath (a .backlogit/-relative path like "logs/<id>.jsonl").
+// This function operates within an existing transaction.
+func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, newLogPath string) error {
 	// commit_links
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE commit_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
@@ -440,7 +443,9 @@ func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, o
 		`UPDATE stash_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
 		return fmt.Errorf("rewrite stash_links %s→%s: %w", oldID, newID, err)
 	}
-	// item_logs — item_id is PK, so delete+insert to avoid PK conflict
+	// item_logs — UPDATE rewrites item_id (PK) and log_path in one statement.
+	// SQLite allows PK updates; there is no conflict because the old row is
+	// the only one being modified.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE item_logs SET item_id = ?, log_path = ? WHERE item_id = ?`, newID, newLogPath, oldID); err != nil {
 		return fmt.Errorf("rewrite item_logs %s→%s: %w", oldID, newID, err)

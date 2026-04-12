@@ -190,3 +190,47 @@ func TestHandleCreateItem_WithSections_WritesContent(t *testing.T) {
 	assert.Contains(t, content, "Must pass all tests",
 		"file should contain the acceptance-criteria section content")
 }
+
+// Test for writeSectionsToFile mixed case: one section already exists in the
+// artifact body, another is missing. Only the missing section should be appended;
+// the existing section should be updated in place without duplication.
+func TestWriteSectionsToFile_MixedExistingAndNew(t *testing.T) {
+	_, ws := setupBugFixServer(t)
+	ctx := context.Background()
+
+	// Create artifact with one pre-existing section ("description").
+	artifact := seedArtifactWithSections(t, ws)
+
+	// Write two sections: "description" (exists) and "notes" (new).
+	sections := map[string]string{
+		"description": "Updated description content",
+		"notes":       "Brand-new notes section",
+	}
+	err := writeSectionsToFile(ctx, ws, artifact, sections)
+	require.NoError(t, err)
+
+	// Read back and verify.
+	filePath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
+	require.NoError(t, err)
+	raw, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	content := string(raw)
+
+	// The existing section should be updated, not duplicated.
+	assert.Contains(t, content, "Updated description content",
+		"existing section should be updated")
+	assert.NotContains(t, content, "This is the description section",
+		"old section content should be replaced, not duplicated")
+
+	// The new section should be appended.
+	assert.Contains(t, content, "Brand-new notes section",
+		"missing section should be appended")
+	assert.Contains(t, content, "<!-- BEGIN:notes -->",
+		"appended section should have BEGIN marker")
+	assert.Contains(t, content, "<!-- END:notes -->",
+		"appended section should have END marker")
+
+	// acceptance-criteria (pre-existing, not in update map) should be untouched.
+	assert.Contains(t, content, "Criterion 1",
+		"sections not in update map should be preserved")
+}

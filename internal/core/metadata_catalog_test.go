@@ -62,11 +62,14 @@ func TestWriteCommandMap_WritesInsideBacklogit(t *testing.T) {
 	require.NoError(t, err)
 	assert.FileExists(t, writtenPath)
 
-	// Verify the file was written inside .backlogit/
+	// Verify the file was written inside .backlogit/ using filepath.Rel
+	// to avoid false positives from prefix matching (e.g. ".backlogit-evil/").
 	absWritten, _ := filepath.Abs(writtenPath)
 	absBacklogit, _ := filepath.Abs(backlogitDir)
-	assert.True(t, strings.HasPrefix(absWritten, absBacklogit),
-		"written path %s should be inside %s", absWritten, absBacklogit)
+	relPath, relErr := filepath.Rel(absBacklogit, absWritten)
+	assert.NoError(t, relErr, "should be able to compute relative path")
+	assert.False(t, strings.HasPrefix(relPath, ".."),
+		"written path %s should be inside %s (relative: %s)", absWritten, absBacklogit, relPath)
 }
 
 func TestWriteCommandMap_RejectsEscapingBacklogit(t *testing.T) {

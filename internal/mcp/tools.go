@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -848,7 +849,14 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 	// Process each section individually to avoid the batch duplication bug:
 	// if one section is missing and another exists, only the missing one should
 	// be appended. Structural errors (not "section not found") propagate immediately.
-	for name, value := range sections {
+	// Iterate in sorted key order to produce deterministic output across runs.
+	sectionNames := make([]string, 0, len(sections))
+	for name := range sections {
+		sectionNames = append(sectionNames, name)
+	}
+	sort.Strings(sectionNames)
+	for _, name := range sectionNames {
+		value := sections[name]
 		singleSection := map[string]string{name: value}
 		updated, writeErr := parser.WriteSections(body, singleSection)
 		if writeErr != nil {
