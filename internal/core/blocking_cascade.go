@@ -11,7 +11,7 @@ import (
 // TerminalStatuses lists the artifact statuses that satisfy the downward
 // blocking cascade check. A parent may only move to a terminal status when
 // all of its children are in one of these states.
-var TerminalStatuses = []string{"done", "accepted", "archived", "shipped", "abandoned"}
+var TerminalStatuses = []string{"done", "accepted", "archived", "shipped", "abandoned", "rejected"}
 
 // StatusOption configures optional behavior for status-change operations.
 type StatusOption func(*statusCheckOptions)

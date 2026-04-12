@@ -390,3 +390,154 @@ func nullString(s string) sql.NullString {
 func nullInt64(n int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(n), Valid: n != 0}
 }
+
+// RewriteDependencyEdges updates all item_deps rows that reference oldID,
+// changing them to reference newID. Both item_id and depends_on columns are
+// rewritten. This function operates within an existing transaction.
+func RewriteDependencyEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) error {
+	_, err := tx.ExecContext(ctx,
+		`UPDATE item_deps SET item_id = ? WHERE item_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite dep edges item_id %s→%s: %w", oldID, newID, err)
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE item_deps SET depends_on = ? WHERE depends_on = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite dep edges depends_on %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
+// RewriteLinkEdges updates all item_links rows that reference oldID,
+// changing them to reference newID. Both source_id and target_id columns are
+// rewritten. This function operates within an existing transaction.
+func RewriteLinkEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) error {
+	_, err := tx.ExecContext(ctx,
+		`UPDATE item_links SET source_id = ? WHERE source_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite link edges source_id %s→%s: %w", oldID, newID, err)
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE item_links SET target_id = ? WHERE target_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("rewrite link edges target_id %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
+// RewriteAncillaryReferences updates item_id references in commit_links,
+// stash_links, item_logs, and item_log_entries. For item_logs and
+// RewriteAncillaryReferences updates item_id columns in commit_links,
+// stash_links, item_logs, and item_log_entries from oldID to newID. For
+// item_logs and item_log_entries the log_path column is also set to
+// newLogPath (a .backlogit/-relative path like "logs/<id>.jsonl").
+// This function operates within an existing transaction.
+func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, newLogPath string) error {
+	// commit_links
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE commit_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
+		return fmt.Errorf("rewrite commit_links %s→%s: %w", oldID, newID, err)
+	}
+	// stash_links
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE stash_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
+		return fmt.Errorf("rewrite stash_links %s→%s: %w", oldID, newID, err)
+	}
+	// item_logs — UPDATE rewrites item_id (PK) and log_path in one statement.
+	// SQLite allows PK updates; there is no conflict because the old row is
+	// the only one being modified.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE item_logs SET item_id = ?, log_path = ? WHERE item_id = ?`, newID, newLogPath, oldID); err != nil {
+		return fmt.Errorf("rewrite item_logs %s→%s: %w", oldID, newID, err)
+	}
+	// item_log_entries
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE item_log_entries SET item_id = ?, log_path = ? WHERE item_id = ?`, newID, newLogPath, oldID); err != nil {
+		return fmt.Errorf("rewrite item_log_entries %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
+// DeleteItemTx removes an item from the items table within an existing
+// transaction. Returns ErrNotFound when no row matched the ID.
+func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
+	result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete item %s: %w", id, err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("delete item %s: %w", id, blErrors.ErrNotFound)
+	}
+	return nil
+}
+
+// UpsertItemTx inserts or replaces an artifact in the items table within an
+// existing transaction. Mirrors UpsertItem's column set and value formatting
+// (including hierarchy_path and RFC3339Nano timestamps) to ensure scan
+// compatibility via scanArtifactRow.
+func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
+	cf, err := json.Marshal(artifact.CustomFields)
+	if err != nil {
+		return fmt.Errorf("marshal custom fields: %w", err)
+	}
+
+	labelsJSON, err := json.Marshal(artifact.Labels)
+	if err != nil {
+		return fmt.Errorf("marshal labels: %w", err)
+	}
+	depsJSON, err := json.Marshal(artifact.Dependencies)
+	if err != nil {
+		return fmt.Errorf("marshal dependencies: %w", err)
+	}
+	refsJSON, err := json.Marshal(artifact.References)
+	if err != nil {
+		return fmt.Errorf("marshal references: %w", err)
+	}
+
+	// Store JSON slice fields as NULL when empty to keep rows tidy.
+	labelsVal := nullString(string(labelsJSON))
+	if string(labelsJSON) == "null" {
+		labelsVal = sql.NullString{}
+	}
+	depsVal := nullString(string(depsJSON))
+	if string(depsJSON) == "null" {
+		depsVal = sql.NullString{}
+	}
+	refsVal := nullString(string(refsJSON))
+	if string(refsJSON) == "null" {
+		refsVal = sql.NullString{}
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO items
+			(id, title, status, artifact_type, parent_id, sprint, priority, description,
+			 custom_fields, created_at, updated_at,
+			 assigned_to, owner, labels, dependencies, "references", "commit",
+			 level, hierarchy_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		artifact.ID,
+		artifact.Title,
+		string(artifact.Status),
+		artifact.ArtifactType,
+		nullString(artifact.ParentID),
+		nullString(artifact.Sprint),
+		nullString(artifact.Priority),
+		nullString(artifact.Description),
+		string(cf),
+		artifact.CreatedAt.Format(time.RFC3339Nano),
+		artifact.UpdatedAt.Format(time.RFC3339Nano),
+		nullString(artifact.AssignedTo),
+		nullString(artifact.Owner),
+		labelsVal,
+		depsVal,
+		refsVal,
+		nullString(artifact.Commit),
+		nullInt64(artifact.Level),
+		nullString(artifact.HierarchyPath),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
+	}
+	return nil
+}

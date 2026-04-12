@@ -13,7 +13,7 @@ input:
 
 # Create Implementation Plan
 
-The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The `harvest` skill decomposes the reviewed plan into backlogit work items for the Stage workflow.
+The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The output feeds into `plan-harden` when the work is risky, then into the `plan-review` skill for validation before the stage agent harvests it into backlog work.
 
 This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
 
@@ -60,6 +60,8 @@ Every plan must contain:
 - **Execution posture notes** per implementation unit
 
 A plan is ready when an implementer can start confidently without needing the plan to write the code for them.
+
+Plans record whether `plan-harden` is required before review — this field is mandatory, not optional. Plans also include runtime verification and closure expectations for changed runtime surfaces.
 
 ## Inputs
 
@@ -196,6 +198,34 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 {Known risks, gotchas from learnings-researcher, edge cases}
 
+## Plan Hardening Signals (REQUIRED)
+
+Every plan MUST include this section. Explicitly record whether the plan needs
+hardening before review. Mark each signal as present or absent and include a
+short justification:
+
+* public API, schema, or contract change
+* security, auth, permission, or compliance-sensitive behavior
+* migration, backfill, destructive data/config action, or irreversible step
+* external integration, operator checkpoint, or external dependency
+* high runtime, rollout, or rollback risk
+
+Conclude with `Requires plan hardening: yes|no`. This conclusion is mandatory —
+P-006 treats its absence as `yes` (fail-safe). Even trivial plans must include
+`Requires plan hardening: no` to pass the gate without unnecessary hardening.
+
+## Runtime Verification and Closure
+
+For each implementation unit, identify:
+
+* Whether it changes a runtime surface (CLI, API, MCP tools, background jobs)
+* What runtime verification should prove before the work is considered absorbed
+* What operational closure artifact should exist (monitoring checklist, rollback trigger, ownership, validation window)
+
+When one or more hardening signals are present, seed enough detail that the
+downstream `plan-harden` step can tighten the plan instead of inventing safety,
+verification, or rollback expectations from scratch.
+
 ## Learnings Applied
 
 {Solutions from docs/compound/ that informed this plan, with file paths}
@@ -212,6 +242,7 @@ or database changes with API changes). Each unit MUST specify a verifiable exit 
 
 When invoked standalone (not as a subagent of Stage), present next steps:
 
-1. "Run harvest to decompose this reviewed plan into backlogit feature, task, and subtask items" (Recommended)
-2. "Run plan-review to validate this plan with multi-persona review first"
-3. "Revise specific sections"
+1. "Run plan-review to validate this plan with multi-persona review" (Recommended when `Requires plan hardening: no`)
+2. "Run plan-harden to reinforce risky plan detail before review" (Recommended when `Requires plan hardening: yes`)
+3. "Run harvest to decompose this reviewed plan into backlogit feature, task, and subtask items"
+4. "Revise specific sections"

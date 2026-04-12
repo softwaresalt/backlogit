@@ -5,7 +5,7 @@ maturity: stable
 
 # Backlogit Development Guidelines
 
-Last updated: 2026-04-12
+Last updated: 2026-04-06
 
 backlogit is a highly configurable, file-backed task management and agent
 operating system optimized for AI agent consumption through MCP and developer
@@ -137,7 +137,7 @@ go install ./cmd/backlogit             # Install binary
 backlogit init                         # Initialize .backlogit/ workspace
 backlogit create --type task --title "My task"  # Create artifact
 backlogit deliberate <stash-id>        # Create deliberation from stash
-backlogit sync                         # Force rehydration of backlogit.db
+backlogit sync                         # Force rehydration of index.db
 backlogit mcp                          # Start MCP stdio server
 ```
 
@@ -152,7 +152,7 @@ into durable Markdown artifacts.
 
 ### Query engine
 
-`.backlogit/backlogit.db` is an ephemeral cache managed by backlogit. If it is
+`.backlogit/index.db` is an ephemeral cache managed by backlogit. If it is
 deleted or stale, the rehydration engine can rebuild it from the Markdown files
 and JSONL queues.
 
@@ -206,15 +206,7 @@ Prefer backlogit-native operations before reading queue files directly:
 
 ### For code search
 
-When the `agent-engram` pack is available, use engram-first indexed lookup before
-falling back to grep or direct file reading:
-
-1. `unified_search` for broad discovery across code, docs, and history
-2. `list_symbols` / `map_code` for structural and symbol-level queries
-3. `impact_analysis` before modifying any shared symbol
-4. Grep or direct file reads only when engram is unavailable or the query is literal-text
-
-When engram is unavailable, prefer targeted grep and glob over broad file dumping.
+Prefer targeted grep, glob, or symbol-aware search over broad file dumping.
 Search first, then read only the files that matter.
 
 ## Durable knowledge layout
@@ -229,27 +221,6 @@ Search first, then read only the files that matter.
 | `docs/design-docs/` | Graduated architecture and design rationale |
 | `docs/product-specs/` | Product-oriented requirements |
 
-## Remote Operator Integration
-
-This workspace has the `agent-intercom` and `agent-engram` capability packs enabled.
-
-### agent-intercom
-
-When `agent-intercom` is available:
-
-* Call `ping` at the start of any multi-step session to confirm liveness.
-* `broadcast` progress at meaningful phase transitions — do not broadcast every trivial step.
-* Route approval for destructive actions through the intercom approval workflow before executing.
-* If intercom becomes unreachable mid-task, warn that operator visibility is degraded and continue only with safe, non-destructive work.
-
-The `ping-loop.prompt.md` prompt is available in `.github/prompts/` for sustained heartbeat sessions.
-
-### agent-engram
-
-Verify workspace binding before relying on engram results. If the workspace is not
-bound or indexed, run `sync_workspace` before searching. Fall back to grep/glob
-only when engram is unavailable or results are insufficient.
-
 ## Backlog workflow expectations
 
 When backlogit is the active backlog tool for this repository:
@@ -261,8 +232,8 @@ When backlogit is the active backlog tool for this repository:
 
 ## Session Memory Requirements
 
-* All working agent sessions MUST persist their output to `docs/memory/` using the Stage or Ship session continuity protocol before the session ends.
-* When the context window reaches approximately 65% capacity, checkpoint current work before continuing using the active agent's continuity protocol.
+* All working agent sessions MUST persist their output to `docs/memory/` using the `memory` agent before the session ends.
+* When the context window reaches approximately 65% capacity, invoke the `memory` agent to checkpoint current work before continuing.
 * For long sessions, save memory checkpoints after completing each phase or major task group.
 * Every memory entry must include task IDs completed, files modified, decisions and rationale, failed approaches, and concrete next steps.
 * File convention: `docs/memory/[{YYYYMMDD}-{HHMMSS}]-{descriptive-slug}-memory.md`.

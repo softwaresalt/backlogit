@@ -62,7 +62,7 @@ production.
 
 All file-system operations MUST resolve within the `.backlogit/`
 directory at the workspace root. Path traversal attempts MUST be
-rejected via canonical path validation. The SQLite `index.db` is
+rejected via canonical path validation. The SQLite `backlogit.db` is
 ephemeral and gitignored; it MUST NOT contain data that does not
 exist in the Markdown source files. The `backlogit_query_sql` MCP
 tool MUST enforce a read-only gate: only `SELECT` statements are
@@ -135,7 +135,7 @@ layers:
    These files MUST contain only the current state and description;
    no history, comments, or agent traces. The deliberation process
    converts transient ideas into durable Markdown artifacts.
-2. **SQLite cache** (query engine): The `index.db` is ephemeral,
+2. **SQLite cache** (query engine): The `backlogit.db` is ephemeral,
    gitignored, and disposable. The rehydration engine MUST be able
    to rebuild it entirely from the Markdown files and JSONL queues
    at any time.
@@ -159,7 +159,7 @@ without polluting the Markdown source of truth. JSONL queues give
 transient, high-churn data a format optimized for append and
 machine parsing without pretending it has the durability guarantees
 of a Markdown artifact. The ephemeral cache ensures no data loss
-if `index.db` is deleted or corrupted.
+if `backlogit.db` is deleted or corrupted.
 
 ### VIII. Git-Friendly Persistence
 
@@ -168,7 +168,7 @@ to human-readable, Git-mergeable files. Markdown with YAML
 frontmatter is the canonical format for artifacts. JSONL queues
 (such as the stash) are Git-tracked and append-friendly but hold
 transient data that has not yet graduated into artifacts. No binary
-files in `.backlogit/` (except the gitignored `index.db`). File
+files in `.backlogit/` (except the gitignored `backlogit.db`). File
 formats MUST minimize merge conflicts (sorted YAML keys, stable
 field ordering in frontmatter, deterministic slug generation,
 one-JSON-object-per-line for JSONL). File writes MUST use atomic
@@ -186,7 +186,7 @@ corrupting the workspace during crashes or concurrent access.
 
 MCP tools MUST return minimal, targeted data to preserve agent
 context windows. The `backlogit_query_sql` tool exists specifically
-so agents can execute surgical SQL queries against `index.db`
+so agents can execute surgical SQL queries against `backlogit.db`
 rather than scanning directories of Markdown files. Tool responses
 MUST be structured JSON, not raw file content. When an agent needs
 a list of tasks, it queries `SELECT id, title, status FROM items

@@ -65,20 +65,27 @@ harness_recommendations:
   preset: full
   capability_packs:
     - backlogit
+    - strict-safety
+    - agent-intercom
+    - agent-engram
 
 agent_intercom:
-  detected: false
-  mcp_configured: false
+  detected: true
+  mcp_configured: true
   config_paths: []
-  instruction_markers: []
-  recommended: false
+  instruction_markers:
+    - "agent-intercom/*"
+    - "Agent-Intercom Communication"
+    - "ping-loop.prompt.md"
+  recommended: true
 
 agent_engram:
-  detected: false
-  mcp_configured: false
+  detected: true
+  mcp_configured: true
   config_paths: []
-  instruction_markers: []
-  recommended: false
+  instruction_markers:
+    - "engram/*"
+  recommended: true
 
 existing_harness:
   has_harness: true

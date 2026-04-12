@@ -161,11 +161,16 @@ targeted invocation when needed.
 | `deliberate` | Collaborative idea shaping |
 | `spike` | Time-boxed technical investigation |
 | `impl-plan` | Plan generation |
+| `plan-harden` | Risk-triggered plan reinforcement before review |
 | `plan-review` | Multi-persona plan gate |
+| `harvest` | Decompose reviewed plans into backlogit work items |
+| `harness-architect` | Scaffold compilable but failing test harnesses |
 | `build-feature` | Test-driven implementation loop |
 | `review` | Structured code review |
 | `fix-ci` | CI and review-comment remediation |
+| `pr-lifecycle` | PR creation, Copilot comment handling, and merge readiness |
 | `compound` | Durable learning capture |
+| `compound-refresh` | Institutional knowledge maintenance |
 | `compact-context` | Tracking and memory compaction |
 | `runtime-verification` | Post-build runtime validation |
 | `operational-closure` | Closure and rollout capture |
@@ -178,6 +183,7 @@ Stash or idea
 	-> Stage
 	   -> deliberate or spike
 	   -> impl-plan
+	   -> plan-harden (when needed)
 	   -> plan-review
 	   -> harvest
 	-> ready backlog
@@ -218,6 +224,10 @@ gofmt -l .
 | Generic backlog abstraction | `.github/instructions/backlog-integration.instructions.md` |
 | Go coding conventions | `.github/instructions/go.instructions.md` |
 | Go MCP conventions | `.github/instructions/go-mcp-server.instructions.md` |
+| Strict-safety action contract | `.github/instructions/strict-safety.instructions.md` |
+| CI security conventions | `.github/instructions/ci-security.instructions.md` |
+| Remote operator integration | `.github/instructions/agent-intercom.instructions.md` |
+| Engram-first search | `.github/instructions/agent-engram.instructions.md` |
 | Markdown and prompt authoring | `.github/instructions/markdown.instructions.md`, `.github/instructions/prompt-builder.instructions.md` |
 | Architecture context | `docs/research/Backlogit-Architecture-Design.md`, `docs/design-docs/` |
 | Plans and reviews | `docs/exec-plans/`, `docs/reviews/` |

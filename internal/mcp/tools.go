@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -169,7 +170,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_export_command_map",
-			mcplib.WithDescription("Write an agent-readable command map file into the workspace"),
+			mcplib.WithDescription("Write an agent-readable command map file into the .backlogit/ workspace directory"),
 			mcplib.WithString("path", mcplib.Required(), mcplib.Description("Workspace-relative output path")),
 			mcplib.WithString("format", mcplib.Description("Output format: markdown or json"), mcplib.DefaultString("markdown")),
 		),
@@ -802,7 +803,10 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 	return toolResultJSON(map[string]string{"path": path})
 }
 
-// validateSectionName rejects section names that would produce malformed HTML comment markers.
+// validateSectionName rejects section names that would produce malformed HTML
+// comment markers or be unparseable by the section parser. Section names must
+// be non-empty, contain no whitespace (the parser regex requires \S+), no
+// "-->" sequences, and no newlines.
 func validateSectionName(name string) error {
 	if name == "" {
 		return fmt.Errorf("section name must not be empty")
@@ -813,12 +817,15 @@ func validateSectionName(name string) error {
 	if strings.ContainsAny(name, "\n\r") {
 		return fmt.Errorf("section name %q must not contain newlines", name)
 	}
+	if strings.ContainsAny(name, " \t") {
+		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
+	}
 	return nil
 }
 
 // writeSectionsToFile appends named section content to an artifact's Markdown body
-// using BEGIN/END markers. It reads the existing file, appends each section that is
-// not already present, and atomically rewrites the file.
+// using BEGIN/END markers. It reads the existing file, processes each section
+// individually to prevent duplication, and atomically rewrites the file.
 func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
 	// Validate all section names before any I/O.
 	for name := range sections {
@@ -839,16 +846,34 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 		return fmt.Errorf("parse artifact: %w", err)
 	}
 
-	newBody, writeErr := parser.WriteSections(body, sections)
-	if writeErr != nil {
-		// Section tags not in file — append them.
-		for name, value := range sections {
-			body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+	// Process each section individually to avoid the batch duplication bug:
+	// if one section is missing and another exists, only the missing one should
+	// be appended. Structural errors (not "section not found") propagate immediately.
+	// Iterate in sorted key order to produce deterministic output across runs.
+	sectionNames := make([]string, 0, len(sections))
+	for name := range sections {
+		sectionNames = append(sectionNames, name)
+	}
+	sort.Strings(sectionNames)
+	for _, name := range sectionNames {
+		value := sections[name]
+		singleSection := map[string]string{name: value}
+		updated, writeErr := parser.WriteSections(body, singleSection)
+		if writeErr != nil {
+			// Distinguish "not found" from structural errors. WriteSections returns
+			// an error when the section markers are not present in the body.
+			// For missing sections, append the markers. For other errors, propagate.
+			if strings.Contains(writeErr.Error(), "not found") || strings.Contains(writeErr.Error(), "no section") {
+				body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+			} else {
+				return fmt.Errorf("write section %q: %w", name, writeErr)
+			}
+		} else {
+			body = updated
 		}
-		newBody = body
 	}
 
-	newContent := models.SerializeFrontmatter(fm, newBody)
+	newContent := models.SerializeFrontmatter(fm, body)
 	tmp := filePath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
 		return fmt.Errorf("write artifact: %w", err)

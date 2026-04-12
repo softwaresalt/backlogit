@@ -244,7 +244,7 @@ func (s *ServerState) BindWorkspace(workspacePath string) error {
     }
     s.config = cfg
 
-    dbPath := filepath.Join(workspacePath, ".backlogit", "index.db")
+    dbPath := filepath.Join(workspacePath, ".backlogit", "backlogit.db")
     db, err := sql.Open("sqlite", dbPath)
     if err != nil {
         return fmt.Errorf("open database: %w", err)
@@ -480,7 +480,7 @@ func setupTestState(t *testing.T) *ServerState {
     dotDir := filepath.Join(ws, ".backlogit")
     require.NoError(t, os.MkdirAll(dotDir, 0o755))
 
-    dbPath := filepath.Join(dotDir, "index.db")
+    dbPath := filepath.Join(dotDir, "backlogit.db")
     db, err := sql.Open("sqlite", dbPath)
     require.NoError(t, err)
     t.Cleanup(func() { db.Close() })

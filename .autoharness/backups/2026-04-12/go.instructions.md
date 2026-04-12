@@ -22,10 +22,9 @@ Follow idiomatic Go 1.22+ practices and community standards when writing code in
 
 ```bash
 go test ./...                          # Run all tests
-go test -race ./...                    # Run all tests with race detection (preferred)
 go test ./internal/...                 # Run internal package tests only
 go test ./tests/contract/...           # Run MCP contract tests only
-go test -race -coverprofile=coverage.out ./... # Run with race detection and coverage report
+go test -coverprofile=coverage.out ./... # Run with coverage report
 golangci-lint run                      # Lint (style, bugs, complexity)
 gofmt -l .                             # Check formatting
 goimports -l .                         # Check import ordering
@@ -567,4 +566,4 @@ Before submitting Go code for review, verify:
 * [ ] `t.TempDir()` used for filesystem tests
 * [ ] Table-driven tests cover edge cases
 * [ ] Contract tests validate MCP tool schemas
-* [ ] `go test -race -cover ./...` reports 90%+ coverage
+* [ ] `go test -cover ./...` reports 90%+ coverage

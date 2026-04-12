@@ -1,13 +1,16 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-05T18:53:02.3114814Z"
+tuned_at: "2026-04-12T00:00:00Z"
 autoharness_version: "1.0.0"
 autoharness_home: "d:\\Source\\GitHub\\autoharness"
 profile_hash: "267c8ca6ccfcb790921db09641dcb23e67040d858c07345a4239dc39660a6e93"
-config_hash: "9e7e829367b4cb021a0becfac6a85aced97edef8e5e0917d5633149d6476b6b9"
+config_hash: "updated"
 install_preset: full
 capability_packs:
   - backlogit
+  - strict-safety
+  - agent-intercom
+  - agent-engram
 capability_pack_overlays:
   - pack: backlogit
     overlay_targets:
@@ -23,11 +26,48 @@ capability_pack_overlays:
       - "Deliberation artifact type exists in .backlogit/config.yaml"
       - "Deliberation schema exists in .backlogit/header-def.yaml"
       - "Deliberation template exists in .backlogit/templates/deliberation.md"
-      - "Deliberator agent exists in .github/agents/"
+      - "Stage agent invokes deliberate skill for deliberation routing"
       - "Backlogit workflow instructions exist in .github/instructions/"
       - "Generic backlog integration instructions exist in .github/instructions/"
       - "Foundation guidance exists in AGENTS.md and .github/copilot-instructions.md"
       - "Spike, safety, runtime verification, and operational closure skills exist in .github/skills/"
+  - pack: strict-safety
+    overlay_targets:
+      - strict-safety instruction file
+      - plan-harden skill
+      - plan-review gate conditions
+      - stage agent P-006 enforcement
+      - workflow policies P-006
+      - safety-modes skill
+      - review and closure workflows
+    verification_checks:
+      - "strict-safety.instructions.md exists in .github/instructions/"
+      - "plan-harden skill exists in .github/skills/"
+      - "plan-review gate table includes hardening FAIL condition"
+      - "stage agent Step 3.2 references plan-harden"
+      - "workflow-policies.md includes P-006"
+  - pack: agent-intercom
+    overlay_targets:
+      - agent-intercom instruction file
+      - foundation guidance docs
+      - pipeline agents (stage, ship)
+      - long-running skills (build-feature, deliberate, impl-plan, fix-ci, harvest, compound, compact-context)
+      - ping-loop prompt
+      - approval routing through safety-modes and strict-safety
+    verification_checks:
+      - "agent-intercom.instructions.md exists in .github/instructions/"
+      - "Stage and Ship agent tools lists include agent-intercom/*"
+      - "Skills include Agent-Intercom Communication sections"
+      - "ping-loop.prompt.md exists in .github/prompts/"
+  - pack: agent-engram
+    overlay_targets:
+      - agent-engram instruction file
+      - foundation guidance docs
+      - pipeline agents (stage, ship)
+      - search-heavy skills and review workflows
+    verification_checks:
+      - "agent-engram.instructions.md exists in .github/instructions/"
+      - "Stage and Ship agent tools lists include engram/*"
 primitives_installed:
   - 1
   - 2
@@ -99,10 +139,42 @@ artifacts:
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "51dffef83966913b782ef1b3151c50623de5e858b1639823aacdd80270aed17e"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/skills/plan-harden/SKILL.md"
+    primitive: 4
+    template: "templates/skills/plan-harden/SKILL.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/skills/compound-refresh/SKILL.md"
+    primitive: 1
+    template: "templates/skills/compound-refresh/SKILL.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/agents/review/concurrency-reviewer.agent.md"
+    primitive: 7
+    template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
+    primitive: 7
+    template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/instructions/ci-security.instructions.md"
+    primitive: 6
+    template: "templates/instructions/ci-security.instructions.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/instructions/strict-safety.instructions.md"
+    primitive: 5
+    template: "templates/instructions/strict-safety.instructions.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/instructions/agent-intercom.instructions.md"
+    primitive: 6
+    template: "templates/instructions/agent-intercom.instructions.md.tmpl"
+    checksum: "tuned-2026-04-11"
+  - path: ".github/instructions/agent-engram.instructions.md"
+    primitive: 6
+    template: "templates/instructions/agent-engram.instructions.md.tmpl"
+    checksum: "tuned-2026-04-11"
 variables_used:
   INSTALL_PRESET: "full"
-  CAPABILITY_PACKS: "backlogit"
+  CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram"
   BACKLOG_TOOL_NAME: "backlogit"
   BACKLOG_DIRECTORY: ".backlogit"
   PREFIX_FEATURE: "F"
@@ -129,3 +201,21 @@ tuning_history:
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
       - ".github/instructions/backlog-integration.instructions.md"
+  - at: "2026-04-11T00:00:00Z"
+    summary: "Full harness tuning: installed plan-harden skill, compound-refresh skill, concurrency-reviewer, agent-native-parity-reviewer, ci-security instructions, strict-safety capability pack, agent-intercom capability pack, agent-engram capability pack. Updated stage agent with P-006 plan-harden gate, impl-plan with hardening signals section, plan-review with hardening FAIL condition and new reviewer personas, workflow-policies with P-006, review skill with conditional concurrency and parity reviewers. Updated AGENTS.md and copilot-instructions.md skill tables and pipeline."
+    artifacts:
+      - ".github/skills/plan-harden/SKILL.md"
+      - ".github/skills/compound-refresh/SKILL.md"
+      - ".github/agents/review/concurrency-reviewer.agent.md"
+      - ".github/agents/review/agent-native-parity-reviewer.agent.md"
+      - ".github/instructions/ci-security.instructions.md"
+      - ".github/instructions/strict-safety.instructions.md"
+      - ".github/instructions/agent-intercom.instructions.md"
+      - ".github/instructions/agent-engram.instructions.md"
+      - ".github/agents/stage.agent.md"
+      - ".github/skills/impl-plan/SKILL.md"
+      - ".github/skills/plan-review/SKILL.md"
+      - ".github/policies/workflow-policies.md"
+      - ".github/skills/review/SKILL.md"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"

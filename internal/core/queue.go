@@ -244,11 +244,12 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 }
 
 // filterByResolvedDependencies removes items from the queue whose blocking dependencies
-// are not yet in a terminal state (done, accepted).
+// are not yet in a terminal state (as defined by core.TerminalStatuses: done, accepted,
+// archived, shipped, abandoned, rejected).
 func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) []*models.Artifact {
-	terminalStatuses := map[string]bool{
-		string(models.StatusDone):     true,
-		string(models.StatusAccepted): true,
+	terminalStatuses := make(map[string]bool, len(TerminalStatuses))
+	for _, s := range TerminalStatuses {
+		terminalStatuses[s] = true
 	}
 
 	// Build a set of all item IDs and their statuses from the current result set.
