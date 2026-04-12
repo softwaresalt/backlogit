@@ -1,6 +1,6 @@
 ---
-title: "Ship 013-S: Correctness & Safety Fixes - CI Green, Awaiting Merge"
-description: "Shipment 013-S: all Copilot review findings fixed, CI green, PR #29 awaiting merge approval"
+title: "Ship 013-S: Correctness & Safety Fixes - SHIPPED"
+description: "Shipment 013-S: merged at aeee58e, all items archived, post-merge closure complete"
 ms.date: 2026-04-12
 shipment_id: 013-S
 ---
@@ -9,58 +9,58 @@ shipment_id: 013-S
 
 - **ID**: 013-S
 - **Title**: Correctness & Safety Fixes
-- **Status**: active (PR created, CI green, Copilot review addressed, awaiting user merge approval)
+- **Status**: shipped → archived
 - **Branch**: ship/013-S-correctness-safety-fixes
-- **PR**: https://github.com/softwaresalt/backlogit/pull/29
-- **Commits**: `170ae28` (implementation), `4c80ccd` (Copilot review fixes)
+- **PR**: https://github.com/softwaresalt/backlogit/pull/29 (merged)
+- **Merge SHA**: `aeee58e`
+- **Commits**: `170ae28` (implementation), `4c80ccd` (wave 1 review fixes), `573b8a9` (wave 2 review fixes)
 
 ## Completed Items
 
 | Item ID | Title | Status |
 |---|---|---|
-| 029-F | Correctness & Safety Fixes (parent feature) | In shipment |
-| 029.001-T | Constrain export_command_map path to .backlogit/ | Implemented |
-| 029.002-T | Atomic adopt item with ID rewrite | Implemented |
-| 029.003-T | Fix query gate semicolons and section-write error handling | Implemented |
-| 029.004-T | Fix stash harvest TOCTOU and terminal status gaps | Implemented |
-| 029.005-T | Fix stale index.db references in instructions | Implemented |
+| 029-F | Correctness & Safety Fixes (parent feature) | archived |
+| 029.001-T | Constrain export_command_map path to .backlogit/ | archived |
+| 029.002-T | Atomic adopt item with ID rewrite | archived |
+| 029.003-T | Fix query gate semicolons and section-write error handling | archived |
+| 029.004-T | Fix stash harvest TOCTOU and terminal status gaps | archived |
+| 029.005-T | Fix stale index.db references in instructions | archived |
 
 ## Build Verification
 
-- `go build ./...` passed
-- `go test ./...` all 15 packages pass (both commits)
+- `go build ./...` passed (all 3 commits)
+- `go test ./...` all 16 packages pass (all 3 commits)
 - `go vet ./...` clean
-- CI: test (1.23) ✅ SUCCESS, test (1.24) ✅ SUCCESS
+- CI: test (1.23) ✅ SUCCESS, test (1.24) ✅ SUCCESS (all 3 commits)
 
-## Copilot Review Remediation (commit 4c80ccd)
+## Copilot Review Remediation
 
-All 6 Copilot comments addressed and replied to:
+### Wave 1 (commit 4c80ccd) — 6 findings
 
-| # | Comment ID | File | Finding | Fix |
-|---|---|---|---|---|
-| 1 | 3070117102 | queries.go | UpsertItemTx missing columns/formatting | Aligned with UpsertItem: hierarchy_path, RFC3339Nano, NULL-safe JSON |
-| 2 | 3070117113 | gate.go | Inline regex + brittle index check | Extracted semicolonGuard var, decoupled from loop index |
-| 3 | 3070117118 | gate.go | Unicode smart-quote in comment | Fixed to ASCII representation of SQL escaped quotes |
-| 4 | 3070117133 | tools.go | No whitespace validation for section names | Added strings.ContainsAny check for space/tab |
-| 5 | 3070117140 | lifecycle.go | Hard-coded newID+".md" for filename | Now uses ResolveFileName with file_name_format config |
-| 6 | 3070117143 | lifecycle.go | Ancillary references not rewritten | Added RewriteAncillaryReferences and wired into AdoptItem tx |
+| # | File | Finding | Fix |
+|---|---|---|---|
+| 1 | queries.go | UpsertItemTx missing columns/formatting | Aligned with UpsertItem |
+| 2 | gate.go | Inline regex + brittle index check | Extracted semicolonGuard var |
+| 3 | gate.go | Unicode smart-quote in comment | Fixed to ASCII |
+| 4 | tools.go | No whitespace validation for section names | Added ContainsAny check |
+| 5 | lifecycle.go | Hard-coded newID+".md" | Uses ResolveFileName |
+| 6 | lifecycle.go | Ancillary references not rewritten | Added RewriteAncillaryReferences |
 
-## Review Gate Findings
+### Wave 2 (commit 573b8a9) — 10 findings
 
-- P2 (advisory): AdoptItem crash-inconsistency window between file renames and
-  DB commit. Mitigated by rehydration architecture (DB is ephemeral cache,
-  Markdown files are source of truth). Current ordering follows the reviewed
-  execution plan: reversible DB tx before harder-to-reverse file ops.
+| # | File | Finding | Fix |
+|---|---|---|---|
+| 7 | tools.go | Non-deterministic map iteration | Sorted section names |
+| 8 | lifecycle.go | log_path stored as absolute, not relative | Fixed to .backlogit/-relative |
+| 9 | queries.go | Comment says delete+insert; unused param | Fixed comment, removed oldLogPath |
+| 10 | queue.go | Comment lists only (done, accepted) | Lists full TerminalStatuses |
+| 11 | tools.go | No regression test for mixed sections | Added test |
+| 12 | test.go | HasPrefix false positive risk | Uses filepath.Rel |
+| 13-15 | docs/ | False positive: || table formatting | Confirmed no || on disk |
+| 16 | lifecycle.go | Markdown frontmatter edge rewrite | Acknowledged as follow-up |
 
-## Decisions
+## Closure
 
-1. Followed execution plan ordering for AdoptItem: DB tx → file ops → commit
-   (per reviewed plan, not commit-then-compensate)
-2. Extended scope of index.db fix to include copilot-instructions.md and
-   go-mcp-expert.agent.md (2 additional references found)
-3. Used NextTypedHierarchicalID for adoption ID generation to match CreateArtifact pattern
-
-## Next Steps
-
-- Awaiting user merge approval for PR #29
-- Post-merge: run operational-closure skill, update docs, write final memory
+- Operational closure: `docs/closure/2026-04-12-013-S-correctness-safety-fixes.md`
+- No documentation updates needed (changes are internal bug fixes)
+- Follow-up filed: cross-artifact Markdown frontmatter reference rewrite on adoption
