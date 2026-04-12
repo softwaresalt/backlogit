@@ -425,6 +425,34 @@ func RewriteLinkEdges(ctx context.Context, tx *sql.Tx, oldID, newID string) erro
 	return nil
 }
 
+// RewriteAncillaryReferences updates item_id references in commit_links,
+// stash_links, item_logs, and item_log_entries. For item_logs and
+// item_log_entries the log_path column is also updated from oldLogPath to
+// newLogPath. This function operates within an existing transaction.
+func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, oldLogPath, newLogPath string) error {
+	// commit_links
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE commit_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
+		return fmt.Errorf("rewrite commit_links %s→%s: %w", oldID, newID, err)
+	}
+	// stash_links
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE stash_links SET item_id = ? WHERE item_id = ?`, newID, oldID); err != nil {
+		return fmt.Errorf("rewrite stash_links %s→%s: %w", oldID, newID, err)
+	}
+	// item_logs — item_id is PK, so delete+insert to avoid PK conflict
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE item_logs SET item_id = ?, log_path = ? WHERE item_id = ?`, newID, newLogPath, oldID); err != nil {
+		return fmt.Errorf("rewrite item_logs %s→%s: %w", oldID, newID, err)
+	}
+	// item_log_entries
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE item_log_entries SET item_id = ?, log_path = ? WHERE item_id = ?`, newID, newLogPath, oldID); err != nil {
+		return fmt.Errorf("rewrite item_log_entries %s→%s: %w", oldID, newID, err)
+	}
+	return nil
+}
+
 // DeleteItemTx removes an item from the items table within an existing
 // transaction. Returns ErrNotFound when no row matched the ID.
 func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
@@ -440,48 +468,49 @@ func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 // UpsertItemTx inserts or replaces an artifact in the items table within an
-// existing transaction.
+// existing transaction. Mirrors UpsertItem's column set and value formatting
+// (including hierarchy_path and RFC3339Nano timestamps) to ensure scan
+// compatibility via scanArtifactRow.
 func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
-	customJSON := "{}"
-	if artifact.CustomFields != nil {
-		b, err := json.Marshal(artifact.CustomFields)
-		if err != nil {
-			return fmt.Errorf("marshal custom fields: %w", err)
-		}
-		customJSON = string(b)
-	}
-	labelsJSON := "[]"
-	if len(artifact.Labels) > 0 {
-		b, err := json.Marshal(artifact.Labels)
-		if err != nil {
-			return fmt.Errorf("marshal labels: %w", err)
-		}
-		labelsJSON = string(b)
-	}
-	refsJSON := "[]"
-	if len(artifact.References) > 0 {
-		b, err := json.Marshal(artifact.References)
-		if err != nil {
-			return fmt.Errorf("marshal references: %w", err)
-		}
-		refsJSON = string(b)
-	}
-	depsJSON := "[]"
-	if len(artifact.Dependencies) > 0 {
-		b, err := json.Marshal(artifact.Dependencies)
-		if err != nil {
-			return fmt.Errorf("marshal dependencies: %w", err)
-		}
-		depsJSON = string(b)
+	cf, err := json.Marshal(artifact.CustomFields)
+	if err != nil {
+		return fmt.Errorf("marshal custom fields: %w", err)
 	}
 
-	_, err := tx.ExecContext(ctx, `
-		INSERT OR REPLACE INTO items (
-			id, title, status, artifact_type, parent_id, sprint, priority,
-			description, custom_fields, assigned_to, owner, labels,
-			dependencies, "references", "commit", level,
-			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	labelsJSON, err := json.Marshal(artifact.Labels)
+	if err != nil {
+		return fmt.Errorf("marshal labels: %w", err)
+	}
+	depsJSON, err := json.Marshal(artifact.Dependencies)
+	if err != nil {
+		return fmt.Errorf("marshal dependencies: %w", err)
+	}
+	refsJSON, err := json.Marshal(artifact.References)
+	if err != nil {
+		return fmt.Errorf("marshal references: %w", err)
+	}
+
+	// Store JSON slice fields as NULL when empty to keep rows tidy.
+	labelsVal := nullString(string(labelsJSON))
+	if string(labelsJSON) == "null" {
+		labelsVal = sql.NullString{}
+	}
+	depsVal := nullString(string(depsJSON))
+	if string(depsJSON) == "null" {
+		depsVal = sql.NullString{}
+	}
+	refsVal := nullString(string(refsJSON))
+	if string(refsJSON) == "null" {
+		refsVal = sql.NullString{}
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO items
+			(id, title, status, artifact_type, parent_id, sprint, priority, description,
+			 custom_fields, created_at, updated_at,
+			 assigned_to, owner, labels, dependencies, "references", "commit",
+			 level, hierarchy_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		artifact.ID,
 		artifact.Title,
 		string(artifact.Status),
@@ -490,16 +519,17 @@ func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) er
 		nullString(artifact.Sprint),
 		nullString(artifact.Priority),
 		nullString(artifact.Description),
-		customJSON,
+		string(cf),
+		artifact.CreatedAt.Format(time.RFC3339Nano),
+		artifact.UpdatedAt.Format(time.RFC3339Nano),
 		nullString(artifact.AssignedTo),
 		nullString(artifact.Owner),
-		labelsJSON,
-		depsJSON,
-		refsJSON,
+		labelsVal,
+		depsVal,
+		refsVal,
 		nullString(artifact.Commit),
 		nullInt64(artifact.Level),
-		artifact.CreatedAt,
-		artifact.UpdatedAt,
+		nullString(artifact.HierarchyPath),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)

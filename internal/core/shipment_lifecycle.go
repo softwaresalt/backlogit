@@ -521,11 +521,22 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 		defer tx.Rollback() //nolint:errcheck
 
+		// Compute log paths for ancillary reference rewriting.
+		logsDir := WorkspaceLogsRoot(ws.RootPath)
+		oldLogPath := filepath.Join(logsDir, oldID+".jsonl")
+		newLogPath := filepath.Join(logsDir, newID+".jsonl")
+
 		// Rewrite dependency and link edges.
 		if err := bldb.RewriteDependencyEdges(ctx, tx, oldID, newID); err != nil {
 			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
 		}
 		if err := bldb.RewriteLinkEdges(ctx, tx, oldID, newID); err != nil {
+			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
+		}
+
+		// Rewrite ancillary references (commit_links, stash_links, item_logs,
+		// item_log_entries) so the index remains fully self-consistent.
+		if err := bldb.RewriteAncillaryReferences(ctx, tx, oldID, newID, oldLogPath, newLogPath); err != nil {
 			return nil, fmt.Errorf("adopt item %s: %w", oldID, err)
 		}
 
@@ -545,12 +556,19 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 
 		var renamedMD, renamedLog bool
-		var newMDPath, oldLogPath, newLogPath string
+		var newMDPath string
 
 		if findErr == nil {
-			// Compute new path based on new ID.
+			// Compute new filename using the configured naming resolver to
+			// respect artifact_types[*].file_name_format when configured.
 			dir := filepath.Dir(oldMDPath)
-			newMDPath = filepath.Join(dir, newID+".md")
+			newFileName := newID // default: use the artifact ID as filename
+			if ws.Config != nil {
+				if typeCfg, ok := ws.Config.ArtifactTypes[artifact.ArtifactType]; ok && typeCfg != nil {
+					newFileName = ResolveFileName(typeCfg, newID, artifact.Title, ws.Config.MaxSlugLength)
+				}
+			}
+			newMDPath = filepath.Join(dir, newFileName+".md")
 
 			// Write updated artifact content (with new ID in frontmatter) to new path.
 			if writeErr := WriteArtifactFile(artifact, newMDPath); writeErr != nil {
@@ -567,9 +585,6 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 
 		// Rename log file if it exists.
-		logsDir := WorkspaceLogsRoot(ws.RootPath)
-		oldLogPath = filepath.Join(logsDir, oldID+".jsonl")
-		newLogPath = filepath.Join(logsDir, newID+".jsonl")
 		if _, statErr := os.Stat(oldLogPath); statErr == nil {
 			if renameErr := os.Rename(oldLogPath, newLogPath); renameErr != nil {
 				// Rollback MD rename

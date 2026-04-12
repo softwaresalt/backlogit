@@ -802,7 +802,10 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 	return toolResultJSON(map[string]string{"path": path})
 }
 
-// validateSectionName rejects section names that would produce malformed HTML comment markers.
+// validateSectionName rejects section names that would produce malformed HTML
+// comment markers or be unparseable by the section parser. Section names must
+// be non-empty, contain no whitespace (the parser regex requires \S+), no
+// "-->" sequences, and no newlines.
 func validateSectionName(name string) error {
 	if name == "" {
 		return fmt.Errorf("section name must not be empty")
@@ -812,6 +815,9 @@ func validateSectionName(name string) error {
 	}
 	if strings.ContainsAny(name, "\n\r") {
 		return fmt.Errorf("section name %q must not contain newlines", name)
+	}
+	if strings.ContainsAny(name, " \t") {
+		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
 	}
 	return nil
 }
