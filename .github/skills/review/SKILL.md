@@ -139,6 +139,20 @@ As each persona returns:
 3. Deduplicate: merge findings that identify the same issue
 4. Assign final severity (more conservative on disagreement)
 5. Assign final action routing
+6. If the merged findings contain 3 or more P0/P1 findings, escalate to adversarial review (see Step 4a)
+
+### Step 4a: Adversarial Review Escalation
+
+When the standard review surfaces 3 or more P0/P1 findings, or when the diff
+touches security-sensitive areas (auth, crypto, PII handling), escalate to the
+adversarial-review agent for multi-model validation:
+
+1. Broadcast `[REVIEW] Escalating to adversarial review: {p0_count} P0 + {p1_count} P1 findings`
+2. Invoke the `Adversarial Review` agent with the current diff scope and standard review findings
+3. Merge adversarial findings into the standard review report using confidence-weighted deduplication
+4. HIGH-confidence adversarial findings inherit the blocking behavior of their severity level
+5. MEDIUM-confidence findings require explicit acknowledgment (fix or defer with rationale)
+6. LOW-confidence findings are preserved as advisory observations
 
 ### Step 5: Apply Actions (mode-dependent)
 

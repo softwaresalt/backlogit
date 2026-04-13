@@ -1,0 +1,146 @@
+---
+name: Adversarial Review
+description: "Multi-model parallel review using independent reviewer agents with different models, assembled into a consensus report with confidence-weighted findings and remediation queue"
+maturity: stable
+tools: read, agent, search, edit
+model_routing: "Tier 3 (Frontier)"
+subagent_depth: 2
+---
+
+# Adversarial Review
+
+Run multiple independent reviewer agents in parallel, each using a different model,
+and assemble their findings into a consensus report. Agreement across models signals
+high-confidence findings; unique findings from a single model are preserved as
+low-confidence observations worth human attention. The result is a structured
+remediation queue with findings ordered by confidence × severity.
+
+## Why Adversarial
+
+Different models have different blind spots. A finding that appears in all reviewer
+outputs is almost certainly real. A finding that appears in only one model's output
+may be a false positive, or a subtle issue that only one model caught. The protocol
+preserves both signals with appropriate confidence labels, rather than losing unique
+findings or trusting any single model too much.
+
+## When to Use
+
+* Pre-merge review for high-risk changes (architecture, security, data integrity)
+* Periodic sweep of a module that has accumulated significant churn
+* Validating a set of automated fixes before applying them
+* Any review where a single-model review felt insufficient or inconclusive
+
+## Inputs
+
+* `files`: (Required) Files or diff to review. Can be a list of paths, a git diff
+  ref (e.g., `HEAD~1`), or a PR number.
+* `reviewers`: (Optional) Number of parallel reviewer instances. Default: 3.
+  Minimum: 2 (a single reviewer provides no consensus signal). Maximum: 5.
+* `models`: (Optional) Model tiers to use for each reviewer instance. Default:
+  one Tier 1, one Tier 2, one Tier 3 model — ensuring diversity across the
+  speed/quality spectrum.
+* `ruleset`: (Optional) Path to a ruleset file. Defaults to
+  `.github/copilot-review-instructions.md` if present, otherwise uses the
+  built-in harness review ruleset.
+* `output_mode`: (Optional) `consensus-only` or `full` (default).
+
+## Output
+
+1. **Consensus findings** (confidence: HIGH) — Flagged by all reviewers.
+   Require mandatory remediation before merge.
+2. **Majority findings** (confidence: MEDIUM) — Flagged by more than half.
+   Require explicit acknowledgment (fix or defer with rationale).
+3. **Unique findings** (confidence: LOW) — Flagged by exactly one reviewer.
+   Preserved as observations; human judgment required.
+4. **Remediation plan** — Ordered action list sorted by `confidence × severity`.
+5. **Bug/issue queue entries** — For each P0 and P1 finding, a structured work item
+   ready to create in the backlog.
+
+Output file at `docs/closure/{YYYY-MM-DD}-{slug}-adversarial-review.md`.
+
+## Required Protocol
+
+### Phase 1: Prepare
+
+1. Resolve the file list or diff to review.
+2. Load the ruleset from the specified path or the default.
+3. Determine the reviewer count and model tier assignment:
+   * Default (3 reviewers): Reviewer-A = Tier 1, Reviewer-B = Tier 2,
+     Reviewer-C = Tier 3.
+4. Confirm with the operator if the review is interactive mode.
+
+### Phase 2: Parallel Dispatch
+
+Launch all reviewer agents **simultaneously** as parallel subagents. Each receives:
+
+* The same file list or diff
+* The same ruleset
+* Its assigned model tier instruction
+* Instruction to return **structured JSON findings only**
+
+Each reviewer produces a JSON array of findings:
+
+```json
+[
+  {
+    "severity": "CRITICAL|MAJOR|MINOR",
+    "rule": "Rule number and name",
+    "file": "path/to/file",
+    "line": 42,
+    "issue": "Precise description of what is wrong",
+    "fix": "What the correct value or behavior should be"
+  }
+]
+```
+
+Do not proceed to Phase 3 until all reviewer agents have returned results.
+
+### Phase 3: Aggregate and Classify
+
+For each unique finding (keyed by `file` + `line` + `rule`):
+
+1. Count how many reviewers flagged it (fuzzy match on `file` + `line` ± 2 + same `rule`).
+2. Assign confidence tier:
+   * **HIGH**: Flagged by all reviewers
+   * **MEDIUM**: Flagged by majority (> reviewers / 2)
+   * **LOW**: Flagged by exactly one reviewer
+3. For severity conflicts, take the most conservative (highest severity).
+
+### Phase 4: Order and Score
+
+```
+priority = confidence_weight × severity_weight
+confidence_weight: HIGH=3, MEDIUM=2, LOW=1
+severity_weight: CRITICAL=4, MAJOR=3, MINOR=2
+```
+
+Sort all findings descending by priority score.
+
+### Phase 5: Route to Action Classes
+
+| Finding | Action Class |
+|---|---|
+| HIGH confidence + CRITICAL severity | `safe_auto` or `manual` |
+| HIGH confidence + MAJOR severity | `gated_auto` or `manual` |
+| MEDIUM confidence + CRITICAL/MAJOR | `gated_auto` |
+| LOW confidence + CRITICAL | `gated_auto` |
+| Any + MINOR | `advisory` |
+
+### Phase 6: Produce Output
+
+Assemble the output report with all four sections. Write to
+`docs/closure/{YYYY-MM-DD}-{slug}-adversarial-review.md`.
+
+## Subagent Depth
+
+Maximum 2 hops. This agent dispatches review skill instances (hop 1), which may invoke
+review persona subagents (hop 2).
+
+## Quality Criteria
+
+* All reviewer instances must complete before Phase 3 begins
+* The output must include all three confidence tiers
+* Every P0 finding must appear in the remediation plan
+* If fewer than 2 reviewer instances return results, halt and report the failure
+
+Generated by autoharness | Template: adversarial-review.agent.md.tmpl

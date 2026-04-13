@@ -67,10 +67,9 @@ its own operational backlog.
 | `go-mcp-expert` | Advises on Go MCP server implementation |
 | `prompt-builder` | Maintains prompts, agents, instructions, and skills |
 
-### Deprecated agents
+### Deprecated agents (archived)
 
-Deprecated agents live in `.github/agents/deprecated/` and are excluded from
-the default Copilot agent picker.
+The following agents have been superseded and removed from the repository.
 
 | Agent | Superseded by |
 |---|---|
@@ -103,6 +102,8 @@ the default Copilot agent picker.
 | `runtime-verification` | Post-build runtime validation |
 | `operational-closure` | Closure, rollout, and rollback capture |
 | `safety-modes` | Elevated-risk workflow controls |
+| `file-lock` | File-level locking for concurrent agent workflows |
+| `skill-search` | Dynamic skill discovery by keyword |
 
 ## Project Structure
 
@@ -231,7 +232,10 @@ Search first, then read only the files that matter.
 
 ## Remote Operator Integration
 
-This workspace has the `agent-intercom` and `agent-engram` capability packs enabled.
+This workspace has the `agent-intercom` and `agent-engram` capability packs enabled,
+along with `adversarial-review`, `circuit-breaker`, `concurrency`, and
+`release-observability` packs for elevated review confidence, retry discipline,
+concurrent file safety, and deployment monitoring.
 
 ### agent-intercom
 

@@ -61,6 +61,27 @@ For new work, the modular path is:
 Do not route new work through the legacy `backlog-harvester` unless the
 operator explicitly asks for the old control flow.
 
+### Step 0: Stash hygiene
+
+Before triage, prune stale active entries so the queue reflects current priorities.
+
+1. Fetch all active stash entries with `backlogit_fetch_stash`.
+2. For any entry where `age_days` is 30 or greater, flag it for operator review.
+3. For confirmed-stale entries (operator confirms removal, or the entry has been
+   superseded by a shipped feature), note the reason (e.g., "superseded by 029-F",
+   "stale > 30 days, no longer relevant"), then call `backlogit_stash_remove`
+   with the `stash_id` only.
+4. For entries that are still relevant but have stale metadata (wrong priority or
+   kind), call `backlogit_stash_edit` to correct them rather than removing them.
+5. When `agent-intercom` is available, broadcast each removal:
+   `[STAGE] Stale: {stash_id}: {reason}`
+6. If `age_days` is absent (entry predates `created_at` support), treat as
+   unknown age, and surface it to the operator rather than silently removing.
+7. Proceed to Step 1 only after hygiene is complete.
+
+Entries with `age_days < 30` are current; do not flag them unless the operator
+has an explicit override request.
+
 ### Step 1: Stash triage
 
 1. Start with `ping` when `agent-intercom` is available, then broadcast the

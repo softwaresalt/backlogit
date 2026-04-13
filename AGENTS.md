@@ -138,21 +138,21 @@ detail. Keep this file as the brief map.
 | `go-mcp-expert` | Advise on Go MCP server design and implementation |
 | `prompt-builder` | Create and refine prompts, agents, instructions, and skills |
 
-### Deprecated agents
+### Deprecated agents (archived)
 
-Deprecated agents live in `.github/agents/deprecated/` and are excluded from
-the default Copilot agent picker. They remain available for reference or
-targeted invocation when needed.
+The following agents have been superseded and removed from the repository.
+Their functionality is covered by the Stage and Ship agents with their
+respective skills.
 
-| Agent | Purpose | Superseded by |
-|---|---|---|
-| `backlog-harvester` | Decompose plans into backlogit work items | `stage` + `harvest` skill |
-| `build-orchestrator` | Claim and execute ready feature work | `ship` + `build-feature` skill |
-| `deliberator` | Route idea work into deliberation | `stage` + `deliberate` / `spike` skills |
-| `doc-ops` | Documentation quality assurance | `ship` post-merge closure protocol |
-| `harness-architect` | Create failing test harnesses | `ship` + `harness-architect` skill |
-| `memory` | Session context persistence | Stage and Ship session continuity protocols |
-| `pr-review` | Manage PR review lifecycle | `ship` + `pr-lifecycle` skill |
+| Agent | Superseded by |
+|---|---|
+| `backlog-harvester` | `stage` + `harvest` skill |
+| `build-orchestrator` | `ship` + `build-feature` skill |
+| `deliberator` | `stage` + `deliberate` / `spike` skills |
+| `doc-ops` | `ship` post-merge closure protocol |
+| `harness-architect` | `ship` + `harness-architect` skill |
+| `memory` | Stage and Ship session continuity protocols |
+| `pr-review` | `ship` + `pr-lifecycle` skill |
 
 ## Available skills
 
@@ -175,6 +175,8 @@ targeted invocation when needed.
 | `runtime-verification` | Post-build runtime validation |
 | `operational-closure` | Closure and rollout capture |
 | `safety-modes` | Elevated-risk workflow controls |
+| `file-lock` | File-level locking for concurrent agent workflows |
+| `skill-search` | Dynamic skill discovery by keyword |
 
 ## Default workflow pipeline
 
@@ -228,6 +230,10 @@ gofmt -l .
 | CI security conventions | `.github/instructions/ci-security.instructions.md` |
 | Remote operator integration | `.github/instructions/agent-intercom.instructions.md` |
 | Engram-first search | `.github/instructions/agent-engram.instructions.md` |
+| Adversarial review | `.github/instructions/adversarial-review.instructions.md` |
+| Circuit breaker protocol | `.github/instructions/circuit-breaker.instructions.md` |
+| Concurrency and file locking | `.github/instructions/concurrency.instructions.md` |
+| Release observability | `.github/instructions/release-observability.instructions.md` |
 | Markdown and prompt authoring | `.github/instructions/markdown.instructions.md`, `.github/instructions/prompt-builder.instructions.md` |
 | Architecture context | `docs/research/Backlogit-Architecture-Design.md`, `docs/design-docs/` |
 | Plans and reviews | `docs/exec-plans/`, `docs/reviews/` |

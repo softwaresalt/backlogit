@@ -2,6 +2,10 @@ package core_test
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,4 +195,99 @@ func TestEditStashEntry_NotFound(t *testing.T) {
 	_, err := core.EditStashEntry(ctx, ws, "DEADBEEF", core.EditStashOptions{Text: "new"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, corerrors.ErrNotFound)
+}
+
+func TestRemoveStashEntry_WritesToArchive(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	added, err := core.AddStashEntry(ctx, ws, "feature", "high", "Archive this entry")
+	require.NoError(t, err)
+
+	_, err = core.RemoveStashEntry(ctx, ws, added.ID)
+	require.NoError(t, err)
+
+	archivePath := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "archive", "stash.jsonl")
+	require.FileExists(t, archivePath)
+
+	data, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, 1, "expected exactly one archive entry")
+
+	var archived core.ArchivedStashEntry
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &archived))
+	assert.Equal(t, added.ID, archived.ID)
+	assert.Equal(t, "high", archived.Priority)
+	assert.Equal(t, "feature", archived.Kind)
+	assert.Equal(t, "Archive this entry", archived.Text)
+	assert.Equal(t, "removed", archived.RemovalReason)
+	assert.Empty(t, archived.HarvestedArtifactID)
+	assert.False(t, archived.RemovedAt.IsZero())
+}
+
+func TestRemoveStashEntry_ArchiveAppendsOnMultipleRemovals(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	a, err := core.AddStashEntry(ctx, ws, "task", "medium", "First removal")
+	require.NoError(t, err)
+	b, err := core.AddStashEntry(ctx, ws, "bug", "low", "Second removal")
+	require.NoError(t, err)
+
+	_, err = core.RemoveStashEntry(ctx, ws, a.ID)
+	require.NoError(t, err)
+	_, err = core.RemoveStashEntry(ctx, ws, b.ID)
+	require.NoError(t, err)
+
+	archivePath := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "archive", "stash.jsonl")
+	data, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, 2, "expected two archive entries")
+
+	ids := make(map[string]bool)
+	for _, line := range lines {
+		var archived core.ArchivedStashEntry
+		require.NoError(t, json.Unmarshal([]byte(line), &archived))
+		ids[archived.ID] = true
+		assert.Equal(t, "removed", archived.RemovalReason)
+	}
+	assert.True(t, ids[a.ID], "first entry must be archived")
+	assert.True(t, ids[b.ID], "second entry must be archived")
+}
+
+func TestHarvestStashEntry_WritesToArchiveWithArtifactID(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	added, err := core.AddStashEntry(ctx, ws, "feature", "medium", "Harvest into artifact")
+	require.NoError(t, err)
+
+	result, err := core.HarvestStashEntry(ctx, ws, core.HarvestStashOptions{
+		StashID:      added.ID,
+		ArtifactType: "feature",
+		Status:       "queued",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	archivePath := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "archive", "stash.jsonl")
+	require.FileExists(t, archivePath)
+
+	data, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, 1, "expected exactly one archive entry")
+
+	var archived core.ArchivedStashEntry
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &archived))
+	assert.Equal(t, added.ID, archived.ID)
+	assert.Equal(t, "harvested", archived.RemovalReason)
+	assert.NotEmpty(t, archived.HarvestedArtifactID, "harvested_artifact_id must be set")
+	require.IsType(t, &models.Artifact{}, result.Artifact)
+	artifact, ok := result.Artifact.(*models.Artifact)
+	require.True(t, ok, "expected harvested artifact to be *models.Artifact")
+	assert.Equal(t, artifact.ID, archived.HarvestedArtifactID)
 }
