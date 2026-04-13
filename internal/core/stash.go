@@ -3,8 +3,10 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +22,44 @@ const (
 	stashStateActive    = "active"
 	stashStateHarvested = "harvested"
 	stashStateRemoved   = "removed"
+
+	stashArchiveFileName = "stash.jsonl"
 )
+
+// ArchivedStashEntry is the record written to .backlogit/archive/stash.jsonl when
+// an active stash entry is removed or harvested into a backlog artifact.
+type ArchivedStashEntry struct {
+	ID                  string     `json:"id"`
+	Priority            string     `json:"priority"`
+	Kind                string     `json:"kind"`
+	Text                string     `json:"text"`
+	CreatedAt           *time.Time `json:"created_at,omitempty"`
+	DeliberationID      string     `json:"deliberation_id,omitempty"`
+	RemovedAt           time.Time  `json:"removed_at"`
+	RemovalReason       string     `json:"removal_reason"`
+	HarvestedArtifactID string     `json:"harvested_artifact_id,omitempty"`
+}
+
+// appendToStashArchive appends an ArchivedStashEntry to .backlogit/archive/stash.jsonl,
+// creating the archive directory and file on first write.
+func appendToStashArchive(rootPath string, entry ArchivedStashEntry) error {
+	archiveDir := filepath.Join(WorkspaceStorageRoot(rootPath), "archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return fmt.Errorf("create stash archive dir: %w", err)
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal archived stash entry: %w", err)
+	}
+	archivePath := filepath.Join(archiveDir, stashArchiveFileName)
+	f, err := os.OpenFile(archivePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open stash archive: %w", err)
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "%s\n", data)
+	return err
+}
 
 // FetchStashOptions controls stash fetch filtering and grouping.
 type FetchStashOptions struct {
@@ -305,6 +344,21 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 	artifact, err := CreateArtifact(ctx, ws, itemTitle, harvestOpts.ArtifactType, createOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create artifact from stash: %w", err)
+	}
+
+	archiveEntry := ArchivedStashEntry{
+		ID:                  entry.ID,
+		Priority:            entry.Priority,
+		Kind:                entry.Kind,
+		Text:                entry.Text,
+		CreatedAt:           entry.CreatedAt,
+		DeliberationID:      entry.DeliberationID,
+		RemovedAt:           time.Now().UTC(),
+		RemovalReason:       "harvested",
+		HarvestedArtifactID: artifact.ID,
+	}
+	if archErr := appendToStashArchive(ws.RootPath, archiveEntry); archErr != nil {
+		slog.Warn("stash harvest: failed to append to archive", "stash_id", entry.ID, "error", archErr)
 	}
 
 	// Artifact created — commit the stash removal atomically under the still-held lock.
@@ -597,6 +651,19 @@ func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stas
 	entry, remaining, err := removeStashEntry(ws.RootPath, stashID)
 	if err != nil {
 		return nil, err
+	}
+	archiveEntry := ArchivedStashEntry{
+		ID:             entry.ID,
+		Priority:       entry.Priority,
+		Kind:           entry.Kind,
+		Text:           entry.Text,
+		CreatedAt:      entry.CreatedAt,
+		DeliberationID: entry.DeliberationID,
+		RemovedAt:      time.Now().UTC(),
+		RemovalReason:  "removed",
+	}
+	if archErr := appendToStashArchive(ws.RootPath, archiveEntry); archErr != nil {
+		slog.Warn("stash remove: failed to append to archive", "stash_id", entry.ID, "error", archErr)
 	}
 	if err := writeStashEntries(path, remaining); err != nil {
 		return nil, fmt.Errorf("rewrite stash file: %w", err)
