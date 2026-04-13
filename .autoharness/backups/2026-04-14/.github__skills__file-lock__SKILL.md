@@ -3,7 +3,7 @@ name: file-lock
 description: "Acquire and release file-level locks to prevent concurrent modifications during multi-agent or human+agent workflows"
 ---
 
-## File Lock
+# File Lock
 
 Manage per-file advisory locks so that multiple agents (or an agent and a
 human operator) do not clobber the same file during complex refactors or

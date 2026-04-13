@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-13T01:50:00Z"
+tuned_at: "2026-04-14T00:00:00Z"
 autoharness_version: "1.0.0"
 autoharness_home: "C:\\Users\\derek.williams\\AppData\\Roaming\\uv\\tools\\autoharness\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -123,15 +123,15 @@ artifacts:
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "2cc517aafd0306d0a3ba4832733c92fd9f33d11b4fbb66518eb38027f8780794"
+    checksum: "1ece719197750a7ebe4c132043c5544ae127e9baf3f94dd35bb4225739354d74"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
-    checksum: "13abaa41ec9f8424d89c5983cd25108c1f5658fcd7a3091d08a8f2da3bdc804b"
+    checksum: "960b007604eaa170bce91296407b155aa91073a46067e2295195490dcd6e4d99"
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "32e86231d699cfac8a9c90753099926f7750c465a028215bc5b956cb8e0da7b9"
+    checksum: "3209e87648c8fb3be7a2c3dfa8b49c2994d25a4bb0ebb05e2d672b52356e6ab9"
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
@@ -139,19 +139,19 @@ artifacts:
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "5934b855c8f5420f6688f8d00ca80c00e9626264b061979e5be545d29d85ce5f"
+    checksum: "07887ccff5ed92b0c9e0aa2669becbe9c12d04bf4fe08b9beb2ad16491c047da"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "03d556a827660876298ce7d6eec502e5028a69d5b0856619d1ce2a4c88abd5f2"
+    checksum: "7cc38e72b43f63f0115938a915a2f4b407e565c90b2d87eb3d8d4d6400232dbb"
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "3728845b5f5f12b91b5929ac18de3e18e68409e5ca8ce6e856e25f3c6f316770"
+    checksum: "a6f6239316df9ac18b2a280f99d2fac43c69ffff3b72c73629f60de661d17e1c"
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
-    checksum: "5590a54941bebcbe362fc847ab111ddacd15c9f0ed3222148cb84b3d246a6dba"
+    checksum: "f991e42ea1ea05abe3e441672a2b897f2f86b0259185863ef734c62eb728bb03"
   - path: ".backlogit/config.yaml"
     primitive: 2
     template: "workspace merge install"
@@ -207,35 +207,35 @@ artifacts:
   - path: ".github/agents/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "4fd4fd717b59f20bd7186e2ab93fc8fc19b9e8a59a5205d01eeef07e7c0f5a09"
+    checksum: "e4074f01fe858d29bc75643f0da5d2020e2109dd8cecc1b68b34df91cd10d3ad"
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "8c0385cea0927835ea628aeadb431ff6135dada685f0716791677621af3b8aa8"
+    checksum: "1b043d3200b4e00e3419f1609edcd50f60cc96ff501b8ad74348b5e65448cd7f"
   - path: ".github/instructions/circuit-breaker.instructions.md"
     primitive: 6
     template: "templates/instructions/circuit-breaker.instructions.md.tmpl"
-    checksum: "af3df30c79b50471181c3dd47962bbbb5ebd516106c83cb179f161820264ea5a"
+    checksum: "e537ef3458bc78728546f91558a5b816730272e37f59ffb2b5f777c37b2a0620"
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "8b7b1b75d6c5f70d0e416570ccf64e0c454de1d5e7c046589103828b1a366ad9"
+    checksum: "ee0e142b02f137f2b371843651e9d607a71d367b72a6edcb02021afd70fdb4c3"
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
-    checksum: "3fb16225e9236024fc0594611a5c60dfe60649c67fb9dc2592d426a74bf5d6c2"
+    checksum: "7139c91ea1b5dcc4285963019b2bda5620b46742f2ad40ffc20766a0acea0b4b"
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
-    checksum: "624df80c6cee4ceca496a5ee6fb1c9ec7603b1fcef190ef7c9f9198c6b9da74b"
+    checksum: "10433d842fe1c87fb50ddcdd70156ae00964f57beb46f63ad8202613243f294d"
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
-    checksum: "0fbdc29c4412dc3e152c015cdc982d5e6ddf82634d1d8c18a28d8f1661a50ab6"
+    checksum: "ba0cf379534d657b1762b684cc50379f0f34ccb15a20e687c12d03fbf2a44857"
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "3a2a11b5309ed9e28132c26e6e915f7259180c41eaa8117720af0f0a5391e0be"
+    checksum: "6ef11643d5d48015c161eb174b977302993886801978afaea1c39d6817634d62"
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
@@ -337,3 +337,17 @@ tuning_history:
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
       - ".github/skills/review/SKILL.md"
+  - at: "2026-04-14T00:00:00Z"
+    summary: "Full harness tuning against latest autoharness templates. P1 rewrites: spike (58→354 lines, full 5-phase protocol), runtime-verification (Step 7 feed-closure + BLOCKED verdict), operational-closure (pre-deploy audit + risky-action record), safety-modes (Step 5 Enforcement Gate). P1 merges: backlogit.instructions (Intercom Coherence Rule), backlog-integration.instructions (Operation Reference table), architecture-doc.instructions (Documentation Gardening + Staleness rules). Updated adversarial-review.agent.md (YAML backlog item format, tier details). Careful merge of review/SKILL.md (strict-safety + ship agent refs, preserved Go personas and Steps 4a/5a/6). Cosmetic: file-lock and skill-search H1→H2 headings. Corrected 4 manifest checksums from 2026-04-13 recovery session."
+    artifacts:
+      - ".github/skills/spike/SKILL.md"
+      - ".github/skills/runtime-verification/SKILL.md"
+      - ".github/skills/operational-closure/SKILL.md"
+      - ".github/skills/safety-modes/SKILL.md"
+      - ".github/instructions/backlogit.instructions.md"
+      - ".github/instructions/backlog-integration.instructions.md"
+      - ".github/instructions/architecture-doc.instructions.md"
+      - ".github/agents/adversarial-review.agent.md"
+      - ".github/skills/review/SKILL.md"
+      - ".github/skills/file-lock/SKILL.md"
+      - ".github/skills/skill-search/SKILL.md"
