@@ -2,7 +2,7 @@
 title: backlogit
 description: AI-native agile workspace with MCP and CLI interfaces
 author: backlogit contributors
-ms.date: 2026-04-10
+ms.date: 2026-04-13
 ms.topic: overview
 keywords:
   - backlogit
@@ -46,7 +46,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - Migration from current Backlog.md workspaces and legacy checklist files with `backlogit migrate --source`
 - Single CGo-free static binary built with `modernc.org/sqlite`
 - Workspace containment: all operations stay within `.backlogit/` with path traversal rejection
-- Token telemetry harvest via `backlogit telemetry harvest` and `backlogit_telemetry_harvest` MCP tool: parses Copilot CLI session logs, correlates model calls and tool calls into per-session summaries, attributes tool calls to MCP servers, writes typed JSONL records, and rehydrates queryable `telemetry_sessions` and `telemetry_tool_usage` SQLite tables
+- Token telemetry pipeline via the `backlogit telemetry` command group and `backlogit_telemetry_harvest` MCP tool: `harvest` parses Copilot CLI session logs (with optional `--since` and `--force` flags for incremental or forced re-harvest), correlates model calls and tool calls into per-session summaries with context-window utilization metrics, attributes tool calls to MCP servers, writes typed JSONL records, and rehydrates queryable `telemetry_sessions` and `telemetry_tool_usage` SQLite tables; `report` renders tabular or JSON summaries grouped by session or server with configurable `--limit`; `list` shows a per-session summary table; `top` shows top servers by call volume
 - Commit traceability on event log entries: MCP mutation tools (`backlogit_move_item`, `backlogit_archive_item`, `backlogit_append_comment`) accept an optional `commit_sha` parameter that is recorded on the emitted JSONL event, enabling external tooling to correlate backlogit state changes with git history
 
 ## Quick Start
