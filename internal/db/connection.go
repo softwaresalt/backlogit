@@ -25,12 +25,16 @@ func abs(dbPath string) (string, error) {
 
 // Open returns a configured *sql.DB backed by the SQLite file at dbPath.
 //
-// PRAGMAs are injected via DSN query parameters so the driver applies them on
+// DSN options are injected via query parameters so the driver applies them on
 // every new physical connection opened from the pool:
 //
-//   - journal_mode=WAL   — WAL journal enables concurrent readers alongside writers.
-//   - foreign_keys=1     — Enforces FK constraints (SQLite disables them by default).
-//   - busy_timeout=5000  — Waits up to 5 s before returning SQLITE_BUSY.
+//   - _pragma=journal_mode(WAL)   — WAL journal enables concurrent readers alongside writers.
+//   - _pragma=foreign_keys(1)     — Enforces FK constraints (SQLite disables them by default).
+//   - _pragma=busy_timeout(30000) — Waits up to 30 s before returning SQLITE_BUSY; gives
+//     multi-process MCP workloads enough headroom to serialise writes.
+//   - _txlock=immediate           — All transactions use BEGIN IMMEDIATE, acquiring the
+//     write lock at transaction start rather than on the first write. This eliminates
+//     lock-upgrade conflicts that produce SQLITE_BUSY mid-transaction.
 //
 // Pool sizing: SetMaxOpenConns(4) / SetMaxIdleConns(4).
 // WAL mode supports multiple simultaneous readers so a pool > 1 is safe and
@@ -61,7 +65,8 @@ func Open(dbPath string) (*sql.DB, error) {
 	q := url.Values{}
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "foreign_keys(1)")
-	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "busy_timeout(30000)")
+	q.Set("_txlock", "immediate")
 
 	dsn := (&url.URL{
 		Scheme:   "file",

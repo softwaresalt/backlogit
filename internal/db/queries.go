@@ -158,37 +158,39 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 		refsVal = sql.NullString{}
 	}
 
-	_, err = db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO items
+	return RetryWrite(ctx, func() error {
+		_, err = db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO items
 			(id, title, status, artifact_type, parent_id, sprint, priority, description,
 			 custom_fields, created_at, updated_at,
 			 assigned_to, owner, labels, dependencies, "references", "commit",
 			 level, hierarchy_path)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		artifact.ID,
-		artifact.Title,
-		string(artifact.Status),
-		artifact.ArtifactType,
-		nullString(artifact.ParentID),
-		nullString(artifact.Sprint),
-		nullString(artifact.Priority),
-		nullString(artifact.Description),
-		string(cf),
-		artifact.CreatedAt.Format(time.RFC3339Nano),
-		artifact.UpdatedAt.Format(time.RFC3339Nano),
-		nullString(artifact.AssignedTo),
-		nullString(artifact.Owner),
-		labelsVal,
-		depsVal,
-		refsVal,
-		nullString(artifact.Commit),
-		nullInt64(artifact.Level),
-		nullString(artifact.HierarchyPath),
-	)
-	if err != nil {
-		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
-	}
-	return nil
+			artifact.ID,
+			artifact.Title,
+			string(artifact.Status),
+			artifact.ArtifactType,
+			nullString(artifact.ParentID),
+			nullString(artifact.Sprint),
+			nullString(artifact.Priority),
+			nullString(artifact.Description),
+			string(cf),
+			artifact.CreatedAt.Format(time.RFC3339Nano),
+			artifact.UpdatedAt.Format(time.RFC3339Nano),
+			nullString(artifact.AssignedTo),
+			nullString(artifact.Owner),
+			labelsVal,
+			depsVal,
+			refsVal,
+			nullString(artifact.Commit),
+			nullInt64(artifact.Level),
+			nullString(artifact.HierarchyPath),
+		)
+		if err != nil {
+			return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
+		}
+		return nil
+	})
 }
 
 // GetItem retrieves a single artifact by ID.
@@ -239,35 +241,37 @@ var cascadeSteps = []deleteStep{
 // logs, events, stash links, commit links) from the index in a single atomic
 // transaction. It returns ErrNotFound when no items row matched id.
 func DeleteItemCascade(ctx context.Context, database *sql.DB, id string) error {
-	tx, err := database.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("delete item %s: begin cascade transaction: %w", id, err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	for _, step := range cascadeSteps {
-		stmt := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", step.table, step.col)
-		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
-			return fmt.Errorf("delete item %s: cascade %s.%s: %w", id, step.table, step.col, err)
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("delete item %s: begin cascade transaction: %w", id, err)
 		}
-	}
+		defer tx.Rollback() //nolint:errcheck
 
-	result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete item %s: %w", id, err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete item %s: rows affected: %w", id, err)
-	}
-	if rowsAffected == 0 {
-		return fmt.Errorf("delete item %s: %w", id, blErrors.ErrNotFound)
-	}
+		for _, step := range cascadeSteps {
+			stmt := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", step.table, step.col)
+			if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
+				return fmt.Errorf("delete item %s: cascade %s.%s: %w", id, step.table, step.col, err)
+			}
+		}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("delete item %s: commit cascade transaction: %w", id, err)
-	}
-	return nil
+		result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+		if err != nil {
+			return fmt.Errorf("delete item %s: %w", id, err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("delete item %s: rows affected: %w", id, err)
+		}
+		if rowsAffected == 0 {
+			return fmt.Errorf("delete item %s: %w", id, blErrors.ErrNotFound)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("delete item %s: commit cascade transaction: %w", id, err)
+		}
+		return nil
+	})
 }
 
 // QueryItems retrieves artifacts matching the provided filters.
