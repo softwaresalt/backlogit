@@ -17,46 +17,40 @@ import (
 	"github.com/backlogit/backlogit/internal/stash"
 )
 
+// rehydrateBatchSize is the number of artifacts inserted per transaction during
+// the batch-rebuild phase. Smaller batches hold the write lock for less time,
+// reducing contention under concurrent MCP workloads.
+const rehydrateBatchSize = 100
+
+// collectedArtifact holds a parsed artifact ready for batch insertion.
+type collectedArtifact struct {
+	artifact *models.Artifact
+}
+
 // Rehydrate walks the workspace directory tree and rebuilds the SQLite index
 // from the Markdown source files. Files that fail to parse are skipped with a
 // debug log entry. Returns the number of artifacts successfully indexed.
 //
-// The clear + rebuild of the items and item_deps tables is wrapped in a single
-// transaction so a crash or parse failure mid-walk does not leave a partial
-// (empty) index. If any step fails, the transaction is rolled back and the
-// previous index remains intact.
+// The rebuild is split into three phases to reduce write-lock hold time:
+//
+//  1. Collect: walk the filesystem and parse all Markdown files into memory.
+//     No database interaction occurs during this phase.
+//  2. Clear: a single IMMEDIATE transaction deletes all existing index rows so
+//     that removed or renamed Markdown files do not leave ghost entries.
+//  3. Batch-insert: parsed artifacts are inserted in batches of
+//     rehydrateBatchSize per transaction. Each batch acquires and releases the
+//     write lock independently, allowing concurrent readers to make progress
+//     between batches.
+//
+// Note: between the clear commit and the final batch commit the index is empty
+// or partially populated. This is acceptable because backlogit.db is an
+// ephemeral cache that can be rebuilt at any time.
 func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, error) {
-	count := 0
 	harvestedStash := make(map[string]StashRecord)
 
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin rehydration transaction: %w", err)
-	}
-	// rolled back on any non-nil error path; nil'd after Commit to skip on success.
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	if err := deleteAllItemLogs(ctx, tx); err != nil {
-		return 0, err
-	}
-
-	// Clear the item index before rebuilding so that deleted Markdown files do not
-	// leave ghost entries.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM items`); err != nil {
-		return 0, fmt.Errorf("clear items for rehydration: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM item_deps`); err != nil {
-		return 0, fmt.Errorf("clear item_deps for rehydration: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM item_links`); err != nil {
-		return 0, fmt.Errorf("clear item_links for rehydration: %w", err)
-	}
-
-	err = filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
+	// ── Phase 1: Collect ──────────────────────────────────────────────────────
+	var collected []collectedArtifact
+	if walkErr := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			slog.Debug("walk error, skipping", "path", path, "error", walkErr)
 			return nil
@@ -77,63 +71,108 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 			return nil
 		}
 
-		if upsertErr := upsertItemTx(ctx, tx, artifact); upsertErr != nil {
-			slog.Warn("failed to upsert artifact", "path", path, "error", upsertErr)
-			return nil
-		}
+		collected = append(collected, collectedArtifact{artifact: artifact})
 		if record, ok := stashRecordFromArtifact(artifact); ok {
 			harvestedStash[record.ID] = record
 		}
+		return nil
+	}); walkErr != nil {
+		return 0, fmt.Errorf("rehydrate walk: %w", walkErr)
+	}
 
-		// Derive level and hierarchy_path from the ID for hierarchical IDs
-		// (segments separated by "."), e.g. "001" → level=1, "001.002" → level=2.
-		// Only update when the artifact does not already carry these values.
-		if artifact.Level == 0 && isHierarchicalID(artifact.ID) {
-			level := strings.Count(artifact.ID, ".") + 1
-			hierarchyPath := hierarchyPathFromID(artifact.ID)
-			if _, execErr := tx.ExecContext(ctx,
-				`UPDATE items SET level = ?, hierarchy_path = ? WHERE id = ?`,
-				level, hierarchyPath, artifact.ID,
-			); execErr != nil {
-				slog.Warn("failed to set level/hierarchy_path", "id", artifact.ID, "error", execErr)
-			}
+	// ── Phase 2: Clear ────────────────────────────────────────────────────────
+	if clearErr := RetryWrite(ctx, func() error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin clear transaction: %w", err)
 		}
+		defer tx.Rollback() //nolint:errcheck
 
-		// Upsert dependency edges from frontmatter.
-		if len(artifact.Dependencies) > 0 {
-			for _, depID := range artifact.Dependencies {
-				if depID == "" {
+		if err := deleteAllItemLogs(ctx, tx); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM items`); err != nil {
+			return fmt.Errorf("clear items: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM item_deps`); err != nil {
+			return fmt.Errorf("clear item_deps: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM item_links`); err != nil {
+			return fmt.Errorf("clear item_links: %w", err)
+		}
+		return tx.Commit()
+	}); clearErr != nil {
+		return 0, clearErr
+	}
+
+	// ── Phase 3: Batch-insert ─────────────────────────────────────────────────
+	count := 0
+	for i := 0; i < len(collected); i += rehydrateBatchSize {
+		end := i + rehydrateBatchSize
+		if end > len(collected) {
+			end = len(collected)
+		}
+		batch := collected[i:end]
+
+		batchCount := 0
+		batchErr := RetryWrite(ctx, func() error {
+			// Reset batchCount at the start of each attempt so that a retried
+			// transaction does not double-count rows inserted in the failed attempt.
+			batchCount = 0
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("begin batch transaction at offset %d: %w", i, err)
+			}
+			defer tx.Rollback() //nolint:errcheck
+
+			for _, ca := range batch {
+				artifact := ca.artifact
+				if upsertErr := upsertItemTx(ctx, tx, artifact); upsertErr != nil {
+					slog.Warn("failed to upsert artifact", "id", artifact.ID, "error", upsertErr)
 					continue
 				}
-				// Best-effort: skip if target doesn't exist yet (will be linked on subsequent rehydration).
-				if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
-					slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+
+				if artifact.Level == 0 && isHierarchicalID(artifact.ID) {
+					level := strings.Count(artifact.ID, ".") + 1
+					hierarchyPath := hierarchyPathFromID(artifact.ID)
+					if _, execErr := tx.ExecContext(ctx,
+						`UPDATE items SET level = ?, hierarchy_path = ? WHERE id = ?`,
+						level, hierarchyPath, artifact.ID,
+					); execErr != nil {
+						slog.Warn("failed to set level/hierarchy_path", "id", artifact.ID, "error", execErr)
+					}
 				}
-			}
-		}
-		for _, link := range artifact.Links {
-			if strings.TrimSpace(link.TargetID) == "" || strings.TrimSpace(link.LinkType) == "" {
-				continue
-			}
-			if _, execErr := tx.ExecContext(ctx,
-				`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
-				artifact.ID, link.TargetID, link.LinkType,
-			); execErr != nil {
-				slog.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
-			}
-		}
 
-		count++
-		return nil
-	})
-	if err != nil {
-		return count, fmt.Errorf("rehydrate walk: %w", err)
-	}
+				for _, depID := range artifact.Dependencies {
+					if depID == "" {
+						continue
+					}
+					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
+						slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+					}
+				}
+				for _, link := range artifact.Links {
+					if strings.TrimSpace(link.TargetID) == "" || strings.TrimSpace(link.LinkType) == "" {
+						continue
+					}
+					if _, execErr := tx.ExecContext(ctx,
+						`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
+						artifact.ID, link.TargetID, link.LinkType,
+					); execErr != nil {
+						slog.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
+					}
+				}
 
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit rehydration: %w", err)
+				batchCount++
+			}
+
+			return tx.Commit()
+		})
+		if batchErr != nil {
+			return count, fmt.Errorf("rehydration batch at offset %d: %w", i, batchErr)
+		}
+		count += batchCount
 	}
-	tx = nil // prevent deferred rollback
 
 	stashCount, stashErr := rehydrateStash(ctx, workspacePath, db, harvestedStash)
 	if stashErr != nil {
@@ -281,27 +320,24 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 		return nil
 	}
 
-	tx, err := database.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin log rehydration transaction: %w", err)
-	}
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin log rehydration transaction: %w", err)
 		}
-	}()
+		defer tx.Rollback() //nolint:errcheck
 
-	for _, le := range allEvents {
-		if err := indexEventTx(ctx, tx, logsDir, le.event); err != nil {
-			slog.Warn("failed to index item log event", "item_id", le.event.ItemID, "path", le.path, "error", err)
+		for _, le := range allEvents {
+			if err := indexEventTx(ctx, tx, logsDir, le.event); err != nil {
+				slog.Warn("failed to index item log event", "item_id", le.event.ItemID, "path", le.path, "error", err)
+			}
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit log rehydration: %w", err)
-	}
-	tx = nil
-	return nil
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit log rehydration: %w", err)
+		}
+		return nil
+	})
 }
 
 func parseItemLogFile(path, itemID string) ([]events.Event, error) {

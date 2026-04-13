@@ -127,21 +127,22 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 // RehydrateStashIndex rebuilds the stash index from the active stash records and artifact provenance.
 // The entire clear-and-rebuild sequence runs inside a single transaction to prevent partial state.
 func RehydrateStashIndex(ctx context.Context, database *sql.DB, activeEntries []StashRecord, harvested map[string]StashRecord) error {
-	tx, err := database.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin stash rehydration tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin stash rehydration tx: %w", err)
+		}
+		defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM stash_links`); err != nil {
-		return fmt.Errorf("clear stash links: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM stash_entries`); err != nil {
-		return fmt.Errorf("clear stash entries: %w", err)
-	}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM stash_links`); err != nil {
+			return fmt.Errorf("clear stash links: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM stash_entries`); err != nil {
+			return fmt.Errorf("clear stash entries: %w", err)
+		}
 
-	now := time.Now().UTC()
-	const upsertStashSQL = `INSERT INTO stash_entries (stash_id, priority, kind, text, deliberation_id, state, source_path, updated_at)
+		now := time.Now().UTC()
+		const upsertStashSQL = `INSERT INTO stash_entries (stash_id, priority, kind, text, deliberation_id, state, source_path, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(stash_id) DO UPDATE SET
 		   priority = excluded.priority,
@@ -151,36 +152,37 @@ func RehydrateStashIndex(ctx context.Context, database *sql.DB, activeEntries []
 		   state = excluded.state,
 		   source_path = excluded.source_path,
 		   updated_at = excluded.updated_at`
-	const upsertLinkSQL = `INSERT INTO stash_links (stash_id, item_id, linked_at)
+		const upsertLinkSQL = `INSERT INTO stash_links (stash_id, item_id, linked_at)
 		 VALUES (?, ?, ?)
 		 ON CONFLICT(stash_id) DO UPDATE SET
 		   item_id = excluded.item_id,
 		   linked_at = excluded.linked_at`
 
-	for _, entry := range activeEntries {
-		if _, err := tx.ExecContext(ctx, upsertStashSQL,
-			entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", entry.SourcePath, now.Format(time.RFC3339Nano),
-		); err != nil {
-			return fmt.Errorf("upsert stash entry %s: %w", entry.ID, err)
+		for _, entry := range activeEntries {
+			if _, err := tx.ExecContext(ctx, upsertStashSQL,
+				entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, "active", entry.SourcePath, now.Format(time.RFC3339Nano),
+			); err != nil {
+				return fmt.Errorf("upsert stash entry %s: %w", entry.ID, err)
+			}
 		}
-	}
-	for _, record := range harvested {
-		if _, err := tx.ExecContext(ctx, upsertStashSQL,
-			record.ID, record.Priority, record.Kind, record.Text, record.DeliberationID, "harvested", record.SourcePath, record.UpdatedAt.Format(time.RFC3339Nano),
-		); err != nil {
-			return fmt.Errorf("upsert harvested stash entry %s: %w", record.ID, err)
+		for _, record := range harvested {
+			if _, err := tx.ExecContext(ctx, upsertStashSQL,
+				record.ID, record.Priority, record.Kind, record.Text, record.DeliberationID, "harvested", record.SourcePath, record.UpdatedAt.Format(time.RFC3339Nano),
+			); err != nil {
+				return fmt.Errorf("upsert harvested stash entry %s: %w", record.ID, err)
+			}
+			linkedAt := record.UpdatedAt
+			if record.LinkedAt != nil {
+				linkedAt = *record.LinkedAt
+			}
+			if _, err := tx.ExecContext(ctx, upsertLinkSQL,
+				record.ID, record.ItemID, linkedAt.Format(time.RFC3339Nano),
+			); err != nil {
+				return fmt.Errorf("link stash entry %s: %w", record.ID, err)
+			}
 		}
-		linkedAt := record.UpdatedAt
-		if record.LinkedAt != nil {
-			linkedAt = *record.LinkedAt
-		}
-		if _, err := tx.ExecContext(ctx, upsertLinkSQL,
-			record.ID, record.ItemID, linkedAt.Format(time.RFC3339Nano),
-		); err != nil {
-			return fmt.Errorf("link stash entry %s: %w", record.ID, err)
-		}
-	}
-	return tx.Commit()
+		return tx.Commit()
+	})
 }
 
 func mustParseTime(value string) time.Time {

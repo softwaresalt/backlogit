@@ -28,7 +28,7 @@ func assertConnectionPragmas(t *testing.T, database *sql.DB) {
 
 	var busyTimeout int
 	require.NoError(t, database.QueryRow(`PRAGMA busy_timeout`).Scan(&busyTimeout))
-	assert.Equal(t, 5000, busyTimeout, "busy_timeout must be 5000 ms")
+	assert.Equal(t, 30000, busyTimeout, "busy_timeout must be 30000 ms")
 }
 
 // TestOpen_PragmasApplied verifies that Open sets journal_mode=WAL,
@@ -78,7 +78,7 @@ func TestOpen_BusyTimeout(t *testing.T) {
 
 	var timeout int
 	require.NoError(t, database.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout))
-	assert.Equal(t, 5000, timeout)
+	assert.Equal(t, 30000, timeout)
 }
 
 // TestOpen_MultipleOpenSameFile verifies that two independent *sql.DB handles
