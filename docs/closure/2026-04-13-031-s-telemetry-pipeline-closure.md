@@ -26,10 +26,10 @@ against failing harnesses verified via full CI on both Go 1.23 and 1.24.
 
 | Task | Title | Package(s) |
 |---|---|---|
-| 031.001-T | Incremental harvest: `--since` and `--force` flags | `internal/telemetry`, `internal/mcp` |
-| 031.002-T | Context-window utilization columns | `internal/telemetry`, `internal/db` |
-| 031.003-T | Telemetry report: groupBy, limit, JSON output | `internal/telemetry`, `internal/cli` |
-| 031.004-T | CLI wiring: `harvest`, `list`, `top`, `report` subcommands | `internal/cli` |
+| 031.001-T | Incremental Harvest with Byte-Offset Checkpoints | `internal/telemetry`, `internal/mcp` |
+| 031.002-T | Date-Filtered Harvest (`--since` flag) | `internal/telemetry`, `internal/cli` |
+| 031.003-T | Context Window Consumption Tracking | `internal/telemetry`, `internal/db` |
+| 031.004-T | CLI Telemetry Report Subcommand | `internal/cli`, `internal/mcp` |
 
 **Net change:** 38 files, +2368 / −57 lines.
 
