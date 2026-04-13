@@ -1,11 +1,17 @@
 ---
 title: "Batch operations that fail silently (log + nil return) prevent callers from detecting incomplete state"
 description: "Rehydrate logged a warning and returned nil when a batch tx failed after retries, giving callers no signal that the index was incomplete"
+problem_type: silent-failure
+category: db-reliability
+component: rehydration
+root_cause: batch transaction failures were logged but not returned to callers
+resolution_type: propagate-error
+message: "Rehydrate returned nil after batch transaction retry exhaustion, allowing callers to operate on a partial index"
+file_path: internal/db/rehydration.go
+resolved: true
+severity: high
 tags: [reliability, error-handling, rehydration, db, anti-pattern]
 date: 2026-04-13
-severity: p1
-pr: "https://github.com/softwaresalt/backlogit/pull/34"
-commit: e3fd907
 ---
 
 ## Problem

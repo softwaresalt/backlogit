@@ -1,11 +1,17 @@
 ---
 title: "SQLITE_LOCKED must be included alongside SQLITE_BUSY in retry predicates"
 description: "isSQLiteBusy initially omitted SQLITE_LOCKED, meaning shared-cache lock contention would bypass the retry wrapper entirely"
+problem_type: bug
+category: db-reliability
+component: sqlite-retry-predicate
+root_cause: missing-sqlite-locked-check
+resolution_type: code-fix
+message: "SQLITE_LOCKED must be included alongside SQLITE_BUSY in retry predicates"
+file_path: internal/db/retry.go
+resolved: true
+severity: high
 tags: [sqlite, retry, concurrency, db]
 date: 2026-04-13
-severity: p1
-pr: "https://github.com/softwaresalt/backlogit/pull/34"
-commit: e3fd907
 ---
 
 ## Problem
