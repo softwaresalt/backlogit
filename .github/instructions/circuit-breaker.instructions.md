@@ -1,5 +1,5 @@
 ---
-description: "Circuit breaker protocol — prevents agents from entering infinite retry loops on persistent failures"
+description: "Circuit breaker protocol: prevents agents from entering infinite retry loops on persistent failures"
 applyTo: '**'
 ---
 

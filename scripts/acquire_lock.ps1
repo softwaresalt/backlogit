@@ -25,22 +25,24 @@ $dir = Split-Path $resolvedPath -Parent
 $filename = Split-Path $resolvedPath -Leaf
 $lockFile = Join-Path $dir ".$filename.lock"
 
-if (Test-Path $lockFile) {
-    $lockContent = Get-Content $lockFile -Raw
-    Write-Error "File is already locked: $FilePath`nLock info: $lockContent"
-    exit 1
-}
-
 $agentName = if ($env:AGENT_NAME) { $env:AGENT_NAME } else { "unknown" }
 $timestamp = Get-Date -Format "o"
-$pid = $PID
+$pidValue = $PID
 
 $lockContent = @"
 agent: $agentName
 timestamp: $timestamp
-pid: $pid
+pid: $pidValue
 "@
 
-Set-Content -Path $lockFile -Value $lockContent -NoNewline
-Write-Host "Lock acquired: $FilePath"
-exit 0
+# Use New-Item with -ErrorAction Stop for atomic lock creation to eliminate TOCTOU race
+try {
+    $null = New-Item -ItemType File -Path $lockFile -ErrorAction Stop
+    Set-Content -Path $lockFile -Value $lockContent -NoNewline
+    Write-Host "Lock acquired: $FilePath"
+    exit 0
+} catch {
+    $existingContent = if (Test-Path $lockFile) { Get-Content $lockFile -Raw } else { "(unavailable)" }
+    Write-Error "File is already locked: $FilePath`nLock info: $existingContent"
+    exit 1
+}

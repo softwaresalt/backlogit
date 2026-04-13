@@ -68,8 +68,9 @@ Before triage, prune stale active entries so the queue reflects current prioriti
 1. Fetch all active stash entries with `backlogit_fetch_stash`.
 2. For any entry where `age_days` is 30 or greater, flag it for operator review.
 3. For confirmed-stale entries (operator confirms removal, or the entry has been
-   superseded by a shipped feature), call `backlogit_stash_remove` with a clear
-   reason string (e.g., `"superseded by 029-F"`, `"stale > 30 days, no longer relevant"`).
+   superseded by a shipped feature), note the reason (e.g., "superseded by 029-F",
+   "stale > 30 days, no longer relevant"), then call `backlogit_stash_remove`
+   with the `stash_id` only.
 4. For entries that are still relevant but have stale metadata (wrong priority or
    kind), call `backlogit_stash_edit` to correct them rather than removing them.
 5. When `agent-intercom` is available, broadcast each removal:

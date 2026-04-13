@@ -15,9 +15,6 @@ capability_packs:
   - circuit-breaker
   - concurrency
   - release-observability
-  - strict-safety
-  - agent-intercom
-  - agent-engram
 capability_pack_overlays:
   - pack: backlogit
     overlay_targets:

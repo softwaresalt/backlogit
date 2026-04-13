@@ -36,7 +36,7 @@ for skill_dir in "$SKILLS_ROOT"/*/; do
     fi
 
     # Match keyword (case-insensitive) against skill name or description
-    if echo "$skill_name" | grep -qi "$KEYWORD" || echo "$description" | grep -qi "$KEYWORD"; then
+    if echo "$skill_name" | grep -qiF -- "$KEYWORD" || echo "$description" | grep -qiF -- "$KEYWORD"; then
         # Truncate description for display
         if [ ${#description} -gt 70 ]; then
             description="${description:0:67}..."

@@ -19,7 +19,7 @@ remediation queue with findings ordered by confidence × severity.
 
 Different models have different blind spots. A finding that appears in all reviewer
 outputs is almost certainly real. A finding that appears in only one model's output
-may be a false positive — or a subtle issue that only one model caught. The protocol
+may be a false positive, or a subtle issue that only one model caught. The protocol
 preserves both signals with appropriate confidence labels, rather than losing unique
 findings or trusting any single model too much.
 

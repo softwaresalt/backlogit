@@ -1,5 +1,5 @@
 ---
-description: "File operation locking protocol — prevents concurrent modifications to the same file by multiple agents or human+agent workflows"
+description: "File operation locking protocol: prevents concurrent modifications to the same file by multiple agents or human+agent workflows"
 applyTo: '**'
 ---
 

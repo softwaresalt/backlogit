@@ -6,7 +6,7 @@ component: task_manager
 root_cause: missing_test_fixture
 resolution_type: documentation
 severity: high
-message: "Agent closure summaries that say 'Follow-up filed' without calling backlogit_stash create silent data loss — no stash entry, no follow-up."
+message: "Agent closure summaries that say 'Follow-up filed' without calling backlogit_stash create silent data loss: no stash entry, no follow-up."
 file_path: "internal/mcp/tools.go"
 resolved: true
 tags: [stash, ship-cycle, follow-up, agent-discipline, closure, backlogit_stash]

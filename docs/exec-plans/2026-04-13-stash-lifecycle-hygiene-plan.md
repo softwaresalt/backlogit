@@ -54,17 +54,17 @@ Implementation notes:
 
 * Define `ArchivedStashEntry` struct extending `stash.Entry` with removal
   metadata fields
-* Use atomic temp-file-then-append pattern consistent with existing JSONL
-  writes in `internal/events/stream.go`
+* Use `os.OpenFile` with `O_APPEND|O_CREATE|O_WRONLY` and a single `Write` call
+  for atomic JSONL line writes
 * Create `.backlogit/archive/stash.jsonl` on first write if it does not exist
 
 ### Task 2: Integrate archive into remove and harvest paths
 
 Wire `appendToStashArchive()` into two call sites:
 
-* `RemoveStashEntry()` at `stash.go:583` — call before rewriting stash file,
+* `RemoveStashEntry()` at `stash.go:583`: call before rewriting stash file,
   with `removal_reason: "removed"`
-* `harvestStashEntryLocked()` at `stash.go:271` — call after artifact creation
+* `harvestStashEntryLocked()` at `stash.go:271`: call after artifact creation
   succeeds, with `removal_reason: "harvested"` and `harvested_artifact_id` set
 
 ### Task 3: Tests for stash archive
