@@ -173,7 +173,7 @@ incorrect session filtering, or if `GenerateReport` panics on unexpected
 
 **Rollback steps:**
 
-1. `git revert 8e736c7` to remove telemetry enhancement code
+1. `git revert -m 1 8e736c7` to revert the PR merge commit against its mainline parent and remove the telemetry enhancement code
 2. Run `backlogit sync` to rebuild `backlogit.db` (context-window columns will
    not exist after revert; existing sessions are unaffected)
 3. The `peak_utilization`, `remaining_capacity`, `depletion_rate`, and

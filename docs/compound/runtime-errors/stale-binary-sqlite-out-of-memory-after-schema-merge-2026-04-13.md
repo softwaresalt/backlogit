@@ -28,14 +28,14 @@ The error persists because the installed `backlogit.exe` binary is stale — com
 
 SQLite error code 14 (`SQLITE_CANTOPEN`) is reported as "out of memory" by `modernc.org/sqlite` in some failure modes. When the binary predates the schema migration, it may fail to open the database due to a version mismatch in the compiled-in schema expectations.
 
-The stale binary was the `backlogit.exe` sitting in `D:\Source\GitHub\backlogit\` — a local copy that was not updated when the branch was merged.
+The stale binary was the `backlogit.exe` sitting in the repository root — a local build artifact that was not updated when the branch was merged.
 
 ## Solution
 
 Build and use a fresh binary compiled from the current source:
 
 ```powershell
-Set-Location D:\Source\GitHub\backlogit
+Set-Location <repo-root>
 go build -o backlogit-fresh.exe ./cmd/backlogit
 .\backlogit-fresh.exe sync
 .\backlogit-fresh.exe shipment ship 031-S --sha <sha>
