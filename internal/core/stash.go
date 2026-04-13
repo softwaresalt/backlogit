@@ -51,14 +51,17 @@ func appendToStashArchive(rootPath string, entry ArchivedStashEntry) error {
 	if err != nil {
 		return fmt.Errorf("marshal archived stash entry: %w", err)
 	}
+	line := append(bytes.Clone(data), '\n')
 	archivePath := filepath.Join(archiveDir, stashArchiveFileName)
 	f, err := os.OpenFile(archivePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open stash archive: %w", err)
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", data)
-	return err
+	if _, err := f.Write(line); err != nil {
+		return fmt.Errorf("write stash archive entry: %w", err)
+	}
+	return nil
 }
 
 // FetchStashOptions controls stash fetch filtering and grouping.

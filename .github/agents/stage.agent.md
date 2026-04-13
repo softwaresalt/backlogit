@@ -73,9 +73,9 @@ Before triage, prune stale active entries so the queue reflects current prioriti
 4. For entries that are still relevant but have stale metadata (wrong priority or
    kind), call `backlogit_stash_edit` to correct them rather than removing them.
 5. When `agent-intercom` is available, broadcast each removal:
-   `[STAGE] Stale: {stash_id} — {reason}`
+   `[STAGE] Stale: {stash_id}: {reason}`
 6. If `age_days` is absent (entry predates `created_at` support), treat as
-   unknown age — surface to the operator rather than silently removing.
+   unknown age, and surface it to the operator rather than silently removing.
 7. Proceed to Step 1 only after hygiene is complete.
 
 Entries with `age_days < 30` are current; do not flag them unless the operator

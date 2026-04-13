@@ -286,5 +286,8 @@ func TestHarvestStashEntry_WritesToArchiveWithArtifactID(t *testing.T) {
 	assert.Equal(t, added.ID, archived.ID)
 	assert.Equal(t, "harvested", archived.RemovalReason)
 	assert.NotEmpty(t, archived.HarvestedArtifactID, "harvested_artifact_id must be set")
-	assert.Equal(t, result.Artifact.(*models.Artifact).ID, archived.HarvestedArtifactID)
+	require.IsType(t, &models.Artifact{}, result.Artifact)
+	artifact, ok := result.Artifact.(*models.Artifact)
+	require.True(t, ok, "expected harvested artifact to be *models.Artifact")
+	assert.Equal(t, artifact.ID, archived.HarvestedArtifactID)
 }
