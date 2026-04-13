@@ -1,4 +1,10 @@
-# Stage Session: Telemetry Pipeline Enhancements
+---
+title: "Stage Session: Telemetry Pipeline Enhancements"
+description: "Stage session memory for telemetry pipeline enhancements shipment 031-S"
+date: 2026-04-13
+---
+
+## Stage Session: Telemetry Pipeline Enhancements
 
 **Date**: 2026-04-13
 **Session ID**: 40b946dc-f424-4b9d-b708-16437f412520

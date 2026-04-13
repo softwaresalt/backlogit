@@ -1,4 +1,5 @@
 ---
+name: operational-closure
 description: "Produce release-readiness, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification - Brought to you by microsoft/hve-core"
 ---
 

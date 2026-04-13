@@ -56,15 +56,18 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 		return "No telemetry data found. Run `backlogit telemetry harvest` first.\n", nil
 	}
 
-	// Apply row limit to session results.
-	if opts.Limit > 0 && len(sessions) > opts.Limit {
-		sessions = sessions[:opts.Limit]
-	}
-
 	groupBy := opts.GroupBy
 	if groupBy == "" {
 		groupBy = "session"
 	}
+	// Validate groupBy before allocating aggregation structures.
+	switch groupBy {
+	case "session", "server":
+		// supported
+	default:
+		return "", fmt.Errorf("unsupported group-by value %q: supported values are \"session\", \"server\"", groupBy)
+	}
+
 	format := opts.Format
 	if format == "" {
 		format = "table"
@@ -72,22 +75,22 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 
 	switch format {
 	case "json":
-		return formatReportJSON(sessions, tools, groupBy)
+		return formatReportJSON(sessions, tools, groupBy, opts.Limit)
 	default:
-		return formatReportTable(sessions, tools, groupBy)
+		return formatReportTable(sessions, tools, groupBy, opts.Limit)
 	}
 }
 
-func formatReportTable(sessions []SessionSummaryRecord, _ []ToolUsageRecord, groupBy string) (string, error) {
+func formatReportTable(sessions []SessionSummaryRecord, _ []ToolUsageRecord, groupBy string, limit int) (string, error) {
 	switch groupBy {
 	case "server":
-		return formatServerTable(sessions), nil
+		return formatServerTable(sessions, limit), nil
 	default:
-		return formatSessionTable(sessions), nil
+		return formatSessionTable(sessions, limit), nil
 	}
 }
 
-func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, groupBy string) (string, error) {
+func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, groupBy string, limit int) (string, error) {
 	var payload any
 	switch groupBy {
 	case "server":
@@ -97,9 +100,30 @@ func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, grou
 				aggregate[server] += count
 			}
 		}
-		payload = aggregate
+		// Apply limit to aggregated server rows.
+		if limit > 0 {
+			servers := make([]string, 0, len(aggregate))
+			for sv := range aggregate {
+				servers = append(servers, sv)
+			}
+			sort.Strings(servers)
+			if len(servers) > limit {
+				servers = servers[:limit]
+			}
+			trimmed := make(map[string]int, len(servers))
+			for _, sv := range servers {
+				trimmed[sv] = aggregate[sv]
+			}
+			payload = trimmed
+		} else {
+			payload = aggregate
+		}
 	default:
-		payload = sessions
+		rows := sessions
+		if limit > 0 && len(rows) > limit {
+			rows = rows[:limit]
+		}
+		payload = rows
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -108,21 +132,25 @@ func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, grou
 	return string(data) + "\n", nil
 }
 
-func formatSessionTable(sessions []SessionSummaryRecord) string {
+func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
+	rows := sessions
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
 		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS"))
 	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
 		strings.Repeat("-", 36), strings.Repeat("-", 8),
 		strings.Repeat("-", 11), strings.Repeat("-", 10)))
-	for _, s := range sessions {
+	for _, s := range rows {
 		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d\n",
 			s.SessionID, s.TotalTokens, s.ModelCalls, s.ToolCalls))
 	}
 	return sb.String()
 }
 
-func formatServerTable(sessions []SessionSummaryRecord) string {
+func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
 	aggregate := make(map[string]int)
 	for _, s := range sessions {
 		for server, count := range s.ToolCallsByServer {
@@ -134,6 +162,10 @@ func formatServerTable(sessions []SessionSummaryRecord) string {
 		servers = append(servers, s)
 	}
 	sort.Strings(servers)
+	// Apply limit to the aggregated server list.
+	if limit > 0 && len(servers) > limit {
+		servers = servers[:limit]
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOOL_CALLS"))

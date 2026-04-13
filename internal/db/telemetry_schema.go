@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -82,6 +83,24 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("ensure telemetry schema: %w", err)
+		}
+	}
+
+	// Migrate existing workspaces: add context-window columns when the table
+	// was created by an older version. SQLite supports ADD COLUMN but not
+	// IF NOT EXISTS; we catch the "duplicate column name" error gracefully.
+	alterStmts := []string{
+		`ALTER TABLE telemetry_sessions ADD COLUMN peak_utilization REAL`,
+		`ALTER TABLE telemetry_sessions ADD COLUMN remaining_capacity INTEGER`,
+		`ALTER TABLE telemetry_sessions ADD COLUMN depletion_rate REAL`,
+		`ALTER TABLE telemetry_sessions ADD COLUMN max_context_tokens INTEGER`,
+	}
+	for _, stmt := range alterStmts {
+		if _, err := db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("migrate telemetry schema: %w", err)
+			}
+			// Column already exists in an existing workspace — skip silently.
 		}
 	}
 	return nil

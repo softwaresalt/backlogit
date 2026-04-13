@@ -1,4 +1,5 @@
 ---
+name: safety-modes
 description: "Interactive safety workflows for elevated-risk work including careful, freeze-scope, and investigate-first modes"
 ---
 
