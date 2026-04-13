@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // telemetryMarker is the log-line segment that identifies a telemetry event.
@@ -67,6 +68,16 @@ func (p *CopilotCLIParser) Parse(r io.Reader, emit func(TelemetryEvent) error) e
 		if err != nil {
 			slog.Debug("skipping malformed telemetry line", "err", err, "line", line)
 			continue
+		}
+		// Extract timestamp from the log-line prefix (everything before [telemetry]).
+		// Expected format: "2026-04-09T12:34:56.789Z ... [telemetry] {...}"
+		// The first whitespace-delimited token is the RFC3339Nano timestamp.
+		if prefix := strings.TrimSpace(line[:idx]); prefix != "" {
+			if fields := strings.Fields(prefix); len(fields) > 0 {
+				if ts, parseErr := time.Parse(time.RFC3339Nano, fields[0]); parseErr == nil {
+					event.Timestamp = ts
+				}
+			}
 		}
 		if err := emit(event); err != nil {
 			return fmt.Errorf("telemetry emit: %w", err)

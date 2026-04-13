@@ -25,6 +25,11 @@ type SessionSummaryRecord struct {
 	CompletedTasks    []string       `json:"completed_tasks"`
 	TokensPerTask     *float64       `json:"tokens_per_task"`
 	CompactionCount   int            `json:"compaction_count"`
+	// Context window metrics — nil when model calls are unavailable.
+	PeakUtilization   *float64 `json:"peak_utilization,omitempty"`
+	RemainingCapacity *int     `json:"remaining_capacity,omitempty"`
+	DepletionRate     *float64 `json:"depletion_rate,omitempty"`
+	MaxContextTokens  *int     `json:"max_context_tokens,omitempty"`
 }
 
 // ToolUsageRecord is the typed JSONL record for per-server tool call counts

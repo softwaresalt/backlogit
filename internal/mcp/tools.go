@@ -1527,7 +1527,7 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 		copilotPath = filepath.Join(ws.RootPath, ".copilot")
 	}
 
-	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB)
+	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, telemetry.HarvestOptions{})
 	if err != nil {
 		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
 			return ValidationFailed(fmt.Sprintf("telemetry source missing — run 'backlogit mcp' from a workspace that contains a .copilot directory: %v", err)), nil

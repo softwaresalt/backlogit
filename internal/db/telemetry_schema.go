@@ -30,6 +30,11 @@ type rawTelemetryRecord struct {
 	CompletedTasks    []string       `json:"completed_tasks"`
 	TokensByModel     map[string]int `json:"tokens_by_model"`
 	ToolCallsByServer map[string]int `json:"tool_calls_by_server"`
+	// Context window fields (031-F / 031.003-T)
+	PeakUtilization   *float64 `json:"peak_utilization,omitempty"`
+	RemainingCapacity *int     `json:"remaining_capacity,omitempty"`
+	DepletionRate     *float64 `json:"depletion_rate,omitempty"`
+	MaxContextTokens  *int     `json:"max_context_tokens,omitempty"`
 	// tool_usage fields
 	ServerName string `json:"server_name"`
 	ToolName   string `json:"tool_name"`
@@ -58,7 +63,11 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 			tool_calls        INTEGER NOT NULL DEFAULT 0,
 			tokens_per_task   REAL,
 			compaction_count  INTEGER NOT NULL DEFAULT 0,
-			harvested_at      TEXT    NOT NULL DEFAULT ''
+			harvested_at      TEXT    NOT NULL DEFAULT '',
+			peak_utilization  REAL,
+			remaining_capacity INTEGER,
+			depletion_rate    REAL,
+			max_context_tokens INTEGER
 		)`,
 		`CREATE TABLE IF NOT EXISTS telemetry_tool_usage (
 			session_id      TEXT    NOT NULL,
@@ -133,12 +142,14 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 			_, err = tx.ExecContext(ctx,
 				`INSERT OR REPLACE INTO telemetry_sessions
 					(session_id, branch, repository, total_tokens, prompt_tokens, completion_tokens,
-					 cached_tokens, model_calls, tool_calls, tokens_per_task, compaction_count, harvested_at)
-				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+					 cached_tokens, model_calls, tool_calls, tokens_per_task, compaction_count, harvested_at,
+					 peak_utilization, remaining_capacity, depletion_rate, max_context_tokens)
+				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				rec.SessionID, rec.Branch, rec.Repository,
 				rec.TotalTokens, rec.PromptTokens, rec.CompletionTokens,
 				rec.CachedTokens, rec.ModelCalls, rec.ToolCalls,
 				rec.TokensPerTask, rec.CompactionCount, harvestedAt,
+				rec.PeakUtilization, rec.RemainingCapacity, rec.DepletionRate, rec.MaxContextTokens,
 			)
 			if err != nil {
 				return fmt.Errorf("insert session_summary %q: %w", rec.SessionID, err)
