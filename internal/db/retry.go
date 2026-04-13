@@ -16,9 +16,9 @@ var defaultRetryDelays = []time.Duration{
 	4 * time.Second,
 }
 
-// RetryWrite calls fn, retrying on SQLITE_BUSY errors using the default backoff
-// schedule (1 s / 2 s / 4 s, up to 3 retries). ctx cancellation stops further
-// retries immediately and returns ctx.Err().
+// RetryWrite calls fn, retrying on SQLITE_BUSY and SQLITE_LOCKED errors using
+// the default backoff schedule (1 s / 2 s / 4 s, up to 3 retries). ctx
+// cancellation stops further retries immediately and returns ctx.Err().
 func RetryWrite(ctx context.Context, fn func() error) error {
 	return RetryWriteWithDelays(ctx, fn, defaultRetryDelays)
 }
@@ -51,13 +51,15 @@ func RetryWriteWithDelays(ctx context.Context, fn func() error, delays []time.Du
 	}
 }
 
-// isSQLiteBusy reports whether err represents an SQLITE_BUSY condition. The
-// check is string-based so it works regardless of how the driver wraps the
-// error code.
+// isSQLiteBusy reports whether err represents a retryable SQLite lock
+// condition. The check is string-based so it works regardless of how the
+// driver wraps the error code.
 func isSQLiteBusy(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(msg, "database is locked")
+	return strings.Contains(msg, "SQLITE_BUSY") ||
+		strings.Contains(msg, "SQLITE_LOCKED") ||
+		strings.Contains(msg, "database is locked")
 }

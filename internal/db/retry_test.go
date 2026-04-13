@@ -102,6 +102,7 @@ func TestIsSQLiteBusy(t *testing.T) {
 		{"nil", nil, false},
 		{"other error", errors.New("some random error"), false},
 		{"SQLITE_BUSY", errors.New("SQLITE_BUSY"), true},
+		{"SQLITE_LOCKED", errors.New("SQLITE_LOCKED: shared-cache lock"), true},
 		{"database is locked", errors.New("database is locked"), true},
 		{"mixed case SQLITE_BUSY with context", errors.New("step: SQLITE_BUSY (5)"), true},
 	}

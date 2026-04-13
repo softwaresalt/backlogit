@@ -169,10 +169,9 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 			return tx.Commit()
 		})
 		if batchErr != nil {
-			slog.Warn("rehydration batch failed, index may be partial", "batch_offset", i, "error", batchErr)
-		} else {
-			count += batchCount
+			return count, fmt.Errorf("rehydration batch at offset %d: %w", i, batchErr)
 		}
+		count += batchCount
 	}
 
 	stashCount, stashErr := rehydrateStash(ctx, workspacePath, db, harvestedStash)
