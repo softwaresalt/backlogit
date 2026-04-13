@@ -1,10 +1,12 @@
 package telemetry
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -22,22 +24,42 @@ type HarvestResult struct {
 }
 
 // HarvestTelemetry is the top-level harvest orchestrator. It:
-//  1. Parses process logs from copilotPath (.copilot/logs/)
-//  2. Loads session metadata from copilotPath (.copilot/session-state/, session-store.db)
-//  3. Correlates events with backlogit task completions via per-item logs in workspacePath/.backlogit/logs/
-//  4. Attributes tool calls to MCP servers via the attribution registry
-//  5. Writes typed records to workspacePath/.backlogit/telemetry-sessions.jsonl
-//  6. Triggers RehydrateTelemetry to rebuild SQLite telemetry tables
+//  1. Loads (or creates) the harvest checkpoint from workspacePath/.backlogit/
+//  2. Parses process logs from copilotPath (.copilot/logs/) starting at saved offsets
+//  3. Loads session metadata from copilotPath (.copilot/session-state/, session-store.db)
+//  4. Correlates events with backlogit task completions via per-item logs in workspacePath/.backlogit/logs/
+//  5. Computes context window utilisation per session
+//  6. Attributes tool calls to MCP servers via the attribution registry
+//  7. Merges new sessions with prior JSONL records (incremental) or replaces (Force)
+//  8. Writes typed records to workspacePath/.backlogit/telemetry-sessions.jsonl
+//  9. Triggers RehydrateTelemetry to rebuild SQLite telemetry tables
+// 10. Saves the updated checkpoint for the next run
 //
-// Full re-harvest in v1; no incremental checkpointing (Plan Review F2).
+// When opts.Force is false and a checkpoint exists, only new log data (by byte
+// offset) is parsed and merged with existing JSONL. When opts.Force is true,
+// all logs are re-processed from offset 0 and the JSONL is overwritten.
+// When opts.Since is set, events whose timestamp precedes that value are
+// excluded; events with unparseable timestamps are always included.
+//
 // Returns ErrTelemetrySourceMissing when copilotPath does not exist.
-func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sqlDB *sql.DB) (HarvestResult, error) {
+func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sqlDB *sql.DB, opts HarvestOptions) (HarvestResult, error) {
 	if _, err := os.Stat(copilotPath); os.IsNotExist(err) {
 		return HarvestResult{}, fmt.Errorf("copilot directory not found: %w", errors.ErrTelemetrySourceMissing)
 	}
 
-	// Parse all *.log files from copilotPath/logs/.
-	events, err := parseLogFiles(filepath.Join(copilotPath, "logs"))
+	// Load checkpoint (zero on missing/corrupt, or when Force is set).
+	cp := &HarvestCheckpoint{FileOffsets: make(map[string]int64)}
+	if !opts.Force {
+		var loadErr error
+		cp, loadErr = LoadCheckpoint(workspacePath)
+		if loadErr != nil {
+			slog.Warn("failed to load harvest checkpoint; treating as fresh", "err", loadErr)
+			cp = &HarvestCheckpoint{FileOffsets: make(map[string]int64)}
+		}
+	}
+
+	// Parse new bytes from log files starting at checkpoint offsets.
+	events, newOffsets, err := parseLogFiles(filepath.Join(copilotPath, "logs"), cp, opts)
 	if err != nil {
 		return HarvestResult{}, fmt.Errorf("parse log files: %w", err)
 	}
@@ -48,10 +70,21 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		slog.Warn("session metadata load partial failure", "err", err)
 	}
 
-	// Correlate events into per-session summaries.
-	summaries, err := Correlate(ctx, events, metas, workspacePath)
+	// Correlate events into per-session summaries for new events only.
+	newSummaries, err := Correlate(ctx, events, metas, workspacePath)
 	if err != nil {
 		return HarvestResult{}, fmt.Errorf("correlate telemetry: %w", err)
+	}
+
+	// Compute context window metrics for each new session summary.
+	modelCallsBySession := groupModelCallsBySession(events)
+	for i, s := range newSummaries {
+		calls := modelCallsBySession[s.SessionID]
+		var compactions []CompactionEvent
+		if meta, ok := metas[s.SessionID]; ok {
+			compactions = meta.CompactionEvents
+		}
+		newSummaries[i].ContextWindow = ComputeContextMetrics(calls, compactions)
 	}
 
 	// Compute per-(session, server, tool) call counts and durations.
@@ -69,7 +102,7 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		toolStats[key] = s
 	}
 
-	// Derive per-session server call counts from toolStats (O(T), not O(S×E)).
+	// Derive per-session server call counts from toolStats.
 	serverCallsPerSession := make(map[string]map[string]int)
 	for key, stat := range toolStats {
 		if serverCallsPerSession[key.sessionID] == nil {
@@ -78,10 +111,18 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		serverCallsPerSession[key.sessionID][key.serverName] += stat.count
 	}
 
-	// Write typed records to telemetry-sessions.jsonl.
-	harvestedAt := time.Now().UTC()
+	// Read prior JSONL for incremental merge, excluding sessions we just re-processed.
 	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
-	if err := writeTelemetryJSONL(jsonlPath, summaries, toolStats, serverCallsPerSession, harvestedAt); err != nil {
+	var priorSessions []SessionSummaryRecord
+	var priorTools []ToolUsageRecord
+	if !opts.Force {
+		excludeIDs := sessionIDSet(newSummaries)
+		priorSessions, priorTools, _ = readSessionJSONL(jsonlPath, excludeIDs)
+	}
+
+	// Write JSONL: prior records preserved, new records appended.
+	harvestedAt := time.Now().UTC()
+	if err := writeTelemetryJSONL(jsonlPath, newSummaries, toolStats, serverCallsPerSession, harvestedAt, priorSessions, priorTools); err != nil {
 		return HarvestResult{}, fmt.Errorf("write telemetry-sessions.jsonl: %w", err)
 	}
 
@@ -93,43 +134,133 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		return HarvestResult{}, fmt.Errorf("rehydrate telemetry: %w", err)
 	}
 
+	// Save checkpoint (even after Force — so the next run starts from current EOF).
+	cp.FileOffsets = newOffsets
+	cp.LastHarvest = harvestedAt
+	if saveErr := SaveCheckpoint(workspacePath, cp); saveErr != nil {
+		slog.Warn("failed to save harvest checkpoint", "err", saveErr)
+	}
+
+	// Total tokens = new sessions + preserved prior sessions (for idempotency).
 	totalTokens := 0
-	for _, s := range summaries {
+	for _, s := range newSummaries {
 		totalTokens += s.TotalTokens
+	}
+	for _, r := range priorSessions {
+		totalTokens += r.TotalTokens
 	}
 
 	return HarvestResult{
-		SessionsHarvested: len(summaries),
-		ToolCallsIndexed:  len(toolStats),
+		SessionsHarvested: len(newSummaries) + len(priorSessions),
+		ToolCallsIndexed:  len(toolStats) + len(priorTools),
 		TotalTokens:       totalTokens,
 	}, nil
 }
 
 // parseLogFiles globs *.log files from logsDir and parses each with CopilotCLIParser.
-func parseLogFiles(logsDir string) ([]TelemetryEvent, error) {
+// When opts.Force is false, each file is read starting from cp.FileOffsets[basename].
+// Returns the parsed events and a map of new byte offsets (basename → EOF position).
+func parseLogFiles(logsDir string, cp *HarvestCheckpoint, opts HarvestOptions) ([]TelemetryEvent, map[string]int64, error) {
 	pattern := filepath.Join(logsDir, "*.log")
 	logFiles, err := filepath.Glob(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("glob log files: %w", err)
+		return nil, nil, fmt.Errorf("glob log files: %w", err)
 	}
 	parser := &CopilotCLIParser{}
 	var events []TelemetryEvent
+	newOffsets := make(map[string]int64, len(logFiles))
+
 	for _, logPath := range logFiles {
+		base := filepath.Base(logPath)
+		startOffset := int64(0)
+		if !opts.Force {
+			startOffset = cp.FileOffsets[base]
+		}
+
 		f, err := os.Open(logPath)
 		if err != nil {
 			slog.Warn("failed to open log file", "path", logPath, "err", err)
 			continue
 		}
+
+		if startOffset > 0 {
+			if _, err := f.Seek(startOffset, io.SeekStart); err != nil {
+				slog.Warn("failed to seek log file", "path", logPath, "err", err)
+				f.Close()
+				continue
+			}
+		}
+
 		parseErr := parser.Parse(f, func(e TelemetryEvent) error {
+			// Apply --since filter: skip events with a known timestamp that
+			// precedes the cutoff. Zero-value timestamps are always included.
+			if opts.Since != nil && !e.Timestamp.IsZero() && e.Timestamp.Before(*opts.Since) {
+				return nil
+			}
 			events = append(events, e)
 			return nil
 		})
+
+		// Record the current EOF as the new offset for this file.
+		if eofOffset, seekErr := f.Seek(0, io.SeekEnd); seekErr == nil {
+			newOffsets[base] = eofOffset
+		}
 		f.Close()
 		if parseErr != nil {
 			slog.Warn("log parse error", "path", logPath, "err", parseErr)
 		}
 	}
-	return events, nil
+	return events, newOffsets, nil
+}
+
+// readSessionJSONL reads session_summary and tool_usage records from the JSONL,
+// skipping records whose session_id is in excludeIDs (nil map includes all).
+// Returns nil slices (not an error) when the file does not exist.
+func readSessionJSONL(jsonlPath string, excludeIDs map[string]bool) ([]SessionSummaryRecord, []ToolUsageRecord, error) {
+	f, err := os.Open(jsonlPath)
+	if os.IsNotExist(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("open telemetry JSONL: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	var sessions []SessionSummaryRecord
+	var tools []ToolUsageRecord
+
+	for scanner.Scan() {
+		raw := scanner.Bytes()
+		if len(raw) == 0 {
+			continue
+		}
+		var hdr struct {
+			RecordType string `json:"record_type"`
+			SessionID  string `json:"session_id"`
+		}
+		if err := json.Unmarshal(raw, &hdr); err != nil {
+			continue
+		}
+		if excludeIDs[hdr.SessionID] {
+			continue
+		}
+		switch hdr.RecordType {
+		case "session_summary":
+			var r SessionSummaryRecord
+			if err := json.Unmarshal(raw, &r); err == nil {
+				sessions = append(sessions, r)
+			}
+		case "tool_usage":
+			var r ToolUsageRecord
+			if err := json.Unmarshal(raw, &r); err == nil {
+				tools = append(tools, r)
+			}
+		}
+	}
+	return sessions, tools, scanner.Err()
 }
 
 // loadSessionMetas merges compaction events and session-store.db into a unified metas map.
@@ -178,6 +309,7 @@ type toolKey struct {
 type toolStat struct{ count, durMs int }
 
 // writeTelemetryJSONL writes session summary and tool usage records to the JSONL file.
+// Prior records (from incremental merge) are written first, followed by new records.
 // Uses a temp-file-then-rename atomic write to prevent a corrupt file on crash.
 func writeTelemetryJSONL(
 	jsonlPath string,
@@ -185,6 +317,8 @@ func writeTelemetryJSONL(
 	toolStats map[toolKey]toolStat,
 	serverCallsPerSession map[string]map[string]int,
 	harvestedAt time.Time,
+	priorSessions []SessionSummaryRecord,
+	priorTools []ToolUsageRecord,
 ) error {
 	tmpPath := jsonlPath + ".tmp"
 	f, err := os.Create(tmpPath)
@@ -195,6 +329,16 @@ func writeTelemetryJSONL(
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 
+	// Write prior session summaries unchanged.
+	for _, rec := range priorSessions {
+		if err := enc.Encode(rec); err != nil {
+			f.Close()
+			os.Remove(tmpPath)
+			return fmt.Errorf("encode prior session summary %q: %w", rec.SessionID, err)
+		}
+	}
+
+	// Write new session summaries with context window fields.
 	for _, s := range summaries {
 		rec := SessionSummaryRecord{
 			RecordType:        "session_summary",
@@ -214,6 +358,12 @@ func writeTelemetryJSONL(
 			TokensPerTask:     s.TokensPerTask,
 			CompactionCount:   len(s.CompactionEvents),
 		}
+		if cw := s.ContextWindow; cw != nil {
+			rec.PeakUtilization = &cw.PeakUtilization
+			rec.RemainingCapacity = &cw.RemainingCapacity
+			rec.DepletionRate = &cw.DepletionRate
+			rec.MaxContextTokens = &cw.MaxContextTokens
+		}
 		if err := enc.Encode(rec); err != nil {
 			f.Close()
 			os.Remove(tmpPath)
@@ -221,6 +371,16 @@ func writeTelemetryJSONL(
 		}
 	}
 
+	// Write prior tool usage records unchanged.
+	for _, rec := range priorTools {
+		if err := enc.Encode(rec); err != nil {
+			f.Close()
+			os.Remove(tmpPath)
+			return fmt.Errorf("encode prior tool usage %q/%q: %w", rec.SessionID, rec.ToolName, err)
+		}
+	}
+
+	// Write new tool usage records.
 	for key, stat := range toolStats {
 		rec := ToolUsageRecord{
 			RecordType:  "tool_usage",
@@ -247,4 +407,25 @@ func writeTelemetryJSONL(
 		return fmt.Errorf("commit %s: %w", jsonlPath, err)
 	}
 	return nil
+}
+
+// groupModelCallsBySession groups model call events by their session ID.
+func groupModelCallsBySession(events []TelemetryEvent) map[string][]ModelCall {
+	result := make(map[string][]ModelCall)
+	for _, e := range events {
+		if e.Kind == EventKindModelCall && e.ModelCall != nil {
+			sid := e.ModelCall.SessionID
+			result[sid] = append(result[sid], *e.ModelCall)
+		}
+	}
+	return result
+}
+
+// sessionIDSet returns a set of session IDs for fast membership testing.
+func sessionIDSet(summaries []SessionSummary) map[string]bool {
+	set := make(map[string]bool, len(summaries))
+	for _, s := range summaries {
+		set[s.SessionID] = true
+	}
+	return set
 }

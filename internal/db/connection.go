@@ -10,6 +10,19 @@ import (
 	_ "modernc.org/sqlite" // SQLite driver registration
 )
 
+// abs resolves dbPath to an absolute path so that the file: URI always
+// references the intended location.  Without this, a relative path like
+// ".backlogit/backlogit.db" gets a leading "/" prepended and becomes
+// "/.backlogit/backlogit.db", which on Windows resolves to the drive root
+// (e.g. D:\.backlogit\backlogit.db) instead of the working directory.
+func abs(dbPath string) (string, error) {
+	p, err := filepath.Abs(dbPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
+	}
+	return p, nil
+}
+
 // Open returns a configured *sql.DB backed by the SQLite file at dbPath.
 //
 // PRAGMAs are injected via DSN query parameters so the driver applies them on
@@ -25,6 +38,13 @@ import (
 // ceiling for a single-user tool; raising it further would add contention on the
 // write lock without meaningful throughput gain.  (F-19)
 func Open(dbPath string) (*sql.DB, error) {
+	// Resolve to absolute so that the file: URI always references the
+	// intended location regardless of the caller's working directory.
+	absPath, err := abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build a canonical file: URI accepted by modernc.org/sqlite v1.34.0.
 	//
 	// filepath.ToSlash on Windows converts "C:\path\db" → "C:/path/db".
@@ -33,7 +53,7 @@ func Open(dbPath string) (*sql.DB, error) {
 	// directory instead of the intended location.  Prepend "/" to produce the
 	// triple-slash form "file:///C:/path/db" that SQLite treats as absolute on
 	// all platforms.
-	slashPath := filepath.ToSlash(dbPath)
+	slashPath := filepath.ToSlash(absPath)
 	if !strings.HasPrefix(slashPath, "/") {
 		slashPath = "/" + slashPath
 	}

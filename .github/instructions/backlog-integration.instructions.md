@@ -1,90 +1,126 @@
 ---
-description: "Backlog tool integration instructions for the installed backlogit workflow surface"
+description: "Backlog tool integration instructions — teaches agents how to interact with the installed backlog management tool using abstracted operations"
 applyTo: '**'
 ---
 
 # Backlog Integration Instructions
 
-This workspace uses **backlogit** for structured backlog management. Use the
-backlogit MCP and CLI surface for task tracking instead of creating ad hoc task
-lists or standalone markdown trackers.
+This workspace uses **backlogit** for structured backlog management. All agents MUST use the backlog tool for task tracking rather than creating ad-hoc markdown files or static task lists.
 
-## Tool configuration
+## Tool Configuration
 
 | Setting | Value |
-|---|---|
+|---------|-------|
 | Tool | backlogit |
 | Directory | `.backlogit/` |
 | Access | both |
 | Registry | `.autoharness/backlog-registry.yaml` |
 
-## Core operations
+## Operation Reference
 
-| Operation | MCP tool | CLI command | Purpose |
-|---|---|---|---|
-| Create task | `backlogit_create_item` | `backlogit add --type <artifact_type> --title <title>` | Create a new artifact |
+Use these operations for all backlog interactions. The operation names are abstract — the actual tool names and parameters are mapped through the backlog registry.
+
+### Core Operations (All Tools)
+
+| Operation | MCP Tool | CLI Command | Purpose |
+|-----------|----------|-------------|---------|
+| Create task | `backlogit_create_item` | `backlogit add --type <artifact_type> --title <title>` | Create a new task/artifact |
 | List tasks | `backlogit_list_items` | `backlogit list` | List tasks with filters |
 | Get task | `backlogit_get_item` | `backlogit get <id>` | Retrieve task details |
 | Update task | `backlogit_update_item` | `backlogit update <id>` | Modify task fields |
 | Move task | `backlogit_move_item` | `backlogit move <id> --status <status>` | Change task status |
-| Search tasks | `backlogit_search_items` | `backlogit search <query>` | Full-text search |
-| Complete task | `backlogit_move_item` | `backlogit move <id> --status done` | Mark work complete |
+| Search | `backlogit_search_items` | `backlogit search <query>` | Full-text search |
+| Complete | `backlogit_move_item` | `backlogit move <id> --status done` | Mark task complete |
 
-## Status mapping
+### Status Values
 
-| Abstract status | backlogit value |
-|---|---|
-| To Do | `queued` |
-| In Progress | `active` |
+| Abstract Status | Tool-Specific Value |
+|----------------|---------------------|
+| Queued | `queued` |
+| Active | `active` |
 | Done | `done` |
 | Blocked | `blocked` |
 
-## Extended operations
+### Extended Operations (Tool-Dependent)
 
-| Operation | MCP tool | CLI command |
-|---|---|---|
-| Query state | `backlogit_query_sql` | `backlogit query <sql>` |
-| Sync index | `backlogit_sync_index` | `backlogit sync` |
-| Append comment | `backlogit_append_comment` | not applicable |
-| Save memory | `backlogit_save_memory` | not applicable |
-| Create checkpoint | `backlogit_create_checkpoint` | not applicable |
-| Get queue | `backlogit_get_queue` | `backlogit queue view` |
-| Add dependency | `backlogit_add_dependency` | `backlogit dep add <id> <depends_on> --type <dep_type>` |
-| Remove dependency | `backlogit_remove_dependency` | `backlogit dep remove <id> <depends_on>` |
-| Get dependencies | `backlogit_get_dependencies` | `backlogit dep list <id>` |
-| Track commit | `backlogit_track_commit` | `backlogit update <id> --commit <sha>` |
+| Operation | MCP Tool | CLI Command | Purpose |
+|-----------|----------|-------------|---------|
+| Query state | `backlogit_query_sql` | `backlogit query <sql>` | Run read-only SQL against the index |
+| Sync index | `backlogit_sync_index` | `backlogit sync` | Rebuild the query index from Markdown files |
+| Append comment | `backlogit_append_comment` | N/A | Append execution notes to a task |
+| Save memory | `backlogit_save_memory` | N/A | Persist agent continuity state |
+| Create checkpoint | `backlogit_create_checkpoint` | N/A | Save full session checkpoint |
+| Get queue | `backlogit_get_queue` | `backlogit queue view` | List ready work in execution order |
+| Add dependency | `backlogit_add_dependency` | `backlogit dep add <item> <depends_on> --type <dep_type>` | Create task dependency |
+| Remove dependency | `backlogit_remove_dependency` | `backlogit dep remove <item> <depends_on>` | Remove task dependency |
+| Get dependencies | `backlogit_get_dependencies` | `backlogit dep list <id>` | Inspect dependency graph |
+| Track commit | `backlogit_track_commit` | `backlogit update <id> --commit <sha>` | Associate commit with task |
 
-## Preferred workflow patterns
+## Agent Workflow Patterns
 
-### Create work
+### Creating a Task
 
-When creating a work item, prefer the MCP tool and provide explicit type, title,
-status, and description. Use `parent_id` when the artifact belongs under an
-existing feature, task, or review lineage.
+```text
+Call backlogit_create_item with:
+  title: "Task title"
+  artifact_type: "task"
+  status: "queued"
+  description: "Task description"
+  parent_id: "parent-task-id"  (if applicable)
+  labels: "label1,label2"      (if applicable)
+```
 
-### Claim work
+### Claiming a Task (Status → Active)
 
-Move an item from `queued` to `active` rather than silently assuming ownership.
+```text
+Call backlogit_move_item with:
+  id: "task-id"
+  status: "active"
+```
 
-### Complete work
+### Completing a Task
 
-When work is done, move it to `done` and record commit associations when the
-change resulted in a real commit.
+```text
+Call backlogit_move_item with:
+  id: "task-id"
+  status: "done"
+```
 
-### Inspect ready work
+### Listing Ready Tasks
 
-Use queue-aware operations or targeted SQL rather than scanning many markdown
-files in `.backlogit/queue/`.
+```text
+Call backlogit_list_items with:
+  status: "queued"
+```
 
-### Preserve traceability
+### Adding a Label
 
-When the registry advertises support for comments, checkpoints, memory, or
-commit tracking, prefer those operations over free-form notes.
+```text
+Call backlogit_update_item with:
+  id: "task-id"
+  labels: "existing-label,harness-ready"
+```
+
+## Advanced Patterns When Supported
+
+If the registry advertises advanced features, prefer them over ad hoc workarounds:
+
+* **Token-efficient lookup** — use the query operation when `features.sql_query` is true
+* **Ready-work selection** — use queue-aware operations when `features.queue` is true
+* **Dependency reasoning** — use dependency operations when `features.dependencies` is true
+* **Agent continuity** — use memory and checkpoint operations when `features.memory` or `features.checkpoints` are true
+* **Traceability** — use comment or commit-tracking operations when `features.comments` or `features.commit_tracking` are true
+* **Index freshness** — use sync / rehydration operations when the workspace was edited outside normal mutation tools
+
+If a tool-specific overlay instruction file is installed (for example,
+`.github/instructions/backlogit.instructions.md`), follow it in addition to this generic guide.
 
 ## Rules
 
-1. Always use backlogit for backlog state changes when the tool surface supports the action.
-2. Prefer MCP tools over CLI commands when both are available because the MCP surface returns structured results.
-3. Use queue and dependency operations for sequencing work instead of hiding critical order only in prose.
-4. Refresh the backlog index after out-of-band edits before relying on SQL or queue results.
-5. Follow `.github/instructions/backlogit.instructions.md` in addition to this generic integration guide when you need backlogit-specific workflow behavior.
+1. **Always use the backlog tool** for task management. Do not create markdown task files outside the `.backlogit/` directory.
+2. **Use abstract status values** mapped through the registry, not hardcoded strings.
+3. **Check the registry** (`.autoharness/backlog-registry.yaml`) for the exact field names and operation parameters when unsure.
+4. **Prefer MCP tools** over CLI when both are available — MCP returns structured JSON, CLI returns human-readable text.
+5. **Feature gating**: Before calling an extended operation, verify the feature is supported by checking the `features` section in the registry.
+
+Generated by autoharness | Template: backlog-integration.instructions.md.tmpl

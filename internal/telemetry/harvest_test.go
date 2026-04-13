@@ -44,7 +44,7 @@ func TestHarvestTelemetry_ProducesSessionSummaries(t *testing.T) {
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
-	result, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB)
+	result, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.SessionsHarvested, "expected 2 sessions from sample log")
 	assert.Greater(t, result.TotalTokens, 0)
@@ -62,10 +62,10 @@ func TestHarvestTelemetry_ReHarvestIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
-	r1, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB)
+	r1, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
 
-	r2, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB)
+	r2, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, r1.SessionsHarvested, r2.SessionsHarvested, "re-harvest should yield same session count")
@@ -80,7 +80,7 @@ func TestHarvestTelemetry_MissingCopilotDir(t *testing.T) {
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
-	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, "/nonexistent/.copilot", sqliteDB)
+	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, "/nonexistent/.copilot", sqliteDB, telemetry.HarvestOptions{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errors.ErrTelemetrySourceMissing)
 }

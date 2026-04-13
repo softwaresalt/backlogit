@@ -49,6 +49,49 @@ func IndexEvent(ctx context.Context, database *sql.DB, logsDir string, event eve
 	return InsertItemLogEntry(ctx, database, filepath.ToSlash(logPath), event)
 }
 
+// indexEventTx is the transaction-scoped variant of IndexEvent used during
+// bulk rehydration.  Batching all log index writes into a single transaction
+// avoids per-event disk syncs that make rehydration extremely slow.
+func indexEventTx(ctx context.Context, tx *sql.Tx, logsDir string, event events.Event) error {
+	if event.ItemID == "" {
+		return fmt.Errorf("index event: item_id is required")
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+
+	logPath, err := filepath.Rel(filepath.Dir(logsDir), events.LogPathForItem(logsDir, event.ItemID))
+	if err != nil {
+		return fmt.Errorf("index event: resolve log path: %w", err)
+	}
+	slashPath := filepath.ToSlash(logPath)
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO item_logs (item_id, log_path, updated_at)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(item_id) DO UPDATE SET
+		   log_path = excluded.log_path,
+		   updated_at = excluded.updated_at`,
+		event.ItemID, slashPath, event.Timestamp.Format(time.RFC3339Nano),
+	); err != nil {
+		return fmt.Errorf("upsert item log %s: %w", event.ItemID, err)
+	}
+	deltaJSON, jsonErr := json.Marshal(event.Delta)
+	if jsonErr != nil {
+		return fmt.Errorf("marshal event delta: %w", jsonErr)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR IGNORE INTO item_log_entries
+			(item_id, log_path, timestamp, actor, event_type, content, delta_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		event.ItemID, slashPath,
+		event.Timestamp.Format(time.RFC3339Nano),
+		event.Actor, event.EventType, eventContent(event), string(deltaJSON),
+	); err != nil {
+		return fmt.Errorf("insert item log entry for %s: %w", event.ItemID, err)
+	}
+	return nil
+}
+
 // UpsertItemLog stores the item-to-log-file relationship.
 func UpsertItemLog(ctx context.Context, database *sql.DB, itemID, logPath string, updatedAt time.Time) error {
 	_, err := database.ExecContext(ctx,

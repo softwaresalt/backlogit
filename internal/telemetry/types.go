@@ -7,7 +7,10 @@
 // to Principle IV (Workspace Containment). All writes target .backlogit/.
 package telemetry
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
 // EventKind identifies the type of a telemetry event.
 type EventKind string
@@ -42,10 +45,16 @@ type ToolCall struct {
 
 // TelemetryEvent is a union of model and tool telemetry events parsed from a
 // Copilot CLI process log. Exactly one of ModelCall or ToolCall is set.
+// Timestamp is populated from the log-line prefix (e.g. "2026-04-09T00:00:02.000Z")
+// and used for --since filtering. It is zero when the prefix is absent or
+// unparseable.
 type TelemetryEvent struct {
 	Kind      EventKind  `json:"kind"`
 	ModelCall *ModelCall `json:"model_call,omitempty"`
 	ToolCall  *ToolCall  `json:"tool_call,omitempty"`
+	// Timestamp is the wall-clock time extracted from the log-line prefix.
+	// Zero when unavailable or malformed.
+	Timestamp time.Time `json:"timestamp,omitempty"`
 }
 
 // CompactionEvent holds data from a session.compaction_complete event in a
@@ -87,6 +96,9 @@ type SessionSummary struct {
 	CompletedTasks   []string          `json:"completed_tasks"`
 	TokensPerTask    *float64          `json:"tokens_per_task"`
 	CompactionEvents []CompactionEvent `json:"compaction_events"`
+	// ContextWindow holds derived context utilisation for this session.
+	// Nil when no model calls are recorded or model is unknown.
+	ContextWindow *ContextWindowMetrics `json:"context_window,omitempty"`
 }
 
 // LogParser is the streaming interface for parsing telemetry log sources.

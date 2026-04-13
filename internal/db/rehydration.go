@@ -244,7 +244,17 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 		return nil
 	}
 
-	return filepath.WalkDir(logsDir, func(path string, d fs.DirEntry, walkErr error) error {
+	// Collect all log events first, then index them in a single transaction.
+	// Without batching, each IndexEvent call auto-commits with a disk sync,
+	// causing O(n) fsyncs that make rehydration extremely slow on workspaces
+	// with hundreds of log entries.
+	type logEvent struct {
+		event events.Event
+		path  string
+	}
+	var allEvents []logEvent
+
+	if walkErr := filepath.WalkDir(logsDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			slog.Debug("log walk error, skipping", "path", path, "error", walkErr)
 			return nil
@@ -259,16 +269,39 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 			slog.Warn("failed to parse item log", "path", path, "error", err)
 			return nil
 		}
-		if len(eventsForItem) == 0 {
-			return nil
-		}
 		for _, event := range eventsForItem {
-			if err := IndexEvent(ctx, database, logsDir, event); err != nil {
-				slog.Warn("failed to index item log event", "item_id", event.ItemID, "path", path, "error", err)
-			}
+			allEvents = append(allEvents, logEvent{event: event, path: path})
 		}
 		return nil
-	})
+	}); walkErr != nil {
+		return walkErr
+	}
+
+	if len(allEvents) == 0 {
+		return nil
+	}
+
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin log rehydration transaction: %w", err)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	for _, le := range allEvents {
+		if err := indexEventTx(ctx, tx, logsDir, le.event); err != nil {
+			slog.Warn("failed to index item log event", "item_id", le.event.ItemID, "path", le.path, "error", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit log rehydration: %w", err)
+	}
+	tx = nil
+	return nil
 }
 
 func parseItemLogFile(path, itemID string) ([]events.Event, error) {

@@ -393,6 +393,8 @@ func (s *Server) RegisterTools() {
 		mcplib.NewTool("backlogit_telemetry_harvest",
 			mcplib.WithDescription("Parse Copilot CLI logs, correlate token usage by session and tool, write telemetry-sessions.jsonl, and rehydrate telemetry tables"),
 			mcplib.WithString("copilot_path", mcplib.Description("Path to the .copilot directory (defaults to auto-detect)")),
+			mcplib.WithString("since", mcplib.Description("Exclude log events before this RFC3339 timestamp (e.g. 2026-04-01T00:00:00Z). Defaults to the saved checkpoint.")),
+			mcplib.WithBoolean("force", mcplib.Description("Re-process all logs from the beginning, ignoring the saved checkpoint")),
 		),
 		s.handleTelemetryHarvest,
 	)
@@ -1527,7 +1529,20 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 		copilotPath = filepath.Join(ws.RootPath, ".copilot")
 	}
 
-	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB)
+	// Parse optional since / force params.
+	opts := telemetry.HarvestOptions{}
+	if sinceStr, _ := request.Params.Arguments["since"].(string); sinceStr != "" {
+		t, err := time.Parse(time.RFC3339, sinceStr)
+		if err != nil {
+			return ValidationFailed(fmt.Sprintf("invalid since timestamp %q: %v", sinceStr, err)), nil
+		}
+		opts.Since = &t
+	}
+	if force, _ := request.Params.Arguments["force"].(bool); force {
+		opts.Force = true
+	}
+
+	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, opts)
 	if err != nil {
 		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
 			return ValidationFailed(fmt.Sprintf("telemetry source missing — run 'backlogit mcp' from a workspace that contains a .copilot directory: %v", err)), nil
