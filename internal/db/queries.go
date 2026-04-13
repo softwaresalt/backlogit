@@ -159,7 +159,9 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 	}
 
 	return RetryWrite(ctx, func() error {
-		_, err = db.ExecContext(ctx,
+		// Use a distinct variable (execErr) rather than reassigning the outer err
+		// so the closure does not shadow the earlier marshalling errors.
+		_, execErr := db.ExecContext(ctx,
 			`INSERT OR REPLACE INTO items
 			(id, title, status, artifact_type, parent_id, sprint, priority, description,
 			 custom_fields, created_at, updated_at,
@@ -186,8 +188,8 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 			nullInt64(artifact.Level),
 			nullString(artifact.HierarchyPath),
 		)
-		if err != nil {
-			return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
+		if execErr != nil {
+			return fmt.Errorf("upsert item %s: %w", artifact.ID, execErr)
 		}
 		return nil
 	})

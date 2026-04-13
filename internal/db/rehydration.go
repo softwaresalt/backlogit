@@ -116,6 +116,8 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 
 		batchCount := 0
 		batchErr := RetryWrite(ctx, func() error {
+			// Reset batchCount at the start of each attempt so that a retried
+			// transaction does not double-count rows inserted in the failed attempt.
 			batchCount = 0
 			tx, err := db.BeginTx(ctx, nil)
 			if err != nil {

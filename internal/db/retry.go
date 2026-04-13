@@ -6,20 +6,21 @@ import (
 	"time"
 )
 
-// DefaultRetryDelays is the backoff schedule used by RetryWrite. The length
-// of the slice determines the maximum number of retries (3 by default, for a
-// total of 4 attempts: 1 initial + 3 retries with 1 s / 2 s / 4 s waits).
-var DefaultRetryDelays = []time.Duration{
+// defaultRetryDelays is the backoff schedule used by RetryWrite: 1 s / 2 s / 4 s.
+// The slice length determines the maximum number of retries (3), for a total of
+// 4 attempts (1 initial + 3 retries). Unexported to prevent external mutation,
+// which would affect all concurrent RetryWrite calls globally.
+var defaultRetryDelays = []time.Duration{
 	1 * time.Second,
 	2 * time.Second,
 	4 * time.Second,
 }
 
-// RetryWrite calls fn, retrying on SQLITE_BUSY errors using the backoff
-// schedule in DefaultRetryDelays. ctx cancellation stops further retries
-// immediately and returns ctx.Err().
+// RetryWrite calls fn, retrying on SQLITE_BUSY errors using the default backoff
+// schedule (1 s / 2 s / 4 s, up to 3 retries). ctx cancellation stops further
+// retries immediately and returns ctx.Err().
 func RetryWrite(ctx context.Context, fn func() error) error {
-	return RetryWriteWithDelays(ctx, fn, DefaultRetryDelays)
+	return RetryWriteWithDelays(ctx, fn, defaultRetryDelays)
 }
 
 // RetryWriteWithDelays is the testable inner implementation of RetryWrite.
@@ -34,13 +35,18 @@ func RetryWriteWithDelays(ctx context.Context, fn func() error, delays []time.Du
 		if attempt >= len(delays) {
 			return err
 		}
+		// Fast-path: if ctx is already cancelled do not enter the select at all.
+		// This matters when delay is zero and both channels would be simultaneously
+		// ready — Go picks randomly, so the explicit check guarantees cancellation wins.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
+		timer := time.NewTimer(delays[attempt])
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-		case <-time.After(delays[attempt]):
+		case <-timer.C:
 		}
 	}
 }
