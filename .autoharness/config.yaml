@@ -5,6 +5,10 @@ capability_packs:
   - strict-safety
   - agent-intercom
   - agent-engram
+  - adversarial-review
+  - circuit-breaker
+  - concurrency
+  - release-observability
 backlog:
   tool: backlogit
   directory: .backlogit

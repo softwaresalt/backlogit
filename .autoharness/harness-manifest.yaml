@@ -1,13 +1,20 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-12T00:00:00Z"
+tuned_at: "2026-04-13T01:50:00Z"
 autoharness_version: "1.0.0"
-autoharness_home: "d:\\Source\\GitHub\\autoharness"
-profile_hash: "267c8ca6ccfcb790921db09641dcb23e67040d858c07345a4239dc39660a6e93"
+autoharness_home: "C:\\Users\\derek.williams\\AppData\\Roaming\\uv\\tools\\autoharness\\Lib\\site-packages\\autoharness\\data"
+profile_hash: "updated"
 config_hash: "updated"
 install_preset: full
 capability_packs:
   - backlogit
+  - strict-safety
+  - agent-intercom
+  - agent-engram
+  - adversarial-review
+  - circuit-breaker
+  - concurrency
+  - release-observability
   - strict-safety
   - agent-intercom
   - agent-engram
@@ -68,6 +75,38 @@ capability_pack_overlays:
     verification_checks:
       - "agent-engram.instructions.md exists in .github/instructions/"
       - "Stage and Ship agent tools lists include engram/*"
+  - pack: adversarial-review
+    overlay_targets:
+      - adversarial-review agent file
+      - adversarial-review instruction file
+      - review skill escalation path
+    verification_checks:
+      - "adversarial-review.agent.md exists in .github/agents/"
+      - "adversarial-review.instructions.md exists in .github/instructions/"
+      - "Review skill Step 4a references adversarial review escalation"
+  - pack: circuit-breaker
+    overlay_targets:
+      - circuit-breaker instruction file
+      - foundation guidance docs
+    verification_checks:
+      - "circuit-breaker.instructions.md exists in .github/instructions/"
+  - pack: concurrency
+    overlay_targets:
+      - concurrency instruction file
+      - file-lock skill
+      - lock scripts (PowerShell and Bash)
+      - gitignore lock pattern
+    verification_checks:
+      - "concurrency.instructions.md exists in .github/instructions/"
+      - "file-lock skill exists in .github/skills/"
+      - "Lock scripts exist in scripts/"
+      - ".gitignore contains .*.lock pattern"
+  - pack: release-observability
+    overlay_targets:
+      - release-observability instruction file
+      - operational-closure integration
+    verification_checks:
+      - "release-observability.instructions.md exists in .github/instructions/"
 primitives_installed:
   - 1
   - 2
@@ -84,14 +123,10 @@ artifacts:
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
     checksum: "00cabc35b7b4f9b76b276a75cfa214ff5a8352d676f2ce6c4554712dba262eb3"
-  - path: ".github/agents/deliberator.agent.md"
-    primitive: 4
-    template: "templates/agents/deliberator.agent.md.tmpl"
-    checksum: "65384a3b7c2887aeb91a9110529ccbee001bb15de5392923a78e1c91481e2172"
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "3f901f79168d85d3d2fbbc677df8d1ad14a4d05716c45faf9709350a682a6cc8"
+    checksum: "2cc517aafd0306d0a3ba4832733c92fd9f33d11b4fbb66518eb38027f8780794"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
@@ -103,19 +138,19 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "ebe6d731cacb7288d6c5de7a94dd7093db51f4452345a57ff973414c69160d69"
+    checksum: "ef016d1258ceb867d6a992ff162ceb2199d0168659583c7e04b37e77832ced0b"
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "b9de014773566abd57ac03b73951b9421c8e10d60ff572a3b704e463d215f944"
+    checksum: "5934b855c8f5420f6688f8d00ca80c00e9626264b061979e5be545d29d85ce5f"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "def02c59f5e0846a8d1f9c0c38826a8b5dc3b61e5938b6698709a30973fae313"
+    checksum: "03d556a827660876298ce7d6eec502e5028a69d5b0856619d1ce2a4c88abd5f2"
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "93269c38cad3923b21a7fa4a4aeea1b94f5026a1ffeb2e3a33f261a4c80bf2ca"
+    checksum: "3728845b5f5f12b91b5929ac18de3e18e68409e5ca8ce6e856e25f3c6f316770"
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
@@ -123,11 +158,11 @@ artifacts:
   - path: ".backlogit/config.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "3dcd097c99ff64188439db1b2f10f9ec9ce24755fef9233ed95f32f69046716a"
+    checksum: "a86d780f5f5e0461adc86a80e9c21f652457ed595909cef4493b0984c7a48816"
   - path: ".backlogit/header-def.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "8d0441b0964fcd8a4536070960e6c0763599a7680a6a72e6f40171c993277a36"
+    checksum: "5998393f74fd3b84354c7954a7a26b26ff7fe8956a5cc0ae0069bc5762c3c02d"
   - path: ".backlogit/templates/deliberation.md"
     primitive: 1
     template: "workspace deliberation template"
@@ -135,46 +170,106 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "7bfac499cf7afc270b398191a071c92204f1f51876d031d569acfb4f4ed5b4ba"
+    checksum: "b94123e7e23a36f91442c3971e5f3053635d50a0d318658b998bfeb1954e0dde"
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "88e071495474923d2b1aef49c97f614c3a42d4aaee2248c841a88eaa2409d73f"
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "d6f81ed3470e1b830f3c01bd48b2afba5e9b8a4f893706d4bcd9767020438d1b"
   - path: ".github/skills/compound-refresh/SKILL.md"
     primitive: 1
     template: "templates/skills/compound-refresh/SKILL.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "d21e5d560a4e4f02576fa7b3e010cb76a957145739caf88ffe07d765c3013461"
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "627b510c2b8d0d414de74285d822176db6fd8280ede0a0a07244cffa64ca3515"
   - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "4b8ef07f1da2ae8338d8e94340e8fefb14b21da86bf1ca873615144db4886b5a"
   - path: ".github/instructions/ci-security.instructions.md"
     primitive: 6
     template: "templates/instructions/ci-security.instructions.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "17a18b260c93b8fc989f7d4c1b2ae5b19ed687b45695126595130690fe501fd4"
   - path: ".github/instructions/strict-safety.instructions.md"
     primitive: 5
     template: "templates/instructions/strict-safety.instructions.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "c66779a76080091f84f15fad12198ec662df4ed9c5d16a2f4f75d712a2f18e03"
   - path: ".github/instructions/agent-intercom.instructions.md"
     primitive: 6
     template: "templates/instructions/agent-intercom.instructions.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "a33c157853d1662ebb22b15a90ebcab2683b63cb44b832d3e74f46fed36af185"
   - path: ".github/instructions/agent-engram.instructions.md"
     primitive: 6
     template: "templates/instructions/agent-engram.instructions.md.tmpl"
-    checksum: "tuned-2026-04-11"
+    checksum: "43513055942ab16652d3903145ca0b1c2a90058344c96007d82a2bd81238ad2e"
+  - path: ".github/agents/adversarial-review.agent.md"
+    primitive: 7
+    template: "templates/agents/adversarial-review.agent.md.tmpl"
+    checksum: "4fd4fd717b59f20bd7186e2ab93fc8fc19b9e8a59a5205d01eeef07e7c0f5a09"
+  - path: ".github/instructions/adversarial-review.instructions.md"
+    primitive: 6
+    template: "templates/instructions/adversarial-review.instructions.md.tmpl"
+    checksum: "8c0385cea0927835ea628aeadb431ff6135dada685f0716791677621af3b8aa8"
+  - path: ".github/instructions/circuit-breaker.instructions.md"
+    primitive: 6
+    template: "templates/instructions/circuit-breaker.instructions.md.tmpl"
+    checksum: "af3df30c79b50471181c3dd47962bbbb5ebd516106c83cb179f161820264ea5a"
+  - path: ".github/instructions/concurrency.instructions.md"
+    primitive: 6
+    template: "templates/instructions/concurrency.instructions.md.tmpl"
+    checksum: "8b7b1b75d6c5f70d0e416570ccf64e0c454de1d5e7c046589103828b1a366ad9"
+  - path: ".github/instructions/release-observability.instructions.md"
+    primitive: 6
+    template: "templates/instructions/release-observability.instructions.md.tmpl"
+    checksum: "3fb16225e9236024fc0594611a5c60dfe60649c67fb9dc2592d426a74bf5d6c2"
+  - path: ".github/skills/file-lock/SKILL.md"
+    primitive: 5
+    template: "templates/skills/file-lock/SKILL.md.tmpl"
+    checksum: "624df80c6cee4ceca496a5ee6fb1c9ec7603b1fcef190ef7c9f9198c6b9da74b"
+  - path: ".github/skills/skill-search/SKILL.md"
+    primitive: 4
+    template: "templates/skills/skill-search/SKILL.md.tmpl"
+    checksum: "0fbdc29c4412dc3e152c015cdc982d5e6ddf82634d1d8c18a28d8f1661a50ab6"
+  - path: ".github/skills/review/SKILL.md"
+    primitive: 7
+    template: "templates/skills/review/SKILL.md.tmpl"
+    checksum: "3a2a11b5309ed9e28132c26e6e915f7259180c41eaa8117720af0f0a5391e0be"
+  - path: ".github/instructions/go.instructions.md"
+    primitive: 6
+    template: "templates/instructions/technology-go.instructions.md.tmpl"
+    checksum: "tuned-2026-04-12"
+  - path: "scripts/acquire_lock.ps1"
+    primitive: 5
+    template: "concurrency pack script"
+    checksum: "cc9621c1df3193443da0c095840448e2253ed49288c5a5340e3a8683a815236b"
+  - path: "scripts/acquire_lock.sh"
+    primitive: 5
+    template: "concurrency pack script"
+    checksum: "0f08e753843ef7a7e4d1b033c4a2c4018f0f64fcf5f31478e78f2ed480b0d6bc"
+  - path: "scripts/release_lock.ps1"
+    primitive: 5
+    template: "concurrency pack script"
+    checksum: "b43e6d0f050d2a90d2c9ee9b1b74b2932062abe8315bf7af80674f742ff9b666"
+  - path: "scripts/release_lock.sh"
+    primitive: 5
+    template: "concurrency pack script"
+    checksum: "a978af5812b1ae74191930961bbe96d41e9c47aeaebf721e08fd410fad63cf7c"
+  - path: "scripts/search.ps1"
+    primitive: 4
+    template: "skill-search pack script"
+    checksum: "8db73817cce6d537026d9322ee770b361cefca8bbf182943e589429a7a0b253d"
+  - path: "scripts/search.sh"
+    primitive: 4
+    template: "skill-search pack script"
+    checksum: "fb5b8a957804742d8fccb1ab70a20958c93f0c303800b48ab51826bba04c883c"
 variables_used:
   INSTALL_PRESET: "full"
-  CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram"
+  CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram,adversarial-review,circuit-breaker,concurrency,release-observability"
   BACKLOG_TOOL_NAME: "backlogit"
   BACKLOG_DIRECTORY: ".backlogit"
   PREFIX_FEATURE: "F"
@@ -219,3 +314,29 @@ tuning_history:
       - ".github/skills/review/SKILL.md"
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
+  - at: "2026-04-12T00:00:00Z"
+    summary: "Interrupted tuning session: installed adversarial-review, circuit-breaker, concurrency, release-observability capability packs with agent, instruction, skill, and script artifacts. Modified copilot-instructions.md and go.instructions.md. Session disconnected before manifest update."
+    artifacts:
+      - ".github/agents/adversarial-review.agent.md"
+      - ".github/instructions/adversarial-review.instructions.md"
+      - ".github/instructions/circuit-breaker.instructions.md"
+      - ".github/instructions/concurrency.instructions.md"
+      - ".github/instructions/release-observability.instructions.md"
+      - ".github/skills/file-lock/SKILL.md"
+      - ".github/skills/skill-search/SKILL.md"
+      - "scripts/acquire_lock.ps1"
+      - "scripts/acquire_lock.sh"
+      - "scripts/release_lock.ps1"
+      - "scripts/release_lock.sh"
+      - "scripts/search.ps1"
+      - "scripts/search.sh"
+      - ".github/copilot-instructions.md"
+      - ".github/instructions/go.instructions.md"
+  - at: "2026-04-13T01:50:00Z"
+    summary: "Recovery tuning: registered 13 untracked artifacts and 4 new capability packs in manifest. Removed deleted deliberator.agent.md entry. Wove file-lock and skill-search into AGENTS.md and copilot-instructions.md skill tables. Added adversarial-review escalation to review skill Step 4a. Added circuit-breaker, concurrency, release-observability, and adversarial-review references to AGENTS.md Where to look next table. Updated deprecated agents section to reflect archived status. Refreshed all stale checksums."
+    artifacts:
+      - ".autoharness/harness-manifest.yaml"
+      - ".autoharness/workspace-profile.yaml"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".github/skills/review/SKILL.md"

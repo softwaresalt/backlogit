@@ -29,3 +29,6 @@ backlogit.db
 .backlogit/runtime/
 *.exe~
 prompt.md
+
+# Advisory file locks (autoharness concurrency protocol)
+.*.lock
