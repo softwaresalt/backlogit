@@ -34,7 +34,7 @@ type GateResult struct {
 // stripStringLiterals removes the content of single-quoted SQL string literals
 // so that structural pattern checks (like the semicolon guard) do not trigger
 // on values embedded inside strings. The function handles SQL escaped quotes
-// ('') and conservatively rejects unterminated string literals.
+// (”) and conservatively rejects unterminated string literals.
 func stripStringLiterals(sql string) (string, error) {
 	// Step 1: Replace escaped quotes ('') with a placeholder that cannot
 	// appear in valid SQL identifiers or string content.

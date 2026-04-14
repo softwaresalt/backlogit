@@ -33,6 +33,7 @@ type HarvestResult struct {
 //  7. Merges new sessions with prior JSONL records (incremental) or replaces (Force)
 //  8. Writes typed records to workspacePath/.backlogit/telemetry-sessions.jsonl
 //  9. Triggers RehydrateTelemetry to rebuild SQLite telemetry tables
+//
 // 10. Saves the updated checkpoint for the next run
 //
 // When opts.Force is false and a checkpoint exists, only new log data (by byte

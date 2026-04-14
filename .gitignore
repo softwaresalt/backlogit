@@ -18,6 +18,7 @@ logs/
 
 # Build artifacts
 *.exe
+backlogit
 
 # Ephemeral SQLite databases (always regenerated; never commit)
 backlogit.db
