@@ -15,6 +15,7 @@ import (
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/db"
 	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	"github.com/backlogit/backlogit/internal/version"
 )
 
 // NewRootCommand creates the backlogit CLI root command.
@@ -23,8 +24,9 @@ func NewRootCommand() *cobra.Command {
 	var logLevel string
 
 	root := &cobra.Command{
-		Use:   "backlogit",
-		Short: "Backlogit — AI-native agile workspace",
+		Use:     "backlogit",
+		Version: version.Version,
+		Short:   "Backlogit — AI-native agile workspace",
 		Long: `backlogit manages a project-local work item workspace under .backlogit.
 
 	It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
