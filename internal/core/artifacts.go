@@ -383,13 +383,14 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
 	}
 	previousStatus := artifact.Status
+	previousTitle := artifact.Title
 
 	// Fire pre-update hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
 			ItemID:       id,
 			ArtifactType: artifact.ArtifactType,
-			OldValues:    map[string]any{"status": string(artifact.Status), "title": artifact.Title},
+			OldValues:    map[string]any{"status": string(artifact.Status), "title": previousTitle},
 			NewValues:    updates,
 			Actor:        "backlogit",
 			Workspace:    ws.RootPath,
@@ -470,7 +471,7 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		hookCtx := hooks.HookContext{
 			ItemID:       id,
 			ArtifactType: artifact.ArtifactType,
-			OldValues:    map[string]any{"status": string(previousStatus), "title": artifact.Title},
+			OldValues:    map[string]any{"status": string(previousStatus), "title": previousTitle},
 			NewValues:    updates,
 			Actor:        "backlogit",
 			Workspace:    ws.RootPath,

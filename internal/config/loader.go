@@ -101,10 +101,11 @@ func LoadHooks(workspacePath string) (*HooksConfig, error) {
 		return nil, fmt.Errorf("validate hooks: %w", err)
 	}
 	// Reject header values that don't use env var expansion (security guardrail).
+	// Only $VAR or ${VAR} syntax is supported; os.ExpandEnv handles resolution.
 	for i, ep := range cfg.Notifications.Endpoints {
 		for key, val := range ep.Headers {
-			if !strings.HasPrefix(val, "$") && !strings.HasPrefix(val, "env:") {
-				return nil, fmt.Errorf("validate hooks: endpoint[%d] header %q value must start with '$' or 'env:' (literal secrets not allowed in hooks.yaml)", i, key)
+			if !strings.HasPrefix(val, "$") {
+				return nil, fmt.Errorf("validate hooks: endpoint[%d] header %q value must start with '$' for environment variable expansion (literal secrets and 'env:' prefixes are not allowed in hooks.yaml)", i, key)
 			}
 		}
 	}

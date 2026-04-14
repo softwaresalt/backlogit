@@ -139,18 +139,17 @@ func (n *WebhookNotifier) dispatchToEndpoint(_ context.Context, ep WebhookEndpoi
 		return
 	}
 
-	// Rate limit — blocks until a token is available.
-	// Use context.Background() to decouple from the parent hook context:
-	// cancellation of the hook context should not prevent queued endpoints
-	// from being dispatched, matching the goroutine's use of Background().
-	if err := n.rateLimiter.Wait(context.Background()); err != nil {
-		n.logger.Warn("webhook rate limit wait cancelled", "url", ep.URL, "error", err)
-		return
-	}
-
 	n.wg.Add(1)
 	go func() {
 		defer n.wg.Done()
+
+		// Rate limit — blocks until a token is available.
+		// Uses context.Background() so rate limiting outlives the parent hook
+		// context and runs entirely in the goroutine to avoid blocking FirePost.
+		if err := n.rateLimiter.Wait(context.Background()); err != nil {
+			n.logger.Warn("webhook rate limit wait cancelled", "url", ep.URL, "error", err)
+			return
+		}
 
 		reqCtx, cancel := context.WithTimeout(context.Background(), ep.Timeout)
 		defer cancel()

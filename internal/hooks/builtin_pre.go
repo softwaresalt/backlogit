@@ -9,8 +9,10 @@ import (
 
 // DefaultTransitions returns the default status transition map covering
 // all 8 artifact statuses plus shipment-specific statuses (shipped, abandoned).
-// Shipments share the UpdateArtifact path so their transitions must be
-// present here as well.
+// This map is used by HookUpdateArtifact pre-hooks. Shipment statuses are
+// included because the MCP move_item handler routes all item types through
+// UpdateArtifact; shipment-specific lifecycle enforcement happens separately
+// in MoveShipmentStatus and ShipShipment.
 func DefaultTransitions() map[string][]string {
 	return map[string][]string{
 		"queued":  {"active", "blocked"},

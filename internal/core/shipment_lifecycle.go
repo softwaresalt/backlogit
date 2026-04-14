@@ -143,7 +143,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		hookCtx := hooks.HookContext{
 			ItemID:       shipmentID,
 			ArtifactType: "shipment",
-			OldValues:    map[string]any{"status": string(models.StatusActive)},
+			OldValues:    map[string]any{"status": string(shipment.Status)},
 			NewValues:    map[string]any{"status": string(ShipmentShipped)},
 			Actor:        "backlogit",
 			Workspace:    ws.RootPath,
