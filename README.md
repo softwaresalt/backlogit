@@ -2,7 +2,7 @@
 title: backlogit
 description: AI-native agile workspace with MCP and CLI interfaces
 author: backlogit contributors
-ms.date: 2026-04-13
+ms.date: 2026-04-14
 ms.topic: overview
 keywords:
   - backlogit
@@ -48,6 +48,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - Workspace containment: all operations stay within `.backlogit/` with path traversal rejection
 - Token telemetry pipeline via the `backlogit telemetry` command group and `backlogit_telemetry_harvest` MCP tool: `harvest` parses Copilot CLI session logs (with optional `--since` and `--force` flags for incremental or forced re-harvest), correlates model calls and tool calls into per-session summaries with context-window utilization metrics, attributes tool calls to MCP servers, writes typed JSONL records, and rehydrates queryable `telemetry_sessions` and `telemetry_tool_usage` SQLite tables; `report` renders tabular or JSON summaries grouped by session or server with configurable `--limit`; `list` shows a per-session summary table; `top` shows top servers by call volume
 - Commit traceability on event log entries: MCP mutation tools (`backlogit_move_item`, `backlogit_archive_item`, `backlogit_append_comment`) accept an optional `commit_sha` parameter that is recorded on the emitted JSONL event, enabling external tooling to correlate backlogit state changes with git history
+- Two-layer hooks system for lifecycle governance: synchronous pre/post hooks fire on all lifecycle operations (create, update, archive, ship, adopt) with priority ordering and error-stops-chain semantics on pre-hooks; built-in `ValidateStatusTransition` pre-hook enforces config-driven status transition rules; `EmitHookEvent` and `LogIndexStale` post-hooks emit structured JSONL events and mark the index stale; external webhook dispatch via `WebhookNotifier` sends async HTTP POST notifications to configured endpoints with rate limiting, event filtering, and environment-variable header expansion; hooks configuration in `.backlogit/hooks.yaml` controls transition maps, webhook endpoints, and notification settings
 
 ## Quick Start
 
@@ -114,7 +115,8 @@ backlogit mcp
 | Database         | SQLite via modernc.org/sqlite v1.34.0 | WAL mode, FTS5, CGo-free, gitignored       |
 | CLI framework    | spf13/cobra v1.8.1                   | Artifact, queue, and stash commands        |
 | Validation       | go-playground/validator/v10 v10.30.1 | Struct tags on all boundary types          |
-| Configuration    | gopkg.in/yaml.v3 v3.0.1              | config.yaml, header-def.yaml, registry.yaml, migration.yaml |
+| Configuration    | gopkg.in/yaml.v3 v3.0.1              | config.yaml, header-def.yaml, registry.yaml, hooks.yaml, migration.yaml |
+| Rate limiting    | golang.org/x/time v0.11.0            | Webhook dispatch backpressure via rate.Limiter |
 | File format      | Markdown + YAML frontmatter          | Git-friendly source of truth               |
 | Event stream     | JSONL (append-only)                  | per-item logs plus telemetry.jsonl         |
 | License          | MIT                                  |                                            |
