@@ -26,6 +26,9 @@ func TestMoveCommand_ChangesStatus(t *testing.T) {
 	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Move test", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
+	// Transition to active so queued→done is not needed (queued→done is invalid).
+	_, err = core.UpdateArtifact(ctx, ws, artifact.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()

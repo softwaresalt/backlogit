@@ -107,7 +107,9 @@ func TestWriteInvariant_MoveThenRehydrate_FileInCorrectDirectory(t *testing.T) {
 	feature, err := core.CreateArtifact(ctx, ws, "Feature to archive", "feature")
 	require.NoError(t, err)
 
-	// Move the feature to "done" — this relocates the file to archive/.
+	// Move the feature to "done" via queued→active→done (queued→done is invalid).
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	moved, err := core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusDone, moved.Status)

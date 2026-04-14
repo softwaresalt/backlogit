@@ -49,9 +49,14 @@ func TestMoveCommand_RelocatesFileToTargetDir(t *testing.T) {
 	require.NoError(t, err)
 	require.FileExists(t, originalPath)
 
-	// Act — move to "done" status
+	// Act — move to "active" then "done" status (queued→done is not a valid transition)
 	cwd := root
 	cmd := newMoveCommand(&cwd)
+	cmd.SetArgs([]string{artifact.ID, "--status", "active"})
+	err = cmd.Execute()
+	require.NoError(t, err)
+
+	cmd = newMoveCommand(&cwd)
 	cmd.SetArgs([]string{artifact.ID, "--status", "done"})
 	err = cmd.Execute()
 	require.NoError(t, err)
@@ -83,8 +88,14 @@ func TestMoveCommand_CreatesTargetDirIfMissing(t *testing.T) {
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
 
 	// Act — move to status that maps to a potentially non-existent directory
+	// (queued→review is not valid; go through queued→active→review)
 	cwd := root
 	cmd := newMoveCommand(&cwd)
+	cmd.SetArgs([]string{artifact.ID, "--status", "active"})
+	err = cmd.Execute()
+	require.NoError(t, err)
+
+	cmd = newMoveCommand(&cwd)
 	cmd.SetArgs([]string{artifact.ID, "--status", "review"})
 	err = cmd.Execute()
 

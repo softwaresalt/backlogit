@@ -9,9 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/db"
+	"github.com/backlogit/backlogit/internal/events"
+	"github.com/backlogit/backlogit/internal/hooks"
 )
 
 // Workspace coordinates cross-store operations across Markdown, SQLite, and JSONL.
@@ -21,6 +24,13 @@ type Workspace struct {
 	DB        *sql.DB
 	HeaderDef *config.HeaderDefConfig
 	Templates []*config.TemplateConfig
+	// HookRunner dispatches lifecycle hooks. May be nil in tests that
+	// construct Workspace{} directly; all call sites must nil-guard.
+	HookRunner *hooks.HookRunner
+	// Hooks holds the parsed hooks.yaml configuration.
+	Hooks *config.HooksConfig
+	// webhookNotifier is stored for shutdown draining. Unexported.
+	webhookNotifier interface{ Shutdown(context.Context) error }
 }
 
 // WorkspaceStorageRoot returns the .backlogit directory for a workspace root.
@@ -69,6 +79,66 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		return nil, fmt.Errorf("load templates: %w", templatesErr)
 	}
 
+	// Load hooks configuration and initialize hook runner.
+	hooksCfg, hooksErr := config.LoadHooks(backlogitDir)
+	if hooksErr != nil {
+		database.Close()
+		return nil, fmt.Errorf("load hooks config: %w", hooksErr)
+	}
+
+	var hookRunner *hooks.HookRunner
+	if hooksCfg.Enabled {
+		hookRunner = hooks.NewHookRunner()
+
+		// Register built-in pre-hooks.
+		if hooksCfg.Lifecycle.ValidateTransition {
+			transitions := hooksCfg.Lifecycle.Transitions
+			hookRunner.Register(hooks.HookUpdateArtifact, hooks.PhasePre, hooks.HookRegistration{
+				Name:     "validate_status_transition",
+				Priority: 20,
+				Fn:       hooks.ValidateStatusTransition(transitions),
+			})
+		}
+
+		// Register built-in post-hooks.
+		if hooksCfg.Lifecycle.EmitEvents {
+			writer := events.NewHookEventWriter(backlogitDir)
+			appender := &hookEventAppenderAdapter{writer: writer}
+			hooks.RegisterEmitHookEvent(hookRunner, appender)
+		}
+
+		// Always register informational index stale hook.
+		hooks.RegisterLogIndexStale(hookRunner)
+	}
+
+	// Wire webhook notifier if endpoints are configured and hooks are enabled.
+	var webhookNotifier *hooks.WebhookNotifier
+	if hooksCfg.Enabled && len(hooksCfg.Notifications.Endpoints) > 0 && hookRunner != nil {
+		endpoints := make([]hooks.WebhookEndpointConfig, 0, len(hooksCfg.Notifications.Endpoints))
+		for _, ep := range hooksCfg.Notifications.Endpoints {
+			filter := make(map[string]struct{}, len(ep.EventFilter))
+			for _, f := range ep.EventFilter {
+				filter[f] = struct{}{}
+			}
+			timeout := time.Duration(ep.TimeoutSecs) * time.Second
+			if timeout <= 0 {
+				timeout = 10 * time.Second
+			}
+			endpoints = append(endpoints, hooks.WebhookEndpointConfig{
+				URL:         ep.URL,
+				EventFilter: filter,
+				Headers:     ep.Headers,
+				Timeout:     timeout,
+			})
+		}
+		rateLimit := hooksCfg.Notifications.RateLimit
+		if rateLimit <= 0 {
+			rateLimit = 10
+		}
+		webhookNotifier = hooks.NewWebhookNotifier(endpoints, rateLimit, slog.Default())
+		hooks.RegisterWebhookNotifier(hookRunner, webhookNotifier)
+	}
+
 	if headerDef != nil {
 		if err := db.EnsureSchemaWithExtensions(database, headerDef); err != nil {
 			database.Close()
@@ -82,11 +152,18 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 	}
 
 	workspace := &Workspace{
-		RootPath:  resolvedRoot,
-		Config:    cfg,
-		DB:        database,
-		HeaderDef: headerDef,
-		Templates: templates,
+		RootPath:   resolvedRoot,
+		Config:     cfg,
+		DB:         database,
+		HeaderDef:  headerDef,
+		Templates:  templates,
+		HookRunner: hookRunner,
+		Hooks:      hooksCfg,
+	}
+	// Assign only when non-nil to avoid storing a typed-nil *WebhookNotifier
+	// inside the interface, which would bypass the != nil guard in Close().
+	if webhookNotifier != nil {
+		workspace.webhookNotifier = webhookNotifier
 	}
 
 	// F-7 migration guard: write any DB-only links to Markdown frontmatter
@@ -145,8 +222,13 @@ func hasWorkspaceConfig(storageRoot string) bool {
 	return !info.IsDir()
 }
 
-// Close closes the database connection.
+// Close drains any in-flight webhook dispatches and closes the database connection.
 func (ws *Workspace) Close() error {
+	if ws.webhookNotifier != nil {
+		if err := ws.webhookNotifier.Shutdown(context.Background()); err != nil {
+			slog.Warn("webhook notifier shutdown error", "error", err)
+		}
+	}
 	if ws.DB != nil {
 		return ws.DB.Close()
 	}
@@ -173,4 +255,39 @@ func SafeResolve(workspaceRoot, target string) (string, error) {
 		return "", fmt.Errorf("path escapes workspace boundary: %s", target)
 	}
 	return abs, nil
+}
+
+// hookEventAppenderAdapter adapts HookEventWriter to the hooks.HookEventAppender
+// interface, decoupling the events package from the hooks package.
+type hookEventAppenderAdapter struct {
+	writer *events.HookEventWriter
+}
+
+func (a *hookEventAppenderAdapter) AppendEvent(ctx context.Context, payload hooks.HookEventPayload) error {
+	event := events.HookEvent{
+		EventType: payload.EventType,
+		Payload: map[string]any{
+			"schema_version": payload.SchemaVersion,
+			"item_id":        payload.ItemID,
+			"artifact_type":  payload.ArtifactType,
+			"actor":          payload.Actor,
+		},
+	}
+	if len(payload.ChangedFields) > 0 {
+		event.Payload["changed_fields"] = payload.ChangedFields
+	}
+	if payload.StatusDelta != nil {
+		event.Payload["status_delta"] = map[string]any{
+			"from": payload.StatusDelta.From,
+			"to":   payload.StatusDelta.To,
+		}
+	}
+	if payload.TitleDelta != nil {
+		event.Payload["title_delta"] = map[string]any{
+			"from": payload.TitleDelta.From,
+			"to":   payload.TitleDelta.To,
+		}
+	}
+	_, err := a.writer.AppendHookEvent(ctx, event)
+	return err
 }

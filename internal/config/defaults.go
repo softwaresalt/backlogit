@@ -476,6 +476,20 @@ func DefaultHooksConfig() *HooksConfig {
 			"stage": {"feature_review_ready", "blocked_stale"},
 			"ship":  {"post_merge_closure", "feature_review_ready"},
 		},
+		Lifecycle: LifecycleHooksConfig{
+			ValidateTransition: true,
+			EmitEvents:         true,
+			Transitions: map[string][]string{
+				"queued":  {"active", "blocked"},
+				"active":  {"done", "blocked", "review", "shipped", "abandoned"},
+				"blocked": {"active"},
+				"review":  {"done", "accepted", "rejected"},
+				"done":    {"archived"},
+			},
+		},
+		Notifications: NotificationsConfig{
+			RateLimit: 10,
+		},
 	}
 }
 

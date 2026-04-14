@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
@@ -79,6 +80,35 @@ func LoadRegistry(workspacePath string) (*RegistryConfig, error) {
 		}
 	}
 	return &reg, nil
+}
+
+// LoadHooks reads hooks.yaml from the workspace directory.
+// If the file is missing, DefaultHooksConfig is returned so callers always have a valid config.
+func LoadHooks(workspacePath string) (*HooksConfig, error) {
+	hooksPath := filepath.Join(workspacePath, "hooks.yaml")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DefaultHooksConfig(), nil
+		}
+		return nil, fmt.Errorf("read hooks: %w", err)
+	}
+	var cfg HooksConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse hooks: %w", err)
+	}
+	if err := validate.Struct(&cfg); err != nil {
+		return nil, fmt.Errorf("validate hooks: %w", err)
+	}
+	// Reject header values that don't use env var expansion (security guardrail).
+	for i, ep := range cfg.Notifications.Endpoints {
+		for key, val := range ep.Headers {
+			if !strings.HasPrefix(val, "$") && !strings.HasPrefix(val, "env:") {
+				return nil, fmt.Errorf("validate hooks: endpoint[%d] header %q value must start with '$' or 'env:' (literal secrets not allowed in hooks.yaml)", i, key)
+			}
+		}
+	}
+	return &cfg, nil
 }
 
 func applyEnvOverrides(cfg *WorkspaceConfig) {

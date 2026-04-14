@@ -38,6 +38,10 @@ func TestMoveItem_RelocatesFile(t *testing.T) {
 	assert.NotContains(t, filepath.ToSlash(initialPath), "/archive/",
 		"newly created feature must not be in archive yet")
 
+	// Transition to active first (queued→done is not a valid transition).
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
+
 	result, err := s.handleMoveItem(ctx, shipmentRequest(map[string]any{
 		"id":     feature.ID,
 		"status": "done",

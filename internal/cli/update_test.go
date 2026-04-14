@@ -252,6 +252,9 @@ func TestUpdateCommand_NoDuplicateWrites(t *testing.T) {
 	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Dedup task", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
+	// Transition to active so update --status done goes through active→done.
+	_, err = core.UpdateArtifact(ctx, ws, artifact.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	origPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
