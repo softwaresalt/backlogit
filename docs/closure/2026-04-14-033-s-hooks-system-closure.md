@@ -191,12 +191,25 @@ Header values must start with `$` for environment variable expansion.
 ### Observability queries
 
 ```sql
--- Count hook events by type
-SELECT json_extract(data, '$.event_type') as event_type, COUNT(*)
-FROM events GROUP BY event_type;
+-- Count indexed hook-related log events by type
+SELECT event_type, COUNT(*) AS count
+FROM item_log_entries
+WHERE event_type LIKE 'hook%'
+GROUP BY event_type
+ORDER BY count DESC, event_type ASC;
+
+-- Inspect recent hook-related log entries
+SELECT timestamp, item_id, actor, event_type, content
+FROM item_log_entries
+WHERE event_type LIKE 'hook%'
+ORDER BY timestamp DESC
+LIMIT 20;
 
 -- Find failed status transitions (via MCP error responses)
 -- Look for ErrInvalidStatusTransition in agent logs
+
+-- Pending hook queue signals are not stored in SQLite.
+-- Use backlogit_poll_hook_events to inspect .backlogit/hooks_queue.jsonl.
 ```
 
 ## Rollback Plan
@@ -244,8 +257,9 @@ Requires Go 1.23+. Compatible with CI matrix (Go 1.23 and 1.24).
 
 * Normal backlogit workflows (create, update, move, archive, ship) function
   without unexpected hook errors.
-* JSONL event files in `.backlogit/logs/` contain hook event entries after
-  lifecycle operations.
+* Hook events appear in `.backlogit/hooks_queue.jsonl` after lifecycle
+  operations, and per-item lifecycle history is recorded under
+  `.backlogit/logs/`.
 * Webhook dispatch (when configured) delivers payloads to endpoints.
 * `ValidateStatusTransition` correctly enforces the configured transition map
   without false rejections.
