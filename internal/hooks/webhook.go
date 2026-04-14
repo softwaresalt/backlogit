@@ -132,15 +132,18 @@ func (n *WebhookNotifier) matchesFilter(ep WebhookEndpointConfig, eventType stri
 	return ok
 }
 
-func (n *WebhookNotifier) dispatchToEndpoint(ctx context.Context, ep WebhookEndpointConfig, payload WebhookPayload) {
+func (n *WebhookNotifier) dispatchToEndpoint(_ context.Context, ep WebhookEndpointConfig, payload WebhookPayload) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		n.logger.Warn("webhook marshal error", "url", ep.URL, "error", err)
 		return
 	}
 
-	// Rate limit — blocks until a token is available or context is cancelled.
-	if err := n.rateLimiter.Wait(ctx); err != nil {
+	// Rate limit — blocks until a token is available.
+	// Use context.Background() to decouple from the parent hook context:
+	// cancellation of the hook context should not prevent queued endpoints
+	// from being dispatched, matching the goroutine's use of Background().
+	if err := n.rateLimiter.Wait(context.Background()); err != nil {
 		n.logger.Warn("webhook rate limit wait cancelled", "url", ep.URL, "error", err)
 		return
 	}
@@ -184,9 +187,9 @@ func (n *WebhookNotifier) dispatchToEndpoint(ctx context.Context, ep WebhookEndp
 	}()
 }
 
-// Shutdown drains all in-flight webhook dispatches before returning.
-// Called from Workspace.Close() to prevent goroutine leaks in short-lived
-// CLI processes.
+// Shutdown drains all in-flight webhook dispatches and releases HTTP
+// connections before returning. Called from Workspace.Close() to prevent
+// goroutine and connection leaks in short-lived CLI processes.
 func (n *WebhookNotifier) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -195,8 +198,10 @@ func (n *WebhookNotifier) Shutdown(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
+		n.client.CloseIdleConnections()
 		return nil
 	case <-ctx.Done():
+		n.client.CloseIdleConnections()
 		return fmt.Errorf("webhook shutdown timed out: %w", ctx.Err())
 	}
 }
