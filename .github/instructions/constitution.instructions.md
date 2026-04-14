@@ -110,7 +110,7 @@ reproducing the exact scenario.
 ### VI. Single-Binary Simplicity
 
 The project MUST be installable via `go install
-github.com/backlogit/backlogit/cmd/backlogit@latest` as a single
+github.com/softwaresalt/backlogit/cmd/backlogit@latest` as a single
 static binary. Dependencies MUST be managed via `go.mod` with
 minimum version selection. New dependencies MUST be justified by
 a concrete requirement; do not add modules speculatively. Prefer

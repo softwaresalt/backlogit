@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/cli"
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 func TestMigrateCommand_ImportStructuredBacklogWorkspace_DryRun(t *testing.T) {

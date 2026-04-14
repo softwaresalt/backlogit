@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/telemetry"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
 // NewTelemetryCmd returns the `telemetry` parent command and its subcommands.

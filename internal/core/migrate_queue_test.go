@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 func setupMigrationWorkspace(t *testing.T) *core.Workspace {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 func TestArtifact_Compact_ReturnsReducedFields(t *testing.T) {

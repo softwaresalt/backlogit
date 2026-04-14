@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/db"
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/hooks"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // Option configures artifact creation.

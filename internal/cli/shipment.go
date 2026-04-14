@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // NewShipmentCmd returns the top-level `backlogit shipment` command group.

@@ -12,8 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/telemetry"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
 func setupTelemetryDB(t *testing.T) *sql.DB {

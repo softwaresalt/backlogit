@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // DoctorFindingType classifies an integrity issue found by Doctor.

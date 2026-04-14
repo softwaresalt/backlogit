@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // QueueLayoutConfig is an alias for config.QueueLayoutConfig, kept for backward compatibility.

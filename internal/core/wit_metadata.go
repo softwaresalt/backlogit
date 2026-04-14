@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // WITMetadata represents complete metadata for a work item type, merging data

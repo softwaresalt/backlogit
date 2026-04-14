@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // 027.003-T: HookEventReader with consumer-scoped polling

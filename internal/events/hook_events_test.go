@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // 027.001-T: HookEvent model and append-only HookEventWriter

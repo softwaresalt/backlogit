@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // TASK-002.01.03: Update frontmatter parser and serializer for new fields.

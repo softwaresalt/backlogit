@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	bldb "github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/models"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // QueueView represents a filtered, ordered view of the backlog queue.

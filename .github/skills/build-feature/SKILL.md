@@ -150,7 +150,7 @@ Once the isolated harness passes:
 
 ### Compilation errors after adding new packages
 
-Verify that all new packages have correct `package` declarations matching the directory name and that imports use the full module path (`github.com/backlogit/backlogit/internal/{package}`). Check that `go.mod` has the correct module declaration.
+Verify that all new packages have correct `package` declarations matching the directory name and that imports use the full module path (`github.com/softwaresalt/backlogit/internal/{package}`). Check that `go.mod` has the correct module declaration.
 
 ### Go vet reports suspicious constructs
 

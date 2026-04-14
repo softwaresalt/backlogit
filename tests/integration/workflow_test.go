@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/cli"
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/core/templates"
-	"github.com/backlogit/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core/templates"
+	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // TASK-002.06.01: Full workflow integration tests.

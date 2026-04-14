@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/stash"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 func TestParseContent_ReadsEntriesWithIDs(t *testing.T) {

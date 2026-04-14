@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // NewMetadataCmd creates the metadata command group.

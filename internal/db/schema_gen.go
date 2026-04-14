@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // columnNameRe validates column names against safe SQL identifier pattern.

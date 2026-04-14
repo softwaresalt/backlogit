@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // StatusTransitionRule defines a valid state transition for an artifact type.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/backlogit/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/cli"
 )
 
 func TestFormatTreeView_RendersHierarchy(t *testing.T) {

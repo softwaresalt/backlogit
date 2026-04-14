@@ -13,15 +13,15 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/core/templates"
-	"github.com/backlogit/backlogit/internal/db"
-	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/events"
-	"github.com/backlogit/backlogit/internal/models"
-	"github.com/backlogit/backlogit/internal/parser"
-	"github.com/backlogit/backlogit/internal/telemetry"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core/templates"
+	"github.com/softwaresalt/backlogit/internal/db"
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/parser"
+	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
 // RegisterTools adds all backlogit tools to the MCP server.

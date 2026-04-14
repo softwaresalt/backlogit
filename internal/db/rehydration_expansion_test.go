@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/stash"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 // TASK-002.01.04: Update rehydration engine for new fields.

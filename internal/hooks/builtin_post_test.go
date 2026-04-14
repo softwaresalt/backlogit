@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/backlogit/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

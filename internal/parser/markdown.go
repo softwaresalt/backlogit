@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // ParseMarkdownFile reads a Markdown file and extracts the artifact and body.

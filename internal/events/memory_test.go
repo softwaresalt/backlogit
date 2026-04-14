@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 func TestSaveMemory_CreatesFile(t *testing.T) {

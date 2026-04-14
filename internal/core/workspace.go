@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/events"
-	"github.com/backlogit/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/hooks"
 )
 
 // Workspace coordinates cross-store operations across Markdown, SQLite, and JSONL.

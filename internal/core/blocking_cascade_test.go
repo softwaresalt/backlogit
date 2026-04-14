@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	corerrors "github.com/backlogit/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func setupCascadeWorkspace(t *testing.T) *core.Workspace {

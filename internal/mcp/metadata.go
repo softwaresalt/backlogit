@@ -7,8 +7,8 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog, error) {

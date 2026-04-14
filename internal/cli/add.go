@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // splitCSV splits s on commas, trims whitespace from each entry, and drops empty entries.

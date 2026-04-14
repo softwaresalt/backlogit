@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	bldb "github.com/backlogit/backlogit/internal/db"
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/hooks"
-	"github.com/backlogit/backlogit/internal/models"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 var deliberationIDPattern = regexp.MustCompile(`\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b`)

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // TASK-002.01.01: Expand Artifact struct with queue-specified fields.

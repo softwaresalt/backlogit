@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/cli"
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // TASK-002.04.03: Implement CLI get command.

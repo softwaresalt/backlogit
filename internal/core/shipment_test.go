@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/config"
-	bldb "github.com/backlogit/backlogit/internal/db"
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/config"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // setupShipmentWorkspace creates a temp workspace directory with minimal config for

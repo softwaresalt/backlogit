@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/core"
-	bldb "github.com/backlogit/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/core"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 )
 
 // TestArchiveItem_QueuePathAbsentAfterArchive verifies the original queue file

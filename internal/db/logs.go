@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 type execContexter interface {

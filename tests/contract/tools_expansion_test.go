@@ -11,9 +11,9 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // TASK-002.05.01: Add new fields and static tools to MCP server.

@@ -11,12 +11,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/config"
-	bldb "github.com/backlogit/backlogit/internal/db"
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/events"
-	"github.com/backlogit/backlogit/internal/hooks"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/config"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // ShipmentStatus represents the lifecycle state of a shipment.

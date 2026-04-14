@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/events"
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // 027.002-T: Per-consumer checkpoint store

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // TASK-002.02.01: Implement header-def.yaml schema and loader.

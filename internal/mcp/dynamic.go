@@ -7,8 +7,8 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/core/templates"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core/templates"
 )
 
 // RegisterSectionAwareTools registers the fixed MCP tools that support section-aware

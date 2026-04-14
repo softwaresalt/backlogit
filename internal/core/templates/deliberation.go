@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/backlogit/backlogit/internal/core"
-	corerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/core"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // DeliberationInput captures the inputs required to create a deliberation from a stash entry.

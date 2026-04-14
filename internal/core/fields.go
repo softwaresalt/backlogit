@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // ValidateFields checks custom field values against their configured types.

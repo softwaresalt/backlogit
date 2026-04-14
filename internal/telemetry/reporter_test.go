@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/telemetry"
+	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
 // writeMinimalTelemetryJSONL writes a minimal telemetry-sessions.jsonl for

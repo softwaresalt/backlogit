@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	corerrors "github.com/backlogit/backlogit/internal/errors"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // domainErrorType calls domainError and returns the "error" field from the JSON body.

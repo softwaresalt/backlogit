@@ -94,7 +94,7 @@ jobs:
           EXT=""
           if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
           VERSION="${GITHUB_REF_NAME#v}"
-          go build -ldflags="-s -w -X github.com/backlogit/backlogit/internal/version.Version=${VERSION}" \
+          go build -ldflags="-s -w -X github.com/softwaresalt/backlogit/internal/version.Version=${VERSION}" \
             -o dist/backlogit-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} \
             ./cmd/backlogit
       - name: Upload artifacts
