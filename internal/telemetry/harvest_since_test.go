@@ -150,4 +150,3 @@ func TestHarvestTelemetry_ZeroTimestampEvents_AlwaysIncluded(t *testing.T) {
 	assert.Equal(t, 1, result.SessionsHarvested,
 		"events with zero timestamp must always be included regardless of --since")
 }
-

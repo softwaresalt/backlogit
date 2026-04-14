@@ -51,6 +51,7 @@ Clone the repository and build the binary directly. This gives you access to unr
 git clone https://github.com/backlogit/backlogit.git
 cd backlogit
 go build -o backlogit ./cmd/backlogit
+go install ./cmd/backlogit
 ```
 
 Move the binary to a directory in your `PATH`:
