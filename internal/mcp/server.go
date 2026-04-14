@@ -16,6 +16,7 @@ import (
 	"github.com/backlogit/backlogit/internal/core"
 	"github.com/backlogit/backlogit/internal/core/templates"
 	"github.com/backlogit/backlogit/internal/events"
+	"github.com/backlogit/backlogit/internal/version"
 )
 
 var logger = slog.With("package", "mcp")
@@ -58,7 +59,7 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	}
 	s.mcp = mcpserver.NewMCPServer(
 		"backlogit",
-		"1.0.0",
+		version.Version,
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(false, true),
 		mcpserver.WithRecovery(),
