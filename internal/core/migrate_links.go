@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/db"
-	blerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // MigrateCustomFieldLinksResult summarises the outcome of a custom-field

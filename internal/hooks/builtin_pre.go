@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	blerrors "github.com/backlogit/backlogit/internal/errors"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // DefaultTransitions returns the default status transition map covering

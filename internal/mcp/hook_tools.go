@@ -8,8 +8,8 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/events"
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // PollHookEventsRequest contains validated parameters for backlogit_poll_hook_events.

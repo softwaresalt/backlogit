@@ -34,7 +34,7 @@ Scaffold the Go project structure, initialize `go.mod`, and establish the error 
 
 **Files to create:**
 
-- `go.mod` — Module declaration (`github.com/backlogit/backlogit`), Go 1.22+
+- `go.mod` — Module declaration (`github.com/softwaresalt/backlogit`), Go 1.22+
 - `cmd/backlogit/main.go` — Minimal CLI entrypoint (imports `internal/cli`)
 - `internal/errors/errors.go` — Sentinel errors (`ErrConfig`, `ErrValidation`, `ErrQuery`, `ErrRehydration`, `ErrMigration`, `ErrMCP`) and typed error structs (`ConfigError`, `ValidationError`, `QueryError`)
 - `internal/errors/errors_test.go` — Tests for error wrapping, `errors.Is`, `errors.As`

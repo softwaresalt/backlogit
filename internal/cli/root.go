@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/db"
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
-	"github.com/backlogit/backlogit/internal/version"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/version"
 )
 
 // NewRootCommand creates the backlogit CLI root command.

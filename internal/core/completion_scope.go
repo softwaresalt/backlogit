@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	bldb "github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/models"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // maxReconcileDepth guards against cycles or unexpectedly deep hierarchies.

@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/core/templates"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core/templates"
 )
 
 func newDeliberateCommand(cwd *string) *cobra.Command {

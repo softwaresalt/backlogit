@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]+`)

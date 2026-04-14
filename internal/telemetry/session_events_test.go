@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/telemetry"
+	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
 const sampleSessionEvents = `{"event_type":"session.start","session_id":"sess-001","timestamp":"2026-04-09T00:00:00Z"}

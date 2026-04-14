@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/parser"
+	"github.com/softwaresalt/backlogit/internal/parser"
 )
 
 // TASK-010.04.01: Design pluggable migration adapter interface

@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/core"
-	"github.com/backlogit/backlogit/internal/core/templates"
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core/templates"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // TASK-002.05.02 (revised): Section-aware MCP tools and template discovery.

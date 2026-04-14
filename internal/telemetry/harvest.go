@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	idb "github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/errors"
+	idb "github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // HarvestResult summarises the outcome of a telemetry harvest run.

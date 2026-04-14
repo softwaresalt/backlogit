@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // setupServerWithArtifact creates a real workspace and a single feature artifact,

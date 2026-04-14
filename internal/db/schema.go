@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/backlogit/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // EnsureSchema creates the items table, indexes, FTS5 virtual table, and

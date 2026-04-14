@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	backlogiterrors "github.com/backlogit/backlogit/internal/errors"
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // consumerLocks serialises concurrent SaveCheckpoint calls for the same

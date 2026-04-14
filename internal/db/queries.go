@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	blErrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
+	blErrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // QueryFilters holds optional filters for item queries.

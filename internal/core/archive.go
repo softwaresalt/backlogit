@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/events"
-	"github.com/backlogit/backlogit/internal/hooks"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // ArchiveRecord tracks the metadata for a single archived artifact.

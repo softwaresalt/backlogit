@@ -28,7 +28,7 @@ The output should show `go1.24` or higher.
 This is the recommended method for most users. The command downloads, compiles, and installs the `backlogit` binary to your `$GOPATH/bin` (or `$GOBIN` if set):
 
 ```bash
-go install github.com/backlogit/backlogit/cmd/backlogit@latest
+go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 ```
 
 Ensure `$GOPATH/bin` is in your `PATH`. On most systems this is already the case, but you can verify with:
@@ -48,7 +48,7 @@ $env:PATH -split ';' | Where-Object { $_ -like '*go*' }
 Clone the repository and build the binary directly. This gives you access to unreleased changes and lets you inspect the source before running.
 
 ```bash
-git clone https://github.com/backlogit/backlogit.git
+git clone https://github.com/softwaresalt/backlogit.git
 cd backlogit
 go build -o backlogit ./cmd/backlogit
 go install ./cmd/backlogit

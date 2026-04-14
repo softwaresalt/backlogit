@@ -15,7 +15,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	mcpinternal "github.com/backlogit/backlogit/internal/mcp"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 func callToolAndParseError(t *testing.T, s *mcpinternal.Server, toolName string, args map[string]any) map[string]any {

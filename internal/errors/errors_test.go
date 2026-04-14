@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	blerr "github.com/backlogit/backlogit/internal/errors"
+	blerr "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func TestSentinelErrors(t *testing.T) {

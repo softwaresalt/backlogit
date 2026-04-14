@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	blerrors "github.com/backlogit/backlogit/internal/errors"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func TestValidateStatusTransition_ValidTransition(t *testing.T) {

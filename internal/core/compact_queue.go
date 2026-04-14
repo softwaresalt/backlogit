@@ -1,6 +1,6 @@
 package core
 
-import "github.com/backlogit/backlogit/internal/models"
+import "github.com/softwaresalt/backlogit/internal/models"
 
 // CompactQueueView is a token-efficient projection of QueueView, replacing full Artifact
 // slices with CompactArtifact slices for list and queue responses.

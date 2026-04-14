@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/db"
-	corerrors "github.com/backlogit/backlogit/internal/errors"
-	"github.com/backlogit/backlogit/internal/models"
-	"github.com/backlogit/backlogit/internal/stash"
+	"github.com/softwaresalt/backlogit/internal/db"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 const (

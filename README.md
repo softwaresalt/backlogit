@@ -55,7 +55,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 **Install from source:**
 
 ```bash
-go install github.com/backlogit/backlogit/cmd/backlogit@latest
+go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 ```
 
 **Initialize a workspace:**

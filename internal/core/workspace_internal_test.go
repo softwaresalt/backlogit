@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	blerrors "github.com/backlogit/backlogit/internal/errors"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func TestResolveWorkspaceRoot_PropagatesReadDirErrors(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // UpsertItemsTx inserts or replaces one or more artifacts within an existing

@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/stash"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 // TestRehydrate_MigratedWorkspace_SkipsLegacyStash verifies that when

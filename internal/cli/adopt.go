@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // newAdoptCommand returns the `backlogit adopt` command.

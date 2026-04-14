@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	dbpkg "github.com/backlogit/backlogit/internal/db"
-	"github.com/backlogit/backlogit/internal/events"
+	dbpkg "github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 // CommitLinkInfo contains the metadata linking an artifact to a git commit.

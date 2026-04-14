@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/backlogit/backlogit/internal/config"
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // ValidateArtifactFields checks that all required fields for the artifact's type

@@ -1,4 +1,4 @@
-module github.com/backlogit/backlogit
+module github.com/softwaresalt/backlogit
 
 go 1.24.0
 

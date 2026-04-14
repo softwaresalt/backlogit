@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/backlogit/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // DocumentClass represents the type of a markdown document detected by classification.

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	corerrors "github.com/backlogit/backlogit/internal/errors"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // LinkEdge represents a directed semantic link between two backlogit artifacts.

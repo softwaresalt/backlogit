@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/backlogit/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // NewQueueCmd creates the `backlogit queue` command group for queue operations.

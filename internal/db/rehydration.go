@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/backlogit/backlogit/internal/events"
-	"github.com/backlogit/backlogit/internal/models"
-	"github.com/backlogit/backlogit/internal/stash"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 // rehydrateBatchSize is the number of artifacts inserted per transaction during

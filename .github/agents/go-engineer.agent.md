@@ -55,7 +55,7 @@ import (
     "github.com/spf13/cobra"
     "modernc.org/sqlite"
 
-    "github.com/backlogit/backlogit/internal/models"
+    "github.com/softwaresalt/backlogit/internal/models"
 )
 ```
 

@@ -7,8 +7,8 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/backlogit/backlogit/internal/core"
-	corerrors "github.com/backlogit/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/core"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 type errorResponse struct {
