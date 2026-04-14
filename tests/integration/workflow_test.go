@@ -126,6 +126,9 @@ func TestWorkflow_MoveToDone(t *testing.T) {
 
 	artifact, err := core.CreateArtifact(ctx, ws, "Move workflow", "feature")
 	require.NoError(t, err)
+	// Transition to active so the CLI move to done goes through active→done.
+	_, err = core.UpdateArtifact(ctx, ws, artifact.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	ws.Close()

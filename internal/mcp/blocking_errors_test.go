@@ -104,9 +104,16 @@ func TestHandleMoveItem_AllChildrenDone_Succeeds(t *testing.T) {
 
 	child, err := core.CreateArtifact(ctx, ws, "Done child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
+	// queued→active→done (queued→done is not a valid transition)
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{
 		"status": "done",
 	})
+	require.NoError(t, err)
+
+	// Parent also needs to be active before moving to done.
+	_, err = core.UpdateArtifact(ctx, ws, parent.ID, map[string]any{"status": "active"})
 	require.NoError(t, err)
 
 	result, err := s.handleMoveItem(ctx, shipmentRequest(map[string]any{

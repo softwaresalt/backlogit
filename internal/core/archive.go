@@ -11,6 +11,7 @@ import (
 
 	"github.com/backlogit/backlogit/internal/db"
 	"github.com/backlogit/backlogit/internal/events"
+	"github.com/backlogit/backlogit/internal/hooks"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -35,11 +36,20 @@ type ArchiveOpt func(*archiveConfig)
 
 type archiveConfig struct {
 	commitSHA string
+	topLevel  *bool // nil means default true
 }
 
 // WithCommitSHA attaches a git commit SHA to the archive event for traceability.
 func WithCommitSHA(sha string) ArchiveOpt {
 	return func(c *archiveConfig) { c.commitSHA = sha }
+}
+
+// WithTopLevel sets whether this archive call is a top-level operation.
+// When false, post-hooks that emit external events (event emission, webhooks)
+// skip to prevent duplicate notifications from nested operations.
+// Default is true when not specified.
+func WithTopLevel(topLevel bool) ArchiveOpt {
+	return func(c *archiveConfig) { c.topLevel = &topLevel }
 }
 
 // ArchiveItem moves an artifact from its active directory to the archive directory,
@@ -73,6 +83,25 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	if fm == nil {
 		fm = map[string]any{}
 	}
+	oldStatus, _ := fm["status"].(string)
+	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
+
+	// Fire pre-archive hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       itemID,
+			ArtifactType: fmArtifactType(fm),
+			OldValues:    map[string]any{"status": oldStatus},
+			NewValues:    map[string]any{"status": string(models.StatusArchived), "archived": true},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     isTopLevel,
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookArchiveItem, hookCtx); err != nil {
+			return nil, fmt.Errorf("pre-archive hook: %w", err)
+		}
+	}
+
 	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
@@ -115,6 +144,20 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
 	} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
 		slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
+	}
+
+	// Fire post-archive hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       itemID,
+			ArtifactType: fmArtifactType(fm),
+			OldValues:    map[string]any{"status": oldStatus},
+			NewValues:    map[string]any{"status": string(models.StatusArchived), "archived": true},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     isTopLevel,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookArchiveItem, hookCtx)
 	}
 
 	return &ArchiveRecord{
@@ -187,6 +230,17 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		}
 	}
 	return nil
+}
+
+// fmArtifactType extracts artifact_type from frontmatter for hook context.
+func fmArtifactType(fm map[string]any) string {
+	if t, ok := fm["artifact_type"].(string); ok {
+		return t
+	}
+	if t, ok := fm["type"].(string); ok {
+		return t
+	}
+	return ""
 }
 
 func workspaceRelativePath(rootPath string, target string) string {

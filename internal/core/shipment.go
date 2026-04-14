@@ -15,6 +15,7 @@ import (
 	bldb "github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
 	"github.com/backlogit/backlogit/internal/events"
+	"github.com/backlogit/backlogit/internal/hooks"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -100,10 +101,18 @@ func GetShipment(ctx context.Context, ws *Workspace, shipmentID string) (*models
 // rewrite the file atomically, and upsert the new status into the database.
 // Emit slog.Info for status transition and events.jsonl record.
 func MoveShipmentStatus(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus) error {
+	return moveShipmentStatusWithTopLevel(ctx, ws, shipmentID, newStatus, true)
+}
+
+// moveShipmentStatusWithTopLevel is the internal variant that accepts an explicit
+// topLevel flag. Top-level callers use true; nested callers (e.g. ShipShipment)
+// use false to suppress duplicate post-hook event emission.
+func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool) error {
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err
 	}
+	oldShipmentStatus := shipment.Status
 
 	if !isValidShipmentTransition(shipment.Status, newStatus) {
 		return fmt.Errorf(
@@ -113,6 +122,22 @@ func MoveShipmentStatus(ctx context.Context, ws *Workspace, shipmentID string, n
 			newStatus,
 			blerrors.ErrShipmentConflict,
 		)
+	}
+
+	// Fire pre-move-shipment-status hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       shipmentID,
+			ArtifactType: "shipment",
+			OldValues:    map[string]any{"status": string(oldShipmentStatus)},
+			NewValues:    map[string]any{"status": string(newStatus)},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     topLevel,
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookMoveShipmentStatus, hookCtx); err != nil {
+			return fmt.Errorf("pre-move-shipment-status hook: %w", err)
+		}
 	}
 
 	shipment.Status = models.ArtifactStatus(newStatus)
@@ -125,6 +150,20 @@ func MoveShipmentStatus(ctx context.Context, ws *Workspace, shipmentID string, n
 	appendItemEvent(ctx, ws, shipmentID, "shipment_status_changed", map[string]any{
 		"status": string(newStatus),
 	})
+
+	// Fire post-move-shipment-status hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       shipmentID,
+			ArtifactType: "shipment",
+			OldValues:    map[string]any{"status": string(oldShipmentStatus)},
+			NewValues:    map[string]any{"status": string(newStatus)},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     topLevel,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookMoveShipmentStatus, hookCtx)
+	}
 
 	return nil
 }

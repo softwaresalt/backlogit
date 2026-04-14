@@ -11,6 +11,7 @@ import (
 	"github.com/backlogit/backlogit/internal/config"
 	"github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
+	"github.com/backlogit/backlogit/internal/hooks"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -108,6 +109,26 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {
 		return nil, err
+	}
+
+	// Fire pre-create hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ArtifactType: artifactType,
+			NewValues:    map[string]any{"title": title, "artifact_type": artifactType},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		if o.ParentID != "" {
+			hookCtx.NewValues["parent_id"] = o.ParentID
+		}
+		if o.Status != "" {
+			hookCtx.NewValues["status"] = o.Status
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookCreateArtifact, hookCtx); err != nil {
+			return nil, fmt.Errorf("pre-create hook: %w", err)
+		}
 	}
 
 	artifactID := ""
@@ -260,6 +281,23 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		}
 	}
 
+	// Fire post-create hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       artifact.ID,
+			ArtifactType: artifactType,
+			NewValues: map[string]any{
+				"id":     artifact.ID,
+				"title":  artifact.Title,
+				"status": string(artifact.Status),
+			},
+			Actor:     "backlogit",
+			Workspace: ws.RootPath,
+			TopLevel:  true,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookCreateArtifact, hookCtx)
+	}
+
 	return artifact, nil
 }
 
@@ -345,6 +383,23 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
 	}
 	previousStatus := artifact.Status
+	previousTitle := artifact.Title
+
+	// Fire pre-update hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       id,
+			ArtifactType: artifact.ArtifactType,
+			OldValues:    map[string]any{"status": string(artifact.Status), "title": previousTitle},
+			NewValues:    updates,
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookUpdateArtifact, hookCtx); err != nil {
+			return nil, fmt.Errorf("pre-update hook: %w", err)
+		}
+	}
 
 	if v, ok := updates["title"].(string); ok {
 		artifact.Title = v
@@ -409,6 +464,20 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 		return nil, fmt.Errorf("persist artifact %s: %w", id, err)
+	}
+
+	// Fire post-update hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       id,
+			ArtifactType: artifact.ArtifactType,
+			OldValues:    map[string]any{"status": string(previousStatus), "title": previousTitle},
+			NewValues:    updates,
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookUpdateArtifact, hookCtx)
 	}
 
 	return artifact, nil

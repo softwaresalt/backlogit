@@ -47,6 +47,9 @@ func TestCheckChildrenTerminal_AllDone_NoError(t *testing.T) {
 
 	child, err := core.CreateArtifact(ctx, ws, "Done child", "task", core.WithParent(parent.ID))
 	require.NoError(t, err)
+	// queued→active→done (queued→done is not a valid transition)
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 
@@ -142,6 +145,11 @@ func TestCheckChildrenTerminal_AcceptedStatus_IsTerminal(t *testing.T) {
 	require.NoError(t, err)
 
 	child, err := core.CreateArtifact(ctx, ws, "Accepted child", "task", core.WithParent(parent.ID))
+	require.NoError(t, err)
+	// queued→active→review→accepted (queued→accepted is not a valid transition)
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
+	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "review"})
 	require.NoError(t, err)
 	_, err = core.UpdateArtifact(ctx, ws, child.ID, map[string]any{"status": "accepted"})
 	require.NoError(t, err)

@@ -68,6 +68,10 @@ func TestHandleMoveItem_RelocatesFileByStatus(t *testing.T) {
 	feature, err := core.CreateArtifact(ctx, ws, "Feature to archive", "feature")
 	require.NoError(t, err)
 
+	// Transition to active first (queued→done is not a valid transition).
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
+
 	result, err := s.handleMoveItem(ctx, shipmentRequest(map[string]any{
 		"id":     feature.ID,
 		"status": "done",

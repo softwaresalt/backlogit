@@ -13,6 +13,7 @@ import (
 
 	bldb "github.com/backlogit/backlogit/internal/db"
 	blerrors "github.com/backlogit/backlogit/internal/errors"
+	"github.com/backlogit/backlogit/internal/hooks"
 	"github.com/backlogit/backlogit/internal/models"
 )
 
@@ -71,6 +72,22 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
 
+	// Fire pre-ship hooks (top-level).
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       shipmentID,
+			ArtifactType: "shipment",
+			OldValues:    map[string]any{"status": string(shipment.Status)},
+			NewValues:    map[string]any{"status": string(ShipmentShipped)},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookShipShipment, hookCtx); err != nil {
+			return nil, fmt.Errorf("pre-ship hook: %w", err)
+		}
+	}
+
 	explicitScope := uniqueNonEmptyStrings(shipmentItems(shipment))
 	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
 	if err != nil {
@@ -99,7 +116,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}
 
-	if err := MoveShipmentStatus(ctx, ws, shipmentID, ShipmentShipped); err != nil {
+	if err := moveShipmentStatusWithTopLevel(ctx, ws, shipmentID, ShipmentShipped, false); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 
@@ -119,6 +136,20 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 
 	if err := VerifyPostShipConsistency(ctx, ws, archivedIDs); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: post-ship consistency: %w", shipmentID, err)
+	}
+
+	// Fire post-ship hooks (top-level).
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       shipmentID,
+			ArtifactType: "shipment",
+			OldValues:    map[string]any{"status": string(shipment.Status)},
+			NewValues:    map[string]any{"status": string(ShipmentShipped)},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookShipShipment, hookCtx)
 	}
 
 	return &ShipShipmentResult{
@@ -262,7 +293,7 @@ func archiveItems(ctx context.Context, ws *Workspace, itemIDs []string) ([]strin
 		if item.Status == models.StatusArchived {
 			continue
 		}
-		if _, err := ArchiveItem(ctx, ws.DB, ws, itemID); err != nil {
+		if _, err := ArchiveItem(ctx, ws.DB, ws, itemID, WithTopLevel(false)); err != nil {
 			return nil, fmt.Errorf("archive item %s: %w", itemID, err)
 		}
 		archived = append(archived, itemID)
@@ -481,6 +512,24 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		return nil, fmt.Errorf("adopt item %s: cannot adopt an archived item", itemID)
 	}
 
+	oldParentID := artifact.ParentID
+
+	// Fire pre-adopt hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       itemID,
+			ArtifactType: artifact.ArtifactType,
+			OldValues:    map[string]any{"parent_id": oldParentID},
+			NewValues:    map[string]any{"parent_id": newParentID},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		if err := ws.HookRunner.FirePre(ctx, hooks.HookAdoptItem, hookCtx); err != nil {
+			return nil, fmt.Errorf("pre-adopt hook: %w", err)
+		}
+	}
+
 	wasOrphan := IsOrphan(artifact)
 
 	// Record origin_feature from the ID prefix if not already set.
@@ -628,6 +677,20 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		"origin_feature": originFeature,
 		"was_orphan":     wasOrphan,
 	})
+
+	// Fire post-adopt hooks.
+	if ws.HookRunner != nil {
+		hookCtx := hooks.HookContext{
+			ItemID:       newID,
+			ArtifactType: artifact.ArtifactType,
+			OldValues:    map[string]any{"parent_id": oldParentID, "id": oldID},
+			NewValues:    map[string]any{"parent_id": newParentID, "id": newID},
+			Actor:        "backlogit",
+			Workspace:    ws.RootPath,
+			TopLevel:     true,
+		}
+		ws.HookRunner.FirePost(ctx, hooks.HookAdoptItem, hookCtx)
+	}
 
 	return &AdoptItemResult{
 		ItemID:        oldID,

@@ -31,6 +31,11 @@ var (
 
 	// Hook event sentinel errors (027-F).
 	ErrHookEvent = errors.New("backlogit: hook event error")
+
+	// Lifecycle hook sentinel errors (033-F).
+	ErrHook                    = errors.New("backlogit: hook error")
+	ErrInvalidStatusTransition = errors.New("backlogit: invalid status transition")
+	ErrWebhookDispatch         = errors.New("backlogit: webhook dispatch error")
 )
 
 // ConfigError wraps a configuration failure with field context.

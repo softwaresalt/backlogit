@@ -93,13 +93,36 @@ type HierarchyLevel struct {
 
 // HooksConfig configures the agent hook event system.
 type HooksConfig struct {
-	Enabled            bool                `yaml:"enabled"`
-	EventThresholds    HookEventThresholds `yaml:"event_thresholds,omitempty"`
-	AgentSubscriptions map[string][]string `yaml:"agent_subscriptions,omitempty"`
+	Enabled            bool                 `yaml:"enabled"`
+	EventThresholds    HookEventThresholds  `yaml:"event_thresholds,omitempty"`
+	AgentSubscriptions map[string][]string  `yaml:"agent_subscriptions,omitempty"`
+	Lifecycle          LifecycleHooksConfig `yaml:"lifecycle,omitempty"`
+	Notifications      NotificationsConfig  `yaml:"notifications,omitempty"`
 }
 
 // HookEventThresholds controls derived signal computation for v1 event types.
 // Deferred signals (stash_overflow, shipment_ready) will add thresholds in v2.
 type HookEventThresholds struct {
 	BlockedStaleDays int `yaml:"blocked_stale_days" validate:"gte=0"`
+}
+
+// LifecycleHooksConfig controls built-in lifecycle hook behavior.
+type LifecycleHooksConfig struct {
+	ValidateTransition bool                `yaml:"validate_transition"`
+	EmitEvents         bool                `yaml:"emit_events"`
+	Transitions        map[string][]string `yaml:"transitions,omitempty"`
+}
+
+// NotificationsConfig configures external webhook notification dispatch.
+type NotificationsConfig struct {
+	Endpoints []WebhookEndpoint `yaml:"endpoints,omitempty"`
+	RateLimit int               `yaml:"rate_limit_per_second,omitempty" validate:"omitempty,gte=1,lte=100"`
+}
+
+// WebhookEndpoint defines a single webhook notification target.
+type WebhookEndpoint struct {
+	URL         string            `yaml:"url" validate:"required"`
+	EventFilter []string          `yaml:"event_filter,omitempty"`
+	Headers     map[string]string `yaml:"headers,omitempty"`
+	TimeoutSecs int               `yaml:"timeout_secs,omitempty" validate:"omitempty,gte=1,lte=60"`
 }
