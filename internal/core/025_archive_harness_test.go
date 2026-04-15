@@ -92,11 +92,20 @@ func TestShipShipment_QueuePathAbsentAfterShip(t *testing.T) {
 	// Act
 	result, err := core.ShipShipment(ctx, ws, shipment.ID, nil)
 
-	// Assert
+	// Assert: queue files removed
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.NoFileExists(t, featureQueuePath, "feature queue file must be absent after shipping")
 	assert.NoFileExists(t, taskQueuePath, "task queue file must be absent after shipping")
+
+	// Assert: archive files exist (regression guard for the archive-deletion bug
+	// where ArchiveItem deleted the file it just wrote when the item was already
+	// routed to archive/ by the done→archive registry mapping).
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	featureArchiveCount := countFilesWithPrefix(t, archiveDir, feature.ID)
+	taskArchiveCount := countFilesWithPrefix(t, archiveDir, task.ID)
+	assert.Equal(t, 1, featureArchiveCount, "feature must have exactly one archive file after shipping")
+	assert.Equal(t, 1, taskArchiveCount, "task must have exactly one archive file after shipping")
 }
 
 // countFilesWithPrefix returns how many files in dir have a base name starting with prefix.
