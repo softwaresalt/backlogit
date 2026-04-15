@@ -117,15 +117,9 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		os.Remove(tmpPath) //nolint:errcheck
 		return nil, fmt.Errorf("rename archive file: %w", err)
 	}
-	// Only remove the source file when it differs from the archive destination.
-	// When the registry routes a terminal status (e.g. "done") to the archive
-	// directory, the item may already reside there before ArchiveItem is called.
-	// Removing currentPath in that case would delete the file we just wrote.
-	if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
-		if err := os.Remove(currentPath); err != nil {
-			os.Remove(archivePath) //nolint:errcheck
-			return nil, fmt.Errorf("remove original: %w", err)
-		}
+	if err := os.Remove(currentPath); err != nil {
+		os.Remove(archivePath) //nolint:errcheck
+		return nil, fmt.Errorf("remove original: %w", err)
 	}
 
 	// Update DB status to archived directly — avoids re-parsing frontmatter field
@@ -225,14 +219,8 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		os.Remove(tmpPath) //nolint:errcheck
 		return fmt.Errorf("rename restored file: %w", err)
 	}
-	// Only remove the archive file when it differs from the restored path.
-	// When archived_from stored an archive-dir path (because the file was already
-	// there before ArchiveItem ran), originalPath == archivePath and the rename
-	// above already updated the file in place — removing it here would undo that.
-	if filepath.Clean(archivePath) != filepath.Clean(originalPath) {
-		if err := os.Remove(archivePath); err != nil {
-			return fmt.Errorf("remove archive file: %w", err)
-		}
+	if err := os.Remove(archivePath); err != nil {
+		return fmt.Errorf("remove archive file: %w", err)
 	}
 
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
