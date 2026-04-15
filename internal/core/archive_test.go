@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,6 +148,76 @@ func TestUnarchiveItem_RejectsActiveArtifact(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is not archived")
+}
+
+// TestArchiveItem_ItemAlreadyInArchiveDir verifies that ArchiveItem does not
+// delete the archive file when the item's current path is already inside the
+// archive directory. This can happen when a registry routes a terminal status
+// (e.g. "done") to the archive/ directory: completeReleaseScope moves the file
+// there first, then archiveItems calls ArchiveItem a second time on the same
+// item. Without the same-path guard, os.Remove(currentPath) would delete the
+// file that was just written.
+func TestArchiveItem_ItemAlreadyInArchiveDir(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	archiveDir := filepath.Join(backlogDir, "archive")
+	queueDir := filepath.Join(backlogDir, "queue")
+
+	// Seed item directly in archive/ (simulating status-routing move)
+	alreadyArchivedContent := "---\nid: 002-T\ntitle: Already archived task\nstatus: done\nartifact_type: task\n---\nBody\n"
+	archiveFilePath := filepath.Join(archiveDir, "002-T.md")
+	require.NoError(t, os.WriteFile(archiveFilePath, []byte(alreadyArchivedContent), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "002-T", Title: "Already archived task", Status: models.StatusDone, ArtifactType: "task",
+	}))
+
+	// Act: ArchiveItem on an item already in archive/
+	record, err := core.ArchiveItem(ctx, ws.DB, ws, "002-T")
+
+	// Assert: no error, archive file still exists, queue file not created
+	require.NoError(t, err)
+	assert.FileExists(t, archiveFilePath, "archive file must survive ArchiveItem when already in archive/")
+	assert.Equal(t, archiveFilePath, record.ArchivePath)
+	assert.NoFileExists(t, filepath.Join(queueDir, "002-T.md"), "no queue file should be created")
+}
+
+// TestUnarchiveItem_ArchiveFromEqualsArchivePath verifies that UnarchiveItem
+// does not delete the file when archived_from resolves to the same path as
+// the current archive location. This can happen when ArchiveItem encountered
+// an item already in archive/ (same-path scenario) and stored the archive-dir
+// path in the archived_from field. Without the same-path guard, os.Remove
+// would delete the file that Rename just wrote in place.
+func TestUnarchiveItem_ArchiveFromEqualsArchivePath(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	archiveDir := filepath.Join(backlogDir, "archive")
+
+	// archived_from stores the archive-dir path (same as current location)
+	archivePath := filepath.Join(archiveDir, "003-T.md")
+	content := fmt.Sprintf(
+		"---\nid: 003-T\ntitle: Self-archived task\nstatus: archived\nartifact_type: task\narchived_from: %s\n---\nBody\n",
+		archivePath,
+	)
+	require.NoError(t, os.WriteFile(archivePath, []byte(content), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "003-T", Title: "Self-archived task", Status: models.StatusArchived, ArtifactType: "task",
+	}))
+
+	// Act
+	err := core.UnarchiveItem(ctx, ws.DB, ws, "003-T")
+
+	// Assert: no error, file survives in archive dir
+	require.NoError(t, err)
+	assert.FileExists(t, archivePath, "archive file must survive when archived_from == archivePath")
+
+	// Content should be readable and no longer contain archived_from
+	raw, readErr := os.ReadFile(archivePath)
+	require.NoError(t, readErr)
+	assert.NotContains(t, string(raw), "archived_from", "restored file must not contain archived_from field")
 }
 
 func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {
