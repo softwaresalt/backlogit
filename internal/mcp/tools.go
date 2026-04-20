@@ -406,6 +406,12 @@ func (s *Server) RegisterTools() {
 		),
 		s.handleDoctor,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_version",
+			mcplib.WithDescription("Return backlogit version, commit SHA, build date, and Go runtime version"),
+		),
+		s.handleGetVersion,
+	)
 	s.registerHookTools()
 }
 

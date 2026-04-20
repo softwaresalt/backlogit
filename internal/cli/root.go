@@ -76,6 +76,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newMigrateCommand(&cwd))
 	root.AddCommand(newAdoptCommand(&cwd))
 	root.AddCommand(NewTelemetryCmd(&cwd))
+	root.AddCommand(newVersionCommand())
 
 	return root
 }
