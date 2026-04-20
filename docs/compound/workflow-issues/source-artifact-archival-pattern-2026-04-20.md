@@ -1,5 +1,6 @@
 ---
 title: "Post-Merge Closure Must Archive Source Stash Entries and Deliberations"
+description: "Protocol for archiving source stash entries and deliberations during ship post-merge closure to prevent stale-scope accumulation."
 problem_type: workflow_issue
 category: workflow_issue
 component: ship_agent
