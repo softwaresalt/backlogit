@@ -129,8 +129,10 @@ backlogit_archive_item(id="026-DL")
   archival as step 2 (before documentation evaluation).
 * The operational-closure skill checklist includes a **Source Artifact Cleanup**
   section so closure artifacts document the archived source IDs for auditability.
-* During the 036-S ship cycle, a one-time retroactive cleanup removed all 15+
-  harvested stash entries corresponding to already-shipped work.
+* During the 036-S ship cycle, a one-time retroactive cleanup confirmed
+  `stash.jsonl` was already clean; `backlogit_stash_remove` returned
+  `not_found`, and only stale DB cache records remained for 15+ harvested
+  entries tied to already-shipped work.
 
 **Ship agent checklist addition (now in protocol):**
 

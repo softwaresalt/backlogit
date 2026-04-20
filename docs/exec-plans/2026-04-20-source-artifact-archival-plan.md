@@ -5,8 +5,6 @@ origin: ".backlogit/queue/034-F.md (stash B155D9DA)"
 status: draft
 ---
 
-# Workflow Hygiene: Source Artifact Archival Pattern
-
 ## Problem Frame
 
 When the Ship agent completes post-merge closure for a shipment, it archives the
