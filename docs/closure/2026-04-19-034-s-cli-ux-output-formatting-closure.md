@@ -8,7 +8,7 @@ ms.date: 2026-04-19
 
 * **Shipment**: 034-S — CLI UX & Output Formatting
 * **Feature**: 033-F
-* **PR**: #43 merged to `main` on 2026-04-20T05:02:01Z
+* **PR**: [#43](https://github.com/softwaresalt/backlogit/pull/43) merged to `main` on 2026-04-20T05:02:01Z
 * **Merge SHA**: `fea611f1bb29ab8e0da4232689dfd574e50db4f9`
 * **Branch**: `shipment/034-b-cli-ux-output-formatting`
 * **Mode**: post-merge
@@ -134,10 +134,11 @@ git revert fea611f1bb29ab8e0da4232689dfd574e50db4f9 --mainline 1
 
 ## Rollback Procedure
 
-1. `git revert fea611f1bb29ab8e0da4232689dfd574e50db4f9 --mainline 1 -m "revert: roll back 034-S CLI UX output formatting"`
-2. Push to a branch, open a PR, merge after CI passes
-3. Announce rollback in project channels
-4. Create a new backlog task to re-implement with the identified fix
+1. `git revert --no-commit fea611f1bb29ab8e0da4232689dfd574e50db4f9 --mainline 1`
+2. `git commit -m "revert: roll back 034-S CLI UX output formatting"`
+3. Push to a branch, open a PR, merge after CI passes
+4. Announce rollback in project channels
+5. Create a new backlog task to re-implement with the identified fix
 
 ## Validation Window
 
@@ -159,7 +160,8 @@ The `backlogit shipment ship` command moved all 034-S and 033-F artifacts from `
 | `.backlogit/queue/033-F.md` | deleted → archived |
 | `.backlogit/queue/033.001-T.md` through `033.009-T.md` | deleted → archived |
 | `.backlogit/queue/033.001-R-branch-review-shipment-034-b-cli-ux-output-formatting.md` | deleted → archived |
-| `.backlogit/queue/033.010-T.md`, `033.011-T.md`, `033.012-T.md` | deleted (follow-up tasks; remain in backlog as queued) |
+| `.backlogit/queue/033.010-T.md` | deleted → `.backlogit/archive/033.010-T.md` (archived) |
+| `.backlogit/queue/033.011-T.md`, `033.012-T.md` | remain in queue — follow-up tasks, not archived |
 | `.backlogit/queue/036-DL.md` | deleted → `.backlogit/archive/036-DL.md` (new) |
 | `.backlogit/archive/033.006-T.md` through `033.009-T.md` | deleted (superseded by fresh archive writes from ship) |
 | `.backlogit/hooks_queue.jsonl` | modified — hook events from shipment lifecycle |
