@@ -1,5 +1,6 @@
 ---
 title: "Unpinned golang.org/x/term Transitively Bumps go Directive via x/sys"
+description: "Adding golang.org/x/term without pinning x/sys can silently bump the go directive in go.mod to a newer version, breaking CI matrix enforcement."
 problem_type: config_issue
 category: config_issue
 component: config
@@ -12,8 +13,6 @@ resolved: true
 tags: [go.mod, go-directive, dependency-pinning, golang.org/x/term, golang.org/x/sys, ci-failure, version-bump, transitive-dependency]
 date: 2026-04-20
 ---
-
-# Unpinned golang.org/x/term Transitively Bumps go Directive via x/sys
 
 ## Problem
 
@@ -50,7 +49,7 @@ explicitly, then manually reset the go directive.
 
 ### Before
 
-```
+```text
 // go.mod (after unpinned go get)
 go 1.25.0
 
@@ -80,7 +79,7 @@ go mod tidy
 go test ./...
 ```
 
-```
+```text
 // go.mod (after fix)
 go 1.24.0
 
@@ -118,7 +117,7 @@ version of x/sys tends to raise the go directive.
 * After any `go get`, diff go.mod before committing:
 
   ```bash
-  git diff go.mod | Select-String "^[+-].*^go "
+  git diff go.mod | Select-String "^[+-]go\s"
   ```
 
   Any change to the `go X.Y.Z` line is a red flag requiring investigation.
