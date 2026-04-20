@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
@@ -29,7 +30,7 @@ queue bulk-status to update multiple items in one command.`,
 
 // NewQueueViewCmd creates `backlogit queue view` with filter/group/sort flags.
 func NewQueueViewCmd() *cobra.Command {
-	var artifactType, status, groupBy, sortBy string
+	var artifactType, status, groupBy, sortBy, formatOutput string
 
 	cmd := &cobra.Command{
 		Use:   "view",
@@ -59,15 +60,25 @@ func NewQueueViewCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("query queue: %w", err)
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(view)
+
+			if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				return err
+			}
+			switch format.Format(formatOutput) {
+			case format.FormatTable, format.FormatTile:
+				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
+			default: // json
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(view)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&artifactType, "type", "", "filter by artifact type")
 	cmd.Flags().StringVar(&status, "status", "", "filter by status")
 	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field")
 	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
+	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
 }
 

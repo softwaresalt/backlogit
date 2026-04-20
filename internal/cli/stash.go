@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
@@ -58,7 +59,7 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 }
 
 func newStashListCommand(cwd *string) *cobra.Command {
-	var priority, kind string
+	var priority, kind, formatOutput string
 	var groupByPriority bool
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -83,14 +84,45 @@ func newStashListCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(entries)
+
+			// groupByPriority produces a structured map that only makes sense as JSON.
+			if groupByPriority {
+				if formatOutput != "" && formatOutput != string(format.FormatJSON) {
+					return fmt.Errorf("--format must be %q when --group-by-priority is set", format.FormatJSON)
+				}
+			} else {
+				if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+					return err
+				}
+			}
+			if groupByPriority || format.Format(formatOutput) == format.FormatJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(entries)
+			}
+
+			stashCols := []format.Column{
+				{Key: "id", Header: "ID"},
+				{Key: "priority", Header: "PRIORITY"},
+				{Key: "kind", Header: "KIND"},
+				{Key: "text", Header: "TEXT"},
+			}
+			rows := make([]map[string]any, len(entries.Entries))
+			for i, e := range entries.Entries {
+				rows[i] = map[string]any{
+					"id":       e.ID,
+					"priority": e.Priority,
+					"kind":     e.Kind,
+					"text":     e.Text,
+				}
+			}
+			return newRenderer(formatOutput).Render(cmd.OutOrStdout(), stashCols, rows)
 		},
 	}
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")
 	cmd.Flags().StringVar(&kind, "kind", "", "filter stash entries by kind (feature, task, bug, epic, unknown)")
 	cmd.Flags().BoolVar(&groupByPriority, "group-by-priority", false, "group stash entries by priority")
+	cmd.Flags().StringVar(&formatOutput, "format", "json", "output format: table, json, tile")
 	return cmd
 }
 

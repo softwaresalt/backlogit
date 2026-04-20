@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
 )
@@ -99,7 +100,7 @@ func newShipmentGetCmd() *cobra.Command {
 
 // newShipmentListCmd returns the `backlogit shipment list` subcommand.
 func newShipmentListCmd() *cobra.Command {
-	var status string
+	var status, formatOutput string
 
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -123,16 +124,23 @@ func newShipmentListCmd() *cobra.Command {
 				return fmt.Errorf("list shipments: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(shipments)
+			if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				return err
+			}
+			switch format.Format(formatOutput) {
+			case format.FormatTable, format.FormatTile:
+				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
+			default: // json
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(shipments)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "filter shipments by status")
+	cmd.Flags().StringVar(&formatOutput, "format", "json", "output format: table, json, tile")
 	return cmd
 }
-
-// newShipmentClaimCmd returns the `backlogit shipment claim <id>` subcommand.
 func newShipmentClaimCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "claim <id>",

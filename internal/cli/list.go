@@ -4,13 +4,62 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+// artifactColumns defines the standard output columns for artifact list and queue views.
+var artifactColumns = []format.Column{
+	{Key: "id", Header: "ID"},
+	{Key: "title", Header: "TITLE"},
+	{Key: "status", Header: "STATUS"},
+	{Key: "type", Header: "TYPE"},
+	{Key: "priority", Header: "PRIORITY"},
+}
+
+// artifactsToRows converts a slice of artifacts to the row maps consumed by format.Renderer.
+func artifactsToRows(artifacts []*models.Artifact) []map[string]any {
+	rows := make([]map[string]any, len(artifacts))
+	for i, a := range artifacts {
+		rows[i] = map[string]any{
+			"id":       a.ID,
+			"title":    a.Title,
+			"status":   string(a.Status),
+			"type":     a.ArtifactType,
+			"priority": a.Priority,
+		}
+	}
+	return rows
+}
+
+// newRenderer returns a format.Renderer for the given format string.
+// TTY detection for the TileRenderer is a follow-up task (AP-001).
+func newRenderer(f string) format.Renderer {
+	if format.Format(f) == format.FormatTile {
+		return format.NewTileRenderer(false)
+	}
+	return format.NewTableRenderer()
+}
+
+// validateFormat returns an error when f is not one of the allowed formats.
+func validateFormat(f string, allowed ...format.Format) error {
+	for _, a := range allowed {
+		if format.Format(f) == a {
+			return nil
+		}
+	}
+	names := make([]string, len(allowed))
+	for i, a := range allowed {
+		names[i] = string(a)
+	}
+	return fmt.Errorf("--format %q is not supported: allowed values are %s", f, strings.Join(names, ", "))
+}
 
 // newListCommand creates the `backlogit list` command.
 func newListCommand(cwd *string) *cobra.Command {
@@ -23,6 +72,7 @@ func newListCommand(cwd *string) *cobra.Command {
 		filterSprint     string
 		groupBy          string
 		jsonOutput       bool
+		formatOutput     string
 	)
 
 	cmd := &cobra.Command{
@@ -56,7 +106,15 @@ that can be piped into other tooling.`,
 				return fmt.Errorf("query items: %w", err)
 			}
 
+			// --json is a legacy alias for --format json.
+			effectiveFormat := format.Format(formatOutput)
 			if jsonOutput {
+				effectiveFormat = format.FormatJSON
+			} else if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				return err
+			}
+
+			if effectiveFormat == format.FormatJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(artifacts)
@@ -78,13 +136,7 @@ that can be piped into other tooling.`,
 				return nil
 			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tTITLE\tSTATUS\tTYPE\tPRIORITY")
-			for _, a := range artifacts {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					a.ID, a.Title, a.Status, a.ArtifactType, a.Priority)
-			}
-			return w.Flush()
+			return newRenderer(string(effectiveFormat)).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
 		},
 	}
 
@@ -96,5 +148,6 @@ that can be piped into other tooling.`,
 	cmd.Flags().StringVar(&filterSprint, "sprint", "", "filter by sprint ID")
 	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field (status, type, priority)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON array")
+	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
 }
