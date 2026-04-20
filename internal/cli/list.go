@@ -23,6 +23,7 @@ func newListCommand(cwd *string) *cobra.Command {
 		filterSprint     string
 		groupBy          string
 		jsonOutput       bool
+		formatOutput     string
 	)
 
 	cmd := &cobra.Command{
@@ -96,5 +97,6 @@ that can be piped into other tooling.`,
 	cmd.Flags().StringVar(&filterSprint, "sprint", "", "filter by sprint ID")
 	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field (status, type, priority)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON array")
+	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
 }

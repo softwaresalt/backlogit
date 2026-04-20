@@ -29,7 +29,7 @@ queue bulk-status to update multiple items in one command.`,
 
 // NewQueueViewCmd creates `backlogit queue view` with filter/group/sort flags.
 func NewQueueViewCmd() *cobra.Command {
-	var artifactType, status, groupBy, sortBy string
+	var artifactType, status, groupBy, sortBy, formatOutput string
 
 	cmd := &cobra.Command{
 		Use:   "view",
@@ -68,6 +68,7 @@ func NewQueueViewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "", "filter by status")
 	cmd.Flags().StringVar(&groupBy, "group-by", "", "group output by field")
 	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
+	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
 }
 

@@ -58,7 +58,7 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 }
 
 func newStashListCommand(cwd *string) *cobra.Command {
-	var priority, kind string
+	var priority, kind, formatOutput string
 	var groupByPriority bool
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -91,6 +91,7 @@ func newStashListCommand(cwd *string) *cobra.Command {
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")
 	cmd.Flags().StringVar(&kind, "kind", "", "filter stash entries by kind (feature, task, bug, epic, unknown)")
 	cmd.Flags().BoolVar(&groupByPriority, "group-by-priority", false, "group stash entries by priority")
+	cmd.Flags().StringVar(&formatOutput, "format", "json", "output format: table, json, tile")
 	return cmd
 }
 

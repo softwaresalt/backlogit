@@ -99,7 +99,7 @@ func newShipmentGetCmd() *cobra.Command {
 
 // newShipmentListCmd returns the `backlogit shipment list` subcommand.
 func newShipmentListCmd() *cobra.Command {
-	var status string
+	var status, formatOutput string
 
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -129,10 +129,9 @@ func newShipmentListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "filter shipments by status")
+	cmd.Flags().StringVar(&formatOutput, "format", "json", "output format: table, json, tile")
 	return cmd
 }
-
-// newShipmentClaimCmd returns the `backlogit shipment claim <id>` subcommand.
 func newShipmentClaimCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "claim <id>",

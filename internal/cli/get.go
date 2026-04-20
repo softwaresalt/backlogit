@@ -84,7 +84,7 @@ JSON output, or a specific named body section.`,
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output frontmatter as JSON")
-	cmd.Flags().StringVar(&format, "format", "", "output format: json")
+	cmd.Flags().StringVar(&format, "format", "table", "output format: table, json, tile")
 	cmd.Flags().StringVar(&section, "section", "", "extract a named section from the body")
 	return cmd
 }
