@@ -129,7 +129,7 @@ func newShipmentListCmd() *cobra.Command {
 			}
 			switch format.Format(formatOutput) {
 			case format.FormatTable, format.FormatTile:
-				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
+				return newRenderer(formatOutput, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
 			default: // json
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")

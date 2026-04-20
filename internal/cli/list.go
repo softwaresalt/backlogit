@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
@@ -38,11 +41,23 @@ func artifactsToRows(artifacts []*models.Artifact) []map[string]any {
 	return rows
 }
 
+// isTerminal reports whether w is a terminal-connected file descriptor.
+// It returns false when w is not an *os.File or when the file descriptor
+// is not attached to a terminal (e.g., piped output, test buffers).
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
+}
+
 // newRenderer returns a format.Renderer for the given format string.
-// TTY detection for the TileRenderer is a follow-up task (AP-001).
-func newRenderer(f string) format.Renderer {
+// w is the destination writer used for TTY detection when the tile renderer
+// is selected; bold output is enabled only when w is a real terminal.
+func newRenderer(f string, w io.Writer) format.Renderer {
 	if format.Format(f) == format.FormatTile {
-		return format.NewTileRenderer(false)
+		return format.NewTileRenderer(isTerminal(w))
 	}
 	return format.NewTableRenderer()
 }
@@ -136,7 +151,7 @@ that can be piped into other tooling.`,
 				return nil
 			}
 
-			return newRenderer(string(effectiveFormat)).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
+			return newRenderer(string(effectiveFormat), cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
 		},
 	}
 
