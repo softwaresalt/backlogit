@@ -1,3 +1,9 @@
+---
+title: "Stage Session Memory — 035-S CLI UX Polish"
+description: "Stage session memory for shipment 035-S: plan written, rubber-duck reviewed, ready for Ship handoff"
+ms.date: 2026-04-20
+---
+
 # Stage Session Memory — 035-S CLI UX Polish
 
 - **Date**: 2026-04-20
@@ -44,9 +50,9 @@
 
 | ID         | Title                                              | Status |
 |------------|----------------------------------------------------|--------|
-| 035-S      | Shipment B Polish: CLI UX Review Follow-ups        | queued |
-| 033.011-T  | cli-reference-drift: move permissions to job level | queued |
-| 033.012-T  | TileRenderer: wire TTY detection at call sites     | queued |
+| 035-S      | Shipment B Polish: CLI UX Review Follow-ups        | active |
+| 033.011-T  | cli-reference-drift: move permissions to job level | done   |
+| 033.012-T  | TileRenderer: wire TTY detection at call sites     | done   |
 
 ## Next Steps for Ship
 

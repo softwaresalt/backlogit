@@ -5,8 +5,6 @@ origin: "docs/closure/2026-04-19-034-s-cli-ux-output-formatting-closure.md"
 status: draft
 ---
 
-# Shipment 035-S: CLI UX Review Follow-ups
-
 ## Problem Frame
 
 Two P3 review findings from the just-shipped 034-S CLI UX work were deferred to a polish shipment:
