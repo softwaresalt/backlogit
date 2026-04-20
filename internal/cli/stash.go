@@ -116,7 +116,7 @@ func newStashListCommand(cwd *string) *cobra.Command {
 					"text":     e.Text,
 				}
 			}
-			return newRenderer(formatOutput).Render(cmd.OutOrStdout(), stashCols, rows)
+			return newRenderer(formatOutput, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), stashCols, rows)
 		},
 	}
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")
