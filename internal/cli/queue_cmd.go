@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
@@ -59,9 +60,15 @@ func NewQueueViewCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("query queue: %w", err)
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(view)
+
+			switch format.Format(formatOutput) {
+			case format.FormatTable, format.FormatTile:
+				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
+			default: // json (default)
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(view)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&artifactType, "type", "", "filter by artifact type")

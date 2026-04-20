@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
@@ -83,9 +84,30 @@ func newStashListCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(entries)
+
+			// groupByPriority produces a structured map that only makes sense as JSON.
+			if groupByPriority || format.Format(formatOutput) == format.FormatJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(entries)
+			}
+
+			stashCols := []format.Column{
+				{Key: "id", Header: "ID"},
+				{Key: "priority", Header: "PRIORITY"},
+				{Key: "kind", Header: "KIND"},
+				{Key: "text", Header: "TEXT"},
+			}
+			rows := make([]map[string]any, len(entries.Entries))
+			for i, e := range entries.Entries {
+				rows[i] = map[string]any{
+					"id":       e.ID,
+					"priority": e.Priority,
+					"kind":     e.Kind,
+					"text":     e.Text,
+				}
+			}
+			return newRenderer(formatOutput).Render(cmd.OutOrStdout(), stashCols, rows)
 		},
 	}
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")

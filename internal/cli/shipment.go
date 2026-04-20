@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
 )
@@ -123,9 +124,14 @@ func newShipmentListCmd() *cobra.Command {
 				return fmt.Errorf("list shipments: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(shipments)
+			switch format.Format(formatOutput) {
+			case format.FormatTable, format.FormatTile:
+				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
+			default: // json (default)
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(shipments)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "filter shipments by status")
