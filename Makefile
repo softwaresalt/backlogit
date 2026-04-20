@@ -1,4 +1,4 @@
-.PHONY: all build test lint vet fmt cover clean install
+.PHONY: all build test lint vet fmt cover clean install docs
 
 all: fmt vet lint test build
 
@@ -25,3 +25,6 @@ clean:
 
 install:
 	go install ./cmd/backlogit
+
+docs:
+	go run ./cmd/gen-docs docs/cli-reference

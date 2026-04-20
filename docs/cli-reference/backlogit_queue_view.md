@@ -1,0 +1,38 @@
+## backlogit queue view
+
+View queue items
+
+```
+backlogit queue view [flags]
+```
+
+### Examples
+
+```
+  backlogit queue view
+  backlogit queue view --status active --group-by type
+  backlogit queue view --sort priority
+```
+
+### Options
+
+```
+      --format string     output format: table, json, tile (default "table")
+      --group-by string   group output by field
+  -h, --help              help for view
+      --sort string       sort by field (default "priority")
+      --status string     filter by status
+      --type string       filter by artifact type
+```
+
+### Options inherited from parent commands
+
+```
+      --cwd string         workspace directory (default ".")
+      --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
+```
+
+### SEE ALSO
+
+* [backlogit queue](backlogit_queue.md)	 - Manage the work queue
+
