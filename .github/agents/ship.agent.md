@@ -241,17 +241,18 @@ After the user approves merge and the shipment transitions to shipped:
 2. Archive source artifacts for each shipped feature. For each feature in the
    shipment's release scope:
    * Read `custom_fields.source_stash_id` — if present, call
-     `backlogit_stash_remove` with the stash ID and reason
-     `superseded by {shipment_id}`. If the entry is already removed, skip
-     and log.
+     `backlogit_stash_remove` with the stash ID only. If the entry is
+     already removed, skip and log.
    * Read `custom_fields.source_deliberation_id` — if present, verify the
      deliberation artifact exists via `backlogit_get_item`. If it exists and
      is not already archived, call `backlogit_archive_item`. If already
      archived or not found, skip and log.
+
+   After processing all features in scope:
    * Broadcast the count of source artifacts archived at info level:
      `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`
-   * Log the archived source artifact IDs in the closure artifact's follow-up
-     section for traceability.
+   * Log the archived source artifact IDs in the closure artifact's `Source
+     artifact cleanup` section for traceability.
 3. Evaluate whether product documentation in `docs/` needs updates for the
    shipped feature scope. Check:
    * `docs/ARCHITECTURE.md` for structural changes

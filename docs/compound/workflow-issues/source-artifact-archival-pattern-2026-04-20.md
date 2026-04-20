@@ -76,12 +76,14 @@ protocol (`.github/agents/ship.agent.md`). After invoking `operational-closure`,
 and before the documentation evaluation step, the agent now:
 
 1. For each shipped feature, reads `custom_fields.source_stash_id` and calls
-   `backlogit_stash_remove` with reason `superseded by {shipment_id}`.
+   `backlogit_stash_remove` for that stash entry using the tool's actual interface.
 2. Reads `custom_fields.source_deliberation_id`, verifies the deliberation exists
    via `backlogit_get_item`, and calls `backlogit_archive_item` if it does.
 3. Handles idempotently: already-removed stash entries and already-archived
    deliberations are skipped and logged rather than causing errors.
-4. Broadcasts the cleanup count and logs archived IDs in the closure artifact.
+4. Broadcasts the cleanup count, logs archived IDs in the closure artifact, and
+   records the shipment linkage as `superseded by {shipment_id}` in the closure
+   artifact rather than as a `backlogit_stash_remove` parameter.
 
 The operational-closure skill (`operational-closure/SKILL.md`) was also updated
 to include a **Source Artifact Cleanup** checklist item in Step 2, so closure
