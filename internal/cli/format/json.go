@@ -7,7 +7,7 @@ import (
 )
 
 // JSONRenderer renders rows as a JSON array. Each element contains only the
-// keys present in columns, in column order.
+// keys present in the supplied columns slice.
 type JSONRenderer struct{}
 
 // NewJSONRenderer returns a ready-to-use JSONRenderer.

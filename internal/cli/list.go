@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -44,6 +45,20 @@ func newRenderer(f string) format.Renderer {
 		return format.NewTileRenderer(false)
 	}
 	return format.NewTableRenderer()
+}
+
+// validateFormat returns an error when f is not one of the allowed formats.
+func validateFormat(f string, allowed ...format.Format) error {
+	for _, a := range allowed {
+		if format.Format(f) == a {
+			return nil
+		}
+	}
+	names := make([]string, len(allowed))
+	for i, a := range allowed {
+		names[i] = string(a)
+	}
+	return fmt.Errorf("--format %q is not supported: allowed values are %s", f, strings.Join(names, ", "))
 }
 
 // newListCommand creates the `backlogit list` command.
@@ -95,6 +110,8 @@ that can be piped into other tooling.`,
 			effectiveFormat := format.Format(formatOutput)
 			if jsonOutput {
 				effectiveFormat = format.FormatJSON
+			} else if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				return err
 			}
 
 			if effectiveFormat == format.FormatJSON {

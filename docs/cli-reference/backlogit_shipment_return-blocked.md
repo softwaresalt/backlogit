@@ -1,20 +1,26 @@
+---
+title: "backlogit shipment return-blocked"
+description: "Return a blocked item from a shipment"
+ms.date: 2026-04-19
+---
+
 ## backlogit shipment return-blocked
 
 Return a blocked item from a shipment
 
-```
+```text
 backlogit shipment return-blocked [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit shipment return-blocked --shipment 001-S --item 001-T --reason "blocked"
 ```
 
 ### Options
 
-```
+```text
   -h, --help              help for return-blocked
       --item string       item ID
       --reason string     blocked reason
@@ -23,7 +29,7 @@ backlogit shipment return-blocked [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

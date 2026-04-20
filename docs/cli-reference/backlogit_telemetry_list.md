@@ -1,20 +1,26 @@
+---
+title: "backlogit telemetry list"
+description: "List harvested session summaries"
+ms.date: 2026-04-19
+---
+
 ## backlogit telemetry list
 
 List harvested session summaries
 
-```
+```text
 backlogit telemetry list [flags]
 ```
 
 ### Options
 
-```
+```text
   -h, --help   help for list
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

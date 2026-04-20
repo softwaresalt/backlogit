@@ -1,3 +1,9 @@
+---
+title: "backlogit dep"
+description: "Manage artifact dependencies"
+ms.date: 2026-04-19
+---
+
 ## backlogit dep
 
 Manage artifact dependencies
@@ -11,13 +17,13 @@ CLI and MCP tools.
 
 ### Options
 
-```
+```text
   -h, --help   help for dep
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

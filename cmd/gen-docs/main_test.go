@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,22 @@ func TestGenerateDocs_RootCommandPageExists(t *testing.T) {
 
 	rootPage := filepath.Join(outDir, "backlogit.md")
 	assert.FileExists(t, rootPage, "backlogit.md should be generated as the root command reference page")
+}
+
+// TestGenerateDocs_FrontmatterPresent asserts that generated pages start with
+// YAML frontmatter delimited by "---".
+func TestGenerateDocs_FrontmatterPresent(t *testing.T) {
+	outDir := t.TempDir()
+
+	err := generateDocs(outDir)
+	require.NoError(t, err)
+
+	rootPage := filepath.Join(outDir, "backlogit.md")
+	content, err := os.ReadFile(rootPage)
+	require.NoError(t, err)
+
+	assert.True(t, strings.HasPrefix(string(content), "---\n"),
+		"generated pages must start with YAML frontmatter (---)")
 }
 
 // TestGenerateDocs_NoAutoGenTag asserts that DisableAutoGenTag = true prevents

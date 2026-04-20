@@ -1,20 +1,26 @@
+---
+title: "backlogit shipment create"
+description: "Create a shipment"
+ms.date: 2026-04-19
+---
+
 ## backlogit shipment create
 
 Create a shipment
 
-```
+```text
 backlogit shipment create [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit shipment create --title "Sprint 1" --items 001-T,002-T
 ```
 
 ### Options
 
-```
+```text
   -h, --help           help for create
       --items string   comma-separated item IDs
       --title string   shipment title
@@ -22,7 +28,7 @@ backlogit shipment create [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

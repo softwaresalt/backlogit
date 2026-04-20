@@ -1,20 +1,26 @@
+---
+title: "backlogit shipment ship"
+description: "Close a released shipment and archive the released scope"
+ms.date: 2026-04-19
+---
+
 ## backlogit shipment ship
 
 Close a released shipment and archive the released scope
 
-```
+```text
 backlogit shipment ship <id> [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit shipment ship 001-S --sha deadbeef --message "merge: release" --author "dev@example.com"
 ```
 
 ### Options
 
-```
+```text
       --author string    merge commit author to record on released artifacts
   -h, --help             help for ship
       --message string   merge commit message to record on released artifacts
@@ -23,7 +29,7 @@ backlogit shipment ship <id> [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

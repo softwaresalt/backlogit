@@ -1,27 +1,33 @@
+---
+title: "backlogit adopt"
+description: "Adopt an orphaned item under a new parent feature"
+ms.date: 2026-04-19
+---
+
 ## backlogit adopt
 
 Adopt an orphaned item under a new parent feature
 
-```
+```text
 backlogit adopt <item-id> [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit adopt 015.009-T --parent 016-F
 ```
 
 ### Options
 
-```
+```text
   -h, --help            help for adopt
       --parent string   New parent feature ID (required)
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

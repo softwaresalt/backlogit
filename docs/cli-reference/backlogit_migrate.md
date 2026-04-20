@@ -1,3 +1,9 @@
+---
+title: "backlogit migrate"
+description: "Migrate backlog data between supported formats and layouts"
+ms.date: 2026-04-19
+---
+
 ## backlogit migrate
 
 Migrate backlog data between supported formats and layouts
@@ -11,13 +17,13 @@ Use --source with --adapter backlog-md for source imports. Use --dry-run and
 --validate before writing imported artifacts. Use --rollback only for internal
 layout migrations, not source imports.
 
-```
+```text
 backlogit migrate [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
   backlogit migrate --source .\.backlog --adapter backlog-md --validate
   backlogit migrate --source .\.backlog --adapter backlog-md
@@ -27,7 +33,7 @@ backlogit migrate [flags]
 
 ### Options
 
-```
+```text
       --adapter string   migration adapter to use (for example: backlog-md)
       --detect           detect the adapter for the source and print it
       --dry-run          preview changes without moving files
@@ -40,7 +46,7 @@ backlogit migrate [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

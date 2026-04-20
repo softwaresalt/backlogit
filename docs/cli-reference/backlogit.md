@@ -1,3 +1,9 @@
+---
+title: "backlogit"
+description: "Backlogit — AI-native agile workspace"
+ms.date: 2026-04-19
+---
+
 ## backlogit
 
 Backlogit — AI-native agile workspace
@@ -16,7 +22,7 @@ stash follow-up work for later planning.
 
 ### Examples
 
-```
+```text
   backlogit init
   backlogit add --type feature --title "Authentication hardening"
   backlogit list --status active
@@ -29,7 +35,7 @@ stash follow-up work for later planning.
 
 ### Options
 
-```
+```text
       --cwd string         workspace directory (default ".")
   -h, --help               help for backlogit
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)

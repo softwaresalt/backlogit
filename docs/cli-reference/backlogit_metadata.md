@@ -1,3 +1,9 @@
+---
+title: "backlogit metadata"
+description: "Discover backlogit metadata for agents and tooling"
+ms.date: 2026-04-19
+---
+
 ## backlogit metadata
 
 Discover backlogit metadata for agents and tooling
@@ -10,13 +16,13 @@ registry routing, stash conventions, CLI commands, and MCP tools.
 
 ### Options
 
-```
+```text
   -h, --help   help for metadata
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

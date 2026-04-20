@@ -1,14 +1,20 @@
+---
+title: "backlogit telemetry report"
+description: "Generate a formatted telemetry report from harvested data"
+ms.date: 2026-04-19
+---
+
 ## backlogit telemetry report
 
 Generate a formatted telemetry report from harvested data
 
-```
+```text
 backlogit telemetry report [flags]
 ```
 
 ### Options
 
-```
+```text
       --by string        Group output by: session, server (default "session")
       --format string    Output format: table, json (default "table")
   -h, --help             help for report
@@ -18,7 +24,7 @@ backlogit telemetry report [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

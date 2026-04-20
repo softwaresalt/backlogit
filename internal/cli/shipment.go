@@ -124,10 +124,13 @@ func newShipmentListCmd() *cobra.Command {
 				return fmt.Errorf("list shipments: %w", err)
 			}
 
+			if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				return err
+			}
 			switch format.Format(formatOutput) {
 			case format.FormatTable, format.FormatTile:
 				return newRenderer(formatOutput).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
-			default: // json (default)
+			default: // json
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(shipments)

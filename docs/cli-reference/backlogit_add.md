@@ -1,3 +1,9 @@
+---
+title: "backlogit add"
+description: "Create a new artifact"
+ms.date: 2026-04-19
+---
+
 ## backlogit add
 
 Create a new artifact
@@ -10,13 +16,13 @@ Artifacts are written as Markdown files under .backlogit\queue or the target
 directory selected by registry routing. Typed hierarchical IDs are assigned
 automatically when the configured queue layout supports the requested type.
 
-```
+```text
 backlogit add [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit add --type feature --title "Authentication hardening"
   backlogit add --type task --title "Add token rotation" --parent 001-F
   backlogit add --type subtask --title "Write expiry tests" --parent 001.001-T --section description="Cover refresh and expiry flows"
@@ -24,7 +30,7 @@ backlogit add [flags]
 
 ### Options
 
-```
+```text
       --assigned-to string    assignee
       --commit string         commit SHA
       --dependencies string   comma-separated dependency IDs
@@ -44,7 +50,7 @@ backlogit add [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

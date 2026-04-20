@@ -1,21 +1,27 @@
+---
+title: "backlogit telemetry top"
+description: "Show top N tool calls by token usage"
+ms.date: 2026-04-19
+---
+
 ## backlogit telemetry top
 
 Show top N tool calls by token usage
 
-```
+```text
 backlogit telemetry top [flags]
 ```
 
 ### Options
 
-```
+```text
   -h, --help    help for top
       --n int   Number of top entries to display (default 10)
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

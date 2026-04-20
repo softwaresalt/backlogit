@@ -27,6 +27,5 @@ Run `make docs` from the repository root to regenerate all pages from the curren
 
 ```bash
 make docs
-```
-
+```text
 The CI pipeline checks for drift automatically on every pull request. If a flag, description, or subcommand changes and `make docs` is not re-run, the pull request will fail with a diff report.

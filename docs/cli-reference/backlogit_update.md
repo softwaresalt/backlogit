@@ -1,3 +1,9 @@
+---
+title: "backlogit update"
+description: "Update artifact fields or sections"
+ms.date: 2026-04-19
+---
+
 ## backlogit update
 
 Update artifact fields or sections
@@ -10,13 +16,13 @@ artifact.
 Use repeated --section name=value flags to update named sections without
 replacing the rest of the document body.
 
-```
+```text
 backlogit update <id> [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit update 001-T --status review
   backlogit update 001-T --priority high
   backlogit update 001-F --section goals="Ship passwordless sign-in"
@@ -25,7 +31,7 @@ backlogit update <id> [flags]
 
 ### Options
 
-```
+```text
       --assigned-to string      assignee
       --commit string           commit SHA
       --description string      new description
@@ -43,7 +49,7 @@ backlogit update <id> [flags]
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

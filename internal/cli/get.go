@@ -71,6 +71,9 @@ JSON output, or a specific named body section.`,
 			}
 
 			useJSON := jsonOutput || format == "json"
+			if !useJSON && format != "" && format != "table" {
+				return fmt.Errorf("--format %q is not supported on 'get': allowed values are table, json", format)
+			}
 
 			if useJSON {
 				detail := buildDetailMap(ctx, ws, fm, body, id)
@@ -84,7 +87,7 @@ JSON output, or a specific named body section.`,
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output frontmatter as JSON")
-	cmd.Flags().StringVar(&format, "format", "table", "output format: table, json, tile")
+	cmd.Flags().StringVar(&format, "format", "table", "output format: table, json")
 	cmd.Flags().StringVar(&section, "section", "", "extract a named section from the body")
 	return cmd
 }

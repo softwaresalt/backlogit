@@ -1,3 +1,9 @@
+---
+title: "backlogit move"
+description: "Change artifact status"
+ms.date: 2026-04-19
+---
+
 ## backlogit move
 
 Change artifact status
@@ -7,27 +13,27 @@ Change artifact status
 Change an artifact status and relocate its file according to registry.yaml
 routing rules.
 
-```
+```text
 backlogit move <id> [flags]
 ```
 
 ### Examples
 
-```
+```text
   backlogit move 001-T --status review
   backlogit move 001-F --status done
 ```
 
 ### Options
 
-```
+```text
   -h, --help            help for move
       --status string   new status (required)
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```

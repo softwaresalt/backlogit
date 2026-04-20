@@ -1,3 +1,9 @@
+---
+title: "backlogit queue"
+description: "Manage the work queue"
+ms.date: 2026-04-19
+---
+
 ## backlogit queue
 
 Manage the work queue
@@ -11,13 +17,13 @@ queue bulk-status to update multiple items in one command.
 
 ### Options
 
-```
+```text
   -h, --help   help for queue
 ```
 
 ### Options inherited from parent commands
 
-```
+```text
       --cwd string         workspace directory (default ".")
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```
