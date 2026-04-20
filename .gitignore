@@ -4,6 +4,10 @@ logs/
 .vscode/
 .engram/
 .copilot/
+.env
+.env.*
+!.env.example
+.mcp.json
 
 # Project files
 *.prj
