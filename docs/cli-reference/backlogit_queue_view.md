@@ -1,7 +1,6 @@
 ---
 title: "backlogit queue view"
 description: "View queue items"
-ms.date: 2026-04-19
 ---
 
 ## backlogit queue view

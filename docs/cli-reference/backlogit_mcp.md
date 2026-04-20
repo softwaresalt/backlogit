@@ -1,7 +1,6 @@
 ---
 title: "backlogit mcp"
 description: "Start the backlogit MCP stdio server"
-ms.date: 2026-04-19
 ---
 
 ## backlogit mcp

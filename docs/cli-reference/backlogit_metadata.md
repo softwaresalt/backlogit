@@ -1,7 +1,6 @@
 ---
 title: "backlogit metadata"
 description: "Discover backlogit metadata for agents and tooling"
-ms.date: 2026-04-19
 ---
 
 ## backlogit metadata

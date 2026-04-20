@@ -1,7 +1,6 @@
 ---
 title: "backlogit list"
 description: "List artifacts in the workspace"
-ms.date: 2026-04-19
 ---
 
 ## backlogit list

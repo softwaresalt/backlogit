@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment"
 description: "Manage shipment work groups"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment

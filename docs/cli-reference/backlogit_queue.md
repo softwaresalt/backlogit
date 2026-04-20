@@ -1,7 +1,6 @@
 ---
 title: "backlogit queue"
 description: "Manage the work queue"
-ms.date: 2026-04-19
 ---
 
 ## backlogit queue

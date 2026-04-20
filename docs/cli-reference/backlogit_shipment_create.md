@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment create"
 description: "Create a shipment"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment create

@@ -1,7 +1,6 @@
 ---
 title: "backlogit telemetry top"
 description: "Show top N tool calls by token usage"
-ms.date: 2026-04-19
 ---
 
 ## backlogit telemetry top

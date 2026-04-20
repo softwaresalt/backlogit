@@ -1,7 +1,6 @@
 ---
 title: "backlogit version"
 description: "Print version, commit, build date, and Go runtime information"
-ms.date: 2026-04-19
 ---
 
 ## backlogit version

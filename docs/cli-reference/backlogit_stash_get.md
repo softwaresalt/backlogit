@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash get"
 description: "Get a stash entry by ID"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash get

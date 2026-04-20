@@ -1,7 +1,6 @@
 ---
 title: "backlogit delete"
 description: "Delete an artifact"
-ms.date: 2026-04-19
 ---
 
 ## backlogit delete

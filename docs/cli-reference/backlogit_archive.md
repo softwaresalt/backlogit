@@ -1,7 +1,6 @@
 ---
 title: "backlogit archive"
 description: "Archive a completed artifact"
-ms.date: 2026-04-19
 ---
 
 ## backlogit archive

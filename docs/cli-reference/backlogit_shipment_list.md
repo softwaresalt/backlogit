@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment list"
 description: "List shipments"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment list

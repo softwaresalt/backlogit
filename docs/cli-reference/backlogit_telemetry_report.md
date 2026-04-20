@@ -1,7 +1,6 @@
 ---
 title: "backlogit telemetry report"
 description: "Generate a formatted telemetry report from harvested data"
-ms.date: 2026-04-19
 ---
 
 ## backlogit telemetry report

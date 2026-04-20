@@ -1,7 +1,6 @@
 ---
 title: "backlogit move"
 description: "Change artifact status"
-ms.date: 2026-04-19
 ---
 
 ## backlogit move

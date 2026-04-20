@@ -1,7 +1,6 @@
 ---
 title: "backlogit search"
 description: "Full-text search across artifacts"
-ms.date: 2026-04-19
 ---
 
 ## backlogit search

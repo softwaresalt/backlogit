@@ -1,7 +1,6 @@
 ---
 title: "backlogit add"
 description: "Create a new artifact"
-ms.date: 2026-04-19
 ---
 
 ## backlogit add

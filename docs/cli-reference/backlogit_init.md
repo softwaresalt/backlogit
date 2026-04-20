@@ -1,7 +1,6 @@
 ---
 title: "backlogit init"
 description: "Initialize a new backlogit workspace"
-ms.date: 2026-04-19
 ---
 
 ## backlogit init

@@ -1,7 +1,6 @@
 ---
 title: "backlogit dep"
 description: "Manage artifact dependencies"
-ms.date: 2026-04-19
 ---
 
 ## backlogit dep

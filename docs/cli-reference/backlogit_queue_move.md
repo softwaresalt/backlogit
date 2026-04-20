@@ -1,7 +1,6 @@
 ---
 title: "backlogit queue move"
 description: "Reorder an item in the queue"
-ms.date: 2026-04-19
 ---
 
 ## backlogit queue move

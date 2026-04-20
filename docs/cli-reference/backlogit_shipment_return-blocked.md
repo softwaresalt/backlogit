@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment return-blocked"
 description: "Return a blocked item from a shipment"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment return-blocked

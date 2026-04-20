@@ -1,7 +1,6 @@
 ---
 title: "backlogit sync"
 description: "Rehydrate the SQLite index from Markdown source files"
-ms.date: 2026-04-19
 ---
 
 ## backlogit sync

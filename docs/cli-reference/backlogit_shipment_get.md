@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment get"
 description: "Get a shipment by ID"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment get

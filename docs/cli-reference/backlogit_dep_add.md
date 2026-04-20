@@ -1,7 +1,6 @@
 ---
 title: "backlogit dep add"
 description: "Add a dependency edge"
-ms.date: 2026-04-19
 ---
 
 ## backlogit dep add

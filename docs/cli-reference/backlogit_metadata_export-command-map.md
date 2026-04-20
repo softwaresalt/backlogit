@@ -1,7 +1,6 @@
 ---
 title: "backlogit metadata export-command-map"
 description: "Write an agent-readable command map into the workspace"
-ms.date: 2026-04-19
 ---
 
 ## backlogit metadata export-command-map

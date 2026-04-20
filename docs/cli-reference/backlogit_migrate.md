@@ -1,7 +1,6 @@
 ---
 title: "backlogit migrate"
 description: "Migrate backlog data between supported formats and layouts"
-ms.date: 2026-04-19
 ---
 
 ## backlogit migrate

@@ -1,7 +1,6 @@
 ---
 title: "backlogit"
 description: "Backlogit — AI-native agile workspace"
-ms.date: 2026-04-19
 ---
 
 ## backlogit

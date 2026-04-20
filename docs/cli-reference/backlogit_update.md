@@ -1,7 +1,6 @@
 ---
 title: "backlogit update"
 description: "Update artifact fields or sections"
-ms.date: 2026-04-19
 ---
 
 ## backlogit update

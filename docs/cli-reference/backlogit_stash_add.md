@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash add"
 description: "Add an item to the stash"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash add

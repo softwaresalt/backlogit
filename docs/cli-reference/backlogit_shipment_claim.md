@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment claim"
 description: "Claim a queued shipment"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment claim

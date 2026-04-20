@@ -1,7 +1,6 @@
 ---
 title: "backlogit telemetry harvest"
 description: "Parse Copilot CLI logs and write telemetry-sessions.jsonl"
-ms.date: 2026-04-19
 ---
 
 ## backlogit telemetry harvest

@@ -1,7 +1,6 @@
 ---
 title: "backlogit get"
 description: "Retrieve an artifact by ID"
-ms.date: 2026-04-19
 ---
 
 ## backlogit get

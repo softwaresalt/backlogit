@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash remove"
 description: "Remove an active stash entry"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash remove

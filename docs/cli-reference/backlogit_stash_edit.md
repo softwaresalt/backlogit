@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash edit"
 description: "Edit a stash entry's text, kind, or priority"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash edit

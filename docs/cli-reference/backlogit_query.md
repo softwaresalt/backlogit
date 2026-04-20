@@ -1,7 +1,6 @@
 ---
 title: "backlogit query"
 description: "Execute a read-only SQL query against the index"
-ms.date: 2026-04-19
 ---
 
 ## backlogit query

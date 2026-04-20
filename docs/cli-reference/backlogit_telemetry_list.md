@@ -1,7 +1,6 @@
 ---
 title: "backlogit telemetry list"
 description: "List harvested session summaries"
-ms.date: 2026-04-19
 ---
 
 ## backlogit telemetry list

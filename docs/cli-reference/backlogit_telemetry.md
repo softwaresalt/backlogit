@@ -1,7 +1,6 @@
 ---
 title: "backlogit telemetry"
 description: "Inspect Copilot CLI token usage and tool telemetry"
-ms.date: 2026-04-19
 ---
 
 ## backlogit telemetry

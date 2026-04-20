@@ -1,7 +1,6 @@
 ---
 title: "backlogit queue bulk-status"
 description: "Update status for multiple items"
-ms.date: 2026-04-19
 ---
 
 ## backlogit queue bulk-status

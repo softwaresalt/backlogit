@@ -1,7 +1,6 @@
 ---
 title: "backlogit metadata catalog"
 description: "Print the unified metadata catalog"
-ms.date: 2026-04-19
 ---
 
 ## backlogit metadata catalog

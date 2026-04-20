@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -52,7 +51,6 @@ func generateDocs(outDir string) error {
 
 	// Build a filename→description map for the frontmatter prepender.
 	descMap := buildDescMap(root, "")
-	today := time.Now().Format("2006-01-02")
 
 	filePrepender := func(filename string) string {
 		base := filepath.Base(filename)
@@ -62,7 +60,7 @@ func generateDocs(outDir string) error {
 		if desc == "" {
 			desc = title
 		}
-		return fmt.Sprintf("---\ntitle: %q\ndescription: %q\nms.date: %s\n---\n\n", title, desc, today)
+		return fmt.Sprintf("---\ntitle: %q\ndescription: %q\n---\n\n", title, desc)
 	}
 	linkHandler := func(name string) string { return name }
 

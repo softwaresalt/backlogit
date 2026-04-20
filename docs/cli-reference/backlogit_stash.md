@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash"
 description: "Manage the deferred work stash"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash

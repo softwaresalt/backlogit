@@ -1,7 +1,6 @@
 ---
 title: "backlogit deliberate"
 description: "Create a deliberation artifact linked to a stash entry"
-ms.date: 2026-04-19
 ---
 
 ## backlogit deliberate

@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash harvest"
 description: "Harvest a stash item into a planned work item"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash harvest

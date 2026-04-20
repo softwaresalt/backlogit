@@ -1,7 +1,6 @@
 ---
 title: "backlogit stash list"
 description: "List the current active stash entries"
-ms.date: 2026-04-19
 ---
 
 ## backlogit stash list

@@ -1,7 +1,6 @@
 ---
 title: "backlogit dep list"
 description: "List dependencies for an artifact"
-ms.date: 2026-04-19
 ---
 
 ## backlogit dep list

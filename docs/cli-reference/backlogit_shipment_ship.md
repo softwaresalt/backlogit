@@ -1,7 +1,6 @@
 ---
 title: "backlogit shipment ship"
 description: "Close a released shipment and archive the released scope"
-ms.date: 2026-04-19
 ---
 
 ## backlogit shipment ship
