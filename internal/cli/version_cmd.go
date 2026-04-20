@@ -32,6 +32,9 @@ func newVersionCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if format != "" && format != "json" {
+				return fmt.Errorf("unsupported format %q: version supports: json", format)
+			}
 			info := versionInfo{
 				Version:   version.Version,
 				Commit:    version.Commit,

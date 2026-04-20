@@ -1,9 +1,16 @@
 .PHONY: all build test lint vet fmt cover clean install docs
 
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+LDFLAGS := -X github.com/softwaresalt/backlogit/internal/version.Version=$(VERSION) \
+           -X github.com/softwaresalt/backlogit/internal/version.Commit=$(COMMIT) \
+           -X github.com/softwaresalt/backlogit/internal/version.BuildDate=$(DATE)
+
 all: fmt vet lint test build
 
 build:
-	go build -o bin/backlogit ./cmd/backlogit
+	go build -ldflags "$(LDFLAGS)" -o bin/backlogit ./cmd/backlogit
 
 test:
 	go test -race -coverprofile=coverage.out ./...
@@ -24,7 +31,7 @@ clean:
 	rm -rf bin/ coverage.out
 
 install:
-	go install ./cmd/backlogit
+	go install -ldflags "$(LDFLAGS)" ./cmd/backlogit
 
 docs:
 	go run ./cmd/gen-docs docs/cli-reference

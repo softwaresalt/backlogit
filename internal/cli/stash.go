@@ -86,7 +86,11 @@ func newStashListCommand(cwd *string) *cobra.Command {
 			}
 
 			// groupByPriority produces a structured map that only makes sense as JSON.
-			if !groupByPriority {
+			if groupByPriority {
+				if formatOutput != "" && formatOutput != string(format.FormatJSON) {
+					return fmt.Errorf("--format must be %q when --group-by-priority is set", format.FormatJSON)
+				}
+			} else {
 				if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
 					return err
 				}
