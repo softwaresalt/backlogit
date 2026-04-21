@@ -74,10 +74,12 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 	}
 
 	switch format {
+	case "table":
+		return formatReportTable(sessions, tools, groupBy, opts.Limit)
 	case "json":
 		return formatReportJSON(sessions, tools, groupBy, opts.Limit)
 	default:
-		return formatReportTable(sessions, tools, groupBy, opts.Limit)
+		return "", fmt.Errorf("unsupported format value %q: supported values are \"table\", \"json\"", format)
 	}
 }
 
