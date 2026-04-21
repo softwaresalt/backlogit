@@ -399,6 +399,13 @@ func (s *Server) RegisterTools() {
 		s.handleTelemetryHarvest,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_merge_sync",
+			mcplib.WithDescription("Perform an incremental sync of the .backlogit workspace cache. Computes a diff against the in-memory manifest and applies targeted upserts/deletes. Falls back to full rehydration when the delta exceeds the threshold."),
+			mcplib.WithBoolean("dry_run", mcplib.Description("When true, compute and return the diff without modifying the database")),
+		),
+		s.handleMergeSync,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_doctor",
 			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Returns a DoctorReport with findings and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
@@ -726,6 +733,47 @@ func (s *Server) handleSyncIndex(ctx context.Context, _ mcplib.CallToolRequest) 
 		return InternalError(fmt.Sprintf("sync index: %v", err)), nil
 	}
 	return toolResultJSON(map[string]any{"indexed": count})
+}
+
+func (s *Server) handleMergeSync(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+
+	dryRun, _ := request.Params.Arguments["dry_run"].(bool)
+
+	s.manifestMu.RLock()
+	oldManifest := s.manifest
+	s.manifestMu.RUnlock()
+
+	storageRoot := core.WorkspaceStorageRoot(ws.RootPath)
+	syncResult, newManifest, err := db.MergeSync(ctx, storageRoot, ws.DB, oldManifest, dryRun)
+	if err != nil {
+		return InternalError(fmt.Sprintf("merge sync: %v", err)), nil
+	}
+
+	if !dryRun {
+		s.manifestMu.Lock()
+		s.manifest = newManifest
+		s.manifestMu.Unlock()
+	}
+
+	// Ensure nil slices marshal as [] rather than null.
+	if syncResult.Added == nil {
+		syncResult.Added = []db.SyncEntry{}
+	}
+	if syncResult.Changed == nil {
+		syncResult.Changed = []db.SyncEntry{}
+	}
+	if syncResult.Deleted == nil {
+		syncResult.Deleted = []db.SyncEntry{}
+	}
+	if syncResult.Relocated == nil {
+		syncResult.Relocated = []db.SyncEntry{}
+	}
+
+	return toolResultJSON(syncResult)
 }
 
 func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

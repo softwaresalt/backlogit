@@ -15,6 +15,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/core/templates"
+	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
@@ -33,6 +34,12 @@ type Server struct {
 	toolNames   []string
 	toolDefs    []mcplib.Tool
 	workspaceMu sync.Mutex
+	// manifest is an in-memory snapshot of workspace file metadata used by
+	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
+	// Protected by manifestMu; lock ordering: workspaceMu must be held before
+	// manifestMu if both are needed simultaneously.
+	manifest   map[string]db.FileEntry
+	manifestMu sync.RWMutex
 }
 
 // NewServer creates an MCP server from a workspace.
