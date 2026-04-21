@@ -52,20 +52,20 @@ func isTerminal(w io.Writer) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// newRenderer returns a format.Renderer for the given format string.
+// newRenderer returns a format.Renderer for the given format.
 // w is the destination writer used for TTY detection when the tile renderer
 // is selected; bold output is enabled only when w is a real terminal.
-func newRenderer(f string, w io.Writer) format.Renderer {
-	if format.Format(f) == format.FormatTile {
+func newRenderer(f format.Format, w io.Writer) format.Renderer {
+	if f == format.FormatTile {
 		return format.NewTileRenderer(isTerminal(w))
 	}
 	return format.NewTableRenderer()
 }
 
 // validateFormat returns an error when f is not one of the allowed formats.
-func validateFormat(f string, allowed ...format.Format) error {
+func validateFormat(f format.Format, allowed ...format.Format) error {
 	for _, a := range allowed {
-		if format.Format(f) == a {
+		if f == a {
 			return nil
 		}
 	}
@@ -125,7 +125,7 @@ that can be piped into other tooling.`,
 			effectiveFormat := format.Format(formatOutput)
 			if jsonOutput {
 				effectiveFormat = format.FormatJSON
-			} else if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+			} else if err := validateFormat(effectiveFormat, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
 				return err
 			}
 
@@ -151,7 +151,7 @@ that can be piped into other tooling.`,
 				return nil
 			}
 
-			return newRenderer(string(effectiveFormat), cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
+			return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
 		},
 	}
 

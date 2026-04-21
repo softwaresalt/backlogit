@@ -85,17 +85,19 @@ func newStashListCommand(cwd *string) *cobra.Command {
 				return err
 			}
 
+			effectiveFormat := format.Format(formatOutput)
+
 			// groupByPriority produces a structured map that only makes sense as JSON.
 			if groupByPriority {
-				if formatOutput != "" && formatOutput != string(format.FormatJSON) {
+				if formatOutput != "" && effectiveFormat != format.FormatJSON {
 					return fmt.Errorf("--format must be %q when --group-by-priority is set", format.FormatJSON)
 				}
 			} else {
-				if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+				if err := validateFormat(effectiveFormat, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
 					return err
 				}
 			}
-			if groupByPriority || format.Format(formatOutput) == format.FormatJSON {
+			if groupByPriority || effectiveFormat == format.FormatJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(entries)
@@ -116,7 +118,7 @@ func newStashListCommand(cwd *string) *cobra.Command {
 					"text":     e.Text,
 				}
 			}
-			return newRenderer(formatOutput, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), stashCols, rows)
+			return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), stashCols, rows)
 		},
 	}
 	cmd.Flags().StringVar(&priority, "priority", "", "filter stash entries by priority")

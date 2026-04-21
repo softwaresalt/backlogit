@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"io"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 )
 
 // TestFormatFlag_ListDefaultsToTable asserts that `backlogit list` has a
@@ -87,4 +91,22 @@ func TestFormatFlag_ShipmentListDefaultsToJSON(t *testing.T) {
 	require.NotNil(t, flag, "shipment list must have a --format flag")
 	assert.Equal(t, "json", flag.DefValue,
 		"--format on 'shipment list' must default to 'json' (PR-001 Option A)")
+}
+
+// TestNewRenderer_UsesTypedFormatSignature asserts the helper accepts the typed
+// format API rather than a raw string boundary.
+func TestNewRenderer_UsesTypedFormatSignature(t *testing.T) {
+	got := reflect.TypeOf(newRenderer).String()
+	want := reflect.TypeOf(func(f format.Format, w io.Writer) format.Renderer { return nil }).String()
+
+	assert.Equal(t, want, got)
+}
+
+// TestValidateFormat_UsesTypedFormatSignature asserts validation stays within
+// the typed format API after flag parsing converts raw strings.
+func TestValidateFormat_UsesTypedFormatSignature(t *testing.T) {
+	got := reflect.TypeOf(validateFormat).String()
+	want := reflect.TypeOf(func(f format.Format, allowed ...format.Format) error { return nil }).String()
+
+	assert.Equal(t, want, got)
 }

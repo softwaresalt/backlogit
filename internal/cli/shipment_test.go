@@ -2,10 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // T003 / ST016: Verify NewShipmentCmd returns a valid command with subcommands.
@@ -103,4 +107,30 @@ func TestShipmentCmd_HelpOutput(t *testing.T) {
 	assert.Contains(t, output, "create")
 	assert.Contains(t, output, "ship")
 	assert.Contains(t, output, "return-blocked")
+}
+
+func TestShipmentListCmd_RejectsInvalidFormat(t *testing.T) {
+	root := setupShipmentCLIWorkspace(t)
+
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "shipment", "list", "--format", "banana"})
+
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"banana"`)
+}
+
+func setupShipmentCLIWorkspace(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+
+	return root
 }

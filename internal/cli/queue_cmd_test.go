@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,4 +53,20 @@ func TestNewQueueBulkStatusCmd_HasRequiredFlags(t *testing.T) {
 	// Assert
 	assert.NotNil(t, cmd.Flags().Lookup("ids"))
 	assert.NotNil(t, cmd.Flags().Lookup("status"))
+}
+
+func TestQueueView_RejectsInvalidFormat(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	t.Chdir(root)
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"queue", "view", "--format", "banana"})
+
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"banana"`)
 }
