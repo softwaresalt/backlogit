@@ -61,12 +61,13 @@ func NewQueueViewCmd() *cobra.Command {
 				return fmt.Errorf("query queue: %w", err)
 			}
 
-			if err := validateFormat(formatOutput, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
+			effectiveFormat := format.Format(formatOutput)
+			if err := validateFormat(effectiveFormat, format.FormatTable, format.FormatJSON, format.FormatTile); err != nil {
 				return err
 			}
-			switch format.Format(formatOutput) {
+			switch effectiveFormat {
 			case format.FormatTable, format.FormatTile:
-				return newRenderer(formatOutput, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
+				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
 			default: // json
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")

@@ -110,3 +110,18 @@ func TestListCommand_FilterByType(t *testing.T) {
 	assert.Contains(t, output, "B001")
 	assert.NotContains(t, output, "T001")
 }
+
+func TestListCommand_RejectsInvalidFormat(t *testing.T) {
+	root := setupCLIWorkspace(t)
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "list", "--format", "banana"})
+
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"banana"`)
+}

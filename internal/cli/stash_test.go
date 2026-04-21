@@ -84,6 +84,20 @@ func TestStashCommand_ListKindFilter(t *testing.T) {
 	assert.NotContains(t, buf.String(), "Task item")
 }
 
+func TestStashCommand_ListRejectsInvalidFormat(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "stash", "list", "--format", "banana"})
+
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"banana"`)
+}
+
 func TestStashCommand_Get(t *testing.T) {
 	root := setupCLIWorkspace(t)
 	cmd := cli.NewRootCommand()
