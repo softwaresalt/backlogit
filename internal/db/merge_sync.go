@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	blErrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -119,8 +120,13 @@ func MergeSync(
 		upsertTargets = append(upsertTargets, r.Entry)
 	}
 
+	// failedPaths accumulates RelPath values for artifacts that failed to parse
+	// or upsert. After the transaction, their prior manifest entries are restored
+	// so they remain visible in the next diff and will be retried.
+	var failedPaths []string
 	if len(upsertTargets) > 0 {
 		if err := RetryWrite(ctx, func() error {
+			failedPaths = nil // reset on each retry attempt
 			tx, txErr := database.BeginTx(ctx, nil)
 			if txErr != nil {
 				return fmt.Errorf("begin upsert transaction: %w", txErr)
@@ -135,10 +141,57 @@ func MergeSync(
 				artifact, parseErr := parseMarkdownArtifact(absPath)
 				if parseErr != nil {
 					log.Warn("skipping artifact: parse error", "path", entry.RelPath, "error", parseErr)
+					failedPaths = append(failedPaths, entry.RelPath)
 					continue
 				}
 				if upsertErr := UpsertItemTx(ctx, tx, artifact); upsertErr != nil {
 					log.Warn("skipping artifact: upsert error", "id", artifact.ID, "error", upsertErr)
+					failedPaths = append(failedPaths, entry.RelPath)
+					continue
+				}
+
+				// Mirror the full rehydration logic: update derived hierarchy
+				// fields and refresh dep/link edges for the changed artifact so
+				// the incremental path stays in sync with what a full Rehydrate
+				// would produce.
+				if artifact.Level == 0 && isHierarchicalID(artifact.ID) {
+					level := strings.Count(artifact.ID, ".") + 1
+					hierarchyPath := hierarchyPathFromID(artifact.ID)
+					if _, execErr := tx.ExecContext(ctx,
+						`UPDATE items SET level = ?, hierarchy_path = ? WHERE id = ?`,
+						level, hierarchyPath, artifact.ID,
+					); execErr != nil {
+						log.Warn("failed to set level/hierarchy_path", "id", artifact.ID, "error", execErr)
+					}
+				}
+
+				// Refresh dependency edges: delete stale rows then re-insert.
+				if _, delErr := tx.ExecContext(ctx, `DELETE FROM item_deps WHERE item_id = ?`, artifact.ID); delErr != nil {
+					log.Warn("failed to clear deps", "id", artifact.ID, "error", delErr)
+				}
+				for _, depID := range artifact.Dependencies {
+					if depID == "" {
+						continue
+					}
+					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
+						log.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+					}
+				}
+
+				// Refresh link edges: delete stale rows then re-insert.
+				if _, delErr := tx.ExecContext(ctx, `DELETE FROM item_links WHERE source_id = ?`, artifact.ID); delErr != nil {
+					log.Warn("failed to clear links", "id", artifact.ID, "error", delErr)
+				}
+				for _, link := range artifact.Links {
+					if strings.TrimSpace(link.TargetID) == "" || strings.TrimSpace(link.LinkType) == "" {
+						continue
+					}
+					if _, execErr := tx.ExecContext(ctx,
+						`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
+						artifact.ID, link.TargetID, link.LinkType,
+					); execErr != nil {
+						log.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
+					}
 				}
 			}
 
@@ -146,9 +199,24 @@ func MergeSync(
 		}); err != nil {
 			return result, manifest, fmt.Errorf("merge sync: upsert batch: %w", err)
 		}
+
+		// Restore prior manifest entries for artifacts that could not be
+		// indexed. This keeps them in the diff on the next MergeSync call so
+		// they are automatically retried.
+		for _, relPath := range failedPaths {
+			if old, ok := manifest[relPath]; ok {
+				current[relPath] = old
+			} else {
+				delete(current, relPath)
+			}
+		}
 	}
 
 	// Delete removed artifacts (one cascade transaction per item to reuse existing tested logic).
+	// Only successfully deleted entries (or already-absent ones) advance the manifest and appear
+	// in result.Deleted. Failed deletes restore the prior manifest entry so the deletion is
+	// retried on the next MergeSync call.
+	var successfulDeletes []FileEntry
 	for _, entry := range diff.Deleted {
 		if entry.Kind != FileKindArtifact || entry.ItemID == "" {
 			continue
@@ -157,14 +225,20 @@ func MergeSync(
 			// Tolerate ErrNotFound — item may already be absent from the index.
 			if !errors.Is(delErr, blErrors.ErrNotFound) {
 				log.Warn("failed to cascade-delete artifact", "id", entry.ItemID, "error", delErr)
+				// Restore the prior manifest entry so the deletion is retried next call.
+				if old, ok := manifest[entry.RelPath]; ok {
+					current[entry.RelPath] = old
+				}
+				continue
 			}
 		}
+		successfulDeletes = append(successfulDeletes, entry)
 	}
 
 	// Populate result with artifact-level sync entries.
 	result.Added = artifactSyncEntries(diff.Added)
 	result.Changed = artifactSyncEntries(diff.Changed)
-	result.Deleted = artifactSyncEntries(diff.Deleted)
+	result.Deleted = artifactSyncEntries(successfulDeletes)
 	result.Relocated = relocationSyncEntries(diff.Relocated)
 
 	// Step 6: Refresh stash when stash.jsonl appears in the diff.

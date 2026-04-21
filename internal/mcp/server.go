@@ -38,8 +38,9 @@ type Server struct {
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
 	// Protected by manifestMu; lock ordering: workspaceMu must be held before
 	// manifestMu if both are needed simultaneously.
-	manifest   map[string]db.FileEntry
-	manifestMu sync.RWMutex
+	manifest        map[string]db.FileEntry
+	manifestMu      sync.RWMutex
+	manifestVersion uint64
 }
 
 // NewServer creates an MCP server from a workspace.
@@ -131,6 +132,22 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	}
 	s.Workspace = ws
 	s.refreshTemplateService(ctx)
+
+	// Populate the manifest baseline so the first backlogit_merge_sync call
+	// can compute a real diff instead of treating every file as added.
+	// manifestMu is acquired inside workspaceMu — the documented lock order.
+	storageRoot := core.WorkspaceStorageRoot(ws.RootPath)
+	s.manifestMu.Lock()
+	if s.manifest == nil {
+		if m, buildErr := db.BuildManifest(storageRoot); buildErr == nil {
+			s.manifest = m
+			s.manifestVersion++
+		} else {
+			logger.Warn("failed to build initial manifest", "error", buildErr)
+		}
+	}
+	s.manifestMu.Unlock()
+
 	return ws, nil
 }
 

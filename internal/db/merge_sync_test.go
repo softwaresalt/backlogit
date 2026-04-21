@@ -15,6 +15,7 @@ package db_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -189,7 +190,7 @@ func TestMergeSync_LargeDeltaTriggersFallback(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(ws, "queue"), 0o755))
 	for i := 0; i < 60; i++ {
 		content := syncTestArtifactA
-		name := filepath.Join(ws, "queue", "extra-"+string(rune('a'+i%26))+".md")
+		name := filepath.Join(ws, "queue", fmt.Sprintf("extra-%03d.md", i))
 		require.NoError(t, os.WriteFile(name, []byte(content), 0o644))
 	}
 

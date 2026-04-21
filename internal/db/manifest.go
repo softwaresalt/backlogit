@@ -310,10 +310,10 @@ func extractItemIDFromFrontmatter(path string) string {
 	return ""
 }
 
-// RehydrateWithManifest performs the same full rehydration as Rehydrate and
-// additionally builds and returns a file manifest from the workspace. It is the
-// canonical implementation; Rehydrate delegates to it and discards the returned
-// manifest for backward compatibility.
+// RehydrateWithManifest performs a full rehydration by calling Rehydrate, then
+// builds and returns a file manifest snapshot of the post-rehydration workspace.
+// Rehydrate is the canonical rebuild path; this function wraps it for callers
+// that also need the manifest baseline (e.g. to seed backlogit_merge_sync).
 func RehydrateWithManifest(ctx context.Context, workspacePath string, database *sql.DB) (int, map[string]FileEntry, error) {
 	count, err := Rehydrate(ctx, workspacePath, database)
 	if err != nil {

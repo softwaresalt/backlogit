@@ -745,6 +745,7 @@ func (s *Server) handleMergeSync(ctx context.Context, request mcplib.CallToolReq
 
 	s.manifestMu.RLock()
 	oldManifest := s.manifest
+	oldVersion := s.manifestVersion
 	s.manifestMu.RUnlock()
 
 	storageRoot := core.WorkspaceStorageRoot(ws.RootPath)
@@ -755,7 +756,13 @@ func (s *Server) handleMergeSync(ctx context.Context, request mcplib.CallToolReq
 
 	if !dryRun {
 		s.manifestMu.Lock()
-		s.manifest = newManifest
+		// Only write when our snapshot has not been superseded by a concurrent
+		// call. A lost CAS means another goroutine already wrote a newer manifest;
+		// discard ours silently to avoid regressing the baseline.
+		if s.manifestVersion == oldVersion {
+			s.manifest = newManifest
+			s.manifestVersion++
+		}
 		s.manifestMu.Unlock()
 	}
 

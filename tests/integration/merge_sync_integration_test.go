@@ -14,6 +14,7 @@ package integration_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,7 +69,8 @@ func setupMergeSyncWorkspace(t *testing.T) (root string, database *sql.DB, manif
 	_, manifest, err = db.RehydrateWithManifest(ctx, storageRoot, ws.DB)
 	require.NoError(t, err)
 
-	return root, ws.DB, manifest}
+	return root, ws.DB, manifest
+}
 
 func TestMergeSyncIntegration_AddedArtifactIndexed(t *testing.T) {
 	root, database, manifest := setupMergeSyncWorkspace(t)
@@ -153,7 +155,7 @@ func TestMergeSyncIntegration_LargeDeltaTriggersFallback(t *testing.T) {
 	queueDir := filepath.Join(root, ".backlogit", "queue")
 	for i := 0; i < 60; i++ {
 		content := integArtifactA
-		name := filepath.Join(queueDir, filepath.Base(filepath.Join("bulk-"+string(rune('a'+i%26))+".md")))
+		name := filepath.Join(queueDir, fmt.Sprintf("bulk-%03d.md", i))
 		require.NoError(t, os.WriteFile(name, []byte(content), 0o644))
 	}
 
