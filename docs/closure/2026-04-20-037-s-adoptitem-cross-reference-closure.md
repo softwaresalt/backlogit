@@ -13,7 +13,6 @@ ms.date: 2026-04-20
 | Branch | `feat/035-adoptitem-cross-reference` |
 | PR | #49 (implementation), #50 (closure state) |
 | Merge SHA (implementation) | `1e2442f` |
-| Merge SHA (closure) | `98ec017` |
 | CI status | 3/3 green (both PRs) |
 | Review gate | Passed — 0 P0/P1, 2 P2, 2 P3 findings; 5 Copilot comments resolved |
 | Readiness status | **READY** |
