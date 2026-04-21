@@ -563,6 +563,14 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	artifact.ID = newID
 	artifact.UpdatedAt = time.Now()
 
+	// Scan for other artifacts that reference oldID in their frontmatter.
+	// This is done outside the transaction (read-only) so the walk does not
+	// contend with the write transaction that follows.
+	crossRefs, crossRefErr := findCrossArtifactReferences(ctx, ws, oldID, newID)
+	if crossRefErr != nil {
+		return nil, fmt.Errorf("adopt item %s: scan cross-references: %w", oldID, crossRefErr)
+	}
+
 	// Step 2: Begin DB transaction for edge rewrites and index sync.
 	if ws.DB != nil && newID != oldID {
 		tx, txErr := ws.DB.BeginTx(ctx, nil)
@@ -636,6 +644,14 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			}
 		}
 
+		// Rewrite frontmatter in other artifacts that reference oldID.
+		if applyErr := applyCrossArtifactRewrites(ctx, tx, ws, crossRefs); applyErr != nil {
+			if renamedMD {
+				_ = os.Rename(newMDPath, oldMDPath)
+			}
+			return nil, fmt.Errorf("adopt item %s: apply cross-artifact rewrites: %w", oldID, applyErr)
+		}
+
 		// Rename log file if it exists.
 		if _, statErr := os.Stat(oldLogPath); statErr == nil {
 			if renameErr := os.Rename(oldLogPath, newLogPath); renameErr != nil {
@@ -657,6 +673,9 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			if renamedMD {
 				_ = os.Rename(newMDPath, oldMDPath)
 			}
+			for _, u := range crossRefs {
+				_ = os.WriteFile(u.filePath, u.snapshotRaw, 0o644)
+			}
 			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
 		}
 	} else {
@@ -671,12 +690,19 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 	}
 
+	// Build list of rewritten artifact IDs for the event delta and result.
+	rewrittenIDs := make([]string, 0, len(crossRefs))
+	for _, u := range crossRefs {
+		rewrittenIDs = append(rewrittenIDs, u.artifact.ID)
+	}
+
 	appendItemEvent(ctx, ws, newID, "adopted", map[string]any{
-		"old_id":         oldID,
-		"new_id":         newID,
-		"new_parent_id":  newParentID,
-		"origin_feature": originFeature,
-		"was_orphan":     wasOrphan,
+		"old_id":                 oldID,
+		"new_id":                 newID,
+		"new_parent_id":          newParentID,
+		"origin_feature":         originFeature,
+		"was_orphan":             wasOrphan,
+		"rewritten_artifact_ids": rewrittenIDs,
 	})
 
 	// Fire post-adopt hooks.
@@ -694,11 +720,12 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	}
 
 	return &AdoptItemResult{
-		ItemID:        oldID,
-		NewID:         newID,
-		NewParentID:   newParentID,
-		OriginFeature: originFeature,
-		IsOrphan:      wasOrphan,
+		ItemID:               oldID,
+		NewID:                newID,
+		NewParentID:          newParentID,
+		OriginFeature:        originFeature,
+		IsOrphan:             wasOrphan,
+		RewrittenArtifactIDs: rewrittenIDs,
 	}, nil
 }
 
