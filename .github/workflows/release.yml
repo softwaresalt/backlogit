@@ -94,7 +94,12 @@ jobs:
           EXT=""
           if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
           VERSION="${GITHUB_REF_NAME#v}"
-          go build -ldflags="-s -w -X github.com/softwaresalt/backlogit/internal/version.Version=${VERSION}" \
+          COMMIT="${GITHUB_SHA::7}"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -ldflags="-s -w \
+            -X github.com/softwaresalt/backlogit/internal/version.Version=${VERSION} \
+            -X github.com/softwaresalt/backlogit/internal/version.Commit=${COMMIT} \
+            -X github.com/softwaresalt/backlogit/internal/version.BuildDate=${BUILD_DATE}" \
             -o dist/backlogit-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} \
             ./cmd/backlogit
       - name: Upload artifacts
