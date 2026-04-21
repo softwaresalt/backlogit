@@ -481,11 +481,12 @@ func clearParentID(ctx context.Context, ws *Workspace, itemID string) error {
 
 // AdoptItemResult summarizes the outcome of an adopt operation.
 type AdoptItemResult struct {
-	ItemID        string `json:"item_id"`
-	NewID         string `json:"new_id,omitempty"`
-	NewParentID   string `json:"new_parent_id"`
-	OriginFeature string `json:"origin_feature,omitempty"`
-	IsOrphan      bool   `json:"was_orphan"`
+	ItemID               string   `json:"item_id"`
+	NewID                string   `json:"new_id,omitempty"`
+	NewParentID          string   `json:"new_parent_id"`
+	OriginFeature        string   `json:"origin_feature,omitempty"`
+	IsOrphan             bool     `json:"was_orphan"`
+	RewrittenArtifactIDs []string `json:"rewritten_artifact_ids,omitempty"`
 }
 
 // AdoptItem sets an orphaned or unparented item's parent_id to a new feature,
