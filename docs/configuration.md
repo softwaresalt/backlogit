@@ -735,6 +735,26 @@ artifact_types:
 6. If you import from a markdown-backed source, edit `migration.yaml` to remap imported classes
 7. Run `backlogit sync` after significant manual changes to the workspace
 
+## Cache refresh: sync vs. merge-sync
+
+`backlogit sync` performs a **full rehydration** — it deletes all rows from the
+SQLite index, walks every `.backlogit/` Markdown file, and re-inserts all
+artifacts. This guarantees consistency but is proportional to workspace size.
+
+`backlogit_merge_sync` (MCP only) performs **incremental rehydration** — it diffs
+the current `.backlogit/` file tree against an in-memory snapshot of paths and
+modification times, upserts only changed artifacts, and deletes only removed
+artifacts. A fallback to full rehydration triggers automatically when the diff is
+too large or the manifest is stale.
+
+Use `backlogit sync` (or `backlogit_sync_index`) after bulk manual edits to
+`.backlogit/` files. Use `backlogit_merge_sync` in agent loops where only a few
+artifacts change between tool calls and token efficiency matters.
+
+The response from `backlogit_merge_sync` includes `upserted`, `deleted`,
+`failed_paths`, and `fallback_triggered` fields so callers can detect and respond
+to incremental sync anomalies.
+
 ## Accuracy notes
 
 The current implementation supports:
@@ -745,6 +765,7 @@ The current implementation supports:
 * status/type routing
 * class-to-type migration remapping
 * stash-based deferred planning
+* incremental cache refresh (`backlogit_merge_sync` MCP tool)
 
 The current implementation does not yet support:
 
