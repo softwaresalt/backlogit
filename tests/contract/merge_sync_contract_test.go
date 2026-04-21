@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/client"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"

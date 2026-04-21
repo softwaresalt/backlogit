@@ -1,11 +1,10 @@
 ---
 title: "MCP Merge Sync: Incremental Cache Refresh for .backlogit Drift"
+description: "Implementation plan for the backlogit_merge_sync MCP tool: incremental SQLite cache refresh from .backlogit/ file diffs"
 date: 2026-04-21
 origin: ".backlogit/queue/037-DL.md"
 status: draft
 ---
-
-# MCP Merge Sync: Incremental Cache Refresh for .backlogit Drift
 
 ## Problem Frame
 
