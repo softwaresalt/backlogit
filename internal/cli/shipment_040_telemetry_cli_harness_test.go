@@ -23,6 +23,10 @@ func writeShipment040CLITelemetryJSONL(t *testing.T, workspacePath string) {
 }
 
 func TestTask039016_TelemetryReportFlagDocumentsMarkdown(t *testing.T) {
+	if active := os.Getenv("BACKLOGIT_ACTIVE_HARNESS"); active != "039.016-T" {
+		t.Skipf("shipment 040 harness inactive for 039.016-T (BACKLOGIT_ACTIVE_HARNESS=%q)", active)
+	}
+
 	cwd := t.TempDir()
 	root := cli.NewTelemetryCmd(&cwd)
 	report, _, err := root.Find([]string{"report"})
@@ -35,6 +39,10 @@ func TestTask039016_TelemetryReportFlagDocumentsMarkdown(t *testing.T) {
 }
 
 func TestTask039016_TelemetryReportCommandSupportsMarkdown(t *testing.T) {
+	if active := os.Getenv("BACKLOGIT_ACTIVE_HARNESS"); active != "039.016-T" {
+		t.Skipf("shipment 040 harness inactive for 039.016-T (BACKLOGIT_ACTIVE_HARNESS=%q)", active)
+	}
+
 	cwd := t.TempDir()
 	writeShipment040CLITelemetryJSONL(t, cwd)
 

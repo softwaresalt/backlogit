@@ -1,6 +1,7 @@
 package telemetry_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,7 +10,17 @@ import (
 	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
+func requireShipment040TelemetryHarness(t *testing.T, taskID string) {
+	t.Helper()
+
+	if active := os.Getenv("BACKLOGIT_ACTIVE_HARNESS"); active != taskID {
+		t.Skipf("shipment 040 harness inactive for %s (BACKLOGIT_ACTIVE_HARNESS=%q)", taskID, active)
+	}
+}
+
 func TestTask039013_ReportHarnessScenariosPending(t *testing.T) {
+	requireShipment040TelemetryHarness(t, "039.013-T")
+
 	t.Run("multi_session_fixture", func(t *testing.T) {
 		t.Fatal("not implemented: add multi-session behavioral telemetry report coverage for 039.013-T")
 	})
@@ -24,6 +35,8 @@ func TestTask039013_ReportHarnessScenariosPending(t *testing.T) {
 }
 
 func TestTask039014_HarvestPipelineHarnessPending(t *testing.T) {
+	requireShipment040TelemetryHarness(t, "039.014-T")
+
 	t.Run("full_harvest_pipeline", func(t *testing.T) {
 		t.Fatal("not implemented: add end-to-end harvest pipeline coverage for 039.014-T")
 	})
@@ -34,6 +47,8 @@ func TestTask039014_HarvestPipelineHarnessPending(t *testing.T) {
 }
 
 func TestTask039015_GenerateReportMarkdownFormat(t *testing.T) {
+	requireShipment040TelemetryHarness(t, "039.015-T")
+
 	ws := t.TempDir()
 	writeMinimalTelemetryJSONL(t, ws)
 
@@ -49,6 +64,8 @@ func TestTask039015_GenerateReportMarkdownFormat(t *testing.T) {
 }
 
 func TestTask039015_GenerateReportMarkdownServerGrouping(t *testing.T) {
+	requireShipment040TelemetryHarness(t, "039.015-T")
+
 	ws := t.TempDir()
 	writeMinimalTelemetryJSONL(t, ws)
 

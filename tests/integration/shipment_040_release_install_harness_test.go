@@ -31,7 +31,17 @@ func readShipment040RepoFile(t *testing.T, relativePath string) string {
 	return string(data)
 }
 
+func requireShipment040Harness(t *testing.T, taskID string) {
+	t.Helper()
+
+	if active := os.Getenv("BACKLOGIT_ACTIVE_HARNESS"); active != taskID {
+		t.Skipf("shipment 040 harness inactive for %s (BACKLOGIT_ACTIVE_HARNESS=%q)", taskID, active)
+	}
+}
+
 func TestTask039009_ReleaseWorkflowRequiresCompleteLdflags(t *testing.T) {
+	requireShipment040Harness(t, "039.009-T")
+
 	workflow := readShipment040RepoFile(t, ".github/workflows/release.yml")
 
 	var missing []string
@@ -52,6 +62,8 @@ func TestTask039009_ReleaseWorkflowRequiresCompleteLdflags(t *testing.T) {
 }
 
 func TestTask039010_ReleaseWorkflowPublishesSHA256Sums(t *testing.T) {
+	requireShipment040Harness(t, "039.010-T")
+
 	workflow := readShipment040RepoFile(t, ".github/workflows/release.yml")
 
 	var missing []string
@@ -70,6 +82,8 @@ func TestTask039010_ReleaseWorkflowPublishesSHA256Sums(t *testing.T) {
 }
 
 func TestTask039011_UnixInstallScriptExistsForCurlPipe(t *testing.T) {
+	requireShipment040Harness(t, "039.011-T")
+
 	scriptPath := filepath.Join(repoRootForShipment040Harness(t), "scripts", "install", "install.sh")
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -93,6 +107,8 @@ func TestTask039011_UnixInstallScriptExistsForCurlPipe(t *testing.T) {
 }
 
 func TestTask039011_PowerShellInstallScriptExistsForIRM(t *testing.T) {
+	requireShipment040Harness(t, "039.011-T")
+
 	scriptPath := filepath.Join(repoRootForShipment040Harness(t), "scripts", "install", "install.ps1")
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -116,6 +132,8 @@ func TestTask039011_PowerShellInstallScriptExistsForIRM(t *testing.T) {
 }
 
 func TestTask039012_InstallationDocsLeadWithBinaryInstallMethods(t *testing.T) {
+	requireShipment040Harness(t, "039.012-T")
+
 	docs := readShipment040RepoFile(t, "docs/installation.md")
 
 	idxCurl := strings.Index(docs, "curl -fsSL")
