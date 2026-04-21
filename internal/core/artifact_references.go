@@ -62,9 +62,16 @@ func findCrossArtifactReferences(
 				return nil
 			}
 
-			a, _, parseErr := parseFile(path)
-			if parseErr != nil {
-				slog.Debug("find cross-refs: skipping unparseable file", "path", path, "error", parseErr)
+			// Parse from already-read bytes to avoid a second os.ReadFile call
+			// and ensure snapshot and parsed state are consistent.
+			fm, body, fmErr := models.ParseFrontmatter(string(raw))
+			if fmErr != nil {
+				slog.Debug("find cross-refs: skipping unparseable file", "path", path, "error", fmErr)
+				return nil
+			}
+			a, artifactErr := models.ArtifactFromFrontmatter(fm, body)
+			if artifactErr != nil {
+				slog.Debug("find cross-refs: skipping invalid artifact frontmatter", "path", path, "error", artifactErr)
 				return nil
 			}
 
@@ -191,7 +198,37 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: upsert item: %w", u.artifact.ID, upsertErr)
 		}
 
-		// Refresh dep rows: delete existing, reinsert from updated struct.
+		// Snapshot existing dep_type values before deleting so we can
+		// preserve them on re-insert (frontmatter does not store dep_type).
+		existingDepTypes := make(map[string]string)
+		existingRows, queryErr := tx.QueryContext(ctx,
+			`SELECT depends_on, dep_type FROM item_deps WHERE item_id = ?`,
+			u.artifact.ID,
+		)
+		if queryErr != nil {
+			restoreWritten()
+			return fmt.Errorf("apply cross-artifact rewrite for %s: select deps: %w", u.artifact.ID, queryErr)
+		}
+		for existingRows.Next() {
+			var dep, depType string
+			if scanErr := existingRows.Scan(&dep, &depType); scanErr != nil {
+				existingRows.Close()
+				restoreWritten()
+				return fmt.Errorf("apply cross-artifact rewrite for %s: scan deps: %w", u.artifact.ID, scanErr)
+			}
+			if depType == "" {
+				depType = "blocks"
+			}
+			existingDepTypes[strings.TrimSpace(dep)] = depType
+		}
+		existingRows.Close()
+		if rowsErr := existingRows.Err(); rowsErr != nil {
+			restoreWritten()
+			return fmt.Errorf("apply cross-artifact rewrite for %s: iterate deps: %w", u.artifact.ID, rowsErr)
+		}
+
+		// Refresh dep rows: delete existing, reinsert from updated struct
+		// using the original dep_type when known.
 		if _, delErr := tx.ExecContext(ctx,
 			`DELETE FROM item_deps WHERE item_id = ?`, u.artifact.ID,
 		); delErr != nil {
@@ -199,12 +236,17 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: delete deps: %w", u.artifact.ID, delErr)
 		}
 		for _, dep := range u.artifact.Dependencies {
-			if strings.TrimSpace(dep) == "" {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
 				continue
 			}
+			depType, ok := existingDepTypes[dep]
+			if !ok || depType == "" {
+				depType = "blocks"
+			}
 			if _, insErr := tx.ExecContext(ctx,
-				`INSERT OR REPLACE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, 'blocks')`,
-				u.artifact.ID, dep,
+				`INSERT OR REPLACE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, ?)`,
+				u.artifact.ID, dep, depType,
 			); insErr != nil {
 				restoreWritten()
 				return fmt.Errorf("apply cross-artifact rewrite for %s: insert dep %s: %w",

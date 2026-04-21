@@ -6,8 +6,6 @@ origin: ".backlogit/queue/035-F.md"
 status: draft
 ---
 
-# AdoptItem Cross-Reference Rewrite
-
 ## Problem Frame
 
 When `AdoptItem` reassigns an orphaned or unparented artifact to a new parent

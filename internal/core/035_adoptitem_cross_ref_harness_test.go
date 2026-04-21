@@ -85,7 +85,8 @@ func TestAdoptItem_CrossReference_NoIDChange(t *testing.T) {
 	// Nil-out QueueLayout so the ID generation path is skipped and newID == oldID.
 	ws.Config.QueueLayout = nil
 
-	// Should not panic because findCrossArtifactReferences is not reached.
+	// findCrossArtifactReferences is called but returns immediately (no-op)
+	// because oldID == newID, so no filesystem walk is performed.
 	result, err := core.AdoptItem(ctx, ws, task.ID, feat2.ID)
 	require.NoError(t, err)
 	require.NotNil(t, result)

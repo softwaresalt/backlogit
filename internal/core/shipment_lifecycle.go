@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -674,7 +675,15 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				_ = os.Rename(newMDPath, oldMDPath)
 			}
 			for _, u := range crossRefs {
-				_ = os.WriteFile(u.filePath, u.snapshotRaw, 0o644)
+				tmp := u.filePath + ".rollback-tmp"
+				if writeErr := os.WriteFile(tmp, u.snapshotRaw, 0o644); writeErr != nil {
+					slog.Warn("adopt item: rollback cross-ref write failed", "path", u.filePath, "error", writeErr)
+					continue
+				}
+				if renameErr := os.Rename(tmp, u.filePath); renameErr != nil {
+					slog.Warn("adopt item: rollback cross-ref rename failed", "path", u.filePath, "error", renameErr)
+					_ = os.Remove(tmp)
+				}
 			}
 			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
 		}
