@@ -238,16 +238,31 @@ After the user approves merge and the shipment transitions to shipped:
 
 1. Invoke the `operational-closure` skill in `mode=post-merge` to produce
    release-readiness, monitoring, and rollback artifacts in `docs/closure/`.
-2. Evaluate whether product documentation in `docs/` needs updates for the
+2. Archive source artifacts for each shipped feature. For each feature in the
+   shipment's release scope:
+   * Read `custom_fields.source_stash_id` — if present, call
+     `backlogit_stash_remove` with the stash ID only. If the entry is
+     already removed, skip and log.
+   * Read `custom_fields.source_deliberation_id` — if present, verify the
+     deliberation artifact exists via `backlogit_get_item`. If it exists and
+     is not already archived, call `backlogit_archive_item`. If already
+     archived or not found, skip and log.
+
+   After processing all features in scope:
+   * Broadcast the count of source artifacts archived at info level:
+     `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`
+   * Log the archived source artifact IDs in the closure artifact's `Source
+     artifact cleanup` section for traceability.
+3. Evaluate whether product documentation in `docs/` needs updates for the
    shipped feature scope. Check:
    * `docs/ARCHITECTURE.md` for structural changes
    * `README.md` for user-facing capability changes
    * `docs/design-docs/` for graduated design decisions
    * `docs/product-specs/` for requirement updates
-3. Apply documentation updates directly. Do not defer them to a separate agent.
-4. If `.copilot-tracking/` tracking files have accumulated, invoke the
+4. Apply documentation updates directly. Do not defer them to a separate agent.
+5. If `.copilot-tracking/` tracking files have accumulated, invoke the
    `compact-context` skill.
-5. Broadcast `[SHIP] Post-merge closure complete`.
+6. Broadcast `[SHIP] Post-merge closure complete`.
 
 ### Session end
 
