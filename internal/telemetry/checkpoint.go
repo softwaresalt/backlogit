@@ -73,14 +73,30 @@ func SaveCheckpoint(workspacePath string, cp *HarvestCheckpoint) error {
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("write checkpoint temp file: %w", err)
+	f, openErr := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if openErr != nil {
+		return fmt.Errorf("write checkpoint temp file: %w", openErr)
+	}
+	_, writeErr := f.Write(data)
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	if writeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write checkpoint data: %w", writeErr)
+	}
+	if syncErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("sync checkpoint: %w", syncErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close checkpoint: %w", closeErr)
 	}
 	// os.Rename fails on Windows when the destination already exists.
 	// Remove the destination first so the swap is safe cross-platform.
 	_ = os.Remove(path)
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("commit checkpoint: %w", err)
 	}
 	return nil

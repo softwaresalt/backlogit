@@ -63,8 +63,17 @@ func (w *HookEventWriter) AppendHookEvent(ctx context.Context, event HookEvent) 
 		// Remove a stale lock left by a crashed process before retrying.
 		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > hookLockStaleTTL {
 			slog.Warn("removing stale hook lock file", "path", lockPath)
-			_ = os.Remove(lockPath)
-			lf, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			recoveringPath := lockPath + ".recovering"
+			// Pre-reap: Windows os.Rename fails when the destination already exists.
+			_ = os.Remove(recoveringPath)
+			// Atomic claim: only the winner of this rename proceeds to create a fresh lock.
+			if renameErr := os.Rename(lockPath, recoveringPath); renameErr == nil {
+				lf, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+				_ = os.Remove(recoveringPath)
+			} else {
+				// Another process already cleaned up the stale lock; try a fresh lock directly.
+				lf, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			}
 		}
 		if err != nil {
 			return 0, fmt.Errorf("hook queue locked by another process: %w", err)
@@ -98,14 +107,8 @@ func (w *HookEventWriter) AppendHookEvent(ctx context.Context, event HookEvent) 
 	}
 	line = append(line, '\n')
 
-	qf, err := os.OpenFile(w.queuePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return 0, fmt.Errorf("open hook queue: %w", err)
-	}
-	defer qf.Close()
-
-	if _, writeErr := qf.Write(line); writeErr != nil {
-		return 0, fmt.Errorf("write hook event: %w", writeErr)
+	if err := syncAppendLine(w.queuePath, line); err != nil {
+		return 0, fmt.Errorf("write hook event: %w", err)
 	}
 	return nextSeq, nil
 }

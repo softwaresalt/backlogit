@@ -87,19 +87,14 @@ func (s *CheckpointStore) SaveCheckpoint(consumerID string, seq int64) error {
 	}
 
 	cpPath := filepath.Join(s.dir, consumerID+".checkpoint.json")
-	tmpPath := cpPath + ".tmp"
 
 	payload, err := json.Marshal(checkpointData{Seq: seq})
 	if err != nil {
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}
 
-	if writeErr := os.WriteFile(tmpPath, payload, 0o644); writeErr != nil {
-		return fmt.Errorf("write checkpoint tmp: %w", writeErr)
-	}
-	if renameErr := os.Rename(tmpPath, cpPath); renameErr != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename checkpoint: %w", renameErr)
+	if err := syncWriteFileAtomic(cpPath, payload, 0o644); err != nil {
+		return fmt.Errorf("write checkpoint: %w", err)
 	}
 	return nil
 }

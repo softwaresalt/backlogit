@@ -399,6 +399,11 @@ func writeTelemetryJSONL(
 		}
 	}
 
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("sync %s: %w", tmpPath, err)
+	}
 	if err := f.Close(); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("close %s: %w", tmpPath, err)
