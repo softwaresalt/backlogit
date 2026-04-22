@@ -15,7 +15,7 @@ backlogit telemetry report [flags]
 
 ```text
       --by string        Group output by: session, server (default "session")
-      --format string    Output format: table, json (default "table")
+      --format string    Output format: table, json, markdown (default "table")
   -h, --help             help for report
       --limit int        Restrict the number of rows returned (0 = no limit)
       --session string   Filter report to a single session ID
