@@ -43,7 +43,16 @@ detect_arch() {
 }
 
 verify_checksum() {
-	checksum_line=$(grep "  $asset_name\$" "$checksums_path" || true)
+	checksum_line=$(awk -v asset="$asset_name" '
+		{
+			file = $2
+			sub(/^\.\//, "", file)
+			if (file == asset) {
+				print
+				exit
+			}
+		}
+	' "$checksums_path")
 	if [ -z "$checksum_line" ]; then
 		printf '%s\n' "checksum entry not found for $asset_name in SHA256SUMS" >&2
 		exit 1
