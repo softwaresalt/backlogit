@@ -27,8 +27,8 @@ const (
 type ReportOptions struct {
 	// SessionID, when non-empty, restricts the report to a single session.
 	SessionID string
-	// GroupBy controls the aggregation dimension. Valid values: "server",
-	// "model", "session", "tool".
+	// GroupBy controls the aggregation dimension. Valid values: "session",
+	// "server".
 	GroupBy string
 	// Format controls the output encoding. Valid values: "table", "json", "markdown".
 	Format string

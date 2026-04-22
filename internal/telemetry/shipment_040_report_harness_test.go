@@ -161,7 +161,7 @@ func openTelemetryIndexDB(t *testing.T, workspacePath string) *sql.DB {
 	return sqliteDB
 }
 
-func TestTask039013_ReportHarnessScenariosPending(t *testing.T) {
+func TestTask039013_ReportHarnessScenarios(t *testing.T) {
 	ws := t.TempDir()
 	writeRichTelemetryJSONL(t, ws)
 
@@ -196,7 +196,7 @@ func TestTask039013_ReportHarnessScenariosPending(t *testing.T) {
 	})
 }
 
-func TestTask039014_HarvestPipelineHarnessPending(t *testing.T) {
+func TestTask039014_HarvestPipelineHarness(t *testing.T) {
 	t.Run("full_harvest_pipeline", func(t *testing.T) {
 		workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 		logsDir := filepath.Join(copilotPath, "logs")
