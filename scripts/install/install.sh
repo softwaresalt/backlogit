@@ -88,7 +88,7 @@ asset_url="${base_url}/${asset_name}"
 checksums_url="${base_url}/SHA256SUMS"
 
 need_cmd curl
-tmp_dir=$(mktemp -d)
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/backlogit.XXXXXX")
 asset_path="${tmp_dir}/${asset_name}"
 checksums_path="${tmp_dir}/SHA256SUMS"
 
