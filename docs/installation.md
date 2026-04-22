@@ -1,51 +1,131 @@
 ---
 title: Installation
-description: Installation methods for backlogit
+description: Install backlogit from pre-built binaries or from source
 author: backlogit contributors
-ms.date: 2026-04-01
+ms.date: 2026-04-21
 ms.topic: how-to
 keywords:
   - backlogit
   - installation
+  - binary download
   - go install
-  - build from source
+  - PATH
 ---
 
-## Prerequisites
+## Method 1: One-line install
 
-backlogit requires Go 1.24 or later. It runs on Linux, macOS, and Windows. Because the SQLite driver uses a pure-Go implementation with no CGo, no C toolchain or system SQLite library is needed.
+`backlogit` ships as a standalone executable. You do not need Go for the binary
+install paths below.
 
-Confirm your Go version before installing:
+### Linux and macOS
 
 ```bash
-go version
+curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
 ```
 
-The output should show `go1.24` or higher.
+### Windows PowerShell
 
-## Method 1: Install with go install
+```powershell
+irm https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.ps1 | iex
+```
 
-This is the recommended method for most users. The command downloads, compiles, and installs the `backlogit` binary to your `$GOPATH/bin` (or `$GOBIN` if set):
+The install scripts:
+
+* detect the current OS and CPU architecture
+* download the matching binary from the latest GitHub release
+* verify the download against `SHA256SUMS`
+* install into a user-writable directory
+* print PATH guidance when the install directory is not already discoverable
+
+You can override the install directory with `BACKLOGIT_INSTALL_DIR`.
+
+## Method 2: Download the binary directly
+
+If you prefer to place the executable yourself, download it from
+[GitHub Releases](https://github.com/softwaresalt/backlogit/releases).
+
+### Platform matrix
+
+| Platform | Asset |
+|---|---|
+| Linux x64 | `backlogit-linux-amd64` |
+| Linux ARM64 | `backlogit-linux-arm64` |
+| macOS x64 | `backlogit-darwin-amd64` |
+| macOS ARM64 | `backlogit-darwin-arm64` |
+| Windows x64 | `backlogit-windows-amd64.exe` |
+| Windows ARM64 | `backlogit-windows-arm64.exe` |
+
+### Install manually
+
+1. Download the binary for your platform from GitHub Releases.
+2. Download `SHA256SUMS` from the same release.
+3. Verify the checksum.
+4. Move the binary into a directory on your PATH.
+
+#### Example checksum verification
+
+```bash
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/backlogit-linux-amd64
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/SHA256SUMS
+grep "backlogit-linux-amd64$" SHA256SUMS | sha256sum -c -
+chmod +x backlogit-linux-amd64
+mv backlogit-linux-amd64 ~/.local/bin/backlogit
+```
+
+On macOS, use `shasum -a 256` instead of `sha256sum`:
+
+```bash
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/backlogit-darwin-arm64
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/SHA256SUMS
+expected="$(grep 'backlogit-darwin-arm64$' SHA256SUMS | awk '{print $1}')"
+actual="$(shasum -a 256 backlogit-darwin-arm64 | awk '{print $1}')"
+[ "$expected" = "$actual" ] || { echo "checksum mismatch" >&2; exit 1; }
+chmod +x backlogit-darwin-arm64
+mv backlogit-darwin-arm64 ~/.local/bin/backlogit
+```
+
+```powershell
+Invoke-WebRequest https://github.com/softwaresalt/backlogit/releases/latest/download/backlogit-windows-amd64.exe -OutFile backlogit.exe
+Invoke-WebRequest https://github.com/softwaresalt/backlogit/releases/latest/download/SHA256SUMS -OutFile SHA256SUMS
+$expected = ((Select-String -Path .\SHA256SUMS -Pattern 'backlogit-windows-amd64\.exe$').Line -split '\s+')[0]
+$actual = (Get-FileHash .\backlogit.exe -Algorithm SHA256).Hash
+if ($expected -ne $actual) { throw 'checksum mismatch' }
+Move-Item .\backlogit.exe $HOME\bin\backlogit.exe
+```
+
+### PATH guidance
+
+Add the install directory to your PATH if it is not already present.
+
+#### Linux and macOS
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### Windows PowerShell
+
+```powershell
+$target = "$HOME\bin"
+[Environment]::SetEnvironmentVariable(
+  "Path",
+  [Environment]::GetEnvironmentVariable("Path", "User") + ";$target",
+  "User"
+)
+```
+
+Open a new shell after updating PATH.
+
+## Method 3: Install from source
+
+Use this path if you want the Go toolchain workflow or unreleased changes.
+This method requires Go 1.24 or later.
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 ```
 
-Ensure `$GOPATH/bin` is in your `PATH`. On most systems this is already the case, but you can verify with:
-
-```bash
-echo $PATH | tr ':' '\n' | grep go
-```
-
-On Windows with PowerShell:
-
-```powershell
-$env:PATH -split ';' | Where-Object { $_ -like '*go*' }
-```
-
-## Method 2: Build from Source
-
-Clone the repository and build the binary directly. This gives you access to unreleased changes and lets you inspect the source before running.
+To build locally from a clone instead:
 
 ```bash
 git clone https://github.com/softwaresalt/backlogit.git
@@ -54,71 +134,70 @@ go build -o backlogit ./cmd/backlogit
 go install ./cmd/backlogit
 ```
 
-Move the binary to a directory in your `PATH`:
+## Post-install verification
 
-```bash
-# Linux / macOS
-mv backlogit /usr/local/bin/
-
-# Windows (run as administrator or adjust the destination)
-Move-Item backlogit.exe C:\Windows\System32\
-```
-
-## Post-install Verification
-
-Confirm the installation succeeded:
+Confirm the binary is on your PATH:
 
 ```bash
 backlogit help
 ```
 
-You should see a list of available commands. If the binary is not found, check that the install directory is in your `PATH`.
+You should see the available commands. If the shell cannot find `backlogit`,
+recheck the directory you installed into and your PATH configuration.
 
-## Shell Completion
+## Shell completion
 
-backlogit uses Cobra, which generates completion scripts for Bash, Zsh, Fish, and PowerShell.
+`backlogit` uses Cobra, which generates completion scripts for Bash, Zsh, Fish,
+and PowerShell.
 
-**Bash:**
+### Bash
 
 ```bash
 backlogit completion bash > /etc/bash_completion.d/backlogit
 source /etc/bash_completion.d/backlogit
 ```
 
-**Zsh:**
+### Zsh
 
 ```zsh
 backlogit completion zsh > "${fpath[1]}/_backlogit"
 ```
 
-**Fish:**
+### Fish
 
 ```fish
 backlogit completion fish > ~/.config/fish/completions/backlogit.fish
 ```
 
-**PowerShell:**
+### PowerShell
 
 ```powershell
 backlogit completion powershell | Out-String | Invoke-Expression
 ```
 
-To make PowerShell completion persistent, add the `Invoke-Expression` line to your `$PROFILE` file.
+To make PowerShell completion persistent, add that line to your `$PROFILE`.
 
-## Common Issues
+## Common issues
 
-**`command not found: backlogit` after `go install`**
+### `backlogit` is not found after installation
 
-Your `$GOPATH/bin` is not in `PATH`. Add it to your shell profile:
+Your install directory is not on PATH. Add the directory that contains the
+binary, then open a new shell.
 
-```bash
-export PATH="$PATH:$(go env GOPATH)/bin"
-```
+### Checksum verification fails
 
-**Build fails with a Go version error**
+Delete the downloaded binary and `SHA256SUMS`, then download both files again
+from the same GitHub release. A mismatch usually means the binary and checksum
+file came from different release versions.
 
-The module requires Go 1.24 or later. Run `go version` and upgrade your toolchain if needed. The official [Go downloads page](https://go.dev/dl/) has installers for all platforms.
+### Source install fails with a Go version error
 
-**Binary runs but cannot find the workspace**
+The module requires Go 1.24 or later. Run `go version` and upgrade your
+toolchain if needed. The official [Go downloads page](https://go.dev/dl/) has
+installers for all supported platforms.
 
-backlogit looks for a `.backlogit/` directory in the current working directory. Run `backlogit init` to create one, or change into the directory that contains an existing workspace before running commands.
+### Binary runs but cannot find the workspace
+
+`backlogit` looks for a `.backlogit/` directory in the current working
+directory. Run `backlogit init` to create one, or change into a directory that
+already contains an existing workspace.

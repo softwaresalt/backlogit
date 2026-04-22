@@ -6,6 +6,20 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	berrors "github.com/softwaresalt/backlogit/internal/errors"
+)
+
+// ReportFormat identifies a supported report output encoding.
+type ReportFormat string
+
+const (
+	// FormatTable renders aligned plaintext tables.
+	FormatTable ReportFormat = "table"
+	// FormatJSON renders JSON output.
+	FormatJSON ReportFormat = "json"
+	// FormatMarkdown renders GitHub-flavored Markdown tables.
+	FormatMarkdown ReportFormat = "markdown"
 )
 
 // ReportOptions configures the telemetry report output produced by
@@ -13,11 +27,11 @@ import (
 type ReportOptions struct {
 	// SessionID, when non-empty, restricts the report to a single session.
 	SessionID string
-	// GroupBy controls the aggregation dimension. Valid values: "server",
-	// "model", "session", "tool".
+	// GroupBy controls the aggregation dimension. Valid values: "session",
+	// "server".
 	GroupBy string
-	// Format controls the output encoding. Valid values: "table", "json".
-	Format string
+	// Format controls the output encoding. Valid values: "table", "json", "markdown".
+	Format ReportFormat
 	// Limit, when > 0, restricts the number of rows returned. Used by the
 	// "top" subcommand to implement top-N behaviour.
 	Limit int
@@ -70,14 +84,25 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 
 	format := opts.Format
 	if format == "" {
-		format = "table"
+		format = FormatTable
 	}
 
 	switch format {
-	case "json":
-		return formatReportJSON(sessions, tools, groupBy, opts.Limit)
-	default:
+	case FormatTable:
 		return formatReportTable(sessions, tools, groupBy, opts.Limit)
+	case FormatJSON:
+		return formatReportJSON(sessions, tools, groupBy, opts.Limit)
+	case FormatMarkdown:
+		return formatReportMarkdown(sessions, tools, groupBy, opts.Limit)
+	default:
+		return "", fmt.Errorf(
+			"unsupported format value %q: supported values are %q, %q, %q: %w",
+			format,
+			FormatTable,
+			FormatJSON,
+			FormatMarkdown,
+			berrors.ErrValidation,
+		)
 	}
 }
 
@@ -174,4 +199,71 @@ func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
 		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", server, aggregate[server]))
 	}
 	return sb.String()
+}
+
+func formatReportMarkdown(sessions []SessionSummaryRecord, _ []ToolUsageRecord, groupBy string, limit int) (string, error) {
+	switch groupBy {
+	case "server":
+		return formatServerMarkdown(sessions, limit), nil
+	default:
+		return formatSessionMarkdown(sessions, limit), nil
+	}
+}
+
+func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
+	rows := append([]SessionSummaryRecord(nil), sessions...)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].SessionID < rows[j].SessionID
+	})
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Telemetry Report\n\n")
+	sb.WriteString("## Session Summary\n\n")
+	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls |\n")
+	sb.WriteString("|---|---:|---:|---:|\n")
+	for _, row := range rows {
+		sb.WriteString(fmt.Sprintf(
+			"| %s | %d | %d | %d |\n",
+			escapeMarkdownCell(row.SessionID),
+			row.TotalTokens,
+			row.ModelCalls,
+			row.ToolCalls,
+		))
+	}
+	return sb.String()
+}
+
+func formatServerMarkdown(sessions []SessionSummaryRecord, limit int) string {
+	aggregate := make(map[string]int)
+	for _, session := range sessions {
+		for server, count := range session.ToolCallsByServer {
+			aggregate[server] += count
+		}
+	}
+
+	servers := make([]string, 0, len(aggregate))
+	for server := range aggregate {
+		servers = append(servers, server)
+	}
+	sort.Strings(servers)
+	if limit > 0 && len(servers) > limit {
+		servers = servers[:limit]
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Telemetry Report\n\n")
+	sb.WriteString("## Tool Calls by Server\n\n")
+	sb.WriteString("| Server | Tool Calls |\n")
+	sb.WriteString("|---|---:|\n")
+	for _, server := range servers {
+		sb.WriteString(fmt.Sprintf("| %s | %d |\n", escapeMarkdownCell(server), aggregate[server]))
+	}
+	return sb.String()
+}
+
+func escapeMarkdownCell(value string) string {
+	return strings.ReplaceAll(value, "|", "\\|")
 }

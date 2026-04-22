@@ -43,7 +43,7 @@ func TestGenerateReport_TableFormat_ProducesAlignedOutput(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
-		Format:  "table",
+		Format:  telemetry.FormatTable,
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -58,7 +58,7 @@ func TestGenerateReport_JSONFormat_ProducesValidJSON(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
-		Format:  "json",
+		Format:  telemetry.FormatJSON,
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -74,7 +74,7 @@ func TestGenerateReport_ByServer_GroupsByServer(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "server",
-		Format:  "table",
+		Format:  telemetry.FormatTable,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, output, "backlogit", "--by server must include server names")
@@ -87,7 +87,7 @@ func TestGenerateReport_SessionFilter_LimitsToSingleSession(t *testing.T) {
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		SessionID: "sess-rpt-1",
 		GroupBy:   "session",
-		Format:    "table",
+		Format:    telemetry.FormatTable,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, output, "sess-rpt-1")
@@ -102,7 +102,7 @@ func TestGenerateReport_NoData_ReturnsInformativeMessage(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
-		Format:  "table",
+		Format:  telemetry.FormatTable,
 	})
 	require.NoError(t, err, "missing data must not return an error")
 	assert.NotEmpty(t, output,
@@ -115,7 +115,7 @@ func TestGenerateReport_Limit_RestrictsRowCount(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
-		Format:  "table",
+		Format:  telemetry.FormatTable,
 		Limit:   1,
 	})
 	require.NoError(t, err)

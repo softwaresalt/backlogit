@@ -76,7 +76,7 @@ func newTelemetryListCmd(cwd *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
 				GroupBy: "session",
-				Format:  "table",
+				Format:  telemetry.FormatTable,
 			})
 			if err != nil {
 				return err
@@ -95,7 +95,7 @@ func newTelemetryTopCmd(cwd *string) *cobra.Command {
 			n, _ := cmd.Flags().GetInt("n")
 			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
 				GroupBy: "server",
-				Format:  "table",
+				Format:  telemetry.FormatTable,
 				Limit:   n,
 			})
 			if err != nil {
@@ -122,7 +122,7 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
 				SessionID: session,
 				GroupBy:   by,
-				Format:    format,
+				Format:    telemetry.ReportFormat(format),
 				Limit:     limit,
 			})
 			if err != nil {
@@ -134,7 +134,7 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 	}
 	cmd.Flags().String("session", "", "Filter report to a single session ID")
 	cmd.Flags().String("by", "session", "Group output by: session, server")
-	cmd.Flags().String("format", "table", "Output format: table, json")
+	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of rows returned (0 = no limit)")
 	return cmd
 }
