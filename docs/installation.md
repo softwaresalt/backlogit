@@ -72,6 +72,18 @@ chmod +x backlogit-linux-amd64
 mv backlogit-linux-amd64 ~/.local/bin/backlogit
 ```
 
+On macOS, use `shasum -a 256` instead of `sha256sum`:
+
+```bash
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/backlogit-darwin-arm64
+curl -fsSL -O https://github.com/softwaresalt/backlogit/releases/latest/download/SHA256SUMS
+expected="$(grep 'backlogit-darwin-arm64$' SHA256SUMS | awk '{print $1}')"
+actual="$(shasum -a 256 backlogit-darwin-arm64 | awk '{print $1}')"
+[ "$expected" = "$actual" ] || { echo "checksum mismatch" >&2; exit 1; }
+chmod +x backlogit-darwin-arm64
+mv backlogit-darwin-arm64 ~/.local/bin/backlogit
+```
+
 ```powershell
 Invoke-WebRequest https://github.com/softwaresalt/backlogit/releases/latest/download/backlogit-windows-amd64.exe -OutFile backlogit.exe
 Invoke-WebRequest https://github.com/softwaresalt/backlogit/releases/latest/download/SHA256SUMS -OutFile SHA256SUMS

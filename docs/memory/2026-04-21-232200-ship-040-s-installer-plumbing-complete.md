@@ -12,9 +12,9 @@ ms.date: 2026-04-21
 
 ## Files Added or Modified
 
-* [.github/workflows/release.yml](.github/workflows/release.yml)
-* [scripts/install/install.sh](scripts/install/install.sh)
-* [scripts/install/install.ps1](scripts/install/install.ps1)
+* [.github/workflows/release.yml](../../.github/workflows/release.yml)
+* [scripts/install/install.sh](../../scripts/install/install.sh)
+* [scripts/install/install.ps1](../../scripts/install/install.ps1)
 
 ## Outcome
 

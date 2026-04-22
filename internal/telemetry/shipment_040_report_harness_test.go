@@ -168,7 +168,7 @@ func TestTask039013_ReportHarnessScenarios(t *testing.T) {
 	t.Run("multi_session_fixture", func(t *testing.T) {
 		output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 			GroupBy: "session",
-			Format:  "table",
+			Format:  telemetry.FormatTable,
 		})
 		require.NoError(t, err)
 		assert.Contains(t, output, "sess-rich-1")
@@ -178,7 +178,7 @@ func TestTask039013_ReportHarnessScenarios(t *testing.T) {
 	t.Run("unsupported_format_validation", func(t *testing.T) {
 		output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 			GroupBy: "session",
-			Format:  "xml",
+			Format:  telemetry.ReportFormat("xml"),
 		})
 		require.Error(t, err)
 		assert.Empty(t, output)
@@ -188,7 +188,7 @@ func TestTask039013_ReportHarnessScenarios(t *testing.T) {
 	t.Run("unsupported_groupby_validation", func(t *testing.T) {
 		output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 			GroupBy: "workspace",
-			Format:  "table",
+			Format:  telemetry.FormatTable,
 		})
 		require.Error(t, err)
 		assert.Empty(t, output)
@@ -364,7 +364,7 @@ func TestTask039015_GenerateReportMarkdownFormat(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
-		Format:  "markdown",
+		Format:  telemetry.FormatMarkdown,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, output, "# Telemetry Report")
@@ -381,7 +381,7 @@ func TestTask039015_GenerateReportMarkdownServerGrouping(t *testing.T) {
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "server",
-		Format:  "markdown",
+		Format:  telemetry.FormatMarkdown,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, output, "## Tool Calls by Server")

@@ -12,9 +12,9 @@ ms.date: 2026-04-21
 
 ## Harness Files Added
 
-* [shipment_040_release_install_harness_test.go](tests/integration/shipment_040_release_install_harness_test.go)
-* [shipment_040_report_harness_test.go](internal/telemetry/shipment_040_report_harness_test.go)
-* [shipment_040_telemetry_cli_harness_test.go](internal/cli/shipment_040_telemetry_cli_harness_test.go)
+* [shipment_040_release_install_harness_test.go](../../tests/integration/shipment_040_release_install_harness_test.go)
+* [shipment_040_report_harness_test.go](../../internal/telemetry/shipment_040_report_harness_test.go)
+* [shipment_040_telemetry_cli_harness_test.go](../../internal/cli/shipment_040_telemetry_cli_harness_test.go)
 
 ## Task to Harness Mapping
 

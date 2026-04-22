@@ -16,7 +16,7 @@ ms.date: 2026-04-21
 
 ## Files Modified
 
-* [.github/workflows/release.yml](.github/workflows/release.yml)
+* [.github/workflows/release.yml](../../.github/workflows/release.yml)
 
 ## Outcome
 

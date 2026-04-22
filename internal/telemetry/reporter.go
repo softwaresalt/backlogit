@@ -31,7 +31,7 @@ type ReportOptions struct {
 	// "server".
 	GroupBy string
 	// Format controls the output encoding. Valid values: "table", "json", "markdown".
-	Format string
+	Format ReportFormat
 	// Limit, when > 0, restricts the number of rows returned. Used by the
 	// "top" subcommand to implement top-N behaviour.
 	Limit int
@@ -84,10 +84,10 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 
 	format := opts.Format
 	if format == "" {
-		format = string(FormatTable)
+		format = FormatTable
 	}
 
-	switch ReportFormat(format) {
+	switch format {
 	case FormatTable:
 		return formatReportTable(sessions, tools, groupBy, opts.Limit)
 	case FormatJSON:
