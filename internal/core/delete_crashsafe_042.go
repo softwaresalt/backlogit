@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -42,6 +43,13 @@ func DeleteArtifact(ctx context.Context, ws *Workspace, id string) error {
 	}
 
 	if err := os.Remove(tempPath); err != nil {
+		// The DB delete already succeeded; the artifact is no longer tracked.
+		// Best-effort: rename temp back to its original path so it remains
+		// discoverable and can be cleaned up by the next rehydration or sync.
+		if renameErr := os.Rename(tempPath, filePath); renameErr != nil {
+			slog.Error("delete artifact: DB deleted but temp file stuck; workspace may be inconsistent",
+				"temp_path", tempPath, "original_path", filePath, "error", err, "rename_error", renameErr)
+		}
 		return fmt.Errorf("remove artifact file: %w", err)
 	}
 

@@ -229,7 +229,7 @@ func ShouldFallback(diff DiffResult, manifestSize, maxChangedFiles int) (bool, s
 // BuildManifest walks the workspace directory tree and builds an in-memory
 // manifest keyed by workspace-relative path. Hidden directories (name starting
 // with ".") are skipped. For artifact files, it extracts the ItemID from the
-// first 512 bytes of frontmatter without a full parse. Files that cannot be
+// full frontmatter using models.ParseFrontmatter. Files that cannot be
 // stat'd or read are skipped with a slog.Warn entry.
 func BuildManifest(workspacePath string) (map[string]FileEntry, error) {
 	manifest := make(map[string]FileEntry)

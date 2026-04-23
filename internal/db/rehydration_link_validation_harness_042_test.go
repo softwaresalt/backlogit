@@ -24,7 +24,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/db"
 )
 
-// artifactWithLinks writes a Markdown artifact file whose frontmatter includes
+// writeArtifactWithLinks writes a Markdown artifact file whose frontmatter includes
 // a links list. Used to seed rehydration scenarios.
 func writeArtifactWithLinks(t *testing.T, dir, id, title, status string, links []map[string]string) string {
 	t.Helper()

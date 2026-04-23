@@ -7,8 +7,8 @@ package core_test
 //   - If the DB delete fails, the artifact file must still exist on disk.
 //   - A successful delete leaves neither file nor DB entry.
 //
-// The harness tests core.DeleteArtifact, which will be wired into the CLI
-// delete command once implemented.
+// The harness tests core.DeleteArtifact, which is wired into the CLI
+// delete command (internal/cli/delete.go).
 
 import (
 	"context"
