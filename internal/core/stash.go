@@ -370,12 +370,17 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 	if ws.DB != nil {
 		now := time.Now().UTC()
 		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateHarvested, stashRelativePath(), now); err != nil {
+			// Best-effort rollback: remove the DB index row inserted by CreateArtifact
+			// so the cache does not reference a file we are about to remove.
+			_ = db.DeleteItemCascade(ctx, ws.DB, artifact.ID)
 			if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
 				_ = os.Remove(artifactPath)
 			}
 			return nil, fmt.Errorf("update stash index: %w", err)
 		}
 		if err := db.LinkStashEntry(ctx, ws.DB, entry.ID, artifact.ID, now); err != nil {
+			// Best-effort rollback: same as UpsertStashEntry failure path.
+			_ = db.DeleteItemCascade(ctx, ws.DB, artifact.ID)
 			if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
 				_ = os.Remove(artifactPath)
 			}

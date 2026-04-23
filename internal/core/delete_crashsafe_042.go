@@ -4,25 +4,31 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // DeleteArtifact removes an artifact from both the filesystem and the SQLite
-// index in a crash-safe order. The file is renamed to a temporary ".deleting"
-// path before the DB delete so that a crash between the rename and the DB
-// operation leaves a recoverable file rather than an orphaned tracked entry.
+// index in a crash-safe order. The file is renamed to a temporary path (with
+// ".deleting" inserted before the ".md" extension) before the DB delete, so
+// that a crash between the rename and the DB operation leaves the artifact
+// discoverable via rehydration rather than invisible to artifact scanning.
 // If the DB delete fails, the renamed file is restored to its original path.
 //
 // Callers that previously inlined db.DeleteItemCascade + os.Remove should
 // migrate to this function to gain crash-safety guarantees.
 func DeleteArtifact(ctx context.Context, ws *Workspace, id string) error {
+	if ws == nil || ws.DB == nil {
+		return fmt.Errorf("delete artifact: workspace or database is not initialized")
+	}
+
 	filePath, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return fmt.Errorf("find artifact: %w", err)
 	}
 
-	tempPath := filePath + ".deleting"
+	tempPath := strings.TrimSuffix(filePath, ".md") + ".deleting.md"
 	if err := os.Rename(filePath, tempPath); err != nil {
 		return fmt.Errorf("prepare delete: %w", err)
 	}
