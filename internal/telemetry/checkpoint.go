@@ -78,7 +78,10 @@ func SaveCheckpoint(workspacePath string, cp *HarvestCheckpoint) error {
 	if openErr != nil {
 		return fmt.Errorf("write checkpoint temp file: %w", openErr)
 	}
-	_, writeErr := f.Write(data)
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = fmt.Errorf("short write checkpoint: wrote %d of %d bytes", n, len(data))
+	}
 	syncErr := f.Sync()
 	closeErr := f.Close()
 	if writeErr != nil {

@@ -14,7 +14,10 @@ func syncAppendLine(path string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("syncAppendLine open %s: %w", path, err)
 	}
-	_, writeErr := f.Write(data)
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = fmt.Errorf("syncAppendLine short write %s: wrote %d of %d bytes", path, n, len(data))
+	}
 	syncErr := f.Sync()
 	closeErr := f.Close()
 	if writeErr != nil {
@@ -39,7 +42,10 @@ func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("syncWriteFileAtomic create tmp %s: %w", tmp, err)
 	}
-	_, writeErr := f.Write(data)
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = fmt.Errorf("syncWriteFileAtomic short write %s: wrote %d of %d bytes", tmp, n, len(data))
+	}
 	syncErr := f.Sync()
 	closeErr := f.Close()
 	if writeErr != nil {

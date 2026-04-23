@@ -1,10 +1,9 @@
-# Ship Session Memory — 041-S PR Ready
-
-**Date**: 2026-04-22  
-**Agent**: Ship  
-**Session**: 4fb60d1f-e3a1-4da9-98a7-470126d962c4  
-**Phase**: Post-implementation, awaiting user merge approval
-
+---
+title: "Ship Session Memory — 041-S PR Ready"
+description: "Ship agent session memory for shipment 041-S Write Durability and Hook Reliability"
+author: backlogit ship agent
+ms.date: 2026-04-22
+ms.topic: how-to
 ---
 
 ## Status

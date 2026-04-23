@@ -6,7 +6,7 @@ origin: ".backlogit/queue/040-F.md"
 status: reviewed
 ---
 
-# Write Durability and Hook Reliability
+## Write Durability and Hook Reliability
 
 ## Problem Frame
 
