@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 var manifestLog = slog.With("component", "manifest")
@@ -282,32 +284,26 @@ func BuildManifest(workspacePath string) (map[string]FileEntry, error) {
 	return manifest, nil
 }
 
-// extractItemIDFromFrontmatter reads up to 512 bytes from the file and extracts
-// the `id:` value from YAML frontmatter without a full parse. Returns an empty
-// string when the file does not begin with frontmatter or the id field is absent.
+// extractItemIDFromFrontmatter reads the full file and extracts the `id:` value
+// from YAML frontmatter using the canonical parser. Returns an empty string when
+// the file does not begin with frontmatter or the id field is absent.
+//
+// Previous implementation read only 512 bytes; that truncated the id: field for
+// artifacts with large description or custom_fields entries in their frontmatter.
 func extractItemIDFromFrontmatter(path string) string {
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	defer f.Close() //nolint:errcheck
-
-	buf := make([]byte, 512)
-	n, _ := f.Read(buf)
-	content := string(buf[:n])
-
-	if !strings.HasPrefix(content, "---") {
+	if !strings.HasPrefix(string(raw), "---") {
 		return ""
 	}
-
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "id:") {
-			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "id:"))
-			return strings.Trim(val, `"'`)
-		}
+	fm, _, err := models.ParseFrontmatter(string(raw))
+	if err != nil || fm == nil {
+		return ""
 	}
-	return ""
+	id, _ := fm["id"].(string)
+	return strings.TrimSpace(id)
 }
 
 // RehydrateWithManifest performs a full rehydration by calling Rehydrate, then

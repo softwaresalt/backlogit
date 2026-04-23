@@ -186,6 +186,11 @@ func MergeSync(
 					if strings.TrimSpace(link.TargetID) == "" || strings.TrimSpace(link.LinkType) == "" {
 						continue
 					}
+					if !isValidLinkType(link.LinkType) {
+						log.Warn("merge_sync: skipping invalid link_type",
+							"source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType)
+						continue
+					}
 					if _, execErr := tx.ExecContext(ctx,
 						`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
 						artifact.ID, link.TargetID, link.LinkType,

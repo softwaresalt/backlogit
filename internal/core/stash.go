@@ -364,28 +364,31 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 		slog.Warn("stash harvest: failed to append to archive", "stash_id", entry.ID, "error", archErr)
 	}
 
-	// Artifact created — commit the stash removal atomically under the still-held lock.
+	// Commit all DB state before rewriting JSONL so a partial failure leaves the
+	// workspace recoverable: if any DB op fails, the stash JSONL is untouched and
+	// the artifact file can be removed, leaving a consistent rollback.
+	if ws.DB != nil {
+		now := time.Now().UTC()
+		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateHarvested, stashRelativePath(), now); err != nil {
+			if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
+				_ = os.Remove(artifactPath)
+			}
+			return nil, fmt.Errorf("update stash index: %w", err)
+		}
+		if err := db.LinkStashEntry(ctx, ws.DB, entry.ID, artifact.ID, now); err != nil {
+			if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
+				_ = os.Remove(artifactPath)
+			}
+			return nil, fmt.Errorf("link stash to artifact: %w", err)
+		}
+	}
+
+	// All DB ops committed — now commit the JSONL removal under the held lock.
 	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
 		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
 			_ = os.Remove(artifactPath)
 		}
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
-	}
-
-	if ws.DB != nil {
-		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
-			return nil, fmt.Errorf("index harvested artifact: %w", err)
-		}
-	}
-
-	if ws.DB != nil {
-		now := time.Now().UTC()
-		if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text, entry.DeliberationID, stashStateHarvested, stashRelativePath(), now); err != nil {
-			return nil, err
-		}
-		if err := db.LinkStashEntry(ctx, ws.DB, entry.ID, artifact.ID, now); err != nil {
-			return nil, err
-		}
 	}
 
 	entryView, err := expandStashEntry(ctx, ws, entry)
