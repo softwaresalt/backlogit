@@ -3,8 +3,7 @@ package events
 // Harness for Unit 1: syncWriteFile helpers (040.001-T dependency, 040.002-T dependency).
 //
 // These tests use package events (internal) to access the unexported helper
-// functions directly. All tests will FAIL (panic "not implemented") until
-// fsutil.go is fully implemented.
+// functions directly.
 
 import (
 	"os"
@@ -55,7 +54,8 @@ func TestSyncAppendLine_CreatesFileIfMissing(t *testing.T) {
 }
 
 func TestSyncAppendLine_ErrorOnUnwritablePath(t *testing.T) {
-	err := syncAppendLine("/nonexistent/dir/file.jsonl", []byte("data\n"))
+	dir := t.TempDir()
+	err := syncAppendLine(filepath.Join(dir, "no_such_dir", "file.jsonl"), []byte("data\n"))
 	assert.Error(t, err, "writing to an unwritable path must return an error")
 }
 
@@ -100,6 +100,7 @@ func TestSyncWriteFileAtomic_OverwritesExistingFile(t *testing.T) {
 }
 
 func TestSyncWriteFileAtomic_ErrorOnUnwritablePath(t *testing.T) {
-	err := syncWriteFileAtomic("/nonexistent/dir/out.json", []byte("{}"), 0o644)
+	dir := t.TempDir()
+	err := syncWriteFileAtomic(filepath.Join(dir, "no_such_dir", "out.json"), []byte("{}"), 0o644)
 	assert.Error(t, err, "writing to an unwritable path must return an error")
 }

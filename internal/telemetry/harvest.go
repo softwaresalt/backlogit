@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	idb "github.com/softwaresalt/backlogit/internal/db"
@@ -408,9 +409,12 @@ func writeTelemetryJSONL(
 		os.Remove(tmpPath)
 		return fmt.Errorf("close %s: %w", tmpPath, err)
 	}
-	// os.Rename fails on Windows when the destination already exists.
-	// Remove the destination first so the swap is safe cross-platform.
-	_ = os.Remove(jsonlPath)
+	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
+	// On Windows, os.Rename fails when the destination already exists; remove first.
+	// The removal window is narrow and acceptable for regenerable telemetry files.
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(jsonlPath)
+	}
 	if err := os.Rename(tmpPath, jsonlPath); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("commit %s: %w", jsonlPath, err)

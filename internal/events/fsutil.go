@@ -3,6 +3,7 @@ package events
 import (
 	"fmt"
 	"os"
+	"runtime"
 )
 
 // syncAppendLine opens path with O_CREATE|O_APPEND|O_WRONLY, writes data,
@@ -53,8 +54,12 @@ func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("syncWriteFileAtomic close %s: %w", tmp, closeErr)
 	}
-	// Windows does not allow renaming over an existing file; remove first.
-	_ = os.Remove(path)
+	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
+	// On Windows, os.Rename fails when the destination already exists; remove first.
+	// The removal window is narrow and acceptable for regenerable files.
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("syncWriteFileAtomic rename %s→%s: %w", tmp, path, err)

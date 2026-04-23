@@ -12,6 +12,7 @@ package telemetry
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 // write. The function must fsync before close and rename atomically.
 func TestWriteTelemetryJSONL_NoDotTmpAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
-	jsonlPath := dir + "/telemetry-sessions.jsonl"
+	jsonlPath := filepath.Join(dir, "telemetry-sessions.jsonl")
 
 	err := writeTelemetryJSONL(
 		jsonlPath,

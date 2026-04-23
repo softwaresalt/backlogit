@@ -3,13 +3,13 @@ package events_test
 // Harness for 040.001-T: Add fsync to hook event queue writes.
 // Harness for 040.004-T: Fix hook queue stale-lock TOCTOU race.
 //
-// RED tests:
-//   - TestHookEventWriter_StaleLockRecovery_PreExistingRecoveringFile: FAILS
-//     with the current implementation because the current stale-lock recovery
-//     does not pre-reap a leftover .recovering file. The new rename-based
-//     algorithm removes it as part of the recovery sequence.
+// All tests in this harness pass after the fixes introduced in shipment 041-S:
+//   - TestHookEventWriter_StaleLockRecovery_PreExistingRecoveringFile: Previously
+//     RED — the prior stale-lock recovery code did not reap a leftover
+//     .recovering file. The rename-based algorithm implemented in this PR removes
+//     it as part of the recovery sequence, so this test now passes.
 //
-// Contract tests (currently passing, establish regression boundary):
+// Contract tests (regression boundary, pass before and after the fix):
 //   - TestHookEventWriter_AppendHookEvent_DurableWrite
 //   - TestHookEventWriter_StaleLockRecovery_SingleWriter
 //   - TestHookEventWriter_FreshLock_NotRemoved

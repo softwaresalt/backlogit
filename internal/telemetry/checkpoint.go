@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -92,9 +93,12 @@ func SaveCheckpoint(workspacePath string, cp *HarvestCheckpoint) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close checkpoint: %w", closeErr)
 	}
-	// os.Rename fails on Windows when the destination already exists.
-	// Remove the destination first so the swap is safe cross-platform.
-	_ = os.Remove(path)
+	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
+	// On Windows, os.Rename fails when the destination already exists; remove first.
+	// The removal window is narrow and acceptable for regenerable checkpoint files.
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("commit checkpoint: %w", err)
