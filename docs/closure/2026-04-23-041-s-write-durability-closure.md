@@ -114,7 +114,7 @@ deliberation artifacts required cleanup for this shipment.
 |---|---|---|
 | slog error lines matching `syncAppendLine\|syncWriteFileAtomic\|SaveCheckpoint` | stderr / log file | Investigate immediately; likely storage error |
 | `.tmp` files persisting in `.backlogit/` | `ls .backlogit/*.tmp` | Indicates aborted write; safe to remove manually |
-| Duplicate JSONL records | `sort .backlogit/hooks_queue.jsonl \| uniq -d` | Indicates TOCTOU regression; file may need manual dedup |
+| Duplicate JSONL records | `jq -c 'del(.seq, .timestamp)' .backlogit/hooks_queue.jsonl \| sort \| uniq -d` | Indicates TOCTOU regression; detects duplicates by stable payload identity |
 | Hook queue file size decreasing | filesystem monitor | Indicates truncation; check for concurrent writers |
 
 No new dashboard or alert infrastructure required — this is a background write

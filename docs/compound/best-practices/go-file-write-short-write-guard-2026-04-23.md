@@ -1,5 +1,6 @@
 ---
 title: "Go os.File.Write Short-Write Guard: Always Check n == len(data)"
+description: "Check that os.File.Write writes all bytes because short writes can occur without returning an error."
 problem_type: best_practice
 category: best_practice
 component: event_log
@@ -12,8 +13,6 @@ resolved: true
 tags: [go, os.File, Write, short-write, data-corruption, JSONL, write-durability, fsync, file-io, event_log]
 date: 2026-04-23
 ---
-
-# Go os.File.Write Short-Write Guard: Always Check n == len(data)
 
 ## Problem
 

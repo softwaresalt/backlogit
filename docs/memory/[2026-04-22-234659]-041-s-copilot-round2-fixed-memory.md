@@ -62,8 +62,10 @@ ms.topic: how-to
 - **`.telemetry-checkpoint.json` untracked**: Contains machine-specific process log filenames and byte offsets.
   Committing it causes noisy diffs across machines and could corrupt harvest state on checkout. Added to `.gitignore`.
 
-- **`archived_from: done`**: The `UnarchiveItem` function requires this field to restore an artifact to its
-  prior status. The archive tool should set it automatically; its absence was a pre-existing gap.
+- **`archived_from` field in archive**: `core.ArchiveItem` writes `archived_from` as the workspace-relative
+  path of the artifact before archiving (e.g. `.backlogit/queue/038-DL.md`). `UnarchiveItem` uses this field
+  to restore the file to its original location. The archive tool should set it automatically; its absence in
+  038-DL.md and 039-DL.md was a pre-existing gap that prevented unarchiving those artifacts.
 
 ---
 

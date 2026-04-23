@@ -1,5 +1,6 @@
 ---
 title: "Windows-Safe Atomic Rename: Gate os.Remove on runtime.GOOS"
+description: "Gate pre-rename removal to Windows so os.Rename works on Windows without breaking POSIX atomic replacement semantics."
 problem_type: best_practice
 category: best_practice
 component: event_log
@@ -13,8 +14,6 @@ tags: [go, os.Rename, Windows, atomic, rename, cross-platform, runtime.GOOS, tem
 date: 2026-04-23
 ---
 
-# Windows-Safe Atomic Rename: Gate os.Remove on runtime.GOOS
-
 ## Problem
 
 A temp-file-then-rename write pattern requires different pre-rename behavior on
@@ -26,7 +25,7 @@ with `ERROR_ALREADY_EXISTS` on Windows.
 ## Symptoms
 
 **On Windows (without pre-remove):**
-```
+```text
 rename tmp.json path.json: The file cannot be accessed by the system.
 // or: The process cannot access the file because it is being used by another process.
 ```
