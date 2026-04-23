@@ -3,12 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/core"
-	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // newDeleteCommand creates the `backlogit delete` command.
@@ -32,21 +30,13 @@ This is a destructive operation and requires --force.`,
 			}
 			defer ws.Close()
 
-			filePath, err := core.FindArtifactPath(ctx, ws, id)
-			if err != nil {
-				return err
-			}
-
 			if !force {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Delete %s? Use --force to confirm.\n", id)
 				return fmt.Errorf("use --force to delete %s", id)
 			}
 
-			if err := db.DeleteItemCascade(ctx, ws.DB, id); err != nil {
-				return fmt.Errorf("delete from index: %w", err)
-			}
-			if err := os.Remove(filePath); err != nil {
-				return fmt.Errorf("delete artifact file: %w", err)
+			if err := core.DeleteArtifact(ctx, ws, id); err != nil {
+				return err
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s\n", id)

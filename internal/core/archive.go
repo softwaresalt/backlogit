@@ -128,9 +128,19 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		}
 	}
 
-	// Update DB status to archived directly — avoids re-parsing frontmatter field
-	// mapping discrepancies (e.g. type vs artifact_type).
+	// Update DB status to archived. On failure, restore the file to its
+	// original path so filesystem and DB index remain consistent.
 	if _, dbErr := database.ExecContext(ctx, "UPDATE items SET status = ? WHERE id = ?", string(models.StatusArchived), itemID); dbErr != nil {
+		// Always restore original content to currentPath regardless of whether
+		// paths differ: the file may have been overwritten with archive frontmatter
+		// even when currentPath == archivePath (already-archived items).
+		if restoreErr := os.WriteFile(currentPath, raw, 0o644); restoreErr != nil {
+			slog.Error("archive: failed to restore file after DB error",
+				"archive_path", archivePath, "original_path", currentPath, "error", restoreErr)
+		} else if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
+			// Remove the stale archive copy only when it is a distinct file.
+			os.Remove(archivePath) //nolint:errcheck
+		}
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
 
