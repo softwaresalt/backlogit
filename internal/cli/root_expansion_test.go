@@ -23,7 +23,7 @@ func TestRootCommand_RegistersAllCommands(t *testing.T) {
 	}
 
 	// Assert — all queue-specified commands must be registered
-	expected := []string{"init", "sync", "mcp", "add", "list", "get", "update", "move", "delete", "search", "query", "status", "stash", "deliberate", "metadata"}
+	expected := []string{"init", "sync", "mcp", "add", "list", "get", "update", "move", "delete", "search", "query", "status", "stash", "deliberate", "metadata", "doctor"}
 	for _, name := range expected {
 		assert.True(t, names[name], "missing command: %s", name)
 	}

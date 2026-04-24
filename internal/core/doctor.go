@@ -76,6 +76,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		id           string
 		artifactType string
 		parentID     string
+		level        int // stored level from frontmatter (0 when absent)
 	}
 
 	var artifacts []artifactInfo
@@ -99,6 +100,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					id:           a.ID,
 					artifactType: a.ArtifactType,
 					parentID:     a.ParentID,
+					level:        a.Level,
 				})
 			}
 			idToFiles[a.ID] = append(idToFiles[a.ID], path)
@@ -126,6 +128,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				isChildType = len(allowedParentTypes(ws, info.artifactType)) > 0
 			}
 			if !isChildType {
+				continue
+			}
+			// Legacy artifacts may have a child type (e.g., "task") but reside
+			// at root level (level 1) in frontmatter. These are not orphans;
+			// they predate the hierarchical layout and should be skipped.
+			if info.level == 1 {
 				continue
 			}
 			if info.parentID != "" {
