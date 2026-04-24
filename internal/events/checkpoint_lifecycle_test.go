@@ -1,0 +1,319 @@
+package events
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+)
+
+// writeTestCheckpoint writes a V1 checkpoint file to dir and returns its filename.
+func writeTestCheckpoint(t *testing.T, dir string, cp *CheckpointV1) string {
+	t.Helper()
+	name := "checkpoint-" + time.Now().UTC().Format("20060102-150405") + ".json"
+	data, err := json.Marshal(cp)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
+	return name
+}
+
+func writeTestCheckpointNamed(t *testing.T, dir, name string, cp *CheckpointV1) {
+	t.Helper()
+	data, err := json.Marshal(cp)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
+}
+
+func TestListCheckpoints_EmptyDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	assert.Empty(t, summaries)
+}
+
+func TestListCheckpoints_ReturnsAll(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.SessionID = "session-1"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.SessionID = "session-2"
+	cp2.Agent = "stage"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-110000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 2)
+}
+
+func TestListCheckpoints_FilterByAgent(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.Agent = "ship"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.Agent = "stage"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-110000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Agent: "ship"})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+	assert.Equal(t, "ship", summaries[0].Agent)
+}
+
+func TestListCheckpoints_FilterByStatus(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.Status = "active"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.Status = "resolved"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-110000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "active"})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+	assert.Equal(t, "active", summaries[0].Status)
+}
+
+func TestListCheckpoints_FilterByShipmentID(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.Context.ShipmentID = "044-S"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.Context.ShipmentID = "045-S"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-110000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{ShipmentID: "044-S"})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+	assert.Equal(t, "044-S", summaries[0].ShipmentID)
+}
+
+func TestListCheckpoints_FilterByMaxAge(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	old := validCheckpointV1()
+	old.CreatedAt = time.Now().UTC().Add(-48 * time.Hour)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260421-100000.json", old)
+
+	recent := validCheckpointV1()
+	recent.CreatedAt = time.Now().UTC().Add(-1 * time.Hour)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", recent)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{MaxAge: 24 * time.Hour})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+}
+
+func TestListCheckpoints_QuarantinesBadFiles(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	// Write garbage file.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "checkpoint-bad.json"), []byte("not-json{"), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+	assert.NotEmpty(t, summaries[0].ValidationErr)
+
+	// Check file was quarantined.
+	quarantine := filepath.Join(root, ".backlogit", "quarantine", "checkpoints", "checkpoint-bad.json")
+	assert.FileExists(t, quarantine)
+	assert.NoFileExists(t, filepath.Join(dir, "checkpoint-bad.json"))
+}
+
+func TestListCheckpoints_SortedByCreatedAtDesc(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.CreatedAt = time.Date(2026, 4, 23, 10, 0, 0, 0, time.UTC)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.CreatedAt = time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-120000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 2)
+	assert.True(t, summaries[0].CreatedAt.After(summaries[1].CreatedAt))
+}
+
+func TestGetCheckpoint_Valid(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+	cp := validCheckpointV1()
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	result, err := GetCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	require.NoError(t, err)
+	assert.Equal(t, "ship", result.Agent)
+	assert.Equal(t, "test-session-001", result.SessionID)
+}
+
+func TestGetCheckpoint_NotFound(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	_, err := GetCheckpoint(context.Background(), dir, "checkpoint-missing.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointNotFound)
+}
+
+func TestGetCheckpoint_PathTraversal(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	_, err := GetCheckpoint(context.Background(), dir, "../../../etc/passwd")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointInvalid)
+}
+
+func TestGetCheckpoint_EmptyFilename(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	_, err := GetCheckpoint(context.Background(), dir, "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointInvalid)
+}
+
+func TestResolveCheckpoint_Active(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+	cp := validCheckpointV1()
+	cp.Status = "active"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	require.NoError(t, err)
+
+	// Verify it's now resolved.
+	resolved, err := GetCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	require.NoError(t, err)
+	assert.Equal(t, "resolved", resolved.Status)
+}
+
+func TestResolveCheckpoint_Idempotent(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+	cp := validCheckpointV1()
+	cp.Status = "resolved"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	assert.NoError(t, err)
+}
+
+func TestResolveCheckpoint_NotFound(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	err := ResolveCheckpoint(context.Background(), dir, "checkpoint-missing.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointNotFound)
+}
+
+func TestResolveCheckpoint_PathTraversal(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	err := ResolveCheckpoint(context.Background(), dir, "../../secret.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointInvalid)
+}
+
+func TestCleanupCheckpoints_ArchivesResolved(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp := validCheckpointV1()
+	cp.Status = "resolved"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	result, err := CleanupCheckpoints(context.Background(), dir, 7)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.ArchivedCount)
+	assert.Contains(t, result.ArchivedFiles, "checkpoint-20260423-100000.json")
+
+	// Verify archived.
+	archive := filepath.Join(root, ".backlogit", "archive", "checkpoints", "checkpoint-20260423-100000.json")
+	assert.FileExists(t, archive)
+	assert.NoFileExists(t, filepath.Join(dir, "checkpoint-20260423-100000.json"))
+}
+
+func TestCleanupCheckpoints_ArchivesStale(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp := validCheckpointV1()
+	cp.Status = "active"
+	cp.CreatedAt = time.Now().UTC().Add(-10 * 24 * time.Hour)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260413-100000.json", cp)
+
+	result, err := CleanupCheckpoints(context.Background(), dir, 7)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.ArchivedCount)
+}
+
+func TestCleanupCheckpoints_SkipsActive(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp := validCheckpointV1()
+	cp.Status = "active"
+	cp.CreatedAt = time.Now().UTC()
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	result, err := CleanupCheckpoints(context.Background(), dir, 7)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ArchivedCount)
+	assert.Equal(t, 1, result.SkippedCount)
+}
+
+func TestCleanupCheckpoints_InvalidRetention(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	_, err := CleanupCheckpoints(context.Background(), dir, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "retentionDays must be > 0")
+}
+
+func TestCleanupCheckpoints_EmptyDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	result, err := CleanupCheckpoints(context.Background(), dir, 7)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ArchivedCount)
+}
+
+func TestCleanupCheckpoints_NegativeRetention(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
+	_, err := CleanupCheckpoints(context.Background(), dir, -1)
+	require.Error(t, err)
+}
