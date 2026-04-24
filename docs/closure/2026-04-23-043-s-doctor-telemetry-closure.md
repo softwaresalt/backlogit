@@ -2,6 +2,8 @@
 title: "043-S Doctor Completion & Telemetry Parser — Post-Merge Closure"
 description: "Operational closure for PR #64: doctor orphan fix, CLI doctor command, and telemetry parser multi-line format support"
 ms.date: 2026-04-23
+ms.topic: reference
+author: Copilot
 shipment: 043-S
 merge_sha: afe1a16
 pr: "https://github.com/softwaresalt/backlogit/pull/64"
@@ -57,7 +59,7 @@ go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 ## Post-Deploy Checks
 
 1. Run `backlogit doctor` on a workspace that includes legacy root artifacts (e.g., `001-T`) — must report no orphans
-2. Run `backlogit doctor --format json` — must return valid JSON with `checked_at`, `orphans`, and `duplicates` fields
+2. Run `backlogit doctor --format json` — must return valid JSON with `findings` array and `checked_at` field; each finding object contains `type`, `artifact_id`, and `description`
 3. Run `backlogit telemetry harvest` with a Copilot log directory containing multi-line format entries — must parse `assistant_usage` and `tool_call_executed` events correctly
 4. Run `backlogit telemetry harvest` against old single-line `[telemetry]` format — must continue to succeed (backward compatibility)
 
