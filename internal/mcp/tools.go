@@ -988,7 +988,10 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 	checkpointDir := filepath.Join(ws.RootPath, ".backlogit", "checkpoints")
 
 	retentionDays := 7 // default
-	if v, ok := request.Params.Arguments["retention_days"].(float64); ok && v > 0 {
+	if v, ok := request.Params.Arguments["retention_days"].(float64); ok {
+		if v < 1 || v != float64(int(v)) {
+			return ValidationFailed("retention_days must be an integer >= 1"), nil
+		}
 		retentionDays = int(v)
 	} else if ws.Config != nil && ws.Config.CheckpointRetention.RetentionDays > 0 {
 		retentionDays = ws.Config.CheckpointRetention.RetentionDays

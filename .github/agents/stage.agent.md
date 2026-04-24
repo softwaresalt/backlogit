@@ -302,12 +302,10 @@ At session start, after the memory scan, run the recovery state machine:
 1. Call `backlogit_get_checkpoint(filename="{chosen}")`
 2. If the tool returns an error result, treat the checkpoint as unavailable or
    invalid: warn operator, then fall back to **FRESH_START**
-3. If the tool succeeds but returns `valid=false`: warn operator, fall back to
-   **FRESH_START**
-4. Restore context (phase, feature_id, task_ids, branch) from checkpoint
-5. Resolve all other active checkpoints from prior sessions with
+3. Restore context (phase, feature_id, task_ids, branch) from checkpoint
+4. Resolve all other active checkpoints from prior sessions with
    `backlogit_resolve_checkpoint`
-6. Continue from checkpoint phase
+5. Continue from checkpoint phase
 
 **FRESH_START**
 1. Resolve all active checkpoints from prior sessions with
