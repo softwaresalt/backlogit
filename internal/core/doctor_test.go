@@ -20,8 +20,9 @@ func helperWriteArtifact(t *testing.T, dir, filename, content string) {
 }
 
 // newDoctorTestWorkspace creates a Workspace with standard queue layout config.
-// Config is set so artifactSearchDirs uses Config-based scanning (requires
-// registry.yaml) — pass nil Config to use the fallback "scan all dirs" path.
+// When withConfig is true, it sets Workspace.Config so tests exercise the
+// config-driven artifact search path. Pass nil Config to use the fallback
+// "scan all dirs" path.
 func newDoctorTestWorkspace(t *testing.T, rootPath string, withConfig bool) *Workspace {
 	t.Helper()
 	ws := &Workspace{RootPath: rootPath}
@@ -77,7 +78,7 @@ hierarchy_path: "001"
 Legacy bug.
 `)
 
-	// Config is nil so artifactSearchDirs scans all non-hidden dirs.
+	// Use a configured workspace and verify these legacy root-level artifacts are not flagged as orphans.
 	ws := newDoctorTestWorkspace(t, tmp, true)
 
 	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckOrphans: true})
