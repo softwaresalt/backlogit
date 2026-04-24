@@ -3,8 +3,10 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -316,4 +318,85 @@ func TestCleanupCheckpoints_NegativeRetention(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
 	_, err := CleanupCheckpoints(context.Background(), dir, -1)
 	require.Error(t, err)
+}
+
+func TestResolveCheckpoint_ConcurrentResolve(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	// Create multiple active checkpoints.
+	for i := 0; i < 5; i++ {
+		cp := validCheckpointV1()
+		cp.Status = "active"
+		cp.SessionID = fmt.Sprintf("session-%d", i)
+		name := fmt.Sprintf("checkpoint-20260423-10000%d.json", i)
+		writeTestCheckpointNamed(t, dir, name, cp)
+	}
+
+	// Resolve all concurrently.
+	var wg sync.WaitGroup
+	errs := make([]error, 5)
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			name := fmt.Sprintf("checkpoint-20260423-10000%d.json", idx)
+			errs[idx] = ResolveCheckpoint(context.Background(), dir, name)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		assert.NoError(t, err, "resolve goroutine %d should not fail", i)
+	}
+
+	// Verify all resolved.
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "resolved"})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 5)
+}
+
+func TestListCheckpoints_FilterByFeatureID(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp1 := validCheckpointV1()
+	cp1.Context.FeatureID = "045-F"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp1)
+
+	cp2 := validCheckpointV1()
+	cp2.Context.FeatureID = "046-F"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-110000.json", cp2)
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{FeatureID: "045-F"})
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+	assert.Equal(t, "045-F", summaries[0].FeatureID)
+}
+
+func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	// Resolved: should archive.
+	resolved := validCheckpointV1()
+	resolved.Status = "resolved"
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", resolved)
+
+	// Active but stale: should archive.
+	stale := validCheckpointV1()
+	stale.Status = "active"
+	stale.CreatedAt = time.Now().UTC().Add(-30 * 24 * time.Hour)
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260323-100000.json", stale)
+
+	// Active and recent: should skip.
+	fresh := validCheckpointV1()
+	fresh.Status = "active"
+	fresh.CreatedAt = time.Now().UTC()
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-120000.json", fresh)
+
+	result, err := CleanupCheckpoints(context.Background(), dir, 7)
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.ArchivedCount)
+	assert.Equal(t, 1, result.SkippedCount)
 }
