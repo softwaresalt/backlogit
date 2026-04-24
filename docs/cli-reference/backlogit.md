@@ -45,6 +45,7 @@ stash follow-up work for later planning.
 * [backlogit add](backlogit_add.md)	 - Create a new artifact
 * [backlogit adopt](backlogit_adopt.md)	 - Adopt an orphaned item under a new parent feature
 * [backlogit archive](backlogit_archive.md)	 - Archive a completed artifact
+* [backlogit checkpoint](backlogit_checkpoint.md)	 - Manage session state checkpoints
 * [backlogit delete](backlogit_delete.md)	 - Delete an artifact
 * [backlogit deliberate](backlogit_deliberate.md)	 - Create a deliberation artifact linked to a stash entry
 * [backlogit dep](backlogit_dep.md)	 - Manage artifact dependencies

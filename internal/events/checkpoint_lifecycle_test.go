@@ -16,17 +16,6 @@ import (
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
-// writeTestCheckpoint writes a V1 checkpoint file to dir and returns its filename.
-func writeTestCheckpoint(t *testing.T, dir string, cp *CheckpointV1) string {
-	t.Helper()
-	name := "checkpoint-" + time.Now().UTC().Format("20060102-150405") + ".json"
-	data, err := json.Marshal(cp)
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
-	return name
-}
-
 func writeTestCheckpointNamed(t *testing.T, dir, name string, cp *CheckpointV1) {
 	t.Helper()
 	data, err := json.Marshal(cp)
