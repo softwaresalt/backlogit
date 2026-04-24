@@ -8,7 +8,7 @@ merge_sha: "71e392a6dc0f99a74e1b1c695251404014a56c7d"
 branch: feat/045-agent-session-disaster-recovery
 status: SHIPPED
 closure_pr: "67"
-closure_sha: edf91d1dd24d8818779ff8cf0c9e4af0ef264b20
+closure_sha: "edf91d1dd24d8818779ff8cf0c9e4af0ef264b20"
 ms.date: 2026-04-24
 ---
 
@@ -52,7 +52,7 @@ No outstanding CI failures. No unresolved review items.
 
 ## Readiness Status
 
-**READY** — merge complete; monitoring plan recorded below.
+**SHIPPED** — closure PR #67 merged to main at `edf91d1`; all closure documentation and archive fixes in production.
 
 ---
 
