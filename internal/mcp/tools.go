@@ -150,6 +150,38 @@ func (s *Server) RegisterTools() {
 		s.handleCreateCheckpoint,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_list_checkpoints",
+			mcplib.WithDescription("List session state checkpoints with optional filters"),
+			mcplib.WithString("consumer_id", mcplib.Description("Filter by consumer/agent ID")),
+			mcplib.WithString("status", mcplib.Description("Filter by status (active, resolved)")),
+			mcplib.WithString("shipment_id", mcplib.Description("Filter by shipment ID")),
+			mcplib.WithString("feature_id", mcplib.Description("Filter by feature ID")),
+			mcplib.WithNumber("max_age_hours", mcplib.Description("Maximum age in hours")),
+		),
+		s.handleListCheckpoints,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_get_checkpoint",
+			mcplib.WithDescription("Get and validate a specific checkpoint by filename"),
+			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
+		),
+		s.handleGetCheckpoint,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_resolve_checkpoint",
+			mcplib.WithDescription("Mark a checkpoint as resolved"),
+			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
+		),
+		s.handleResolveCheckpoint,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_cleanup_checkpoints",
+			mcplib.WithDescription("Archive resolved and stale checkpoints based on retention policy"),
+			mcplib.WithNumber("retention_days", mcplib.Description("Override retention days (defaults to config)")),
+		),
+		s.handleCleanupCheckpoints,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_get_wit_metadata",
 			mcplib.WithDescription("Get complete WIT metadata for an artifact type including fields, sections, and relationships"),
 			mcplib.WithString("type", mcplib.Required(), mcplib.Description("Artifact type (feature, task, subtask)")),
@@ -861,9 +893,112 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
 	path, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
 	if err != nil {
-		return InternalError(fmt.Sprintf("create checkpoint: %v", err)), nil
+		return domainError("create checkpoint", err), nil
 	}
 	return toolResultJSON(map[string]string{"path": path})
+}
+
+func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+
+	filter := events.CheckpointFilter{}
+	if v, ok := request.Params.Arguments["consumer_id"].(string); ok && v != "" {
+		filter.Agent = v
+	}
+	if v, ok := request.Params.Arguments["status"].(string); ok && v != "" {
+		filter.Status = v
+	}
+	if v, ok := request.Params.Arguments["shipment_id"].(string); ok && v != "" {
+		filter.ShipmentID = v
+	}
+	if v, ok := request.Params.Arguments["feature_id"].(string); ok && v != "" {
+		filter.FeatureID = v
+	}
+	if v, ok := request.Params.Arguments["max_age_hours"].(float64); ok && v > 0 {
+		filter.MaxAge = time.Duration(v * float64(time.Hour))
+	}
+
+	summaries, err := events.ListCheckpoints(ctx, checkpointDir, filter)
+	if err != nil {
+		return InternalError(fmt.Sprintf("list checkpoints: %v", err)), nil
+	}
+
+	quarantined := 0
+	for _, sm := range summaries {
+		if sm.ValidationErr != "" {
+			quarantined++
+		}
+	}
+
+	return toolResultJSON(map[string]any{
+		"checkpoints": summaries,
+		"total":       len(summaries),
+		"quarantined": quarantined,
+	})
+}
+
+func (s *Server) handleGetCheckpoint(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	filename, _ := request.Params.Arguments["filename"].(string)
+	if filename == "" {
+		return ValidationFailed("filename is required"), nil
+	}
+	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	cp, err := events.GetCheckpoint(ctx, checkpointDir, filename)
+	if err != nil {
+		return domainError("get checkpoint", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"checkpoint": cp,
+		"filename":   filename,
+		"valid":      true,
+	})
+}
+
+func (s *Server) handleResolveCheckpoint(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+	filename, _ := request.Params.Arguments["filename"].(string)
+	if filename == "" {
+		return ValidationFailed("filename is required"), nil
+	}
+	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	if err := events.ResolveCheckpoint(ctx, checkpointDir, filename); err != nil {
+		return domainError("resolve checkpoint", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"ok":          true,
+		"filename":    filename,
+		"status":      "resolved",
+		"resolved_at": time.Now().UTC(),
+	})
+}
+
+func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+	checkpointDir := filepath.Join(ws.RootPath, ".backlogit", "checkpoints")
+
+	retentionDays := 7 // default
+	if v, ok := request.Params.Arguments["retention_days"].(float64); ok && v > 0 {
+		retentionDays = int(v)
+	} else if ws.Config != nil && ws.Config.CheckpointRetention.RetentionDays > 0 {
+		retentionDays = ws.Config.CheckpointRetention.RetentionDays
+	}
+
+	cleanupResult, err := events.CleanupCheckpoints(ctx, checkpointDir, retentionDays)
+	if err != nil {
+		return InternalError(fmt.Sprintf("cleanup checkpoints: %v", err)), nil
+	}
+	return toolResultJSON(cleanupResult)
 }
 
 // validateSectionName rejects section names that would produce malformed HTML
