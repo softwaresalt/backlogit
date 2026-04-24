@@ -128,6 +128,10 @@ func (p *CopilotCLIParser) Parse(r io.Reader, emit func(TelemetryEvent) error) e
 			return fmt.Errorf("telemetry emit: %w", err)
 		}
 	}
+	if accumulating {
+		slog.Debug("incomplete new-format telemetry block at EOF; last event skipped",
+			"event_type", accEventType)
+	}
 	return scanner.Err()
 }
 
