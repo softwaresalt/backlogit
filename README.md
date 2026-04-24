@@ -36,6 +36,7 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - Workspace doctor: `backlogit doctor` detects orphaned artifacts and duplicate IDs across queue and archive, with text and JSON output formats
 - Single CGo-free static binary; workspace-contained with path traversal rejection
 - Agent-native: version surface, two-layer hooks, token telemetry, commit traceability, and dependency tracking baked in
+- Session disaster recovery: standardized checkpoint schema, MCP lifecycle tools (`list_checkpoints`, `get_checkpoint`, `resolve_checkpoint`, `cleanup_checkpoints`), and deterministic agent recovery state machine for interrupted sessions
 
 ## Quick Start
 
@@ -83,6 +84,15 @@ backlogit doctor --format json
 ```bash
 backlogit metadata catalog
 backlogit metadata export-command-map .github\instructions\backlogit-command-map.md
+```
+
+**Manage agent session checkpoints:**
+
+```bash
+backlogit checkpoint list --agent ship --status active
+backlogit checkpoint get checkpoint-20260424-083000.json
+backlogit checkpoint resolve checkpoint-20260424-083000.json
+backlogit checkpoint cleanup --retention-days 7
 ```
 
 **Start the MCP server:**
