@@ -60,6 +60,7 @@ func InternalError(detail string) *mcplib.CallToolResult {
 //	--------------------------|--------------------|---------------
 //	ErrNotFound               | not_found          | 404
 //	ErrShipmentNotFound       | not_found          | 404
+//	ErrCheckpointNotFound     | not_found          | 404
 //	ErrShipmentConflict       | conflict           | 409
 //	ErrItemAlreadyAssigned    | conflict           | 409
 //	ErrCannotReturnItem       | conflict           | 409
@@ -67,6 +68,8 @@ func InternalError(detail string) *mcplib.CallToolResult {
 //	ErrValidation             | validation_failed  | 422
 //	ErrInvalidLinkType        | validation_failed  | 422
 //	ErrTelemetrySourceMissing | validation_failed  | 422
+//	ErrCheckpointInvalid      | validation_failed  | 422
+//	ErrCheckpointCorrupt      | validation_failed  | 422
 //	ErrTelemetryParseFailed   | internal           | 500
 //	(all others)              | internal           | 500
 //
@@ -74,7 +77,8 @@ func InternalError(detail string) *mcplib.CallToolResult {
 // InternalError messages to aid diagnosis (e.g. "archive item").
 func domainError(op string, err error) *mcplib.CallToolResult {
 	switch {
-	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound):
+	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound),
+		errors.Is(err, corerrors.ErrCheckpointNotFound):
 		return NotFound(err.Error())
 	case errors.Is(err, corerrors.ErrShipmentConflict),
 		errors.Is(err, corerrors.ErrItemAlreadyAssigned),
@@ -83,7 +87,9 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		return Conflict(err.Error())
 	case errors.Is(err, corerrors.ErrValidation),
 		errors.Is(err, corerrors.ErrInvalidLinkType),
-		errors.Is(err, corerrors.ErrTelemetrySourceMissing):
+		errors.Is(err, corerrors.ErrTelemetrySourceMissing),
+		errors.Is(err, corerrors.ErrCheckpointInvalid),
+		errors.Is(err, corerrors.ErrCheckpointCorrupt):
 		return ValidationFailed(err.Error())
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))

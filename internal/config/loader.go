@@ -33,6 +33,10 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 		cfg.BugLevel = 3
 	}
 
+	if cfg.CheckpointRetention.RetentionDays == 0 {
+		cfg.CheckpointRetention.RetentionDays = 7
+	}
+
 	applyEnvOverrides(&cfg)
 	applyBugLevelConfig(&cfg)
 

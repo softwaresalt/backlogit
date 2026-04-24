@@ -20,11 +20,17 @@ func (c *WorkspaceConfig) Validate() error {
 
 // WorkspaceConfig holds the parsed workspace configuration.
 type WorkspaceConfig struct {
-	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
-	Fields        map[string]*FieldConfig        `yaml:"fields"`
-	BugLevel      int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
-	MaxSlugLength int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
-	QueueLayout   *QueueLayoutConfig             `yaml:"queue_layout"`
+	ArtifactTypes       map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
+	Fields              map[string]*FieldConfig        `yaml:"fields"`
+	BugLevel            int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
+	MaxSlugLength       int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
+	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
+	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
+}
+
+// CheckpointRetention configures checkpoint file retention policy.
+type CheckpointRetention struct {
+	RetentionDays int `yaml:"retention_days" validate:"omitempty,gte=1"`
 }
 
 // ArtifactTypeConfig defines an artifact type's behavior.

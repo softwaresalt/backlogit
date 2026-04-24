@@ -29,6 +29,11 @@ var (
 	ErrTelemetrySourceMissing = errors.New("backlogit: telemetry source missing")
 	ErrTelemetryParseFailed   = errors.New("backlogit: telemetry parse failed")
 
+	// Checkpoint sentinel errors (045-F).
+	ErrCheckpointNotFound = errors.New("backlogit: checkpoint not found")
+	ErrCheckpointInvalid  = errors.New("backlogit: checkpoint validation failed")
+	ErrCheckpointCorrupt  = errors.New("backlogit: checkpoint file corrupt or unparseable")
+
 	// Hook event sentinel errors (027-F).
 	ErrHookEvent = errors.New("backlogit: hook event error")
 
