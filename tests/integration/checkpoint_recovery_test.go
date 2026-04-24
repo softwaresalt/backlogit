@@ -177,7 +177,7 @@ func TestCheckpointRecoveryFlow_MultipleCheckpoints(t *testing.T) {
 
 	// Parse output to verify order.
 	var result struct {
-		Total       int                       `json:"total"`
+		Total       int                        `json:"total"`
 		Checkpoints []events.CheckpointSummary `json:"checkpoints"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(output), &result))
