@@ -6,7 +6,9 @@ feature: 045-F
 pr: "66"
 merge_sha: "71e392a6dc0f99a74e1b1c695251404014a56c7d"
 branch: feat/045-agent-session-disaster-recovery
-status: READY
+status: SHIPPED
+closure_pr: "67"
+closure_sha: edf91d1dd24d8818779ff8cf0c9e4af0ef264b20
 ms.date: 2026-04-24
 ---
 
