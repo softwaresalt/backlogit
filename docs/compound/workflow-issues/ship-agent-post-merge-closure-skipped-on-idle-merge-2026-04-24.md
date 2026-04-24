@@ -8,6 +8,7 @@ severity: medium
 message: "Ship agent post-merge closure (6 steps) never executed after shipment 044-S was archived. PR #66 merged via GitHub UI while Ship agent was idle; ship_shipment fired but closure protocol had no execution context."
 file_path: ".github/agents/ship.agent.md"
 resolved: true
+description: "Ship agent post-merge closure silently skipped when PR merged via GitHub UI while Ship agent was idle; ship_shipment fires but the 6-step closure workflow has no execution context to run."
 tags:
   - ship-agent
   - post-merge-closure
@@ -17,8 +18,6 @@ tags:
   - hook-gap
 date: 2026-04-24
 ---
-
-# Post-Merge Closure Silently Skipped When PR Merged Outside Active Ship Session
 
 ## Problem
 

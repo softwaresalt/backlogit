@@ -1,16 +1,16 @@
 ---
 title: "044-S Agent Session Disaster Recovery — Post-Merge Closure"
+description: "Post-merge closure record for shipment 044-S covering agent session disaster recovery delivery, verification, and operational follow-up."
 shipment: 044-S
 feature: 045-F
 pr: "66"
 merge_sha: "71e392a6dc0f99a74e1b1c695251404014a56c7d"
 branch: feat/045-agent-session-disaster-recovery
 status: READY
-date: 2026-04-24
-mode: post-merge
+ms.date: 2026-04-24
 ---
 
-# 044-S — Agent Session Disaster Recovery Post-Merge Closure
+## 044-S — Agent Session Disaster Recovery Post-Merge Closure
 
 ## Change Summary
 

@@ -1,4 +1,10 @@
-# Ship Agent — 044-S Post-Merge Closure Memory
+---
+title: "Ship 044-S Post-Merge Closure Memory — Agent Session Disaster Recovery"
+description: "Post-merge closure complete for shipment 044-S: PR #66 merged, closure artifact written, compound learning captured, README updated"
+ms.date: 2026-04-24
+---
+
+## Ship Agent — 044-S Post-Merge Closure Memory
 
 **Session type:** Post-merge closure (follow-up session)
 **Date:** 2026-04-24

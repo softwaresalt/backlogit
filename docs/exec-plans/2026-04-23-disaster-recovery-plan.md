@@ -1,5 +1,6 @@
 ---
 title: "Agent Session Disaster Recovery"
+description: "Implementation plan for checkpoint discovery, lifecycle tooling, and agent harness recovery protocol to support interrupted session resumption."
 date: 2026-04-23
 origin: ".backlogit/queue/040-DL.md"
 status: reviewed
