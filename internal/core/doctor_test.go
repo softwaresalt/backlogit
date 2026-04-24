@@ -66,14 +66,12 @@ hierarchy_path: "001"
 Legacy task.
 `)
 
-	// Legacy bug at root level — type not even in queue layout but level 1.
+	// Legacy bug at root level — type not in queue layout, no level field.
 	helperWriteArtifact(t, archiveDir, "001-B.md", `---
 id: "001-B"
 title: "Legacy root bug"
 status: done
 artifact_type: bug
-level: 1
-hierarchy_path: "001"
 ---
 Legacy bug.
 `)

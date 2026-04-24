@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -130,10 +131,15 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if !isChildType {
 				continue
 			}
-			// Legacy artifacts may have a child type (e.g., "task") but reside
-			// at root level (level 1) in frontmatter. These are not orphans;
-			// they predate the hierarchical layout and should be skipped.
-			if info.level == 1 {
+			// Legacy artifacts may have a child type (e.g., "task") but reside at
+			// root level in the workspace. Real legacy artifacts do not include a
+			// level field in frontmatter, so info.level is 0; derive the effective
+			// level from the ID structure in that case ("001-T" -> 1, "001.001-T" -> 2).
+			effectiveLevel := info.level
+			if effectiveLevel == 0 {
+				effectiveLevel = levelFromID(info.id)
+			}
+			if effectiveLevel == 1 {
 				continue
 			}
 			if info.parentID != "" {
@@ -200,4 +206,16 @@ func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
 		}
 	}
 	return false
+}
+
+// levelFromID derives a hierarchy depth from an artifact ID when the
+// frontmatter level field is absent (zero). It counts dot-separated segments
+// in the numeric prefix before the last dash (e.g. "001.002-T" -> 2, "001-T" -> 1).
+// The minimum depth returned is 1.
+func levelFromID(id string) int {
+	dash := strings.LastIndex(id, "-")
+	if dash < 0 {
+		return 1
+	}
+	return strings.Count(id[:dash], ".") + 1
 }
