@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ checkpoint files.`,
 }
 
 func checkpointDir(cwd string) string {
-	return cwd + "/.backlogit/checkpoints"
+	return filepath.Join(cwd, ".backlogit", "checkpoints")
 }
 
 func newCheckpointListCmd(cwd *string) *cobra.Command {
@@ -65,7 +66,7 @@ func newCheckpointListCmd(cwd *string) *cobra.Command {
 
 			quarantined := 0
 			for _, s := range summaries {
-				if s.ValidationErr != "" {
+				if s.Quarantined {
 					quarantined++
 				}
 			}
@@ -164,7 +165,7 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 
 			// Load retention from config if not overridden.
 			if retentionDays == 0 {
-				wsPath := *cwd + "/.backlogit"
+				wsPath := filepath.Join(*cwd, ".backlogit")
 				cfg, err := config.Load(ctx, wsPath)
 				if err == nil && cfg.CheckpointRetention.RetentionDays > 0 {
 					retentionDays = cfg.CheckpointRetention.RetentionDays

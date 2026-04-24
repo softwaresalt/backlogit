@@ -290,8 +290,8 @@ At session start, after the memory scan, run the recovery state machine:
 3. If non-empty → **RECOVERY_DECISION**
 
 **RECOVERY_DECISION**
-- Present checkpoint summaries to operator: phase, feature context, stash IDs
-  processed, resume hint, validation status
+- Present checkpoint summaries to operator: phase, feature context, resume
+  hint, validation status
 - Surface any quarantined checkpoints (validation_error set) as warnings
 - Ask operator: "Resume from checkpoint {filename}, or start fresh?"
 - Log chosen action with slog
@@ -300,11 +300,14 @@ At session start, after the memory scan, run the recovery state machine:
 
 **RESUME_FROM_CHECKPOINT**
 1. Call `backlogit_get_checkpoint(filename="{chosen}")`
-2. If `valid=false`: warn operator, fall back to **FRESH_START**
-3. Restore context (phase, feature_id, task_ids, branch) from checkpoint
-4. Resolve all other active checkpoints from prior sessions with
+2. If the tool returns an error result, treat the checkpoint as unavailable or
+   invalid: warn operator, then fall back to **FRESH_START**
+3. If the tool succeeds but returns `valid=false`: warn operator, fall back to
+   **FRESH_START**
+4. Restore context (phase, feature_id, task_ids, branch) from checkpoint
+5. Resolve all other active checkpoints from prior sessions with
    `backlogit_resolve_checkpoint`
-5. Continue from checkpoint phase
+6. Continue from checkpoint phase
 
 **FRESH_START**
 1. Resolve all active checkpoints from prior sessions with
@@ -321,8 +324,9 @@ milestones:
 * plan hardening completes for a risky plan (`phase: "plan-review-complete"`)
 * harvest creates backlog items (`phase: "harvest-complete"`)
 
-Each checkpoint captures: stash IDs processed, artifact IDs created, decisions
-with rationale, and next steps.
+Each checkpoint captures: artifact IDs created, decisions with rationale, and
+next steps. Context carries feature_id, task_ids, and branch; progress carries
+tasks_completed, tasks_remaining, files_modified, and decisions.
 
 ### Session end
 

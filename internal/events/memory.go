@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // memoriesMu serializes concurrent SaveMemory calls on the same process.
@@ -57,7 +55,8 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 	if json.Unmarshal(data, &probe) == nil && probe.SchemaVersion == 1 {
 		cp, err := ParseCheckpoint(data)
 		if err != nil {
-			return "", fmt.Errorf("%w: parse v1: %v", backlogiterrors.ErrCheckpointInvalid, err)
+			// Preserve the ErrCheckpointCorrupt sentinel from ParseCheckpoint.
+			return "", fmt.Errorf("parse v1 checkpoint: %w", err)
 		}
 		if cp.CreatedAt.IsZero() {
 			cp.CreatedAt = time.Now().UTC()

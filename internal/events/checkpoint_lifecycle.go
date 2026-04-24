@@ -39,10 +39,12 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 
 		cp, parseErr := ParseCheckpoint(data)
 		if parseErr != nil {
-			// Quarantine unparseable file.
+			// Quarantine unparseable file — set Quarantined=true to distinguish from
+			// schema validation failures which stay in the checkpoints dir.
 			summary := CheckpointSummary{
 				Filename:      filename,
 				ValidationErr: parseErr.Error(),
+				Quarantined:   true,
 			}
 			summaries = append(summaries, summary)
 			quarantinePath := filepath.Join(quarantineDir, filename)
@@ -212,6 +214,15 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 			continue
 		}
 
+		// Validate before eligibility check so invalid files are skipped rather
+		// than being silently archived (e.g., zero-time created_at would always
+		// appear stale).
+		if valErr := ValidateCheckpoint(cp); valErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("validate %s: %v", filename, valErr))
+			result.SkippedCount++
+			continue
+		}
+
 		// Archive if resolved OR stale (older than retention).
 		eligible := cp.Status == "resolved" || cp.CreatedAt.Before(cutoff)
 		if !eligible {
@@ -236,13 +247,21 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 	return result, nil
 }
 
-// validateCheckpointFilename rejects filenames containing path separators.
+// validateCheckpointFilename rejects invalid checkpoint filenames and only allows
+// files in the expected checkpoint-*.json namespace.
 func validateCheckpointFilename(filename string) error {
+	if filename == "" {
+		return fmt.Errorf("%w: filename must not be empty", backlogiterrors.ErrCheckpointInvalid)
+	}
 	if strings.ContainsAny(filename, `/\`) {
 		return fmt.Errorf("%w: filename must be a basename without path separators", backlogiterrors.ErrCheckpointInvalid)
 	}
-	if filename == "" {
-		return fmt.Errorf("%w: filename must not be empty", backlogiterrors.ErrCheckpointInvalid)
+	if !strings.HasPrefix(filename, "checkpoint-") || !strings.HasSuffix(filename, ".json") {
+		return fmt.Errorf("%w: filename must match checkpoint-*.json", backlogiterrors.ErrCheckpointInvalid)
+	}
+	checkpointID := strings.TrimSuffix(strings.TrimPrefix(filename, "checkpoint-"), ".json")
+	if checkpointID == "" {
+		return fmt.Errorf("%w: filename must include a checkpoint identifier", backlogiterrors.ErrCheckpointInvalid)
 	}
 	return nil
 }

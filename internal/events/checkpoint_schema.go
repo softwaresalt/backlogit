@@ -64,6 +64,10 @@ type CheckpointSummary struct {
 	FeatureID     string    `json:"feature_id,omitempty"`
 	ResumeHint    string    `json:"resume_hint,omitempty"`
 	ValidationErr string    `json:"validation_error,omitempty"`
+	// Quarantined is true when the file was physically moved to the quarantine
+	// directory due to a parse failure. ValidationErr may also be set for
+	// schema validation failures that do NOT quarantine the file.
+	Quarantined bool `json:"quarantined,omitempty"`
 }
 
 // CleanupResult reports the outcome of a checkpoint cleanup operation.

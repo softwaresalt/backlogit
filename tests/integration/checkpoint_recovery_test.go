@@ -17,7 +17,7 @@ import (
 func TestCheckpointRecoveryFlow(t *testing.T) {
 	root := setupIntegrationWorkspace(t)
 
-	// Step 1: Create a V1 checkpoint via CLI create_checkpoint (using MCP tool indirectly through code).
+	// Step 1: Seed a V1 checkpoint file directly in the workspace for the subsequent CLI flows.
 	checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
 	require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
 

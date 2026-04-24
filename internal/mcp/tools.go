@@ -928,7 +928,7 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 
 	quarantined := 0
 	for _, sm := range summaries {
-		if sm.ValidationErr != "" {
+		if sm.Quarantined {
 			quarantined++
 		}
 	}
