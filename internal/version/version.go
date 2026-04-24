@@ -7,7 +7,7 @@
 package version
 
 // Version is the current backlogit release version.
-var Version = "1.0.2"
+var Version = "1.1.0"
 
 // Commit is the short git SHA injected at build time. Defaults to "unknown".
 var Commit = "unknown"
