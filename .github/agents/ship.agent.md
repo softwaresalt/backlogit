@@ -208,14 +208,50 @@ steps, not optional standalone agents.
 3. Broadcast `[SHIP] Restored session context from {memory_file}` or
    `[SHIP] No prior session context found`.
 
+### Session Start Recovery Protocol
+
+At session start, after the memory scan, run the recovery state machine:
+
+**SESSION_START**
+1. Call `backlogit_list_checkpoints(consumer_id="ship", status="active", max_age_hours=168)`
+2. If empty → **FRESH_START**
+3. If non-empty → **RECOVERY_DECISION**
+
+**RECOVERY_DECISION**
+- Present checkpoint summaries to operator: phase, shipment/feature context,
+  tasks completed, resume hint, validation status
+- Surface any quarantined checkpoints (validation_error set) as warnings
+- Ask operator: "Resume from checkpoint {filename}, or start fresh?"
+- Log chosen action with slog
+- If resume → **RESUME_FROM_CHECKPOINT**
+- If fresh → **FRESH_START**
+
+**RESUME_FROM_CHECKPOINT**
+1. Call `backlogit_get_checkpoint(filename="{chosen}")`
+2. If the tool returns an error result, treat the checkpoint as invalid or
+   unavailable: warn operator, log the recovery decision, and fall back to
+   **FRESH_START**
+3. Restore context (phase, shipment_id, feature_id, task_ids, branch) only
+   from a successful checkpoint result
+4. Resolve all other active checkpoints from prior sessions with
+   `backlogit_resolve_checkpoint`
+5. Continue from checkpoint phase
+
+**FRESH_START**
+1. Resolve all active checkpoints from prior sessions with
+   `backlogit_resolve_checkpoint`
+2. Proceed with existing memory scan and shipment validation
+
 ### Mid-session checkpoints
 
-Write a checkpoint to `docs/memory/` after any of these milestones:
+Write a V1 checkpoint via `backlogit_create_checkpoint` after any of these
+milestones:
 
-* harness generation completes
-* a build-feature cycle completes for a work item
-* review gate produces findings
-* CI remediation resolves or blocks
+* harness generation completes (`phase: "harness-complete"`)
+* a build-feature cycle completes for a work item (`phase: "per-task-complete"`)
+* review gate produces findings (`phase: "review-gate"`)
+* CI remediation resolves or blocks (`phase: "ci-pass"`)
+* PR is ready for review (`phase: "pr-ready"`)
 
 Each checkpoint captures: shipment ID, items completed, items blocked, branch
 state, decisions with rationale, errors encountered and how they were resolved,
@@ -266,10 +302,14 @@ After the user approves merge and the shipment transitions to shipped:
 
 ### Session end
 
-1. Write a final memory file to `docs/memory/` capturing: shipment status,
+1. Resolve all active checkpoints from the current session with
+   `backlogit_resolve_checkpoint`.
+2. Write a final V1 checkpoint with `resume_hint` describing the next action as
+   best-effort (graceful context-window shutdown).
+3. Write a final memory file to `docs/memory/` capturing: shipment status,
    completed items, blocked returns, branch state, PR status, and any pending
    merge approval.
-2. Broadcast `[SHIP] Memory persisted: {memory_file}`.
+4. Broadcast `[SHIP] Memory persisted: {memory_file}`.
 
 ## Session Completion
 

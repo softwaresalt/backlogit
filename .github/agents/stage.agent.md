@@ -280,26 +280,64 @@ standalone agents.
 3. Broadcast `[STAGE] Restored session context from {memory_file}` or
    `[STAGE] No prior session context found`.
 
+### Session Start Recovery Protocol
+
+At session start, after the memory scan, run the recovery state machine:
+
+**SESSION_START**
+1. Call `backlogit_list_checkpoints(consumer_id="stage", status="active", max_age_hours=168)`
+2. If empty → **FRESH_START**
+3. If non-empty → **RECOVERY_DECISION**
+
+**RECOVERY_DECISION**
+- Present checkpoint summaries to operator: phase, feature context, resume
+  hint, validation status
+- Surface any quarantined checkpoints (validation_error set) as warnings
+- Ask operator: "Resume from checkpoint {filename}, or start fresh?"
+- Log chosen action with slog
+- If resume → **RESUME_FROM_CHECKPOINT**
+- If fresh → **FRESH_START**
+
+**RESUME_FROM_CHECKPOINT**
+1. Call `backlogit_get_checkpoint(filename="{chosen}")`
+2. If the tool returns an error result, treat the checkpoint as unavailable or
+   invalid: warn operator, then fall back to **FRESH_START**
+3. Restore context (phase, feature_id, task_ids, branch) from checkpoint
+4. Resolve all other active checkpoints from prior sessions with
+   `backlogit_resolve_checkpoint`
+5. Continue from checkpoint phase
+
+**FRESH_START**
+1. Resolve all active checkpoints from prior sessions with
+   `backlogit_resolve_checkpoint`
+2. Proceed with existing memory scan and stash processing
+
 ### Mid-session checkpoints
 
-Write a checkpoint to `docs/memory/` after any of these milestones:
+Write a V1 checkpoint via `backlogit_create_checkpoint` after any of these
+milestones:
 
-* deliberation completes and produces an artifact
-* plan hardening completes for a risky plan
-* plan passes or fails the review gate
-* harvest creates backlog items
+* triage completes (`phase: "triage-complete"`)
+* deliberation completes and produces an artifact (`phase: "deliberation-complete"`)
+* plan hardening completes for a risky plan (`phase: "plan-review-complete"`)
+* harvest creates backlog items (`phase: "harvest-complete"`)
 
-Each checkpoint captures: stash IDs processed, artifact IDs created, decisions
-with rationale, and next steps.
+Each checkpoint captures: artifact IDs created, decisions with rationale, and
+next steps. Context carries feature_id, task_ids, and branch; progress carries
+tasks_completed, tasks_remaining, files_modified, and decisions.
 
 ### Session end
 
-1. Write a final memory file to `docs/memory/` capturing: stash entries
+1. Resolve all active checkpoints from the current session with
+   `backlogit_resolve_checkpoint`.
+2. Write a final V1 checkpoint with `resume_hint` describing the next action as
+   best-effort (graceful context-window shutdown).
+3. Write a final memory file to `docs/memory/` capturing: stash entries
    processed, deliberation or plan artifacts produced, backlog IDs created, and
    deferred entries with reasoning.
-2. If `.copilot-tracking/` contains more than 10 files or the tracking directory
+4. If `.copilot-tracking/` contains more than 10 files or the tracking directory
    exceeds reasonable size, invoke the `compact-context` skill.
-3. Broadcast `[STAGE] Memory persisted: {memory_file}`.
+5. Broadcast `[STAGE] Memory persisted: {memory_file}`.
 
 ## Session Completion
 

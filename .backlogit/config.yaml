@@ -56,6 +56,8 @@ fields:
     external_map: {}
 max_slug_length: 60
 bug_level: 3
+checkpoint_retention:
+  retention_days: 7
 queue_layout:
   root_dir: queue
   levels:

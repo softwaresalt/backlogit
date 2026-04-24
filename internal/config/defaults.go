@@ -335,8 +335,9 @@ func DefaultConfig() *WorkspaceConfig {
 
 func defaultConfigBase() *WorkspaceConfig {
 	return &WorkspaceConfig{
-		BugLevel:      3,
-		MaxSlugLength: 60,
+		BugLevel:            3,
+		MaxSlugLength:       60,
+		CheckpointRetention: CheckpointRetention{RetentionDays: 7},
 		ArtifactTypes: map[string]*ArtifactTypeConfig{
 			"feature": {
 				Prefix:          "F",
