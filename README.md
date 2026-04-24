@@ -32,7 +32,8 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 
 - CQRS architecture: Markdown files as source of truth, ephemeral SQLite for token-efficient agent queries, JSONL for append-only history
 - MCP server over JSON-RPC 2.0 stdio — integrates with Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client
-- Full CLI for the artifact lifecycle: create, list, query, update, move, archive, stash workflows, queue management, and metadata discovery
+- Full CLI for the artifact lifecycle: create, list, query, update, move, archive, stash workflows, queue management, metadata discovery, and workspace integrity checks
+- Workspace doctor: `backlogit doctor` detects orphaned artifacts and duplicate IDs across queue and archive, with text and JSON output formats
 - Single CGo-free static binary; workspace-contained with path traversal rejection
 - Agent-native: version surface, two-layer hooks, token telemetry, commit traceability, and dependency tracking baked in
 
@@ -68,6 +69,13 @@ backlogit deliberate ABCD1234 --chosen-direction "Keep the initial scope narrow 
 backlogit stash list --group-by-priority
 backlogit stash harvest --priority critical --type task
 backlogit stash remove ABCD1234
+```
+
+**Run workspace integrity checks:**
+
+```bash
+backlogit doctor --check-orphans --check-duplicates
+backlogit doctor --format json
 ```
 
 **Discover metadata and export an agent command map:**
