@@ -1,3 +1,9 @@
+---
+title: "Harness Tuning Report — 2026-04-25"
+date: "2026-04-25"
+status: applied
+---
+
 # Harness Tuning Report — 2026-04-25
 
 ## Drift Summary

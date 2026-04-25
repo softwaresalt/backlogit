@@ -244,7 +244,7 @@ artifacts:
   - path: "scripts/search.sh"
     primitive: 4
     template: "skill-search pack script"
-    checksum: "1c451a03ae9ab41b351f589457e44df23d0e8f6fef483e1bafaea4a2479dcd81"
+    checksum: "464a150825e19bea7b4f32b555b633ddeefcf9f9777376620ef4d764ffbafb72"
 variables_used:
   INSTALL_PRESET: "full"
   CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram,adversarial-review,release-observability"

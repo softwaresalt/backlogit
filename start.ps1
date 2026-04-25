@@ -12,7 +12,7 @@ if (Test-Path $global_agents_src) {
     }
 }
 
-$env:COPILOT_HOME = $local_copilot
+$env:COPILOT_HOME = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { "" }
 $env:ENGRAM_DATA_DIR = ".\.engram"   # Uncomment when the agent-engram capability pack is active
 $env:GITHUB_TOKEN = (gh auth token)
 $copilotExe = if ($env:COPILOT_EXE) {
