@@ -6,19 +6,20 @@ capability_packs:
   - agent-intercom
   - agent-engram
   - adversarial-review
-  - circuit-breaker
-  - concurrency
   - release-observability
 backlog:
   tool: backlogit
   directory: .backlogit
-  prefix_map:
+  suffix_map:
     feature: "F"
+    chore: "C"
     task: "T"
+    spike: "SP"
     deliberation: "DL"
-    review: "R"
     bug: "B"
+    epic: "E"
     subtask: "ST"
+    shipment: "S"
 docs:
   root: docs
   subdirectories:

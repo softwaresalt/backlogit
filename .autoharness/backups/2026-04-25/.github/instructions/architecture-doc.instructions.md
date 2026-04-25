@@ -6,8 +6,7 @@ applyTo: '**/ARCHITECTURE.md,**/docs/**,**/AGENTS.md'
 # Architecture Documentation Instructions
 
 These rules govern how architecture documentation is maintained in this workspace.
-Architecture documentation is a core artifact of Primitive 9 (Repository Knowledge &
-Agent Legibility) and serves as the navigable map that agents use to understand the
+Architecture documentation serves as the navigable map that agents use to understand the
 codebase.
 
 ## Progressive Disclosure

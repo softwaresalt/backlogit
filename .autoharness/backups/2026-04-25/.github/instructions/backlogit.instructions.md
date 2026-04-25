@@ -45,14 +45,6 @@ When selecting work or establishing execution order:
 3. Do not hide critical sequencing only in prose when the dependency graph can represent it.
 4. Re-check unfinished dependencies before claiming a task that appears ready.
 
-## Hook Signal Protocol
-
-When hook event polling operations are supported:
-
-1. Poll for unacknowledged hook events at session start before normal stash or shipment queue selection.
-2. Treat returned hook events as higher-priority signals than raw queue scans.
-3. Acknowledge only the highest processed concrete event sequence; never acknowledge derived signals.
-
 ## Intercom Coherence Rule
 
 When the `backlogit` and `agent-intercom` capability packs are both enabled and

@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-25T00:00:00Z"
+tuned_at: "2026-04-14T00:00:00Z"
 autoharness_version: "1.0.0"
 autoharness_home: "C:\\Users\\derek.williams\\AppData\\Roaming\\uv\\tools\\autoharness\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -12,6 +12,8 @@ capability_packs:
   - agent-intercom
   - agent-engram
   - adversarial-review
+  - circuit-breaker
+  - concurrency
   - release-observability
 capability_pack_overlays:
   - pack: backlogit
@@ -79,6 +81,23 @@ capability_pack_overlays:
       - "adversarial-review.agent.md exists in .github/agents/"
       - "adversarial-review.instructions.md exists in .github/instructions/"
       - "Review skill Step 4a references adversarial review escalation"
+  - pack: circuit-breaker
+    overlay_targets:
+      - circuit-breaker instruction file
+      - foundation guidance docs
+    verification_checks:
+      - "circuit-breaker.instructions.md exists in .github/instructions/"
+  - pack: concurrency
+    overlay_targets:
+      - concurrency instruction file
+      - file-lock skill
+      - lock scripts (PowerShell and Bash)
+      - gitignore lock pattern
+    verification_checks:
+      - "concurrency.instructions.md exists in .github/instructions/"
+      - "file-lock skill exists in .github/skills/"
+      - "Lock scripts exist in scripts/"
+      - ".gitignore contains .*.lock pattern"
   - pack: release-observability
     overlay_targets:
       - release-observability instruction file
@@ -104,15 +123,15 @@ artifacts:
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "9c8f85968345bc5ec6d7bc19bf83f32989da7464f0ecec4649be8b8edef3045c"
+    checksum: "1ece719197750a7ebe4c132043c5544ae127e9baf3f94dd35bb4225739354d74"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
-    checksum: "c843f13e433a385e4f7039ff06d929e7d9518010d5e3ef4bd40cae634e9db551"
+    checksum: "960b007604eaa170bce91296407b155aa91073a46067e2295195490dcd6e4d99"
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "6caa59f8394b129fb5933f8a76018399c37336f728a3cab097e1807a8d69d8ab"
+    checksum: "3209e87648c8fb3be7a2c3dfa8b49c2994d25a4bb0ebb05e2d672b52356e6ab9"
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
@@ -120,23 +139,23 @@ artifacts:
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "5dfaff0363dc2373ad4df7ffec8a2121427d554cf83382fee61e93101e988950"
+    checksum: "07887ccff5ed92b0c9e0aa2669becbe9c12d04bf4fe08b9beb2ad16491c047da"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "5f8ec4da158c1ded58aea6825f45fe761d59269f7e1ac88ae05ed964ab32735b"
+    checksum: "7cc38e72b43f63f0115938a915a2f4b407e565c90b2d87eb3d8d4d6400232dbb"
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "529eacf4995c6ca281cb2a5ccfbcd165bbf95a5f4de6843360285df6717af774"
+    checksum: "a6f6239316df9ac18b2a280f99d2fac43c69ffff3b72c73629f60de661d17e1c"
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
-    checksum: "a4f17fb473b7aee6391d2275e777cb5a00b8474978bb0eb3f4737527c0f5e53e"
+    checksum: "f991e42ea1ea05abe3e441672a2b897f2f86b0259185863ef734c62eb728bb03"
   - path: ".backlogit/config.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "d93c3c662a7c016e6c6939ea159606a4208eaa360d9278bc1e5068a89d8ff34b"
+    checksum: "a86d780f5f5e0461adc86a80e9c21f652457ed595909cef4493b0984c7a48816"
   - path: ".backlogit/header-def.yaml"
     primitive: 2
     template: "workspace merge install"
@@ -188,7 +207,7 @@ artifacts:
   - path: ".github/agents/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "56b3ad54371a886b4bebeff6bf7b4c22c659a43f4bb9654620c990498fd0090c"
+    checksum: "e4074f01fe858d29bc75643f0da5d2020e2109dd8cecc1b68b34df91cd10d3ad"
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
@@ -212,23 +231,23 @@ artifacts:
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
-    checksum: "54aab8e829bc731eb672933897c14730eb42b2cad9d6c60dace5533b955edbe5"
+    checksum: "ba0cf379534d657b1762b684cc50379f0f34ccb15a20e687c12d03fbf2a44857"
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "958da1b1abca77dd23502c146601f2850dc3d16723269b3f25a422c5d85e3d9f"
+    checksum: "6ef11643d5d48015c161eb174b977302993886801978afaea1c39d6817634d62"
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
-    checksum: "daab06be5cfa544c76d2995a1e1ec7422dca6dfa0ee4a3a7fb16563bac125a69"
+    checksum: "tuned-2026-04-12"
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "d61a4760c49302d2c8c425d23552ded5e9fd51bf13c76362f1cf41ea3e3115f6"
+    checksum: "cc9621c1df3193443da0c095840448e2253ed49288c5a5340e3a8683a815236b"
   - path: "scripts/acquire_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "9af1a00f0f37bf79753a83147feaef1039de7e8fcb84307e4514f8df316d92a3"
+    checksum: "0f08e753843ef7a7e4d1b033c4a2c4018f0f64fcf5f31478e78f2ed480b0d6bc"
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
@@ -236,7 +255,7 @@ artifacts:
   - path: "scripts/release_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "b0bc75188e6efbf3e47ec1e8af40d7b1f4fe3d14d779bfae62d2d2c44a16509f"
+    checksum: "a978af5812b1ae74191930961bbe96d41e9c47aeaebf721e08fd410fad63cf7c"
   - path: "scripts/search.ps1"
     primitive: 4
     template: "skill-search pack script"
@@ -244,10 +263,10 @@ artifacts:
   - path: "scripts/search.sh"
     primitive: 4
     template: "skill-search pack script"
-    checksum: "1c451a03ae9ab41b351f589457e44df23d0e8f6fef483e1bafaea4a2479dcd81"
+    checksum: "fb5b8a957804742d8fccb1ab70a20958c93f0c303800b48ab51826bba04c883c"
 variables_used:
   INSTALL_PRESET: "full"
-  CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram,adversarial-review,release-observability"
+  CAPABILITY_PACKS: "backlogit,strict-safety,agent-intercom,agent-engram,adversarial-review,circuit-breaker,concurrency,release-observability"
   BACKLOG_TOOL_NAME: "backlogit"
   BACKLOG_DIRECTORY: ".backlogit"
   PREFIX_FEATURE: "F"
@@ -332,15 +351,3 @@ tuning_history:
       - ".github/skills/review/SKILL.md"
       - ".github/skills/file-lock/SKILL.md"
       - ".github/skills/skill-search/SKILL.md"
-  - at: "2026-04-25T00:00:00Z"
-    summary: "Full harness tuning against latest autoharness templates (package update 2026-04-25). P1: Replaced 4 lock/search scripts with template versions adding atomic file creation (noclobber/CreateNew), Set-StrictMode, and better error handling. Preserved SCRIPT_DIR resolution in search.sh. Normalized legacy capability-pack names (circuit-breaker, concurrency) — now base harness, not tracked as packs. Merged Hook Signal Protocol into backlogit.instructions.md, Primitive 9 reference into architecture-doc.instructions.md. Updated workspace-profile Go version 1.22+→1.24.0, rewrote drift report with current taxonomy. P2: Expanded safety-modes description. Checksum refreshes for 16 user-modified artifacts. Preserved heavily customized go.instructions.md and review/SKILL.md."
-    artifacts:
-      - "scripts/acquire_lock.ps1"
-      - "scripts/acquire_lock.sh"
-      - "scripts/release_lock.sh"
-      - "scripts/search.sh"
-      - ".github/instructions/backlogit.instructions.md"
-      - ".github/instructions/architecture-doc.instructions.md"
-      - ".github/skills/safety-modes/SKILL.md"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"

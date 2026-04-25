@@ -1,36 +1,48 @@
 #!/usr/bin/env bash
-# Acquire an advisory file lock.
-#
+# Acquires an advisory file lock for agent concurrency control.
 # Creates a .{filename}.lock file in the same directory as the target file.
-# Fails with exit code 1 if the lock already exists.
+# Fails with exit code 1 if the lock already exists (another process holds it).
 #
 # Usage: scripts/acquire_lock.sh <filepath>
 
 set -euo pipefail
 
-FILEPATH="${1:?Usage: acquire_lock.sh <filepath>}"
-
-if [ ! -f "$FILEPATH" ]; then
-    echo "File not found: $FILEPATH" >&2
+if [ $# -lt 1 ]; then
+    echo "Usage: acquire_lock.sh <filepath>" >&2
     exit 1
 fi
 
-DIR="$(dirname "$FILEPATH")"
+FILEPATH="$1"
+
+if [ ! -e "$FILEPATH" ]; then
+    echo "Error: Target file does not exist: $FILEPATH" >&2
+    exit 1
+fi
+
+DIRECTORY="$(cd "$(dirname "$FILEPATH")" && pwd -P)"
 FILENAME="$(basename "$FILEPATH")"
-LOCKFILE="$DIR/.$FILENAME.lock"
+LOCKFILE="${DIRECTORY}/.${FILENAME}.lock"
+
+if [ -e "$LOCKFILE" ]; then
+    echo "Warning: Lock already held on: $FILEPATH" >&2
+    echo "Warning: Lock info: $(cat "$LOCKFILE")" >&2
+    exit 1
+fi
 
 AGENT_NAME="${AGENT_NAME:-unknown}"
-TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+PID_VAL="$$"
 
-# Use noclobber (O_EXCL) for atomic lock creation to eliminate TOCTOU race
-if ! (set -C; printf "agent: %s\ntimestamp: %s\npid: %d\n" "$AGENT_NAME" "$TIMESTAMP" "$$" > "$LOCKFILE") 2>/dev/null; then
-    echo "File is already locked: $FILEPATH" >&2
-    if [ -f "$LOCKFILE" ]; then
-        echo "Lock info:" >&2
-        cat "$LOCKFILE" >&2
-    fi
+LOCK_CONTENT="agent: ${AGENT_NAME}
+timestamp: ${TIMESTAMP}
+pid: ${PID_VAL}
+file: ${FILEPATH}"
+
+# Use exclusive file creation to minimize race window
+if (set -o noclobber; echo "$LOCK_CONTENT" > "$LOCKFILE") 2>/dev/null; then
+    echo "Lock acquired: $LOCKFILE"
+    exit 0
+else
+    echo "Warning: Lock already held on: $FILEPATH (race condition)" >&2
     exit 1
 fi
-
-echo "Lock acquired: $FILEPATH"
-exit 0
