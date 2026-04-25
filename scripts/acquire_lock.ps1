@@ -1,48 +1,72 @@
 <#
 .SYNOPSIS
-    Acquire an advisory file lock.
+    Acquires an advisory file lock for agent concurrency control.
 .DESCRIPTION
     Creates a .{filename}.lock file in the same directory as the target file.
-    Fails with exit code 1 if the lock already exists (file is locked by
-    another process).
+    Fails with exit code 1 if the lock already exists (another process holds it).
 .PARAMETER FilePath
     Path to the file to lock, relative to the workspace root.
 .EXAMPLE
-    scripts/acquire_lock.ps1 internal/core/artifacts.go
+    scripts/acquire_lock.ps1 src/main.rs
 #>
+
 param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$FilePath
 )
 
-$resolvedPath = Resolve-Path $FilePath -ErrorAction SilentlyContinue
-if (-not $resolvedPath) {
-    Write-Error "File not found: $FilePath"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path -LiteralPath $FilePath)) {
+    Write-Error "Target file does not exist: $FilePath"
     exit 1
 }
 
-$dir = Split-Path $resolvedPath -Parent
-$filename = Split-Path $resolvedPath -Leaf
-$lockFile = Join-Path $dir ".$filename.lock"
+$resolvedPath = Resolve-Path -LiteralPath $FilePath
+$directory = Split-Path -Parent $resolvedPath
+$fileName = Split-Path -Leaf $resolvedPath
+$lockFile = Join-Path $directory ".$fileName.lock"
+
+if (Test-Path -LiteralPath $lockFile) {
+    $lockContent = Get-Content -LiteralPath $lockFile -Raw
+    Write-Warning "Lock already held on: $FilePath"
+    Write-Warning "Lock info: $lockContent"
+    exit 1
+}
 
 $agentName = if ($env:AGENT_NAME) { $env:AGENT_NAME } else { "unknown" }
-$timestamp = Get-Date -Format "o"
-$pidValue = $PID
+$timestamp = Get-Date -Format 'o'
+$pid_val = $PID
 
 $lockContent = @"
 agent: $agentName
 timestamp: $timestamp
-pid: $pidValue
+pid: $pid_val
+file: $FilePath
 "@
 
-# Use New-Item with -ErrorAction Stop for atomic lock creation to eliminate TOCTOU race
 try {
-    $null = New-Item -ItemType File -Path $lockFile -ErrorAction Stop
-    Set-Content -Path $lockFile -Value $lockContent -NoNewline
-    Write-Host "Lock acquired: $FilePath"
+    # Use exclusive file creation to minimize race window
+    $stream = [System.IO.File]::Open(
+        $lockFile,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
+    $writer = [System.IO.StreamWriter]::new($stream)
+    $writer.Write($lockContent)
+    $writer.Close()
+    $stream.Close()
+    Write-Host "Lock acquired: $lockFile"
     exit 0
-} catch {
-    $existingContent = if (Test-Path $lockFile) { Get-Content $lockFile -Raw } else { "(unavailable)" }
-    Write-Error "File is already locked: $FilePath`nLock info: $existingContent"
+}
+catch [System.IO.IOException] {
+    # Another process created the lock between our check and creation
+    Write-Warning "Lock already held on: $FilePath (race condition)"
+    exit 1
+}
+catch {
+    Write-Error "Failed to create lock file: $_"
     exit 1
 }

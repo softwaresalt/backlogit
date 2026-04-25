@@ -4,7 +4,7 @@ workspace_path: "d:\\Source\\GitHub\\backlogit"
 
 languages:
   primary: "Go"
-  version: "1.24.0"
+  version: "1.22+"
   secondary: []
 
 frameworks:
@@ -333,48 +333,131 @@ vscode:
   has_agent_settings: true
 
 drift_report:
-  summary: "Tuning session 2026-04-25 resolved all prior drift. Legacy capability pack names normalized, scripts upgraded with atomic file creation, instruction and skill files refreshed. Profile Go version updated from 1.22+ to 1.24.0."
-  previous_tuning: "2026-04-14T00:00:00Z"
+  summary: "Interrupted tuning session installed 13 new artifacts and modified 2 existing files but did not update the manifest. Additionally, 8 manifest-tracked artifacts have diverged checksums from workspace evolution, 1 manifest entry references a deleted file, and deprecated agents have been removed from the working tree."
+  previous_tuning: "2026-04-12T00:00:00Z"
   changes:
-    - category: "degrading"
-      description: "Legacy capability pack names (circuit-breaker, concurrency) removed from manifest — now part of base harness"
-      severity: "medium"
+    - category: "interrupted_tuning"
+      description: "Previous tuning session installed new capability pack artifacts but disconnected before updating the manifest"
+      severity: "high"
       artifacts_affected:
-        - ".autoharness/harness-manifest.yaml"
-    - category: "degrading"
-      description: "Lock and search scripts replaced with template versions adding atomic file creation and better error handling"
-      severity: "medium"
-      artifacts_affected:
+        - ".github/agents/adversarial-review.agent.md"
+        - ".github/instructions/adversarial-review.instructions.md"
+        - ".github/instructions/circuit-breaker.instructions.md"
+        - ".github/instructions/concurrency.instructions.md"
+        - ".github/instructions/release-observability.instructions.md"
+        - ".github/skills/file-lock/SKILL.md"
+        - ".github/skills/skill-search/SKILL.md"
         - "scripts/acquire_lock.ps1"
         - "scripts/acquire_lock.sh"
+        - "scripts/release_lock.ps1"
         - "scripts/release_lock.sh"
+        - "scripts/search.ps1"
         - "scripts/search.sh"
-    - category: "growth"
-      description: "Hook Signal Protocol added to backlogit.instructions.md, Primitive 9 reference added to architecture-doc.instructions.md"
+    - category: "deleted_artifact"
+      description: "Manifest references .github/agents/deliberator.agent.md which was moved to deprecated/ and then deleted from the working tree"
+      severity: "medium"
+      artifacts_affected:
+        - ".github/agents/deliberator.agent.md"
+    - category: "deprecated_agents_removed"
+      description: "All deprecated agent files under .github/agents/deprecated/ have been deleted from the working tree"
       severity: "low"
       artifacts_affected:
-        - ".github/instructions/backlogit.instructions.md"
-        - ".github/instructions/architecture-doc.instructions.md"
-    - category: "cosmetic"
-      description: "Safety-modes skill description expanded to include action-risk/result tracking"
+        - ".github/agents/deprecated/backlog-harvester.agent.md"
+        - ".github/agents/deprecated/build-orchestrator.agent.md"
+        - ".github/agents/deprecated/deliberator.agent.md"
+        - ".github/agents/deprecated/doc-ops.agent.md"
+        - ".github/agents/deprecated/harness-architect.agent.md"
+        - ".github/agents/deprecated/memory.agent.md"
+        - ".github/agents/deprecated/pr-review.agent.md"
+    - category: "existing_modified"
+      description: "Backed-up files were modified by the interrupted tuning session (backups exist at .autoharness/backups/2026-04-12/)"
       severity: "low"
       artifacts_affected:
-        - ".github/skills/safety-modes/SKILL.md"
-    - category: "cosmetic"
-      description: "Go version in workspace profile updated from 1.22+ to 1.24.0 to match go.mod"
+        - ".github/copilot-instructions.md"
+        - ".github/instructions/go.instructions.md"
+    - category: "gitignore_updated"
+      description: ".gitignore was updated with .*.lock pattern for concurrency protocol"
       severity: "low"
       artifacts_affected:
-        - ".autoharness/workspace-profile.yaml"
+        - ".gitignore"
   checksum_scan:
     manifest_present: true
     ignore_file: null
-    checked_artifacts: 36
-    missing_count: 0
-    user_modified_count: 0
+    checked_artifacts: 23
+    missing_count: 1
+    user_modified_count: 8
     ignored_count: 0
-    untracked_new_count: 0
-    artifacts: []
-  not_in_manifest: []
+    untracked_new_count: 13
+    artifacts:
+      - path: ".github/agents/deliberator.agent.md"
+        status: "missing"
+        note: "Deleted; agent was deprecated and removed"
+      - path: ".github/instructions/backlogit.instructions.md"
+        status: "user_modified"
+        expected_checksum: "3f901f79168d"
+        current_checksum: "2cc517aafd03"
+      - path: ".github/policies/workflow-policies.md"
+        status: "user_modified"
+        expected_checksum: "ebe6d731cacb"
+        current_checksum: "ef016d1258ce"
+      - path: ".github/skills/spike/SKILL.md"
+        status: "user_modified"
+        expected_checksum: "b9de01477356"
+        current_checksum: "5934b855c8f5"
+      - path: ".github/skills/runtime-verification/SKILL.md"
+        status: "user_modified"
+        expected_checksum: "def02c59f5e0"
+        current_checksum: "03d556a82766"
+      - path: ".github/skills/operational-closure/SKILL.md"
+        status: "user_modified"
+        expected_checksum: "93269c38cad3"
+        current_checksum: "3728845b5f5f"
+      - path: ".backlogit/config.yaml"
+        status: "user_modified"
+        expected_checksum: "3dcd097c99ff"
+        current_checksum: "a86d780f5f5e"
+      - path: ".backlogit/header-def.yaml"
+        status: "user_modified"
+        expected_checksum: "8d0441b0964f"
+        current_checksum: "5998393f74fd"
+      - path: "AGENTS.md"
+        status: "user_modified"
+        expected_checksum: "7bfac499cf7a"
+        current_checksum: "8445a41aaebc"
+  not_in_manifest:
+    - path: ".github/agents/adversarial-review.agent.md"
+      template: "templates/agents/adversarial-review.agent.md.tmpl"
+      pack: "adversarial-review"
+    - path: ".github/instructions/adversarial-review.instructions.md"
+      template: "templates/instructions/adversarial-review.instructions.md.tmpl"
+      pack: "adversarial-review"
+    - path: ".github/instructions/circuit-breaker.instructions.md"
+      template: "templates/instructions/circuit-breaker.instructions.md.tmpl"
+      pack: "circuit-breaker"
+    - path: ".github/instructions/concurrency.instructions.md"
+      template: "templates/instructions/concurrency.instructions.md.tmpl"
+      pack: "concurrency"
+    - path: ".github/instructions/release-observability.instructions.md"
+      template: "templates/instructions/release-observability.instructions.md.tmpl"
+      pack: "release-observability"
+    - path: ".github/skills/file-lock/SKILL.md"
+      template: "templates/skills/file-lock/SKILL.md.tmpl"
+      pack: "concurrency"
+    - path: ".github/skills/skill-search/SKILL.md"
+      template: "templates/skills/skill-search/SKILL.md.tmpl"
+      pack: "skill-search"
+    - path: "scripts/acquire_lock.ps1"
+      pack: "concurrency"
+    - path: "scripts/acquire_lock.sh"
+      pack: "concurrency"
+    - path: "scripts/release_lock.ps1"
+      pack: "concurrency"
+    - path: "scripts/release_lock.sh"
+      pack: "concurrency"
+    - path: "scripts/search.ps1"
+      pack: "skill-search"
+    - path: "scripts/search.sh"
+      pack: "skill-search"
   templates_not_installed:
     - template: "agents/language-engineer.agent.md.tmpl"
       expected_path: ".github/agents/language-engineer.agent.md"
@@ -382,4 +465,14 @@ drift_report:
     - template: "agents/review/technology-reviewer.agent.md.tmpl"
       expected_path: ".github/agents/review/technology-reviewer.agent.md"
       note: "Generic technology reviewer; workspace has Go-specific go-quality-reviewer.agent.md and mcp-protocol-reviewer.agent.md"
-  recommendations: []
+  recommendations:
+    - priority: "P0"
+      action: "Update manifest to register 13 new artifacts from interrupted tuning session"
+    - priority: "P0"
+      action: "Add adversarial-review, circuit-breaker, concurrency, release-observability capability packs to manifest"
+    - priority: "P1"
+      action: "Remove deleted deliberator.agent.md from manifest"
+    - priority: "P1"
+      action: "Update checksums for 8 user-modified artifacts to reflect current state"
+    - priority: "P2"
+      action: "Evaluate language-engineer and technology-reviewer templates for potential installation"

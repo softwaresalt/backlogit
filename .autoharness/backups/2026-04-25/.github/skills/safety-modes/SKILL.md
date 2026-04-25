@@ -1,6 +1,6 @@
 ---
 name: safety-modes
-description: "Interactive safety workflows for elevated-risk work — careful, freeze-scope, investigate-first, and explicit action-risk/result tracking"
+description: "Interactive safety workflows for elevated-risk work including careful, freeze-scope, and investigate-first modes"
 ---
 
 ## Safety Modes

@@ -1,0 +1,26 @@
+{
+  "schema_version": "V1",
+  "consumer_id": "ship",
+  "phase": "pr-ready",
+  "shipment_id": "v1.1.0-release",
+  "feature_id": null,
+  "task_ids": [],
+  "branch": "docs/v1.1.0-closure",
+  "pr_number": 71,
+  "pr_url": "https://github.com/softwaresalt/backlogit/pull/71",
+  "items_completed": [
+    "Tag v1.1.0 pushed at 7e87e79",
+    "GitHub Actions release workflow run 24908172336 — all 10 jobs green",
+    "GitHub Release v1.1.0 published with 6 platform binaries + SHA256SUMS",
+    "Closure artifact: docs/closure/2026-04-24-v1.1.0-release-closure.md",
+    "Session memory: docs/memory/[20260424-200000]-v1.1.0-release-complete-memory.md",
+    "PR #71 created — docs/v1.1.0-closure -> main, all CI green"
+  ],
+  "items_blocked": [],
+  "decisions": [
+    "v1.1.0 minor bump warranted by accumulated scope since v1.0.2 (checkpoint system, doctor CLI, write durability, crash-safe ops, merge_sync, AdoptItem rewrite)",
+    "Closure artifacts committed as docs-only PR #71 because direct push to main is blocked by branch protection"
+  ],
+  "errors": [],
+  "resume_hint": "Merge PR #71 (https://github.com/softwaresalt/backlogit/pull/71) after user approval, then run backlogit_ship_shipment equivalent for v1.1.0 closure and call task_complete"
+}
