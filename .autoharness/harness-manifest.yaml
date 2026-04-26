@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-25T00:00:00Z"
+tuned_at: "2026-04-26T00:00:00Z"
 autoharness_version: "1.0.0"
 autoharness_home: "C:\\Users\\derek.williams\\AppData\\Roaming\\uv\\tools\\autoharness\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -344,3 +344,9 @@ tuning_history:
       - ".github/skills/safety-modes/SKILL.md"
       - ".autoharness/harness-manifest.yaml"
       - ".autoharness/workspace-profile.yaml"
+  - at: "2026-04-26T00:00:00Z"
+    summary: "Targeted tuning for 3 check failures from verify-workspace. TUNE-001: stage.agent.md — added Step Sequence Contract, Step 5.5 Shipment Assembly (NON-NEGOTIABLE with backlogit_create_shipment/backlogit_add_to_shipment), Step 5.6 Archive Stash Entries, Pre-Summary Verification Gate, Behavioral Constraints section, updated Session Completion handoff to reference shipment ID. Replaced 'Do not create shipments from this agent' with shipment-mandatory contract. TUNE-002: ship.agent.md — added branch retention (NON-NEGOTIABLE, before merge gate), Step 6.0 Post-Merge Branch Protocol (post-merge/{feature_slug} branch for closure work), Branch Management Rules section. TUNE-003: pr-lifecycle/SKILL.md — added branch retention to Step 5, expanded Step 6 with post-merge branch guidance."
+    artifacts:
+      - ".github/agents/stage.agent.md"
+      - ".github/agents/ship.agent.md"
+      - ".github/skills/pr-lifecycle/SKILL.md"
