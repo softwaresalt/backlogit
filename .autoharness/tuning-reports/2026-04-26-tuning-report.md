@@ -1,4 +1,8 @@
-# Harness Tuning Report — 2026-04-26
+---
+title: "Harness Tuning Report — 2026-04-26"
+date: "2026-04-26"
+status: applied
+---
 
 ## Drift Summary
 
