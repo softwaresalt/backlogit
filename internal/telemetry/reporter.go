@@ -176,27 +176,49 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 }
 
 func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
-	aggregate := make(map[string]int)
+	// Compute proportional token attribution per server.
+	// Formula: server_tokens[sv] += session.TotalTokens × (ToolCallsByServer[sv] / total_tool_calls)
+	tokensByServer := make(map[string]int)
 	for _, s := range sessions {
+		totalCalls := 0
+		for _, count := range s.ToolCallsByServer {
+			totalCalls += count
+		}
+		if totalCalls == 0 {
+			continue
+		}
 		for server, count := range s.ToolCallsByServer {
-			aggregate[server] += count
+			tokensByServer[server] += s.TotalTokens * count / totalCalls
 		}
 	}
-	servers := make([]string, 0, len(aggregate))
-	for s := range aggregate {
-		servers = append(servers, s)
+
+	// Build a sorted list of servers, descending by proportional token attribution.
+	// Ties broken alphabetically for stable output.
+	type serverRow struct {
+		name   string
+		tokens int
 	}
-	sort.Strings(servers)
-	// Apply limit to the aggregated server list.
-	if limit > 0 && len(servers) > limit {
-		servers = servers[:limit]
+	rows := make([]serverRow, 0, len(tokensByServer))
+	for sv, tok := range tokensByServer {
+		rows = append(rows, serverRow{name: sv, tokens: tok})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].tokens != rows[j].tokens {
+			return rows[i].tokens > rows[j].tokens
+		}
+		return rows[i].name < rows[j].name
+	})
+
+	// Apply limit after token sort so the top-N by tokens are returned.
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOOL_CALLS"))
+	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOKENS"))
 	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", strings.Repeat("-", 24), strings.Repeat("-", 10)))
-	for _, server := range servers {
-		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", server, aggregate[server]))
+	for _, r := range rows {
+		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", r.name, r.tokens))
 	}
 	return sb.String()
 }
