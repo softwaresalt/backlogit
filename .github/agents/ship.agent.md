@@ -289,9 +289,9 @@ After the merge completes on `main`:
    operations, context compaction).
 4. Do NOT push closure commits directly to `main`.
 
-1. Invoke the `operational-closure` skill in `mode=post-merge` to produce
+5. Invoke the `operational-closure` skill in `mode=post-merge` to produce
    release-readiness, monitoring, and rollback artifacts in `docs/closure/`.
-2. Archive source artifacts for each shipped feature. For each feature in the
+6. Archive source artifacts for each shipped feature. For each feature in the
    shipment's release scope:
    * Read `custom_fields.source_stash_id` — if present, call
      `backlogit_stash_remove` with the stash ID only. If the entry is
@@ -306,16 +306,16 @@ After the merge completes on `main`:
      `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`
    * Log the archived source artifact IDs in the closure artifact's `Source
      artifact cleanup` section for traceability.
-3. Evaluate whether product documentation in `docs/` needs updates for the
+7. Evaluate whether product documentation in `docs/` needs updates for the
    shipped feature scope. Check:
    * `docs/ARCHITECTURE.md` for structural changes
    * `README.md` for user-facing capability changes
    * `docs/design-docs/` for graduated design decisions
    * `docs/product-specs/` for requirement updates
-4. Apply documentation updates directly. Do not defer them to a separate agent.
-5. If `.copilot-tracking/` tracking files have accumulated, invoke the
+8. Apply documentation updates directly. Do not defer them to a separate agent.
+9. If `.copilot-tracking/` tracking files have accumulated, invoke the
    `compact-context` skill.
-6. Broadcast `[SHIP] Post-merge closure complete`.
+10. Broadcast `[SHIP] Post-merge closure complete`.
 
 ### Session end
 
