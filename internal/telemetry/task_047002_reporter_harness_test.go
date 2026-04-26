@@ -1,10 +1,12 @@
 package telemetry_test
 
-// Harness for 047.002-T: Fix telemetry top command to rank by token usage.
+// Harness for 047.002-T: regression coverage for token-ranked server reporting.
 //
-// These tests FAIL against the current implementation because formatServerTable
-// aggregates raw tool call counts and sorts alphabetically. The fix must compute
-// proportional token attribution per server and sort descending by tokens.
+// These tests guard against a regression where formatServerTable aggregated raw
+// tool call counts and sorted alphabetically instead of ranking servers by
+// proportional token attribution. The previous behaviour produced misleading
+// output: a server with many cheap calls ranked above one with fewer but
+// token-intensive calls.
 //
 // Proportional attribution formula:
 //
@@ -19,8 +21,8 @@ package telemetry_test
 //	  → backlogit=200t, copilot=1800t
 //	Aggregate: copilot=1900t, backlogit=1100t
 //
-// Current alphabetical sort: "backlogit" first (WRONG)
-// Correct token-based sort:  "copilot" first (RIGHT)
+// Previous alphabetical sort: "backlogit" first (incorrect)
+// Correct token-based sort:   "copilot" first
 //
 // Harness command:
 //

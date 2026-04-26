@@ -38,7 +38,7 @@ func newTelemetryHarvestCmd(cwd *string) *cobra.Command {
 Each harvest run performs two writes:
 
 1. Primary output: appends new session_summary and tool_usage JSONL records to
-   .backlogit/telemetry-sessions.jsonl. Incremental by default — only sessions
+   .backlogit/telemetry-sessions.jsonl. Incremental by default, only sessions
    seen since the last checkpoint are appended. Use --force to rewrite from scratch.
 
 2. SQLite rehydration (side effect): after writing the JSONL, harvest calls

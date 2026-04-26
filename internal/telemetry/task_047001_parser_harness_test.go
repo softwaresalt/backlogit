@@ -1,14 +1,15 @@
 package telemetry_test
 
-// Harness for 047.001-T: Fix bufio.Scanner token-too-long handling in telemetry parser.
+// Harness for 047.001-T: regression coverage for oversized-line handling in the
+// telemetry parser and zero-token session summary validation.
 //
-// These tests FAIL against the current implementation because bufio.Scanner has a hard
-// 1MB token limit. Feeding a line longer than 1MB causes scanner.Err() to return
-// bufio.ErrTooLong, which aborts the entire parse.
+// These tests cover behaviors that previously failed when the parser used
+// bufio.Scanner, which has a hard 1MB token limit. Feeding a line longer than
+// 1MB caused scanner.Err() to return bufio.ErrTooLong and abort the entire parse,
+// preventing later valid events from being processed.
 //
-// Once parser.go replaces bufio.NewScanner with bufio.NewReader + ReadString('\n'),
-// all oversized-line tests should pass. Once ValidateSessionSummary is implemented
-// in validate.go, the zero-token session tests should pass.
+// The zero-token session tests also cover the validation path that previously
+// failed before ValidateSessionSummary was implemented in validate.go.
 //
 // Harness commands:
 //
