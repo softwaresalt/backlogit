@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	idb "github.com/softwaresalt/backlogit/internal/db"
@@ -228,41 +229,45 @@ func readSessionJSONL(jsonlPath string, excludeIDs map[string]bool) ([]SessionSu
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	reader := bufio.NewReader(f)
 
 	var sessions []SessionSummaryRecord
 	var tools []ToolUsageRecord
 
-	for scanner.Scan() {
-		raw := scanner.Bytes()
-		if len(raw) == 0 {
-			continue
+	for {
+		rawLine, readErr := reader.ReadString('\n')
+		if readErr != nil && readErr != io.EOF {
+			return nil, nil, fmt.Errorf("read telemetry JSONL: %w", readErr)
 		}
-		var hdr struct {
-			RecordType string `json:"record_type"`
-			SessionID  string `json:"session_id"`
-		}
-		if err := json.Unmarshal(raw, &hdr); err != nil {
-			continue
-		}
-		if excludeIDs[hdr.SessionID] {
-			continue
-		}
-		switch hdr.RecordType {
-		case "session_summary":
-			var r SessionSummaryRecord
-			if err := json.Unmarshal(raw, &r); err == nil {
-				sessions = append(sessions, r)
+		isEOF := readErr == io.EOF
+		raw := []byte(strings.TrimRight(rawLine, "\r\n"))
+		if len(raw) > 0 {
+			var hdr struct {
+				RecordType string `json:"record_type"`
+				SessionID  string `json:"session_id"`
 			}
-		case "tool_usage":
-			var r ToolUsageRecord
-			if err := json.Unmarshal(raw, &r); err == nil {
-				tools = append(tools, r)
+			if err := json.Unmarshal(raw, &hdr); err == nil {
+				if !excludeIDs[hdr.SessionID] {
+					switch hdr.RecordType {
+					case "session_summary":
+						var r SessionSummaryRecord
+						if err := json.Unmarshal(raw, &r); err == nil {
+							sessions = append(sessions, r)
+						}
+					case "tool_usage":
+						var r ToolUsageRecord
+						if err := json.Unmarshal(raw, &r); err == nil {
+							tools = append(tools, r)
+						}
+					}
+				}
 			}
+		}
+		if isEOF {
+			break
 		}
 	}
-	return sessions, tools, scanner.Err()
+	return sessions, tools, nil
 }
 
 // loadSessionMetas merges compaction events and session-store.db into a unified metas map.

@@ -3,6 +3,7 @@ package telemetry
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -60,8 +61,7 @@ func NewCopilotCLIParser() *CopilotCLIParser {
 // each valid event found. Supports both old single-line [telemetry] format and
 // new multi-line [Telemetry] format where JSON is spread across subsequent lines.
 func (p *CopilotCLIParser) Parse(r io.Reader, emit func(TelemetryEvent) error) error {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	reader := bufio.NewReader(r)
 
 	// State for multi-line JSON accumulation (new format).
 	var (
@@ -72,67 +72,69 @@ func (p *CopilotCLIParser) Parse(r io.Reader, emit func(TelemetryEvent) error) e
 		braceDepth   int
 	)
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		rawLine, readErr := reader.ReadString('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return fmt.Errorf("telemetry read: %w", readErr)
+		}
+		isEOF := errors.Is(readErr, io.EOF)
+		line := strings.TrimRight(rawLine, "\r\n")
 
-		// If we're accumulating multi-line JSON for a new-format event,
-		// continue collecting lines until brace depth returns to zero.
-		if accumulating {
-			accJSON.WriteString(line)
-			accJSON.WriteByte('\n')
-			braceDepth += countBraces(line)
-			if braceDepth <= 0 {
-				accumulating = false
-				event, err := parseNewFormatPayload(accEventType, accJSON.String())
+		if line != "" {
+			// If we're accumulating multi-line JSON for a new-format event,
+			// continue collecting lines until brace depth returns to zero.
+			if accumulating {
+				accJSON.WriteString(line)
+				accJSON.WriteByte('\n')
+				braceDepth += countBraces(line)
+				if braceDepth <= 0 {
+					accumulating = false
+					event, err := parseNewFormatPayload(accEventType, accJSON.String())
+					if err != nil {
+						slog.Debug("skipping malformed new-format telemetry block",
+							"err", err, "event_type", accEventType)
+					} else {
+						event.Timestamp = accTimestamp
+						if err := emit(event); err != nil {
+							return fmt.Errorf("telemetry emit: %w", err)
+						}
+					}
+				}
+			} else if idx := strings.Index(line, newFormatMarker); idx >= 0 {
+				// Check for new-format marker: [Telemetry] cli.model_call: / cli.tool_call:
+				suffix := line[idx+len(newFormatMarker):]
+				eventType := strings.TrimSuffix(strings.TrimSpace(suffix), ":")
+				if eventType == "cli.model_call" || eventType == "cli.tool_call" {
+					accumulating = true
+					accEventType = eventType
+					accJSON.Reset()
+					braceDepth = 0
+					accTimestamp = extractTimestamp(line[:idx])
+				}
+			} else if idx := strings.Index(line, telemetryMarker); idx >= 0 {
+				// Old-format marker: [telemetry] followed by single-line JSON.
+				payload := line[idx+len(telemetryMarker):]
+				event, err := parseTelemetryPayload(payload)
 				if err != nil {
-					slog.Debug("skipping malformed new-format telemetry block",
-						"err", err, "event_type", accEventType)
-					continue
-				}
-				event.Timestamp = accTimestamp
-				if err := emit(event); err != nil {
-					return fmt.Errorf("telemetry emit: %w", err)
+					slog.Debug("skipping malformed telemetry line", "err", err, "line", line)
+				} else {
+					event.Timestamp = extractTimestamp(line[:idx])
+					if err := emit(event); err != nil {
+						return fmt.Errorf("telemetry emit: %w", err)
+					}
 				}
 			}
-			continue
 		}
 
-		// Check for new-format marker: [Telemetry] cli.model_call: / cli.tool_call:
-		if idx := strings.Index(line, newFormatMarker); idx >= 0 {
-			suffix := line[idx+len(newFormatMarker):]
-			eventType := strings.TrimSuffix(strings.TrimSpace(suffix), ":")
-			if eventType != "cli.model_call" && eventType != "cli.tool_call" {
-				continue
-			}
-			accumulating = true
-			accEventType = eventType
-			accJSON.Reset()
-			braceDepth = 0
-			accTimestamp = extractTimestamp(line[:idx])
-			continue
-		}
-
-		// Old-format marker: [telemetry] followed by single-line JSON.
-		idx := strings.Index(line, telemetryMarker)
-		if idx < 0 {
-			continue
-		}
-		payload := line[idx+len(telemetryMarker):]
-		event, err := parseTelemetryPayload(payload)
-		if err != nil {
-			slog.Debug("skipping malformed telemetry line", "err", err, "line", line)
-			continue
-		}
-		event.Timestamp = extractTimestamp(line[:idx])
-		if err := emit(event); err != nil {
-			return fmt.Errorf("telemetry emit: %w", err)
+		if isEOF {
+			break
 		}
 	}
 	if accumulating {
 		slog.Debug("incomplete new-format telemetry block at EOF; last event skipped",
 			"event_type", accEventType)
 	}
-	return scanner.Err()
+	return nil
 }
 
 // extractTimestamp parses the RFC3339Nano timestamp from a log-line prefix.
