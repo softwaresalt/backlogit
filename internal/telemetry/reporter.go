@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -119,29 +120,33 @@ func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, grou
 	var payload any
 	switch groupBy {
 	case "server":
-		aggregate := make(map[string]int)
-		for _, s := range sessions {
-			for server, count := range s.ToolCallsByServer {
-				aggregate[server] += count
-			}
-		}
-		// Apply limit to aggregated server rows.
+		tokensByServer := proportionalServerTokens(sessions)
+		// Apply limit: sort by tokens descending before trimming.
 		if limit > 0 {
-			servers := make([]string, 0, len(aggregate))
-			for sv := range aggregate {
-				servers = append(servers, sv)
+			type serverRow struct {
+				name   string
+				tokens int
 			}
-			sort.Strings(servers)
-			if len(servers) > limit {
-				servers = servers[:limit]
+			rows := make([]serverRow, 0, len(tokensByServer))
+			for sv, tok := range tokensByServer {
+				rows = append(rows, serverRow{sv, tok})
 			}
-			trimmed := make(map[string]int, len(servers))
-			for _, sv := range servers {
-				trimmed[sv] = aggregate[sv]
+			sort.Slice(rows, func(i, j int) bool {
+				if rows[i].tokens != rows[j].tokens {
+					return rows[i].tokens > rows[j].tokens
+				}
+				return rows[i].name < rows[j].name
+			})
+			if len(rows) > limit {
+				rows = rows[:limit]
+			}
+			trimmed := make(map[string]int, len(rows))
+			for _, r := range rows {
+				trimmed[r.name] = r.tokens
 			}
 			payload = trimmed
 		} else {
-			payload = aggregate
+			payload = tokensByServer
 		}
 	default:
 		rows := sessions
@@ -175,28 +180,64 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 	return sb.String()
 }
 
-func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
-	aggregate := make(map[string]int)
+// proportionalServerTokens computes each server's proportional token share across
+// all sessions. For each session, a server's share is:
+//
+//	server_tokens += TotalTokens × (server_calls / total_calls)
+//
+// Accumulation uses float64 to avoid integer-division truncation. The returned
+// map values are rounded to the nearest integer for display.
+func proportionalServerTokens(sessions []SessionSummaryRecord) map[string]int {
+	raw := make(map[string]float64)
 	for _, s := range sessions {
+		totalCalls := 0
+		for _, count := range s.ToolCallsByServer {
+			totalCalls += count
+		}
+		if totalCalls == 0 {
+			continue
+		}
 		for server, count := range s.ToolCallsByServer {
-			aggregate[server] += count
+			raw[server] += float64(s.TotalTokens) * float64(count) / float64(totalCalls)
 		}
 	}
-	servers := make([]string, 0, len(aggregate))
-	for s := range aggregate {
-		servers = append(servers, s)
+	result := make(map[string]int, len(raw))
+	for sv, v := range raw {
+		result[sv] = int(math.Round(v))
 	}
-	sort.Strings(servers)
-	// Apply limit to the aggregated server list.
-	if limit > 0 && len(servers) > limit {
-		servers = servers[:limit]
+	return result
+}
+
+func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
+	tokensByServer := proportionalServerTokens(sessions)
+
+	// Build a sorted list of servers, descending by proportional token attribution.
+	// Ties broken alphabetically for stable output.
+	type serverRow struct {
+		name   string
+		tokens int
+	}
+	rows := make([]serverRow, 0, len(tokensByServer))
+	for sv, tok := range tokensByServer {
+		rows = append(rows, serverRow{name: sv, tokens: tok})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].tokens != rows[j].tokens {
+			return rows[i].tokens > rows[j].tokens
+		}
+		return rows[i].name < rows[j].name
+	})
+
+	// Apply limit after token sort so the top-N by tokens are returned.
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOOL_CALLS"))
+	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOKENS"))
 	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", strings.Repeat("-", 24), strings.Repeat("-", 10)))
-	for _, server := range servers {
-		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", server, aggregate[server]))
+	for _, r := range rows {
+		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", r.name, r.tokens))
 	}
 	return sb.String()
 }
@@ -237,29 +278,33 @@ func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
 }
 
 func formatServerMarkdown(sessions []SessionSummaryRecord, limit int) string {
-	aggregate := make(map[string]int)
-	for _, session := range sessions {
-		for server, count := range session.ToolCallsByServer {
-			aggregate[server] += count
-		}
-	}
+	tokensByServer := proportionalServerTokens(sessions)
 
-	servers := make([]string, 0, len(aggregate))
-	for server := range aggregate {
-		servers = append(servers, server)
+	type serverRow struct {
+		name   string
+		tokens int
 	}
-	sort.Strings(servers)
-	if limit > 0 && len(servers) > limit {
-		servers = servers[:limit]
+	rows := make([]serverRow, 0, len(tokensByServer))
+	for sv, tok := range tokensByServer {
+		rows = append(rows, serverRow{name: sv, tokens: tok})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].tokens != rows[j].tokens {
+			return rows[i].tokens > rows[j].tokens
+		}
+		return rows[i].name < rows[j].name
+	})
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
 	}
 
 	var sb strings.Builder
 	sb.WriteString("# Telemetry Report\n\n")
-	sb.WriteString("## Tool Calls by Server\n\n")
-	sb.WriteString("| Server | Tool Calls |\n")
+	sb.WriteString("## Tokens by Server\n\n")
+	sb.WriteString("| Server | Tokens |\n")
 	sb.WriteString("|---|---:|\n")
-	for _, server := range servers {
-		sb.WriteString(fmt.Sprintf("| %s | %d |\n", escapeMarkdownCell(server), aggregate[server]))
+	for _, r := range rows {
+		sb.WriteString(fmt.Sprintf("| %s | %d |\n", escapeMarkdownCell(r.name), r.tokens))
 	}
 	return sb.String()
 }

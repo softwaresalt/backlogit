@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "phase": "pr-ready",
+  "consumer": "ship",
+  "shipment_id": "045-S",
+  "feature_id": "047-F",
+  "branch": "ship-045-telemetry-quality-fixes",
+  "pr_number": 73,
+  "pr_url": "https://github.com/softwaresalt/backlogit/pull/73",
+  "ci_status": "all_green",
+  "tasks_completed": ["047.001-T", "047.002-T", "047.003-T", "047.004-T"],
+  "tasks_queued": ["047.005-T", "047.006-T"],
+  "review_artifact": "047.001-R",
+  "review_gate": "PASS",
+  "copilot_comments_resolved": 3,
+  "last_commit": "a0ed7e2",
+  "decisions": [
+    "Used bufio.NewReader/ReadString instead of bufio.Scanner to remove 1MB line limit in parser.go, harvest.go, db/telemetry_schema.go",
+    "Added ValidateSessionSummary in validate.go to reject partial sessions (TotalTokens==0 && ToolCalls>0)",
+    "Extracted proportionalServerTokens helper to share float64-accurate token attribution across all 3 server formatters",
+    "Filtered event stream by validIDs after ValidateSessionSummary to prevent orphan tool_usage JSONL records",
+    "Added Long: field to newTelemetryHarvestCmd to pass CLI Reference Drift Check"
+  ],
+  "next_steps": "Awaiting user merge approval. After merge: run post-merge closure (operational-closure skill), archive stash/deliberation source artifacts, check docs/ARCHITECTURE.md and README.md for updates.",
+  "resume_hint": "PR #73 is ready to merge. User must approve. After merge: shipment ship 045-S with merge SHA, then invoke operational-closure skill."
+}
