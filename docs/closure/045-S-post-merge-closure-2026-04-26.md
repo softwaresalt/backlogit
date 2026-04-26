@@ -1,3 +1,10 @@
+---
+title: "045-S Telemetry Quality — Post-Merge Closure"
+description: "Operational closure record for shipment 045-S, PR #73, merge commit b0d1d29"
+ms.date: 2026-04-26
+ms.topic: reference
+---
+
 # Operational Closure — Shipment 045-S
 
 **Shipment**: 045-S  
@@ -71,9 +78,9 @@ Any of:
 
 ### Rollback Procedure
 
-1. `git revert b0d1d2986bc2b35a566cac77d09c1bd1a3e43a17` (PR merge commit)
+1. `git revert -m 1 b0d1d2986bc2b35a566cac77d09c1bd1a3e43a17` (PR merge commit)
 2. Create and merge a revert PR through the normal review pipeline
-3. Delete `.backlogit/telemetry-checkpoint.json` and rerun harvest with `--force` if the JSONL became corrupted
+3. Delete `.backlogit/.telemetry-checkpoint.json` and rerun harvest with `--force` if the JSONL became corrupted
 
 ---
 

@@ -30,7 +30,7 @@ data after running harvest.
 
 ### Checkpoint
 
-A harvest checkpoint is saved to .backlogit/telemetry-checkpoint.json after each
+A harvest checkpoint is saved to .backlogit/.telemetry-checkpoint.json after each
 successful run. The checkpoint records file offsets for each parsed log file so
 subsequent runs read only new log entries. Delete the checkpoint or use --force to
 reparse all logs from the beginning.
