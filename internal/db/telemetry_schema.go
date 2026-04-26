@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -142,16 +143,26 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 		return fmt.Errorf("clear telemetry_tool_usage: %w", err)
 	}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
+	reader := bufio.NewReader(f)
+	for {
+		rawLine, readErr := reader.ReadString('\n')
+		if readErr != nil && readErr != io.EOF {
+			return fmt.Errorf("scan telemetry-sessions.jsonl: %w", readErr)
+		}
+		isEOF := readErr == io.EOF
+		line := strings.TrimRight(rawLine, "\r\n")
 		if line == "" {
+			if isEOF {
+				break
+			}
 			continue
 		}
 		var rec rawTelemetryRecord
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			slog.Warn("skipping malformed telemetry JSONL line", "err", err)
+			if isEOF {
+				break
+			}
 			continue
 		}
 		harvestedAt := rec.HarvestedAt.Format(time.RFC3339)
@@ -189,9 +200,9 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 		default:
 			slog.Debug("ignoring unknown telemetry record type", "record_type", rec.RecordType)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scan telemetry-sessions.jsonl: %w", err)
+		if isEOF {
+			break
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

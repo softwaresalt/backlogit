@@ -79,6 +79,17 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		return HarvestResult{}, fmt.Errorf("correlate telemetry: %w", err)
 	}
 
+	// Filter out partial sessions before any further processing. A session is
+	// partial when oversized log entries were dropped by the parser, leaving
+	// tool calls with no corresponding token attribution.
+	validSummaries := newSummaries[:0]
+	for _, s := range newSummaries {
+		if ValidateSessionSummary(s) {
+			validSummaries = append(validSummaries, s)
+		}
+	}
+	newSummaries = validSummaries
+
 	// Compute context window metrics for each new session summary.
 	modelCallsBySession := groupModelCallsBySession(events)
 	for i, s := range newSummaries {
