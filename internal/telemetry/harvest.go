@@ -90,6 +90,32 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 	newSummaries = validSummaries
 
+	// Align the event stream with the filtered session set so that tool_usage
+	// records written to JSONL (and subsequently SQLite) do not contain orphan
+	// entries for sessions intentionally rejected above.
+	validIDs := make(map[string]struct{}, len(newSummaries))
+	for _, s := range newSummaries {
+		validIDs[s.SessionID] = struct{}{}
+	}
+	filteredEvents := events[:0]
+	for _, e := range events {
+		var sid string
+		switch e.Kind {
+		case EventKindModelCall:
+			if e.ModelCall != nil {
+				sid = e.ModelCall.SessionID
+			}
+		case EventKindToolCall:
+			if e.ToolCall != nil {
+				sid = e.ToolCall.SessionID
+			}
+		}
+		if _, ok := validIDs[sid]; ok {
+			filteredEvents = append(filteredEvents, e)
+		}
+	}
+	events = filteredEvents
+
 	// Compute context window metrics for each new session summary.
 	modelCallsBySession := groupModelCallsBySession(events)
 	for i, s := range newSummaries {
