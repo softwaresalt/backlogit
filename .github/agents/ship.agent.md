@@ -165,9 +165,14 @@ does not yet exist. Never fail the session on a missing queue file.
    loop with `fix-ci` when further remediation is required.
 3. When the branch is reviewable, broadcast `[SHIP] PR ready for review: {pr_url}`
    and present the pull request state to the operator.
-4. Never merge automatically. Broadcast `[WAIT] Awaiting user merge approval for
+4. **Branch retention (NON-NEGOTIABLE)**: Do NOT checkout `main` or delete the
+   shipment branch while CI remediation, review-fix cycles, or merge approval
+   are in progress. The shipment branch is the working context for the entire
+   PR lifecycle. Switching away risks losing uncommitted state and breaks the
+   `fix-ci` → `pr-lifecycle` loop.
+5. Never merge automatically. Broadcast `[WAIT] Awaiting user merge approval for
    shipment {shipment_id}` and await explicit user approval before any merge.
-5. After a user-approved merge, update shipment state to shipped and broadcast
+6. After a user-approved merge, update shipment state to shipped and broadcast
    `[SHIP] Shipment session complete: {outcome}`. Perform optional cleanup only
    when the operator requests it.
 
@@ -272,6 +277,18 @@ the work uncovered reusable solutions:
 
 After the user approves merge and the shipment transitions to shipped:
 
+#### Step 6.0: Post-Merge Branch Protocol (NON-NEGOTIABLE)
+
+After the merge completes on `main`:
+
+1. Create a `post-merge/{feature_slug}` branch from updated `main`.
+2. Perform all post-merge closure work (steps below) on the `post-merge/`
+   branch, NOT on `main`.
+3. Push the `post-merge/` branch and open a follow-up PR for closure artifacts
+   when the closure work produces file changes (documentation updates, archive
+   operations, context compaction).
+4. Do NOT push closure commits directly to `main`.
+
 1. Invoke the `operational-closure` skill in `mode=post-merge` to produce
    release-readiness, monitoring, and rollback artifacts in `docs/closure/`.
 2. Archive source artifacts for each shipped feature. For each feature in the
@@ -310,6 +327,16 @@ After the user approves merge and the shipment transitions to shipped:
    completed items, blocked returns, branch state, PR status, and any pending
    merge approval.
 4. Broadcast `[SHIP] Memory persisted: {memory_file}`.
+
+## Branch Management Rules (NON-NEGOTIABLE)
+
+* The shipment branch is the working context for the entire Ship session. Do NOT
+  checkout `main` or delete the shipment branch during CI remediation,
+  review-fix cycles, or merge approval.
+* After merge, create a `post-merge/{feature_slug}` branch from updated `main`
+  for all closure work. Do NOT push closure commits directly to `main`.
+* Delete shipment and post-merge branches only when explicitly requested by the
+  operator or when the chosen PR flow includes automatic branch deletion.
 
 ## Session Completion
 

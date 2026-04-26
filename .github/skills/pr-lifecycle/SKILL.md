@@ -72,15 +72,21 @@ review, CI follow-up, and merge approval as one bounded workflow.
 3. Never auto-merge and never treat silence as approval.
 4. If the user does not approve merge, leave the PR open and report the ready
    state.
+5. **Branch retention (NON-NEGOTIABLE)**: Do NOT checkout `main` or delete the feature branch
+   while the merge gate is open. The branch is the active working context for
+   any follow-up CI or review fixes.
 
 ### Step 6: Post-merge cleanup
 
 After a user-approved merge:
 
 1. Report the merge result and resulting default-branch state.
-2. Delete the branch only when that cleanup is requested or already part of the
-   chosen PR flow.
-3. Summarize any follow-up items, release notes, or residual risks that remain
+2. If the caller requires post-merge closure work, recommend creating a
+   `post-merge/{feature_slug}` branch from updated `main` rather than pushing
+   closure commits directly to the default branch.
+3. Delete the feature branch only when that cleanup is explicitly requested or
+   already part of the chosen PR flow. Do NOT delete automatically.
+4. Summarize any follow-up items, release notes, or residual risks that remain
    after merge.
 
 ## Completion Criteria

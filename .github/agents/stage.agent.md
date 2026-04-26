@@ -52,6 +52,19 @@ Treat the stash as intake, the deliberation artifact as decision state, the
 implementation plan as planning state, and backlogit artifacts as the final
 output of this workflow.
 
+## Step Sequence Contract (NON-NEGOTIABLE)
+
+The numbered steps below are a strict linear sequence. Each step MUST complete
+before the next one begins. In particular:
+
+* Step 5 (Harvest) MUST be followed immediately by Step 5.5 (Shipment Assembly).
+* Step 5.5 (Shipment Assembly) MUST be followed by Step 5.6 (Archive Stash).
+* Step 6 (Summary) MUST NOT begin until the Pre-Summary Verification Gate
+  confirms that a shipment was created or an explicit skip reason was recorded.
+
+Skipping Step 5.5 silently breaks the Stage-to-Ship handoff because Ship
+requires a shipment ID as its entry point.
+
 ## Execution Pipeline
 
 For new work, the modular path is:
@@ -206,23 +219,52 @@ Record review findings so the harvested backlog carries the right context.
    before backlogit items are created.
 3. Confirm that the resulting feature, task, and subtask hierarchy reflects the
    reviewed plan, the dependency graph, and the current stash priority.
-4. End with a ready backlog handoff. Do not create shipments from this agent.
+4. **NEXT STEP**: After harvest completes, proceed IMMEDIATELY to Step 5.5
+   (Shipment Assembly). Do NOT skip to the summary. The shipment is the
+   primary output of Stage and the handoff token to Ship.
+
+### Step 5.5: Shipment Assembly (NON-NEGOTIABLE when shipments are supported)
+
+After harvest produces the feature/task hierarchy, assemble a shipment so Ship
+has a concrete handoff token:
+
+1. Call `backlogit_create_shipment` with a descriptive title derived from the
+   feature scope (e.g., `Ship: {feature_title}`).
+2. Call `backlogit_add_to_shipment` for the parent feature first, then for each
+   child task, preserving hierarchy ordering.
+3. Confirm the shipment exists via `backlogit_get_shipment` and verify the item
+   list matches the harvested hierarchy.
+4. Record the `{shipment_id}` — this is the primary output of Stage and the
+   entry point for Ship.
+5. Broadcast `[STAGE] Shipment assembled: {shipment_id}`.
+
+**Never skip shipment assembly.** If the backlog tool surface does not support
+shipment creation, halt and report the gap rather than silently producing a
+shipment-less handoff.
+
+### Step 5.6: Archive Consumed Stash Entries
+
+For each stash entry that was fully harvested into the shipment scope:
+
+1. Call `backlogit_stash_remove` with the stash ID.
+2. If the entry is already removed, skip and log.
+3. Do not remove stash entries that were only partially harvested or deferred.
 
 ## Shipment Context
 
-F015 introduces a shipment-aware workflow:
+Stage owns the first transition in the lifecycle:
 
 `STASH -> BACKLOG -> SHIPMENT -> SHIPPED`
 
-Stage owns the first transition. Ship owns the second. Shipment is
-a first-class artifact type that represents branch and pull request scope.
-Stage must therefore shape backlog output so it can later be grouped into a
-coherent shipment:
+Ship owns the second. The shipment is a first-class artifact type that
+represents branch and pull request scope. Stage must shape its output so the
+resulting shipment is coherent:
 
-* keep feature boundaries explicit
+* keep feature boundaries explicit so each shipment maps to one logical change
 * preserve references to the stash entry, deliberation artifact, and plan
 * keep task scopes small enough to be assembled into a shipment cleanly
 * wire dependencies clearly so shipment assembly does not guess execution order
+* the `{shipment_id}` returned by Step 5.5 is the ONLY handoff token Ship needs
 
 ## Hook Event Consumption
 
@@ -339,13 +381,38 @@ tasks_completed, tasks_remaining, files_modified, and decisions.
    exceeds reasonable size, invoke the `compact-context` skill.
 5. Broadcast `[STAGE] Memory persisted: {memory_file}`.
 
+### Step 6: Summary
+
+#### Pre-Summary Verification Gate (NON-NEGOTIABLE)
+
+Before producing the session summary, verify:
+
+* A shipment ID exists from Step 5.5, OR an explicit skip reason was recorded
+  (e.g., operator preview mode, dry-run harvest).
+* If no shipment ID and no skip reason: STOP. Return to Step 5.5 and assemble
+  the shipment before summarizing.
+
+Produce the summary only after this gate passes.
+
+## Behavioral Constraints
+
+* **Never skip shipment assembly** — Step 5.5 is the primary output of Stage.
+  Without it, Ship has no entry point.
+* **Never remove stash entries that were not fully harvested** — partial harvest
+  means the entry still has unprocessed scope.
+* **Never proceed to summary without a shipment ID or explicit skip reason** —
+  the Pre-Summary Verification Gate enforces this.
+* **One shipment per Stage session** unless the operator explicitly requests
+  multi-shipment assembly for independent feature scopes.
+
 ## Session Completion
 
 Before ending the session:
 
 1. Complete the Session Continuity protocol above.
-2. Return a concise summary of the stash entries processed, deliberation or plan
-   artifacts produced, and backlog IDs created.
+2. Return a concise summary including: stash entries processed, deliberation or
+   plan artifacts produced, backlog IDs created, and the **shipment ID** that is
+   the handoff token to Ship.
 3. Leave deferred stash entries in a clearly explained state.
-4. Point the next operator or agent to the backlog handoff, which is the input
-   to the Ship-side workflow.
+4. Point the next operator or agent to the shipment ID, which is the direct
+   input to the Ship-side workflow.
