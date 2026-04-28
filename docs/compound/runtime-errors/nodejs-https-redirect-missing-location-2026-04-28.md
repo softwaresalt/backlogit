@@ -1,5 +1,6 @@
 ---
 title: "Node.js https.get crash on malformed 3xx redirect without Location header"
+description: "Node.js https.get() silently passes undefined to a recursive call when a 3xx redirect is missing the Location header, causing an opaque crash and socket leak."
 problem_type: runtime_error
 category: runtime_error
 component: cli
@@ -12,8 +13,6 @@ resolved: true
 tags: [nodejs, https, redirect, undefined, crash, fetch, binary-resolver, socket-leak]
 date: 2026-04-28
 ---
-
-# Node.js https.get crash on malformed 3xx redirect without Location header
 
 ## Problem
 

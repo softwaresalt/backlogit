@@ -1,5 +1,6 @@
 ---
 title: "Hybrid npm wrapper for Go binary distribution (three-tier resolver)"
+description: "Distribute a native Go binary via npm without requiring Go on the user's system using a three-tier PATH/optionalDep/GitHub-Releases resolver with SHA256 verification."
 problem_type: best_practice
 category: best_practice
 component: cli
@@ -12,8 +13,6 @@ resolved: true
 tags: [npm, go, binary-distribution, copilot-plugin, nodejs, sha256, optional-dependencies, postinstall]
 date: 2026-04-28
 ---
-
-# Hybrid npm wrapper for Go binary distribution (three-tier resolver)
 
 ## Problem
 

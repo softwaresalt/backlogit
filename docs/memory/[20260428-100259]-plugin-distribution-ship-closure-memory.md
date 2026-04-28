@@ -11,7 +11,7 @@
 ## Tasks Completed This Session
 
 | ID | Title | Outcome |
-|---|---|---|
+| --- | --- | --- |
 | 046-S | Copilot CLI Plugin Distribution | **SHIPPED** — archived |
 | 048-F | Copilot CLI Plugin Distribution | done, archived, commit 6a180b0 |
 | 048.001-T | Plugin manifest + directory structure | done, archived |
@@ -29,7 +29,7 @@
 ## Files Created
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `plugin/plugin.json` | Copilot CLI plugin manifest |
 | `plugin/.mcp.json` | MCP server config for plugin |
 | `plugin/agents/stage.agent.md` | Stage agent copy |
@@ -49,7 +49,7 @@
 ## Files Modified
 
 | File | Change |
-|---|---|
+| --- | --- |
 | `.github/workflows/release.yml` | Added npm-package + npm-publish jobs |
 | `.github/skills/build-feature/SKILL.md` | Fixed Unicode replacement chars → em dashes |
 | `.gitignore` | Added negation exceptions for plugin/.mcp.json and npm bin/ |
@@ -72,7 +72,7 @@
 ## Decisions and Rationale
 
 | Decision | Rationale |
-|---|---|
+| --- | --- |
 | Three-tier binary resolver (PATH → npm optional → GH Releases) | `go run` rejected for 5–10s latency; single-tier npm optional dep too fragile without fallback |
 | `continue-on-error: true` on npm-publish CI job | npm org scope + NPM_TOKEN not yet provisioned; GitHub Release must not be blocked by npm state |
 | `preferUnplugged: true` on platform packages | Yarn PnP intercepts `require.resolve` without this; binary unreachable |
@@ -94,7 +94,7 @@
 ## Outstanding Items (follow-up backlog — archived with shipment, will re-harvest if needed)
 
 | ID | Title | Priority |
-|---|---|---|
+| --- | --- | --- |
 | 048.006-T | Version validation before tier3 download (guard against 0.0.0) | medium |
 | 048.007-T | HTTPS proxy support (process.env.HTTPS_PROXY for corporate envs) | medium |
 | 048.008-T | Test coverage for install.js and bin/backlogit-mcp.js | medium |
