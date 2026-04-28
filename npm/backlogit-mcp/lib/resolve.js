@@ -94,7 +94,13 @@ function fetchBuf(url) {
     const get = (u) =>
       https.get(u, (res) => {
         const { statusCode, headers } = res;
-        if (statusCode === 301 || statusCode === 302) return get(headers.location);
+        if (statusCode === 301 || statusCode === 302) {
+          res.resume();
+          if (!headers.location) {
+            return reject(new Error(`Redirect (${statusCode}) without Location header: ${u}`));
+          }
+          return get(headers.location);
+        }
         if (statusCode !== 200) {
           res.resume();
           return reject(new Error(`HTTP ${statusCode}: ${u}`));
