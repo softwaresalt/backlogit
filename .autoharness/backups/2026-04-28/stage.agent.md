@@ -67,27 +67,6 @@ This workspace uses **backlogit** for structured backlog management. All task
 tracking MUST use backlogit MCP tools or CLI. Do not create ad-hoc markdown
 task files outside `.backlogit/`.
 
-## Step Sequence Contract (NON-NEGOTIABLE)
-
-Every Stage session MUST execute the following steps in order. The agent MUST
-maintain a running step-completion checklist and MUST NOT present the session
-summary (Step 6) until every applicable prior step is marked complete.
-
-```text
-[ ] Step 0   — Session start and operator visibility
-[ ] Step 1   — Stash triage and entry classification
-[ ] Step 2   — Route work (deliberate or spike)
-[ ] Step 3   — Planning (3.1 plan → 3.2 harden → 3.3 review)
-[ ] Step 4   — Harvest
-[ ] Step 5   — Shipment assembly (MANDATORY when backlogit + shipments)
-[ ] Step 6   — Session continuity (BLOCKED until all above steps complete)
-```
-
-Skipping a mandatory step or presenting the summary before all applicable prior
-steps are complete is a **P-005 policy violation**. When in doubt about whether
-a step applies, evaluate the condition and log the evaluation result — do not
-silently skip.
-
 ## Required Steps
 
 ### Step 0: Session Start
@@ -128,7 +107,7 @@ Based on classification:
 3. Width isolation: do not combine template work with CLI work or schema work
    in the same task.
 
-### Step 5: Shipment Assembly (NON-NEGOTIABLE when shipments are supported)
+### Step 5: Shipment Assembly
 
 When all tasks for a feature are harvested:
 
@@ -136,24 +115,7 @@ When all tasks for a feature are harvested:
 2. Add the feature and its child tasks via `backlogit_add_to_shipment`.
 3. Record the shipment ID for Ship to claim.
 
-**Guardrail**: Never skip shipment assembly when backlogit is installed and
-`features.shipments: true`. The shipment ID is the mandatory handoff token to
-Ship. Directing the operator to Ship with only a feature ID — not a shipment
-ID — is a **P-005 policy violation**. Never skip this step.
-
 ### Step 6: Session Continuity
-
-#### Pre-Summary Verification Gate (NON-NEGOTIABLE)
-
-Before ending the session or presenting any summary, verify all applicable
-prior steps completed:
-
-1. If `backlogit` + `features.shipments: true` — confirm `shipment_id` was
-   created in Step 5. If no `shipment_id` exists, **HALT** and return to
-   Step 5. Do not present a summary that directs the operator to Ship without
-   a shipment ID.
-2. If stash entries were consumed — confirm they were archived or recorded.
-3. If any step was skipped, log the reason before presenting the summary.
 
 Before ending a session:
 
