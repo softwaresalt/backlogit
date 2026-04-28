@@ -1,0 +1,13 @@
+{
+  "name": "@backlogit/darwin-x64",
+  "version": "0.0.0",
+  "description": "backlogit native binary for darwin/x64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "preferUnplugged": true,
+  "bin": {
+    "backlogit": "bin/backlogit"
+  },
+  "files": ["bin/"]
+}
