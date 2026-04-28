@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-04-05T18:35:34.2669821Z"
-tuned_at: "2026-04-26T00:00:00Z"
+tuned_at: "2026-04-28T00:00:00Z"
 autoharness_version: "1.0.0"
 autoharness_home: "C:\\Users\\derek.williams\\AppData\\Roaming\\uv\\tools\\autoharness\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -220,7 +220,7 @@ artifacts:
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
-    checksum: "daab06be5cfa544c76d2995a1e1ec7422dca6dfa0ee4a3a7fb16563bac125a69"
+    checksum: "378f0546d4ad909e4f97af44149f83588d07d0f1d797183aee85de0e4f4aab5d"
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
@@ -350,3 +350,9 @@ tuning_history:
       - ".github/agents/stage.agent.md"
       - ".github/agents/ship.agent.md"
       - ".github/skills/pr-lifecycle/SKILL.md"
+  - at: "2026-04-28T00:00:00Z"
+    summary: "Harness tuning after PR #79 merge (npm/Copilot CLI plugin distribution). Regression remediation for TUNE-001/002 (stage/ship agent guardrails had regressed due to prior fix not surviving branch lifecycle). New: TUNE-003 source artifact cleanup in ship.agent.md. Learning-driven P1 additions: TUNE-004 error-type selection table in go.instructions.md (incorrect_error_type x5 compound entries), TUNE-005 schema synchronization rules (schema_mismatch x5). All 19 targeted checks pass post-tune. Backups at .autoharness/backups/2026-04-28/."
+    artifacts:
+      - ".github/agents/stage.agent.md"
+      - ".github/agents/ship.agent.md"
+      - ".github/instructions/go.instructions.md"

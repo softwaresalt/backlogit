@@ -45,25 +45,6 @@ backlogit mcp                          # Start MCP stdio server
 * Use `const` blocks with a string type alias for fixed sets of states, artifact types, and status values.
 * Prefer value receivers on small structs and pointer receivers on large structs or when mutation is required.
 
-### Schema Synchronization
-
-Keep Go struct definitions and YAML frontmatter schemas aligned. **Schema mismatch** — where a
-struct field name, type, or tag differs from the frontmatter key written to `.backlogit/` files —
-is a recurring source of rehydration failures, silent data loss, and query errors.
-
-Rules:
-
-* When adding a field to a struct, add the corresponding `yaml:` tag and update the frontmatter
-  template or migration in `internal/parser/`.
-* When renaming a YAML frontmatter key, update the corresponding `yaml:` struct tag and write a
-  migration that rewrites existing files (do not leave a silent gap between old files and new code).
-* When removing a field from a struct, handle the case where old files still carry the key (use
-  `yaml:",omitempty"` or a migration to strip it).
-* Validate struct round-trips in unit tests: marshal a known struct to YAML, unmarshal back, and
-  assert field equality.
-* Use `yaml:",omitempty"` on optional fields to avoid writing zero-value keys to `.backlogit/`
-  files that then trip up consumers expecting the key to be absent vs. present-but-empty.
-
 ```go
 package models
 
@@ -316,21 +297,6 @@ func ParseFrontmatter(content string) (map[string]string, string, error) {
 * Wrap errors with `fmt.Errorf("context: %w", err)` to preserve the chain.
 * Provide actionable error messages that help the caller understand what went wrong and how to resolve it.
 * Never discard errors without explicit justification in a comment.
-
-### Error Type Selection
-
-Choose the correct error type based on caller needs:
-
-| Situation | Error Type | Example |
-|---|---|---|
-| Package-level condition callers check with `errors.Is` | Sentinel (`errors.New`) | `ErrNotFound`, `ErrConfig` |
-| Caller needs structured data to recover or branch | Typed struct + `errors.As` | `*ConfigError{Field, Err}` |
-| Adding context to a propagated error | Wrapped (`fmt.Errorf("%w")`) | `fmt.Errorf("open db: %w", err)` |
-| Always-fatal initialization failure | Sentinel in `errors.go` | `ErrRehydration` |
-
-**Incorrect error type** is the most common mistake: using a bare sentinel when the caller
-needs structured data, or using a typed struct when a simple sentinel would suffice. Match
-the error type to what callers actually need to inspect.
 
 ```go
 package errors

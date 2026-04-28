@@ -124,58 +124,10 @@ For each task in the shipment/feature:
 
 After user-approved merge:
 
-#### Step 5.0: Post-Merge Branch Protocol (NON-NEGOTIABLE)
-
-Post-merge closure produces commits (backlog archival, knowledge graduation,
-doc updates). These commits MUST NOT land directly on `main`.
-
-1. Verify the merge commit exists on `main`.
-2. Create a post-merge closure branch from `main`:
-   `git checkout main && git pull && git checkout -b post-merge/{feature_slug}`
-   where `{feature_slug}` is derived from the feature ID and title (e.g.,
-   `post-merge/022-stash-filter`).
-3. All subsequent closure work (steps 5.1–5.2 below) happens on this branch.
-4. After all closure work is committed, push and create a closure PR:
-   `git push -u origin post-merge/{feature_slug}`
-   Then invoke `pr-lifecycle` with title:
-   `chore: post-merge closure for {feature_id} — {feature_title}`.
-5. **Await operator approval** before merge. Never auto-merge closure work.
-
-#### Step 5.1: Closure Tasks
-
 1. Close the shipment via `backlogit_ship_shipment` if applicable.
 2. Write compound learnings for hard-won solutions.
 3. Update documentation if templates changed significantly.
 4. Write session memory to `docs/memory/`.
-
-#### Step 5.2: Source Artifact Cleanup (backlogit only)
-
-When the `backlogit` capability pack is installed, retire source artifacts
-that directly fed the shipped scope:
-
-1. For each shipped feature or chore, read `custom_fields.source_stash_id`.
-   If present, call `backlogit_stash_remove` with the stash ID. If already
-   removed, skip and log.
-2. For each shipped feature or chore, read
-   `custom_fields.source_deliberation_id`. If present, verify the deliberation
-   artifact exists via `backlogit_get_item`. If it exists and is not archived,
-   call `backlogit_archive_item`. If already archived or not found, skip.
-3. Record the archived and skipped source artifact IDs in the closure artifact.
-
-## Branch Management Rules (NON-NEGOTIABLE)
-
-* **Branch retention (NON-NEGOTIABLE)**: Stay on the feature or chore branch
-  from Step 0.5 through Step 4 merge approval. Never checkout `main` or
-  another branch while the feature PR is open, during CI remediation, or
-  during review-fix cycles. Switching branches risks losing uncommitted work.
-* **Post-Merge Branch Protocol (NON-NEGOTIABLE)**: Create a
-  `post-merge/{feature_slug}` branch from `main` for all Step 5 closure work.
-  Never commit post-merge closure artifacts directly to `main`. Push the
-  closure branch and open a closure PR; await operator approval before merge.
-* **Every branch that produces commits gets a PR.** The feature branch gets
-  the feature PR; the post-merge closure branch gets the closure PR. Both
-  require explicit operator approval.
-* **Never merge automatically.** Always await explicit user approval.
 
 ## Stop Conditions
 

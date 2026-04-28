@@ -1,0 +1,161 @@
+---
+description: "Interactive safety workflows for elevated-risk work — careful, freeze-scope, investigate-first, and explicit action-risk/result tracking"
+---
+
+## Safety Modes
+
+Enter an explicit operating mode before performing risky work. This skill slows the agent down on purpose: it surfaces risk, narrows scope, and makes the next action legible to the operator.
+
+## When to Use
+
+Invoke when work has elevated blast radius, uncertain root cause, production impact, or destructive potential.
+
+Typical triggers:
+
+* Destructive commands or large-scale refactors
+* Production configuration changes
+* Incident debugging with unclear causality
+* Work that must stay inside a single directory or subsystem boundary
+
+## Inputs
+
+* `mode`: (Required) One of `careful`, `freeze-scope`, or `investigate-first`.
+* `scope`: (Optional) Directory, subsystem, or change boundary for `freeze-scope` mode.
+* `context`: (Optional) Description of the risky task or incident.
+
+## Output
+
+* A structured safety checklist for the current work session
+* If useful, a written record at `docs/closure/{YYYY-MM-DD}-{slug}-safety-check.md`
+
+## Required Protocol
+
+When the `strict-safety` capability pack is installed, also follow
+`.github/instructions/strict-safety.instructions.md`: classify risky work as
+explicit `ProposedAction` entries with `ActionRisk` and `ActionResult` instead
+of leaving those details implicit.
+
+### Step 1: Classify Risk and Proposed Actions
+
+Identify why elevated safety is required:
+
+* Destructive action risk
+* Production/runtime risk
+* Scope creep risk
+* Root-cause uncertainty
+* Data loss or security risk
+
+For every risky or boundary-sensitive step, capture a `ProposedAction` with:
+
+* summary of the action
+* targets touched
+* rollback or containment path
+* whether approval is required
+
+Assign the most conservative `ActionRisk`:
+
+* `low`
+* `moderate`
+* `high`
+* `destructive`
+
+### Step 2: Enter the Requested Mode
+
+#### Mode: `careful`
+
+Before changing anything:
+
+1. Enumerate the risky actions that may occur
+2. Identify rollback or backup strategy
+3. Separate non-destructive steps from destructive ones
+4. Require explicit operator approval before destructive steps
+5. Mark each risky step's expected `ActionResult` as `planned` until approval or execution changes its state
+
+#### Mode: `freeze-scope`
+
+Before changing anything:
+
+1. Declare the allowed boundary (`scope`)
+2. List files and directories inside that boundary
+3. **Verify lock availability**: For each file to be modified within the boundary,
+   check whether a lock conflict exists (per `concurrency.instructions.md`).
+   If lock acquisition fails on a boundary file:
+   * Classify the edit as `ActionRisk: high` (lock contention on boundary file)
+   * Add the lock conflict to the safety checklist
+   * Do not modify the file; retry once after a brief wait
+   * If contention persists, prompt the operator to resolve or break the lock and coordinate file ownership before proceeding
+4. Refuse edits outside the boundary unless the operator expands scope
+5. Re-state the freeze boundary before each risky edit sequence
+6. Reject any `ProposedAction` whose targets fall outside the declared boundary
+
+#### Mode: `investigate-first`
+
+Before changing anything:
+
+1. Gather evidence from logs, tests, code paths, and recent changes
+2. Produce at least one root-cause hypothesis
+3. Distinguish evidence from assumptions
+4. Do not apply a fix until the hypothesis is explicit and testable
+5. Keep risky fixes in `ActionResult: planned` or `blocked` until the evidence supports them
+
+### Step 3: Produce the Safety Checklist
+
+The checklist MUST include:
+
+* Active mode
+* Declared scope or risk boundary
+* `ProposedAction` entries with `ActionRisk`
+* Actions allowed immediately
+* Actions requiring approval
+* Expected or current `ActionResult` state for each risky action
+* Exit condition for leaving the mode
+
+### Step 4: Record Action Results
+
+When risky actions are approved, attempted, or rejected, update their
+`ActionResult`:
+
+* `approved` before execution when approval is granted
+* `blocked` when tooling, information, or approval is missing
+* `applied` when the action succeeds
+* `rolled-back` when the action had to be reversed or mitigated
+* `abandoned` when the action is intentionally dropped
+
+### Step 5: Enforcement Gate
+
+When the `strict-safety` capability pack is enabled, the safety checklist is a
+**decision gate**, not advisory:
+
+* Actions classified as `ActionRisk: destructive` MUST NOT proceed without
+  explicit operator approval recorded as `ActionResult: approved`. Proceeding
+  without approval is a policy violation, not a judgment call.
+* Actions classified as `ActionRisk: high` SHOULD request operator approval
+  before proceeding. If approval is unavailable, record the decision rationale.
+* If a `destructive` action proceeds without `ActionResult: approved`, broadcast
+  a P-005 violation telemetry event and halt.
+
+When `strict-safety` is **not** enabled, Constitutional Principle VII
+(Destructive Command Approval — NON-NEGOTIABLE) still applies. Agents MUST NOT
+execute `ActionRisk: destructive` work without explicit operator approval, even
+when the safety checklist is advisory. To comply:
+
+* Classify destructive actions as `ActionRisk: destructive` in the checklist
+* Record them as `ActionResult: blocked` until operator approval is obtained
+* Prompt the operator via the configured interface (intercom if available, else
+  console): `Destructive action requires approval: {action_summary}. Approve? [yes/no]`
+* Only proceed if the operator responds with explicit approval
+
+## Quality Criteria
+
+* The chosen mode matches the risk profile of the work
+* Destructive or high-blast-radius actions are called out explicitly
+* Risky actions are legible as `ProposedAction` / `ActionRisk` / `ActionResult`
+* Freeze boundaries are concrete, not vague
+* Investigate-first mode separates evidence from proposed fixes
+
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — risk classification and checklist production.
+
+Generated by autoharness | Template: safety-modes/SKILL.md.tmpl
