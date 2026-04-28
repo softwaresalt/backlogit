@@ -4,8 +4,8 @@ description: Installing backlogit as a Copilot CLI plugin with hybrid binary dis
 ms.date: 2026-04-27
 ms.topic: guide
 ---
-
-# backlogit Plugin Guide
+
+## Overview
 
 backlogit distributes as a Copilot CLI plugin. When installed, the plugin contributes the Stage and Ship agents, 19 universal workflow skills, and an MCP server backed by the native backlogit binary.
 

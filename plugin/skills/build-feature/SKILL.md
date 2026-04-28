@@ -1,4 +1,4 @@
----
+﻿---
 name: build-feature
 description: "Usage: Build feature {task-id} with harness {harness-cmd}. Implements a requested feature by continuously looping a fast worker agent against a strict, passing-import but failing test harness until success is achieved."
 version: 2.0
@@ -59,12 +59,12 @@ Use `broadcast` (non-blocking) throughout execution to keep the operator informe
 | When | Tool | Level | Message Pattern |
 |---|---|---|---|
 | Skill start | `broadcast` | `info` | `[BUILD] Starting task {task-id}: {harness-cmd}` |
-| Each iteration start | `broadcast` | `info` | `[LOOP] Attempt {N}/5 � running harness` |
-| File created | `broadcast` | `info` | `[FILE] created: {file_path}` � include full content in body |
-| File modified | `broadcast` | `info` | `[FILE] modified: {file_path}` � include unified diff in body |
+| Each iteration start | `broadcast` | `info` | `[LOOP] Attempt {N}/5 — running harness` |
+| File created | `broadcast` | `info` | `[FILE] created: {file_path}` — include full content in body |
+| File modified | `broadcast` | `info` | `[FILE] modified: {file_path}` — include unified diff in body |
 | Harness passes | `broadcast` | `success` | `[BUILD] Harness passed on attempt {N}` |
-| Harness fails | `broadcast` | `warning` | `[LOOP] Attempt {N} failed � {error_summary}` |
-| Circuit breaker hit | `broadcast` | `error` | `[BUILD] Circuit breaker � 5 attempts exhausted, task blocked` |
+| Harness fails | `broadcast` | `warning` | `[LOOP] Attempt {N} failed — {error_summary}` |
+| Circuit breaker hit | `broadcast` | `error` | `[BUILD] Circuit breaker — 5 attempts exhausted, task blocked` |
 | Workspace test pass | `broadcast` | `success` | `[BUILD] Workspace tests pass — task {task-id} complete` |
 | Instruction re-read | `broadcast` | `info` | `[REINFORCE] Coding standards refreshed for attempt {N}/5` |
 | Task complete | `broadcast` | `success` | `[BUILD] Task {task-id} complete — commit {short_hash} — {N} attempt(s)` |
@@ -75,9 +75,9 @@ File creation and modification proceed with direct writes. After each file write
 **Protected file awareness**: When modifying core harness configuration files (`.github/agents/*.agent.md`, `.github/skills/*/SKILL.md`, `.github/instructions/*.instructions.md`, `AGENTS.md`), `broadcast` at `info` level: `[PROTECTED] Modifying harness config: {file_path}`. This alerts the operator without blocking modification.
 
 For **destructive operations** (file deletion, directory removal), route through the approval workflow:
-1. `auto_check` � Check if workspace policy allows the operation.
-2. `check_clearance` � Submit proposal and block until operator responds.
-3. `check_diff` � Execute only after `status: "approved"`.
+1. `auto_check` — Check if workspace policy allows the operation.
+2. `check_clearance` — Submit proposal and block until operator responds.
+3. `check_diff` — Execute only after `status: "approved"`.
 ## Execution Steps
 
 ### Step 1: Context Isolation
@@ -115,7 +115,7 @@ Execute the following loop with a **hard limit of 5 attempts**:
    g. Return to step 1 of this loop.
 
 4. **Circuit breaker**: If 5 attempts are exhausted without the harness passing:
-   * `broadcast` at `error` level: `[BUILD] Circuit breaker � 5 attempts exhausted, task blocked`.
+   * `broadcast` at `error` level: `[BUILD] Circuit breaker — 5 attempts exhausted, task blocked`.
    * Call `backlogit_move_item` with `id: ${input:task-id}` and `status: "blocked"`.
    * Call `backlogit_append_comment` with `item_id: ${input:task-id}`, `actor: "build-feature"`, and a note indicating the task is blocked pending human review.
    * Halt execution. Do not retry automatically.
