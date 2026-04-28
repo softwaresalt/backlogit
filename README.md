@@ -38,6 +38,26 @@ A JSONL event model records state transitions, comments, and agent telemetry in 
 - Agent-native: version surface, two-layer hooks, token telemetry, commit traceability, and dependency tracking baked in
 - Session disaster recovery: standardized checkpoint schema, MCP lifecycle tools (`list_checkpoints`, `get_checkpoint`, `resolve_checkpoint`, `cleanup_checkpoints`), and deterministic agent recovery state machine for interrupted sessions
 
+## Plugin Installation
+
+Install backlogit as a Copilot CLI plugin to get the Stage and Ship agents, 19 universal workflow skills, and the MCP server in one step:
+
+```bash
+copilot plugin install softwaresalt/backlogit
+```
+
+The plugin uses `npx @backlogit/backlogit-mcp` to run the backlogit binary. On first invocation the binary is downloaded and cached (~10–30 s). To pre-install and avoid the first-run download:
+
+```bash
+npm install -g @backlogit/backlogit-mcp   # pre-download
+# — or —
+go install github.com/softwaresalt/backlogit/cmd/backlogit@latest  # native binary
+```
+
+See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
+
+---
+
 ## Quick Start
 
 **Install from source:**

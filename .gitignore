@@ -9,6 +9,12 @@ logs/
 !.env.example
 .mcp.json
 
+# Plugin .mcp.json is intentionally tracked (distinct from local dev config)
+!plugin/.mcp.json
+
+# npm wrapper bin/ contains JS (not compiled binaries) — track it
+!npm/backlogit-mcp/bin/
+
 # Project files
 *.prj
 *.pui

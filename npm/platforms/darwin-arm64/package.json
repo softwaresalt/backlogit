@@ -1,0 +1,13 @@
+{
+  "name": "@backlogit/darwin-arm64",
+  "version": "0.0.0",
+  "description": "backlogit native binary for darwin/arm64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "preferUnplugged": true,
+  "bin": {
+    "backlogit": "bin/backlogit"
+  },
+  "files": ["bin/"]
+}

@@ -20,7 +20,7 @@
     .\make.ps1 install -InstallPath C:\Tools  # install to specific path
 #>
 param(
-    [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install")]
+    [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install", "verify-plugin")]
     [string]$Target = "all",
 
     # Optional install directory for the 'install' target (e.g. C:\Tools).
@@ -105,6 +105,31 @@ switch ($Target) {
             $dest = Join-Path $InstallPath "backlogit.exe"
             go build -o $dest .\cmd\backlogit
             Write-Host "Installed: $dest" -ForegroundColor Green
+        }
+    }
+
+    "verify-plugin" {
+        Step "verify-plugin" {
+            $agents = @("stage.agent.md", "ship.agent.md")
+            foreach ($a in $agents) {
+                $src = ".github/agents/$a"; $dst = "plugin/agents/$a"
+                if ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash) {
+                    Write-Host "DRIFT: $a out of date" -ForegroundColor Red; exit 1
+                }
+            }
+            $skills = @(
+                "build-feature","compact-context","compound","compound-refresh","deliberate",
+                "file-lock","fix-ci","harness-architect","harvest","impl-plan",
+                "operational-closure","plan-harden","plan-review","pr-lifecycle","review",
+                "runtime-verification","safety-modes","skill-search","spike"
+            )
+            foreach ($s in $skills) {
+                $src = ".github/skills/$s/SKILL.md"; $dst = "plugin/skills/$s/SKILL.md"
+                if ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash) {
+                    Write-Host "DRIFT: $s/SKILL.md out of date" -ForegroundColor Red; exit 1
+                }
+            }
+            Write-Host "OK: all plugin copies match .github/ sources" -ForegroundColor Green
         }
     }
 }

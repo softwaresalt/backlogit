@@ -1,0 +1,23 @@
+{
+  "name": "@backlogit/backlogit-mcp",
+  "version": "0.0.0",
+  "description": "backlogit MCP server — npm wrapper with hybrid binary resolver",
+  "license": "MIT",
+  "bin": {
+    "backlogit-mcp": "bin/backlogit-mcp.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "test": "node --test test/resolve.test.js"
+  },
+  "optionalDependencies": {
+    "@backlogit/linux-x64": "0.0.0",
+    "@backlogit/linux-arm64": "0.0.0",
+    "@backlogit/darwin-x64": "0.0.0",
+    "@backlogit/darwin-arm64": "0.0.0",
+    "@backlogit/win32-x64": "0.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

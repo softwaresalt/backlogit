@@ -110,6 +110,79 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  npm-package:
+    name: Package npm binaries
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          merge-multiple: true
+          path: dist/
+
+      - name: Package platform npm packages
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x scripts/package-npm.sh
+          bash scripts/package-npm.sh "${VERSION}" dist/
+
+      - name: Upload npm packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-packages
+          path: |
+            npm/platforms/*/
+            npm/backlogit-mcp/
+          if-no-files-found: error
+
+  npm-publish:
+    name: Publish npm packages
+    needs: npm-package
+    runs-on: ubuntu-latest
+    # Intentional: npm publish failure must not block the GitHub Release.
+    # The @backlogit npm scope may not yet be provisioned; NPM_TOKEN may be absent.
+    # Users can always install via `go install` or binary download regardless of npm state.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download npm packages
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: npm-packages
+          path: npm/
+
+      - name: Publish platform packages
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
+            echo "Publishing @backlogit/${platform}..."
+            npm publish "npm/platforms/${platform}" --access public
+          done
+
+      - name: Publish wrapper package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Publishing @backlogit/backlogit-mcp..."
+          npm publish npm/backlogit-mcp --access public
+
   release:
     name: Publish GitHub Release
     needs: [changelog, build]
