@@ -6,6 +6,14 @@
   "os": ["darwin"],
   "cpu": ["arm64"],
   "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/softwaresalt/backlogit.git",
+    "directory": "npm/platforms/darwin-arm64"
+  },
   "bin": {
     "backlogit": "bin/backlogit"
   },
