@@ -181,7 +181,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "Publishing @backlogit/backlogit-mcp..."
-          npm publish npm/backlogit-mcp --access public
+          npm publish ./npm/backlogit-mcp --access public
 
   release:
     name: Publish GitHub Release
