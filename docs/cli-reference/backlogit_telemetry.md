@@ -7,6 +7,17 @@ description: "Inspect Copilot CLI token usage and tool telemetry"
 
 Inspect Copilot CLI token usage and tool telemetry
 
+### Synopsis
+
+Inspect Copilot CLI token usage and tool telemetry
+
+Use telemetry harvest to parse logs, telemetry report for machine-readable
+session and server summaries, and telemetry top to rank servers by
+proportional token attribution.
+
+See docs/telemetry-fields.md for harvested field definitions and SQLite column
+mappings.
+
 ### Options
 
 ```text
@@ -26,5 +37,5 @@ Inspect Copilot CLI token usage and tool telemetry
 * [backlogit telemetry harvest](backlogit_telemetry_harvest.md)	 - Parse Copilot CLI logs and write telemetry-sessions.jsonl
 * [backlogit telemetry list](backlogit_telemetry_list.md)	 - List harvested session summaries
 * [backlogit telemetry report](backlogit_telemetry_report.md)	 - Generate a formatted telemetry report from harvested data
-* [backlogit telemetry top](backlogit_telemetry_top.md)	 - Show top N tool calls by token usage
+* [backlogit telemetry top](backlogit_telemetry_top.md)	 - Show top N servers by token usage
 
