@@ -1,11 +1,11 @@
 ---
 title: "backlogit telemetry top"
-description: "Show top N tool calls by token usage"
+description: "Show top N servers by token usage"
 ---
 
 ## backlogit telemetry top
 
-Show top N tool calls by token usage
+Show top N servers by token usage
 
 ```text
 backlogit telemetry top [flags]

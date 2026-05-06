@@ -15,12 +15,20 @@ import (
 //
 //	backlogit telemetry harvest  -- parse Copilot CLI logs and write telemetry-sessions.jsonl
 //	backlogit telemetry list     -- list harvested session summaries
-//	backlogit telemetry top      -- show top N tool calls by token usage
+//	backlogit telemetry top      -- show top N servers by token usage
 //	backlogit telemetry report   -- generate a formatted telemetry report
 func NewTelemetryCmd(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "telemetry",
 		Short: "Inspect Copilot CLI token usage and tool telemetry",
+		Long: `Inspect Copilot CLI token usage and tool telemetry
+
+Use telemetry harvest to parse logs, telemetry report for machine-readable
+session and server summaries, and telemetry top to rank servers by
+proportional token attribution.
+
+See https://github.com/softwaresalt/backlogit/blob/main/docs/telemetry-fields.md
+for harvested field definitions and SQLite column mappings.`,
 	}
 	cmd.AddCommand(newTelemetryHarvestCmd(cwd))
 	cmd.AddCommand(newTelemetryListCmd(cwd))
@@ -115,7 +123,7 @@ func newTelemetryListCmd(cwd *string) *cobra.Command {
 func newTelemetryTopCmd(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "top",
-		Short: "Show top N tool calls by token usage",
+		Short: "Show top N servers by token usage",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("n")
 			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
