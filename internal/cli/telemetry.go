@@ -27,8 +27,8 @@ Use telemetry harvest to parse logs, telemetry report for machine-readable
 session and server summaries, and telemetry top to rank servers by
 proportional token attribution.
 
-See docs/telemetry-fields.md for harvested field definitions and SQLite column
-mappings.`,
+See https://github.com/softwaresalt/backlogit/blob/main/docs/telemetry-fields.md
+for harvested field definitions and SQLite column mappings.`,
 	}
 	cmd.AddCommand(newTelemetryHarvestCmd(cwd))
 	cmd.AddCommand(newTelemetryListCmd(cwd))

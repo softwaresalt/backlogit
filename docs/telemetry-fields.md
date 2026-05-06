@@ -7,7 +7,7 @@ ms.topic: reference
 
 ## Overview
 
-backlogit harvests Copilot CLI session telemetry into
+Backlogit harvests Copilot CLI session telemetry into
 `.backlogit/telemetry-sessions.jsonl` and then rehydrates two SQLite tables in
 `.backlogit/backlogit.db`:
 
@@ -68,7 +68,7 @@ The `tool_usage` record is written from
 
 ## Derived context metrics
 
-backlogit computes session-level context metrics from correlated model calls and
+Backlogit computes session-level context metrics from correlated model calls and
 compaction events.
 
 | Metric | Meaning |
