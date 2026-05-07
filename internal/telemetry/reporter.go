@@ -351,6 +351,9 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	if by == "" {
 		by = "date"
 	}
+	if by != "date" && by != "branch" {
+		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\"", by)
+	}
 
 	// Group sessions.
 	groupIndex := make(map[string]int)
@@ -452,8 +455,10 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		return string(data) + "\n", nil
 	case FormatMarkdown:
 		return formatTrendMarkdown(groups), nil
-	default:
+	case FormatTable:
 		return formatTrendTable(groups), nil
+	default:
+		return "", fmt.Errorf("unsupported format %q: valid values are \"table\", \"json\", \"markdown\"", format)
 	}
 }
 

@@ -21,9 +21,7 @@ import (
 // .backlogit/logs/ for status_changed events where delta.to == "done".
 // Sessions with no task completions report TokensPerTask as nil.
 func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]SessionMeta, workspacePath string, customPrefixes map[string]string) ([]SessionSummary, error) {
-	attr := func(toolName string) string {
-		return AttributeToolWithConfig(toolName, customPrefixes)
-	}
+	attr := BuildAttributor(customPrefixes)
 
 	// Index events by session.
 	type sessionAccum struct {
@@ -93,8 +91,9 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 	for sessionID, a := range accums {
 		meta := metas[sessionID]
 
-		// Distribute total tokens across servers using the largest-remainder method,
-		// ensuring the per-server sum equals TotalTokens exactly.
+		// Distribute total tokens across servers using the largest-remainder method
+		// with pure integer arithmetic to guarantee the per-server sum equals
+		// TotalTokens exactly (no floating-point drift).
 		tokensByServer := make(map[string]int, len(a.tokensByServer))
 		if a.totalTokens > 0 {
 			totalCalls := 0
@@ -105,14 +104,14 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 				type svRemainder struct {
 					name      string
 					floor     int
-					remainder float64
+					remainder int // numerator % totalCalls; used for largest-remainder ordering
 				}
 				allocated := 0
 				items := make([]svRemainder, 0, len(a.tokensByServer))
 				for sv, c := range a.tokensByServer {
-					exact := float64(a.totalTokens) * float64(c) / float64(totalCalls)
-					fl := int(exact)
-					items = append(items, svRemainder{name: sv, floor: fl, remainder: exact - float64(fl)})
+					numerator := a.totalTokens * c
+					fl := numerator / totalCalls
+					items = append(items, svRemainder{name: sv, floor: fl, remainder: numerator % totalCalls})
 					allocated += fl
 				}
 				// Distribute the remaining tokens to servers with the largest remainders.

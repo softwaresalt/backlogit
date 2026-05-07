@@ -128,13 +128,14 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	// Compute per-(session, server, tool) call counts and durations.
+	attr := BuildAttributor(opts.AttributionPrefixes)
 	toolStats := make(map[toolKey]toolStat)
 	for _, e := range events {
 		if e.Kind != EventKindToolCall || e.ToolCall == nil {
 			continue
 		}
 		tc := e.ToolCall
-		server := AttributeToolWithConfig(tc.ToolName, opts.AttributionPrefixes)
+		server := attr(tc.ToolName)
 		key := toolKey{tc.SessionID, server, tc.ToolName}
 		s := toolStats[key]
 		s.count++

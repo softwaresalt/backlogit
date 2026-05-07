@@ -174,7 +174,10 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 		case "session_summary":
 			var tokensByServerJSON interface{}
 			if len(rec.TokensByServer) > 0 {
-				b, _ := json.Marshal(rec.TokensByServer)
+				b, merr := json.Marshal(rec.TokensByServer)
+				if merr != nil {
+					return fmt.Errorf("marshal tokens_by_server for session %q: %w", rec.SessionID, merr)
+				}
 				tokensByServerJSON = string(b)
 			}
 			_, err = tx.ExecContext(ctx,
