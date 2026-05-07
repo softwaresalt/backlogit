@@ -37,6 +37,7 @@ stash follow-up work for later planning.
 ```text
       --cwd string         workspace directory (default ".")
   -h, --help               help for backlogit
+      --jsonrpc            wrap all output in a JSON-RPC 2.0 response envelope
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```
 
@@ -53,6 +54,7 @@ stash follow-up work for later planning.
 * [backlogit get](backlogit_get.md)	 - Retrieve an artifact by ID
 * [backlogit init](backlogit_init.md)	 - Initialize a new backlogit workspace
 * [backlogit list](backlogit_list.md)	 - List artifacts in the workspace
+* [backlogit manifest](backlogit_manifest.md)	 - Print a JSON-RPC manifest of all backlogit MCP tool definitions
 * [backlogit mcp](backlogit_mcp.md)	 - Start the backlogit MCP stdio server
 * [backlogit metadata](backlogit_metadata.md)	 - Discover backlogit metadata for agents and tooling
 * [backlogit migrate](backlogit_migrate.md)	 - Migrate backlog data between supported formats and layouts

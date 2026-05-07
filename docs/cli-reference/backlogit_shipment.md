@@ -24,6 +24,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 
 ```text
       --cwd string         workspace directory (default ".")
+      --jsonrpc            wrap all output in a JSON-RPC 2.0 response envelope
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```
 
