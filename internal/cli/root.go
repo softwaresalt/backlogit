@@ -122,6 +122,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewCheckpointCmd(&cwd))
 	root.AddCommand(newDoctorCommand(&cwd))
 	root.AddCommand(newVersionCommand())
+	root.AddCommand(newManifestCommand(&cwd))
 
 	return root
 }
