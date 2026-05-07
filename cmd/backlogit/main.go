@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -11,8 +10,7 @@ import (
 
 func main() {
 	initLogger()
-	if err := cli.NewRootCommand().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := cli.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -20,6 +21,7 @@ The output format is compatible with the MCP tools/list response:
 
   {"tools": [{"name": "...", "description": "...", "inputSchema": {...}}, ...]}
 
+Tools are sorted alphabetically by name to match MCP tools/list ordering.
 This allows agents to discover the full backlogit tool surface through the CLI
 in the same format they receive during MCP server initialization. Combine with
 --jsonrpc to receive a JSON-RPC 2.0 response envelope.`,
@@ -29,6 +31,10 @@ in the same format they receive during MCP server initialization. Combine with
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s := mcpinternal.NewServerForRoot(*cwd)
 			defs := s.ToolDefs()
+
+			sort.Slice(defs, func(i, j int) bool {
+				return defs[i].Name < defs[j].Name
+			})
 
 			out := map[string]any{
 				"tools": defs,

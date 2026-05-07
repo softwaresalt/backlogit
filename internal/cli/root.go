@@ -31,13 +31,60 @@ type jsonrpcInterceptor struct {
 	cmdPath string
 }
 
+// Execute creates the root command and runs it. When --jsonrpc is active and
+// the command fails (including flag-parse and argument-validation failures),
+// it writes a JSON-RPC 2.0 error envelope to stdout instead of letting Cobra
+// print the error to stderr.
+//
+// main.go should call this rather than cli.NewRootCommand().Execute() so that
+// the full error path is covered by the JSON-RPC contract.
+func Execute() error {
+	jctx := &jsonrpcInterceptor{}
+	root := newRootCommandImpl(jctx)
+
+	// Pre-scan os.Args to detect --jsonrpc before Cobra parses flags.
+	// This lets us silence Cobra's own error output and write a JSON-RPC
+	// error envelope even when PersistentPreRunE never runs (flag parse errors,
+	// --help, --version).
+	jsonrpcRequested := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--jsonrpc" {
+			jsonrpcRequested = true
+			break
+		}
+	}
+	if jsonrpcRequested {
+		root.SilenceErrors = true
+	}
+
+	err := root.Execute()
+	if err != nil && jsonrpcRequested {
+		origOut := jctx.origOut
+		if origOut == nil {
+			origOut = os.Stdout
+		}
+		cmdPath := jctx.cmdPath
+		if cmdPath == "" {
+			cmdPath = "backlogit"
+		}
+		b, _ := format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		fmt.Fprintf(origOut, "%s\n", b)
+	}
+	return err
+}
+
 // NewRootCommand creates the backlogit CLI root command.
+// Use Execute() from main.go for production use. NewRootCommand is kept for
+// test-harness access where the caller controls SetArgs and SetOut directly.
 func NewRootCommand() *cobra.Command {
+	return newRootCommandImpl(&jsonrpcInterceptor{})
+}
+
+// newRootCommandImpl builds the root command wired to the supplied interceptor.
+func newRootCommandImpl(jctx *jsonrpcInterceptor) *cobra.Command {
 	var cwd string
 	var logLevel string
 	var jsonrpcFlag bool
-
-	jctx := &jsonrpcInterceptor{}
 
 	root := &cobra.Command{
 		Use:     "backlogit",

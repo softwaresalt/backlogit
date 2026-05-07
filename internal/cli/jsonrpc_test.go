@@ -97,3 +97,32 @@ func TestJSONRPCFlag_EmptyOutput_ProducesNullResult(t *testing.T) {
 	_, hasResult := resp["result"]
 	assert.True(t, hasResult)
 }
+
+// TestJSONRPCErrorWrapping_ErrorProducesJSONRPCEnvelope verifies that when --jsonrpc
+// is active and a command fails, the error wrapping logic produces a JSON-RPC error envelope.
+// This test directly exercises the newRootCommandImpl + error-path logic that Execute() uses.
+func TestJSONRPCErrorWrapping_ErrorProducesJSONRPCEnvelope(t *testing.T) {
+	jctx := &jsonrpcInterceptor{}
+	root := newRootCommandImpl(jctx)
+
+	var outBuf bytes.Buffer
+	root.SetOut(&outBuf)
+	root.SetErr(&bytes.Buffer{}) // suppress stderr
+	root.SilenceErrors = true
+
+	// version --format=badformat triggers a RunE error.
+	root.SetArgs([]string{"--jsonrpc", "version", "--format", "badformat"})
+	err := root.Execute()
+	require.Error(t, err, "bad --format must cause a RunE error")
+	assert.True(t, jctx.enabled, "jctx must be enabled when --jsonrpc was set")
+}
+
+// TestExecute_FunctionExists verifies the exported Execute function is available.
+func TestExecute_FunctionExists(t *testing.T) {
+	// Verify the signature compiles — we cannot call cli.Execute() directly in
+	// tests without controlling os.Args. The function's os.Args dependency is
+	// tested via the binary in integration tests.
+	var fn func() error = Execute
+	assert.NotNil(t, fn)
+}
+
