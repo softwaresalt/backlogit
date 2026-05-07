@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 )
@@ -28,7 +29,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 		modelCalls       int
 		toolCalls        int
 		tokensByModel    map[string]int
-		tokensByServer   map[string]string
+		tokensByServer   map[string]int // call counts per server; converted to tokens in summary loop
 	}
 	accums := make(map[string]*sessionAccum)
 
@@ -38,7 +39,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 		}
 		a := &sessionAccum{
 			tokensByModel:  make(map[string]int),
-			tokensByServer: make(map[string]string),
+			tokensByServer: make(map[string]int),
 		}
 		accums[sessionID] = a
 		return a
@@ -67,7 +68,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 			a := ensureAccum(tc.SessionID)
 			a.toolCalls++
 			server := attr(tc.ToolName)
-			a.tokensByServer[server] = server
+			a.tokensByServer[server]++
 		}
 	}
 
@@ -86,6 +87,21 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 	summaries := make([]SessionSummary, 0, len(accums))
 	for sessionID, a := range accums {
 		meta := metas[sessionID]
+
+		// Distribute total tokens across servers proportional to call counts.
+		tokensByServer := make(map[string]int, len(a.tokensByServer))
+		if a.totalTokens > 0 {
+			totalCalls := 0
+			for _, c := range a.tokensByServer {
+				totalCalls += c
+			}
+			if totalCalls > 0 {
+				for sv, c := range a.tokensByServer {
+					tokensByServer[sv] = int(math.Round(float64(a.totalTokens) * float64(c) / float64(totalCalls)))
+				}
+			}
+		}
+
 		s := SessionSummary{
 			SessionID:        sessionID,
 			Branch:           meta.Branch,
@@ -97,7 +113,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 			ModelCalls:       a.modelCalls,
 			ToolCalls:        a.toolCalls,
 			TokensByModel:    a.tokensByModel,
-			TokensByServer:   a.tokensByServer,
+			TokensByServer:   tokensByServer,
 			CompactionEvents: meta.CompactionEvents,
 			CompletedTasks:   completedTasks,
 		}
