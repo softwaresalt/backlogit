@@ -16,12 +16,17 @@ shipment assembly.
 | Artifact | ID | Description |
 |---|---|---|
 | Feature | 049-F | CLI Agent Interop — JSON-RPC Output & Stash Kind Expansion |
-| Task | 049.005-T | JSON-RPC Envelope Package |
-| Task | 049.006-T | Wire JSON-RPC Output to CLI Commands |
-| Task | 049.007-T | Implement backlogit manifest Command |
-| Task | 049.008-T | Config-Driven Stash Kind Expansion |
+| Task | 049.005-T | JSON-RPC Envelope Package (canonical) |
+| Task | 049.006-T | Wire JSON-RPC Output to CLI Commands (canonical) |
+| Task | 049.007-T | Implement backlogit manifest Command (canonical) |
+| Task | 049.008-T | Config-Driven Stash Kind Expansion (canonical) |
 | Shipment | 048-S | CLI Agent Interop — JSON-RPC & Stash Kinds |
 | Plan | docs/exec-plans/2026-05-06-cli-agent-interop-plan.md | Reviewed (ADVISORY) |
+
+> **Note on draft tasks 049.001–049.004**: During an earlier planning iteration, draft task stubs
+> (049.001-T through 049.004-T) were created with the same scope as the canonical tasks above.
+> Those drafts were superseded when task IDs 049.005–049.008 were assigned as the canonical set
+> in the revised implementation plan. All four draft stubs are archived with a `superseded` label.
 
 ## Dependency graph
 

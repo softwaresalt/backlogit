@@ -1,19 +1,34 @@
-# CLI Agent Interop Shipped — Session Memory
+---
+title: "Ship session: 048-S CLI Agent Interop shipped"
+description: "Session continuity for shipping 048-S — CLI Agent Interop JSON-RPC output and manifest command"
+ms.date: 2026-05-07
+ms.topic: reference
+---
 
-**Date**: 2026-05-07T13:30:00-07:00
-**Branch**: post-merge/049-cli-agent-interop
-**Prior checkpoint**: 004-cli-agent-interop-shipped-pr-8.md
+## Session summary
+
+Shipped 048-S (CLI Agent Interop) from feature 049-F through the full Ship pipeline: implementation,
+review gate, CI remediation, PR merge (#87), and post-merge closure.
 
 ## Tasks Completed
 
-| Task | Description | Status |
-|---|---|---|
-| 049.008-T | Config-driven stash kind expansion | done |
-| 049.005-T | JSON-RPC 2.0 envelope package | done |
-| 049.006-T | Wire `--jsonrpc` persistent flag | done |
-| 049.007-T | `backlogit manifest` command | done |
-| 049-F | CLI Agent Interop feature | done |
-| 048-S | Shipment | archived (shipped) |
+| Task | Description | Status | Notes |
+|---|---|---|---|
+| 049.005-T | JSON-RPC 2.0 envelope package | done | Canonical task |
+| 049.006-T | Wire `--jsonrpc` persistent flag | done | Canonical task |
+| 049.007-T | `backlogit manifest` command | done | Canonical task |
+| 049.008-T | Config-driven stash kind expansion | done | Canonical task |
+| 049.001-T | JSON-RPC Envelope Package (draft) | archived | Superseded by 049.005-T during plan revision |
+| 049.002-T | Wire JSON-RPC Output (draft) | archived | Superseded by 049.006-T during plan revision |
+| 049.003-T | manifest Command (draft) | archived | Superseded by 049.007-T during plan revision |
+| 049.004-T | Stash Kind Expansion (draft) | archived | Superseded by 049.008-T during plan revision |
+| 049-F | CLI Agent Interop feature | done | |
+| 048-S | Shipment | archived (shipped) | |
+
+> **Note on draft tasks 049.001–049.004**: These were initial task stubs created during the first
+> planning pass. They were superseded when the implementation plan was revised to assign canonical
+> IDs 049.005–049.008. Both sets are archived; the canonical tasks (005–008) contain the actual
+> implementation scope.
 
 ## Files Modified
 

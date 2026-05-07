@@ -18,7 +18,7 @@ tags:
   - cli
 ---
 
-# F049: JSON-RPC CLI Interceptor Patterns
+## F049: JSON-RPC CLI Interceptor Patterns
 
 ## Context
 
