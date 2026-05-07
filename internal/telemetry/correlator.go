@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Correlate joins model calls, tool calls, session metadata, and backlogit task
@@ -93,7 +93,8 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 	for sessionID, a := range accums {
 		meta := metas[sessionID]
 
-		// Distribute total tokens across servers proportional to call counts.
+		// Distribute total tokens across servers using the largest-remainder method,
+		// ensuring the per-server sum equals TotalTokens exactly.
 		tokensByServer := make(map[string]int, len(a.tokensByServer))
 		if a.totalTokens > 0 {
 			totalCalls := 0
@@ -101,8 +102,34 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 				totalCalls += c
 			}
 			if totalCalls > 0 {
+				type svRemainder struct {
+					name      string
+					floor     int
+					remainder float64
+				}
+				allocated := 0
+				items := make([]svRemainder, 0, len(a.tokensByServer))
 				for sv, c := range a.tokensByServer {
-					tokensByServer[sv] = int(math.Round(float64(a.totalTokens) * float64(c) / float64(totalCalls)))
+					exact := float64(a.totalTokens) * float64(c) / float64(totalCalls)
+					fl := int(exact)
+					items = append(items, svRemainder{name: sv, floor: fl, remainder: exact - float64(fl)})
+					allocated += fl
+				}
+				// Distribute the remaining tokens to servers with the largest remainders.
+				remaining := a.totalTokens - allocated
+				sort.Slice(items, func(i, j int) bool {
+					if items[i].remainder != items[j].remainder {
+						return items[i].remainder > items[j].remainder
+					}
+					return items[i].name < items[j].name
+				})
+				for i := range items {
+					extra := 0
+					if remaining > 0 {
+						extra = 1
+						remaining--
+					}
+					tokensByServer[items[i].name] = items[i].floor + extra
 				}
 			}
 		}

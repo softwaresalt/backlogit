@@ -134,7 +134,7 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 			continue
 		}
 		tc := e.ToolCall
-		server := AttributeTool(tc.ToolName)
+		server := AttributeToolWithConfig(tc.ToolName, opts.AttributionPrefixes)
 		key := toolKey{tc.SessionID, server, tc.ToolName}
 		s := toolStats[key]
 		s.count++
