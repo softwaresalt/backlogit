@@ -38,7 +38,7 @@ type Entry struct {
 	CreatedAt      *time.Time `json:"created_at,omitempty"`
 }
 
-var allowedKinds = []string{"feature", "task", "bug", "epic", "unknown"}
+var allowedKinds = []string{"feature", "task", "bug", "epic", "unknown", "spike", "subtask", "deliberation", "review", "shipment"}
 var allowedPriorities = []string{"low", "medium", "high", "critical"}
 
 const DefaultPriority = "medium"
@@ -157,15 +157,29 @@ func GenerateID(existingIDs map[string]struct{}) (string, error) {
 	return "", fmt.Errorf("generate stash id: exhausted retries")
 }
 
-// NormalizeKind validates and normalizes a stash item kind.
+// NormalizeKind validates and normalizes a stash item kind against the built-in
+// allowed kinds. Use NormalizeKindWithExtras when workspace-configured types
+// should also be accepted.
 func NormalizeKind(kind string) (string, error) {
+	return NormalizeKindWithExtras(kind, nil)
+}
+
+// NormalizeKindWithExtras validates and normalizes a stash item kind against
+// the built-in allowed kinds plus any caller-supplied extra kinds derived from
+// workspace WIT configuration.
+func NormalizeKindWithExtras(kind string, extraKinds []string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(kind))
-	switch normalized {
-	case "feature", "task", "bug", "epic", "unknown":
-		return normalized, nil
-	default:
-		return "", fmt.Errorf("unsupported stash kind %q: %w", kind, blErrors.ErrValidation)
+	for _, allowed := range allowedKinds {
+		if normalized == allowed {
+			return normalized, nil
+		}
 	}
+	for _, extra := range extraKinds {
+		if normalized == strings.ToLower(strings.TrimSpace(extra)) {
+			return normalized, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported stash kind %q: %w", kind, blErrors.ErrValidation)
 }
 
 // NormalizePriority validates and normalizes a stash priority.
@@ -186,6 +200,31 @@ func NormalizePriority(priority string) (string, error) {
 func AllowedKinds() []string {
 	result := make([]string, len(allowedKinds))
 	copy(result, allowedKinds)
+	return result
+}
+
+// AllowedKindsWithExtras returns the built-in allowed kinds merged with any
+// caller-supplied extra kinds (e.g. WIT type names from workspace config).
+// Duplicates are removed and the result is returned in stable order.
+func AllowedKindsWithExtras(extraKinds []string) []string {
+	seen := make(map[string]struct{}, len(allowedKinds)+len(extraKinds))
+	result := make([]string, 0, len(allowedKinds)+len(extraKinds))
+	for _, k := range allowedKinds {
+		if _, exists := seen[k]; !exists {
+			seen[k] = struct{}{}
+			result = append(result, k)
+		}
+	}
+	for _, k := range extraKinds {
+		normalized := strings.ToLower(strings.TrimSpace(k))
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; !exists {
+			seen[normalized] = struct{}{}
+			result = append(result, normalized)
+		}
+	}
 	return result
 }
 

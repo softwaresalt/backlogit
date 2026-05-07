@@ -53,7 +53,7 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(entry)
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "task", "stash item kind (feature, task, bug, epic, unknown)")
+	cmd.Flags().StringVar(&kind, "kind", "task", "stash item kind (feature, task, bug, epic, unknown, spike, subtask, deliberation, review, shipment; workspace-configured WIT types are also accepted)")
 	cmd.Flags().StringVar(&priority, "priority", "medium", "stash priority (low, medium, high, critical)")
 	return cmd
 }

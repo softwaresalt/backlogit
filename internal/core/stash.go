@@ -64,6 +64,20 @@ func appendToStashArchive(rootPath string, entry ArchivedStashEntry) error {
 	return nil
 }
 
+// witKindExtras returns the WIT artifact type names from the workspace config
+// as a slice suitable for passing to stash.NormalizeKindWithExtras. If the
+// workspace or its config is nil, an empty slice is returned.
+func witKindExtras(ws *Workspace) []string {
+	if ws == nil || ws.Config == nil {
+		return nil
+	}
+	extras := make([]string, 0, len(ws.Config.ArtifactTypes))
+	for name := range ws.Config.ArtifactTypes {
+		extras = append(extras, name)
+	}
+	return extras
+}
+
 // FetchStashOptions controls stash fetch filtering and grouping.
 type FetchStashOptions struct {
 	Priority        string `json:"priority,omitempty"`
@@ -178,7 +192,7 @@ func FetchStash(ctx context.Context, ws *Workspace, opts FetchStashOptions) (*Fe
 		entries = filtered
 	}
 	if opts.Kind != "" {
-		kind, err := stash.NormalizeKind(opts.Kind)
+		kind, err := stash.NormalizeKindWithExtras(opts.Kind, witKindExtras(ws))
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +234,7 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
 	}
-	normalizedKind, err := stash.NormalizeKind(kind)
+	normalizedKind, err := stash.NormalizeKindWithExtras(kind, witKindExtras(ws))
 	if err != nil {
 		return nil, err
 	}
@@ -733,7 +747,7 @@ func EditStashEntry(ctx context.Context, ws *Workspace, stashID string, opts Edi
 			entries[i].Text = trimmed
 		}
 		if opts.Kind != "" {
-			kind, err := stash.NormalizeKind(opts.Kind)
+			kind, err := stash.NormalizeKindWithExtras(opts.Kind, witKindExtras(ws))
 			if err != nil {
 				return nil, err
 			}
