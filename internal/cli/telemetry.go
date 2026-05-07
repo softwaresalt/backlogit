@@ -86,6 +86,10 @@ reparse all logs from the beginning.`,
 			}
 			defer ws.Close()
 
+			if ws.Config != nil && ws.Config.Telemetry != nil {
+				opts.AttributionPrefixes = ws.Config.Telemetry.AttributionPrefixes
+			}
+
 			copilotPath := ws.RootPath + "/.copilot"
 			result, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, opts)
 			if err != nil {

@@ -74,7 +74,7 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	// Correlate events into per-session summaries for new events only.
-	newSummaries, err := Correlate(ctx, events, metas, workspacePath)
+	newSummaries, err := Correlate(ctx, events, metas, workspacePath, opts.AttributionPrefixes)
 	if err != nil {
 		return HarvestResult{}, fmt.Errorf("correlate telemetry: %w", err)
 	}

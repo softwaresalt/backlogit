@@ -14,11 +14,16 @@ import (
 // Correlate joins model calls, tool calls, session metadata, and backlogit task
 // completions into per-session SessionSummary records.
 //
+// customPrefixes extends or overrides the built-in MCP server attribution
+// registry. Nil or empty falls back to built-in defaults.
+//
 // Task completions are detected by scanning per-item log files under
 // .backlogit/logs/ for status_changed events where delta.to == "done".
 // Sessions with no task completions report TokensPerTask as nil.
-func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]SessionMeta, workspacePath string) ([]SessionSummary, error) {
-	attr := AttributeTool
+func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]SessionMeta, workspacePath string, customPrefixes map[string]string) ([]SessionSummary, error) {
+	attr := func(toolName string) string {
+		return AttributeToolWithConfig(toolName, customPrefixes)
+	}
 
 	// Index events by session.
 	type sessionAccum struct {

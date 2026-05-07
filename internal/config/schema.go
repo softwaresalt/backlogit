@@ -26,6 +26,16 @@ type WorkspaceConfig struct {
 	MaxSlugLength       int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
 	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
 	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
+	Telemetry           *TelemetryConfig               `yaml:"telemetry,omitempty"`
+}
+
+// TelemetryConfig holds workspace-scoped telemetry settings.
+type TelemetryConfig struct {
+	// AttributionPrefixes extends or overrides the built-in MCP server attribution
+	// registry. Keys are tool name prefixes (e.g. "myserver-") or exact names;
+	// values are the server label to attribute. Custom entries take priority over
+	// built-in defaults when the same key appears in both.
+	AttributionPrefixes map[string]string `yaml:"attribution_prefixes,omitempty"`
 }
 
 // CheckpointRetention configures checkpoint file retention policy.

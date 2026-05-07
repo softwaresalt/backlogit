@@ -35,7 +35,7 @@ func TestCorrelate_GroupsEventsBySession(t *testing.T) {
 		"sess-002": {SessionID: "sess-002", Branch: "main", Repository: "test/repo"},
 	}
 
-	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir())
+	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Len(t, summaries, 2)
 
@@ -72,7 +72,7 @@ func TestCorrelate_NoTaskCompletions_NilTokensPerTask(t *testing.T) {
 		"sess-noop": {SessionID: "sess-noop"},
 	}
 
-	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir())
+	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
 	assert.Nil(t, summaries[0].TokensPerTask, "sessions with no task completions should report nil tokens_per_task")
