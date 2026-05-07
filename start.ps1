@@ -34,15 +34,14 @@ if (-not $copilotExe) {
     throw "Unable to locate Copilot CLI. Set COPILOT_EXE_PATH (or COPILOT_EXE for backward compatibility) or add 'copilot' to PATH."
 }
 $backlogitCmd = Get-Command backlogit -ErrorAction SilentlyContinue
-if ($backlogitCmd) {
-    try {
-        backlogit sync
-    } catch {
-        Write-Warning "backlogit sync failed (non-fatal): $_"
+if ($backlogitCmd -and (Test-Path ".\.backlogit")) {
+    backlogit sync --cwd .
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "backlogit sync failed (non-fatal) with exit code $LASTEXITCODE."
     }
 }
 
-& $copilotExe --remote
+& $copilotExe @args
 
 # ── Claude Code ─────────────────────────────────────────────────────────────
 # Uncomment to run Claude Code with workspace-local state directories.
