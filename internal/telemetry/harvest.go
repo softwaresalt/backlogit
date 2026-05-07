@@ -397,6 +397,7 @@ func writeTelemetryJSONL(
 			ModelCalls:        s.ModelCalls,
 			ToolCalls:         s.ToolCalls,
 			TokensByModel:     s.TokensByModel,
+			TokensByServer:    s.TokensByServer,
 			ToolCallsByServer: serverCallsPerSession[s.SessionID],
 			CompletedTasks:    s.CompletedTasks,
 			TokensPerTask:     s.TokensPerTask,

@@ -31,6 +31,7 @@ type rawTelemetryRecord struct {
 	CompactionCount   int            `json:"compaction_count"`
 	CompletedTasks    []string       `json:"completed_tasks"`
 	TokensByModel     map[string]int `json:"tokens_by_model"`
+	TokensByServer    map[string]int `json:"tokens_by_server"`
 	ToolCallsByServer map[string]int `json:"tool_calls_by_server"`
 	// Context window fields (031-F / 031.003-T)
 	PeakUtilization   *float64 `json:"peak_utilization,omitempty"`
@@ -69,7 +70,8 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 			peak_utilization  REAL,
 			remaining_capacity INTEGER,
 			depletion_rate    REAL,
-			max_context_tokens INTEGER
+			max_context_tokens INTEGER,
+			tokens_by_server  TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS telemetry_tool_usage (
 			session_id      TEXT    NOT NULL,
@@ -95,6 +97,7 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 		`ALTER TABLE telemetry_sessions ADD COLUMN remaining_capacity INTEGER`,
 		`ALTER TABLE telemetry_sessions ADD COLUMN depletion_rate REAL`,
 		`ALTER TABLE telemetry_sessions ADD COLUMN max_context_tokens INTEGER`,
+		`ALTER TABLE telemetry_sessions ADD COLUMN tokens_by_server TEXT`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -169,17 +172,23 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 
 		switch rec.RecordType {
 		case "session_summary":
+			var tokensByServerJSON interface{}
+			if len(rec.TokensByServer) > 0 {
+				b, _ := json.Marshal(rec.TokensByServer)
+				tokensByServerJSON = string(b)
+			}
 			_, err = tx.ExecContext(ctx,
 				`INSERT OR REPLACE INTO telemetry_sessions
 					(session_id, branch, repository, total_tokens, prompt_tokens, completion_tokens,
 					 cached_tokens, model_calls, tool_calls, tokens_per_task, compaction_count, harvested_at,
-					 peak_utilization, remaining_capacity, depletion_rate, max_context_tokens)
-				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+					 peak_utilization, remaining_capacity, depletion_rate, max_context_tokens, tokens_by_server)
+				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				rec.SessionID, rec.Branch, rec.Repository,
 				rec.TotalTokens, rec.PromptTokens, rec.CompletionTokens,
 				rec.CachedTokens, rec.ModelCalls, rec.ToolCalls,
 				rec.TokensPerTask, rec.CompactionCount, harvestedAt,
 				rec.PeakUtilization, rec.RemainingCapacity, rec.DepletionRate, rec.MaxContextTokens,
+				tokensByServerJSON,
 			)
 			if err != nil {
 				return fmt.Errorf("insert session_summary %q: %w", rec.SessionID, err)

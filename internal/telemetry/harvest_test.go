@@ -2,8 +2,10 @@ package telemetry_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,6 +72,45 @@ func TestHarvestTelemetry_ReHarvestIsIdempotent(t *testing.T) {
 
 	assert.Equal(t, r1.SessionsHarvested, r2.SessionsHarvested, "re-harvest should yield same session count")
 	assert.Equal(t, r1.TotalTokens, r2.TotalTokens, "re-harvest should yield same token totals")
+}
+
+func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
+	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
+	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
+
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	require.NoError(t, err)
+	defer sqliteDB.Close()
+
+	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
+	require.NoError(t, err)
+
+	// Read back the JSONL and verify tokens_by_server field is present.
+	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	content, err := os.ReadFile(jsonlPath)
+	require.NoError(t, err)
+
+	// The sample log has sess-h1 with one backlogit tool call and 1500 total tokens.
+	// tokens_by_server must contain {"backlogit": 1500}.
+	type sessionRecord struct {
+		RecordType    string         `json:"record_type"`
+		SessionID     string         `json:"session_id"`
+		TotalTokens   int            `json:"total_tokens"`
+		TokensByServer map[string]int `json:"tokens_by_server"`
+	}
+	found := false
+	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
+		var rec sessionRecord
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.RecordType != "session_summary" {
+			continue
+		}
+		if rec.SessionID == "sess-h1" {
+			found = true
+			assert.Equal(t, 1500, rec.TokensByServer["backlogit"],
+				"sess-h1 should have all tokens attributed to backlogit server")
+		}
+	}
+	assert.True(t, found, "session sess-h1 should be present in JSONL output")
 }
 
 func TestHarvestTelemetry_MissingCopilotDir(t *testing.T) {

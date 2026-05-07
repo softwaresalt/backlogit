@@ -21,6 +21,7 @@ type SessionSummaryRecord struct {
 	ModelCalls        int            `json:"model_calls"`
 	ToolCalls         int            `json:"tool_calls"`
 	TokensByModel     map[string]int `json:"tokens_by_model"`
+	TokensByServer    map[string]int `json:"tokens_by_server,omitempty"`
 	ToolCallsByServer map[string]int `json:"tool_calls_by_server"`
 	CompletedTasks    []string       `json:"completed_tasks"`
 	TokensPerTask     *float64       `json:"tokens_per_task"`
