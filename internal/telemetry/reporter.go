@@ -312,3 +312,189 @@ func formatServerMarkdown(sessions []SessionSummaryRecord, limit int) string {
 func escapeMarkdownCell(value string) string {
 	return strings.ReplaceAll(value, "|", "\\|")
 }
+
+// TrendOptions configures the telemetry trend report.
+type TrendOptions struct {
+	// By controls the grouping dimension. Valid values: "date", "branch".
+	// Defaults to "date".
+	By string
+	// Format controls the output encoding: "table", "json", "markdown".
+	Format ReportFormat
+	// Limit, when > 0, restricts the number of groups returned.
+	Limit int
+}
+
+// TrendGroup holds aggregated metrics for one date or branch group.
+type TrendGroup struct {
+	Group            string   `json:"group"`
+	Sessions         int      `json:"sessions"`
+	TotalTokens      int      `json:"total_tokens"`
+	AvgTokensSession float64  `json:"avg_tokens_per_session"`
+	AvgTokensTask    *float64 `json:"avg_tokens_per_task,omitempty"`
+	AvgPeakUtil      *float64 `json:"avg_peak_utilization,omitempty"`
+}
+
+// GenerateTrendReport reads telemetry-sessions.jsonl and produces a trend
+// report grouped by date or branch. Returns an informative message when no
+// harvested data exists.
+func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error) {
+	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	sessions, _, err := readSessionJSONL(jsonlPath, nil)
+	if err != nil {
+		return "", fmt.Errorf("read telemetry data: %w", err)
+	}
+	if len(sessions) == 0 {
+		return "No telemetry data found. Run `backlogit telemetry harvest` first.\n", nil
+	}
+
+	by := opts.By
+	if by == "" {
+		by = "date"
+	}
+
+	// Group sessions.
+	groupIndex := make(map[string]int)
+	var groups []TrendGroup
+
+	for _, s := range sessions {
+		var key string
+		switch by {
+		case "branch":
+			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		default: // "date"
+			key = s.HarvestedAt.UTC().Format("2006-01-02")
+		}
+		idx, ok := groupIndex[key]
+		if !ok {
+			idx = len(groups)
+			groupIndex[key] = idx
+			groups = append(groups, TrendGroup{Group: key})
+		}
+		g := &groups[idx]
+		g.Sessions++
+		g.TotalTokens += s.TotalTokens
+		if s.TokensPerTask != nil {
+			if g.AvgTokensTask == nil {
+				v := *s.TokensPerTask
+				g.AvgTokensTask = &v
+			} else {
+				// Running sum; divide later.
+				*g.AvgTokensTask += *s.TokensPerTask
+			}
+		}
+		if s.PeakUtilization != nil {
+			if g.AvgPeakUtil == nil {
+				v := *s.PeakUtilization
+				g.AvgPeakUtil = &v
+			} else {
+				*g.AvgPeakUtil += *s.PeakUtilization
+			}
+		}
+	}
+
+	// Finalise averages.
+	taskCounts := make(map[string]int)
+	peakCounts := make(map[string]int)
+	for _, s := range sessions {
+		var key string
+		switch by {
+		case "branch":
+			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		default:
+			key = s.HarvestedAt.UTC().Format("2006-01-02")
+		}
+		if s.TokensPerTask != nil {
+			taskCounts[key]++
+		}
+		if s.PeakUtilization != nil {
+			peakCounts[key]++
+		}
+	}
+	for i := range groups {
+		g := &groups[i]
+		if g.Sessions > 0 {
+			g.AvgTokensSession = float64(g.TotalTokens) / float64(g.Sessions)
+		}
+		if g.AvgTokensTask != nil && taskCounts[g.Group] > 1 {
+			*g.AvgTokensTask /= float64(taskCounts[g.Group])
+		}
+		if g.AvgPeakUtil != nil && peakCounts[g.Group] > 1 {
+			*g.AvgPeakUtil /= float64(peakCounts[g.Group])
+		}
+	}
+
+	// Sort: chronologically for date, alphabetically for branch.
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Group < groups[j].Group
+	})
+
+	// Apply limit.
+	if opts.Limit > 0 && len(groups) > opts.Limit {
+		groups = groups[:opts.Limit]
+	}
+
+	format := opts.Format
+	if format == "" {
+		format = FormatTable
+	}
+	switch format {
+	case FormatJSON:
+		data, err := json.MarshalIndent(groups, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("marshal trend report: %w", err)
+		}
+		return string(data) + "\n", nil
+	case FormatMarkdown:
+		return formatTrendMarkdown(groups), nil
+	default:
+		return formatTrendTable(groups), nil
+	}
+}
+
+func formatTrendTable(groups []TrendGroup) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s\n",
+		"GROUP", "SESSIONS", "TOTAL_TOKENS", "AVG_TOKENS/SESSION", "AVG_TOKENS/TASK", "AVG_PEAK_UTIL"))
+	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s\n",
+		strings.Repeat("-", 12), strings.Repeat("-", 8), strings.Repeat("-", 12),
+		strings.Repeat("-", 18), strings.Repeat("-", 15), strings.Repeat("-", 13)))
+	for _, g := range groups {
+		tpt := "-"
+		if g.AvgTokensTask != nil {
+			tpt = fmt.Sprintf("%.0f", *g.AvgTokensTask)
+		}
+		pu := "-"
+		if g.AvgPeakUtil != nil {
+			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
+		}
+		sb.WriteString(fmt.Sprintf("%-12s  %8d  %12d  %18.0f  %15s  %13s\n",
+			g.Group, g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu))
+	}
+	return sb.String()
+}
+
+func formatTrendMarkdown(groups []TrendGroup) string {
+	var sb strings.Builder
+	sb.WriteString("# Telemetry Trend Report\n\n")
+	sb.WriteString("| Group | Sessions | Total Tokens | Avg Tokens/Session | Avg Tokens/Task | Avg Peak Util |\n")
+	sb.WriteString("|---|---:|---:|---:|---:|---:|\n")
+	for _, g := range groups {
+		tpt := "-"
+		if g.AvgTokensTask != nil {
+			tpt = fmt.Sprintf("%.0f", *g.AvgTokensTask)
+		}
+		pu := "-"
+		if g.AvgPeakUtil != nil {
+			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
+		}
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %.0f | %s | %s |\n",
+			escapeMarkdownCell(g.Group), g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu))
+	}
+	return sb.String()
+}

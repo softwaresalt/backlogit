@@ -34,6 +34,7 @@ for harvested field definitions and SQLite column mappings.`,
 	cmd.AddCommand(newTelemetryListCmd(cwd))
 	cmd.AddCommand(newTelemetryTopCmd(cwd))
 	cmd.AddCommand(newTelemetryReportCmd(cwd))
+	cmd.AddCommand(newTelemetryTrendCmd(cwd))
 	return cmd
 }
 
@@ -173,5 +174,43 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 	cmd.Flags().String("by", "session", "Group output by: session, server")
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of rows returned (0 = no limit)")
+	return cmd
+}
+
+func newTelemetryTrendCmd(cwd *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "trend",
+		Short: "Show token usage trends grouped by date or branch",
+		Long: `Show token usage trends grouped by date or branch.
+
+Each output row contains:
+  - Group (date YYYY-MM-DD or branch name)
+  - Session count
+  - Total tokens
+  - Avg tokens per session
+  - Avg tokens per task (when available)
+  - Avg peak context utilisation (when available)
+
+Use --by branch to switch from date grouping to branch grouping.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			by, _ := cmd.Flags().GetString("by")
+			format, _ := cmd.Flags().GetString("format")
+			limit, _ := cmd.Flags().GetInt("limit")
+
+			out, err := telemetry.GenerateTrendReport(*cwd, telemetry.TrendOptions{
+				By:     by,
+				Format: telemetry.ReportFormat(format),
+				Limit:  limit,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Fprint(cmd.OutOrStdout(), out)
+			return nil
+		},
+	}
+	cmd.Flags().String("by", "date", "Group output by: date, branch")
+	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
+	cmd.Flags().Int("limit", 0, "Restrict the number of groups returned (0 = no limit)")
 	return cmd
 }
