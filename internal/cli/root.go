@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
@@ -18,10 +22,78 @@ import (
 	"github.com/softwaresalt/backlogit/internal/version"
 )
 
+// jsonrpcInterceptor captures stdout during a command run so the output can be
+// wrapped in a JSON-RPC 2.0 response envelope in PersistentPostRunE.
+type jsonrpcInterceptor struct {
+	enabled bool
+	buf     *bytes.Buffer
+	origOut io.Writer
+	cmdPath string
+}
+
+// Execute creates the root command and runs it. When --jsonrpc is active and
+// the command fails (including flag-parse and argument-validation failures),
+// it writes a JSON-RPC 2.0 error envelope to stdout instead of letting Cobra
+// print the error to stderr.
+//
+// main.go should call this rather than cli.NewRootCommand().Execute() so that
+// the full error path is covered by the JSON-RPC contract.
+func Execute() error {
+	jctx := &jsonrpcInterceptor{}
+	root := newRootCommandImpl(jctx)
+
+	// Pre-scan os.Args to detect --jsonrpc before Cobra parses flags.
+	// This lets us silence Cobra's own error output and write a JSON-RPC
+	// error envelope even when PersistentPreRunE never runs (flag parse errors,
+	// --help, --version).
+	// pflag accepts boolean flags as --flag, --flag=true, and --flag=false, so
+	// we must check for all non-false variants.
+	jsonrpcRequested := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--jsonrpc" ||
+			(strings.HasPrefix(arg, "--jsonrpc=") &&
+				arg != "--jsonrpc=false" && arg != "--jsonrpc=0") {
+			jsonrpcRequested = true
+			break
+		}
+	}
+	if jsonrpcRequested {
+		root.SilenceErrors = true
+	}
+
+	err := root.Execute()
+	if err != nil && jsonrpcRequested {
+		origOut := jctx.origOut
+		if origOut == nil {
+			origOut = os.Stdout
+		}
+		cmdPath := jctx.cmdPath
+		if cmdPath == "" {
+			cmdPath = "backlogit"
+		}
+		b, wrapErr := format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		if wrapErr != nil {
+			// Marshaling failed; fall back to a minimal valid JSON-RPC error envelope.
+			b = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"error":{"code":%d,"message":%q}}`,
+				cmdPath, format.ErrCodeServerError, err.Error()))
+		}
+		fmt.Fprintf(origOut, "%s\n", b)
+	}
+	return err
+}
+
 // NewRootCommand creates the backlogit CLI root command.
+// Use Execute() from main.go for production use. NewRootCommand is kept for
+// test-harness access where the caller controls SetArgs and SetOut directly.
 func NewRootCommand() *cobra.Command {
+	return newRootCommandImpl(&jsonrpcInterceptor{})
+}
+
+// newRootCommandImpl builds the root command wired to the supplied interceptor.
+func newRootCommandImpl(jctx *jsonrpcInterceptor) *cobra.Command {
 	var cwd string
 	var logLevel string
+	var jsonrpcFlag bool
 
 	root := &cobra.Command{
 		Use:     "backlogit",
@@ -45,14 +117,41 @@ stash follow-up work for later planning.`,
   backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
   backlogit mcp`,
 		SilenceUsage: true,
-		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if logLevel != "" {
 				applyLogLevel(logLevel)
 			}
+			jctx.enabled = jsonrpcFlag
+			if jctx.enabled {
+				jctx.buf = &bytes.Buffer{}
+				jctx.origOut = cmd.OutOrStdout()
+				jctx.cmdPath = cmd.CommandPath()
+				cmd.SetOut(jctx.buf)
+			}
+			return nil
+		},
+		PersistentPostRunE: func(_ *cobra.Command, _ []string) error {
+			if !jctx.enabled || jctx.buf == nil {
+				return nil
+			}
+			raw := bytes.TrimSpace(jctx.buf.Bytes())
+			var result any
+			if len(raw) > 0 {
+				if err := json.Unmarshal(raw, &result); err != nil {
+					result = string(raw)
+				}
+			}
+			b, err := format.WrapResult(jctx.cmdPath, result)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(jctx.origOut, "%s\n", b)
+			return err
 		},
 	}
 	root.PersistentFlags().StringVar(&cwd, "cwd", ".", "workspace directory")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)")
+	root.PersistentFlags().BoolVar(&jsonrpcFlag, "jsonrpc", false, "wrap all output in a JSON-RPC 2.0 response envelope")
 
 	root.AddCommand(newInitCommand(&cwd))
 	root.AddCommand(newSyncCommand(&cwd))
@@ -79,6 +178,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewCheckpointCmd(&cwd))
 	root.AddCommand(newDoctorCommand(&cwd))
 	root.AddCommand(newVersionCommand())
+	root.AddCommand(newManifestCommand(&cwd))
 
 	return root
 }

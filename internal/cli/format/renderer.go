@@ -3,7 +3,10 @@
 // Renderer interface. All renderers write to an io.Writer and return an error.
 package format
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 // Format specifies the output format selected by the --format flag.
 type Format string
@@ -16,6 +19,9 @@ const (
 	FormatJSON Format = "json"
 	// FormatTile renders output as blank-line-separated property-value blocks.
 	FormatTile Format = "tile"
+	// FormatJSONRPC renders output wrapped in a JSON-RPC 2.0 success envelope.
+	// The id field is the CLI command path (e.g. "backlogit list").
+	FormatJSONRPC Format = "jsonrpc"
 )
 
 // Column describes a single output column.
@@ -29,4 +35,22 @@ type Column struct {
 // Renderer writes structured row data to an io.Writer in a specific format.
 type Renderer interface {
 	Render(w io.Writer, columns []Column, rows []map[string]any) error
+}
+
+// NewRenderer constructs the Renderer for the given format. For FormatJSONRPC
+// the id parameter must be supplied (it becomes the JSON-RPC "id" field). id
+// is ignored for all other formats.
+func NewRenderer(f Format, id string) (Renderer, error) {
+	switch f {
+	case FormatTable:
+		return NewTableRenderer(), nil
+	case FormatJSON:
+		return NewJSONRenderer(), nil
+	case FormatTile:
+		return NewTileRenderer(false), nil
+	case FormatJSONRPC:
+		return NewJSONRPCRenderer(id), nil
+	default:
+		return nil, fmt.Errorf("unknown output format %q", f)
+	}
 }

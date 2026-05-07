@@ -86,6 +86,14 @@ func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
 	s.toolDefs = append(s.toolDefs, tool)
 }
 
+// ToolDefs returns a copy of the registered tool definitions. The returned
+// slice is safe to read and serialize without locking.
+func (s *Server) ToolDefs() []mcplib.Tool {
+	result := make([]mcplib.Tool, len(s.toolDefs))
+	copy(result, s.toolDefs)
+	return result
+}
+
 // RunStdio starts the MCP server on stdio transport.
 func RunStdio(s *Server) error {
 	logger.Info("starting backlogit MCP server on stdio")

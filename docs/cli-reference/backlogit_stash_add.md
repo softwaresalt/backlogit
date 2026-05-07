@@ -22,7 +22,7 @@ backlogit stash add <text> [flags]
 
 ```text
   -h, --help              help for add
-      --kind string       stash item kind (feature, task, bug, epic, unknown) (default "task")
+      --kind string       stash item kind (feature, task, bug, epic, unknown, spike, subtask, deliberation, review, shipment; workspace-configured WIT types are also accepted) (default "task")
       --priority string   stash priority (low, medium, high, critical) (default "medium")
 ```
 
@@ -30,6 +30,7 @@ backlogit stash add <text> [flags]
 
 ```text
       --cwd string         workspace directory (default ".")
+      --jsonrpc            wrap all output in a JSON-RPC 2.0 response envelope
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
 ```
 
