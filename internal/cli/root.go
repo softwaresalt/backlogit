@@ -46,9 +46,13 @@ func Execute() error {
 	// This lets us silence Cobra's own error output and write a JSON-RPC
 	// error envelope even when PersistentPreRunE never runs (flag parse errors,
 	// --help, --version).
+	// pflag accepts boolean flags as --flag, --flag=true, and --flag=false, so
+	// we must check for all non-false variants.
 	jsonrpcRequested := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--jsonrpc" {
+		if arg == "--jsonrpc" ||
+			(strings.HasPrefix(arg, "--jsonrpc=") &&
+				arg != "--jsonrpc=false" && arg != "--jsonrpc=0") {
 			jsonrpcRequested = true
 			break
 		}
@@ -67,7 +71,12 @@ func Execute() error {
 		if cmdPath == "" {
 			cmdPath = "backlogit"
 		}
-		b, _ := format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		b, wrapErr := format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		if wrapErr != nil {
+			// Marshaling failed; fall back to a minimal valid JSON-RPC error envelope.
+			b = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"error":{"code":%d,"message":%q}}`,
+				cmdPath, format.ErrCodeServerError, err.Error()))
+		}
 		fmt.Fprintf(origOut, "%s\n", b)
 	}
 	return err
