@@ -8,11 +8,12 @@ ms.topic: reference
 ## Session summary
 
 Executed shipment `050-S` from claim through PR handoff. The session completed the
-release-readiness work under `051-F` except for the approval-gated public release
-step in `051.010-T`. It cleared repository-wide Go formatting drift, re-ran the
-full Go quality gates, verified the unreleased `1.2.0` version surface from a
-fresh local binary, committed the source and backlog state, pushed branch
-`chore/release-binary-readiness`, and opened PR `#91`.
+release-readiness task and subtask hierarchy under `051-F` except for the
+approval-gated public release step in `051.010-T`. It cleared repository-wide Go
+formatting drift, re-ran the full Go quality gates, verified the unreleased
+`1.2.0` version surface from a fresh local binary, committed the source and
+backlog state, pushed branch `chore/release-binary-readiness`, and opened
+PR `#91`.
 
 ## Tasks completed
 
@@ -30,6 +31,8 @@ fresh local binary, committed the source and backlog state, pushed branch
 | 051.008-T   | Format contract and integration test packages      | done   | Archived with commit `7332837` |
 | 051.009-T   | Bump the canonical source version                  | done   | Verified `1.2.0` was already the correct unreleased version |
 | 051.010-T   | Execute the tag-driven release and validate assets | active | Deferred until post-merge approval and tag push |
+| 051.001.001-ST through 051.009.001-ST | Execution subtasks for the completed slices | done   | Archived after advancing through the allowed `queued -> active -> done` transition |
+| 051.010.001-ST | Execution subtask for the release step          | queued | Remains queued until post-merge release execution begins |
 
 ## Files modified
 
@@ -66,6 +69,10 @@ fresh local binary, committed the source and backlog state, pushed branch
 2. Early in the shipment lifecycle, the work had only been claimed and not executed.
    I corrected that by carrying the shipment through formatting, verification,
    backlog-state persistence, review, push, and PR creation in one continuous pass.
+3. Closing the completed subtasks required an intermediate `active` step because
+   the workspace hooks reject a direct `queued -> done` transition. I corrected
+   the archived subtask set by advancing each finished subtask through the allowed
+   state path.
 
 ## Verification summary
 
@@ -81,8 +88,6 @@ fresh local binary, committed the source and backlog state, pushed branch
 ## Branch and PR state
 
 * Branch: `chore/release-binary-readiness`
-* Source and docs commit: `7332837`
-* Backlog and plan commit: `d6744c6`
 * Pull request: `#91` `<https://github.com/softwaresalt/backlogit/pull/91>`
 
 ## Next steps
