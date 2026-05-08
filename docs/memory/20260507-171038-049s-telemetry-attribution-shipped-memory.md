@@ -1,3 +1,10 @@
+---
+title: "Ship session: 049-S Telemetry Attribution Analytics shipped"
+description: "Session continuity for shipping 049-S — telemetry attribution analytics and trend reporting"
+ms.date: 2026-05-07
+ms.topic: reference
+---
+
 # Session Memory: 049-S Telemetry Attribution Analytics — Shipped
 
 **Saved**: 2026-05-07T17:10:38-07:00
