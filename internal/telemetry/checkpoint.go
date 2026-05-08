@@ -20,6 +20,10 @@ type HarvestOptions struct {
 	// Since, when non-nil, excludes events whose timestamp precedes this value.
 	// Events with unparseable timestamps are always included (safe default).
 	Since *time.Time
+	// AttributionPrefixes extends or overrides the built-in MCP server prefix
+	// registry for this harvest run. Loaded from workspace config when available.
+	// Nil or empty falls back to built-in defaults only.
+	AttributionPrefixes map[string]string
 }
 
 // HarvestCheckpoint tracks the last-read byte offset per log file to enable

@@ -74,7 +74,7 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	// Correlate events into per-session summaries for new events only.
-	newSummaries, err := Correlate(ctx, events, metas, workspacePath)
+	newSummaries, err := Correlate(ctx, events, metas, workspacePath, opts.AttributionPrefixes)
 	if err != nil {
 		return HarvestResult{}, fmt.Errorf("correlate telemetry: %w", err)
 	}
@@ -128,13 +128,14 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	// Compute per-(session, server, tool) call counts and durations.
+	attr := BuildAttributor(opts.AttributionPrefixes)
 	toolStats := make(map[toolKey]toolStat)
 	for _, e := range events {
 		if e.Kind != EventKindToolCall || e.ToolCall == nil {
 			continue
 		}
 		tc := e.ToolCall
-		server := AttributeTool(tc.ToolName)
+		server := attr(tc.ToolName)
 		key := toolKey{tc.SessionID, server, tc.ToolName}
 		s := toolStats[key]
 		s.count++
@@ -397,6 +398,7 @@ func writeTelemetryJSONL(
 			ModelCalls:        s.ModelCalls,
 			ToolCalls:         s.ToolCalls,
 			TokensByModel:     s.TokensByModel,
+			TokensByServer:    s.TokensByServer,
 			ToolCallsByServer: serverCallsPerSession[s.SessionID],
 			CompletedTasks:    s.CompletedTasks,
 			TokensPerTask:     s.TokensPerTask,

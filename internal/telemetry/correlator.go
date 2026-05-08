@@ -8,16 +8,20 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Correlate joins model calls, tool calls, session metadata, and backlogit task
 // completions into per-session SessionSummary records.
 //
+// customPrefixes extends or overrides the built-in MCP server attribution
+// registry. Nil or empty falls back to built-in defaults.
+//
 // Task completions are detected by scanning per-item log files under
 // .backlogit/logs/ for status_changed events where delta.to == "done".
 // Sessions with no task completions report TokensPerTask as nil.
-func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]SessionMeta, workspacePath string) ([]SessionSummary, error) {
-	attr := AttributeTool
+func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]SessionMeta, workspacePath string, customPrefixes map[string]string) ([]SessionSummary, error) {
+	attr := BuildAttributor(customPrefixes)
 
 	// Index events by session.
 	type sessionAccum struct {
@@ -28,7 +32,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 		modelCalls       int
 		toolCalls        int
 		tokensByModel    map[string]int
-		tokensByServer   map[string]string
+		tokensByServer   map[string]int // call counts per server; converted to tokens in summary loop
 	}
 	accums := make(map[string]*sessionAccum)
 
@@ -38,7 +42,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 		}
 		a := &sessionAccum{
 			tokensByModel:  make(map[string]int),
-			tokensByServer: make(map[string]string),
+			tokensByServer: make(map[string]int),
 		}
 		accums[sessionID] = a
 		return a
@@ -67,7 +71,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 			a := ensureAccum(tc.SessionID)
 			a.toolCalls++
 			server := attr(tc.ToolName)
-			a.tokensByServer[server] = server
+			a.tokensByServer[server]++
 		}
 	}
 
@@ -86,6 +90,49 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 	summaries := make([]SessionSummary, 0, len(accums))
 	for sessionID, a := range accums {
 		meta := metas[sessionID]
+
+		// Distribute total tokens across servers using the largest-remainder method
+		// with pure integer arithmetic to guarantee the per-server sum equals
+		// TotalTokens exactly (no floating-point drift).
+		tokensByServer := make(map[string]int, len(a.tokensByServer))
+		if a.totalTokens > 0 {
+			totalCalls := 0
+			for _, c := range a.tokensByServer {
+				totalCalls += c
+			}
+			if totalCalls > 0 {
+				type svRemainder struct {
+					name      string
+					floor     int
+					remainder int // numerator % totalCalls; used for largest-remainder ordering
+				}
+				allocated := 0
+				items := make([]svRemainder, 0, len(a.tokensByServer))
+				for sv, c := range a.tokensByServer {
+					numerator := a.totalTokens * c
+					fl := numerator / totalCalls
+					items = append(items, svRemainder{name: sv, floor: fl, remainder: numerator % totalCalls})
+					allocated += fl
+				}
+				// Distribute the remaining tokens to servers with the largest remainders.
+				remaining := a.totalTokens - allocated
+				sort.Slice(items, func(i, j int) bool {
+					if items[i].remainder != items[j].remainder {
+						return items[i].remainder > items[j].remainder
+					}
+					return items[i].name < items[j].name
+				})
+				for i := range items {
+					extra := 0
+					if remaining > 0 {
+						extra = 1
+						remaining--
+					}
+					tokensByServer[items[i].name] = items[i].floor + extra
+				}
+			}
+		}
+
 		s := SessionSummary{
 			SessionID:        sessionID,
 			Branch:           meta.Branch,
@@ -97,7 +144,7 @@ func Correlate(ctx context.Context, events []TelemetryEvent, metas map[string]Se
 			ModelCalls:       a.modelCalls,
 			ToolCalls:        a.toolCalls,
 			TokensByModel:    a.tokensByModel,
-			TokensByServer:   a.tokensByServer,
+			TokensByServer:   tokensByServer,
 			CompactionEvents: meta.CompactionEvents,
 			CompletedTasks:   completedTasks,
 		}

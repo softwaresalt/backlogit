@@ -1740,6 +1740,9 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 	if force, _ := request.Params.Arguments["force"].(bool); force {
 		opts.Force = true
 	}
+	if ws.Config != nil && ws.Config.Telemetry != nil {
+		opts.AttributionPrefixes = ws.Config.Telemetry.AttributionPrefixes
+	}
 
 	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, opts)
 	if err != nil {

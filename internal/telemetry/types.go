@@ -90,9 +90,10 @@ type SessionSummary struct {
 	ModelCalls       int            `json:"model_calls"`
 	ToolCalls        int            `json:"tool_calls"`
 	TokensByModel    map[string]int `json:"tokens_by_model"`
-	// TokensByServer maps server name to server name, acting as an attribution set.
-	// Populated via AttributeTool prefix matching on tool call names.
-	TokensByServer   map[string]string `json:"tokens_by_server"`
+	// TokensByServer maps server name to its proportional token allocation for
+	// this session. Allocation is computed by distributing TotalTokens across
+	// servers in proportion to their share of tool calls.
+	TokensByServer map[string]int `json:"tokens_by_server"`
 	CompletedTasks   []string          `json:"completed_tasks"`
 	TokensPerTask    *float64          `json:"tokens_per_task"`
 	CompactionEvents []CompactionEvent `json:"compaction_events"`

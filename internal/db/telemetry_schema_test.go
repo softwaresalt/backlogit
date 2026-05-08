@@ -96,7 +96,58 @@ func TestTelemetryTablesQueryableViaGate(t *testing.T) {
 	assert.NoError(t, rows.Err())
 }
 
-// writeSampleTelemetryJSONL writes a minimal telemetry-sessions.jsonl fixture.
+func TestTokensByServerColumnExistsAndQueryable(t *testing.T) {
+	sqliteDB := setupTelemetryDB(t)
+	require.NoError(t, db.EnsureTelemetrySchema(sqliteDB))
+
+	workspacePath := t.TempDir()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	writeSampleTelemetryJSONLWithServerTokens(t, backlogitDir)
+
+	ctx := context.Background()
+	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+
+	// tokens_by_server column should exist and json_extract should work.
+	var backlogitTokens *int
+	err := sqliteDB.QueryRowContext(ctx,
+		`SELECT json_extract(tokens_by_server, '$.backlogit') FROM telemetry_sessions WHERE session_id = 'sess-t1'`,
+	).Scan(&backlogitTokens)
+	require.NoError(t, err, "tokens_by_server column should exist and json_extract should work")
+	require.NotNil(t, backlogitTokens, "backlogit token value should not be nil")
+	assert.Equal(t, 1500, *backlogitTokens, "backlogit proportional tokens should equal total tokens (single server)")
+}
+
+func TestRehydrateTelemetry_BackwardCompatWithoutTokensByServer(t *testing.T) {
+	// Old JSONL records without tokens_by_server should load without error.
+	sqliteDB := setupTelemetryDB(t)
+	require.NoError(t, db.EnsureTelemetrySchema(sqliteDB))
+
+	workspacePath := t.TempDir()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	writeSampleTelemetryJSONL(t, backlogitDir) // old fixture without tokens_by_server
+
+	ctx := context.Background()
+	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+
+	var count int
+	require.NoError(t, sqliteDB.QueryRow("SELECT COUNT(*) FROM telemetry_sessions").Scan(&count))
+	assert.Greater(t, count, 0, "old JSONL records should still load successfully")
+}
+
+// writeSampleTelemetryJSONLWithServerTokens writes a fixture with tokens_by_server.
+func writeSampleTelemetryJSONLWithServerTokens(t *testing.T, backlogitDir string) {
+	t.Helper()
+	content := `{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","branch":"main","repository":"test/repo","total_tokens":1500,"prompt_tokens":1000,"completion_tokens":500,"cached_tokens":200,"model_calls":1,"tool_calls":1,"tokens_by_model":{"claude-sonnet-4":1500},"tokens_by_server":{"backlogit":1500},"tool_calls_by_server":{"backlogit":1},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}
+{"record_type":"tool_usage","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","server_name":"backlogit","tool_name":"backlogit_create_item","call_count":1,"total_duration_ms":45}
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+}
+
 func writeSampleTelemetryJSONL(t *testing.T, backlogitDir string) {
 	t.Helper()
 	content := `{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-t1","branch":"main","repository":"test/repo","total_tokens":1500,"prompt_tokens":1000,"completion_tokens":500,"cached_tokens":200,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-sonnet-4":1500},"tool_calls_by_server":{"backlogit":2},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}

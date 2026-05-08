@@ -35,7 +35,7 @@ func TestCorrelate_GroupsEventsBySession(t *testing.T) {
 		"sess-002": {SessionID: "sess-002", Branch: "main", Repository: "test/repo"},
 	}
 
-	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir())
+	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Len(t, summaries, 2)
 
@@ -48,12 +48,17 @@ func TestCorrelate_GroupsEventsBySession(t *testing.T) {
 	assert.Equal(t, 1500, s1.TotalTokens)
 	assert.Equal(t, 1, s1.ModelCalls)
 	assert.Equal(t, 2, s1.ToolCalls)
-	assert.Equal(t, "backlogit", s1.TokensByServer["backlogit"])
+	// TokensByServer stores proportional token allocation (not a set).
+	// 2 calls split evenly: backlogit=750, engram=750.
+	assert.Equal(t, 750, s1.TokensByServer["backlogit"])
+	assert.Equal(t, 750, s1.TokensByServer["engram"])
 
 	s2 := byID["sess-002"]
 	assert.Equal(t, 280, s2.TotalTokens)
 	assert.Equal(t, 1, s2.ModelCalls)
 	assert.Equal(t, 1, s2.ToolCalls)
+	// Single tool call → copilot_builtin receives 100% of tokens.
+	assert.Equal(t, 280, s2.TokensByServer["copilot_builtin"])
 }
 
 func TestCorrelate_NoTaskCompletions_NilTokensPerTask(t *testing.T) {
@@ -67,7 +72,7 @@ func TestCorrelate_NoTaskCompletions_NilTokensPerTask(t *testing.T) {
 		"sess-noop": {SessionID: "sess-noop"},
 	}
 
-	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir())
+	summaries, err := telemetry.Correlate(context.Background(), events, metas, t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
 	assert.Nil(t, summaries[0].TokensPerTask, "sessions with no task completions should report nil tokens_per_task")
