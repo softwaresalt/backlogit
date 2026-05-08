@@ -26,6 +26,7 @@ import (
 // wrapped in a JSON-RPC 2.0 response envelope in PersistentPostRunE.
 type jsonrpcInterceptor struct {
 	enabled bool
+	wrapped bool
 	buf     *bytes.Buffer
 	origOut io.Writer
 	cmdPath string
@@ -41,6 +42,7 @@ type jsonrpcInterceptor struct {
 func Execute() error {
 	jctx := &jsonrpcInterceptor{}
 	root := newRootCommandImpl(jctx)
+	origOut := root.OutOrStdout()
 
 	// Pre-scan os.Args to detect --jsonrpc before Cobra parses flags.
 	// This lets us silence Cobra's own error output and write a JSON-RPC
@@ -59,14 +61,16 @@ func Execute() error {
 	}
 	if jsonrpcRequested {
 		root.SilenceErrors = true
+		capture := &bytes.Buffer{}
+		root.SetOut(capture)
+		root.SetErr(capture)
 	}
 
-	err := root.Execute()
+	executed, err := root.ExecuteC()
+	if !jsonrpcRequested {
+		return err
+	}
 	if err != nil && jsonrpcRequested {
-		origOut := jctx.origOut
-		if origOut == nil {
-			origOut = os.Stdout
-		}
 		cmdPath := jctx.cmdPath
 		if cmdPath == "" {
 			cmdPath = "backlogit"
@@ -78,8 +82,28 @@ func Execute() error {
 				cmdPath, format.ErrCodeServerError, err.Error()))
 		}
 		fmt.Fprintf(origOut, "%s\n", b)
+		return err
 	}
-	return err
+	captured, _ := root.OutOrStdout().(*bytes.Buffer)
+	if jctx.wrapped {
+		if captured == nil {
+			return nil
+		}
+		raw := bytes.TrimSpace(captured.Bytes())
+		if len(raw) == 0 {
+			return nil
+		}
+		_, err = fmt.Fprintf(origOut, "%s\n", raw)
+		return err
+	}
+	cmdPath := jctx.cmdPath
+	if cmdPath == "" && executed != nil {
+		cmdPath = executed.CommandPath()
+	}
+	if cmdPath == "" {
+		cmdPath = "backlogit"
+	}
+	return writeJSONRPCResult(origOut, cmdPath, captured.Bytes())
 }
 
 // NewRootCommand creates the backlogit CLI root command.
@@ -135,6 +159,9 @@ stash follow-up work for later planning.`,
 				return nil
 			}
 			raw := bytes.TrimSpace(jctx.buf.Bytes())
+			if len(raw) == 0 {
+				return nil
+			}
 			var result any
 			if len(raw) > 0 {
 				if err := json.Unmarshal(raw, &result); err != nil {
@@ -145,8 +172,11 @@ stash follow-up work for later planning.`,
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(jctx.origOut, "%s\n", b)
-			return err
+			if _, err = fmt.Fprintf(jctx.origOut, "%s\n", b); err != nil {
+				return err
+			}
+			jctx.wrapped = true
+			return nil
 		},
 	}
 	root.PersistentFlags().StringVar(&cwd, "cwd", ".", "workspace directory")
@@ -166,7 +196,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newQueryCommand(&cwd))
 	root.AddCommand(newStatusCommand(&cwd))
 	root.AddCommand(NewDepCmd())
-	root.AddCommand(NewQueueCmd())
+	root.AddCommand(newQueueCmd(&cwd))
 	root.AddCommand(NewStashCmd(&cwd))
 	root.AddCommand(NewShipmentCmd())
 	root.AddCommand(newDeliberateCommand(&cwd))
@@ -181,6 +211,24 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newManifestCommand(&cwd))
 
 	return root
+}
+
+func writeJSONRPCResult(w io.Writer, cmdPath string, raw []byte) error {
+	raw = bytes.TrimSpace(raw)
+
+	var result any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &result); err != nil {
+			result = string(raw)
+		}
+	}
+
+	b, err := format.WrapResult(cmdPath, result)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s\n", b)
+	return err
 }
 
 // applyLogLevel reconfigures the global slog handler at the given level.

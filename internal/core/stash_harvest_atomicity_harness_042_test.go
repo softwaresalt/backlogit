@@ -73,8 +73,9 @@ func TestHarvestStashEntry_Success_StashRemovedAndArtifactIndexed(t *testing.T) 
 // TestHarvestStashEntry_DBFailureAfterStashRewrite_WorkspaceConsistent verifies
 // that when DB operations fail after stash.jsonl is rewritten, the workspace
 // is either:
-//   (a) rolled back: stash entry restored in JSONL, artifact file removed, or
-//   (b) forward-consistent: artifact indexed with stash marked harvested.
+//
+//	(a) rolled back: stash entry restored in JSONL, artifact file removed, or
+//	(b) forward-consistent: artifact indexed with stash marked harvested.
 //
 // The stash must never be removed from JSONL while the artifact is absent from
 // the DB index.

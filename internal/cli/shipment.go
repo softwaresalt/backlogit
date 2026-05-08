@@ -41,7 +41,7 @@ func newShipmentCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "create",
 		Short:   "Create a shipment",
-		Example: `  backlogit shipment create --title "Sprint 1" --items 001-T,002-T`,
+		Example: `  backlogit shipment create --title "Sprint 1" --items 001-F,001.001-T`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			slog.Info("shipment command invoked", "operation", "shipment-create")
@@ -222,7 +222,7 @@ func newShipmentReturnBlockedCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "return-blocked",
 		Short:   "Return a blocked item from a shipment",
-		Example: `  backlogit shipment return-blocked --shipment 001-S --item 001-T --reason "blocked"`,
+		Example: `  backlogit shipment return-blocked --shipment 001-S --item 001.001-T --reason "blocked"`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			slog.Info(

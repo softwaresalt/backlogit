@@ -14,7 +14,7 @@ backlogit queue bulk-status [flags]
 ### Examples
 
 ```text
-  backlogit queue bulk-status --ids 001-T,002-T,003-T --status active
+  backlogit queue bulk-status --ids 001.001-T,001.002-T,001.003-T --status active
 ```
 
 ### Options

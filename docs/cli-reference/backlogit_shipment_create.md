@@ -14,7 +14,7 @@ backlogit shipment create [flags]
 ### Examples
 
 ```text
-  backlogit shipment create --title "Sprint 1" --items 001-T,002-T
+  backlogit shipment create --title "Sprint 1" --items 001-F,001.001-T
 ```
 
 ### Options

@@ -85,4 +85,3 @@ func TestAttributeToolWithConfig_EmptyCustomFallsToDefaults(t *testing.T) {
 	got := telemetry.AttributeToolWithConfig("engram-map_code", map[string]string{})
 	assert.Equal(t, "engram", got)
 }
-

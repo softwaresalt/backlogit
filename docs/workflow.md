@@ -83,14 +83,14 @@ This creates the `.backlogit/` directory with default `config.yaml`, `header-def
 **Add artifacts:**
 
 ```bash
-# Create a task
-backlogit add --type task --title "Add rate limiting to API" --status active
-
 # Create a feature
 backlogit add --type feature --title "User authentication flow" --status active
 
-# Create a subtask
-backlogit add --type subtask --title "Write token validation tests" --status queued
+# Create a task under the feature
+backlogit add --type task --title "Add rate limiting to API" --parent 001-F --status active
+
+# Create a subtask under the task
+backlogit add --type subtask --title "Write token validation tests" --parent 001.001-T --status queued
 ```
 
 **List and filter artifacts:**
@@ -121,7 +121,7 @@ backlogit query "SELECT id, title, status FROM items WHERE artifact_type='task' 
 **Get the work queue (prioritized active items):**
 
 ```bash
-backlogit queue
+backlogit queue view
 ```
 
 **Capture deferred work in the stash:**
@@ -139,38 +139,38 @@ backlogit stash list --priority critical
 backlogit stash harvest ABCD1234 --type feature --description "Pulled into the current feature wave"
 
 # Harvest every critical stash item into planned work
-backlogit stash harvest --priority critical --type task --description "Pulled forward from stash"
+backlogit stash harvest --priority critical --type task --parent-id 001-F --description "Pulled forward from stash"
 ```
 
 **Inspect a specific artifact:**
 
 ```bash
-backlogit get T042
+backlogit get 001.001-T
 ```
 
 **Update fields on an artifact:**
 
 ```bash
-backlogit update T042 --status review
-backlogit update T042 --title "Add rate limiting to public API"
+backlogit update 001.001-T --status review
+backlogit update 001.001-T --title "Add rate limiting to public API"
 ```
 
 **Move an artifact to a new status:**
 
 ```bash
-backlogit move T042 --status done
+backlogit move 001.001-T --status done
 ```
 
 **Add a dependency between artifacts:**
 
 Dependencies are managed through the MCP tool surface
 (`backlogit_add_dependency`) or with the CLI dependency commands such as
-`backlogit dep add T042 T017 --type blocks` and `backlogit dep remove T042 T017`.
+`backlogit dep add 001.002-T 001.001-T --type blocks` and `backlogit dep remove 001.002-T 001.001-T`.
 
 **Archive a completed artifact:**
 
 ```bash
-backlogit archive T042
+backlogit archive 001.001-T
 ```
 
 **Force-rebuild the SQLite index from Markdown files:**
@@ -343,7 +343,7 @@ When multiple developers or agents make concurrent changes, Markdown files merge
 Associate a commit with an artifact using the MCP tool or the CLI:
 
 ```bash
-backlogit update T042 --commit abc1234
+backlogit update 001.001-T --commit abc1234
 ```
 
 The `backlogit_track_commit` MCP tool records commit SHAs against artifact IDs for traceability.

@@ -7,6 +7,13 @@ description: "View queue items"
 
 View queue items
 
+### Synopsis
+
+View active work queue items.
+
+By default, queue view shows queued, active, blocked, and review items using
+priority as the secondary sort after any manually assigned queue positions.
+
 ```text
 backlogit queue view [flags]
 ```

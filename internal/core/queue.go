@@ -44,8 +44,13 @@ type QueueFilter struct {
 	OrphansOnly bool     `json:"orphans_only,omitempty"` // when true, return only orphaned items
 }
 
+const queuePositionCustomField = "queue_position"
+
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
 func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
+	if filter == nil {
+		filter = &QueueFilter{}
+	}
 	statuses := compactStrings(filter.Statuses)
 	types := compactStrings(filter.Types)
 
@@ -86,7 +91,7 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY created_at ASC"
+	query += buildQueueOrderClause(filter.SortBy, filter.SortOrder)
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
 	}
@@ -163,6 +168,42 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	return view, nil
 }
 
+func buildQueueOrderClause(sortBy, sortOrder string) string {
+	direction := "ASC"
+	if strings.EqualFold(strings.TrimSpace(sortOrder), "desc") {
+		direction = "DESC"
+	}
+
+	queuePositionExpr := `CASE WHEN json_extract(custom_fields, '$.` + queuePositionCustomField + `') IS NULL THEN 1 ELSE 0 END ASC, ` +
+		`CAST(COALESCE(json_extract(custom_fields, '$.` + queuePositionCustomField + `'), 0) AS INTEGER) ASC`
+
+	secondary := "created_at ASC"
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "priority":
+		secondary = `CASE LOWER(COALESCE(priority, ''))
+			WHEN 'critical' THEN 0
+			WHEN 'high' THEN 1
+			WHEN 'medium' THEN 2
+			WHEN 'low' THEN 3
+			ELSE 4
+		END ` + direction
+	case "title":
+		secondary = "title " + direction
+	case "type":
+		secondary = "artifact_type " + direction
+	case "status":
+		secondary = "status " + direction
+	case "updated_at":
+		secondary = "updated_at " + direction
+	case "created_at":
+		secondary = "created_at " + direction
+	case "":
+		secondary = "created_at ASC"
+	}
+
+	return " ORDER BY " + queuePositionExpr + ", " + secondary + ", id ASC"
+}
+
 func compactStrings(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -196,12 +237,129 @@ func groupKey(a *models.Artifact, field string) string {
 	}
 }
 
-// MoveInQueue updates the queue position record for an item.
-// NOTE: Persistent ordinal reordering is not yet implemented. This operation
-// is intentionally rejected so callers receive explicit feedback rather than a
-// silent no-op.
-func MoveInQueue(_ context.Context, _ *sql.DB, _ string, _ int) error {
-	return fmt.Errorf("queue position reordering is not yet implemented")
+// MoveInQueue updates the durable queue order for an item within the caller's
+// selected queue filter.
+func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int, filter *QueueFilter) error {
+	if ws == nil {
+		return fmt.Errorf("workspace is required")
+	}
+	if position < 1 {
+		return fmt.Errorf("position must be >= 1")
+	}
+
+	view, err := QueryQueue(ctx, ws.DB, filter)
+	if err != nil {
+		return fmt.Errorf("load queue view: %w", err)
+	}
+	if len(view.Items) == 0 {
+		return fmt.Errorf("queue is empty")
+	}
+
+	currentIndex := -1
+	for i, item := range view.Items {
+		if item.ID == itemID {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex < 0 {
+		return fmt.Errorf("item %s not found in queue view", itemID)
+	}
+
+	if position > len(view.Items) {
+		position = len(view.Items)
+	}
+	targetIndex := position - 1
+	reordered := reorderQueueItems(view.Items, currentIndex, targetIndex)
+	stamp := time.Now()
+	originals := make(map[string]*models.Artifact, len(reordered))
+	persistedIDs := make([]string, 0, len(reordered))
+	for index, item := range reordered {
+		desired := index + 1
+		if currentQueuePosition(item) == desired {
+			continue
+		}
+		if _, exists := originals[item.ID]; !exists {
+			originals[item.ID] = cloneArtifact(item)
+		}
+		updated := cloneArtifact(item)
+		if updated.CustomFields == nil {
+			updated.CustomFields = map[string]any{}
+		}
+		updated.CustomFields[queuePositionCustomField] = desired
+		updated.UpdatedAt = stamp
+		if err := persistArtifact(ctx, ws, updated, false); err != nil {
+			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
+				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %v", item.ID, err, rollbackErr)
+			}
+			return fmt.Errorf("persist queue position for %s: %w", item.ID, err)
+		}
+		persistedIDs = append(persistedIDs, item.ID)
+	}
+
+	return nil
+}
+
+func reorderQueueItems(items []*models.Artifact, fromIndex, toIndex int) []*models.Artifact {
+	if fromIndex == toIndex {
+		return items
+	}
+
+	reordered := append([]*models.Artifact(nil), items...)
+	item := reordered[fromIndex]
+	reordered = append(reordered[:fromIndex], reordered[fromIndex+1:]...)
+	if toIndex >= len(reordered) {
+		return append(reordered, item)
+	}
+
+	reordered = append(reordered[:toIndex], append([]*models.Artifact{item}, reordered[toIndex:]...)...)
+	return reordered
+}
+
+func currentQueuePosition(item *models.Artifact) int {
+	if item == nil || item.CustomFields == nil {
+		return 0
+	}
+
+	raw, ok := item.CustomFields[queuePositionCustomField]
+	if !ok {
+		return 0
+	}
+
+	switch value := raw.(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case string:
+		var parsed int
+		if _, err := fmt.Sscanf(value, "%d", &parsed); err == nil {
+			return parsed
+		}
+	}
+
+	return 0
+}
+
+func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]*models.Artifact, persistedIDs []string) error {
+	var rollbackErrs []error
+	for i := len(persistedIDs) - 1; i >= 0; i-- {
+		original := originals[persistedIDs[i]]
+		if original == nil {
+			continue
+		}
+		if err := persistArtifact(ctx, ws, cloneArtifact(original), false); err != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("%s: %w", persistedIDs[i], err))
+		}
+	}
+	if len(rollbackErrs) == 0 {
+		return nil
+	}
+	return errors.Join(rollbackErrs...)
 }
 
 // BulkUpdateResult summarises the outcome of a BulkUpdateStatus operation.

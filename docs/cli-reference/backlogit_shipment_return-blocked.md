@@ -14,7 +14,7 @@ backlogit shipment return-blocked [flags]
 ### Examples
 
 ```text
-  backlogit shipment return-blocked --shipment 001-S --item 001-T --reason "blocked"
+  backlogit shipment return-blocked --shipment 001-S --item 001.001-T --reason "blocked"
 ```
 
 ### Options

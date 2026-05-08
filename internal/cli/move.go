@@ -19,7 +19,7 @@ func newMoveCommand(cwd *string) *cobra.Command {
 		Short: "Change artifact status",
 		Long: `Change an artifact status and relocate its file according to registry.yaml
 routing rules.`,
-		Example: `  backlogit move 001-T --status review
+		Example: `  backlogit move 001.001-T --status review
   backlogit move 001-F --status done`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
