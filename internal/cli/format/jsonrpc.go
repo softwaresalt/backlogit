@@ -27,10 +27,10 @@ const jsonrpcVersion = "2.0"
 // JSONRPCResponse is a JSON-RPC 2.0 response object. Exactly one of Result or
 // Error will be non-nil in a well-formed response.
 type JSONRPCResponse struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      string         `json:"id"`
-	Result  any            `json:"result,omitempty"`
-	Error   *JSONRPCError  `json:"error,omitempty"`
+	JSONRPC string        `json:"jsonrpc"`
+	ID      string        `json:"id"`
+	Result  any           `json:"result,omitempty"`
+	Error   *JSONRPCError `json:"error,omitempty"`
 }
 
 // JSONRPCError is the error object embedded in a JSON-RPC 2.0 error response.

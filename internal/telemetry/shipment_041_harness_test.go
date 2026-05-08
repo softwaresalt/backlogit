@@ -29,12 +29,12 @@ func TestWriteTelemetryJSONL_NoDotTmpAfterSuccess(t *testing.T) {
 
 	err := writeTelemetryJSONL(
 		jsonlPath,
-		nil,            // summaries: empty run
-		nil,            // toolStats: no tool calls
-		nil,            // serverCallsPerSession: no server calls
+		nil, // summaries: empty run
+		nil, // toolStats: no tool calls
+		nil, // serverCallsPerSession: no server calls
 		time.Now().UTC(),
-		nil,            // priorSessions: no prior records
-		nil,            // priorTools: no prior tool records
+		nil, // priorSessions: no prior records
+		nil, // priorTools: no prior tool records
 	)
 	require.NoError(t, err)
 

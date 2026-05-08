@@ -20,7 +20,7 @@ backlogit archive <id> [flags]
 ### Examples
 
 ```text
-  backlogit archive 001-T
+  backlogit archive 001.001-T
   backlogit archive --all-done
 ```
 

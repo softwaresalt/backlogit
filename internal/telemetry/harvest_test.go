@@ -93,9 +93,9 @@ func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
 	// The sample log has sess-h1 with one backlogit tool call and 1500 total tokens.
 	// tokens_by_server must contain {"backlogit": 1500}.
 	type sessionRecord struct {
-		RecordType    string         `json:"record_type"`
-		SessionID     string         `json:"session_id"`
-		TotalTokens   int            `json:"total_tokens"`
+		RecordType     string         `json:"record_type"`
+		SessionID      string         `json:"session_id"`
+		TotalTokens    int            `json:"total_tokens"`
 		TokensByServer map[string]int `json:"tokens_by_server"`
 	}
 	found := false

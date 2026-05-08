@@ -121,7 +121,7 @@ The Markdown layer holds current artifact state: title, status, type, descriptio
 
 The SQLite cache enables fast relational queries. It is rebuilt automatically whenever it is missing or stale. Agents and CLI commands read from it for query operations, including full-text search, filtered lists, queue views, dependency lookups, and type-aware metadata access.
 
-The JSONL event model records state transitions and agent activity in append-only files. Per-item logs capture comments and status changes under `.backlogit/logs/{item-id}.jsonl`. `telemetry.jsonl` captures agent execution metrics. These files accumulate over time and support audit and replay workflows.
+The JSONL event model records state transitions and telemetry in append-only files. Per-item logs capture comments and status changes under `.backlogit/logs/{item-id}.jsonl`. `telemetry.jsonl` captures agent execution metrics, while `telemetry-sessions.jsonl` captures harvested Copilot CLI session summaries and server-attributed token usage. These files accumulate over time and support audit and replay workflows.
 
 ## Where backlogit Fits Best
 

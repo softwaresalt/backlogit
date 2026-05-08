@@ -22,8 +22,8 @@ backlogit update <id> [flags]
 ### Examples
 
 ```text
-  backlogit update 001-T --status review
-  backlogit update 001-T --priority high
+  backlogit update 001.001-T --status review
+  backlogit update 001.001-T --priority high
   backlogit update 001-F --section goals="Ship passwordless sign-in"
   backlogit update 001-F --harness-status passing
 ```

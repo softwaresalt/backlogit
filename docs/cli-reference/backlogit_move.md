@@ -19,7 +19,7 @@ backlogit move <id> [flags]
 ### Examples
 
 ```text
-  backlogit move 001-T --status review
+  backlogit move 001.001-T --status review
   backlogit move 001-F --status done
 ```
 

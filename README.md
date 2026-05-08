@@ -26,7 +26,7 @@ backlogit stores features, tasks, and subtasks as individual Markdown files with
 
 Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. The cache rebuilds automatically from the Markdown source whenever it is missing or stale.
 
-A JSONL event model records state transitions, comments, and agent telemetry in append-only files. Work-item history is written per item to `.backlogit/logs/{item-id}.jsonl`, while telemetry stays in `.backlogit/telemetry.jsonl`. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
+A JSONL event model records state transitions, comments, and telemetry in append-only files. Work-item history is written per item to `.backlogit/logs/{item-id}.jsonl`, agent-operation telemetry goes to `.backlogit/telemetry.jsonl`, and harvested Copilot CLI session summaries go to `.backlogit/telemetry-sessions.jsonl`. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
 
 ## Features
 
@@ -73,10 +73,11 @@ cd your-project
 backlogit init
 ```
 
-**Create a task:**
+**Create a feature and task:**
 
 ```bash
-backlogit add --type task --title "Implement authentication" --status active
+backlogit add --type feature --title "Authentication hardening" --status active
+backlogit add --type task --title "Implement authentication" --parent 001-F --status active
 ```
 
 **Stash deferred work for later planning:**
@@ -88,7 +89,7 @@ backlogit stash get ABCD1234
 backlogit stash edit ABCD1234 --priority critical
 backlogit deliberate ABCD1234 --chosen-direction "Keep the initial scope narrow and defer follow-up polish"
 backlogit stash list --group-by-priority
-backlogit stash harvest --priority critical --type task
+backlogit stash harvest --priority critical --type feature
 backlogit stash remove ABCD1234
 ```
 
@@ -145,7 +146,7 @@ backlogit mcp
 | Configuration    | gopkg.in/yaml.v3 v3.0.1              | config.yaml, header-def.yaml, registry.yaml, hooks.yaml, migration.yaml |
 | Rate limiting    | golang.org/x/time v0.11.0            | Webhook dispatch backpressure via rate.Limiter |
 | File format      | Markdown + YAML frontmatter          | Git-friendly source of truth               |
-| Event stream     | JSONL (append-only)                  | per-item logs plus telemetry.jsonl         |
+| Event stream     | JSONL (append-only)                  | per-item logs plus telemetry.jsonl and telemetry-sessions.jsonl |
 | License          | MIT                                  |                                            |
 
 ## Contributing

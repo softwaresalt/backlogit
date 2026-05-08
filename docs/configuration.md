@@ -103,7 +103,7 @@ backlogit deliberate ABCD1234 --problem-frame "Clarify the trade-offs before thi
 backlogit stash list --priority critical
 backlogit stash list --group-by-priority
 backlogit stash harvest ABCD1234 --type feature
-backlogit stash harvest --priority high --type task
+backlogit stash harvest --priority high --type feature
 ```
 
 ### MCP stash examples

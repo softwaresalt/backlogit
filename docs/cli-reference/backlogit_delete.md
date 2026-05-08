@@ -20,7 +20,7 @@ backlogit delete <id> [flags]
 ### Examples
 
 ```text
-  backlogit delete 001-T --force
+  backlogit delete 001.001-T --force
 ```
 
 ### Options

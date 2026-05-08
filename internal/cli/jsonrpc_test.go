@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -126,3 +127,97 @@ func TestExecute_FunctionExists(t *testing.T) {
 	assert.NotNil(t, fn)
 }
 
+func executeWithCapturedStdout(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+
+	oldArgs := os.Args
+	oldStdout := os.Stdout
+
+	outputFile, err := os.CreateTemp(t.TempDir(), "backlogit-stdout-*.txt")
+	require.NoError(t, err)
+
+	os.Args = append([]string{"backlogit"}, args...)
+	os.Stdout = outputFile
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		os.Stdout = oldStdout
+	})
+
+	executeErr := Execute()
+	require.NoError(t, outputFile.Close())
+
+	output, readErr := os.ReadFile(outputFile.Name())
+	require.NoError(t, readErr)
+
+	return string(output), executeErr
+}
+
+func decodeEnvelope(t *testing.T, raw string) map[string]any {
+	t.Helper()
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace([]byte(raw)), &resp), "raw output: %s", raw)
+	return resp
+}
+
+func TestExecute_JSONRPCRootHelpProducesEnvelope(t *testing.T) {
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "--help")
+	require.NoError(t, err)
+
+	resp := decodeEnvelope(t, output)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, "backlogit", resp["id"])
+	result, ok := resp["result"].(string)
+	require.True(t, ok, "help output must be wrapped as a string result")
+	assert.Contains(t, result, "Available Commands")
+}
+
+func TestExecute_JSONRPCHelpSubcommandProducesEnvelope(t *testing.T) {
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "help", "add")
+	require.NoError(t, err)
+
+	resp := decodeEnvelope(t, output)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, "backlogit help", resp["id"])
+	result, ok := resp["result"].(string)
+	require.True(t, ok, "subcommand help must be wrapped as a string result")
+	assert.Contains(t, result, "backlogit add")
+}
+
+func TestExecute_JSONRPCCompletionProducesEnvelope(t *testing.T) {
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "completion", "powershell")
+	require.NoError(t, err)
+
+	resp := decodeEnvelope(t, output)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, "backlogit completion powershell", resp["id"])
+	result, ok := resp["result"].(string)
+	require.True(t, ok, "completion output must be wrapped as a string result")
+	assert.Contains(t, result, "Register-ArgumentCompleter")
+}
+
+func TestExecute_JSONRPCRootVersionProducesEnvelope(t *testing.T) {
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "--version")
+	require.NoError(t, err)
+
+	resp := decodeEnvelope(t, output)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, "backlogit", resp["id"])
+	result, ok := resp["result"].(string)
+	require.True(t, ok, "root --version output must be wrapped as a string result")
+	assert.Contains(t, result, "backlogit version")
+}
+
+func TestExecute_JSONRPCUnknownCommandProducesErrorEnvelope(t *testing.T) {
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "definitely-not-a-command")
+	require.Error(t, err)
+
+	resp := decodeEnvelope(t, output)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, "backlogit", resp["id"])
+	errorPayload, ok := resp["error"].(map[string]any)
+	require.True(t, ok, "unknown command must produce a JSON-RPC error payload")
+	message, ok := errorPayload["message"].(string)
+	require.True(t, ok, "error message must be a string")
+	assert.Contains(t, message, "unknown command")
+}

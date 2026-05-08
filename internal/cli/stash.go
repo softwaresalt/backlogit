@@ -224,7 +224,7 @@ func newStashHarvestCommand(cwd *string) *cobra.Command {
 		Short: "Harvest a stash item into a planned work item",
 		Example: `  backlogit stash harvest ABCD1234 --type feature
   backlogit stash harvest ABCD1234 --type task --parent-id 001-F --status active
-  backlogit stash harvest --priority critical --type task`,
+  backlogit stash harvest --priority critical --type feature`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()

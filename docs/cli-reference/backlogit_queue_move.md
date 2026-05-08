@@ -7,6 +7,13 @@ description: "Reorder an item in the queue"
 
 Reorder an item in the queue
 
+### Synopsis
+
+Reorder an item within the default active queue view.
+
+Positions are 1-based and use the same default scope as queue view: queued,
+active, blocked, and review items.
+
 ```text
 backlogit queue move <item-id> [flags]
 ```
@@ -14,7 +21,7 @@ backlogit queue move <item-id> [flags]
 ### Examples
 
 ```text
-  backlogit queue move 001-T --position 1
+  backlogit queue move 001.001-T --position 1
 ```
 
 ### Options

@@ -230,13 +230,15 @@ If you want different target types for the currently supported imported classes,
 
 The migration command reads `.backlogit/migration.yaml` automatically when it exists.
 
-## Configuring Artifact Types Post-Migration
+## Configuring Artifact Types for Future Imports
 
-After migration, you may want to refine the artifact types assigned to migrated items. Task-like items default to `task`, milestone files default to `feature`, and explicit source task types are mapped when backlogit has a compatible target type. To change the type of a specific artifact:
+Artifact types are assigned during import. backlogit does not support changing an
+artifact's type afterward with `backlogit update`, so type mapping decisions
+should be made in `.backlogit/migration.yaml` before you run `backlogit migrate import`.
 
-```bash
-backlogit update 042-T --type bug
-```
+If an imported item lands on the wrong type, update the migration mapping and
+re-import into a clean workspace, or recreate the artifact with the desired
+type through the normal CLI or MCP create flow.
 
 To configure custom artifact types for future use, edit `.backlogit/config.yaml`:
 

@@ -16,7 +16,7 @@ backlogit stash harvest [stash-id] [flags]
 ```text
   backlogit stash harvest ABCD1234 --type feature
   backlogit stash harvest ABCD1234 --type task --parent-id 001-F --status active
-  backlogit stash harvest --priority critical --type task
+  backlogit stash harvest --priority critical --type feature
 ```
 
 ### Options
