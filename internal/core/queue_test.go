@@ -139,6 +139,65 @@ func TestMoveInQueue_RejectsInvalidPosition(t *testing.T) {
 	assert.Contains(t, err.Error(), "position must be >=")
 }
 
+func TestMoveInQueue_RollsBackPersistedPositionsOnFailure(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	high, err := core.CreateArtifact(ctx, ws, "High priority task", "feature", core.WithPriority("high"))
+	require.NoError(t, err)
+	medium, err := core.CreateArtifact(ctx, ws, "Medium priority task", "feature", core.WithPriority("medium"))
+	require.NoError(t, err)
+	low, err := core.CreateArtifact(ctx, ws, "Low priority task", "feature", core.WithPriority("low"))
+	require.NoError(t, err)
+
+	filter := &core.QueueFilter{Statuses: []string{"queued"}, SortBy: "priority"}
+
+	initial, err := core.QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+	require.Len(t, initial.Items, 3)
+	assert.Equal(t, []string{high.ID, medium.ID, low.ID}, []string{
+		initial.Items[0].ID,
+		initial.Items[1].ID,
+		initial.Items[2].ID,
+	})
+
+	failingPath, err := core.FindArtifactPath(ctx, ws, high.ID)
+	require.NoError(t, err)
+	originalHigh, err := os.ReadFile(failingPath)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(failingPath))
+
+	err = core.MoveInQueue(ctx, ws, low.ID, 1, filter)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "persist queue position")
+
+	lowPath, err := core.FindArtifactPath(ctx, ws, low.ID)
+	require.NoError(t, err)
+	lowData, err := os.ReadFile(lowPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(lowData), "queue_position", "rollback should restore the original file contents")
+
+	lowItem, err := db.GetItem(ctx, ws.DB, low.ID)
+	require.NoError(t, err)
+	if lowItem.CustomFields != nil {
+		_, hasQueuePosition := lowItem.CustomFields["queue_position"]
+		assert.False(t, hasQueuePosition, "rollback should remove the queued position from the DB record")
+	}
+
+	require.NoError(t, os.WriteFile(failingPath, originalHigh, 0o644))
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+	require.NoError(t, err)
+
+	rolledBack, err := core.QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+	require.Len(t, rolledBack.Items, 3)
+	assert.Equal(t, []string{high.ID, medium.ID, low.ID}, []string{
+		rolledBack.Items[0].ID,
+		rolledBack.Items[1].ID,
+		rolledBack.Items[2].ID,
+	})
+}
+
 func TestBulkUpdateStatus(t *testing.T) {
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()

@@ -272,19 +272,29 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 	targetIndex := position - 1
 	reordered := reorderQueueItems(view.Items, currentIndex, targetIndex)
 	stamp := time.Now()
+	originals := make(map[string]*models.Artifact, len(reordered))
+	persistedIDs := make([]string, 0, len(reordered))
 	for index, item := range reordered {
 		desired := index + 1
 		if currentQueuePosition(item) == desired {
 			continue
 		}
-		if item.CustomFields == nil {
-			item.CustomFields = map[string]any{}
+		if _, exists := originals[item.ID]; !exists {
+			originals[item.ID] = cloneArtifact(item)
 		}
-		item.CustomFields[queuePositionCustomField] = desired
-		item.UpdatedAt = stamp
-		if err := persistArtifact(ctx, ws, item, false); err != nil {
+		updated := cloneArtifact(item)
+		if updated.CustomFields == nil {
+			updated.CustomFields = map[string]any{}
+		}
+		updated.CustomFields[queuePositionCustomField] = desired
+		updated.UpdatedAt = stamp
+		if err := persistArtifact(ctx, ws, updated, false); err != nil {
+			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
+				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %v", item.ID, err, rollbackErr)
+			}
 			return fmt.Errorf("persist queue position for %s: %w", item.ID, err)
 		}
+		persistedIDs = append(persistedIDs, item.ID)
 	}
 
 	return nil
@@ -333,6 +343,23 @@ func currentQueuePosition(item *models.Artifact) int {
 	}
 
 	return 0
+}
+
+func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]*models.Artifact, persistedIDs []string) error {
+	var rollbackErrs []error
+	for i := len(persistedIDs) - 1; i >= 0; i-- {
+		original := originals[persistedIDs[i]]
+		if original == nil {
+			continue
+		}
+		if err := persistArtifact(ctx, ws, cloneArtifact(original), false); err != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("%s: %w", persistedIDs[i], err))
+		}
+	}
+	if len(rollbackErrs) == 0 {
+		return nil
+	}
+	return errors.Join(rollbackErrs...)
 }
 
 // BulkUpdateResult summarises the outcome of a BulkUpdateStatus operation.
