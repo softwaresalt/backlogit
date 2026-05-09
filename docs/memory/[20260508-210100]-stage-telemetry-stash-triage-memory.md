@@ -1,7 +1,7 @@
 ---
 title: Stage session — telemetry stash triage and shipment assembly
 description: Staged 5 telemetry stash entries into 2 features, 8 tasks, and 2 shipments
-ms.date: 05/08/2026
+ms.date: 2026-05-08
 ms.topic: reference
 ---
 
