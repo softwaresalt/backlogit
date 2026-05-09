@@ -1,11 +1,10 @@
 ---
 title: "Lifecycle Hygiene: Cascading Archive & Stash Cleanup"
+description: "Cascading archive for child items, stash cleanup on feature archive, doctor --fix-orphans, and stash_remove rename"
 date: 2026-05-09
 origin: ".backlogit/queue/046-DL.md"
 status: reviewed
 ---
-
-# Lifecycle Hygiene: Cascading Archive & Stash Cleanup
 
 ## Problem Frame
 
@@ -33,7 +32,7 @@ features, descendants, and deliberations). The remaining gaps are:
 | R3 | Add doctor --fix-orphans mode that resolves orphaned items | 046-DL chosen direction |
 | R4 | Rename stash_remove to stash_archive with backward-compatible alias | Stash 6E99AE10 |
 | R5 | Cascade defaults off; user-facing paths opt in | Design decision (see D1, revised per P1-1) |
-| R6 | Doctor --fix defaults to report-only; --fix flag enables auto-fix | Design decision (see D2) |
+| R6 | Doctor --fix-orphans defaults to report-only; --fix-orphans flag enables auto-fix | Design decision (see D2) |
 
 ## Scope Boundaries
 
@@ -83,8 +82,8 @@ features, descendants, and deliberations). The remaining gaps are:
 5. Update `ArchivedStashEntry.RemovalReason` field doc comment.
 
 **Verification:**
-- `backlogit stash archive <id>` works and sets reason "archived"
-- `backlogit stash remove <id>` still works (alias) and sets reason "archived"
+- `backlogit stash archive <id>` works and sets reason "removed" (persisted state unchanged per P1-3)
+- `backlogit stash remove <id>` still works (alias) and sets reason "removed"
 - Both MCP tool names work
 - DB state remains `state = 'removed'` (unchanged)
 - Existing tests pass with updated assertions
@@ -110,8 +109,8 @@ features, descendants, and deliberations). The remaining gaps are:
 4. If any child archive fails, continue with remaining children. Record
    failures in `ArchiveRecord.FailedItems []ArchiveFailure` (per P1-2).
    Hard depth cap at configured hierarchy depth + 1 fallback.
-4. Return cascade results in `ArchiveRecord` — add `CascadedItems []string`.
-5. Guard against cycles by tracking visited IDs.
+5. Return cascade results in `ArchiveRecord` — add `CascadedItems []string`.
+6. Guard against cycles by tracking visited IDs.
 
 **Verification:**
 - Archiving a feature cascades to its tasks and subtasks
