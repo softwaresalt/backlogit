@@ -349,7 +349,7 @@ func escapeMarkdownCell(value string) string {
 
 // TrendOptions configures the telemetry trend report.
 type TrendOptions struct {
-	// By controls the grouping dimension. Valid values: "date", "branch".
+	// By controls the grouping dimension. Valid values: "date", "branch", "class".
 	// Defaults to "date".
 	By string
 	// Format controls the output encoding: "table", "json", "markdown".
@@ -387,8 +387,8 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	if by == "" {
 		by = "date"
 	}
-	if by != "date" && by != "branch" {
-		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\"", by)
+	if by != "date" && by != "branch" && by != "class" {
+		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\", \"class\"", by)
 	}
 
 	// Group sessions.
@@ -403,6 +403,14 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "class":
+			key = s.ModelClass
+			if key == "" {
+				key = DeriveModelClass(PrimaryModel(s.TokensByModel))
+			}
 			if key == "" {
 				key = "(unknown)"
 			}
@@ -450,6 +458,14 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "class":
+			key = s.ModelClass
+			if key == "" {
+				key = DeriveModelClass(PrimaryModel(s.TokensByModel))
+			}
 			if key == "" {
 				key = "(unknown)"
 			}

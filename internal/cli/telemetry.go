@@ -209,7 +209,7 @@ Use --by branch to switch from date grouping to branch grouping.`,
 			return nil
 		},
 	}
-	cmd.Flags().String("by", "date", "Group output by: date, branch")
+	cmd.Flags().String("by", "date", "Group output by: date, branch, class")
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of groups returned (0 = no limit)")
 	return cmd
