@@ -14,7 +14,7 @@ backlogit telemetry report [flags]
 ### Options
 
 ```text
-      --by string        Group output by: session, server, model, class (default "session")
+      --by string        Group output by: session, server, model, class, tool, context (default "session")
       --format string    Output format: table, json, markdown (default "table")
   -h, --help             help for report
       --limit int        Restrict the number of rows returned (0 = no limit)
