@@ -180,18 +180,19 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 func newTelemetryTrendCmd(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trend",
-		Short: "Show token usage trends grouped by date or branch",
-		Long: `Show token usage trends grouped by date or branch.
+		Short: "Show token usage trends grouped by date, branch, or model class",
+		Long: `Show token usage trends grouped by date, branch, or model class.
 
 Each output row contains:
-  - Group (date YYYY-MM-DD or branch name)
+  - Group (date YYYY-MM-DD, branch name, or model class)
   - Session count
   - Total tokens
   - Avg tokens per session
   - Avg tokens per task (when available)
   - Avg peak context utilisation (when available)
 
-Use --by branch to switch from date grouping to branch grouping.`,
+Use --by branch to switch from date grouping to branch grouping.
+Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			by, _ := cmd.Flags().GetString("by")
 			format, _ := cmd.Flags().GetString("format")

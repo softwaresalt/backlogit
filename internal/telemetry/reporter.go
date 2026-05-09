@@ -572,8 +572,8 @@ func formatTrendMarkdown(groups []TrendGroup) string {
 // ModelGroup holds aggregated metrics for one model-name or model-class group
 // used by --by model and --by class report dimensions.
 type ModelGroup struct {
-	// Model is the primary model name (--by model) or class (--by class).
-	Model    string `json:"model"`
+	// Group is the primary model name (--by model) or class label (--by class).
+	Group    string `json:"group"`
 	Sessions int    `json:"sessions"`
 	Tokens   int    `json:"total_tokens"`
 }
@@ -603,7 +603,7 @@ func buildModelGroups(sessions []SessionSummaryRecord, byClass bool, limit int) 
 		if !ok {
 			idx = len(groups)
 			index[key] = idx
-			groups = append(groups, ModelGroup{Model: key})
+			groups = append(groups, ModelGroup{Group: key})
 		}
 		groups[idx].Sessions++
 		groups[idx].Tokens += s.TotalTokens
@@ -612,7 +612,7 @@ func buildModelGroups(sessions []SessionSummaryRecord, byClass bool, limit int) 
 		if groups[i].Tokens != groups[j].Tokens {
 			return groups[i].Tokens > groups[j].Tokens
 		}
-		return groups[i].Model < groups[j].Model
+		return groups[i].Group < groups[j].Group
 	})
 	if limit > 0 && len(groups) > limit {
 		groups = groups[:limit]
@@ -633,7 +633,7 @@ func formatModelTable(sessions []SessionSummaryRecord, limit int, byClass bool) 
 		nameWidth, strings.Repeat("-", nameWidth),
 		strings.Repeat("-", 8), strings.Repeat("-", 10)))
 	for _, g := range groups {
-		name := g.Model
+		name := g.Group
 		if len(name) > nameWidth {
 			name = name[:nameWidth]
 		}
@@ -655,7 +655,7 @@ func formatModelMarkdown(sessions []SessionSummaryRecord, limit int, byClass boo
 	sb.WriteString("|---|---:|---:|\n")
 	for _, g := range groups {
 		sb.WriteString(fmt.Sprintf("| %s | %d | %d |\n",
-			escapeMarkdownCell(g.Model), g.Tokens, g.Sessions))
+			escapeMarkdownCell(g.Group), g.Tokens, g.Sessions))
 	}
 	return sb.String()
 }

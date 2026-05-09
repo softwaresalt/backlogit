@@ -1,18 +1,18 @@
 ---
 title: "backlogit telemetry trend"
-description: "Show token usage trends grouped by date or branch"
+description: "Show token usage trends grouped by date, branch, or model class"
 ---
 
 ## backlogit telemetry trend
 
-Show token usage trends grouped by date or branch
+Show token usage trends grouped by date, branch, or model class
 
 ### Synopsis
 
-Show token usage trends grouped by date or branch.
+Show token usage trends grouped by date, branch, or model class.
 
 Each output row contains:
-  - Group (date YYYY-MM-DD or branch name)
+  - Group (date YYYY-MM-DD, branch name, or model class)
   - Session count
   - Total tokens
   - Avg tokens per session
@@ -20,6 +20,7 @@ Each output row contains:
   - Avg peak context utilisation (when available)
 
 Use --by branch to switch from date grouping to branch grouping.
+Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).
 
 ```text
 backlogit telemetry trend [flags]
