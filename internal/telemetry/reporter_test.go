@@ -421,3 +421,231 @@ func TestGenerateTrendReport_ExistingFields_Unchanged(t *testing.T) {
 	assert.InDelta(t, 1000.0, g.AvgTokensSession, 0.01,
 		"AvgTokensSession must use the active-session count as denominator")
 }
+
+// ---- Unit 4: PRIMARY_MODEL column in session list output --------------------
+
+// writeModelAwareJSONL creates a fixture with sessions that have tokens_by_model
+// populated so that PrimaryModel resolution can be verified.
+func writeModelAwareJSONL(t *testing.T, workspacePath string) {
+	t.Helper()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	records := []string{
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4.6":1500},"compaction_count":0,"model_class":"sonnet"}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-2","branch":"main","repository":"repo","total_tokens":400,"model_calls":1,"tool_calls":1,"tokens_by_model":{"gpt-5.4":400},"compaction_count":0,"model_class":"gpt"}`,
+	}
+	content := strings.Join(records, "\n") + "\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+}
+
+func TestFormatSessionTable_PrimaryModel_Column(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "PRIMARY_MODEL",
+		"table header must include PRIMARY_MODEL column")
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"PRIMARY_MODEL column must show the primary model name")
+	assert.Contains(t, output, "gpt-5.4",
+		"PRIMARY_MODEL column must show the primary model name for second session")
+}
+
+func TestFormatSessionMarkdown_PrimaryModel_Column(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatMarkdown,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "Primary Model",
+		"markdown header must include Primary Model column")
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"PRIMARY_MODEL column must show the primary model name")
+}
+
+func TestFormatSessionTable_NoPrimaryModel_ShowsDash(t *testing.T) {
+	// Sessions with no tokens_by_model should show "-" in the PRIMARY_MODEL column.
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "PRIMARY_MODEL",
+		"table header must include PRIMARY_MODEL column even when no model data available")
+}
+
+// ---- Unit 5: --by model and --by class report dimensions --------------------
+
+func TestGenerateReport_ByModel_GroupsByPrimaryModel(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "model",
+		Format:  telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"--by model must show primary model names")
+	assert.Contains(t, output, "gpt-5.4",
+		"--by model must show primary model names for all sessions")
+}
+
+func TestGenerateReport_ByClass_GroupsByModelClass(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "class",
+		Format:  telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "sonnet",
+		"--by class must show model class sonnet")
+	assert.Contains(t, output, "gpt",
+		"--by class must show model class gpt")
+}
+
+func TestGenerateReport_ByModel_JSON_Valid(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "model",
+		Format:  telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+	var decoded any
+	require.NoError(t, json.Unmarshal([]byte(output), &decoded),
+		"--by model with json format must produce valid JSON")
+}
+
+func TestGenerateReport_ByClass_Markdown_Valid(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "class",
+		Format:  telemetry.FormatMarkdown,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "|",
+		"--by class markdown output must contain table delimiter")
+}
+
+func TestGenerateReport_InvalidGroupBy_ReturnsError(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	_, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "invalid",
+		Format:  telemetry.FormatTable,
+	})
+	require.Error(t, err, "unsupported group-by value must return an error")
+}
+
+// ---- Unit 6: --by class grouping in trend report ----------------------------
+
+// writeClassTrendJSONL creates a fixture with sessions of different model
+// classes harvested on the same date to verify trend grouping by class.
+func writeClassTrendJSONL(t *testing.T, workspacePath string) {
+	t.Helper()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	records := []string{
+		// Two sonnet sessions
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ct-1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4.6":1500},"compaction_count":0,"model_class":"sonnet"}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ct-2","branch":"feat","repository":"repo","total_tokens":1000,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-sonnet-4.6":1000},"compaction_count":0,"model_class":"sonnet"}`,
+		// One gpt session
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ct-3","branch":"main","repository":"repo","total_tokens":400,"model_calls":1,"tool_calls":1,"tokens_by_model":{"gpt-5.4":400},"compaction_count":0,"model_class":"gpt"}`,
+	}
+	content := strings.Join(records, "\n") + "\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+}
+
+func TestGenerateTrendReport_ByClass_GroupsByModelClass(t *testing.T) {
+	ws := t.TempDir()
+	writeClassTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "class",
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "sonnet",
+		"--by class trend must show sonnet group")
+	assert.Contains(t, output, "gpt",
+		"--by class trend must show gpt group")
+}
+
+func TestGenerateTrendReport_ByClass_JSON_AggregatesCorrectly(t *testing.T) {
+	ws := t.TempDir()
+	writeClassTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "class",
+		Format: telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+
+	var groups []telemetry.TrendGroup
+	require.NoError(t, json.Unmarshal([]byte(output), &groups))
+	require.Len(t, groups, 2, "expected 2 class groups: sonnet and gpt")
+
+	totals := make(map[string]int)
+	for _, g := range groups {
+		totals[g.Group] = g.TotalTokens
+	}
+	assert.Equal(t, 2500, totals["sonnet"],
+		"sonnet group should aggregate tokens from both sonnet sessions")
+	assert.Equal(t, 400, totals["gpt"],
+		"gpt group should have tokens from the gpt session")
+}
+
+func TestGenerateTrendReport_ByClass_FallbackDerivation(t *testing.T) {
+	// Sessions without model_class field should derive it from TokensByModel.
+	ws := t.TempDir()
+	backlogitDir := filepath.Join(ws, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	records := []string{
+		// No model_class field — should derive from tokens_by_model
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"fb-1","branch":"main","repository":"repo","total_tokens":800,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-haiku-4.5":800},"compaction_count":0}`,
+	}
+	content := strings.Join(records, "\n") + "\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "class",
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "haiku",
+		"--by class trend should derive class from tokens_by_model when model_class is absent")
+}
+
+func TestGenerateTrendReport_InvalidBy_ReturnsError(t *testing.T) {
+	ws := t.TempDir()
+	writeClassTrendJSONL(t, ws)
+
+	_, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "invalid",
+		Format: telemetry.FormatTable,
+	})
+	require.Error(t, err, "unsupported By value must return an error")
+}

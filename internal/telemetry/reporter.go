@@ -29,7 +29,7 @@ type ReportOptions struct {
 	// SessionID, when non-empty, restricts the report to a single session.
 	SessionID string
 	// GroupBy controls the aggregation dimension. Valid values: "session",
-	// "server".
+	// "server", "model", "class".
 	GroupBy string
 	// Format controls the output encoding. Valid values: "table", "json", "markdown".
 	Format ReportFormat
@@ -77,10 +77,10 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 	}
 	// Validate groupBy before allocating aggregation structures.
 	switch groupBy {
-	case "session", "server":
+	case "session", "server", "model", "class":
 		// supported
 	default:
-		return "", fmt.Errorf("unsupported group-by value %q: supported values are \"session\", \"server\"", groupBy)
+		return "", fmt.Errorf("unsupported group-by value %q: supported values are \"session\", \"server\", \"model\", \"class\"", groupBy)
 	}
 
 	format := opts.Format
@@ -111,6 +111,10 @@ func formatReportTable(sessions []SessionSummaryRecord, _ []ToolUsageRecord, gro
 	switch groupBy {
 	case "server":
 		return formatServerTable(sessions, limit), nil
+	case "model":
+		return formatModelTable(sessions, limit, false), nil
+	case "class":
+		return formatModelTable(sessions, limit, true), nil
 	default:
 		return formatSessionTable(sessions, limit), nil
 	}
@@ -148,6 +152,10 @@ func formatReportJSON(sessions []SessionSummaryRecord, _ []ToolUsageRecord, grou
 		} else {
 			payload = tokensByServer
 		}
+	case "model":
+		payload = buildModelGroups(sessions, false, limit)
+	case "class":
+		payload = buildModelGroups(sessions, true, limit)
 	default:
 		rows := sessions
 		if limit > 0 && len(rows) > limit {
@@ -167,19 +175,28 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 	if limit > 0 && len(rows) > limit {
 		rows = rows[:limit]
 	}
+	const modelWidth = 20
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
-		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS"))
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
+	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
+		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS", modelWidth, "PRIMARY_MODEL"))
+	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
 		strings.Repeat("-", 36), strings.Repeat("-", 8),
-		strings.Repeat("-", 11), strings.Repeat("-", 10)))
+		strings.Repeat("-", 11), strings.Repeat("-", 10),
+		modelWidth, strings.Repeat("-", modelWidth)))
 	for _, s := range rows {
 		sessionDisplay := s.SessionID
 		if IsGhostSession(s) {
 			sessionDisplay = s.SessionID + " [empty]"
 		}
-		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d\n",
-			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls))
+		pm := PrimaryModel(s.TokensByModel)
+		if pm == "" {
+			pm = "-"
+		}
+		if len(pm) > modelWidth {
+			pm = pm[:modelWidth]
+		}
+		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d  %-*s\n",
+			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls, modelWidth, pm))
 	}
 	return sb.String()
 }
@@ -250,6 +267,10 @@ func formatReportMarkdown(sessions []SessionSummaryRecord, _ []ToolUsageRecord, 
 	switch groupBy {
 	case "server":
 		return formatServerMarkdown(sessions, limit), nil
+	case "model":
+		return formatModelMarkdown(sessions, limit, false), nil
+	case "class":
+		return formatModelMarkdown(sessions, limit, true), nil
 	default:
 		return formatSessionMarkdown(sessions, limit), nil
 	}
@@ -267,19 +288,24 @@ func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
 	var sb strings.Builder
 	sb.WriteString("# Telemetry Report\n\n")
 	sb.WriteString("## Session Summary\n\n")
-	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls |\n")
-	sb.WriteString("|---|---:|---:|---:|\n")
+	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls | Primary Model |\n")
+	sb.WriteString("|---|---:|---:|---:|---|\n")
 	for _, row := range rows {
 		sessionDisplay := escapeMarkdownCell(row.SessionID)
 		if IsGhostSession(row) {
 			sessionDisplay = escapeMarkdownCell(row.SessionID) + " [empty]"
 		}
+		pm := PrimaryModel(row.TokensByModel)
+		if pm == "" {
+			pm = "-"
+		}
 		sb.WriteString(fmt.Sprintf(
-			"| %s | %d | %d | %d |\n",
+			"| %s | %d | %d | %d | %s |\n",
 			sessionDisplay,
 			row.TotalTokens,
 			row.ModelCalls,
 			row.ToolCalls,
+			escapeMarkdownCell(pm),
 		))
 	}
 	return sb.String()
@@ -323,7 +349,7 @@ func escapeMarkdownCell(value string) string {
 
 // TrendOptions configures the telemetry trend report.
 type TrendOptions struct {
-	// By controls the grouping dimension. Valid values: "date", "branch".
+	// By controls the grouping dimension. Valid values: "date", "branch", "class".
 	// Defaults to "date".
 	By string
 	// Format controls the output encoding: "table", "json", "markdown".
@@ -361,8 +387,8 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	if by == "" {
 		by = "date"
 	}
-	if by != "date" && by != "branch" {
-		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\"", by)
+	if by != "date" && by != "branch" && by != "class" {
+		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\", \"class\"", by)
 	}
 
 	// Group sessions.
@@ -377,6 +403,14 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "class":
+			key = s.ModelClass
+			if key == "" {
+				key = DeriveModelClass(PrimaryModel(s.TokensByModel))
+			}
 			if key == "" {
 				key = "(unknown)"
 			}
@@ -424,6 +458,14 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "class":
+			key = s.ModelClass
+			if key == "" {
+				key = DeriveModelClass(PrimaryModel(s.TokensByModel))
+			}
 			if key == "" {
 				key = "(unknown)"
 			}
@@ -523,6 +565,97 @@ func formatTrendMarkdown(groups []TrendGroup) string {
 		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %.0f | %s | %s | %.1f | %.1f |\n",
 			escapeMarkdownCell(g.Group), g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu,
 			g.AvgModelCalls, g.AvgToolCalls))
+	}
+	return sb.String()
+}
+
+// ModelGroup holds aggregated metrics for one model-name or model-class group
+// used by --by model and --by class report dimensions.
+type ModelGroup struct {
+	// Group is the primary model name (--by model) or class label (--by class).
+	Group    string `json:"group"`
+	Sessions int    `json:"sessions"`
+	Tokens   int    `json:"total_tokens"`
+}
+
+// buildModelGroups aggregates sessions by primary model name (byClass=false)
+// or model class (byClass=true). Rows are sorted by tokens descending then
+// name ascending. Limit is applied after sort.
+func buildModelGroups(sessions []SessionSummaryRecord, byClass bool, limit int) []ModelGroup {
+	index := make(map[string]int)
+	var groups []ModelGroup
+	for _, s := range sessions {
+		if IsGhostSession(s) {
+			continue
+		}
+		key := PrimaryModel(s.TokensByModel)
+		if byClass {
+			if s.ModelClass != "" {
+				key = s.ModelClass
+			} else {
+				key = DeriveModelClass(PrimaryModel(s.TokensByModel))
+			}
+		}
+		if key == "" {
+			key = "(unknown)"
+		}
+		idx, ok := index[key]
+		if !ok {
+			idx = len(groups)
+			index[key] = idx
+			groups = append(groups, ModelGroup{Group: key})
+		}
+		groups[idx].Sessions++
+		groups[idx].Tokens += s.TotalTokens
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Tokens != groups[j].Tokens {
+			return groups[i].Tokens > groups[j].Tokens
+		}
+		return groups[i].Group < groups[j].Group
+	})
+	if limit > 0 && len(groups) > limit {
+		groups = groups[:limit]
+	}
+	return groups
+}
+
+func formatModelTable(sessions []SessionSummaryRecord, limit int, byClass bool) string {
+	groups := buildModelGroups(sessions, byClass, limit)
+	header := "MODEL"
+	if byClass {
+		header = "CLASS"
+	}
+	const nameWidth = 24
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%-*s  %8s  %10s\n", nameWidth, header, "TOKENS", "SESSIONS"))
+	sb.WriteString(fmt.Sprintf("%-*s  %8s  %10s\n",
+		nameWidth, strings.Repeat("-", nameWidth),
+		strings.Repeat("-", 8), strings.Repeat("-", 10)))
+	for _, g := range groups {
+		name := g.Group
+		if len(name) > nameWidth {
+			name = name[:nameWidth]
+		}
+		sb.WriteString(fmt.Sprintf("%-*s  %8d  %10d\n", nameWidth, name, g.Tokens, g.Sessions))
+	}
+	return sb.String()
+}
+
+func formatModelMarkdown(sessions []SessionSummaryRecord, limit int, byClass bool) string {
+	groups := buildModelGroups(sessions, byClass, limit)
+	header := "Model"
+	if byClass {
+		header = "Class"
+	}
+	var sb strings.Builder
+	sb.WriteString("# Telemetry Report\n\n")
+	sb.WriteString(fmt.Sprintf("## Tokens by %s\n\n", header))
+	sb.WriteString(fmt.Sprintf("| %s | Tokens | Sessions |\n", header))
+	sb.WriteString("|---|---:|---:|\n")
+	for _, g := range groups {
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d |\n",
+			escapeMarkdownCell(g.Group), g.Tokens, g.Sessions))
 	}
 	return sb.String()
 }

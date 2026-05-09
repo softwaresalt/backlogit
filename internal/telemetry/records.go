@@ -1,6 +1,9 @@
 package telemetry
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // SessionSummaryRecord is the typed JSONL record written to
 // .backlogit/telemetry-sessions.jsonl. One record per session per harvest run.
@@ -31,6 +34,10 @@ type SessionSummaryRecord struct {
 	RemainingCapacity *int     `json:"remaining_capacity,omitempty"`
 	DepletionRate     *float64 `json:"depletion_rate,omitempty"`
 	MaxContextTokens  *int     `json:"max_context_tokens,omitempty"`
+	// Model-awareness fields derived from TokensByModel at harvest time.
+	// Both are omitempty: older records without these fields remain valid.
+	ModelClass     string `json:"model_class,omitempty"`
+	ReasoningLevel string `json:"reasoning_level,omitempty"`
 }
 
 // ToolUsageRecord is the typed JSONL record for per-server tool call counts
@@ -44,4 +51,70 @@ type ToolUsageRecord struct {
 	ToolName    string    `json:"tool_name"`
 	CallCount   int       `json:"call_count"`
 	TotalDurMs  int       `json:"total_duration_ms"`
+}
+
+// DeriveModelClass returns a coarse model-class label from a model name string.
+//
+// Rules (applied in order):
+//   - empty string → ""
+//   - contains "sonnet" → "sonnet"
+//   - contains "haiku"  → "haiku"
+//   - contains "opus"   → "opus"
+//   - starts with "gpt" → "gpt"
+//   - starts with "o1", "o3", or "o4" → "o-series"
+//   - fallback → "other"
+func DeriveModelClass(model string) string {
+	if model == "" {
+		return ""
+	}
+	lower := strings.ToLower(model)
+	switch {
+	case strings.Contains(lower, "sonnet"):
+		return "sonnet"
+	case strings.Contains(lower, "haiku"):
+		return "haiku"
+	case strings.Contains(lower, "opus"):
+		return "opus"
+	case strings.HasPrefix(lower, "gpt"):
+		return "gpt"
+	case strings.HasPrefix(lower, "o1") || strings.HasPrefix(lower, "o3") || strings.HasPrefix(lower, "o4"):
+		return "o-series"
+	default:
+		return "other"
+	}
+}
+
+// DeriveReasoningLevel returns a reasoning-level label from a model name.
+// Returns "high" for full o1/o3/o4 models, "low" for mini variants,
+// and empty string for all other models (including empty input).
+func DeriveReasoningLevel(model string) string {
+	lower := strings.ToLower(model)
+	if strings.HasSuffix(lower, "-mini") {
+		// o*-mini variants: only matches o1-mini, o3-mini, o4-mini.
+		if strings.HasPrefix(lower, "o1-") || strings.HasPrefix(lower, "o3-") || strings.HasPrefix(lower, "o4-") {
+			return "low"
+		}
+		return ""
+	}
+	// Full o1, o3, o4 (exact names only; variants like o1-preview return empty).
+	if lower == "o1" || lower == "o3" || lower == "o4" {
+		return "high"
+	}
+	return ""
+}
+
+// PrimaryModel returns the name of the model with the highest token count
+// from tokensByModel. When multiple models share the maximum, the
+// alphabetically first name is returned for deterministic output.
+// Returns empty string when the map is nil or empty.
+func PrimaryModel(tokensByModel map[string]int) string {
+	var best string
+	var bestCount int
+	for model, count := range tokensByModel {
+		if count > bestCount || (count == bestCount && (best == "" || model < best)) {
+			best = model
+			bestCount = count
+		}
+	}
+	return best
 }
