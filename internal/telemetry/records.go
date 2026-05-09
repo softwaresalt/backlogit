@@ -92,7 +92,7 @@ func DeriveReasoningLevel(model string) string {
 		}
 		return ""
 	}
-	// Full o1, o3, o4 (exact or with version suffixes but not -mini).
+	// Full o1, o3, o4 (exact names only; variants like o1-preview return empty).
 	if lower == "o1" || lower == "o3" || lower == "o4" {
 		return "high"
 	}
