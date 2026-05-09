@@ -11,13 +11,15 @@ Executed shipment 052-S "Telemetry Accuracy & Call-Rate Metrics" from branch `fe
 
 ## Tasks Completed
 
-| Task | Title | Status |
-|---|---|---|
-| 053.004-T | Ghost session predicate and trend filtering | done |
-| 053.005-T | Ghost session visual indicator | done |
-| 053.006-T | Call-rate columns in TrendGroup | done |
-| 053-F | Telemetry Accuracy & Call-Rate Metrics (feature) | done |
-| 052-S | Shipment | done (merged) |
+| Task | Title | Status | Notes |
+|---|---|---|---|
+| 053.004-T | Ghost session predicate and trend filtering | done | Implementation task |
+| 053.005-T | Ghost session visual indicator | done | Implementation task |
+| 053.006-T | Call-rate columns in TrendGroup | done | Implementation task |
+| 053.007-T | Ghost session filtering (harvested into 053-F) | done | Provenance tracker — stash E39D0A34; work completed by 053.004-T and 053.005-T |
+| 053.008-T | Call-rate trend columns (harvested into 053-F) | done | Provenance tracker — stash 5EC2B37F; work completed by 053.006-T |
+| 053-F | Telemetry Accuracy & Call-Rate Metrics (feature) | done | |
+| 052-S | Shipment | done (merged) | PR #94 |
 
 ## Files Modified
 
