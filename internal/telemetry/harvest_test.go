@@ -173,4 +173,3 @@ func TestHarvestTelemetry_WritesModelClassToJSONL(t *testing.T) {
 	assert.Equal(t, "", reasoning["sess-h2"],
 		"sess-h2 (gpt-5.1) should have no reasoning_level")
 }
-
