@@ -79,16 +79,69 @@ is valid Markdown.
 This workspace uses **backlogit** for structured backlog management. All task
 tracking MUST use backlogit MCP tools or CLI.
 
+## Branch Management Rules (NON-NEGOTIABLE)
+
+* **Branch retention**: Do NOT delete the feature branch while the PR merge gate
+  is open. The branch is the active working context for any follow-up CI or review
+  fixes. Delete only when explicitly requested or already part of the chosen PR flow.
+* **No auto-merge**: Never merge a PR without explicit user approval. Treat silence
+  as non-approval. The merge gate is a hard stop.
+* **Post-merge branch protocol**: After merge, create `post-merge/{feature_slug}`
+  from updated `main` for any closure work. Do not commit closure artifacts directly
+  to `main`.
+* **PR per branch**: One PR per feature branch. Do not open a second PR for the
+  same branch.
+
 ## Execution Pipeline
+
+### Step 0.0: Tool Availability Gate (P-012)
+
+Before any pipeline work begins, verify tool availability and declare degraded mode if tools are unavailable.
+
+1. Check for the backlog registry at `.autoharness/backlog-registry.yaml`.
+   - If present: load it and identify MCP tools required for this session (shipment, task state, commit tracking).
+   - If absent: proceed in manual/file-backed mode.
+2. For each required MCP tool, probe with a read-only lightweight operation:
+   - On success: log `TOOL_OK: {tool_name}`.
+   - On failure: check whether the registry declares a CLI fallback in the `cli_command` field.
+     - If CLI fallback exists: log `TOOL_DEGRADED: {tool_name} — CLI fallback: {cli_command}` and record it.
+     - If no fallback: halt with `TOOL_UNAVAILABLE: {tool_name} — required for this session.`
+3. Do NOT silently fall back to ad hoc filesystem `grep`/`cat` operations when a configured tool is unavailable (P-012 violation).
+4. Log overall status: `ALL_TOOLS_OK`, `DEGRADED_MODE: {tool_list}`, or `TOOL_UNAVAILABLE`.
+
+### Step 0.1: Backlog Index Sync
+
+After tool availability probing (Step 0.0), and before any subsequent semantic shipment reads, task lookups, or queue operations, call `backlogit_sync_index` to ensure the index reflects the current state of the workspace. Step 0.0 MCP probes are lightweight availability checks, not semantic reads; the index sync runs immediately after those probes complete.
+
+- On success: log `INDEX_SYNC_OK`.
+- On failure: run `backlogit sync` (CLI fallback).
+  - If the CLI succeeds: log `INDEX_SYNC_OK (CLI fallback)`.
+  - If both fail: log `INDEX_SYNC_WARN — proceeding with potentially stale index` and continue.
 
 ### Step 0.5: Work Intake
 
-1. Identify the shipment or feature to work on.
-   * If a shipment exists, claim it via `backlogit_claim_shipment`.
+1. Identify the shipment or feature to work on (read-only — do not claim yet).
+   * If a shipment exists, record its ID for use in step 4.
    * Otherwise, select queued tasks from the backlog.
 2. Verify all tasks have clear scope and acceptance criteria.
-3. Create a working branch: `git checkout -b feat/{feature-slug}` or
-   `git checkout -b chore/{chore-slug}`.
+3. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**: Before claiming (the first workspace mutation), ensure a feature branch is active:
+   - Check current branch:
+     `git branch --show-current`
+   - If already on a branch matching this shipment (e.g., `feat/{slug}` or `chore/{slug}`): log `BRANCH_OK: {branch_name}` and proceed.
+   - If on `main` (the default branch):
+     a. Verify the worktree is clean:
+        `git status --short`
+        If any output appears, halt. Do not create a branch from a dirty worktree.
+     b. Switch to the default branch:
+        `git checkout main`
+     c. Pull latest:
+        `git pull`
+     d. Create the shipment branch:
+        `git checkout -b feat/{feature-slug}` (features) or `git checkout -b chore/{chore-slug}` (chores)
+     e. Log `BRANCH_CREATED: {branch_name}`.
+   - If on any other non-shipment branch: halt with `BRANCH_MISMATCH: currently on {branch_name}`.
+   - Note: all git commands above are run as separate sequential steps, not chained.
+4. Claim the shipment via `backlogit_claim_shipment` (first mutation, only after branch gate passes).
 
 ### Step 1: Pre-Flight Checks
 
@@ -124,58 +177,55 @@ For each task in the shipment/feature:
 
 After user-approved merge:
 
+#### Merge Confirmation Gate (NON-NEGOTIABLE)
+
+Before any post-merge closure work begins, confirm the PR has actually merged:
+
+1. Retrieve PR state: `gh pr view {pr_number} --json state,mergedAt,mergeCommit`
+   - If `state` is `MERGED`: log `MERGE_CONFIRMED: PR #{pr_number} merged at {mergedAt}, SHA: {mergeCommit.oid}`. Record the merge SHA.
+   - If not `MERGED`: halt with `MERGE_NOT_CONFIRMED: PR #{pr_number} is {state}. Do not begin closure.`
+2. Confirm merge SHA is in default branch history (separate sequential steps):
+   `git fetch origin main`
+   `git merge-base --is-ancestor {merge_sha} origin/main`
+   - Exit code 0: confirmed. Proceed.
+   - Non-zero: halt with `MERGE_NOT_CONFIRMED: SHA not yet in origin/main history.`
+3. Proceed only after both checks pass.
+
 #### Step 5.0: Post-Merge Branch Protocol (NON-NEGOTIABLE)
 
-Post-merge closure produces commits (backlog archival, knowledge graduation,
-doc updates). These commits MUST NOT land directly on `main`.
+For all closure work after merge, use a dedicated branch rather than committing
+directly to `main`:
 
-1. Verify the merge commit exists on `main`.
-2. Create a post-merge closure branch from `main`:
-   `git checkout main && git pull && git checkout -b post-merge/{feature_slug}`
-   where `{feature_slug}` is derived from the feature ID and title (e.g.,
-   `post-merge/022-stash-filter`).
-3. All subsequent closure work (steps 5.1–5.2 below) happens on this branch.
-4. After all closure work is committed, push and create a closure PR:
-   `git push -u origin post-merge/{feature_slug}`
-   Then invoke `pr-lifecycle` with title:
-   `chore: post-merge closure for {feature_id} — {feature_title}`.
-5. **Await operator approval** before merge. Never auto-merge closure work.
+1. Fetch latest default branch: `git fetch origin main && git checkout main && git pull`
+2. Create a closure branch: `git checkout -b post-merge/{feature_slug}`
+3. Perform all closure work (compound learnings, documentation updates, memory
+   artifacts) on this branch.
+4. Open a closure PR targeting `main`.
+5. Await operator approval before merging the closure PR.
+6. **Never commit closure artifacts directly to `main`.**
 
-#### Step 5.1: Closure Tasks
+#### Step 5.1: Shipment and Backlog Closure
 
 1. Close the shipment via `backlogit_ship_shipment` if applicable.
 2. Write compound learnings for hard-won solutions.
 3. Update documentation if templates changed significantly.
 4. Write session memory to `docs/memory/`.
+5. **Closure index resync**: Call `backlogit_sync_index` (or `backlogit sync` CLI fallback) after
+   all archival and mutations are complete. Log `CLOSURE_INDEX_SYNC_OK` on success.
 
 #### Step 5.2: Source Artifact Cleanup (backlogit only)
 
-When the `backlogit` capability pack is installed, retire source artifacts
-that directly fed the shipped scope:
+Retire the source stash or deliberation artifacts that seeded this feature:
 
-1. For each shipped feature or chore, read `custom_fields.source_stash_id`.
-   If present, call `backlogit_stash_remove` with the stash ID. If already
-   removed, skip and log.
-2. For each shipped feature or chore, read
-   `custom_fields.source_deliberation_id`. If present, verify the deliberation
-   artifact exists via `backlogit_get_item`. If it exists and is not archived,
-   call `backlogit_archive_item`. If already archived or not found, skip.
-3. Record the archived and skipped source artifact IDs in the closure artifact.
-
-## Branch Management Rules (NON-NEGOTIABLE)
-
-* **Branch retention (NON-NEGOTIABLE)**: Stay on the feature or chore branch
-  from Step 0.5 through Step 4 merge approval. Never checkout `main` or
-  another branch while the feature PR is open, during CI remediation, or
-  during review-fix cycles. Switching branches risks losing uncommitted work.
-* **Post-Merge Branch Protocol (NON-NEGOTIABLE)**: Create a
-  `post-merge/{feature_slug}` branch from `main` for all Step 5 closure work.
-  Never commit post-merge closure artifacts directly to `main`. Push the
-  closure branch and open a closure PR; await operator approval before merge.
-* **Every branch that produces commits gets a PR.** The feature branch gets
-  the feature PR; the post-merge closure branch gets the closure PR. Both
-  require explicit operator approval.
-* **Never merge automatically.** Always await explicit user approval.
+1. Read `custom_fields` on the feature artifact to find `source_stash_id`
+   and/or `source_deliberation_id`.
+2. For each `source_stash_id`: call `backlogit_stash_remove` to remove the
+   stash entry.
+3. For each `source_deliberation_id`: call `backlogit_archive_item` to archive
+   the deliberation artifact.
+4. Verify removal: confirm the stash entry no longer appears in
+   `backlogit_fetch_stash` output and the deliberation is not in the active
+   item list.
 
 ## Stop Conditions
 

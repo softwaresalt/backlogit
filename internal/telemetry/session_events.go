@@ -3,11 +3,13 @@ package telemetry
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // rawSessionEvent is used for first-pass decoding to discover the event type.
@@ -32,35 +34,36 @@ type rawCompactionEvent struct {
 // no compaction events are present.
 func ParseSessionEvents(r io.Reader) ([]CompactionEvent, error) {
 	var events []CompactionEvent
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
+	reader := bufio.NewReader(r)
+	for {
+		rawLine, readErr := reader.ReadString('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("scan session events: %w", readErr)
 		}
-		var raw rawSessionEvent
-		if err := json.Unmarshal([]byte(line), &raw); err != nil {
-			slog.Debug("skipping malformed session event line", "err", err)
-			continue
+		isEOF := errors.Is(readErr, io.EOF)
+		line := strings.TrimRight(rawLine, "\r\n")
+		if line != "" {
+			var raw rawSessionEvent
+			if err := json.Unmarshal([]byte(line), &raw); err != nil {
+				slog.Debug("skipping malformed session event line", "err", err)
+			} else if raw.EventType == "session.compaction_complete" {
+				var rc rawCompactionEvent
+				if err := json.Unmarshal([]byte(line), &rc); err != nil {
+					slog.Debug("skipping malformed compaction event", "err", err)
+				} else {
+					events = append(events, CompactionEvent{
+						Timestamp:           rc.Timestamp,
+						PreCompactionTokens: rc.PreCompactionTokens,
+						InputTokens:         rc.CompactionTokensUsed.Input,
+						OutputTokens:        rc.CompactionTokensUsed.Output,
+						CachedInputTokens:   rc.CompactionTokensUsed.CachedInput,
+					})
+				}
+			}
 		}
-		if raw.EventType != "session.compaction_complete" {
-			continue
+		if isEOF {
+			break
 		}
-		var rc rawCompactionEvent
-		if err := json.Unmarshal([]byte(line), &rc); err != nil {
-			slog.Debug("skipping malformed compaction event", "err", err)
-			continue
-		}
-		events = append(events, CompactionEvent{
-			Timestamp:           rc.Timestamp,
-			PreCompactionTokens: rc.PreCompactionTokens,
-			InputTokens:         rc.CompactionTokensUsed.Input,
-			OutputTokens:        rc.CompactionTokensUsed.Output,
-			CachedInputTokens:   rc.CompactionTokensUsed.CachedInput,
-		})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan session events: %w", err)
 	}
 	return events, nil
 }

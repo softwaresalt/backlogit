@@ -36,6 +36,7 @@ var utf8BOM = "\xef\xbb\xbf"
 func ReadJSONL(r io.Reader) ([]Entry, error) {
 	var entries []Entry
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	first := true
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
