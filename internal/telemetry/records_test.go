@@ -47,7 +47,7 @@ func TestDeriveModelClass_Unknown_Fallback(t *testing.T) {
 }
 
 func TestDeriveModelClass_Empty(t *testing.T) {
-	assert.Equal(t, "other", telemetry.DeriveModelClass(""))
+	assert.Equal(t, "", telemetry.DeriveModelClass(""))
 }
 
 // ---- DeriveReasoningLevel ---------------------------------------------------

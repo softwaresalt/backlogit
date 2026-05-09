@@ -404,8 +404,10 @@ func writeTelemetryJSONL(
 			CompletedTasks:    s.CompletedTasks,
 			TokensPerTask:     s.TokensPerTask,
 			CompactionCount:   len(s.CompactionEvents),
-			ModelClass:        DeriveModelClass(primaryModel),
-			ReasoningLevel:    DeriveReasoningLevel(primaryModel),
+		}
+		if primaryModel != "" {
+			rec.ModelClass = DeriveModelClass(primaryModel)
+			rec.ReasoningLevel = DeriveReasoningLevel(primaryModel)
 		}
 		if cw := s.ContextWindow; cw != nil {
 			rec.PeakUtilization = &cw.PeakUtilization

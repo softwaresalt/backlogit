@@ -29,7 +29,7 @@ type ReportOptions struct {
 	// SessionID, when non-empty, restricts the report to a single session.
 	SessionID string
 	// GroupBy controls the aggregation dimension. Valid values: "session",
-	// "server".
+	// "server", "model", "class".
 	GroupBy string
 	// Format controls the output encoding. Valid values: "table", "json", "markdown".
 	Format ReportFormat
@@ -585,6 +585,9 @@ func buildModelGroups(sessions []SessionSummaryRecord, byClass bool, limit int) 
 	index := make(map[string]int)
 	var groups []ModelGroup
 	for _, s := range sessions {
+		if IsGhostSession(s) {
+			continue
+		}
 		key := PrimaryModel(s.TokensByModel)
 		if byClass {
 			if s.ModelClass != "" {
@@ -630,7 +633,11 @@ func formatModelTable(sessions []SessionSummaryRecord, limit int, byClass bool) 
 		nameWidth, strings.Repeat("-", nameWidth),
 		strings.Repeat("-", 8), strings.Repeat("-", 10)))
 	for _, g := range groups {
-		sb.WriteString(fmt.Sprintf("%-*s  %8d  %10d\n", nameWidth, g.Model, g.Tokens, g.Sessions))
+		name := g.Model
+		if len(name) > nameWidth {
+			name = name[:nameWidth]
+		}
+		sb.WriteString(fmt.Sprintf("%-*s  %8d  %10d\n", nameWidth, name, g.Tokens, g.Sessions))
 	}
 	return sb.String()
 }

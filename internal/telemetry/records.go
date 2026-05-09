@@ -56,6 +56,7 @@ type ToolUsageRecord struct {
 // DeriveModelClass returns a coarse model-class label from a model name string.
 //
 // Rules (applied in order):
+//   - empty string → ""
 //   - contains "sonnet" → "sonnet"
 //   - contains "haiku"  → "haiku"
 //   - contains "opus"   → "opus"
@@ -63,6 +64,9 @@ type ToolUsageRecord struct {
 //   - starts with "o1", "o3", or "o4" → "o-series"
 //   - fallback → "other"
 func DeriveModelClass(model string) string {
+	if model == "" {
+		return ""
+	}
 	lower := strings.ToLower(model)
 	switch {
 	case strings.Contains(lower, "sonnet"):
