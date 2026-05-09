@@ -228,3 +228,196 @@ func TestGenerateTrendReport_Limit_RestrictsGroups(t *testing.T) {
 	c10 := strings.Count(output, "2026-04-10")
 	assert.LessOrEqual(t, c9+c10, 1, "Limit=1 should restrict output to at most 1 group")
 }
+
+// ---- Unit 1: IsGhostSession + ghost filtering in GenerateTrendReport --------
+
+// writeGhostTrendJSONL creates a JSONL fixture with 3 active sessions
+// (1000 tokens, 2 model calls, 4 tool calls each) and 2 ghost sessions
+// (all zeros), all harvested on 2026-05-08 on branch "main".
+func writeGhostTrendJSONL(t *testing.T, workspacePath string) {
+	t.Helper()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	records := []string{
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-active-1","branch":"main","repository":"repo","total_tokens":1000,"model_calls":2,"tool_calls":4,"compaction_count":0}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-active-2","branch":"main","repository":"repo","total_tokens":1000,"model_calls":2,"tool_calls":4,"compaction_count":0}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-active-3","branch":"main","repository":"repo","total_tokens":1000,"model_calls":2,"tool_calls":4,"compaction_count":0}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-sess-1","branch":"main","repository":"repo","total_tokens":0,"model_calls":0,"tool_calls":0,"compaction_count":0}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-sess-2","branch":"main","repository":"repo","total_tokens":0,"model_calls":0,"tool_calls":0,"compaction_count":0}`,
+	}
+	content := strings.Join(records, "\n") + "\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+}
+
+func TestIsGhostSession_AllZero_ReturnsTrue(t *testing.T) {
+	s := telemetry.SessionSummaryRecord{
+		TotalTokens: 0,
+		ModelCalls:  0,
+		ToolCalls:   0,
+	}
+	assert.True(t, telemetry.IsGhostSession(s))
+}
+
+func TestIsGhostSession_NonzeroTokens_ReturnsFalse(t *testing.T) {
+	s := telemetry.SessionSummaryRecord{
+		TotalTokens: 1000,
+		ModelCalls:  0,
+		ToolCalls:   0,
+	}
+	assert.False(t, telemetry.IsGhostSession(s))
+}
+
+func TestIsGhostSession_ZeroTokensNonzeroModelCalls_ReturnsFalse(t *testing.T) {
+	s := telemetry.SessionSummaryRecord{
+		TotalTokens: 0,
+		ModelCalls:  2,
+		ToolCalls:   0,
+	}
+	assert.False(t, telemetry.IsGhostSession(s))
+}
+
+func TestGenerateTrendReport_GhostSessionsExcludedFromAverages(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "date",
+		Format: telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+
+	var groups []telemetry.TrendGroup
+	require.NoError(t, json.Unmarshal([]byte(output), &groups))
+	require.Len(t, groups, 1, "expected one date group")
+
+	g := groups[0]
+	assert.Equal(t, 3, g.Sessions, "ghost sessions must not increment Sessions")
+	assert.InDelta(t, 1000.0, g.AvgTokensSession, 0.01,
+		"avg_tokens_per_session must exclude ghost sessions from denominator")
+}
+
+// ---- Unit 2: [empty] marker in session list output --------------------------
+
+func TestFormatSessionTable_GhostSessions_ShowEmptyMarker(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "[empty]",
+		"ghost sessions must display [empty] marker in table output")
+}
+
+func TestFormatSessionMarkdown_GhostSessions_ShowEmptyMarker(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatMarkdown,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "[empty]",
+		"ghost sessions must display [empty] marker in markdown output")
+}
+
+func TestFormatSessionTable_ActiveSession_NoEmptyMarker(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	// Active sessions must appear without an [empty] marker.
+	assert.Contains(t, output, "ghost-active-1")
+	// Exactly 2 ghost sessions are in the fixture, so [empty] appears exactly 2 times.
+	assert.Equal(t, 2, strings.Count(output, "[empty]"),
+		"only ghost sessions must show the [empty] marker")
+}
+
+// ---- Unit 3: AvgModelCalls / AvgToolCalls in TrendGroup ---------------------
+
+func TestGenerateTrendReport_CallRateColumns_InJSON(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "date",
+		Format: telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+
+	var groups []telemetry.TrendGroup
+	require.NoError(t, json.Unmarshal([]byte(output), &groups))
+	require.Len(t, groups, 1)
+
+	g := groups[0]
+	assert.InDelta(t, 2.0, g.AvgModelCalls, 0.01, "avg_model_calls should be 2.0")
+	assert.InDelta(t, 4.0, g.AvgToolCalls, 0.01, "avg_tool_calls should be 4.0")
+}
+
+func TestGenerateTrendReport_CallRateColumns_InTable(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "date",
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "AVG_MODEL_CALLS",
+		"table header must include AVG_MODEL_CALLS column")
+	assert.Contains(t, output, "AVG_TOOL_CALLS",
+		"table header must include AVG_TOOL_CALLS column")
+}
+
+func TestGenerateTrendReport_CallRateColumns_ExcludeGhosts(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "date",
+		Format: telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+
+	var groups []telemetry.TrendGroup
+	require.NoError(t, json.Unmarshal([]byte(output), &groups))
+	require.Len(t, groups, 1)
+
+	g := groups[0]
+	// Ghost sessions contribute 0 model and 0 tool calls; if included in
+	// the denominator, AvgModelCalls would drop from 2.0 to 1.2 (3*2/5).
+	assert.InDelta(t, 2.0, g.AvgModelCalls, 0.01,
+		"ghost sessions must not inflate AvgModelCalls denominator")
+	assert.InDelta(t, 4.0, g.AvgToolCalls, 0.01,
+		"ghost sessions must not inflate AvgToolCalls denominator")
+}
+
+func TestGenerateTrendReport_ExistingFields_Unchanged(t *testing.T) {
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
+		By:     "date",
+		Format: telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+
+	var groups []telemetry.TrendGroup
+	require.NoError(t, json.Unmarshal([]byte(output), &groups))
+	require.Len(t, groups, 1)
+
+	g := groups[0]
+	assert.Equal(t, 3, g.Sessions,
+		"Sessions must only count non-ghost sessions")
+	assert.Equal(t, 3000, g.TotalTokens,
+		"TotalTokens must be the sum of active sessions only")
+	assert.InDelta(t, 1000.0, g.AvgTokensSession, 0.01,
+		"AvgTokensSession must use the active-session count as denominator")
+}
