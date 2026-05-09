@@ -75,10 +75,11 @@ type rawShutdownData struct {
 // pendingToolStart holds the start-event data for an in-flight tool call
 // awaiting its matching tool.execution_complete event.
 type pendingToolStart struct {
-	toolName   string
-	serverName string
-	turnID     string
-	timestamp  time.Time
+	toolName    string
+	mcpToolName string
+	serverName  string
+	turnID      string
+	timestamp   time.Time
 }
 
 // ParseEventFacts reads an events.jsonl stream and extracts ToolCallFact records
@@ -153,10 +154,11 @@ func processEventFactLine(
 		}
 		ts := parseEventTimestamp(evt.Timestamp)
 		pending[d.ToolCallID] = pendingToolStart{
-			toolName:   d.ToolName,
-			serverName: d.MCPServerName,
-			turnID:     d.TurnID,
-			timestamp:  ts,
+			toolName:    d.ToolName,
+			mcpToolName: d.MCPToolName,
+			serverName:  d.MCPServerName,
+			turnID:      d.TurnID,
+			timestamp:   ts,
 		}
 
 	case "tool.execution_complete":
@@ -168,12 +170,27 @@ func processEventFactLine(
 		if !ok {
 			return // unmatched complete — skip
 		}
+		// Skip tool calls with unparseable timestamps to avoid bogus durations.
+		if start.timestamp.IsZero() {
+			delete(pending, d.ToolCallID)
+			return
+		}
 		completedAt := parseEventTimestamp(evt.Timestamp)
+		if completedAt.IsZero() {
+			delete(pending, d.ToolCallID)
+			return
+		}
 		durMs := completedAt.Sub(start.timestamp).Milliseconds()
-		// Use the short MCP tool name when available; fall back to the full name.
-		toolName := start.toolName
-		if start.serverName != "" && strings.HasPrefix(toolName, start.serverName+"-") {
-			toolName = strings.TrimPrefix(toolName, start.serverName+"-")
+		if durMs < 0 {
+			durMs = 0
+		}
+		// Prefer the short MCP tool name when available; fall back to prefix-stripping.
+		toolName := start.mcpToolName
+		if toolName == "" {
+			toolName = start.toolName
+			if start.serverName != "" && strings.HasPrefix(toolName, start.serverName+"-") {
+				toolName = strings.TrimPrefix(toolName, start.serverName+"-")
+			}
 		}
 		*facts = append(*facts, ToolCallFact{
 			RecordType:  "tool_call_fact",

@@ -2,7 +2,9 @@ package telemetry
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -728,9 +730,12 @@ func readToolCallFacts(path string) ([]ToolCallFact, error) {
 
 	var facts []ToolCallFact
 	dec := json.NewDecoder(f)
-	for dec.More() {
+	for {
 		var rec ToolCallFact
 		if err := dec.Decode(&rec); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue // skip corrupt lines
 		}
 		facts = append(facts, rec)
@@ -750,9 +755,12 @@ func readSessionFacts(path string) ([]SessionFact, error) {
 
 	var facts []SessionFact
 	dec := json.NewDecoder(f)
-	for dec.More() {
+	for {
 		var rec SessionFact
 		if err := dec.Decode(&rec); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 		facts = append(facts, rec)
@@ -760,11 +768,18 @@ func readSessionFacts(path string) ([]SessionFact, error) {
 	return facts, nil
 }
 
-// aggregateToolFacts groups ToolCallFact records by tool name.
+// toolAggKey returns a composite key for aggregation to avoid merging distinct
+// tools that share a name across different MCP servers or collide with built-ins.
+func toolAggKey(f ToolCallFact) string {
+	return f.ServerName + "\x00" + f.ToolName
+}
+
+// aggregateToolFacts groups ToolCallFact records by (server_name, tool_name).
 func aggregateToolFacts(facts []ToolCallFact) []toolCallAggregate {
 	index := make(map[string]*toolCallAggregate)
 	for _, f := range facts {
-		agg, ok := index[f.ToolName]
+		key := toolAggKey(f)
+		agg, ok := index[key]
 		if !ok {
 			agg = &toolCallAggregate{
 				ToolName:   f.ToolName,
@@ -772,7 +787,7 @@ func aggregateToolFacts(facts []ToolCallFact) []toolCallAggregate {
 				IsBuiltin:  f.IsBuiltin,
 				Sessions:   make(map[string]struct{}),
 			}
-			index[f.ToolName] = agg
+			index[key] = agg
 		}
 		agg.CallCount++
 		if f.Success {
