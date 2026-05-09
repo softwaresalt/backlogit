@@ -6,8 +6,9 @@ deliberation_id: "045-DL"
 branch: "feat/054-events-fact-harvest"
 pr: "#98"
 commit: "68fa483f081e5536b8a66b4ffe999922b6a6e977"
-status: implemented
-ms.date: 2026-05-09
+date: 2026-05-09
+origin: ".backlogit/queue/045-DL.md"
+status: approved
 ---
 
 ## Overview
