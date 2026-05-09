@@ -72,8 +72,10 @@ features, descendants, and deliberations). The remaining gaps are:
 **Approach:**
 1. Rename `RemoveStashEntry` → `ArchiveStashEntry` in `internal/core/stash.go`.
    Keep `RemoveStashEntry` as a deprecated wrapper that calls `ArchiveStashEntry`.
-2. Keep `stashStateRemoved` and `RemovalReason = "removed"` unchanged.
-   The rename is API/CLI-only; persisted state stays `"removed"` (per P1-3).
+2. Change `RemovalReason` from `"removed"` to `"archived"` in the archive JSONL
+   writer. Keep DB `stash_entries.state` as `"removed"` for rehydration safety
+   (per P1-3). The JSONL `removal_reason` is a display/audit field, not a
+   rehydration key, so changing it does not break the rebuild path.
 3. In `internal/cli/stash.go`, rename command from `remove` to `archive` with
    `Aliases: []string{"remove"}` for backward compat.
 4. In `internal/mcp/tools.go`, register `backlogit_stash_archive` as the primary
@@ -82,10 +84,10 @@ features, descendants, and deliberations). The remaining gaps are:
 5. Update `ArchivedStashEntry.RemovalReason` field doc comment.
 
 **Verification:**
-- `backlogit stash archive <id>` works and sets reason "removed" (persisted state unchanged per P1-3)
-- `backlogit stash remove <id>` still works (alias) and sets reason "removed"
+- `backlogit stash archive <id>` works and sets reason "archived"
+- `backlogit stash remove <id>` still works (alias) and sets reason "archived"
 - Both MCP tool names work
-- DB state remains `state = 'removed'` (unchanged)
+- DB state remains `state = 'removed'` (unchanged — rehydration safety per P1-3)
 - Existing tests pass with updated assertions
 
 ### Unit 2: Cascade archive children in ArchiveItem
@@ -212,7 +214,7 @@ Unit 5 is last.
 | D1 | Cascade defaults off; user-facing paths opt in | Existing callers (AutoArchive, ShipShipment, tests) retain single-item behavior. User-facing CLI/MCP pass `WithCascade(true)` explicitly. Revised per P1-1 | Always-on (rejected P1-1: changes all callers unexpectedly) |
 | D2 | Doctor --fix defaults to report-only | Safer default; auto-fix could mask data issues that need human review | Always auto-fix (rejected: too aggressive for a diagnostic tool) |
 | D3 | Register both MCP tool names | MCP has no alias mechanism; dual registration with shared handler is simplest | Single name with breaking change (rejected: breaks existing agent instructions) |
-| D4 | Keep "removed" persisted state; rename API/CLI only | Avoids contract migration, rehydration changes, and breaking existing SQL. Revised per P1-3 | Change to "archived" (rejected P1-3: contract migration risk) |
+| D4 | JSONL `removal_reason` changes to "archived"; DB `state` stays "removed" | Operator override of P1-3. JSONL reason is an audit/display field, not a rehydration key, so "archived" is safe. DB state remains "removed" for rehydration safety | Keep both as "removed" (P1-3 original; overridden by operator) |
 | D5 | ShipShipment unchanged (cascade defaults off) | No code change needed since cascade defaults to false. Revised per D1 | Explicit WithCascade(false) (unnecessary given new default) |
 
 ## Risks and Caveats
