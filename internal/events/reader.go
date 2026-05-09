@@ -34,6 +34,7 @@ func ReadAllEvents(_ context.Context, logsDir string, itemID string) ([]Event, e
 
 	var result []Event
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
