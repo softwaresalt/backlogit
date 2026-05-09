@@ -483,3 +483,73 @@ func TestFormatSessionTable_NoPrimaryModel_ShowsDash(t *testing.T) {
 	assert.Contains(t, output, "PRIMARY_MODEL",
 		"table header must include PRIMARY_MODEL column even when no model data available")
 }
+
+// ---- Unit 5: --by model and --by class report dimensions --------------------
+
+func TestGenerateReport_ByModel_GroupsByPrimaryModel(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "model",
+		Format:  telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"--by model must show primary model names")
+	assert.Contains(t, output, "gpt-5.4",
+		"--by model must show primary model names for all sessions")
+}
+
+func TestGenerateReport_ByClass_GroupsByModelClass(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "class",
+		Format:  telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "sonnet",
+		"--by class must show model class sonnet")
+	assert.Contains(t, output, "gpt",
+		"--by class must show model class gpt")
+}
+
+func TestGenerateReport_ByModel_JSON_Valid(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "model",
+		Format:  telemetry.FormatJSON,
+	})
+	require.NoError(t, err)
+	var decoded any
+	require.NoError(t, json.Unmarshal([]byte(output), &decoded),
+		"--by model with json format must produce valid JSON")
+}
+
+func TestGenerateReport_ByClass_Markdown_Valid(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "class",
+		Format:  telemetry.FormatMarkdown,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "|",
+		"--by class markdown output must contain table delimiter")
+}
+
+func TestGenerateReport_InvalidGroupBy_ReturnsError(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	_, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		GroupBy: "invalid",
+		Format:  telemetry.FormatTable,
+	})
+	require.Error(t, err, "unsupported group-by value must return an error")
+}

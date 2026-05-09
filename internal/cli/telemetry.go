@@ -171,7 +171,7 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().String("session", "", "Filter report to a single session ID")
-	cmd.Flags().String("by", "session", "Group output by: session, server")
+	cmd.Flags().String("by", "session", "Group output by: session, server, model, class")
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of rows returned (0 = no limit)")
 	return cmd
