@@ -385,6 +385,7 @@ func writeTelemetryJSONL(
 
 	// Write new session summaries with context window fields.
 	for _, s := range summaries {
+		primaryModel := PrimaryModel(s.TokensByModel)
 		rec := SessionSummaryRecord{
 			RecordType:        "session_summary",
 			HarvestedAt:       harvestedAt,
@@ -403,6 +404,8 @@ func writeTelemetryJSONL(
 			CompletedTasks:    s.CompletedTasks,
 			TokensPerTask:     s.TokensPerTask,
 			CompactionCount:   len(s.CompactionEvents),
+			ModelClass:        DeriveModelClass(primaryModel),
+			ReasoningLevel:    DeriveReasoningLevel(primaryModel),
 		}
 		if cw := s.ContextWindow; cw != nil {
 			rec.PeakUtilization = &cw.PeakUtilization

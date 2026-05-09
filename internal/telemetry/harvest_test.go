@@ -125,3 +125,52 @@ func TestHarvestTelemetry_MissingCopilotDir(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errors.ErrTelemetrySourceMissing)
 }
+
+// ---- 054.002-T: model_class and reasoning_level populated in JSONL ----------
+
+func TestHarvestTelemetry_WritesModelClassToJSONL(t *testing.T) {
+	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
+	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
+
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	require.NoError(t, err)
+	defer sqliteDB.Close()
+
+	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
+	require.NoError(t, err)
+
+	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	content, err := os.ReadFile(jsonlPath)
+	require.NoError(t, err)
+
+	type sessionRecord struct {
+		RecordType     string `json:"record_type"`
+		SessionID      string `json:"session_id"`
+		ModelClass     string `json:"model_class"`
+		ReasoningLevel string `json:"reasoning_level"`
+	}
+
+	classes := make(map[string]string)   // sessionID → model_class
+	reasoning := make(map[string]string) // sessionID → reasoning_level
+	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
+		var rec sessionRecord
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.RecordType != "session_summary" {
+			continue
+		}
+		classes[rec.SessionID] = rec.ModelClass
+		reasoning[rec.SessionID] = rec.ReasoningLevel
+	}
+
+	// sess-h1 uses "claude-sonnet-4" → class "sonnet", no reasoning level
+	assert.Equal(t, "sonnet", classes["sess-h1"],
+		"sess-h1 (claude-sonnet-4) should have model_class=sonnet")
+	assert.Equal(t, "", reasoning["sess-h1"],
+		"sess-h1 (claude-sonnet-4) should have no reasoning_level")
+
+	// sess-h2 uses "gpt-5.1" → class "gpt", no reasoning level
+	assert.Equal(t, "gpt", classes["sess-h2"],
+		"sess-h2 (gpt-5.1) should have model_class=gpt")
+	assert.Equal(t, "", reasoning["sess-h2"],
+		"sess-h2 (gpt-5.1) should have no reasoning_level")
+}
+
