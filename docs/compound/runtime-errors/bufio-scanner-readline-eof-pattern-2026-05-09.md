@@ -10,17 +10,17 @@ pr: "92"
 
 ## Problem
 
-`bufio.NewScanner` has a hard per-line limit (default 64KB, max configurable
-to ~1MB via `sc.Buffer`). Copilot CLI `events.jsonl` files contain full
-conversation context dumps that can exceed 1MB, causing:
+`bufio.NewScanner` has a default per-line limit of 64KB. While `sc.Buffer`
+can raise that limit, backlogit's bounded JSONL readers use a 1 MiB cap as a
+practical ceiling. Copilot CLI `events.jsonl` files contain full conversation
+context dumps that can exceed even that cap, causing:
 
-```
+```text
 bufio.Scanner: token too long
 ```
 
-This crashed `backlogit telemetry harvest` silently — the scanner error was
-returned and the harvest loop exited early without processing the remaining
-sessions.
+This crashed `backlogit telemetry harvest`: the scanner error was returned and
+the harvest loop exited early without processing the remaining sessions.
 
 ## Root Cause
 
