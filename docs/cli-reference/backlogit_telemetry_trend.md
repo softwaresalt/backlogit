@@ -28,7 +28,7 @@ backlogit telemetry trend [flags]
 ### Options
 
 ```text
-      --by string       Group output by: date, branch (default "date")
+      --by string       Group output by: date, branch, class (default "date")
       --format string   Output format: table, json, markdown (default "table")
   -h, --help            help for trend
       --limit int       Restrict the number of groups returned (0 = no limit)
