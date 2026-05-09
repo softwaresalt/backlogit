@@ -103,6 +103,61 @@ func DeriveReasoningLevel(model string) string {
 	return ""
 }
 
+// ModelUsageMetrics holds per-model token and request metrics extracted from
+// a session.shutdown event in events.jsonl.
+type ModelUsageMetrics struct {
+	RequestCount     int `json:"request_count"`
+	RequestCost      int `json:"request_cost"` // in "premium requests"
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens"`
+}
+
+// ToolCallFact is the typed JSONL record for a single completed tool call
+// harvested from session-state events.jsonl. One record per matched
+// tool.execution_start + tool.execution_complete pair.
+// Stored in .backlogit/telemetry/tool-calls.jsonl.
+type ToolCallFact struct {
+	RecordType  string    `json:"record_type"` // "tool_call_fact"
+	HarvestedAt time.Time `json:"harvested_at"`
+	SessionID   string    `json:"session_id"`
+	Branch      string    `json:"branch,omitempty"`
+	Repository  string    `json:"repository,omitempty"`
+	ToolName    string    `json:"tool_name"`             // short name (mcpToolName for MCP, toolName for built-ins)
+	ServerName  string    `json:"server_name,omitempty"` // empty for built-in tools
+	IsBuiltin   bool      `json:"is_builtin"`
+	TurnID      string    `json:"turn_id,omitempty"`
+	Model       string    `json:"model,omitempty"` // model that triggered the call
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+	DurationMs  int64     `json:"duration_ms"`
+	Success     bool      `json:"success"`
+}
+
+// SessionFact is the typed JSONL record for aggregate session metrics harvested
+// from a session.shutdown event in events.jsonl. Includes per-model token
+// breakdowns, context window composition, and API duration.
+// Stored in .backlogit/telemetry/session-facts.jsonl.
+type SessionFact struct {
+	RecordType            string                       `json:"record_type"` // "session_fact"
+	HarvestedAt           time.Time                    `json:"harvested_at"`
+	SessionID             string                       `json:"session_id"`
+	Branch                string                       `json:"branch,omitempty"`
+	Repository            string                       `json:"repository,omitempty"`
+	StartedAt             time.Time                    `json:"started_at,omitempty"`
+	ShutdownAt            time.Time                    `json:"shutdown_at,omitempty"`
+	TotalApiDurationMs    int64                        `json:"total_api_duration_ms,omitempty"`
+	TotalPremiumRequests  int                          `json:"total_premium_requests,omitempty"`
+	ModelMetrics          map[string]ModelUsageMetrics `json:"model_metrics,omitempty"`
+	CurrentTokens         int                          `json:"current_tokens,omitempty"`
+	SystemTokens          int                          `json:"system_tokens,omitempty"`
+	ConversationTokens    int                          `json:"conversation_tokens,omitempty"`
+	ToolDefinitionsTokens int                          `json:"tool_definitions_tokens,omitempty"`
+	ToolCallCount         int                          `json:"tool_call_count,omitempty"`
+}
+
 // PrimaryModel returns the name of the model with the highest token count
 // from tokensByModel. When multiple models share the maximum, the
 // alphabetically first name is returned for deterministic output.

@@ -32,6 +32,10 @@ type HarvestCheckpoint struct {
 	// FileOffsets maps a log file base-name to the byte offset from which the
 	// next harvest should resume.
 	FileOffsets map[string]int64 `json:"file_offsets"`
+	// ProcessedEventSessions tracks session IDs whose events.jsonl file has been
+	// fully harvested (i.e., a session.shutdown event was found and processed).
+	// Sessions absent from this map are re-processed on the next harvest.
+	ProcessedEventSessions map[string]bool `json:"processed_event_sessions,omitempty"`
 	// LastHarvest is the wall-clock time of the most recent successful harvest.
 	LastHarvest time.Time `json:"last_harvest"`
 	// Version is a schema version for forward-compatibility checks.
@@ -52,19 +56,31 @@ func LoadCheckpoint(workspacePath string) (*HarvestCheckpoint, error) {
 	path := checkpointPath(workspacePath)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &HarvestCheckpoint{FileOffsets: make(map[string]int64)}, nil
+		return &HarvestCheckpoint{
+			FileOffsets:            make(map[string]int64),
+			ProcessedEventSessions: make(map[string]bool),
+		}, nil
 	}
 	if err != nil {
 		slog.Warn("failed to read telemetry checkpoint; treating as missing", "err", err)
-		return &HarvestCheckpoint{FileOffsets: make(map[string]int64)}, nil
+		return &HarvestCheckpoint{
+			FileOffsets:            make(map[string]int64),
+			ProcessedEventSessions: make(map[string]bool),
+		}, nil
 	}
 	var cp HarvestCheckpoint
 	if err := json.Unmarshal(data, &cp); err != nil {
 		slog.Warn("corrupt telemetry checkpoint; re-processing all logs", "err", err)
-		return &HarvestCheckpoint{FileOffsets: make(map[string]int64)}, nil
+		return &HarvestCheckpoint{
+			FileOffsets:            make(map[string]int64),
+			ProcessedEventSessions: make(map[string]bool),
+		}, nil
 	}
 	if cp.FileOffsets == nil {
 		cp.FileOffsets = make(map[string]int64)
+	}
+	if cp.ProcessedEventSessions == nil {
+		cp.ProcessedEventSessions = make(map[string]bool)
 	}
 	return &cp, nil
 }

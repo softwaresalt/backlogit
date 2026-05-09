@@ -20,9 +20,11 @@ import (
 
 // HarvestResult summarises the outcome of a telemetry harvest run.
 type HarvestResult struct {
-	SessionsHarvested int
-	ToolCallsIndexed  int
-	TotalTokens       int
+	SessionsHarvested  int
+	ToolCallsIndexed   int
+	TotalTokens        int
+	FactToolCallsAdded int
+	FactSessionsAdded  int
 }
 
 // HarvestTelemetry is the top-level harvest orchestrator. It:
@@ -182,6 +184,16 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 		slog.Warn("failed to save harvest checkpoint", "err", saveErr)
 	}
 
+	// Harvest granular fact tables from events.jsonl files.
+	factToolCalls, factSessions, factsErr := HarvestEventsFacts(copilotPath, workspacePath, cp, harvestedAt, opts.Force)
+	if factsErr != nil {
+		slog.Warn("events fact harvest partial failure", "err", factsErr)
+	}
+	// Re-save checkpoint to persist ProcessedEventSessions updated by HarvestEventsFacts.
+	if saveErr := SaveCheckpoint(workspacePath, cp); saveErr != nil {
+		slog.Warn("failed to save harvest checkpoint after events harvest", "err", saveErr)
+	}
+
 	// Total tokens = new sessions + preserved prior sessions (for idempotency).
 	totalTokens := 0
 	for _, s := range newSummaries {
@@ -192,9 +204,11 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	return HarvestResult{
-		SessionsHarvested: len(newSummaries) + len(priorSessions),
-		ToolCallsIndexed:  len(toolStats) + len(priorTools),
-		TotalTokens:       totalTokens,
+		SessionsHarvested:  len(newSummaries) + len(priorSessions),
+		ToolCallsIndexed:   len(toolStats) + len(priorTools),
+		TotalTokens:        totalTokens,
+		FactToolCallsAdded: factToolCalls,
+		FactSessionsAdded:  factSessions,
 	}, nil
 }
 
