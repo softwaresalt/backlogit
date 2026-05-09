@@ -51,3 +51,31 @@ NOT JSON AT ALL
 	require.NoError(t, err)
 	assert.Len(t, events, 2, "malformed lines should be skipped, not cause failure")
 }
+
+func TestParseSessionEvents_OversizedNonCompactionLine_Skipped(t *testing.T) {
+	oversized := strings.Repeat("x", 2*1024*1024) + "\n"
+	events, err := telemetry.ParseSessionEvents(strings.NewReader(oversized))
+	require.NoError(t, err, "oversized non-compaction line must not return an error")
+	assert.Empty(t, events, "oversized non-compaction line must produce no events")
+}
+
+func TestParseSessionEvents_OversizedLine_SubsequentEventsPreserved(t *testing.T) {
+	compaction := `{"event_type":"session.compaction_complete","preCompactionTokens":60000,"compactionTokensUsed":{"input":6000,"output":2500,"cachedInput":1500},"timestamp":"2026-04-09T00:15:00Z"}` + "\n"
+	oversized := strings.Repeat("x", 2*1024*1024) + "\n"
+	input := compaction + oversized + compaction
+	events, err := telemetry.ParseSessionEvents(strings.NewReader(input))
+	require.NoError(t, err, "oversized line mid-stream must not abort the parse")
+	require.Len(t, events, 2, "both compaction events must be parsed despite the oversized line between them")
+	assert.Equal(t, 60000, events[0].PreCompactionTokens)
+	assert.Equal(t, 60000, events[1].PreCompactionTokens)
+}
+
+func TestParseSessionEvents_OversizedLineBeforeCompaction_EventStillParsed(t *testing.T) {
+	oversized := strings.Repeat("x", 2*1024*1024) + "\n"
+	compaction := `{"event_type":"session.compaction_complete","preCompactionTokens":75000,"compactionTokensUsed":{"input":7500,"output":3000,"cachedInput":2000},"timestamp":"2026-04-09T00:30:00Z"}` + "\n"
+	input := oversized + compaction
+	events, err := telemetry.ParseSessionEvents(strings.NewReader(input))
+	require.NoError(t, err, "oversized prefix line must not abort the parse")
+	require.Len(t, events, 1, "compaction event after the oversized line must be parsed")
+	assert.Equal(t, 75000, events[0].PreCompactionTokens)
+}
