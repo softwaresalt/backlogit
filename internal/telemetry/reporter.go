@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -42,7 +43,20 @@ type ReportOptions struct {
 // <workspacePath>/.backlogit/ and produces a formatted report string
 // according to opts. Returns an informative message (not an error) when no
 // harvested data exists.
+//
+// GroupBy values backed by telemetry-sessions.jsonl: "session", "server",
+// "model", "class". GroupBy values backed by fact JSONL files: "tool",
+// "context".
 func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
+	// "tool" and "context" are backed by the fact tables, not telemetry-sessions.jsonl.
+	if opts.GroupBy == "tool" || opts.GroupBy == "context" {
+		format := opts.Format
+		if format == "" {
+			format = FormatTable
+		}
+		return GenerateFactsReport(workspacePath, opts.GroupBy, format, opts.Limit)
+	}
+
 	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
 	sessions, tools, err := readSessionJSONL(jsonlPath, nil)
 	if err != nil {
@@ -78,9 +92,9 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 	// Validate groupBy before allocating aggregation structures.
 	switch groupBy {
 	case "session", "server", "model", "class":
-		// supported
+		// supported — backed by telemetry-sessions.jsonl
 	default:
-		return "", fmt.Errorf("unsupported group-by value %q: supported values are \"session\", \"server\", \"model\", \"class\"", groupBy)
+		return "", fmt.Errorf("unsupported group-by value %q: supported values are \"session\", \"server\", \"model\", \"class\", \"tool\", \"context\"", groupBy)
 	}
 
 	format := opts.Format
@@ -658,4 +672,346 @@ func formatModelMarkdown(sessions []SessionSummaryRecord, limit int, byClass boo
 			escapeMarkdownCell(g.Group), g.Tokens, g.Sessions))
 	}
 	return sb.String()
+}
+
+// ─── Fact-table reporters ──────────────────────────────────────────────────
+
+// toolCallAggregate holds rolled-up stats for one tool.
+type toolCallAggregate struct {
+	ToolName     string
+	ServerName   string
+	IsBuiltin    bool
+	CallCount    int
+	SuccessCount int
+	TotalMs      int64
+	Sessions     map[string]struct{}
+}
+
+// GenerateFactsReport reads fact JSONL files from .backlogit/telemetry/ and
+// produces a formatted report. Supported groupBy values: "tool", "context".
+func GenerateFactsReport(workspacePath, groupBy string, format ReportFormat, limit int) (string, error) {
+	telDir := filepath.Join(workspacePath, ".backlogit", "telemetry")
+
+	switch groupBy {
+	case "tool":
+		facts, err := readToolCallFacts(filepath.Join(telDir, "tool-calls.jsonl"))
+		if err != nil {
+			return "", fmt.Errorf("read tool-calls.jsonl: %w", err)
+		}
+		if len(facts) == 0 {
+			return "No tool call fact data found. Run `backlogit telemetry harvest` first.\n", nil
+		}
+		return formatToolFacts(facts, format, limit)
+	case "context":
+		sfacts, err := readSessionFacts(filepath.Join(telDir, "session-facts.jsonl"))
+		if err != nil {
+			return "", fmt.Errorf("read session-facts.jsonl: %w", err)
+		}
+		if len(sfacts) == 0 {
+			return "No session fact data found. Run `backlogit telemetry harvest` first.\n", nil
+		}
+		return formatContextFacts(sfacts, format, limit)
+	default:
+		return "", fmt.Errorf("unsupported group-by %q for facts report: valid values are \"tool\", \"context\"", groupBy)
+	}
+}
+
+func readToolCallFacts(path string) ([]ToolCallFact, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var facts []ToolCallFact
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var rec ToolCallFact
+		if err := dec.Decode(&rec); err != nil {
+			continue // skip corrupt lines
+		}
+		facts = append(facts, rec)
+	}
+	return facts, nil
+}
+
+func readSessionFacts(path string) ([]SessionFact, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var facts []SessionFact
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var rec SessionFact
+		if err := dec.Decode(&rec); err != nil {
+			continue
+		}
+		facts = append(facts, rec)
+	}
+	return facts, nil
+}
+
+// aggregateToolFacts groups ToolCallFact records by tool name.
+func aggregateToolFacts(facts []ToolCallFact) []toolCallAggregate {
+	index := make(map[string]*toolCallAggregate)
+	for _, f := range facts {
+		agg, ok := index[f.ToolName]
+		if !ok {
+			agg = &toolCallAggregate{
+				ToolName:   f.ToolName,
+				ServerName: f.ServerName,
+				IsBuiltin:  f.IsBuiltin,
+				Sessions:   make(map[string]struct{}),
+			}
+			index[f.ToolName] = agg
+		}
+		agg.CallCount++
+		if f.Success {
+			agg.SuccessCount++
+		}
+		agg.TotalMs += f.DurationMs
+		agg.Sessions[f.SessionID] = struct{}{}
+	}
+
+	rows := make([]toolCallAggregate, 0, len(index))
+	for _, a := range index {
+		rows = append(rows, *a)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].CallCount != rows[j].CallCount {
+			return rows[i].CallCount > rows[j].CallCount
+		}
+		return rows[i].ToolName < rows[j].ToolName
+	})
+	return rows
+}
+
+func formatToolFacts(facts []ToolCallFact, format ReportFormat, limit int) (string, error) {
+	rows := aggregateToolFacts(facts)
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+
+	switch format {
+	case FormatJSON:
+		type jsonRow struct {
+			ToolName        string  `json:"tool_name"`
+			ServerName      string  `json:"server_name,omitempty"`
+			IsBuiltin       bool    `json:"is_builtin"`
+			CallCount       int     `json:"call_count"`
+			SuccessPct      float64 `json:"success_pct"`
+			AvgDurationMs   float64 `json:"avg_duration_ms"`
+			TotalDurationMs int64   `json:"total_duration_ms"`
+			Sessions        int     `json:"sessions"`
+		}
+		out := make([]jsonRow, 0, len(rows))
+		for _, r := range rows {
+			sp := 0.0
+			if r.CallCount > 0 {
+				sp = 100.0 * float64(r.SuccessCount) / float64(r.CallCount)
+			}
+			ad := 0.0
+			if r.CallCount > 0 {
+				ad = float64(r.TotalMs) / float64(r.CallCount)
+			}
+			out = append(out, jsonRow{
+				ToolName:        r.ToolName,
+				ServerName:      r.ServerName,
+				IsBuiltin:       r.IsBuiltin,
+				CallCount:       r.CallCount,
+				SuccessPct:      math.Round(sp*10) / 10,
+				AvgDurationMs:   math.Round(ad*10) / 10,
+				TotalDurationMs: r.TotalMs,
+				Sessions:        len(r.Sessions),
+			})
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("marshal tool facts: %w", err)
+		}
+		return string(data) + "\n", nil
+
+	case FormatMarkdown:
+		var sb strings.Builder
+		sb.WriteString("# Tool Call Report\n\n")
+		sb.WriteString("| Tool | Server | Calls | Success% | Avg ms | Total ms | Sessions |\n")
+		sb.WriteString("|---|---|---:|---:|---:|---:|---:|\n")
+		for _, r := range rows {
+			sp := 0.0
+			if r.CallCount > 0 {
+				sp = 100.0 * float64(r.SuccessCount) / float64(r.CallCount)
+			}
+			ad := 0.0
+			if r.CallCount > 0 {
+				ad = float64(r.TotalMs) / float64(r.CallCount)
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %d | %.1f | %.0f | %d | %d |\n",
+				escapeMarkdownCell(r.ToolName),
+				escapeMarkdownCell(r.ServerName),
+				r.CallCount,
+				sp, ad, r.TotalMs,
+				len(r.Sessions),
+			))
+		}
+		return sb.String(), nil
+
+	default: // table
+		const nameWidth = 36
+		const srvWidth = 20
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
+			nameWidth, "TOOL", srvWidth, "SERVER",
+			"CALLS", "SUCCESS%", "AVG_MS", "TOTAL_MS", "SESSIONS"))
+		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
+			nameWidth, strings.Repeat("-", nameWidth),
+			srvWidth, strings.Repeat("-", srvWidth),
+			strings.Repeat("-", 6), strings.Repeat("-", 8),
+			strings.Repeat("-", 8), strings.Repeat("-", 11),
+			strings.Repeat("-", 8)))
+		for _, r := range rows {
+			sp := 0.0
+			if r.CallCount > 0 {
+				sp = 100.0 * float64(r.SuccessCount) / float64(r.CallCount)
+			}
+			ad := 0.0
+			if r.CallCount > 0 {
+				ad = float64(r.TotalMs) / float64(r.CallCount)
+			}
+			name := r.ToolName
+			if len(name) > nameWidth {
+				name = name[:nameWidth]
+			}
+			srv := r.ServerName
+			if srv == "" {
+				srv = "(builtin)"
+			}
+			if len(srv) > srvWidth {
+				srv = srv[:srvWidth]
+			}
+			sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6d  %7.1f%%  %8.0f  %11d  %8d\n",
+				nameWidth, name,
+				srvWidth, srv,
+				r.CallCount, sp, ad, r.TotalMs,
+				len(r.Sessions),
+			))
+		}
+		return sb.String(), nil
+	}
+}
+
+func formatContextFacts(facts []SessionFact, format ReportFormat, limit int) (string, error) {
+	rows := append([]SessionFact(nil), facts...)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].StartedAt.After(rows[j].StartedAt)
+	})
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+
+	type contextRow struct {
+		SessionID  string  `json:"session_id"`
+		Branch     string  `json:"branch,omitempty"`
+		SystemPct  float64 `json:"system_pct"`
+		ConvPct    float64 `json:"conversation_pct"`
+		ToolDefPct float64 `json:"tool_definitions_pct"`
+		CachePct   float64 `json:"cache_read_pct"`
+		CurrentCtx int     `json:"current_context_tokens"`
+		TotalInput int     `json:"total_input_tokens"`
+	}
+
+	toRow := func(sf SessionFact) contextRow {
+		var totalInput, cacheRead int
+		for _, mm := range sf.ModelMetrics {
+			totalInput += mm.InputTokens
+			cacheRead += mm.CacheReadTokens
+		}
+		total := sf.SystemTokens + sf.ConversationTokens + sf.ToolDefinitionsTokens
+		if total == 0 {
+			total = 1
+		}
+		cachePct := 0.0
+		if totalInput > 0 {
+			cachePct = 100.0 * float64(cacheRead) / float64(totalInput)
+		}
+		return contextRow{
+			SessionID:  sf.SessionID,
+			Branch:     sf.Branch,
+			SystemPct:  100.0 * float64(sf.SystemTokens) / float64(total),
+			ConvPct:    100.0 * float64(sf.ConversationTokens) / float64(total),
+			ToolDefPct: 100.0 * float64(sf.ToolDefinitionsTokens) / float64(total),
+			CachePct:   cachePct,
+			CurrentCtx: sf.CurrentTokens,
+			TotalInput: totalInput,
+		}
+	}
+
+	switch format {
+	case FormatJSON:
+		out := make([]contextRow, 0, len(rows))
+		for _, sf := range rows {
+			out = append(out, toRow(sf))
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("marshal context facts: %w", err)
+		}
+		return string(data) + "\n", nil
+
+	case FormatMarkdown:
+		var sb strings.Builder
+		sb.WriteString("# Context Window Report\n\n")
+		sb.WriteString("| Session | Branch | System% | Conv% | ToolDef% | Cache% | Context | Total Input |\n")
+		sb.WriteString("|---|---|---:|---:|---:|---:|---:|---:|\n")
+		for _, sf := range rows {
+			r := toRow(sf)
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.1f | %.1f | %.1f | %.1f | %d | %d |\n",
+				escapeMarkdownCell(r.SessionID),
+				escapeMarkdownCell(r.Branch),
+				r.SystemPct, r.ConvPct, r.ToolDefPct, r.CachePct,
+				r.CurrentCtx, r.TotalInput,
+			))
+		}
+		return sb.String(), nil
+
+	default: // table
+		const sidWidth = 36
+		const branchWidth = 20
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
+			sidWidth, "SESSION", branchWidth, "BRANCH",
+			"SYSTEM%", "CONV%", "TOOLDEF%", "CACHE%", "CTX_TOK", "TOTAL_INPUT"))
+		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
+			sidWidth, strings.Repeat("-", sidWidth),
+			branchWidth, strings.Repeat("-", branchWidth),
+			strings.Repeat("-", 7), strings.Repeat("-", 5),
+			strings.Repeat("-", 8), strings.Repeat("-", 6),
+			strings.Repeat("-", 7), strings.Repeat("-", 11)))
+		for _, sf := range rows {
+			r := toRow(sf)
+			sid := r.SessionID
+			if len(sid) > sidWidth {
+				sid = sid[:sidWidth]
+			}
+			br := r.Branch
+			if len(br) > branchWidth {
+				br = br[:branchWidth]
+			}
+			sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6.1f%%  %4.1f%%  %7.1f%%  %5.1f%%  %7d  %11d\n",
+				sidWidth, sid,
+				branchWidth, br,
+				r.SystemPct, r.ConvPct, r.ToolDefPct, r.CachePct,
+				r.CurrentCtx, r.TotalInput,
+			))
+		}
+		return sb.String(), nil
+	}
 }
