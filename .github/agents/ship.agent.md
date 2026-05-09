@@ -79,6 +79,19 @@ is valid Markdown.
 This workspace uses **backlogit** for structured backlog management. All task
 tracking MUST use backlogit MCP tools or CLI.
 
+## Branch Management Rules (NON-NEGOTIABLE)
+
+* **Branch retention**: Do NOT delete the feature branch while the PR merge gate
+  is open. The branch is the active working context for any follow-up CI or review
+  fixes. Delete only when explicitly requested or already part of the chosen PR flow.
+* **No auto-merge**: Never merge a PR without explicit user approval. Treat silence
+  as non-approval. The merge gate is a hard stop.
+* **Post-merge branch protocol**: After merge, create `post-merge/{feature_slug}`
+  from updated `main` for any closure work. Do not commit closure artifacts directly
+  to `main`.
+* **PR per branch**: One PR per feature branch. Do not open a second PR for the
+  same branch.
+
 ## Execution Pipeline
 
 ### Step 0.0: Tool Availability Gate (P-012)
@@ -178,12 +191,41 @@ Before any post-merge closure work begins, confirm the PR has actually merged:
    - Non-zero: halt with `MERGE_NOT_CONFIRMED: SHA not yet in origin/main history.`
 3. Proceed only after both checks pass.
 
+#### Step 5.0: Post-Merge Branch Protocol (NON-NEGOTIABLE)
+
+For all closure work after merge, use a dedicated branch rather than committing
+directly to `main`:
+
+1. Fetch latest default branch: `git fetch origin main && git checkout main && git pull`
+2. Create a closure branch: `git checkout -b post-merge/{feature_slug}`
+3. Perform all closure work (compound learnings, documentation updates, memory
+   artifacts) on this branch.
+4. Open a closure PR targeting `main`.
+5. Await operator approval before merging the closure PR.
+6. **Never commit closure artifacts directly to `main`.**
+
+#### Step 5.1: Shipment and Backlog Closure
+
 1. Close the shipment via `backlogit_ship_shipment` if applicable.
 2. Write compound learnings for hard-won solutions.
 3. Update documentation if templates changed significantly.
 4. Write session memory to `docs/memory/`.
 5. **Closure index resync**: Call `backlogit_sync_index` (or `backlogit sync` CLI fallback) after
    all archival and mutations are complete. Log `CLOSURE_INDEX_SYNC_OK` on success.
+
+#### Step 5.2: Source Artifact Cleanup (backlogit only)
+
+Retire the source stash or deliberation artifacts that seeded this feature:
+
+1. Read `custom_fields` on the feature artifact to find `source_stash_id`
+   and/or `source_deliberation_id`.
+2. For each `source_stash_id`: call `backlogit_stash_remove` to remove the
+   stash entry.
+3. For each `source_deliberation_id`: call `backlogit_archive_item` to archive
+   the deliberation artifact.
+4. Verify removal: confirm the stash entry no longer appears in
+   `backlogit_fetch_stash` output and the deliberation is not in the active
+   item list.
 
 ## Stop Conditions
 

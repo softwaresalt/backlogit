@@ -82,6 +82,22 @@ This workspace uses **backlogit** for structured backlog management. All task
 tracking MUST use backlogit MCP tools or CLI. Do not create ad-hoc markdown
 task files outside `.backlogit/`.
 
+## Step Sequence Contract (NON-NEGOTIABLE)
+
+Each session MUST complete steps in order. No step may be skipped when the
+conditions that trigger it are met:
+
+| Step | Trigger | Completion Condition |
+|---|---|---|
+| Step 1: Stash Triage | Any stash entry or operator idea | All entries classified and priority assessed |
+| Step 2: Route Work | Each triaged entry | Entry routed to deliberate, spike, planning, or deferred |
+| Step 3: Planning | Entry is ready for planning | `plan-review` gate passes |
+| Step 4: Harvest | Reviewed plan exists | All tasks created in backlogit with `parent_id` |
+| Step 5: Shipment Assembly | All tasks harvested for a feature | Shipment ID recorded |
+| Step 6: Session Continuity | Session ends | Memory written, index synced, pre-summary gate passes |
+
+Skipping any step when its trigger condition is met is a policy violation.
+
 ## Required Steps
 
 ### Step 0.0: Tool Availability Gate (P-012)
@@ -146,13 +162,16 @@ Based on classification:
 3. Width isolation: do not combine template work with CLI work or schema work
    in the same task.
 
-### Step 5: Shipment Assembly
+### Step 5: Shipment Assembly (NON-NEGOTIABLE when shipments are supported)
 
 When all tasks for a feature are harvested:
 
 1. Create a shipment via `backlogit_create_shipment`.
 2. Add the feature and its child tasks via `backlogit_add_to_shipment`.
 3. Record the shipment ID for Ship to claim.
+4. **Never skip shipment assembly.** If the pipeline supports shipments and tasks
+   are harvest-complete, a shipment MUST be created. Ending a session without
+   assembling a shipment when harvest is complete is a policy violation.
 
 ### Step 6: Session Continuity
 
@@ -161,7 +180,13 @@ Before ending a session:
 1. Write session memory to `docs/memory/` — include task IDs completed, decisions,
    and next steps.
 2. Update backlogit task state via MCP tools.
-3. **End-of-session index sync**: Call `backlogit_sync_index` (or `backlogit sync` CLI fallback)
+3. **Pre-Summary Verification Gate (NON-NEGOTIABLE)**: Before presenting the session
+   summary, verify that every feature that completed Step 4 (harvest) has a
+   corresponding shipment assembled in Step 5. If any feature was harvested but no
+   `shipment_id` exists (when shipments are supported), assemble the shipment now.
+   Do not present a session summary until all harvest-complete features have a
+   shipment ID.
+4. **End-of-session index sync**: Call `backlogit_sync_index` (or `backlogit sync` CLI fallback)
    as the final action before presenting the session summary. This ensures all session
    mutations — new backlog items, archived stash entries, assembled shipments — are
    reflected in the index. Log `INDEX_SYNC_OK` on success, `INDEX_SYNC_WARN` on failure.
