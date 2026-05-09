@@ -167,19 +167,28 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 	if limit > 0 && len(rows) > limit {
 		rows = rows[:limit]
 	}
+	const modelWidth = 20
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
-		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS"))
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s\n",
+	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
+		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS", modelWidth, "PRIMARY_MODEL"))
+	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
 		strings.Repeat("-", 36), strings.Repeat("-", 8),
-		strings.Repeat("-", 11), strings.Repeat("-", 10)))
+		strings.Repeat("-", 11), strings.Repeat("-", 10),
+		modelWidth, strings.Repeat("-", modelWidth)))
 	for _, s := range rows {
 		sessionDisplay := s.SessionID
 		if IsGhostSession(s) {
 			sessionDisplay = s.SessionID + " [empty]"
 		}
-		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d\n",
-			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls))
+		pm := PrimaryModel(s.TokensByModel)
+		if pm == "" {
+			pm = "-"
+		}
+		if len(pm) > modelWidth {
+			pm = pm[:modelWidth]
+		}
+		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d  %-*s\n",
+			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls, modelWidth, pm))
 	}
 	return sb.String()
 }
@@ -267,19 +276,24 @@ func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
 	var sb strings.Builder
 	sb.WriteString("# Telemetry Report\n\n")
 	sb.WriteString("## Session Summary\n\n")
-	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls |\n")
-	sb.WriteString("|---|---:|---:|---:|\n")
+	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls | Primary Model |\n")
+	sb.WriteString("|---|---:|---:|---:|---|\n")
 	for _, row := range rows {
 		sessionDisplay := escapeMarkdownCell(row.SessionID)
 		if IsGhostSession(row) {
 			sessionDisplay = escapeMarkdownCell(row.SessionID) + " [empty]"
 		}
+		pm := PrimaryModel(row.TokensByModel)
+		if pm == "" {
+			pm = "-"
+		}
 		sb.WriteString(fmt.Sprintf(
-			"| %s | %d | %d | %d |\n",
+			"| %s | %d | %d | %d | %s |\n",
 			sessionDisplay,
 			row.TotalTokens,
 			row.ModelCalls,
 			row.ToolCalls,
+			escapeMarkdownCell(pm),
 		))
 	}
 	return sb.String()

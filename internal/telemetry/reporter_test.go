@@ -421,3 +421,65 @@ func TestGenerateTrendReport_ExistingFields_Unchanged(t *testing.T) {
 	assert.InDelta(t, 1000.0, g.AvgTokensSession, 0.01,
 		"AvgTokensSession must use the active-session count as denominator")
 }
+
+// ---- Unit 4: PRIMARY_MODEL column in session list output --------------------
+
+// writeModelAwareJSONL creates a fixture with sessions that have tokens_by_model
+// populated so that PrimaryModel resolution can be verified.
+func writeModelAwareJSONL(t *testing.T, workspacePath string) {
+	t.Helper()
+	backlogitDir := filepath.Join(workspacePath, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	records := []string{
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4.6":1500},"compaction_count":0,"model_class":"sonnet"}`,
+		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-2","branch":"main","repository":"repo","total_tokens":400,"model_calls":1,"tool_calls":1,"tokens_by_model":{"gpt-5.4":400},"compaction_count":0,"model_class":"gpt"}`,
+	}
+	content := strings.Join(records, "\n") + "\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		[]byte(content), 0o644,
+	))
+}
+
+func TestFormatSessionTable_PrimaryModel_Column(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "PRIMARY_MODEL",
+		"table header must include PRIMARY_MODEL column")
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"PRIMARY_MODEL column must show the primary model name")
+	assert.Contains(t, output, "gpt-5.4",
+		"PRIMARY_MODEL column must show the primary model name for second session")
+}
+
+func TestFormatSessionMarkdown_PrimaryModel_Column(t *testing.T) {
+	ws := t.TempDir()
+	writeModelAwareJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatMarkdown,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "Primary Model",
+		"markdown header must include Primary Model column")
+	assert.Contains(t, output, "claude-sonnet-4.6",
+		"PRIMARY_MODEL column must show the primary model name")
+}
+
+func TestFormatSessionTable_NoPrimaryModel_ShowsDash(t *testing.T) {
+	// Sessions with no tokens_by_model should show "-" in the PRIMARY_MODEL column.
+	ws := t.TempDir()
+	writeGhostTrendJSONL(t, ws)
+
+	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
+		Format: telemetry.FormatTable,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, output, "PRIMARY_MODEL",
+		"table header must include PRIMARY_MODEL column even when no model data available")
+}
