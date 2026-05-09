@@ -19,3 +19,11 @@ func ValidateSessionSummary(s SessionSummary) bool {
 	}
 	return true
 }
+
+// IsGhostSession reports whether s is a fully inactive (ghost) session.
+// A ghost session has zero total tokens, zero model calls, and zero tool calls.
+// Ghost sessions are excluded from trend report aggregation and averages so
+// that abandoned or zero-activity sessions do not distort per-session metrics.
+func IsGhostSession(s SessionSummaryRecord) bool {
+	return s.TotalTokens == 0 && s.ModelCalls == 0 && s.ToolCalls == 0
+}

@@ -174,8 +174,12 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 		strings.Repeat("-", 36), strings.Repeat("-", 8),
 		strings.Repeat("-", 11), strings.Repeat("-", 10)))
 	for _, s := range rows {
+		sessionDisplay := s.SessionID
+		if IsGhostSession(s) {
+			sessionDisplay = s.SessionID + " [empty]"
+		}
 		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d\n",
-			s.SessionID, s.TotalTokens, s.ModelCalls, s.ToolCalls))
+			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls))
 	}
 	return sb.String()
 }
@@ -266,9 +270,13 @@ func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
 	sb.WriteString("| Session | Tokens | Model Calls | Tool Calls |\n")
 	sb.WriteString("|---|---:|---:|---:|\n")
 	for _, row := range rows {
+		sessionDisplay := escapeMarkdownCell(row.SessionID)
+		if IsGhostSession(row) {
+			sessionDisplay = escapeMarkdownCell(row.SessionID) + " [empty]"
+		}
 		sb.WriteString(fmt.Sprintf(
 			"| %s | %d | %d | %d |\n",
-			escapeMarkdownCell(row.SessionID),
+			sessionDisplay,
 			row.TotalTokens,
 			row.ModelCalls,
 			row.ToolCalls,
@@ -332,6 +340,8 @@ type TrendGroup struct {
 	AvgTokensSession float64  `json:"avg_tokens_per_session"`
 	AvgTokensTask    *float64 `json:"avg_tokens_per_task,omitempty"`
 	AvgPeakUtil      *float64 `json:"avg_peak_utilization,omitempty"`
+	AvgModelCalls    float64  `json:"avg_model_calls"`
+	AvgToolCalls     float64  `json:"avg_tool_calls"`
 }
 
 // GenerateTrendReport reads telemetry-sessions.jsonl and produces a trend
@@ -360,6 +370,9 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	var groups []TrendGroup
 
 	for _, s := range sessions {
+		if IsGhostSession(s) {
+			continue
+		}
 		var key string
 		switch by {
 		case "branch":
@@ -379,6 +392,8 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		g := &groups[idx]
 		g.Sessions++
 		g.TotalTokens += s.TotalTokens
+		g.AvgModelCalls += float64(s.ModelCalls)
+		g.AvgToolCalls += float64(s.ToolCalls)
 		if s.TokensPerTask != nil {
 			if g.AvgTokensTask == nil {
 				v := *s.TokensPerTask
@@ -402,6 +417,9 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	taskCounts := make(map[string]int)
 	peakCounts := make(map[string]int)
 	for _, s := range sessions {
+		if IsGhostSession(s) {
+			continue
+		}
 		var key string
 		switch by {
 		case "branch":
@@ -423,6 +441,8 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		g := &groups[i]
 		if g.Sessions > 0 {
 			g.AvgTokensSession = float64(g.TotalTokens) / float64(g.Sessions)
+			g.AvgModelCalls /= float64(g.Sessions)
+			g.AvgToolCalls /= float64(g.Sessions)
 		}
 		if g.AvgTokensTask != nil && taskCounts[g.Group] > 1 {
 			*g.AvgTokensTask /= float64(taskCounts[g.Group])
@@ -464,11 +484,12 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 
 func formatTrendTable(groups []TrendGroup) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s\n",
-		"GROUP", "SESSIONS", "TOTAL_TOKENS", "AVG_TOKENS/SESSION", "AVG_TOKENS/TASK", "AVG_PEAK_UTIL"))
-	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s\n",
+	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
+		"GROUP", "SESSIONS", "TOTAL_TOKENS", "AVG_TOKENS/SESSION", "AVG_TOKENS/TASK", "AVG_PEAK_UTIL", "AVG_MODEL_CALLS", "AVG_TOOL_CALLS"))
+	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
 		strings.Repeat("-", 12), strings.Repeat("-", 8), strings.Repeat("-", 12),
-		strings.Repeat("-", 18), strings.Repeat("-", 15), strings.Repeat("-", 13)))
+		strings.Repeat("-", 18), strings.Repeat("-", 15), strings.Repeat("-", 13),
+		strings.Repeat("-", 15), strings.Repeat("-", 14)))
 	for _, g := range groups {
 		tpt := "-"
 		if g.AvgTokensTask != nil {
@@ -478,8 +499,9 @@ func formatTrendTable(groups []TrendGroup) string {
 		if g.AvgPeakUtil != nil {
 			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
 		}
-		sb.WriteString(fmt.Sprintf("%-12s  %8d  %12d  %18.0f  %15s  %13s\n",
-			g.Group, g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu))
+		sb.WriteString(fmt.Sprintf("%-12s  %8d  %12d  %18.0f  %15s  %13s  %15.1f  %14.1f\n",
+			g.Group, g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu,
+			g.AvgModelCalls, g.AvgToolCalls))
 	}
 	return sb.String()
 }
@@ -487,8 +509,8 @@ func formatTrendTable(groups []TrendGroup) string {
 func formatTrendMarkdown(groups []TrendGroup) string {
 	var sb strings.Builder
 	sb.WriteString("# Telemetry Trend Report\n\n")
-	sb.WriteString("| Group | Sessions | Total Tokens | Avg Tokens/Session | Avg Tokens/Task | Avg Peak Util |\n")
-	sb.WriteString("|---|---:|---:|---:|---:|---:|\n")
+	sb.WriteString("| Group | Sessions | Total Tokens | Avg Tokens/Session | Avg Tokens/Task | Avg Peak Util | Avg Model Calls | Avg Tool Calls |\n")
+	sb.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|\n")
 	for _, g := range groups {
 		tpt := "-"
 		if g.AvgTokensTask != nil {
@@ -498,8 +520,9 @@ func formatTrendMarkdown(groups []TrendGroup) string {
 		if g.AvgPeakUtil != nil {
 			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
 		}
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %.0f | %s | %s |\n",
-			escapeMarkdownCell(g.Group), g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu))
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %.0f | %s | %s | %.1f | %.1f |\n",
+			escapeMarkdownCell(g.Group), g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu,
+			g.AvgModelCalls, g.AvgToolCalls))
 	}
 	return sb.String()
 }
