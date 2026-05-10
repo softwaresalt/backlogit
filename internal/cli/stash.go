@@ -25,7 +25,7 @@ be planned later and harvested into formal work items when ready.`,
 	cmd.AddCommand(newStashListCommand(cwd))
 	cmd.AddCommand(newStashGetCommand(cwd))
 	cmd.AddCommand(newStashEditCommand(cwd))
-	cmd.AddCommand(newStashRemoveCommand(cwd))
+	cmd.AddCommand(newStashArchiveCommand(cwd))
 	cmd.AddCommand(newStashHarvestCommand(cwd))
 	return cmd
 }
@@ -190,12 +190,14 @@ func newStashEditCommand(cwd *string) *cobra.Command {
 	return cmd
 }
 
-func newStashRemoveCommand(cwd *string) *cobra.Command {
+func newStashArchiveCommand(cwd *string) *cobra.Command {
 	return &cobra.Command{
-		Use:     "remove <stash-id>",
-		Short:   "Remove an active stash entry",
-		Example: `  backlogit stash remove ABCD1234`,
-		Args:    cobra.ExactArgs(1),
+		Use:     "archive <stash-id>",
+		Aliases: []string{"remove"},
+		Short:   "Archive an active stash entry",
+		Example: `  backlogit stash archive ABCD1234
+  backlogit stash remove ABCD1234`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
@@ -203,7 +205,7 @@ func newStashRemoveCommand(cwd *string) *cobra.Command {
 				return fmt.Errorf("open workspace: %w", err)
 			}
 			defer ws.Close()
-			entry, err := core.RemoveStashEntry(ctx, ws, args[0])
+			entry, err := core.ArchiveStashEntry(ctx, ws, args[0])
 			if err != nil {
 				return err
 			}
@@ -211,7 +213,7 @@ func newStashRemoveCommand(cwd *string) *cobra.Command {
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]any{
 				"id":     entry.ID,
-				"status": "removed",
+				"status": "archived",
 			})
 		},
 	}

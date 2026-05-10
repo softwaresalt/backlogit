@@ -148,6 +148,7 @@ func TestStashTools_AreRegistered(t *testing.T) {
 		"backlogit_deliberate",
 		"backlogit_stash_get",
 		"backlogit_stash_edit",
+		"backlogit_stash_archive",
 		"backlogit_stash_remove",
 	}
 	for _, name := range expected {

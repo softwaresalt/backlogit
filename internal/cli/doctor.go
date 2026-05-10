@@ -14,6 +14,7 @@ func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
 		checkOrphans     bool
 		checkDuplicates  bool
+		fixOrphans       bool
 		outputFormatFlag string
 	)
 
@@ -22,9 +23,12 @@ func newDoctorCommand(cwd *string) *cobra.Command {
 		Short: "Check workspace integrity",
 		Long: `Scan the .backlogit workspace for structural issues such as
 orphaned artifacts (child types with no parent) and duplicate IDs
-across queue and archive directories.`,
+across queue and archive directories.
+
+Use --fix-orphans to archive orphaned artifacts automatically.`,
 		Example: `  backlogit doctor
   backlogit doctor --check-orphans=false
+  backlogit doctor --fix-orphans
   backlogit doctor --format json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -42,6 +46,7 @@ across queue and archive directories.`,
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
 				CheckOrphans:    checkOrphans,
 				CheckDuplicates: checkDuplicates,
+				FixOrphans:      fixOrphans,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -55,20 +60,24 @@ across queue and archive directories.`,
 			}
 
 			// Text output.
-			if len(report.Findings) == 0 {
+			if len(report.Findings) == 0 && len(report.FixActions) == 0 {
 				fmt.Fprintln(w, "No issues found.")
 				return nil
 			}
 			for _, f := range report.Findings {
 				fmt.Fprintf(w, "[%s] %s: %s\n", f.Type, f.ArtifactID, f.Description)
 			}
-			fmt.Fprintf(w, "\n%d issue(s) found.\n", len(report.Findings))
+			for _, a := range report.FixActions {
+				fmt.Fprintf(w, "[fix:%s] %s: %s\n", a.Type, a.ArtifactID, a.Detail)
+			}
+			fmt.Fprintf(w, "\n%d issue(s) found, %d fix(es) applied.\n", len(report.Findings), len(report.FixActions))
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&checkOrphans, "check-orphans", true, "check for orphaned child artifacts")
 	cmd.Flags().BoolVar(&checkDuplicates, "check-duplicates", true, "check for duplicate IDs across directories")
+	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().StringVar(&outputFormatFlag, "format", "text", "output format: text or json")
 
 	return cmd

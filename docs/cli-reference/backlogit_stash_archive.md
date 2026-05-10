@@ -1,26 +1,27 @@
 ---
-title: "backlogit stash remove"
-description: "Remove an active stash entry"
+title: "backlogit stash archive"
+description: "Archive an active stash entry"
 ---
 
-## backlogit stash remove
+## backlogit stash archive
 
-Remove an active stash entry
+Archive an active stash entry
 
 ```text
-backlogit stash remove <stash-id> [flags]
+backlogit stash archive <stash-id> [flags]
 ```
 
 ### Examples
 
 ```text
+  backlogit stash archive ABCD1234
   backlogit stash remove ABCD1234
 ```
 
 ### Options
 
 ```text
-  -h, --help   help for remove
+  -h, --help   help for archive
 ```
 
 ### Options inherited from parent commands

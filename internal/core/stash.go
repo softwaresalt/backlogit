@@ -27,7 +27,7 @@ const (
 )
 
 // ArchivedStashEntry is the record written to .backlogit/archive/stash.jsonl when
-// an active stash entry is removed or harvested into a backlog artifact.
+// an active stash entry is archived or harvested into a backlog artifact.
 type ArchivedStashEntry struct {
 	ID                  string     `json:"id"`
 	Priority            string     `json:"priority"`
@@ -35,8 +35,8 @@ type ArchivedStashEntry struct {
 	Text                string     `json:"text"`
 	CreatedAt           *time.Time `json:"created_at,omitempty"`
 	DeliberationID      string     `json:"deliberation_id,omitempty"`
-	RemovedAt           time.Time  `json:"removed_at"`
-	RemovalReason       string     `json:"removal_reason"`
+	ArchivedAt          time.Time  `json:"archived_at"`
+	Reason              string     `json:"reason"`
 	HarvestedArtifactID string     `json:"harvested_artifact_id,omitempty"`
 }
 
@@ -370,8 +370,8 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 		Text:                entry.Text,
 		CreatedAt:           entry.CreatedAt,
 		DeliberationID:      entry.DeliberationID,
-		RemovedAt:           time.Now().UTC(),
-		RemovalReason:       "harvested",
+		ArchivedAt:          time.Now().UTC(),
+		Reason:              "harvested",
 		HarvestedArtifactID: artifact.ID,
 	}
 	if archErr := appendToStashArchive(ws.RootPath, archiveEntry); archErr != nil {
@@ -657,9 +657,10 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 	return view, nil
 }
 
-// RemoveStashEntry permanently removes an active stash entry by ID.
+// ArchiveStashEntry archives an active stash entry by ID.
 // The entry is removed from the JSONL file and marked as removed in the DB index.
-func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stash.Entry, error) {
+// An archive record is appended to .backlogit/archive/stash.jsonl.
+func ArchiveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stash.Entry, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
 	}
@@ -684,11 +685,11 @@ func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stas
 		Text:           entry.Text,
 		CreatedAt:      entry.CreatedAt,
 		DeliberationID: entry.DeliberationID,
-		RemovedAt:      time.Now().UTC(),
-		RemovalReason:  "removed",
+		ArchivedAt:     time.Now().UTC(),
+		Reason:         "archived",
 	}
 	if archErr := appendToStashArchive(ws.RootPath, archiveEntry); archErr != nil {
-		slog.Warn("stash remove: failed to append to archive", "stash_id", entry.ID, "error", archErr)
+		slog.Warn("stash archive: failed to append to archive", "stash_id", entry.ID, "error", archErr)
 	}
 	if err := writeStashEntries(path, remaining); err != nil {
 		return nil, fmt.Errorf("rewrite stash file: %w", err)
@@ -699,6 +700,40 @@ func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stas
 		}
 	}
 	return &entry, nil
+}
+
+// RemoveStashEntry is a deprecated alias for ArchiveStashEntry.
+// Deprecated: Use ArchiveStashEntry instead.
+func RemoveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stash.Entry, error) {
+	return ArchiveStashEntry(ctx, ws, stashID)
+}
+
+// ArchiveLinkedStashEntries archives all active stash entries linked to the
+// given item ID. It is called during cascade archive operations to clean up
+// stash entries associated with features and tasks being archived.
+func ArchiveLinkedStashEntries(ctx context.Context, ws *Workspace, itemID string) (int, error) {
+	if ws == nil || ws.DB == nil {
+		return 0, nil
+	}
+
+	stashIDs, err := db.GetStashLinksForItem(ctx, ws.DB, itemID)
+	if err != nil {
+		return 0, fmt.Errorf("get stash links for %s: %w", itemID, err)
+	}
+	if len(stashIDs) == 0 {
+		return 0, nil
+	}
+
+	var archived int
+	for _, sid := range stashIDs {
+		if _, archErr := ArchiveStashEntry(ctx, ws, sid); archErr != nil {
+			slog.Warn("archive linked stash: failed to archive stash entry",
+				"item_id", itemID, "stash_id", sid, "error", archErr)
+			continue
+		}
+		archived++
+	}
+	return archived, nil
 }
 
 // EditStashOptions controls which fields to update on a stash entry.

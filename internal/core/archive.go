@@ -15,13 +15,22 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
-// ArchiveRecord tracks the metadata for a single archived artifact.
+// ArchiveRecord tracks the metadata for a single archived artifact,
+// including any cascaded children and failures.
 type ArchiveRecord struct {
-	ID           string    `json:"id"`
-	ArchivedAt   time.Time `json:"archived_at"`
-	ArchivedBy   string    `json:"archived_by"`
-	OriginalPath string    `json:"original_path"`
-	ArchivePath  string    `json:"archive_path"`
+	ID            string           `json:"id"`
+	ArchivedAt    time.Time        `json:"archived_at"`
+	ArchivedBy    string           `json:"archived_by"`
+	OriginalPath  string           `json:"original_path"`
+	ArchivePath   string           `json:"archive_path"`
+	CascadedItems []string         `json:"cascaded_items,omitempty"`
+	FailedItems   []ArchiveFailure `json:"failed_items,omitempty"`
+}
+
+// ArchiveFailure records a child item that failed to archive during cascade.
+type ArchiveFailure struct {
+	ItemID string `json:"item_id"`
+	Error  string `json:"error"`
 }
 
 // ArchivePolicy defines rules for automatic archiving of completed artifacts.
@@ -37,6 +46,7 @@ type ArchiveOpt func(*archiveConfig)
 type archiveConfig struct {
 	commitSHA string
 	topLevel  *bool // nil means default true
+	cascade   bool  // when true, archive children recursively before the parent
 }
 
 // WithCommitSHA attaches a git commit SHA to the archive event for traceability.
@@ -52,12 +62,27 @@ func WithTopLevel(topLevel bool) ArchiveOpt {
 	return func(c *archiveConfig) { c.topLevel = &topLevel }
 }
 
+// WithCascade enables recursive archiving of child items before archiving
+// the target item. Children are archived deepest-first (subtasks before tasks).
+// Default is false.
+func WithCascade(cascade bool) ArchiveOpt {
+	return func(c *archiveConfig) { c.cascade = cascade }
+}
+
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
+// When WithCascade(true) is set, child items are archived bottom-up before the parent.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, opts ...ArchiveOpt) (*ArchiveRecord, error) {
 	var cfg archiveConfig
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+
+	// Cascade: archive all descendants bottom-up before archiving the target.
+	var cascadedItems []string
+	var failedItems []ArchiveFailure
+	if cfg.cascade {
+		cascadedItems, failedItems = archiveDescendants(ctx, database, ws, itemID, cfg)
 	}
 
 	backlogDir := WorkspaceStorageRoot(ws.RootPath)
@@ -176,12 +201,99 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		ws.HookRunner.FirePost(ctx, hooks.HookArchiveItem, hookCtx)
 	}
 
+	// Archive any stash entries linked to this item (best-effort).
+	if n, stashErr := ArchiveLinkedStashEntries(ctx, ws, itemID); stashErr != nil {
+		slog.Warn("archive item: failed to archive linked stash entries",
+			"item_id", itemID, "error", stashErr)
+	} else if n > 0 {
+		slog.Info("archive item: archived linked stash entries",
+			"item_id", itemID, "count", n)
+	}
+
 	return &ArchiveRecord{
-		ID:           itemID,
-		ArchivedAt:   time.Now(),
-		OriginalPath: currentPath,
-		ArchivePath:  archivePath,
+		ID:            itemID,
+		ArchivedAt:    time.Now(),
+		OriginalPath:  currentPath,
+		ArchivePath:   archivePath,
+		CascadedItems: cascadedItems,
+		FailedItems:   failedItems,
 	}, nil
+}
+
+// archiveDescendants collects all descendants of parentID bottom-up and archives
+// each one individually. It returns the IDs of successfully archived items and
+// any failures. Already-archived children are silently skipped.
+func archiveDescendants(ctx context.Context, database *sql.DB, ws *Workspace, parentID string, cfg archiveConfig) ([]string, []ArchiveFailure) {
+	descendants := collectDescendants(ctx, database, parentID, make(map[string]bool), 0, maxCascadeDepth(ws))
+	// descendants are collected parent-first; reverse for bottom-up archive order.
+	for i, j := 0, len(descendants)-1; i < j; i, j = i+1, j-1 {
+		descendants[i], descendants[j] = descendants[j], descendants[i]
+	}
+
+	var cascaded []string
+	var failures []ArchiveFailure
+	for _, childID := range descendants {
+		_, err := ArchiveItem(ctx, database, ws, childID, WithTopLevel(false), WithCommitSHA(cfg.commitSHA))
+		if err != nil {
+			// Skip already-archived items silently.
+			if isAlreadyArchived(ctx, database, childID) {
+				continue
+			}
+			failures = append(failures, ArchiveFailure{ItemID: childID, Error: err.Error()})
+			slog.Warn("cascade archive: child failed", "parent_id", parentID, "child_id", childID, "error", err)
+			continue
+		}
+		cascaded = append(cascaded, childID)
+
+		// Archive any stash entries linked to this child (best-effort).
+		if n, stashErr := ArchiveLinkedStashEntries(ctx, ws, childID); stashErr != nil {
+			slog.Warn("cascade archive: failed to archive linked stash entries",
+				"item_id", childID, "error", stashErr)
+		} else if n > 0 {
+			slog.Info("cascade archive: archived linked stash entries",
+				"item_id", childID, "count", n)
+		}
+	}
+	return cascaded, failures
+}
+
+// collectDescendants recursively finds all child item IDs for parentID using
+// the DB index. Items are returned parent-first (caller reverses for bottom-up).
+func collectDescendants(ctx context.Context, database *sql.DB, parentID string, visited map[string]bool, depth, maxDepth int) []string {
+	if depth >= maxDepth || visited[parentID] {
+		return nil
+	}
+	visited[parentID] = true
+
+	children, err := db.QueryItems(ctx, database, db.QueryFilters{ParentID: parentID})
+	if err != nil {
+		slog.Warn("cascade archive: failed to query children", "parent_id", parentID, "error", err)
+		return nil
+	}
+
+	var result []string
+	for _, child := range children {
+		result = append(result, child.ID)
+		result = append(result, collectDescendants(ctx, database, child.ID, visited, depth+1, maxDepth)...)
+	}
+	return result
+}
+
+// maxCascadeDepth returns a safe maximum recursion depth for cascade operations.
+func maxCascadeDepth(ws *Workspace) int {
+	if ws != nil && ws.Config != nil && ws.Config.QueueLayout != nil && len(ws.Config.QueueLayout.Levels) > 0 {
+		return len(ws.Config.QueueLayout.Levels) + 1
+	}
+	return 10 // fallback
+}
+
+// isAlreadyArchived checks whether an item has status=archived in the DB.
+func isAlreadyArchived(ctx context.Context, database *sql.DB, itemID string) bool {
+	item, err := db.GetItem(ctx, database, itemID)
+	if err != nil {
+		return false
+	}
+	return item.Status == models.StatusArchived
 }
 
 // UnarchiveItem restores an artifact from the archive back to its original path.

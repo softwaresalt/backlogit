@@ -182,7 +182,7 @@ func TestStashCommand_Remove(t *testing.T) {
 	cmd.SetArgs([]string{"--cwd", root, "stash", "remove", stashID})
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), stashID)
-	assert.Contains(t, buf.String(), "removed")
+	assert.Contains(t, buf.String(), "archived")
 
 	buf.Reset()
 	cmd.SetArgs([]string{"--cwd", root, "stash", "list"})
