@@ -120,3 +120,41 @@ func TestPrimaryModel_Tie_DeterministicByName(t *testing.T) {
 	}
 	assert.Equal(t, "aaa-model", telemetry.PrimaryModel(m))
 }
+
+// ---- DeriveBranchType -------------------------------------------------------
+
+func TestDeriveBranchType_Empty(t *testing.T) {
+	assert.Equal(t, "", telemetry.DeriveBranchType(""))
+}
+
+func TestDeriveBranchType_Feature(t *testing.T) {
+	assert.Equal(t, "feature", telemetry.DeriveBranchType("feature/057-f-schema-discoverability"))
+}
+
+func TestDeriveBranchType_Stage(t *testing.T) {
+	assert.Equal(t, "stage", telemetry.DeriveBranchType("chore/stage-056-s-schema-discoverability"))
+}
+
+func TestDeriveBranchType_Ship(t *testing.T) {
+	assert.Equal(t, "ship", telemetry.DeriveBranchType("ship/055s-lifecycle-hygiene"))
+}
+
+func TestDeriveBranchType_PostMerge(t *testing.T) {
+	assert.Equal(t, "post-merge", telemetry.DeriveBranchType("post-merge/autoharness-tune-2026-04-26"))
+}
+
+func TestDeriveBranchType_Chore(t *testing.T) {
+	assert.Equal(t, "chore", telemetry.DeriveBranchType("chore/copilot-review-fixes-108-109"))
+}
+
+func TestDeriveBranchType_Main(t *testing.T) {
+	assert.Equal(t, "main", telemetry.DeriveBranchType("main"))
+}
+
+func TestDeriveBranchType_Master(t *testing.T) {
+	assert.Equal(t, "main", telemetry.DeriveBranchType("master"))
+}
+
+func TestDeriveBranchType_Other(t *testing.T) {
+	assert.Equal(t, "other", telemetry.DeriveBranchType("release/v1.0"))
+}

@@ -103,6 +103,39 @@ func DeriveReasoningLevel(model string) string {
 	return ""
 }
 
+// DeriveBranchType returns a branch-type classification label from a branch name.
+//
+// Rules (applied in order):
+//   - empty string → ""
+//   - "feature/" prefix → "feature"
+//   - "chore/stage-" prefix → "stage"
+//   - "ship/" prefix → "ship"
+//   - "post-merge/" prefix → "post-merge"
+//   - "chore/" prefix → "chore"
+//   - "main" or "master" exact → "main"
+//   - fallback → "other"
+func DeriveBranchType(branch string) string {
+	if branch == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(branch, "feature/"):
+		return "feature"
+	case strings.HasPrefix(branch, "chore/stage-"):
+		return "stage"
+	case strings.HasPrefix(branch, "ship/"):
+		return "ship"
+	case strings.HasPrefix(branch, "post-merge/"):
+		return "post-merge"
+	case strings.HasPrefix(branch, "chore/"):
+		return "chore"
+	case branch == "main" || branch == "master":
+		return "main"
+	default:
+		return "other"
+	}
+}
+
 // ModelUsageMetrics holds per-model token and request metrics extracted from
 // a session.shutdown event in events.jsonl.
 type ModelUsageMetrics struct {

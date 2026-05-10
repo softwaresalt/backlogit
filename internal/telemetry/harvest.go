@@ -268,6 +268,13 @@ func parseLogFiles(logsDir string, cp *HarvestCheckpoint, opts HarvestOptions) (
 	return events, newOffsets, nil
 }
 
+// ReadSessionsOnly reads all SessionSummaryRecord entries from the JSONL file
+// at jsonlPath. It returns nil (not an error) when the file does not exist.
+func ReadSessionsOnly(jsonlPath string) ([]SessionSummaryRecord, error) {
+	sessions, _, err := readSessionJSONL(jsonlPath, nil)
+	return sessions, err
+}
+
 // readSessionJSONL reads session_summary and tool_usage records from the JSONL,
 // skipping records whose session_id is in excludeIDs (nil map includes all).
 // Returns nil slices (not an error) when the file does not exist.

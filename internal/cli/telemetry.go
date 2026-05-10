@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ for harvested field definitions and SQLite column mappings.`,
 	cmd.AddCommand(newTelemetryTopCmd(cwd))
 	cmd.AddCommand(newTelemetryReportCmd(cwd))
 	cmd.AddCommand(newTelemetryTrendCmd(cwd))
+	cmd.AddCommand(newTelemetryBranchCmd(cwd))
 	cmd.AddCommand(newTelemetrySchemaCmd())
 	return cmd
 }
@@ -217,10 +219,156 @@ Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).`,
 			return nil
 		},
 	}
-	cmd.Flags().String("by", "date", "Group output by: date, branch, class")
+	cmd.Flags().String("by", "date", "Group output by: date, branch, class, branch-type")
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of groups returned (0 = no limit)")
 	return cmd
+}
+
+func newTelemetryBranchCmd(cwd *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "branch",
+		Short: "Show per-branch telemetry metrics with type classification and enrichment",
+		Long: `Show per-branch telemetry metrics with type classification and enrichment.
+
+Aggregates all sessions by branch name and enriches each branch profile with:
+  - Branch type classification (feature, chore, stage, ship, post-merge, main, other)
+  - Git PR number (from merge commit history)
+  - Backlogit artifact IDs (shipment/feature extracted from branch naming conventions)
+  - Lifespan (first to last session)
+
+Use --type to filter by branch type (e.g. --type feature).
+Use --format json for machine-readable output.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, _ := cmd.Flags().GetString("format")
+			typeFilter, _ := cmd.Flags().GetString("type")
+			limit, _ := cmd.Flags().GetInt("limit")
+
+			jsonlPath := filepath.Join(*cwd, ".backlogit", "telemetry-sessions.jsonl")
+			sessions, err := telemetry.ReadSessionsOnly(jsonlPath)
+			if err != nil {
+				return fmt.Errorf("read telemetry data: %w", err)
+			}
+			if len(sessions) == 0 {
+				fmt.Fprint(cmd.OutOrStdout(), "No telemetry data found. Run `backlogit telemetry harvest` first.\n")
+				return nil
+			}
+
+			profiles := telemetry.AggregateBranches(sessions)
+
+			// Git PR enrichment (graceful failure).
+			prMap, _ := telemetry.ParseGitMergePRs(*cwd)
+			telemetry.EnrichBranchProfiles(profiles, prMap)
+
+			// Filter by branch type if requested.
+			if typeFilter != "" {
+				var filtered []telemetry.BranchProfile
+				for _, p := range profiles {
+					if p.BranchType == typeFilter {
+						filtered = append(filtered, p)
+					}
+				}
+				profiles = filtered
+			}
+
+			// Apply limit.
+			if limit > 0 && len(profiles) > limit {
+				profiles = profiles[:limit]
+			}
+
+			switch telemetry.ReportFormat(format) {
+			case telemetry.FormatJSON:
+				return renderBranchJSON(cmd, profiles)
+			case telemetry.FormatMarkdown:
+				renderBranchMarkdown(cmd, profiles)
+			default:
+				renderBranchTable(cmd, profiles)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
+	cmd.Flags().String("type", "", "Filter by branch type: feature, chore, stage, ship, post-merge, main, other")
+	cmd.Flags().Int("limit", 0, "Restrict the number of branches returned (0 = no limit)")
+	return cmd
+}
+
+func renderBranchTable(cmd *cobra.Command, profiles []telemetry.BranchProfile) {
+	w := cmd.OutOrStdout()
+	fmt.Fprintf(w, "%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
+		"BRANCH", "TYPE", "SESSIONS", "TOKENS", "AVG/SESSION", "TASKS", "PR", "FEATURE", "SHIPMENT", "LIFESPAN")
+	fmt.Fprintf(w, "%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
+		"----------------------------------------", "------------", "--------", "------------",
+		"--------------", "-----", "------", "--------", "--------", "--------")
+	for _, p := range profiles {
+		branch := p.Branch
+		if len(branch) > 40 {
+			branch = branch[:37] + "..."
+		}
+		pr := p.PRNumber
+		if pr == "" {
+			pr = "-"
+		}
+		feat := p.FeatureID
+		if feat == "" {
+			feat = "-"
+		}
+		ship := p.ShipmentID
+		if ship == "" {
+			ship = "-"
+		}
+		lifespan := formatLifespan(p.LastSeen.Sub(p.FirstSeen))
+		fmt.Fprintf(w, "%-40s %-12s %8d %12d %14.0f %5d %-6s %-8s %-8s %s\n",
+			branch, p.BranchType, p.Sessions, p.TotalTokens, p.AvgTokens,
+			p.TaskCount, pr, feat, ship, lifespan)
+	}
+}
+
+func renderBranchJSON(cmd *cobra.Command, profiles []telemetry.BranchProfile) error {
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(profiles)
+}
+
+func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile) {
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "## Branch Telemetry Metrics")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "| Branch | Type | Sessions | Tokens | Avg/Session | Tasks | PR | Feature | Shipment | Lifespan |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|")
+	for _, p := range profiles {
+		pr := p.PRNumber
+		if pr == "" {
+			pr = "-"
+		}
+		feat := p.FeatureID
+		if feat == "" {
+			feat = "-"
+		}
+		ship := p.ShipmentID
+		if ship == "" {
+			ship = "-"
+		}
+		lifespan := formatLifespan(p.LastSeen.Sub(p.FirstSeen))
+		fmt.Fprintf(w, "| %s | %s | %d | %d | %.0f | %d | %s | %s | %s | %s |\n",
+			p.Branch, p.BranchType, p.Sessions, p.TotalTokens, p.AvgTokens,
+			p.TaskCount, pr, feat, ship, lifespan)
+	}
+}
+
+func formatLifespan(d time.Duration) string {
+	if d < time.Minute {
+		return "<1m"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	return fmt.Sprintf("%dd%dh", days, hours)
 }
 
 func newTelemetrySchemaCmd() *cobra.Command {
