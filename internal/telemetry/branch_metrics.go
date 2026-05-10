@@ -162,12 +162,13 @@ func ParseGitMergePRs(repoPath string) (map[string]string, error) {
 		// Git not available or not a repo — graceful degradation.
 		return map[string]string{}, nil
 	}
-	return ParseMergeLines(strings.NewReader(string(output))), nil
+	return ParseMergeLines(strings.NewReader(string(output)))
 }
 
 // ParseMergeLines parses git log --merges --oneline output and extracts
-// branch name → PR number mappings.
-func ParseMergeLines(r io.Reader) map[string]string {
+// branch name → PR number mappings. Returns an error if the scanner
+// encounters an I/O or buffer-overflow issue.
+func ParseMergeLines(r io.Reader) (map[string]string, error) {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -182,7 +183,10 @@ func ParseMergeLines(r io.Reader) map[string]string {
 			}
 		}
 	}
-	return result
+	if err := scanner.Err(); err != nil {
+		return result, fmt.Errorf("scan merge lines: %w", err)
+	}
+	return result, nil
 }
 
 // EnrichBranchProfiles fills PRNumber on each profile from the provided
