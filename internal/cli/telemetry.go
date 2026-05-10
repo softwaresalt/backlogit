@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -35,6 +36,7 @@ for harvested field definitions and SQLite column mappings.`,
 	cmd.AddCommand(newTelemetryTopCmd(cwd))
 	cmd.AddCommand(newTelemetryReportCmd(cwd))
 	cmd.AddCommand(newTelemetryTrendCmd(cwd))
+	cmd.AddCommand(newTelemetrySchemaCmd())
 	return cmd
 }
 
@@ -219,4 +221,103 @@ Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).`,
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
 	cmd.Flags().Int("limit", 0, "Restrict the number of groups returned (0 = no limit)")
 	return cmd
+}
+
+func newTelemetrySchemaCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "schema",
+		Short: "Show telemetry JSONL and SQL table schemas",
+		Long: `Show telemetry JSONL fact table and SQL table schemas.
+
+Lists every field in the telemetry fact tables (session_summary, tool_usage,
+tool_call_fact, session_fact) and the SQLite cache tables (telemetry_sessions,
+telemetry_tool_usage). Useful for agents and operators building queries
+against harvested telemetry data.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			formatFlag, _ := cmd.Flags().GetString("format")
+
+			factTables := telemetry.DescribeFactTables()
+			sqlTables := telemetry.DescribeTelemetrySQLTables()
+
+			switch formatFlag {
+			case "json":
+				return renderSchemaJSON(cmd, factTables, sqlTables)
+			case "markdown":
+				return renderSchemaMarkdown(cmd, factTables, sqlTables)
+			default:
+				return renderSchemaText(cmd, factTables, sqlTables)
+			}
+		},
+	}
+	cmd.Flags().String("format", "text", "Output format: text, json, markdown")
+	return cmd
+}
+
+func renderSchemaText(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "JSONL Fact Tables")
+	fmt.Fprintln(w, "=================")
+	for _, tbl := range factTables {
+		fmt.Fprintf(w, "\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File)
+		fmt.Fprintf(w, "  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
+		for _, f := range tbl.Fields {
+			opt := ""
+			if f.Optional {
+				opt = " (optional)"
+			}
+			fmt.Fprintf(w, "  %-30s %-30s %s%s\n", f.Name, f.Type, f.JSONKey, opt)
+		}
+	}
+	fmt.Fprintln(w, "\nSQL Tables")
+	fmt.Fprintln(w, "==========")
+	for _, tbl := range sqlTables {
+		fmt.Fprintf(w, "\n%s (db: %s)\n", tbl.Name, tbl.File)
+		fmt.Fprintf(w, "  %-30s %-10s %s\n", "COLUMN", "TYPE", "JSON KEY")
+		for _, f := range tbl.Fields {
+			fmt.Fprintf(w, "  %-30s %-10s %s\n", f.Name, f.Type, f.JSONKey)
+		}
+	}
+	return nil
+}
+
+func renderSchemaJSON(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
+	out := struct {
+		FactTables []telemetry.FactTableSchema `json:"fact_tables"`
+		SQLTables  []telemetry.FactTableSchema `json:"sql_tables"`
+	}{
+		FactTables: factTables,
+		SQLTables:  sqlTables,
+	}
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func renderSchemaMarkdown(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "## JSONL Fact Tables")
+	for _, tbl := range factTables {
+		fmt.Fprintf(w, "\n### %s\n\n", tbl.Name)
+		fmt.Fprintf(w, "File: `%s` | Record type: `%s`\n\n", tbl.File, tbl.RecordType)
+		fmt.Fprintln(w, "| Field | Type | JSON Key | Optional |")
+		fmt.Fprintln(w, "|---|---|---|---|")
+		for _, f := range tbl.Fields {
+			opt := ""
+			if f.Optional {
+				opt = "yes"
+			}
+			fmt.Fprintf(w, "| %s | %s | %s | %s |\n", f.Name, f.Type, f.JSONKey, opt)
+		}
+	}
+	fmt.Fprintln(w, "\n## SQL Tables")
+	for _, tbl := range sqlTables {
+		fmt.Fprintf(w, "\n### %s\n\n", tbl.Name)
+		fmt.Fprintf(w, "Database: `%s`\n\n", tbl.File)
+		fmt.Fprintln(w, "| Column | Type | JSON Key |")
+		fmt.Fprintln(w, "|---|---|---|")
+		for _, f := range tbl.Fields {
+			fmt.Fprintf(w, "| %s | %s | %s |\n", f.Name, f.Type, f.JSONKey)
+		}
+	}
+	return nil
 }

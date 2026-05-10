@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
@@ -24,6 +25,7 @@ type MetadataCatalog struct {
 	Stash         MetadataStashInfo     `json:"stash"`
 	CLI           []CommandInfo         `json:"cli"`
 	MCPTools      []ToolInfo            `json:"mcp_tools"`
+	SQLSchema     []db.TableSchema      `json:"sql_schema,omitempty"`
 }
 
 // MetadataWorkspaceInfo describes key workspace paths and layout.
@@ -100,6 +102,7 @@ func BuildMetadataCatalog(
 	migration *config.MigrationConfig,
 	cliRoot *cobra.Command,
 	mcpTools []ToolInfo,
+	sqlSchema []db.TableSchema,
 ) (*MetadataCatalog, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
@@ -140,8 +143,9 @@ func BuildMetadataCatalog(
 			SupportsDeliberation: true,
 			DeliberationType:     "deliberation",
 		},
-		CLI:      DescribeCLICommands(cliRoot),
-		MCPTools: sortToolInfos(mcpTools),
+		CLI:       DescribeCLICommands(cliRoot),
+		MCPTools:  sortToolInfos(mcpTools),
+		SQLSchema: sqlSchema,
 	}
 
 	if migration != nil {

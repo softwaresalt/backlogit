@@ -20,7 +20,7 @@ var forbiddenPatterns = []*regexp.Regexp{
 var semicolonGuard = regexp.MustCompile(`(?m);.*\S+.*$`)
 
 // allowedPragmas lists PRAGMA statements that pass the read-only gate.
-var allowedPragmas = []string{"table_info", "table_list", "database_list"}
+var allowedPragmas = []string{"table_info", "table_list", "database_list", "index_list", "index_info"}
 
 // MaxRows caps the number of rows returned by a gated query.
 const MaxRows = 500

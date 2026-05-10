@@ -3,12 +3,14 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog, error) {
@@ -41,6 +43,16 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 		}
 	}
 
+	var sqlSchema []db.TableSchema
+	if s.Workspace != nil && s.Workspace.DB != nil {
+		schema, err := db.IntrospectSchema(ctx, s.Workspace.DB)
+		if err != nil {
+			slog.Warn("schema introspection failed, catalog will omit sql_schema", "error", err)
+		} else {
+			sqlSchema = schema
+		}
+	}
+
 	return core.BuildMetadataCatalog(
 		s.Workspace,
 		templateInfos,
@@ -48,6 +60,7 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 		migration,
 		nil,
 		s.DescribeTools(),
+		sqlSchema,
 	)
 }
 
