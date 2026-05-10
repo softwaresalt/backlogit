@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // DoctorFindingType classifies an integrity issue found by Doctor.
@@ -186,6 +187,13 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				}
 			}
 
+			// Build status lookup from parsed artifacts to skip already-archived
+			// items without a DB round-trip.
+			statusByID := make(map[string]string, len(artifacts))
+			for _, info := range artifacts {
+				statusByID[info.id] = info.status
+			}
+
 			for _, f := range report.Findings {
 				if f.Type != FindingOrphanedArtifact {
 					continue
@@ -193,7 +201,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				if duplicateIDs[f.ArtifactID] {
 					continue
 				}
-				if isAlreadyArchived(ctx, ws.DB, f.ArtifactID) {
+				if statusByID[f.ArtifactID] == string(models.StatusArchived) {
 					continue
 				}
 				if _, archErr := ArchiveItem(ctx, ws.DB, ws, f.ArtifactID); archErr != nil {

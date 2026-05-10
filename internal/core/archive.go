@@ -244,15 +244,6 @@ func archiveDescendants(ctx context.Context, database *sql.DB, ws *Workspace, pa
 			continue
 		}
 		cascaded = append(cascaded, childID)
-
-		// Archive any stash entries linked to this child (best-effort).
-		if n, stashErr := ArchiveLinkedStashEntries(ctx, ws, childID); stashErr != nil {
-			slog.Warn("cascade archive: failed to archive linked stash entries",
-				"item_id", childID, "error", stashErr)
-		} else if n > 0 {
-			slog.Info("cascade archive: archived linked stash entries",
-				"item_id", childID, "count", n)
-		}
 	}
 	return cascaded, failures
 }
