@@ -183,3 +183,46 @@ func TestTelemetrySchemaSubcmd_RunsMarkdown(t *testing.T) {
 	assert.Contains(t, out.String(), "## JSONL Fact Tables")
 	assert.Contains(t, out.String(), "## SQL Tables")
 }
+
+func TestTelemetryBranchSubcmd_Exists(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	branch, _, err := root.Find([]string{"branch"})
+	require.NoError(t, err)
+	require.NotNil(t, branch, "'branch' subcommand should be registered")
+}
+
+func TestTelemetryBranchSubcmd_AcceptsFlags(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	branch, _, err := root.Find([]string{"branch"})
+	require.NoError(t, err)
+
+	for _, name := range []string{"format", "type", "limit"} {
+		f := branch.Flags().Lookup(name)
+		assert.NotNil(t, f, "branch subcommand must accept --%s flag", name)
+	}
+}
+
+func TestTelemetryBranchSubcmd_RunsNoData(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"branch"})
+	err := root.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "No telemetry data found")
+}
+
+func TestTelemetryBranchSubcmd_RejectsInvalidFormat(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"branch", "--format", "invalid"})
+	err := root.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported format")
+}

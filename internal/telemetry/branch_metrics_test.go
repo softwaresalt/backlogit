@@ -157,7 +157,8 @@ ef28b29 Merge pull request #109 from softwaresalt/feature/057-f-schema-discovera
 f1c639d Merge pull request #108 from softwaresalt/chore/stage-056-s-schema-discoverability
 9752238 Merge pull request #106 from softwaresalt/ship/055s-lifecycle-hygiene
 `
-	result := telemetry.ParseMergeLines(strings.NewReader(input))
+	result, err := telemetry.ParseMergeLines(strings.NewReader(input))
+	require.NoError(t, err)
 
 	assert.Equal(t, "#110", result["chore/copilot-review-fixes-108-109"])
 	assert.Equal(t, "#109", result["feature/057-f-schema-discoverability"])
@@ -170,13 +171,15 @@ func TestParseMergeLines_NonMergeLines(t *testing.T) {
 619cb3e Merge pull request #110 from softwaresalt/chore/fixes
 some random text
 `
-	result := telemetry.ParseMergeLines(strings.NewReader(input))
+	result, err := telemetry.ParseMergeLines(strings.NewReader(input))
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "#110", result["chore/fixes"])
 }
 
 func TestParseMergeLines_Empty(t *testing.T) {
-	result := telemetry.ParseMergeLines(strings.NewReader(""))
+	result, err := telemetry.ParseMergeLines(strings.NewReader(""))
+	require.NoError(t, err)
 	assert.Empty(t, result)
 }
 
@@ -185,7 +188,8 @@ func TestParseMergeLines_DuplicateBranch_KeepsFirst(t *testing.T) {
 	input := `aaa Merge pull request #200 from owner/feature/x
 bbb Merge pull request #100 from owner/feature/x
 `
-	result := telemetry.ParseMergeLines(strings.NewReader(input))
+	result, err := telemetry.ParseMergeLines(strings.NewReader(input))
+	require.NoError(t, err)
 	assert.Equal(t, "#200", result["feature/x"])
 }
 

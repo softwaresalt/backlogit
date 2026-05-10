@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -244,6 +245,13 @@ Use --format json for machine-readable output.`,
 			typeFilter, _ := cmd.Flags().GetString("type")
 			limit, _ := cmd.Flags().GetInt("limit")
 
+			// Validate format early.
+			switch telemetry.ReportFormat(format) {
+			case telemetry.FormatTable, telemetry.FormatJSON, telemetry.FormatMarkdown:
+			default:
+				return fmt.Errorf("unsupported format %q: supported values are \"table\", \"json\", \"markdown\"", format)
+			}
+
 			jsonlPath := filepath.Join(*cwd, ".backlogit", "telemetry-sessions.jsonl")
 			sessions, err := telemetry.ReadSessionsOnly(jsonlPath)
 			if err != nil {
@@ -351,9 +359,14 @@ func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile
 		}
 		lifespan := formatLifespan(p.LastSeen.Sub(p.FirstSeen))
 		fmt.Fprintf(w, "| %s | %s | %d | %d | %.0f | %d | %s | %s | %s | %s |\n",
-			p.Branch, p.BranchType, p.Sessions, p.TotalTokens, p.AvgTokens,
+			escapeMDCell(p.Branch), escapeMDCell(p.BranchType), p.Sessions, p.TotalTokens, p.AvgTokens,
 			p.TaskCount, pr, feat, ship, lifespan)
 	}
+}
+
+// escapeMDCell replaces pipe characters that would break Markdown table cells.
+func escapeMDCell(s string) string {
+	return strings.ReplaceAll(s, "|", "\\|")
 }
 
 func formatLifespan(d time.Duration) string {
