@@ -186,7 +186,7 @@ features, descendants, and deliberations). The remaining gaps are:
 **Skill domain:** docs
 **Execution note:** run after all code units
 **Patterns to follow:** `go run ./cmd/gen-docs`
-**Dependencies:** Units 1, 4 (CLI flag changes)
+**Dependencies:** Units 1, 3, 4 (CLI and stash surface changes)
 
 **Approach:**
 1. Run `go run ./cmd/gen-docs` to regenerate CLI reference docs.
@@ -206,7 +206,7 @@ Unit 2 (cascade children)┘                                          ▲
 ```
 
 Units 1 and 2 are parallel. Unit 3 depends on both. Unit 4 depends on Unit 2.
-Unit 5 is last.
+Unit 5 depends on Units 1, 3, and 4.
 
 ## Decisions
 
