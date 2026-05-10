@@ -21,7 +21,11 @@ import (
 const (
 	stashStateActive    = "active"
 	stashStateHarvested = "harvested"
-	stashStateRemoved   = "removed"
+	// stashStateRemoved is the DB index state for archived/removed stash entries.
+	// Kept as "removed" for backward compatibility with existing DB rows during
+	// rehydration. The JSONL archive log uses "archived" terminology (ArchivedAt,
+	// Reason) while the DB index retains this legacy state value.
+	stashStateRemoved = "removed"
 
 	stashArchiveFileName = "stash.jsonl"
 )
@@ -658,8 +662,8 @@ func expandStashEntry(ctx context.Context, ws *Workspace, entry stash.Entry) (St
 }
 
 // ArchiveStashEntry archives an active stash entry by ID.
-// The entry is removed from the JSONL file and marked as removed in the DB index.
-// An archive record is appended to .backlogit/archive/stash.jsonl.
+// The entry is removed from the active JSONL file and its DB index state is
+// updated. An archive record is appended to .backlogit/archive/stash.jsonl.
 func ArchiveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*stash.Entry, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
