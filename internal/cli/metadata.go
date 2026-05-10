@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
@@ -101,6 +103,16 @@ func loadMetadataCatalog(ctx context.Context, cwd string) (*core.MetadataCatalog
 		migration = nil
 	}
 
+	var sqlSchema []db.TableSchema
+	if ws.DB != nil {
+		schema, err := db.IntrospectSchema(ctx, ws.DB)
+		if err != nil {
+			slog.Warn("schema introspection failed, catalog will omit sql_schema", "error", err)
+		} else {
+			sqlSchema = schema
+		}
+	}
+
 	metadataRoot := buildMetadataRootCommand(cwd)
 	return core.BuildMetadataCatalog(
 		ws,
@@ -109,7 +121,7 @@ func loadMetadataCatalog(ctx context.Context, cwd string) (*core.MetadataCatalog
 		migration,
 		metadataRoot,
 		describeMCPTools(ws),
-		nil, // sqlSchema — CLI does not have DB access; MCP path supplies this
+		sqlSchema,
 	)
 }
 

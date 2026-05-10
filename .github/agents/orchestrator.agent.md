@@ -30,7 +30,7 @@ You do NOT triage stash entries yourself. You do NOT write code or create PRs yo
 
 ## Domain Context
 
-autoharness is a globally-installed agent harness framework. The product is templates, schemas, skills, and documentation — not application code.
+backlogit is a file-backed task management and agent operating system optimized for AI agent consumption through MCP and developer consumption through CLI workflows. The product is Go source code, MCP tools, CLI commands, and documentation.
 
 ## Backlog Tool
 

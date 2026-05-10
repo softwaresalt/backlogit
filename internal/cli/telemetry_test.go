@@ -125,3 +125,61 @@ func TestTelemetryTopSubcmd_AcceptsNFlag(t *testing.T) {
 	nFlag := top.Flags().Lookup("n")
 	require.NotNil(t, nFlag, "top subcommand must accept --n flag")
 }
+
+func TestTelemetrySchemaSubcmd_Exists(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	schema, _, err := root.Find([]string{"schema"})
+	require.NoError(t, err)
+	require.NotNil(t, schema, "'schema' subcommand should be registered")
+}
+
+func TestTelemetrySchemaSubcmd_AcceptsFormatFlag(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	schema, _, err := root.Find([]string{"schema"})
+	require.NoError(t, err)
+	require.NotNil(t, schema)
+
+	formatFlag := schema.Flags().Lookup("format")
+	require.NotNil(t, formatFlag, "schema subcommand must accept --format flag")
+}
+
+func TestTelemetrySchemaSubcmd_RunsText(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"schema", "--format", "text"})
+	err := root.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "JSONL Fact Tables")
+	assert.Contains(t, out.String(), "SQL Tables")
+}
+
+func TestTelemetrySchemaSubcmd_RunsJSON(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"schema", "--format", "json"})
+	err := root.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), `"fact_tables"`)
+	assert.Contains(t, out.String(), `"sql_tables"`)
+}
+
+func TestTelemetrySchemaSubcmd_RunsMarkdown(t *testing.T) {
+	cwd := t.TempDir()
+	root := cli.NewTelemetryCmd(&cwd)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"schema", "--format", "markdown"})
+	err := root.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "## JSONL Fact Tables")
+	assert.Contains(t, out.String(), "## SQL Tables")
+}
