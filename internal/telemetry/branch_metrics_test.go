@@ -1,8 +1,10 @@
 package telemetry_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -191,6 +193,14 @@ bbb Merge pull request #100 from owner/feature/x
 	result, err := telemetry.ParseMergeLines(strings.NewReader(input))
 	require.NoError(t, err)
 	assert.Equal(t, "#200", result["feature/x"])
+}
+
+func TestParseMergeLines_ReaderError(t *testing.T) {
+	// A failing reader must surface as an error from ParseMergeLines.
+	r := iotest.ErrReader(errors.New("simulated I/O failure"))
+	_, err := telemetry.ParseMergeLines(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scan merge lines")
 }
 
 // ---- EnrichBranchProfiles ---------------------------------------------------
