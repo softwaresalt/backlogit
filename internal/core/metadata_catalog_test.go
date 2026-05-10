@@ -32,6 +32,7 @@ func TestBuildMetadataCatalog_ReturnsUnifiedCatalog(t *testing.T) {
 		config.DefaultMigrationConfig(),
 		cliRoot,
 		[]core.ToolInfo{{Name: "backlogit_get_metadata_catalog", Description: "catalog"}},
+		nil, // sqlSchema
 	)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, ".backlogit"), catalog.Workspace.StorageRoot)

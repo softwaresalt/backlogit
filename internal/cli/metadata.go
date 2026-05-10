@@ -109,6 +109,7 @@ func loadMetadataCatalog(ctx context.Context, cwd string) (*core.MetadataCatalog
 		migration,
 		metadataRoot,
 		describeMCPTools(ws),
+		nil, // sqlSchema — CLI does not have DB access; MCP path supplies this
 	)
 }
 
