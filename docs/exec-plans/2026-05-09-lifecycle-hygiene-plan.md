@@ -32,7 +32,7 @@ features, descendants, and deliberations). The remaining gaps are:
 | R3 | Add doctor --fix-orphans mode that resolves orphaned items | 046-DL chosen direction |
 | R4 | Rename stash_remove to stash_archive with backward-compatible alias | Stash 6E99AE10 |
 | R5 | Cascade defaults off; user-facing paths opt in | Design decision (see D1, revised per P1-1) |
-| R6 | Doctor --fix-orphans defaults to report-only; --fix-orphans flag enables auto-fix | Design decision (see D2) |
+| R6 | Doctor defaults to report-only diagnostics; `--fix-orphans` flag enables automatic orphan resolution | Design decision (see D2) |
 
 ## Scope Boundaries
 
@@ -84,10 +84,10 @@ features, descendants, and deliberations). The remaining gaps are:
 5. Update `ArchivedStashEntry` field names and doc comments.
 
 **Verification:**
-- `backlogit stash archive <id>` writes JSONL with `"reason": "archived"`
+- `backlogit stash archive <id>` writes JSONL with `"reason": "archived"` and `"archived_at"` timestamp
 - `backlogit stash remove <id>` still works (alias), same output
 - Both MCP tool names work
-- JSONL field is `reason` (not `removal_reason`)
+- JSONL fields are `reason` (not `removal_reason`) and `archived_at` (not `removed_at`)
 - DB state remains `state = 'removed'` (unchanged — rehydration safety per P1-3)
 - Existing tests pass with updated assertions
 
@@ -215,7 +215,7 @@ Unit 5 is last.
 | D1 | Cascade defaults off; user-facing paths opt in | Existing callers (AutoArchive, ShipShipment, tests) retain single-item behavior. User-facing CLI/MCP pass `WithCascade(true)` explicitly. Revised per P1-1 | Always-on (rejected P1-1: changes all callers unexpectedly) |
 | D2 | Doctor --fix defaults to report-only | Safer default; auto-fix could mask data issues that need human review | Always auto-fix (rejected: too aggressive for a diagnostic tool) |
 | D3 | Register both MCP tool names | MCP has no alias mechanism; dual registration with shared handler is simplest | Single name with breaking change (rejected: breaks existing agent instructions) |
-| D4 | JSONL fields rename: `removal_reason` → `reason` (value: "archived"), `removed_at` → `archived_at`; DB `state` stays "removed" | Operator directive. JSONL fields are audit/display, not rehydration keys. DB state remains "removed" for rebuild safety | Keep old field names (overridden by operator) |
+| D4 | JSONL fields rename: `removal_reason` → `reason` (value: "archived"), `removed_at` → `archived_at`; DB `state` stays "removed" | Operator directive. The `reason` field explains the cause of the state transition (why the entry left active state), complementing the `state` field (what happened). JSONL fields are audit/display, not rehydration keys. DB state remains "removed" for rebuild safety | Keep old field names (overridden by operator) |
 | D5 | ShipShipment unchanged (cascade defaults off) | No code change needed since cascade defaults to false. Revised per D1 | Explicit WithCascade(false) (unnecessary given new default) |
 
 ## Risks and Caveats
