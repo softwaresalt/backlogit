@@ -13,6 +13,8 @@ Scan the .backlogit workspace for structural issues such as
 orphaned artifacts (child types with no parent) and duplicate IDs
 across queue and archive directories.
 
+Use --fix-orphans to archive orphaned artifacts automatically.
+
 ```text
 backlogit doctor [flags]
 ```
@@ -22,6 +24,7 @@ backlogit doctor [flags]
 ```text
   backlogit doctor
   backlogit doctor --check-orphans=false
+  backlogit doctor --fix-orphans
   backlogit doctor --format json
 ```
 
@@ -30,6 +33,7 @@ backlogit doctor [flags]
 ```text
       --check-duplicates   check for duplicate IDs across directories (default true)
       --check-orphans      check for orphaned child artifacts (default true)
+      --fix-orphans        archive orphaned artifacts instead of just reporting them
       --format string      output format: text or json (default "text")
   -h, --help               help for doctor
 ```

@@ -312,11 +312,18 @@ func (s *Server) RegisterTools() {
 		s.handleStashEdit,
 	)
 	s.addTool(
-		mcplib.NewTool("backlogit_stash_remove",
-			mcplib.WithDescription("Remove an active stash entry"),
+		mcplib.NewTool("backlogit_stash_archive",
+			mcplib.WithDescription("Archive an active stash entry"),
 			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID")),
 		),
-		s.handleStashRemove,
+		s.handleStashArchive,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_stash_remove",
+			mcplib.WithDescription("[Deprecated: use backlogit_stash_archive] Remove an active stash entry"),
+			mcplib.WithString("stash_id", mcplib.Required(), mcplib.Description("Stash entry ID")),
+		),
+		s.handleStashArchive,
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_deliberate",
@@ -439,9 +446,10 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_doctor",
-			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Returns a DoctorReport with findings and checked_at timestamp."),
+			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
+			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
 		),
 		s.handleDoctor,
 	)
@@ -1419,7 +1427,8 @@ func (s *Server) handleStashEdit(ctx context.Context, request mcplib.CallToolReq
 	return toolResultJSON(entry)
 }
 
-func (s *Server) handleStashRemove(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+// handleStashArchive implements the backlogit_stash_archive MCP tool.
+func (s *Server) handleStashArchive(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
 	}
@@ -1427,13 +1436,13 @@ func (s *Server) handleStashRemove(ctx context.Context, request mcplib.CallToolR
 	if stashID == "" {
 		return ValidationFailed("stash_id is required"), nil
 	}
-	entry, err := core.RemoveStashEntry(ctx, s.Workspace, stashID)
+	entry, err := core.ArchiveStashEntry(ctx, s.Workspace, stashID)
 	if err != nil {
-		return domainError("remove stash entry", err), nil
+		return domainError("archive stash entry", err), nil
 	}
 	return toolResultJSON(map[string]any{
 		"id":     entry.ID,
-		"status": "removed",
+		"status": "archived",
 	})
 }
 
@@ -1770,16 +1779,21 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 
 	checkOrphans := true
 	checkDuplicates := true
+	fixOrphans := false
 	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
 		checkOrphans = v
 	}
 	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
 		checkDuplicates = v
 	}
+	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
+		fixOrphans = v
+	}
 
 	opts := &core.DoctorOptions{
 		CheckOrphans:    checkOrphans,
 		CheckDuplicates: checkDuplicates,
+		FixOrphans:      fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)
 	if err != nil {

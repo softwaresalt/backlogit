@@ -195,3 +195,28 @@ func mustParseTime(value string) time.Time {
 	slog.Warn("stash: failed to parse timestamp; zero time used", "value", value)
 	return time.Time{}
 }
+
+// GetStashLinksForItem returns active stash entry IDs linked to the given item ID.
+func GetStashLinksForItem(ctx context.Context, database *sql.DB, itemID string) ([]string, error) {
+	rows, err := database.QueryContext(ctx,
+		`SELECT sl.stash_id
+		 FROM stash_links sl
+		 JOIN stash_entries se ON se.stash_id = sl.stash_id
+		 WHERE sl.item_id = ? AND se.state = 'active'`,
+		itemID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get stash links for item %s: %w", itemID, err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan stash link: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

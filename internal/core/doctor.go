@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,10 +39,26 @@ type DoctorFinding struct {
 	Description string            `json:"description"`
 }
 
+// FixActionType classifies a repair action taken by Doctor.
+type FixActionType string
+
+const (
+	// FixArchived indicates the item was archived by the fix-orphans path.
+	FixArchived FixActionType = "archived"
+)
+
+// FixAction describes a repair action taken by Doctor in fix mode.
+type FixAction struct {
+	Type       FixActionType `json:"type"`
+	ArtifactID string        `json:"artifact_id"`
+	Detail     string        `json:"detail"`
+}
+
 // DoctorReport summarises the results of a Doctor run.
 type DoctorReport struct {
-	Findings  []DoctorFinding `json:"findings"`
-	CheckedAt time.Time       `json:"checked_at"`
+	Findings   []DoctorFinding `json:"findings"`
+	FixActions []FixAction     `json:"fix_actions,omitempty"`
+	CheckedAt  time.Time       `json:"checked_at"`
 }
 
 // DoctorOptions controls which checks Doctor performs.
@@ -50,6 +67,9 @@ type DoctorOptions struct {
 	CheckOrphans bool
 	// CheckDuplicates enables the queue/archive duplicate-ID check.
 	CheckDuplicates bool
+	// FixOrphans archives orphaned artifacts instead of just reporting them.
+	// Requires CheckOrphans to be true.
+	FixOrphans bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -77,6 +97,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		id           string
 		artifactType string
 		parentID     string
+		status       string
 		level        int // stored level from frontmatter (0 when absent)
 	}
 
@@ -101,6 +122,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					id:           a.ID,
 					artifactType: a.ArtifactType,
 					parentID:     a.ParentID,
+					status:       string(a.Status),
 					level:        a.Level,
 				})
 			}
@@ -153,6 +175,38 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				ArtifactID:  info.id,
 				Description: fmt.Sprintf("artifact %q (type %q) has no parent_id and no returned_to_backlog event", info.id, info.artifactType),
 			})
+		}
+
+		// Fix orphans by archiving them when requested.
+		if opts.FixOrphans && ws.DB != nil {
+			duplicateIDs := make(map[string]bool)
+			for id, paths := range idToFiles {
+				if len(paths) >= 2 {
+					duplicateIDs[id] = true
+				}
+			}
+
+			for _, f := range report.Findings {
+				if f.Type != FindingOrphanedArtifact {
+					continue
+				}
+				if duplicateIDs[f.ArtifactID] {
+					continue
+				}
+				if isAlreadyArchived(ctx, ws.DB, f.ArtifactID) {
+					continue
+				}
+				if _, archErr := ArchiveItem(ctx, ws.DB, ws, f.ArtifactID); archErr != nil {
+					slog.Warn("doctor: fix-orphans: failed to archive",
+						"artifact_id", f.ArtifactID, "error", archErr)
+					continue
+				}
+				report.FixActions = append(report.FixActions, FixAction{
+					Type:       FixArchived,
+					ArtifactID: f.ArtifactID,
+					Detail:     fmt.Sprintf("orphaned artifact %q archived by doctor --fix-orphans", f.ArtifactID),
+				})
+			}
 		}
 	}
 

@@ -221,9 +221,9 @@ func TestRemoveStashEntry_WritesToArchive(t *testing.T) {
 	assert.Equal(t, "high", archived.Priority)
 	assert.Equal(t, "feature", archived.Kind)
 	assert.Equal(t, "Archive this entry", archived.Text)
-	assert.Equal(t, "removed", archived.RemovalReason)
+	assert.Equal(t, "archived", archived.Reason)
 	assert.Empty(t, archived.HarvestedArtifactID)
-	assert.False(t, archived.RemovedAt.IsZero())
+	assert.False(t, archived.ArchivedAt.IsZero())
 }
 
 func TestRemoveStashEntry_ArchiveAppendsOnMultipleRemovals(t *testing.T) {
@@ -252,7 +252,7 @@ func TestRemoveStashEntry_ArchiveAppendsOnMultipleRemovals(t *testing.T) {
 		var archived core.ArchivedStashEntry
 		require.NoError(t, json.Unmarshal([]byte(line), &archived))
 		ids[archived.ID] = true
-		assert.Equal(t, "removed", archived.RemovalReason)
+		assert.Equal(t, "archived", archived.Reason)
 	}
 	assert.True(t, ids[a.ID], "first entry must be archived")
 	assert.True(t, ids[b.ID], "second entry must be archived")
@@ -284,7 +284,7 @@ func TestHarvestStashEntry_WritesToArchiveWithArtifactID(t *testing.T) {
 	var archived core.ArchivedStashEntry
 	require.NoError(t, json.Unmarshal([]byte(lines[0]), &archived))
 	assert.Equal(t, added.ID, archived.ID)
-	assert.Equal(t, "harvested", archived.RemovalReason)
+	assert.Equal(t, "harvested", archived.Reason)
 	assert.NotEmpty(t, archived.HarvestedArtifactID, "harvested_artifact_id must be set")
 	require.IsType(t, &models.Artifact{}, result.Artifact)
 	artifact, ok := result.Artifact.(*models.Artifact)
