@@ -2,6 +2,7 @@ package telemetry_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,73 +38,88 @@ func TestDescribeTelemetrySQLTables_ReturnsAllTables(t *testing.T) {
 }
 
 // TestSessionSummaryFieldsDriftDetection ensures the schema reference stays in
-// sync with the SessionSummaryRecord struct. If a field is added or removed
-// from the struct, this test fails as a reminder to update schema_ref.go.
+// sync with the SessionSummaryRecord struct. Validates field count, JSON tag
+// names, and omitempty/Optional alignment.
 func TestSessionSummaryFieldsDriftDetection(t *testing.T) {
-	structFields := exportedFieldCount(reflect.TypeOf(telemetry.SessionSummaryRecord{}))
-	tables := telemetry.DescribeFactTables()
-
-	var schemaFields int
-	for _, tbl := range tables {
-		if tbl.Name == "session_summary" {
-			schemaFields = len(tbl.Fields)
-			break
-		}
-	}
-	assert.Equal(t, structFields, schemaFields,
-		"SessionSummaryRecord has %d exported fields but schema_ref declares %d; update schema_ref.go",
-		structFields, schemaFields)
+	assertFieldsMatchStruct(t, "session_summary",
+		reflect.TypeOf(telemetry.SessionSummaryRecord{}),
+		telemetry.DescribeFactTables())
 }
 
 // TestToolCallFactFieldsDriftDetection ensures ToolCallFact and its schema reference match.
 func TestToolCallFactFieldsDriftDetection(t *testing.T) {
-	structFields := exportedFieldCount(reflect.TypeOf(telemetry.ToolCallFact{}))
-	tables := telemetry.DescribeFactTables()
-
-	var schemaFields int
-	for _, tbl := range tables {
-		if tbl.Name == "tool_call_fact" {
-			schemaFields = len(tbl.Fields)
-			break
-		}
-	}
-	assert.Equal(t, structFields, schemaFields,
-		"ToolCallFact has %d exported fields but schema_ref declares %d; update schema_ref.go",
-		structFields, schemaFields)
+	assertFieldsMatchStruct(t, "tool_call_fact",
+		reflect.TypeOf(telemetry.ToolCallFact{}),
+		telemetry.DescribeFactTables())
 }
 
 // TestSessionFactFieldsDriftDetection ensures SessionFact and its schema reference match.
 func TestSessionFactFieldsDriftDetection(t *testing.T) {
-	structFields := exportedFieldCount(reflect.TypeOf(telemetry.SessionFact{}))
-	tables := telemetry.DescribeFactTables()
-
-	var schemaFields int
-	for _, tbl := range tables {
-		if tbl.Name == "session_fact" {
-			schemaFields = len(tbl.Fields)
-			break
-		}
-	}
-	assert.Equal(t, structFields, schemaFields,
-		"SessionFact has %d exported fields but schema_ref declares %d; update schema_ref.go",
-		structFields, schemaFields)
+	assertFieldsMatchStruct(t, "session_fact",
+		reflect.TypeOf(telemetry.SessionFact{}),
+		telemetry.DescribeFactTables())
 }
 
 // TestToolUsageFieldsDriftDetection ensures ToolUsageRecord and its schema reference match.
 func TestToolUsageFieldsDriftDetection(t *testing.T) {
-	structFields := exportedFieldCount(reflect.TypeOf(telemetry.ToolUsageRecord{}))
-	tables := telemetry.DescribeFactTables()
+	assertFieldsMatchStruct(t, "tool_usage",
+		reflect.TypeOf(telemetry.ToolUsageRecord{}),
+		telemetry.DescribeFactTables())
+}
 
-	var schemaFields int
-	for _, tbl := range tables {
-		if tbl.Name == "tool_usage" {
-			schemaFields = len(tbl.Fields)
+// assertFieldsMatchStruct validates that a schema table's fields match the
+// exported struct fields by count, JSON key, and Optional/omitempty alignment.
+func assertFieldsMatchStruct(t *testing.T, tableName string, structType reflect.Type, tables []telemetry.FactTableSchema) {
+	t.Helper()
+
+	var table *telemetry.FactTableSchema
+	for i := range tables {
+		if tables[i].Name == tableName {
+			table = &tables[i]
 			break
 		}
 	}
-	assert.Equal(t, structFields, schemaFields,
-		"ToolUsageRecord has %d exported fields but schema_ref declares %d; update schema_ref.go",
-		structFields, schemaFields)
+	require.NotNilf(t, table, "table %q not found in DescribeFactTables()", tableName)
+
+	structFields := exportedFieldCount(structType)
+	assert.Equal(t, structFields, len(table.Fields),
+		"%s has %d exported fields but schema_ref declares %d; update schema_ref.go",
+		structType.Name(), structFields, len(table.Fields))
+
+	// Build a map of struct field JSON keys to their omitempty status.
+	structFieldMap := make(map[string]bool) // json_key -> has omitempty
+	for i := 0; i < structType.NumField(); i++ {
+		f := structType.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		jsonTag := f.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		parts := strings.Split(jsonTag, ",")
+		key := parts[0]
+		hasOmitempty := false
+		for _, part := range parts[1:] {
+			if part == "omitempty" {
+				hasOmitempty = true
+			}
+		}
+		structFieldMap[key] = hasOmitempty
+	}
+
+	// Validate each schema field matches the struct.
+	for _, sf := range table.Fields {
+		hasOmitempty, found := structFieldMap[sf.JSONKey]
+		assert.Truef(t, found,
+			"schema field %q (json_key=%q) has no matching struct field in %s",
+			sf.Name, sf.JSONKey, structType.Name())
+		if found {
+			assert.Equalf(t, hasOmitempty, sf.Optional,
+				"field %q: struct omitempty=%v but schema Optional=%v",
+				sf.JSONKey, hasOmitempty, sf.Optional)
+		}
+	}
 }
 
 // exportedFieldCount returns the number of exported fields on a struct type.

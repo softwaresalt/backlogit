@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -47,7 +46,7 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 	if s.Workspace != nil && s.Workspace.DB != nil {
 		schema, err := db.IntrospectSchema(ctx, s.Workspace.DB)
 		if err != nil {
-			slog.Warn("schema introspection failed, catalog will omit sql_schema", "error", err)
+			logger.Warn("schema introspection failed, catalog will omit sql_schema", "error", err)
 		} else {
 			sqlSchema = schema
 		}
