@@ -35,6 +35,7 @@ for harvested field definitions and SQLite column mappings.
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
+* [backlogit telemetry branch](backlogit_telemetry_branch.md)	 - Show per-branch telemetry metrics with type classification and enrichment
 * [backlogit telemetry harvest](backlogit_telemetry_harvest.md)	 - Parse Copilot CLI logs and write telemetry-sessions.jsonl
 * [backlogit telemetry list](backlogit_telemetry_list.md)	 - List harvested session summaries
 * [backlogit telemetry report](backlogit_telemetry_report.md)	 - Generate a formatted telemetry report from harvested data

@@ -403,8 +403,8 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 	if by == "" {
 		by = "date"
 	}
-	if by != "date" && by != "branch" && by != "class" {
-		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\", \"class\"", by)
+	if by != "date" && by != "branch" && by != "class" && by != "branch-type" {
+		return "", fmt.Errorf("unsupported By value %q: valid values are \"date\", \"branch\", \"class\", \"branch-type\"", by)
 	}
 
 	// Group sessions.
@@ -419,6 +419,11 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "branch-type":
+			key = DeriveBranchType(s.Branch)
 			if key == "" {
 				key = "(unknown)"
 			}
@@ -474,6 +479,11 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 		switch by {
 		case "branch":
 			key = s.Branch
+			if key == "" {
+				key = "(unknown)"
+			}
+		case "branch-type":
+			key = DeriveBranchType(s.Branch)
 			if key == "" {
 				key = "(unknown)"
 			}
