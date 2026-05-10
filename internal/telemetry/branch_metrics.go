@@ -154,7 +154,8 @@ var prMergePattern = regexp.MustCompile(`Merge pull request #(\d+) from [^/]+/(.
 
 // ParseGitMergePRs runs git log to extract branch→PR number mappings from merge
 // commits. Returns an empty map (not an error) when git is unavailable or the
-// repo has no merge commits.
+// repo has no merge commits. Returns an error if parsing the git output fails
+// due to I/O or buffer-overflow issues.
 func ParseGitMergePRs(repoPath string) (map[string]string, error) {
 	cmd := exec.Command("git", "-C", repoPath, "log", "--merges", "--oneline", "--all")
 	output, err := cmd.Output()
