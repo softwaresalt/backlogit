@@ -6,7 +6,7 @@ argument-hint: "[mode:autofix|mode:report-only] [branch name or file paths]"
 
 # Code Review
 
-Reviews code changes using dynamically selected reviewer personas. Spawns persona subagents that return structured JSON findings, then merges and deduplicates into a unified report.
+Reviews code changes using dynamically selected reviewer personas. Spawns persona subagents that return structured findings, then merges and deduplicates into a unified report.
 
 ## Agent-Intercom Communication (NON-NEGOTIABLE)
 
@@ -32,7 +32,7 @@ be visible before merge or deployment.
 
 ## Subagent Depth Constraint
 
-This skill spawns reviewer subagents. Those subagents are leaf executors and MUST NOT spawn their own subagents. Maximum depth: review skill -> persona subagent (1 hop).
+This skill spawns reviewer subagents. Those subagents are leaf executors and MUST NOT spawn their own subagents. Maximum depth: review skill → persona subagent (1 hop).
 
 ## Mode Detection
 
@@ -42,14 +42,14 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | **Interactive** (default) | No mode token | Review, present findings, ask for decisions |
 | **Autofix** | `mode:autofix` | No user interaction. Apply `safe_auto` fixes only, write artifact, emit residual work |
-| **Report-only** | `mode:report-only` | Read-only. Report findings with no edits, no artifacts, or follow-up item creation |
+| **Report-only** | `mode:report-only` | Read-only. Report findings with no edits, no artifacts, no follow-up item creation |
 
 ### Autofix mode rules
 
 - Skip all user questions
 - Apply only `safe_auto` findings
 - Leave `gated_auto`, `manual`, and `advisory` findings unresolved
-- Write a review artifact to `docs/closure/` via backlogit (see Step 6)
+- Write a review artifact to `docs/closure/`
 - Create backlog follow-up items for unresolved actionable findings
 - Never commit, push, or create a PR
 
@@ -68,7 +68,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 |---|---|---|
 | **P0** | Critical breakage, exploitable vulnerability, data corruption | Block commit |
 | **P1** | High-impact defect in normal usage, breaking contract | Block commit |
-| **P2** | Moderate issue (edge case, perf, maintainability) | Record as a backlog follow-up item |
+| **P2** | Moderate issue (edge case, perf, maintainability) | Record as backlog follow-up item |
 | **P3** | Low-impact, minor improvement | User's discretion |
 
 ## Action Routing
@@ -90,38 +90,38 @@ Routing rules:
 
 ### Always-On (every review)
 
-| Agent | Focus |
+| Persona Subagent | Focus |
 |---|---|
-| **Go Quality Reviewer** | Type safety, error handling, error return patterns, import organization, Effective Go/GoDoc compliance |
-| **Constitution Reviewer** | Project coding standards compliance |
-| **Learnings Researcher** | Search `docs/compound/` for related past issues |
+| **Constitution Reviewer** | Constitutional compliance |
+| **Go Reviewer** | Language-specific safety and correctness |
+| **Learnings Researcher** | Search compound library for related past issues |
 
 ### Conditional (based on changed files)
 
-Use a different model from the caller when available to force genuine diversity
-of critique. Cross-model is preferred but not blocking; if unavailable, use the
-caller's model.
+Use a different model from the caller when available to force genuine diversity of critique. Cross-model is preferred but not blocking.
 
-| Agent | Select when diff touches | Suggested Model |
+| Persona Subagent | Select when diff touches | Suggested Model |
 |---|---|---|
-| **MCP Protocol Reviewer** | `internal/mcp/`, MCP-related code | GPT-5.4 or Gemini |
-| **SQLite Reviewer** | `internal/db/`, database queries, schema files | GPT-5.4 or Gemini |
-| **Markdown/YAML Reviewer** | `internal/parser/`, frontmatter handling, YAML schemas | GPT-5.4 or Gemini |
-| **Concurrency Reviewer** | goroutine, channel, sync.Mutex, errgroup, context cancellation patterns | GPT-5.4 or Gemini |
-| **Agent-Native Parity Reviewer** | `internal/mcp/`, MCP tool definitions, agent-facing workflows | GPT-5.4 or Gemini |
+| **Architecture Strategist** | Module boundaries, new abstractions, dependency changes | Different from caller |
+| **Concurrency Reviewer** | Concurrent/async patterns | Different from caller |
+| **Scope Boundary Auditor** | Changes spanning multiple domains or exceeding expected scope | Different from caller |
+| **Agent-Native Parity Reviewer** | MCP SDKs, tool handlers, agent-exposed actions, or user/agent parity-critical flows | Different from caller |
+| **Security Reviewer** | Auth middleware, public endpoints, input handling, permission checks, secret management | Different from caller |
 
 ## Workflow
 
 ### Step 1: Determine Review Scope
 
 1. Identify changed files from git diff, explicit file list, or caller-provided scope
-2. For branch-based review: `git diff --stat origin/main..HEAD`
-3. Broadcast the diff analysis
+2. Categorize each file by type and domain
+3. Identify which instruction files apply (via `applyTo` patterns)
+4. Broadcast the diff analysis
 
 ### Step 2: Route Personas
 
-1. Always-on: spawn Go Quality Reviewer, Constitution Reviewer, Learnings Researcher
-2. Conditional: analyze changed file paths and content patterns to select additional personas
+1. Always-on: spawn Constitution Reviewer, Go Reviewer, Learnings Researcher
+2. Conditional: analyze changed file paths, content patterns, and workspace agent-native signals to select additional personas:
+   * Select **Security Reviewer** (`security-reviewer.agent.md`) when the diff touches: authentication or authorization code, public endpoint handlers, user input processing, permission or role checks, secret or credential management, or files matching `SQL injection via string concatenation, path traversal in file operations, unvalidated external input, hardcoded credentials, missing TLS configuration, unsafe deserialization`
 3. Broadcast the routing decision with persona count
 
 ### Step 3: Spawn Persona Subagents
@@ -130,7 +130,7 @@ Spawn all selected personas. Each receives:
 
 - The list of changed files with line ranges
 - The diff content relevant to their domain
-- Instructions to return structured JSON findings
+- Instructions to return structured findings
 - Codebase search directive (use grep/glob for context)
 
 Broadcast each spawn.
@@ -144,123 +144,36 @@ As each persona returns:
 3. Deduplicate: merge findings that identify the same issue
 4. Assign final severity (more conservative on disagreement)
 5. Assign final action routing
-6. If the merged findings contain 3 or more P0/P1 findings, escalate to adversarial review (see Step 4a)
-
-### Step 4a: Adversarial Review Escalation
-
-When the standard review surfaces 3 or more P0/P1 findings, or when the diff
-touches security-sensitive areas (auth, crypto, PII handling), escalate to the
-adversarial-review agent for multi-model validation:
-
-1. Broadcast `[REVIEW] Escalating to adversarial review: {p0_count} P0 + {p1_count} P1 findings`
-2. Invoke the `Adversarial Review` agent with the current diff scope and standard review findings
-3. Merge adversarial findings into the standard review report using confidence-weighted deduplication
-4. HIGH-confidence adversarial findings inherit the blocking behavior of their severity level
-5. MEDIUM-confidence findings require explicit acknowledgment (fix or defer with rationale)
-6. LOW-confidence findings are preserved as advisory observations
 
 ### Step 5: Apply Actions (mode-dependent)
 
 **Interactive mode:**
 
-1. Present findings by severity (P0 first)
-2. For each finding, present recommendation and ask for decision
+1. Present findings grouped by severity (P0 first)
+2. For each P0/P1, ask the user to accept, modify, or reject the recommendation
 3. Apply approved fixes
 
 **Autofix mode:**
 
 1. Apply all `safe_auto` findings automatically
 2. Create backlog follow-up items for unresolved actionable findings
-3. Write review artifact (see Step 6)
+3. Write review artifact to `docs/closure/`
 
 **Report-only mode:**
 
 1. Return structured findings to caller
 2. No side effects: no edits, no review artifact, no follow-up items
 
-When the diff changes runtime surfaces, include an explicit recommendation for whether
-follow-up runtime verification is required and which mode (`manual`, `api`, `browser`)
-is appropriate.
+When the diff changes runtime surfaces, include an explicit recommendation for whether follow-up runtime verification is required and which mode (`manual`, `api`, `browser`) is appropriate.
 
 When the diff includes destructive potential, contract changes, migrations,
 security-sensitive edits, or other high-blast-radius work, include an explicit
 recommendation for whether strict-safety action classification or approval
 follow-up is required before merge or deployment.
 
-### Step 5a: Log Follow-Up Work in backlogit
-
-In interactive and autofix modes, log follow-up work in backlogit for every unresolved actionable finding after the review artifact is written:
-
-1. Call `backlogit_list_types` or `backlogit_get_metadata_catalog` to determine whether the workspace defines a `bug` artifact type.
-2. For each unresolved `manual` finding, and for any `gated_auto` finding that was declined or left unapplied:
-   * Prefer `artifact_type: "bug"` when `bug` is configured.
-   * Otherwise create `artifact_type: "task"` and add a `bug` label so the issue is still tracked explicitly.
-3. Use `backlogit_create_item` with:
-   * `title`: concise defect summary
-   * `description`: finding details, affected files, reproduction or review context, and recommended fix direction
-   * `status: "queued"`
-   * `priority`: map from severity, `P0/P1 -> high`, `P2 -> medium`, `P3 -> low`
-   * `references`: review artifact path plus any affected file paths or PR references
-4. When the reviewed change belongs under a known feature, set `parent_id` to that feature if doing so is safe and unambiguous.
-5. Include the created backlogit item IDs in the final review summary.
-
-### Step 6: Write Review Artifact
-
-In interactive and autofix modes, create a backlogit artifact of type `review` instead of writing an ad hoc markdown file. Skip this step in report-only mode.
-
-1. Determine whether the reviewed scope belongs to a known level-1 artifact such as a feature.
-2. When a level-1 artifact is known, create the review as its child with `parent_id` set to that artifact. This yields stable IDs such as `013.001-R`.
-3. Use a short, descriptive review title so the configured filename format yields grouped files such as:
-   * `013.001-R-branch-review.md`
-   * `013.002-R-followup-review.md`
-4. Set `status: "review"` and include branch metadata in `custom_fields.source_branch` when available.
-5. Write the merged review content as the artifact body.
-
-```markdown
----
-id: 013.001-R
-title: "Branch review"
-status: review
-artifact_type: review
-parent_id: 013-F
-created_at: YYYY-MM-DDTHH:MM:SSZ
-updated_at: YYYY-MM-DDTHH:MM:SSZ
-custom_fields:
-  source_branch: 013-release-pipeline-fix
-  mode: interactive|autofix|report-only
-  gate: pass|fail
-  reviewers: [{persona_list}]
----
-
-# Branch review
-
-## Summary
-
-| Severity | Count | Action |
-|---|---|---|
-| P0 | {n} | {blocked/fixed/deferred} |
-| P1 | {n} | {blocked/fixed/deferred} |
-| P2 | {n} | {backlog follow-up items created} |
-| P3 | {n} | {advisory} |
-
-## Findings
-
-{Grouped by file, ordered by severity}
-
-## Learnings Applied
-
-{Relevant solutions from docs/compound/ that informed this review}
-
-## Residual Work
-
-{Findings not resolved in this review session}
-
-## Logged Follow-Up Items
-
-{Backlogit bug or task IDs created for unresolved actionable findings}
-```
-
-Broadcast the created review artifact path when written.
+When the `adversarial-review` capability pack is installed and this review surfaces 3 or more
+P0/P1 findings, recommend escalation to the `adversarial-review` agent for multi-model consensus
+validation before blocking the build.
 
 ## Quality Criteria
 
@@ -268,3 +181,10 @@ Broadcast the created review artifact path when written.
 * All P0 findings are addressed before the review is marked complete
 * P1 findings require explicit acknowledgment (fix or defer with rationale)
 * The review report accurately reflects all findings and their resolution status
+
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — review coordination and finding assembly.
+
+Generated by autoharness | Template: review/SKILL.md.tmpl

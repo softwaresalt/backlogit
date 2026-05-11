@@ -33,11 +33,11 @@ instances across different model tiers:
 
 After all reviewers return findings:
 
-* **HIGH confidence**: finding identified by all reviewers (consensus).
+* **HIGH confidence** — finding identified by all reviewers (consensus).
   Treat identically to a standard review P0/P1 finding: blocks the gate.
-* **MEDIUM confidence**: finding identified by a majority of reviewers.
+* **MEDIUM confidence** — finding identified by a majority of reviewers.
   Requires explicit acknowledgment (fix or defer with rationale).
-* **LOW confidence**: finding identified by a single reviewer only.
+* **LOW confidence** — finding identified by a single reviewer only.
   Preserved as an advisory observation.
 
 ## Remediation Queue
@@ -54,7 +54,7 @@ Assemble findings into a structured remediation queue ordered by
 
 ## Integration with Standard Review
 
-Adversarial review does not replace standard review; it supplements it
+Adversarial review does not replace standard review — it supplements it
 when escalation criteria are met. The ship agent should:
 
 * run standard review first

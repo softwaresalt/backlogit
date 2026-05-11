@@ -1,5 +1,4 @@
 ---
-name: runtime-verification
 description: "Validate affected runtime surfaces after build and CI using manual, API, or browser-backed verification"
 ---
 

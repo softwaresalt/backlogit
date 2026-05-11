@@ -1,204 +1,95 @@
 ---
-name: impl-plan
-description: "Transform backlogit deliberation artifacts, feature descriptions, or research documents into structured implementation plans grounded in repo patterns and research. Use when the user says 'plan this', 'create a plan', 'how should we build', 'break this down', or when a deliberate session is ready for technical planning."
-argument-hint: "source=.backlogit/queue/DL...md or source=docs/research/{file}.md"
-input:
-  properties:
-    source:
-      type: string
-      description: "Path to the source document to plan from. Accepted locations: .backlogit/queue/DL...md (deliberation artifacts) or docs/research/{file}.md (research reports)."
-  required:
-    - source
+description: "Transform feature or chore descriptions and requirements into structured implementation plans grounded in repo patterns and research"
 ---
 
-# Create Implementation Plan
+## Implementation Plan
 
-The `deliberate` skill defines **WHAT** to build. The `impl-plan` skill defines **HOW** to build it. The output feeds into `plan-harden` when the work is risky, then into the `plan-review` skill for validation before the stage agent harvests it into backlog work.
+Transform WHAT (requirements document) into HOW (implementation plan). Produces a structured plan that the stage agent decomposes into tasks via the harvest skill.
 
-This skill produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results.
+## When to Use
 
-## Agent-Intercom Communication (NON-NEGOTIABLE)
-
-Call `ping` at session start. If agent-intercom is reachable, broadcast at every step. If unreachable, warn the user that operator visibility is degraded.
-
-| Event | Level | Message prefix |
-|---|---|---|
-| Session start | info | `[PLAN] Starting: {topic}` |
-| Source doc found | info | `[PLAN] Using requirements doc: {path}` |
-| Research phase | info | `[PLAN] Researching: {area}` |
-| Learnings found | info | `[PLAN] Learnings researcher found {count} relevant solutions` |
-| Plan section drafted | info | `[PLAN] Drafted: {section_name}` |
-| Waiting for input | warning | `[WAIT] Blocked on user clarification: {question}` |
-| Plan written | success | `[PLAN] Plan written: {file_path}` |
-| Session complete | success | `[PLAN] Complete: {topic}` |
-
-## Core Principles
-
-1. **Use the source artifact as the source of truth** -- If `deliberate` produced a deliberation artifact, build from it rather than re-inventing.
-2. **Decisions, not code** -- Capture approach, boundaries, files, dependencies, risks, and test scenarios. Do not pre-write implementation code.
-3. **Research before structuring** -- Explore the codebase and institutional learnings before finalizing the plan.
-4. **Right-size the artifact** -- Small work gets a compact plan. Large work gets more structure.
-5. **Separate planning from execution discovery** -- Resolve planning-time questions here. Defer execution-time unknowns to implementation.
-6. **Keep the plan portable** -- The plan should work as a living document, review artifact, or `harvest` skill input.
-7. **Enforce task granularity** -- Every implementation unit must be scoped to roughly 2 hours of human-equivalent effort. Units that appear larger must be split. Units must not mix skill domains (e.g., Python code + documentation, database migration + API changes). Every unit must produce a verifiable state (passing test, successful build, or measurable output).
-
-## Plan Quality Bar
-
-Every plan must contain:
-
-- A clear problem frame and scope boundary
-- Concrete requirements traceability back to the request or origin document
-- Exact file paths for the work being proposed
-- Explicit test file paths for feature-bearing implementation units
-- Decisions with rationale, not just tasks
-- Existing patterns or code references to follow
-- Specific test scenarios and verification outcomes
-- Clear dependencies and sequencing
-- **Granularity validation**: each implementation unit scoped to ≤2 hours of human effort
-- **Width isolation**: each unit targets a single skill domain (code, docs, config, tests)
-- **Atomic milestone**: each unit specifies a verifiable exit state (test pass, build pass, or measurable output)
-- **Execution posture notes** per implementation unit
-
-A plan is ready when an implementer can start confidently without needing the plan to write the code for them.
-
-Plans record whether `plan-harden` is required before review — this field is mandatory, not optional. Plans also include runtime verification and closure expectations for changed runtime surfaces.
+Invoke when a deliberation outcome or spike findings document is ready for technical planning. The output feeds into `plan-harden` when the work is risky, then into the `plan-review` skill for validation before the stage agent harvests it into backlog work.
 
 ## Inputs
 
-* `${input:source}`: (Required) Path to the source document to plan from. Accepted locations:
-  - `.backlogit/queue/DL...md` — Deliberation artifacts produced by the deliberate skill or `backlogit deliberate`
-  - `docs/research/{filename}.md` — External research, evaluation reports, or design explorations
+* `source`: (Required) Path to source document (`docs/decisions/{file}.md` for deliberation outcomes or spike findings).
 
-## Workflow
+## Output
 
-### Phase 0: Resume, Source, and Scope
+A plan file at `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
 
-#### 0.1 Resume Existing Plan Work
+## Required Protocol
 
-If the user references an existing plan file or there is an obvious recent matching plan in `docs/exec-plans/`:
+When the `agent-intercom` capability pack is installed, follow
+`.github/instructions/agent-intercom.instructions.md`: establish heartbeat / ping visibility at the
+start of planning, broadcast major planning milestones, and use the intercom clarification flow
+when unresolved source ambiguity or planning trade-offs require operator input.
 
-- Read it
-- Confirm whether to update in place or create new
-- If updating, preserve completed checkboxes and revise only still-relevant sections
+When the `agent-engram` capability pack is installed, follow
+`.github/instructions/agent-engram.instructions.md`: verify the engram search surface before relying
+on indexed discovery, and prefer engram-first lookup while researching the codebase.
 
-#### 0.2 Read Source Document
+### Phase 1: Understand the Source
 
-Read the source document at `${input:source}` in full.
+1. Read and parse the source document
+2. Extract: problem frame, requirements, success criteria, scope boundaries
+3. Identify any outstanding questions that need resolution before planning
 
-1. Validate the file exists and is in an accepted location (`.backlogit/queue/` for deliberations or `docs/research/`).
-2. If the file does not exist, list available files in both directories and halt.
-3. Determine the source type from the file path:
-   - **Deliberation**: Structured format with YAML frontmatter and sections such as `## Problem Frame`, `## Options`, `## Chosen Direction`, `## Open Questions`, and `## Notes`
-   - **Research**: Free-form structure with H1/H2 sections, executive summary, proposed changes, evaluation criteria
-4. Announce the source document: `broadcast` at `info` level: `[PLAN] Using source doc: ${input:source}`
+### Phase 2: Research the Codebase
 
-#### 0.3 Use Source Document as Primary Input
+Search the learnings library (`docs/compound/`) for relevant past solutions BEFORE deeper repo analysis. Treat retrieval as mandatory pre-planning context, not an optional fallback.
 
-1. Read it thoroughly
-2. Announce it as the origin document for planning
-3. Carry forward: problem frame, requirements, success criteria, scope boundaries, key decisions, dependencies, outstanding questions
-4. Reference carried-forward decisions with `(see origin: {source-path})`
-5. Do not silently omit source content
+Use workspace search tools to understand:
 
-#### 0.4 Classify Outstanding Questions
+* Existing patterns and conventions in the codebase
+* Modules and symbols relevant to the feature or chore
+* Test patterns established in the project
+* Dependencies and integration points
 
-If the origin doc has "Resolve Before Planning" questions:
+When the `agent-engram` capability pack is installed, prefer `unified_search` for broad discovery,
+`list_symbols` for inventory, `map_code` for caller/callee context, and `impact_analysis` before
+manual caller tracing.
 
-- Review each before proceeding
-- Reclassify technical/architectural questions as planning-owned
-- Keep product behavior questions as true blockers
-- Present blockers to user for resolution
+### Phase 3: Structure the Plan
 
-### Phase 1: Research
+Produce a plan with these sections:
 
-**Codebase search**:
+#### Problem Frame
 
-1. Use grep/glob to search for key concepts across the codebase
-2. Identify affected modules and files
-3. Search for related function and class definitions
-4. Search for existing patterns that the implementation should follow
-5. Fall back to broader file reads when needed
+Restate the problem in technical terms, referencing specific code paths and modules.
 
-**Learnings check**: Invoke `learnings-researcher` as a subagent to search `docs/compound/` for relevant past solutions. Incorporate relevant learnings into the plan's decisions and caveats.
+#### Requirements Trace
 
-**Broadcast** research findings at each step.
+Map each requirement from the source document to specific implementation actions.
 
-### Phase 2: Structure the Plan
+#### Implementation Units
 
-Write to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
+Break the work into discrete units, each following the granularity constraints:
 
-```markdown
----
-title: "{Feature Title}"
-date: YYYY-MM-DD
-origin: ".backlogit/queue/DL....md"
-status: draft|reviewed|approved
----
+* **2-Hour Rule**: Fewer than 3 files, fewer than 5 functions, fewer than 4 test scenarios
+* **Width Isolation**: Single domain per unit (code OR docs OR tests OR config)
+* **Atomic Milestone**: Each unit produces a verifiable outcome
 
-# {Feature Title}
+For each unit, specify:
 
-## Problem Frame
+* What changes are needed
+* Which files are affected
+* What tests verify the change
+* Execution posture (test-first, characterization-first, migration-first, spike)
 
-{Problem description and scope boundary}
+#### Dependency Graph
 
-## Requirements Trace
+Identify which units depend on others. Sequence them to minimize blocking.
 
-| # | Requirement | Origin |
-|---|---|---|
-| R1 | {requirement} | {origin doc reference or user request} |
+#### Decisions and Rationale
 
-## Scope Boundaries
+Document key technical decisions with the reasoning behind each choice.
 
-### In Scope
-{What this plan covers}
+#### Risks and Caveats
 
-### Non-Goals
-{What this plan explicitly excludes}
+Identify potential issues, unknowns, and mitigation strategies.
 
-### Deferred to Implementation
-{Questions the implementer must resolve during execution}
-
-## Implementation Units
-
-Each unit MUST be scoped to roughly 2 hours of human-equivalent effort. Use these
-heuristics to evaluate size: fewer than 3 files modified, fewer than 5 functions
-changed, fewer than 4 test scenarios. If a unit exceeds these heuristics, split it.
-Each unit MUST target a single skill domain (do not mix Python code with documentation,
-or database changes with API changes). Each unit MUST specify a verifiable exit state.
-
-### Unit 1: {Title}
-
-**Files:** {exact file paths}
-**Test files:** {exact test file paths}
-**Effort size:** small|medium — must not exceed "medium" (~2 hours human effort)
-**Skill domain:** code|docs|config|tests — single domain per unit
-**Execution note:** test-first|characterization-first|migration-first|spike
-**Patterns to follow:** {links to existing code patterns in the codebase}
-**Dependencies:** {other units this depends on}
-
-**Approach:**
-{Technical approach with rationale}
-
-**Verification:**
-{Specific, testable success criteria — must produce a verifiable state}
-
-### Unit 2: ...
-
-## Dependency Graph
-
-{Sequencing of units with rationale}
-
-## Decisions
-
-| # | Decision | Rationale | Alternatives Rejected |
-|---|---|---|---|
-| D1 | {decision} | {why} | {what was rejected and why} |
-
-## Risks and Caveats
-
-{Known risks, gotchas from learnings-researcher, edge cases}
-
-## Plan Hardening Signals (REQUIRED)
+#### Plan Hardening Signals (REQUIRED)
 
 Every plan MUST include this section. Explicitly record whether the plan needs
 hardening before review. Mark each signal as present or absent and include a
@@ -214,11 +105,11 @@ Conclude with `Requires plan hardening: yes|no`. This conclusion is mandatory �
 P-006 treats its absence as `yes` (fail-safe). Even trivial plans must include
 `Requires plan hardening: no` to pass the gate without unnecessary hardening.
 
-## Runtime Verification and Closure
+#### Runtime Verification and Closure
 
 For each implementation unit, identify:
 
-* Whether it changes a runtime surface (CLI, API, MCP tools, background jobs)
+* Whether it changes a runtime surface (CLI, API, browser UI, background jobs)
 * What runtime verification should prove before the work is considered absorbed
 * What operational closure artifact should exist (monitoring checklist, rollback trigger, ownership, validation window)
 
@@ -226,23 +117,19 @@ When one or more hardening signals are present, seed enough detail that the
 downstream `plan-harden` step can tighten the plan instead of inventing safety,
 verification, or rollback expectations from scratch.
 
-## Learnings Applied
+## Quality Criteria
 
-{Solutions from docs/compound/ that informed this plan, with file paths}
+* Every requirement from the source document maps to at least one implementation unit
+* Every unit satisfies the 2-hour rule, width isolation, and atomic milestone constraints
+* Dependency graph has no cycles
+* Decisions include rationale (not just the choice)
+* Risks identify mitigations
+* Relevant prior learnings are surfaced before planning concludes
+* Plans record whether `plan-harden` is required before review — this field is mandatory, not optional
+* Plans include runtime verification and closure expectations for changed runtime surfaces
 
-## Standards Check
+## Model Routing
 
-{Map proposed work against the project's coding standards and conventions; document any justified deviations}
-```
+This skill operates at **Tier 3 (Frontier)** — technical planning and codebase analysis require deep reasoning.
 
-### Phase 3: Complete
-
-1. Confirm the plan file was written to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
-2. Return the plan file path to the caller.
-
-When invoked standalone (not as a subagent of Stage), present next steps:
-
-1. "Run plan-review to validate this plan with multi-persona review" (Recommended when `Requires plan hardening: no`)
-2. "Run plan-harden to reinforce risky plan detail before review" (Recommended when `Requires plan hardening: yes`)
-3. "Run harvest to decompose this reviewed plan into backlogit feature, task, and subtask items"
-4. "Revise specific sections"
+Generated by autoharness | Template: impl-plan/SKILL.md.tmpl

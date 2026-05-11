@@ -1,5 +1,5 @@
 schema_version: "1.0.0"
-generated_at: "2026-04-13T01:28:00Z"
+generated_at: "2026-05-11T00:00:00Z"
 workspace_path: "d:\\Source\\GitHub\\backlogit"
 
 languages:
@@ -102,10 +102,16 @@ agent_native:
   detected: true
   mcp_sdk_present: true
   mcp_transport: "stdio"
+  mcp_tool_count: "50+"  # backlogit exposes 50+ MCP tools via mark3labs/mcp-go
   agent_tooling_markers:
     - "internal/mcp/tools.go"
     - "internal/mcp/server.go"
     - "internal/mcp/resources.go"
+    - "internal/telemetry/branch_metrics.go"
+    - "internal/telemetry/schema_ref.go"
+    - "internal/telemetry/events_harvest.go"
+    - "internal/cli/manifest.go"
+    - "internal/cli/format/jsonrpc.go"
     - ".github/instructions/go-mcp-server.instructions.md"
   user_agent_parity_required: true
   recommended_reviewer: true
@@ -164,6 +170,18 @@ existing_harness:
     - path: ".github/agents/review/sqlite-reviewer.agent.md"
       type: "agent"
       description: "SQLite usage reviewer"
+    - path: ".github/agents/review/security-lens-reviewer.agent.md"
+      type: "agent"
+      description: "Security lens review persona"
+    - path: ".github/agents/review/security-reviewer.agent.md"
+      type: "agent"
+      description: "Security review persona"
+    - path: ".github/agents/orchestrator.agent.md"
+      type: "agent"
+      description: "Stage → Ship pipeline coordinator"
+    - path: ".github/agents/security-sentinel.agent.md"
+      type: "agent"
+      description: "Security analysis sentinel agent"
     - path: ".github/skills/deliberate/SKILL.md"
       type: "skill"
       description: "Collaborative deliberation workflow"
@@ -221,6 +239,18 @@ existing_harness:
     - path: ".github/skills/skill-search/SKILL.md"
       type: "skill"
       description: "Dynamic skill discovery"
+    - path: ".github/skills/harness-doctor/SKILL.md"
+      type: "skill"
+      description: "Harness structural integrity diagnostics"
+    - path: ".github/skills/iterative-experiment/SKILL.md"
+      type: "skill"
+      description: "Iterative experimentation workflow"
+    - path: ".github/skills/security-audit/SKILL.md"
+      type: "skill"
+      description: "Security audit workflow"
+    - path: ".github/skills/shipment-reconcile/SKILL.md"
+      type: "skill"
+      description: "Shipment reconciliation workflow"
     - path: ".github/instructions/backlogit.instructions.md"
       type: "instruction"
       description: "Backlogit-native workflow guidance"
@@ -290,12 +320,33 @@ existing_harness:
     - path: ".github/instructions/writing-style.instructions.md"
       type: "instruction"
       description: "Writing style conventions"
+    - path: ".github/instructions/context-efficiency.instructions.md"
+      type: "instruction"
+      description: "Context window efficiency guidance"
+    - path: ".github/instructions/role-enforcement.instructions.md"
+      type: "instruction"
+      description: "Agent role enforcement rules"
+    - path: ".github/instructions/github-pr-automation.instructions.md"
+      type: "instruction"
+      description: "GitHub PR automation guidance"
+    - path: ".github/instructions/continuous-learning.instructions.md"
+      type: "instruction"
+      description: "Continuous learning workflow rules"
+    - path: ".github/instructions/technology.instructions.md"
+      type: "instruction"
+      description: "Technology-specific conventions"
     - path: ".github/prompts/ping-loop.prompt.md"
       type: "prompt"
       description: "Agent-intercom ping loop prompt"
+    - path: ".github/prompts/stage-grouping-analysis.prompt.md"
+      type: "prompt"
+      description: "Stage grouping analysis prompt"
     - path: ".github/policies/workflow-policies.md"
       type: "policy"
       description: "Workflow policy definitions"
+    - path: ".github/policies/policy-proposal.md"
+      type: "policy"
+      description: "Policy proposal template"
 
 backlog_tool:
   detected: true
@@ -333,42 +384,13 @@ vscode:
   has_agent_settings: true
 
 drift_report:
-  summary: "Tuning session 2026-04-25 resolved all prior drift. Legacy capability pack names normalized, scripts upgraded with atomic file creation, instruction and skill files refreshed. Profile Go version updated from 1.22+ to 1.24.0."
-  previous_tuning: "2026-04-14T00:00:00Z"
-  changes:
-    - category: "degrading"
-      description: "Legacy capability pack names (circuit-breaker, concurrency) removed from manifest — now part of base harness"
-      severity: "medium"
-      artifacts_affected:
-        - ".autoharness/harness-manifest.yaml"
-    - category: "degrading"
-      description: "Lock and search scripts replaced with template versions adding atomic file creation and better error handling"
-      severity: "medium"
-      artifacts_affected:
-        - "scripts/acquire_lock.ps1"
-        - "scripts/acquire_lock.sh"
-        - "scripts/release_lock.sh"
-        - "scripts/search.sh"
-    - category: "growth"
-      description: "Hook Signal Protocol added to backlogit.instructions.md, Primitive 9 reference added to architecture-doc.instructions.md"
-      severity: "low"
-      artifacts_affected:
-        - ".github/instructions/backlogit.instructions.md"
-        - ".github/instructions/architecture-doc.instructions.md"
-    - category: "cosmetic"
-      description: "Safety-modes skill description expanded to include action-risk/result tracking"
-      severity: "low"
-      artifacts_affected:
-        - ".github/skills/safety-modes/SKILL.md"
-    - category: "cosmetic"
-      description: "Go version in workspace profile updated from 1.22+ to 1.24.0 to match go.mod"
-      severity: "low"
-      artifacts_affected:
-        - ".autoharness/workspace-profile.yaml"
+  summary: "Merge-install v1.4.0 applied 2026-05-11. 73 templates processed, 14 new files installed, 56 existing files updated with backups. New capabilities: context-efficiency, role-enforcement, github-pr-automation, continuous-learning instructions; security-sentinel agent; security-lens-reviewer and security-reviewer personas; harness-doctor, iterative-experiment, security-audit, shipment-reconcile skills; policy-proposal template; stage-grouping-analysis prompt."
+  previous_tuning: "2026-04-28T00:00:00Z"
+  changes: []
   checksum_scan:
     manifest_present: true
     ignore_file: null
-    checked_artifacts: 36
+    checked_artifacts: 55
     missing_count: 0
     user_modified_count: 0
     ignored_count: 0
@@ -376,9 +398,6 @@ drift_report:
     artifacts: []
   not_in_manifest: []
   templates_not_installed:
-    - template: "agents/language-engineer.agent.md.tmpl"
-      expected_path: ".github/agents/language-engineer.agent.md"
-      note: "Generic language engineer; workspace has Go-specific go-engineer.agent.md"
     - template: "agents/review/technology-reviewer.agent.md.tmpl"
       expected_path: ".github/agents/review/technology-reviewer.agent.md"
       note: "Generic technology reviewer; workspace has Go-specific go-quality-reviewer.agent.md and mcp-protocol-reviewer.agent.md"

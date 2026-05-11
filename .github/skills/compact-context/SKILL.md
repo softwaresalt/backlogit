@@ -1,111 +1,128 @@
 ---
-name: compact-context
-description: "Scan .copilot-tracking/ for stale or oversized tracking artifacts, produce compacted summaries, and archive originals. Use when tracking files accumulate beyond thresholds that degrade agent context quality."
-argument-hint: "[threshold-days=14] [max-files=40] [max-size-kb=500]"
+description: "Compact and consolidate memory, plan, and tracking artifacts into durable summaries in docs/ — mandatory workflow step, not advisory"
 ---
 
-# Compact Context
+## Compact Context
 
-Reduce context noise by compacting old `.copilot-tracking/` artifacts into dense summaries. Originals are archived, never deleted, preserving full audit history.
+Scan `docs/memory/`, `docs/exec-plans/`, and `docs/closure/` for stale or oversized artifacts, produce compacted summaries, and archive verbose originals. For plans with appended reviews, consolidate into a decided-plan that replaces the original plan + review verbosity.
 
-## Agent-Intercom Communication (NON-NEGOTIABLE)
+This skill is a **mandatory workflow step** invoked explicitly by the stage or ship agent (when checkpoint threshold is exceeded or at batch completion). It is NOT advisory — built-in AI assistant memory features do not write to `docs/`, so compaction is the only mechanism that ensures session knowledge is consolidated into durable, version-controlled artifacts.
 
-Call `ping` at session start. If agent-intercom is reachable, broadcast at every step. If unreachable, warn the user that operator visibility is degraded.
+## When to Use
 
-| Event | Level | Message prefix |
-|---|---|---|
-| Session start | info | `[COMPACT] Starting context compaction` |
-| Assessment complete | info | `[COMPACT] Assessment: {file_count} files, {total_size_kb} KB across {dir_count} subdirectories` |
-| Stale batch identified | info | `[COMPACT] Stale batch: {count} files in {subdirectory} older than {threshold} days` |
-| Files preserved | info | `[COMPACT] Preserved {count} files referenced by active backlog tasks` |
-| Summary written | success | `[COMPACT] Summary written: {file_path}` |
-| Archive complete | success | `[COMPACT] Archived {count} originals to .copilot-tracking/archive/{subdirectory}/` |
-| Session complete | success | `[COMPACT] Complete: {archived_count} files archived, {summary_count} summaries written` |
-| Nothing to compact | info | `[COMPACT] Tracking directory healthy — no compaction needed` |
+Invoke as part of the standard workflow:
 
-## Subagent Depth Constraint
-
-This skill is a leaf executor. It MUST NOT spawn additional subagents. Perform all work using direct tool calls.
+* **Stage or Ship agent**: When checkpoint count for a feature or chore exceeds 10 (mandatory trigger)
+* **Ship agent**: At batch completion (Step 5), after writing the session memory summary
+* **Manual**: When `docs/memory/` file count > 40, total size > 500 KB, or the operator requests it
 
 ## Inputs
 
-* `${input:threshold-days:14}`: (Optional, defaults to 14) Files older than this threshold are candidates for compaction.
-* `${input:max-files:40}`: (Optional, defaults to 40) File count threshold that triggers compaction when exceeded.
-* `${input:max-size-kb:500}`: (Optional, defaults to 500) Total size threshold in KB that triggers compaction when exceeded.
+* `target`: (Optional) One of `memory`, `plans`, `all`. Defaults to `all`.
+* `threshold_days`: (Optional, default 14) Files older than this are candidates for compaction.
+* `max_files`: (Optional, default 40) File count threshold that triggers compaction.
+* `max_size_kb`: (Optional, default 500) Total size threshold in KB.
 
-## Execution Steps
+## Output
+
+* Compacted summary files in `docs/memory/` (for memory/checkpoints)
+* Decided-plan files in `docs/exec-plans/` (for plans with appended reviews)
+* Compacted closure summaries in `docs/closure/` (for verification and closure records)
+* Verbose originals moved to `docs/archive/`
+* Summary report of what was compacted
+
+## Required Protocol
 
 ### Phase 1: Assess
 
-Scan `.copilot-tracking/` to determine whether compaction is needed and identify stale artifacts.
+> **Intercom**: When the `agent-intercom` capability pack is installed, broadcast `[COMPACT] Starting compaction: target={target}` before scanning.
 
-1. **Enumerate subdirectories**: List all subdirectories in `.copilot-tracking/` excluding `archive/`. Record the subdirectory name, file count, and total size for each.
+Scan the target directories:
 
-2. **Check thresholds**: If the total file count (excluding `archive/`) is below `${input:max-files}` AND total size is below `${input:max-size-kb}` KB, broadcast `[COMPACT] Tracking directory healthy` and exit. No compaction needed.
+**Memory and checkpoints** (`docs/memory/`):
 
-3. **Identify stale files**: For each subdirectory, identify files with a last-modified date older than `${input:threshold-days}` days from today. Group stale files by subdirectory.
+* Count files and total size per date subdirectory
+* Identify files older than `threshold_days`
+* Cross-reference against active backlog work items (do not compact active task checkpoints)
 
-4. **Cross-reference active backlog items**: Query backlogit for active or queued work items and scan their descriptions and implementation notes for file path references matching `.copilot-tracking/` paths. Any tracking file referenced by an active backlog item is excluded from compaction regardless of age.
+**Plans** (`docs/exec-plans/`):
 
-5. **Build compaction manifest**: For each subdirectory with stale files, record:
-   - Subdirectory name
-   - Files to compact (stale and not referenced by active tasks)
-   - Files to preserve (recent or referenced by active tasks)
-   - Total size of files to compact
+* Identify plans with appended review sections (plan-review skill appends findings)
+* Identify plans whose associated feature or chore is complete (all tasks Done)
 
-6. Broadcast the assessment summary.
+**Closure records** (`docs/closure/`):
 
-### Phase 2: Compact
+* Identify verification and closure artifacts for completed features or chores
 
-For each subdirectory batch in the compaction manifest:
+### Phase 2: Identify Candidates
 
-1. **Read stale files**: Read each file in the batch. Extract key content:
-   - Section headings (H2, H3 level)
-   - Key decisions and their rationale
-   - Outcomes and results (success/failure, commit hashes, task completions)
-   - Error resolutions and workarounds
-   - Discard verbose logs, raw command output, and intermediate debugging steps
+Mark artifacts as compaction candidates if:
 
-2. **Write summary file**: Create a compacted summary at `.copilot-tracking/{subdirectory}/{YYYY-MM-DD}-compacted-summary.md` with this structure:
+* **Memory files**: Older than threshold AND not referenced by any active work item
+* **Memory files**: Part of a completed feature or chore (all tasks Done)
+* **Memory files**: Superseded by a more recent checkpoint for the same task
+* **Plans**: Feature or chore is complete AND plan has appended review content ready for consolidation
+* **Closure records**: Feature or chore is complete AND more than `threshold_days` old
 
-   ```markdown
-   ---
-   type: compacted-summary
-   date: YYYY-MM-DD
-   source_count: {number of files compacted}
-   source_date_range: "{oldest_date} to {newest_date}"
-   ---
+> **Intercom**: When the `agent-intercom` capability pack is installed, broadcast `[COMPACT] Candidates identified: {count} files` after candidate identification is complete.
 
-   # Compacted Summary: {subdirectory}
+### Phase 3: Compact
 
-   Compacted from {source_count} files spanning {source_date_range}.
+**Memory compaction** (per-release-unit or per-date group):
 
-   ## Key Decisions
+1. Read all candidate memory/checkpoint files in the group
+2. Generate a dense summary capturing: decisions made, files modified, key learnings, failed approaches, outcomes
+3. Write the compacted summary to `docs/memory/compacted/{YYYY-MM-DD}-{release-unit-or-slug}-compacted.md`
+4. Move verbose originals to `docs/archive/memory/`
 
-   * {decision} — {rationale} (from {source_file})
+**Plan consolidation** (per-plan):
 
-   ## Outcomes
+1. Read the plan file including all appended review sections
+2. Extract: final decisions, implementation units that survived review, key constraints, rejected alternatives
+3. Write a decided-plan to `docs/exec-plans/{YYYY-MM-DD}-{slug}-decided-plan.md` — a concise document containing only the actionable decisions and rationale, not the full deliberation history
+4. Move the verbose original plan to `docs/archive/plans/`
 
-   * {outcome description} (from {source_file})
+**Closure compaction** (per-release-unit):
 
-   ## Error Resolutions
+1. Read verification and closure artifacts for the completed feature or chore
+2. Generate a consolidated closure record: what was verified, healthy/failure signals, monitoring status, follow-up items
+3. Write the compacted closure to `docs/closure/{YYYY-MM-DD}-{slug}-closure-summary.md`
+4. Move verbose originals to `docs/archive/closure/`
 
-   * {error} — {resolution} (from {source_file})
+### Phase 4: Report
 
-   ## Preserved Context
+Summarize:
 
-   * {any critical context that would be lost without the originals}
-   ```
+* Files compacted: {{count}}
+* Space recovered: {{size_reduction}}
+* Active task checkpoints preserved: {{count}}
+* Plans consolidated into decided-plans: {{count}}
+* Closure records compacted: {{count}}
 
-3. **Archive originals**: Move the compacted files to `.copilot-tracking/archive/{subdirectory}/`. Create the archive subdirectory if it does not exist. Use file move operations, not copy-then-delete.
+> **Intercom**: When the `agent-intercom` capability pack is installed, broadcast `[COMPACT] Compacted {count} files, recovered {size_reduction}` after the summary is produced.
 
-4. **Broadcast**: Report the summary file path and the count of archived originals.
+## Behavioral Constraints
 
-5. Repeat for each subdirectory batch in the manifest.
+* Never delete files — always archive to `docs/archive/`
+* Never compact checkpoints for active (Active status) work items
+* Preserve the most recent checkpoint for each completed task
+* All archive operations maintain a traceable path from the compacted summary back to the original verbose artifacts
+* Decided-plans must preserve all final decisions and their rationale — compaction removes verbosity, not substance
 
-## Constraints
+## Intercom Events
 
-* **Never delete files.** All originals are moved to `.copilot-tracking/archive/`. The archive directory is the permanent home for compacted originals.
-* **Preserve active task references.** Files referenced by active backlog tasks are never compacted, regardless of age or size.
-* **One summary per batch.** Each subdirectory compaction produces exactly one summary file. Multiple compaction runs on the same subdirectory produce separate dated summaries.
-* **Idempotent.** Running compaction twice on an already-compact directory produces no changes (threshold check exits early).
+When the `agent-intercom` capability pack is installed, broadcast the
+following events at the specified trigger points:
+
+| Event | Trigger | Broadcast format |
+|---|---|---|
+| `start` | Skill invoked (Phase 1 begin) | `[COMPACT] Starting compaction: target={target}` |
+| `candidates` | Phase 2 complete | `[COMPACT] Candidates identified: {count} files` |
+| `complete` | Phase 4 report produced | `[COMPACT] Compacted {count} files, recovered {size_reduction}` |
+
+## Model Routing
+
+This skill operates at **Tier 1 (Fast/Cheap)** — summarization and consolidation are low-complexity.
+Recommended model class: GPT-5.4-mini, Claude Haiku, or equivalent fast/cheap tier.
+
+Generated by autoharness | Template: compact-context/SKILL.md.tmpl

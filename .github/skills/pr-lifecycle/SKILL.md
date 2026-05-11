@@ -1,7 +1,7 @@
 ---
 name: pr-lifecycle
-description: "Manages the full PR lifecycle: creation, Copilot comment handling, CI remediation, and user-approved merge"
-argument-hint: "branch=015-feature-branch"
+description: "Manages the full PR lifecycle: creation, review comment handling, CI remediation, and user-approved merge"
+argument-hint: "branch=feature/{feature-number}-{slug}"
 input:
   properties:
     branch:
@@ -16,78 +16,132 @@ input:
 
 # PR Lifecycle Skill
 
-Manage the branch-to-merged workflow for a shipment or feature branch. This
-skill creates or updates the pull request, responds to review feedback, keeps CI
-healthy, and stops at the user merge gate unless the user explicitly approves
-the merge.
+Manage the branch-to-merged workflow for a feature or chore branch. This
+skill creates or updates the pull request, responds to review feedback,
+keeps CI healthy, and stops at the user merge gate unless the user
+explicitly approves the merge.
 
 ## Purpose
 
-Use this skill when implementation work is ready to move through pull request
-execution. It centralizes the PR control loop so higher-level agents can treat
-review, CI follow-up, and merge approval as one bounded workflow.
+Use this skill when implementation work is ready to move through pull
+request execution. It centralizes the PR control loop so higher-level
+agents can treat review, CI follow-up, and merge approval as one bounded
+workflow.
+
+## Agent-Intercom Communication
+
+When the `agent-intercom` capability pack is installed, call `ping` at
+session start. If reachable, broadcast at every step. If unreachable,
+warn the operator that visibility is degraded and continue locally.
+
+| Event | Level | Message prefix |
+|---|---|---|
+| Session start | info | `[PR-LIFECYCLE] Starting: branch={input.branch}` |
+| Branch pushed | info | `[PR-LIFECYCLE] Branch pushed: {branch}` |
+| PR created | info | `[PR-LIFECYCLE] PR created: {pr_url}` |
+| PR updated | info | `[PR-LIFECYCLE] PR updated: {pr_url}` |
+| Feedback received | info | `[PR-LIFECYCLE] Review feedback: {comment_count} comments` |
+| Fix applied | info | `[PR-LIFECYCLE] Fix applied for: {comment_summary}` |
+| CI failure | warning | `[PR-LIFECYCLE] CI failed — delegating to fix-ci` |
+| CI green | info | `[PR-LIFECYCLE] CI passing` |
+| Ready for merge | success | `[PR-LIFECYCLE] PR ready — awaiting user approval` |
+| Merged | success | `[PR-LIFECYCLE] Merged: {pr_url}` |
+| Blocked | warning | `[PR-LIFECYCLE] Blocked: {reason}` |
 
 ## Inputs
 
-* `${input:branch}`: (Required) Branch name to ship
-* `${input:title}`: (Optional) PR title override. When omitted, derive the
-  title from the branch name or prepared PR description
+* `${input:branch}`: (Required) Branch name to ship.
+* `${input:title}`: (Optional) PR title override. When omitted, derive
+  the title from the branch name or prepared PR description.
 
 ## Workflow
 
 ### Step 1: Prepare the branch
 
 1. Confirm the branch exists locally and is ready to push.
-2. Gather or generate the PR title and body before calling GitHub tooling.
+2. Gather or generate the PR title and body before calling GitHub
+   tooling.
 3. Push the branch if it is not already available on the remote.
 
 ### Step 2: Create or update the pull request
 
-1. Use the GitHub CLI, such as `gh pr create` or `gh pr edit`, to create or
+1. Use the GitHub CLI (`gh pr create` or `gh pr edit`) to create or
    refresh the pull request.
-2. Capture the PR URL, branch, and base branch as the active shipment context.
-3. Reuse an existing PR when the branch already has one instead of creating
-   duplicates.
+2. Capture the PR URL, branch, and base branch as the active context.
+3. Reuse an existing PR when the branch already has one instead of
+   creating duplicates.
 
-### Step 3: Handle Copilot and review feedback
+### Step 2b: Request automated review
 
-1. Monitor PR review comments, especially Copilot review comments.
-2. Apply bounded fixes directly when they are clearly actionable.
-3. Re-run the relevant validation after each fix cycle.
-4. Keep the PR description and review context aligned with the latest branch
-   state.
+When the repository is hosted on GitHub, request Copilot Review
+immediately after PR creation or after pushing new commits:
+
+1. Request review per `.github/instructions/github-pr-automation.instructions.md` §1.1.
+2. Poll for review completion using the back-off cadence in §1.2.
+3. Do not block on review — proceed to CI monitoring in parallel when
+   possible, but complete the review poll before entering the fix cycle.
+
+### Step 3: Handle review feedback
+
+1. Monitor PR review comments, especially automated review comments.
+2. For GitHub-hosted repositories, follow the complete Copilot Review
+   workflow in `.github/instructions/github-pr-automation.instructions.md` Part 1:
+   categorize comments (§1.3), apply fixes (§1.4), reply to threads
+   (§1.5), and resolve bot-authored threads via GraphQL (§1.6).
+3. For non-GitHub repositories, apply bounded fixes directly when they
+   are clearly actionable.
+4. Re-run the relevant validation after each fix cycle.
+5. Keep the PR description and review context aligned with the latest
+   branch state.
 
 ### Step 4: Handle CI failures
 
-1. If CI fails, invoke the `fix-ci` skill with the active PR or branch context.
-2. Let `fix-ci` own the remediation loop for failing checks and unresolved
-   review comments.
-3. Return to PR monitoring once CI and review status are clean again.
+1. If CI fails, invoke the `fix-ci` skill with the active PR or branch
+   context.
+2. For GitHub-hosted repositories, ensure the fix-ci skill follows the
+   CI polling protocol in `.github/instructions/github-pr-automation.instructions.md` Part 2
+   for status monitoring, failure extraction, and fix-push-poll loops.
+3. Let `fix-ci` own the remediation loop for failing checks and
+   unresolved review comments.
+4. Return to PR monitoring once CI and review status are clean again.
+
+### Step 4b: Re-request review after fixes
+
+When fixes were pushed (from either review or CI remediation):
+
+1. Re-request Copilot Review per `.github/instructions/github-pr-automation.instructions.md`
+   §1.7.
+2. Poll for the new review using the same back-off cadence.
+3. Resolve any remaining bot-authored threads per §1.6.
+4. Repeat until the review is clean or the review-fix cycle limit is
+   reached.
 
 ### Step 5: Merge approval gate
 
-1. When the PR is reviewable and checks are green, present the status to the
-   user.
+1. When the PR is reviewable and checks are green, present the status
+   to the user.
 2. Wait for explicit user approval before any merge action.
-3. Never auto-merge and never treat silence as approval.
-4. If the user does not approve merge, leave the PR open and report the ready
-   state.
-5. **Branch retention (NON-NEGOTIABLE)**: Do NOT checkout `main` or delete the feature branch
-   while the merge gate is open. The branch is the active working context for
-   any follow-up CI or review fixes.
+3. **Never auto-merge** and never treat silence as approval.
+4. If the user does not approve merge, leave the PR open and report
+   the ready state.
+5. **Branch retention (NON-NEGOTIABLE)**: Remain on the current feature
+   or chore branch while awaiting merge approval. Do NOT checkout
+   `main` or any other branch. The calling agent (Ship)
+   depends on the branch context being preserved for post-merge work.
 
 ### Step 6: Post-merge cleanup
 
 After a user-approved merge:
 
 1. Report the merge result and resulting default-branch state.
-2. If the caller requires post-merge closure work, recommend creating a
-   `post-merge/{feature_slug}` branch from updated `main` rather than pushing
-   closure commits directly to the default branch.
-3. Delete the feature branch only when that cleanup is explicitly requested or
-   already part of the chosen PR flow. Do NOT delete automatically.
-4. Summarize any follow-up items, release notes, or residual risks that remain
-   after merge.
+2. **Do NOT checkout `main` and start working on it.**
+   Post-merge closure work belongs on a dedicated `post-merge/` branch
+   created by the Ship agent. This skill's responsibility ends at
+   reporting the merge result.
+3. Delete the feature branch only when that cleanup is requested or
+   already part of the chosen PR flow.
+4. Summarize any follow-up items, release notes, or residual risks
+   that remain after merge.
 
 ## Completion Criteria
 
@@ -96,3 +150,14 @@ The skill is complete only when one of these outcomes is explicit:
 * the PR is open and ready, waiting on user merge approval
 * the PR feedback and CI loop is blocked with a clear reason
 * the PR was merged after explicit user approval
+
+## Stop Conditions
+
+| Counter | Limit | Action |
+|---|---|---|
+| Fix-CI delegation cycles | 5 | Halt, leave PR for manual intervention |
+| Review-fix cycles | 3 | Accept remaining as backlog follow-ups |
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — PR creation and follow-up is routine coordination.

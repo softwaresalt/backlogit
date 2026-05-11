@@ -24,13 +24,13 @@ Use these operations for all backlog interactions. The operation names are abstr
 
 | Operation | MCP Tool | CLI Command | Purpose |
 |-----------|----------|-------------|---------|
-| Create task | `backlogit_create_item` | `backlogit add --type <artifact_type> --title <title>` | Create a new task/artifact |
+| Create task | `backlogit_create_item` | `backlogit add` | Create a new task/artifact |
 | List tasks | `backlogit_list_items` | `backlogit list` | List tasks with filters |
-| Get task | `backlogit_get_item` | `backlogit get <id>` | Retrieve task details |
-| Update task | `backlogit_update_item` | `backlogit update <id>` | Modify task fields |
-| Move task | `backlogit_move_item` | `backlogit move <id> --status <status>` | Change task status |
-| Search | `backlogit_search_items` | `backlogit search <query>` | Full-text search |
-| Complete | `backlogit_move_item` | `backlogit move <id> --status done` | Mark task complete |
+| Get task | `backlogit_get_item` | `backlogit get {id}` | Retrieve task details |
+| Update task | `backlogit_update_item` | `backlogit update {id}` | Modify task fields |
+| Move task | `backlogit_move_item` | `backlogit move {id} --status {status}` | Change task status |
+| Search | `backlogit_search_items` | `backlogit search {query}` | Full-text search |
+| Complete | `backlogit_move_item` | `backlogit move {id} --status done` | Mark task complete |
 
 ### Status Values
 
@@ -43,18 +43,27 @@ Use these operations for all backlog interactions. The operation names are abstr
 
 ### Extended Operations (Tool-Dependent)
 
-| Operation | MCP Tool | CLI Command | Purpose |
-|-----------|----------|-------------|---------|
-| Query state | `backlogit_query_sql` | `backlogit query <sql>` | Run read-only SQL against the index |
-| Sync index | `backlogit_sync_index` | `backlogit sync` | Rebuild the query index from Markdown files |
-| Append comment | `backlogit_append_comment` | N/A | Append execution notes to a task |
-| Save memory | `backlogit_save_memory` | N/A | Persist agent continuity state |
-| Create checkpoint | `backlogit_create_checkpoint` | N/A | Save full session checkpoint |
-| Get queue | `backlogit_get_queue` | `backlogit queue view` | List ready work in execution order |
-| Add dependency | `backlogit_add_dependency` | `backlogit dep add <item> <depends_on> --type <dep_type>` | Create task dependency |
-| Remove dependency | `backlogit_remove_dependency` | `backlogit dep remove <item> <depends_on>` | Remove task dependency |
-| Get dependencies | `backlogit_get_dependencies` | `backlogit dep list <id>` | Inspect dependency graph |
-| Track commit | `backlogit_track_commit` | `backlogit update <id> --commit <sha>` | Associate commit with task |
+| Query SQL | `backlogit_query_sql` | `backlogit query {sql}` | Read-only SQL against index |
+| Sync Index | `backlogit_sync_index` | `backlogit sync` | Rehydrate SQLite from Markdown |
+| Append Comment | `backlogit_append_comment` | — | Add comment to item event log |
+| Log Telemetry | `backlogit_log_telemetry` | — | Write agent telemetry event |
+| Save Memory | `backlogit_save_memory` | — | Persist key-value agent memory |
+| Create Checkpoint | `backlogit_create_checkpoint` | — | Save session state |
+| List Checkpoints | `backlogit_list_checkpoints` | — | List session checkpoints |
+| Get Queue | `backlogit_get_queue` | `backlogit queue view` | Priority-ordered work queue |
+| Add Dependency | `backlogit_add_dependency` | `backlogit dep add` | Add dependency edge |
+| Track Commit | `backlogit_track_commit` | — | Associate commit with artifact |
+| Archive Item | `backlogit_archive_item` | — | Archive completed artifact |
+| Fetch Stash | `backlogit_fetch_stash` | — | Get active stash entries |
+| Stash | `backlogit_stash` | — | Defer work item to stash |
+| Harvest Stash | `backlogit_harvest_stash` | — | Promote stash to work item |
+| Create Shipment | `backlogit_create_shipment` | — | Create release shipment |
+| Get Shipment | `backlogit_get_shipment` | — | Retrieve shipment details |
+| List Shipments | `backlogit_list_shipments` | — | List shipments by status |
+| Claim Shipment | `backlogit_claim_shipment` | — | Activate a queued shipment |
+| Ship Shipment | `backlogit_ship_shipment` | — | Close released shipment |
+| Poll Hook Events | `backlogit_poll_hook_events` | — | Poll for hook signal events |
+| Ack Hook Events | `backlogit_ack_hook_events` | — | Acknowledge hook events |
 
 ## Agent Workflow Patterns
 
@@ -83,7 +92,6 @@ Call backlogit_move_item with:
 ```text
 Call backlogit_move_item with:
   id: "task-id"
-  status: "done"
 ```
 
 ### Listing Ready Tasks

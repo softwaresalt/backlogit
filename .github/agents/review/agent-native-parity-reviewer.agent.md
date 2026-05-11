@@ -3,7 +3,12 @@ name: Agent-Native Parity Reviewer
 description: "Reviews agent-facing systems for parity between user workflows, agent workflows, context surfaces, and tool contracts"
 maturity: stable
 tools: read, search
-model_routing: "Tier 1 (Fast/Cheap)"
+model_routing: "Tier 1 (Fast/Cheap)"  # DEPRECATED — use model_tier
+model_tier: 1
+max_subagent_tier: 1
+reasoning_effort: "low"
+model_provider: "Anthropic"
+model_family: "Claude Haiku 4.5"
 subagent_depth: 0
 ---
 
@@ -28,8 +33,8 @@ Return a JSON array of findings:
 ```json
 [
   {
-    "file": "path/to/file.go",
-    "line": 42,
+    "file": "{file_path}",
+    "line": {line},
     "severity": "P0|P1|P2|P3",
     "autofix_class": "safe_auto|gated_auto|manual|advisory",
     "category": "agent-native-parity",
@@ -51,7 +56,7 @@ Return a JSON array of findings:
 * No subagent spawning (leaf executor)
 * Read-only analysis — do not modify files
 * Focus on parity, context symmetry, and tool-boundary quality rather than syntax or style
-* When present, use `.github/instructions/go-mcp-server.instructions.md` as supporting context for MCP-oriented surfaces
+* When present, use `.github/instructions/mcp-server.instructions.md` as supporting context for MCP-oriented surfaces
 
 ## Model Routing
 

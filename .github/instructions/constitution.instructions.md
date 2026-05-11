@@ -1,262 +1,306 @@
 ---
-applyTo: "**"
+description: "Constitutional principles governing all agent operations in this workspace — adapted for Go"
+applyTo: '**'
 ---
 
-# Backlogit Constitution
+# Constitution
 
 ## Core Principles
 
-### I. Type-Safe Go
+### I. Safety-First Go
 
-All production code MUST be written in Go 1.22+ with complete
-GoDoc comments on every exported function, type, and package.
-`golangci-lint` MUST pass with zero errors. Go structs with
-`go-playground/validator` tags are the canonical choice for all
-data structures crossing package boundaries. Custom validation
-functions MUST enforce the artifact hierarchy and naming
-constraints defined in `config.yaml`. `panic()` is forbidden in
-library code; all error handling MUST use the sentinel and typed
-error patterns defined in `internal/errors/`.
+All production code MUST be written in Go (1.24.0).
+No ``unsafe`` package usage without explicit justification in a code comment and review approval.. ``golangci-lint run`` must pass with zero warnings before any commit. ``go vet ./...`` must also pass.. All errors must be wrapped with context using ``fmt.Errorf("context: %w", err)``. Sentinel errors for known failures. Never ignore returned errors..
 
-**Rationale**: backlogit manages user project state through file
-writes, database operations, and MCP tool calls. Go's built-in
-static type system catches structural errors at compile time
-rather than corrupting workspace files at runtime. Struct
-validation at boundaries provides runtime safety for dynamic
-inputs. Strong typing also improves agent comprehension of the
-codebase.
+**Rationale**: Explicit error handling and safety enforcement prevent data corruption,
+silent failures, and state loss during unattended agent operation.
 
-### II. MCP Protocol Fidelity
+### II. Test-First Development (NON-NEGOTIABLE)
 
-The server MUST implement the Model Context Protocol via the Go
-`mcp-go` SDK (JSON-RPC 2.0 over stdio). All MCP tools MUST be
-unconditionally visible to every connected agent regardless of
-workspace state. Tools called before workspace initialization MUST
-return a descriptive error rather than being hidden. Tool parameter
-schemas MUST use Go structs with JSON tags for automatic validation
-and JSON Schema generation.
+Every feature or chore MUST have tests written before implementation code. The test
+directory structure (Unit tests colocated in `*_test.go` files, integration tests in `tests/` directory. Use `testify/assert` and `testify/require`. Table-driven tests with `t.Run` subtests.) MUST be maintained. All tests MUST
+pass via `go test ./...` before any code is merged. Steps: write test,
+confirm it fails (red), implement, confirm it passes (green). Never write
+production code before the corresponding test exists and has been observed
+to fail.
 
-**Rationale**: Consistent tool surface ensures agents can discover
-capabilities without conditional logic. Protocol compliance
-guarantees interoperability with any MCP-compatible client (Claude
-Code, GitHub Copilot CLI, Cursor, VS Code).
+**Rationale**: Agents operating unattended for extended periods cannot
+self-verify correctness without a robust test suite. Regressions caught
+in production are orders of magnitude more expensive than regressions
+caught by a failing test.
 
-### III. Test-First Development (NON-NEGOTIABLE)
+### III. Workspace Isolation and Security Boundaries
 
-Every feature MUST have tests written before implementation code.
-The test structure (colocated `_test.go` unit tests,
-`tests/integration/`, `tests/contract/`) MUST be maintained.
-Contract tests validate MCP tool input/output schemas and error
-responses. Integration tests validate cross-module interactions
-(rehydration, file routing, event streaming). Unit tests validate
-isolated logic. All tests MUST pass via `go test ./...` before
-any code is merged.
+All file-system operations MUST resolve within the configured workspace root.
+Path traversal attempts MUST be rejected. No secrets or credentials MUST
+appear in committed files.
 
-**Rationale**: backlogit manages the user's agile system of record.
-Regressions in artifact creation, rehydration cycles, SQL query
-gates, or file routing can silently corrupt the workspace or lose
-data. Test-first discipline catches failures before they reach
-production.
+**Rationale**: Agents run with the operator's filesystem permissions. Without
+strict isolation, a misbehaving agent could access or corrupt unrelated
+projects, leak internal paths, or expose sensitive information.
 
-### IV. Workspace Containment & Security Boundaries
+### IV. CLI Workspace Containment (NON-NEGOTIABLE)
 
-All file-system operations MUST resolve within the `.backlogit/`
-directory at the workspace root. Path traversal attempts MUST be
-rejected via canonical path validation. The SQLite `backlogit.db` is
-ephemeral and gitignored; it MUST NOT contain data that does not
-exist in the Markdown source files. The `backlogit_query_sql` MCP
-tool MUST enforce a read-only gate: only `SELECT` statements are
-permitted. No secrets or credentials MUST appear in `.backlogit/`
-files (which may be committed to Git).
+When an agent operates in CLI mode, it MUST NOT create, modify, or delete any
+file or directory outside the current working directory tree. This applies to
+all file operations. Paths that resolve above or outside the cwd, whether via
+absolute paths, `..` traversal, symlinks, or environment variable expansion,
+MUST be refused. The only exception is reading files explicitly provided by
+the user as context.
 
-Write discipline is enforced at two complementary layers:
-
-* **Tool-level**: `SafeResolve` and path validation in core code
-  enforce containment at the file-operation boundary. This prevents
-  any write that escapes the workspace regardless of the caller.
-* **Agent-level**: Instructions and skill protocols enforce that
-  agents use the backlogit CLI or MCP tool surface rather than
-  writing `.backlogit/` files directly. Direct file edits bypass
-  validation, event logging, index maintenance, and naming
-  conventions. Agents MUST NOT mutate `.backlogit/` files outside
-  the tool surface.
-
-**Rationale**: backlogit operates on files that travel with the
-codebase in Git. Without strict containment, a misbehaving agent
-could write outside the workspace, execute destructive SQL, or
-leak sensitive information through serialized state. The two-layer
-model provides defense in depth: tool-level enforcement is a hard
-boundary, and agent-level discipline is a quality boundary that
-keeps workflow state consistent across rehydration and index
-rebuild cycles.
+**Rationale**: CLI agents run with the operator's full filesystem permissions
+and no interactive approval UI. A single misrouted write can corrupt unrelated
+repositories, overwrite system configuration, or destroy data in sibling
+directories.
 
 ### V. Structured Observability
 
-All significant operations MUST emit structured log entries via
-Go's `log/slog` package. Log coverage MUST include: MCP tool
-call execution, workspace lifecycle events (init, sync, rehydrate),
-database operations, file routing decisions, and event stream
-writes. Log output MUST support both human-readable text and JSON
-formats via `slog.Handler` configuration. Agent telemetry MUST
-be captured in `telemetry.jsonl` for operational visibility.
+All significant operations MUST produce traceable output. Agent actions MUST
+be logged through broadcasting, commit messages, or structured reporting.
+Coverage MUST include: build/test execution, file modifications, quality
+gate results, and error conditions.
 
-**Rationale**: backlogit runs as a background MCP server during
-extended coding sessions. When something goes wrong during
-unattended operation, structured logs and telemetry streams are
-the primary diagnostic tools. Without them, debugging rehydration
-failures, routing errors, or query gate violations would require
-reproducing the exact scenario.
+**Rationale**: Agents run as background services for extended periods. When
+something goes wrong during unattended operation, structured traces are the
+primary diagnostic tool.
 
-### VI. Single-Binary Simplicity
+### VI. Single Responsibility
 
-The project MUST be installable via `go install
-github.com/softwaresalt/backlogit/cmd/backlogit@latest` as a single
-static binary. Dependencies MUST be managed via `go.mod` with
-minimum version selection. New dependencies MUST be justified by
-a concrete requirement; do not add modules speculatively. Prefer
-the standard library over external packages when the standard
-library solution is adequate. SQLite (via `modernc.org/sqlite`,
-a CGo-free pure-Go implementation) is the sole query engine; do
-not introduce additional databases or caches.
+New dependencies MUST be justified by a concrete requirement. Do not add
+libraries or tools speculatively. Prefer the standard library and existing
+project dependencies over external additions. Optional capabilities SHOULD
+use feature flags or conditional configuration.
 
-**Rationale**: Operational simplicity is critical for a tool that
-developers install alongside their projects. Go's single static
-binary model eliminates runtime dependencies, version conflicts,
-and environment setup. Deployment is a single `go install` or
-binary download.
+**Rationale**: Every additional dependency increases build time, attack
+surface, and maintenance burden. Agents should minimize the changes they
+introduce to the dependency graph.
 
-### VII. CQRS Data Architecture (NON-NEGOTIABLE)
+### VII. Destructive Command Approval (NON-NEGOTIABLE)
 
-backlogit MUST maintain strict separation between its four storage
-layers:
+All destructive terminal commands MUST require operator approval before
+execution, regardless of permissive agent modes. A terminal command is
+destructive if it: deletes files or directories, overwrites files without
+backup, modifies system configuration, alters version control history,
+drops or truncates data, installs or removes system-level packages, or
+executes code from untrusted sources.
 
-1. **Markdown files** (source of truth): Individual `.md` files
-   with YAML frontmatter store current state for durable artifacts.
-   These files MUST contain only the current state and description;
-   no history, comments, or agent traces. The deliberation process
-   converts transient ideas into durable Markdown artifacts.
-2. **SQLite cache** (query engine): The `backlogit.db` is ephemeral,
-   gitignored, and disposable. The rehydration engine MUST be able
-   to rebuild it entirely from the Markdown files and JSONL queues
-   at any time.
-3. **JSONL streams** (event history): `events.jsonl` captures
-   state changes and comments. `telemetry.jsonl` captures agent
-   metrics. Both are append-only.
-4. **JSONL queues** (transient intake): Data that has not yet
-   graduated into a durable artifact MAY be stored as JSONL. The
-   stash is the canonical example: entries are transient ideas on
-   their way to becoming artifacts through the deliberation
-   process. JSONL queues are Git-tracked, append-friendly, and
-   machine-parseable, but they are not sources of truth. An entry
-   in a JSONL queue becomes a source of truth only when
-   deliberation or another promotion workflow produces a Markdown
-   artifact from it.
+**Rationale**: Permissive agent modes exist to reduce friction for routine
+operations. They must never extend to destructive operations because a
+single misrouted destructive command can irrecoverably corrupt repositories
+or break system configuration.
 
-**Rationale**: This architecture allows humans to work with readable
-Markdown files in Git while agents query the SQLite cache for
-token-efficient lookups. The JSONL streams provide audit history
-without polluting the Markdown source of truth. JSONL queues give
-transient, high-churn data a format optimized for append and
-machine parsing without pretending it has the durability guarantees
-of a Markdown artifact. The ephemeral cache ensures no data loss
-if `backlogit.db` is deleted or corrupted.
+### VIII. Explicit Safety Modes for Elevated Risk
 
-### VIII. Git-Friendly Persistence
+When work involves destructive commands, production-impacting changes, uncertain root causes,
+or large blast radius, agents MUST switch into an explicit safety mode before proceeding:
 
-All durable workspace state in `.backlogit/` MUST be serializable
-to human-readable, Git-mergeable files. Markdown with YAML
-frontmatter is the canonical format for artifacts. JSONL queues
-(such as the stash) are Git-tracked and append-friendly but hold
-transient data that has not yet graduated into artifacts. No binary
-files in `.backlogit/` (except the gitignored `backlogit.db`). File
-formats MUST minimize merge conflicts (sorted YAML keys, stable
-field ordering in frontmatter, deterministic slug generation,
-one-JSON-object-per-line for JSONL). File writes MUST use atomic
-temp-file-then-rename to prevent corruption.
+* **Careful mode** — enumerate risks, confirm intent, and pause before high-impact operations
+* **Freeze-scope mode** — constrain work to a declared path or subsystem boundary
+* **Investigate-first mode** — gather evidence and causal understanding before proposing fixes
+
+**Rationale**: Guardrails are more reliable when they are interactive and legible. Safety modes
+translate policy into an operating posture that both the agent and the operator can reason about.
+
+### Capability Overlay — agent-intercom
+
+When the workspace enables the `agent-intercom` capability pack, agents MUST use the configured
+intercom workflow for heartbeat, milestone broadcasting, destructive-operation approval routing,
+and operator steering waits. If the intercom path becomes unavailable, agents MUST warn that
+remote visibility is degraded and must not silently bypass approval steps that depend on it.
+
+**Rationale**: A remote operator cannot supervise or approve work they cannot see. When intercom
+is part of the harness, observability and approval routing become operational requirements rather
+than optional niceties.
+
+### Capability Overlay — agent-engram
+
+When the workspace enables the `agent-engram` capability pack, agents MUST use the configured
+engram workflow for indexed search, workspace binding and status checks, code-graph traversal,
+and freshness verification. Agents MUST prefer engram MCP tools over file-based search for
+context-related discovery, MUST refresh or verify stale index state before trusting query results,
+and MUST not hand-edit tool-managed `.engram/` artifacts as a substitute for lifecycle or sync
+operations.
+
+**Rationale**: Engram exists to compress codebase understanding into a queryable local index.
+Ignoring that index and falling back immediately to raw file reading wastes context budget and
+throws away the leverage the overlay was meant to provide.
+
+### Capability Overlay — backlogit
+
+When the workspace enables the `backlogit` capability pack, agents MUST use the configured
+backlogit workflow for queue selection, dependency management, token-efficient task lookup,
+continuity checkpoints, and task traceability. Agents MUST prefer backlogit query and queue
+operations over manual backlog scanning when those operations are available, MUST refresh the
+index after out-of-band edits before trusting query output, and MUST not bypass backlogit by
+creating parallel task state outside the configured backlog workspace.
+
+**Rationale**: backlogit exists to preserve agent context through targeted queries, explicit work
+ordering, and durable execution traces. Treating it as a thin file store would discard the very
+capabilities that justify enabling the overlay.
+
+### IX. Git-Friendly Persistence
+
+All workspace state managed by the agent harness MUST be serializable to
+human-readable, Git-mergeable files. Markdown with YAML frontmatter is the
+preferred format for structured documents. Writes SHOULD use atomic
+operations to prevent corruption. File formats SHOULD minimize merge
+conflicts through sorted keys and stable ordering.
 
 **Rationale**: Workspace state travels with the codebase in Git.
-Human-readable files enable code review of agent-managed state,
-conflict resolution during merges, and manual editing when needed.
-JSONL queues trade some human readability for append efficiency on
-high-churn transient data that will be promoted to Markdown once
-it matures. Atomic writes prevent half-written state from
-corrupting the workspace during crashes or concurrent access.
+Human-readable files enable code review of agent-managed state, conflict
+resolution during merges, and manual editing when needed.
 
-### IX. Agent Context Efficiency
+### X. Agent Context Efficiency
 
-MCP tools MUST return minimal, targeted data to preserve agent
-context windows. The `backlogit_query_sql` tool exists specifically
-so agents can execute surgical SQL queries against `backlogit.db`
-rather than scanning directories of Markdown files. Tool responses
-MUST be structured JSON, not raw file content. When an agent needs
-a list of tasks, it queries `SELECT id, title, status FROM items
-WHERE type='bug'` (50 tokens) rather than reading 50 Markdown
-files (50,000 tokens).
+Tools and data access patterns MUST preserve agent context windows by
+returning minimal, targeted data. When a structured query can replace
+directory scanning or bulk file reading, agents MUST prefer the query.
+Tool responses MUST be structured (JSON or YAML), not raw file content,
+unless the agent explicitly needs the full document.
 
-**Rationale**: AI agents operate within finite context windows.
-Every token consumed by raw file content is a token unavailable
-for reasoning and code generation. The CQRS architecture exists
-precisely to serve token-efficient query results to agents.
+**Rationale**: AI agents operate within finite context windows. Every
+token consumed by bulk data is a token unavailable for reasoning and
+code generation. Data access architecture should serve token-efficient
+query results to agents.
+
+### XI. Merge Commit History Preservation (NON-NEGOTIABLE)
+
+All pull request merges MUST use merge commits. Squash merge and rebase
+merge are expressly forbidden. Repository settings MUST be configured to
+disable squash and rebase merge options (GitHub Settings → General →
+Pull Requests → uncheck "Allow squash merging" and "Allow rebase merging").
+The ship agent MUST verify the merge strategy before executing any merge
+and MUST halt with a P-009 violation if squash or rebase merge is detected.
+
+**Rationale**: Merge commits preserve the full development history,
+individual commit attribution, and bisect-friendly history. Squash merge
+destroys commit granularity and makes root-cause analysis of regressions
+significantly harder. Rebase merge rewrites history, breaking
+commit-traceability links and backlog commit associations.
 
 ## Technical Constraints
 
-- **Language**: Go 1.22+, statically typed
-- **Concurrency**: goroutines, channels, `sync` package,
-  `context.Context`
-- **MCP SDK**: `github.com/mark3labs/mcp-go` (JSON-RPC 2.0 over
-  stdio)
-- **Database**: SQLite 3 via `modernc.org/sqlite` (CGo-free),
-  WAL mode, FTS5 for full-text search
-- **Configuration**: YAML via `gopkg.in/yaml.v3`
-- **Data Validation**: `github.com/go-playground/validator/v10`
-  for struct validation
-- **Markdown Parsing**: `github.com/adrg/frontmatter` for YAML
-  frontmatter extraction
-- **CLI**: `github.com/spf13/cobra` for command-line interface
-- **Linting**: `golangci-lint` (format + lint + vet)
-- **Testing**: `testing` package, `github.com/stretchr/testify`,
-  `go test -cover`
-- **Build verification**: `go test ./...` and `golangci-lint run`
-  and `go vet ./...` MUST pass before merge
-- **License**: MIT
+| Concern         | Constraint                                                       |
+|-----------------|------------------------------------------------------------------|
+| Language        | Go 1.24.0                        |
+| Build           | `go build ./cmd/backlogit`                                              |
+| Test            | `go test ./...`                                               |
+| Lint            | `golangci-lint run`                                               |
+| Format          | `gofmt -l .`                                             |
+| CI              | GitHub Actions                                                  |
+| Error Handling  | ``if err != nil { return fmt.Errorf("context: %w", err) }``                                                |
+| Documentation   | Go doc comments: start with the identifier name, use complete sentences, add ``// Deprecated:`` for deprecated APIs.                                            |
+
+## Quality Gates
+
+Run in order. Do not skip any gate.
+
+```text
+go test ./...
+go vet ./...
+golangci-lint run
+gofmt -l .
+```
 
 ## Development Workflow
 
-1. **Research before code**: Feature explorations and architecture
-   decisions MUST be documented in `docs/research/` before
-   implementation begins.
-2. **Plan before code**: Implementation plans MUST be generated via
-   the planning workflow and stored in `docs/exec-plans/`.
-3. **Branch per feature**: Each feature MUST be developed on a
-   dedicated branch with a descriptive name.
-4. **Contract-first design**: MCP tool schemas and Go structs
-   MUST be defined before implementation. Changes to tool schemas
-   require updating corresponding contract tests.
-5. **Commit discipline**: Each commit MUST represent a coherent,
-   passing-tests change. Commit messages MUST follow conventional
-   commits format (e.g., `feat:`, `fix:`, `docs:`, `test:`).
-6. **No dead code**: Placeholder functions (e.g., `panic("not
-   implemented")` stubs) MUST be replaced with real
-   implementations or removed before a feature is considered
-   complete.
+1. **Harness before code**: Every feature or chore MUST have a compiling but failing
+   test harness before implementation begins.
+2. **Backlog-driven planning**: All task tracking MUST use the backlog system.
+   Static markdown task lists outside `.backlogit/` are not permitted.
+3. **Branch per release unit**: Each feature or chore MUST be developed on a dedicated branch.
+4. **Commit discipline**: Each commit MUST be coherent and buildable. Commit
+   messages follow conventional commits format (`feat:`, `fix:`, `docs:`, `test:`).
+5. **No dead code**: Placeholder modules MUST be replaced or removed before a
+   release unit is considered complete.
+6. **Operational closure**: Work is not complete at “green CI” if runtime validation,
+   monitoring setup, or release handoff remains unresolved.
+
+### Task Granularity (NON-NEGOTIABLE)
+
+Agent reliability drops below 50% for tasks exceeding 2 hours of human-equivalent
+effort and approaches 0% beyond 4 hours. All task decomposition enforces these rules:
+
+* **2-Hour Rule**: Every task MUST be scoped to roughly 2 hours of human effort.
+  Heuristics: fewer than 3 files modified, fewer than 5 functions changed, fewer
+  than 4 test scenarios.
+* **Width Isolation**: Each task MUST target a single skill domain. Do not combine
+  code with documentation, schema changes with API handlers, or test
+  infrastructure with production code in the same task.
+* **Atomic Milestone**: Every task MUST produce a verifiable state change: a passing
+  test, a successful build, or a measurable output.
+
+### Stop Conditions and Circuit Breakers
+
+The full circuit breaker protocol — retry thresholds, escalation steps, stall
+detection, and error logging — is defined in `circuit-breaker.instructions.md`.
+All agents MUST follow that protocol. The summary table below is a quick
+reference; the instruction file is authoritative.
+
+| Counter                         | Limit | Action                                              |
+|---------------------------------|-------|-----------------------------------------------------|
+| Consecutive operation failures  | 3     | Stop, log to `docs/memory/`, prompt user        |
+| Skill-managed loop (build/fix-ci)| 5    | Skill limit governs inside loop scope               |
+| Same-error recurrence in loop   | 3     | Universal breaker overrides: stop, log, prompt      |
+| Tasks attempted in session      | 20    | Halt, write memory checkpoint, exit                 |
+| Consecutive task failures       | 3     | Halt, prompt operator for guidance                  |
+| Review-fix cycles per task      | 3     | Accept remaining as backlog items, commit, move on  |
+| Total fix-ci cycles             | 5     | Halt, leave PR open for manual intervention         |
+| Session stalls                  | 3     | Halt, write checkpoint, prompt operator             |
+
+### Model Routing
+
+| Tier                    | Model Class  | Agents                                         | Rationale                       |
+|-------------------------|--------------|------------------------------------------------|---------------------------------|
+| **Tier 1 (Fast/Cheap)** | Smaller model | prompt-builder, learnings-researcher          | Low-complexity tasks            |
+| **Tier 2 (Standard)**  | Medium model | ship, go-engineer, harness-architect | Routine code, scaffolding, coordination |
+| **Tier 3 (Frontier)**  | Large model  | stage                                          | Deep analysis and architecture  |
 
 ## Governance
 
-This constitution supersedes all other development practices for
-the backlogit project. All code reviews and automated checks MUST
-verify compliance with these principles.
+This constitution supersedes all other development practices in this
+workspace. All code reviews and automated checks MUST verify compliance
+with these principles.
+
+### Enforcement Language
+
+| Level | Meaning | Mechanism |
+|---|---|---|
+| **NON-NEGOTIABLE** | Agent MUST comply. Violations trigger P-005 telemetry and halt. | CI gates, policy checks, or runtime containment |
+| **MUST** | Agent MUST comply. Violations are flagged; self-correction is expected. | Agent workflow logic, review findings |
+| **SHOULD** | Recommended practice. Deviations are acceptable with documented rationale. | Advisory review findings |
+| **MAY** | Optional practice at agent discretion. | — |
+
+### Enforcement Model
+
+| Principle | Level | Enforcement Mechanism |
+|---|---|---|
+| I. Safety-First Language | MUST | CI quality gates (`golangci-lint run`, `go build ./cmd/backlogit`) |
+| II. Test-First Development | NON-NEGOTIABLE | P-002/P-004 policies; harness-architect red phase; build-feature green phase |
+| III. Workspace Isolation | MUST | Agent runtime path resolution within workspace root |
+| IV. CLI Containment | NON-NEGOTIABLE | Agent runtime cwd boundary enforcement |
+| V. Structured Observability | MUST | Broadcasting, commit messages, structured reporting |
+| VI. Single Responsibility | SHOULD | Code review persona checks on dependency additions |
+| VII. Destructive Approval | NON-NEGOTIABLE | P-005 violation telemetry; strict-safety enforcement when enabled |
+| VIII. Safety Modes | MUST | safety-modes skill invocation; strict-safety decision gate when enabled |
+| IX. Git-Friendly Persistence | SHOULD | Markdown + YAML frontmatter convention |
+| X. Context Efficiency | SHOULD | Query-first data access patterns |
+
+For principles marked NON-NEGOTIABLE without runtime enforcement (II, IV),
+agents that observe violations MUST broadcast a P-005 event and halt rather
+than proceeding.
 
 - **Amendments**: Any change to this constitution MUST be documented
   with a version bump, rationale, and sync impact report. Principle
-  removals or redefinitions require a MAJOR version bump. New
-  principles or material expansions require MINOR. Clarifications
-  and wording fixes require PATCH.
+  removals or redefinitions require a MAJOR version bump. New principles
+  or material expansions require MINOR. Clarifications and wording fixes
+  require PATCH.
 - **Compliance review**: Every implementation plan MUST include a
-  "Constitution Check" section that maps the proposed work against
-  these principles and documents any justified violations.
-- **Conflict resolution**: When a principle conflicts with a
-  practical implementation need, the conflict MUST be documented
-  with the specific principle violated, the justification, and the
-  simpler alternative that was rejected.
+  "Constitution Check" section that maps the proposed work against these
+  principles and documents any justified violations.
+- **Conflict resolution**: When a principle conflicts with a practical
+  implementation need, the conflict MUST be documented with the specific
+  principle violated, the justification, and the simpler alternative that
+  was rejected.
 
-**Version**: 2.1.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-04-05
+**Version**: 1.0.0 | **Ratified**: 2026-05-11 | **Generated by**: autoharness

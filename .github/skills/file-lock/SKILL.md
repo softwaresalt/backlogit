@@ -1,5 +1,4 @@
 ---
-name: file-lock
 description: "Acquire and release file-level locks to prevent concurrent modifications during multi-agent or human+agent workflows"
 ---
 
@@ -76,5 +75,5 @@ Bash:       scripts/release_lock.sh <filepath>
 
 * Locks are advisory, not enforced at the filesystem level.
 * Lock files MUST NOT be committed to version control.
-* Lock files older than 1 hour are likely stale: warn the operator.
+* Lock files older than 1 hour are likely stale — warn the operator.
 * Only the operator may force-break a lock they did not create.
