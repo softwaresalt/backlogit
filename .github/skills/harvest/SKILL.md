@@ -1,6 +1,6 @@
 ---
 name: harvest
-description: "Decomposes a reviewed implementation plan into backlogit feature/task/subtask hierarchy"
+description: "Decomposes a reviewed implementation plan into backlog feature/task/subtask hierarchy"
 argument-hint: "plan=docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md"
 input:
   properties:
@@ -16,19 +16,18 @@ input:
 
 # Harvest Skill
 
-The `harvest` skill turns a reviewed implementation plan into backlogit
-feature, task, and subtask items. It is the reusable decomposition step for the
-Stage workflow and replaces the embedded harvest phase inside the legacy
-`backlog-harvester` agent.
+The `harvest` skill turns a reviewed implementation plan into backlog
+feature, task, and subtask items. It is the reusable decomposition step
+invoked by the stage agent.
 
-This skill does not perform planning or review. It assumes the incoming plan is
-already reviewed or otherwise approved for decomposition.
+This skill does not perform planning or review. It assumes the incoming
+plan has already been reviewed or otherwise approved for decomposition.
 
-## Agent-Intercom Communication (NON-NEGOTIABLE)
+## Agent-Intercom Communication
 
-Call `ping` at session start. If `agent-intercom` is reachable, broadcast at
-every step. If unreachable, warn the operator that visibility is degraded and
-continue locally.
+When the `agent-intercom` capability pack is installed, call `ping` at
+session start. If reachable, broadcast at every step. If unreachable,
+warn the operator that visibility is degraded and continue locally.
 
 | Event | Level | Message prefix |
 |---|---|---|
@@ -36,16 +35,16 @@ continue locally.
 | Plan accepted | info | `[HARVEST] Using reviewed plan: {plan_path}` |
 | Structure parsed | info | `[HARVEST] Parsed implementation units: {unit_count}` |
 | Dry run | info | `[HARVEST] Dry run: {feature_count} features, {task_count} tasks, {subtask_count} subtasks` |
-| Feature created | info | `[HARVEST] Created feature: {feature_id} - {title}` |
-| Task created | info | `[HARVEST] Created task: {task_id} - {title}` |
+| Feature created | info | `[HARVEST] Created feature: {feature_id} — {title}` |
+| Task created | info | `[HARVEST] Created task: {task_id} — {title}` |
 | Dependency wired | info | `[HARVEST] Dependency: {item_id} blocked by {depends_on}` |
 | Complete | success | `[HARVEST] Complete: {feature_count} features, {task_count} tasks, {subtask_count} subtasks` |
 
 ## Inputs
 
 * `${input:plan}`: (Required) Path to the reviewed implementation plan.
-* `${input:dry_run:false}`: (Optional, defaults to `false`) Preview the planned
-  hierarchy without creating backlogit entries.
+* `${input:dry_run:false}`: (Optional, defaults to `false`) Preview the
+  planned hierarchy without creating entries.
 
 ## Workflow
 
@@ -53,53 +52,59 @@ continue locally.
 
 1. Read `${input:plan}` in full.
 2. Confirm the file exists and represents an implementation plan.
-3. Confirm the plan has already cleared the review gate or is explicitly marked
-   ready for harvesting.
+3. Confirm the plan has already cleared the review gate or is explicitly
+   marked ready for harvesting.
 4. Broadcast the accepted plan path.
-5. Halt if the plan is missing, unreadable, or clearly not ready for backlog
-   creation. Recommend running `plan-review` first when the review state is
-   unclear.
+5. Halt if the plan is missing, unreadable, or clearly not ready for
+   backlog creation. Recommend running `plan-review` first when the
+   review state is unclear.
 
 ### Phase 2: Parse the plan structure
 
 Extract the planning data needed for decomposition:
 
 1. Root feature title from frontmatter and top-level headings.
-2. Problem frame, requirements trace, decisions, and standards check for the
-   root feature description.
+2. Problem frame, requirements trace, decisions, and standards check
+   for the root feature description.
 3. Task candidates from each implementation unit.
-4. Subtask candidates from file lists, acceptance criteria, verification steps,
-   and test surfaces inside each implementation unit.
+4. Subtask candidates from file lists, acceptance criteria, verification
+   steps, and test surfaces inside each implementation unit.
 5. Dependency edges from the plan's dependency graph.
 
-Use repository search tools to validate file references or symbols when the plan
-mentions existing code locations that need confirmation.
+Use repository search tools to validate file references or symbols when
+the plan mentions existing code locations that need confirmation.
 
 ### Phase 3: Build the hierarchy model
 
-Map the plan into the backlogit hierarchy:
+Map the plan into the backlog hierarchy:
 
 * one feature representing the whole reviewed plan
 * one task per implementation unit
 * one or more subtasks per file group, verification slice, or explicit
   execution step inside the unit
 
-Before creating anything, apply the same backlog shaping rules that governed the
-legacy decomposition path:
+Before creating anything, apply backlog shaping rules:
 
-1. Keep tasks small enough to fit a focused implementation session.
+1. Keep tasks small enough to fit a focused implementation session
+   (the 2-hour rule).
 2. Keep each task within a single skill domain.
 3. Require a verifiable exit state for every task and subtask.
-4. Preserve plan references so downstream shipment assembly can trace work back
-   to the plan.
+4. Preserve plan references so downstream execution can trace work
+   back to the plan.
 
 **Parent-first ordering (NON-NEGOTIABLE):** Tasks require a `parent_id`
 referencing an existing feature. The root feature MUST be created before any
-tasks are created. Within each feature group, the parent feature MUST be added
-to a shipment before its child tasks. If the harvest context does not include an
-existing parent feature for task-kind work items, create or identify one before
-proceeding. Omitting `parent_id` for task-kind artifacts will be rejected by the
-hierarchy enforcement layer.
+tasks are created. If the harvest context does not include an existing parent
+feature for task-kind work items, create or identify one before proceeding.
+Omitting `parent_id` for task-kind artifacts violates the required
+parent-child hierarchy (P-003 decomposition integrity) and may be blocked by
+the configured backlog registry or policy gates.
+
+When the `backlogit` capability pack is installed and the registry advertises
+`features.shipments: true`, the parent feature MUST be added to the shipment
+before its child tasks during shipment assembly. This ordering is enforced
+downstream by the Ship agent — flag it explicitly in the harvest report so
+Ship can assemble the shipment correctly.
 
 ### Phase 4: Execute or preview
 
@@ -107,30 +112,39 @@ If `${input:dry_run}` is `true`:
 
 1. Produce the proposed feature, task, subtask, and dependency structure.
 2. Broadcast the dry-run counts.
-3. Do not call backlogit mutation tools.
+3. Do not call backlog mutation tools.
 
 If `${input:dry_run}` is `false`:
 
-1. Query backlogit first to avoid duplicate root features.
-2. Create the root feature.
+1. Query the backlog first to avoid duplicate root features.
+   Use `backlogit_list_items` or `backlogit_search_items` to check for existing
+   items with matching titles.
+2. Create the root feature via `backlogit_create_item` or
+   `backlogit add`.
 3. Create one task per implementation unit under that feature.
 4. Create granular subtasks under each task.
-5. Wire dependencies with backlogit dependency operations.
-6. Broadcast each created feature, task, and dependency edge as it is written.
+5. Wire dependencies when the backlog tool supports dependency operations
+   (check the backlog registry for availability).
+6. Broadcast each created feature, task, and dependency edge as it is
+   written.
 
 ### Phase 5: Verify and report
 
-1. Confirm the created hierarchy through backlogit read operations.
+1. Confirm the created hierarchy through backlog read operations.
 2. Report the created IDs, counts, and dependency summary.
-3. Return the ready backlog as the output of the Stage-side workflow.
-4. Recommend handing the resulting backlog to the Ship workflow for harness,
-   build, review, CI, and pull request execution.
+3. Return the ready backlog as the output of the planning pipeline.
+4. Recommend handing the resulting backlog to the build-and-ship
+   workflow for harness, build, review, CI, and pull request execution.
 
 ## Guardrails
 
 * Do not modify the plan file.
 * Do not skip duplicate checks.
-* Do not create shipment artifacts from this skill. Shipment is a downstream
-  concern handled after backlog staging.
-* Keep descriptions self-contained enough for the next executor to act without
-  reopening the plan for basic context.
+* Do not create shipment artifacts from this skill. Shipment assembly
+  happens downstream in Stage (Step 5.5) or Ship (fallback path).
+* Keep descriptions self-contained enough for the next executor to act
+  without reopening the plan for basic context.
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — backlog decomposition is structured and deterministic.

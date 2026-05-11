@@ -16,7 +16,7 @@ codebase.
    deeper sources of truth, not contain them. Every section should be a signpost:
    "for X, see Y."
 
-2. **Structured `docs/` directory.** Organize durable knowledge by purpose:
+2. **Structured docs/ directory.** Organize durable knowledge by purpose:
    * `docs/ARCHITECTURE.md` — Top-level domain map and dependency direction
    * `docs/design-docs/` — Graduated design decisions and rationale from completed work
    * `docs/product-specs/` — Product requirements and acceptance criteria
@@ -30,9 +30,10 @@ codebase.
 
 The `docs/` directory and the backlog directory serve different lifecycles:
 
-* **Backlog** (`.backlogit/`) holds **active work items**: features, tasks, spikes,
-  deliberations, and bugs managed by the backlog tool with status transitions
-  (queued → active → done). These are managed through backlogit CLI and MCP tools.
+* **Backlog** (`.backlogit/`) holds **active work items**: features,
+  tasks, spikes, deliberations, and bugs in a flat `queue/` directory, typed by suffix
+  and identified by hierarchical IDs. These are managed by the backlog tool and have
+  status transitions (queued → active → done → archived).
 
 * **`docs/`** holds **durable knowledge**: architecture, design decisions, product specs,
   quality grades, compound learnings (`docs/compound/`), implementation plans
@@ -40,7 +41,7 @@ The `docs/` directory and the backlog directory serve different lifecycles:
   (`docs/memory/`), and closure records (`docs/closure/`). These persist and evolve
   with the codebase. They have no "done" state.
 
-Do NOT duplicate active backlog content into `docs/`. Instead, use the knowledge graduation
+Do NOT duplicate backlog content into `docs/`. Instead, use the knowledge graduation
 process to distill durable insights from completed work into `docs/` artifacts.
 
 ## Knowledge Graduation

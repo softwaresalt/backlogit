@@ -1,12 +1,12 @@
 ---
 name: harness-architect
-description: "Scaffolds compilable but failing Go test harnesses for backlogit tasks"
-argument-hint: "feature=015-F tasks=015.001-T,015.002-T"
+description: "Scaffolds compilable but failing test harnesses for feature and chore tasks"
+argument-hint: "feature=001-{SUFFIX_FEATURE} tasks=001.001-{SUFFIX_TASK},001.002-{SUFFIX_TASK}"
 input:
   properties:
     feature:
       type: string
-      description: "Feature ID to scaffold harnesses for"
+      description: "Feature or chore ID to scaffold harnesses for"
     tasks:
       type: string
       description: "Comma-separated task IDs to scaffold (optional, defaults to all ready tasks)"
@@ -16,81 +16,147 @@ input:
 
 # Harness Architect Skill
 
-Scaffold strict Go test harnesses for a feature's ready work items. The output
-must compile cleanly, fail for the intended not-yet-implemented behavior, and
-leave clear harness commands for downstream build execution.
+Scaffold strict test harnesses for a feature's or chore's ready work items.
+The output must compile cleanly, fail for the intended not-yet-implemented
+behavior, and leave clear harness commands for downstream build execution.
 
 ## Purpose
 
-Use this skill when a shipment or feature needs executable test boundaries
-before implementation starts. The skill prepares the red phase and stops there.
-It does not implement production logic.
+Use this skill when a release unit needs executable test boundaries before
+implementation starts. The skill prepares the red phase and stops there. It
+does not implement production logic.
+
+## Agent-Intercom Communication
+
+When the `agent-intercom` capability pack is installed, call `ping` at
+session start. If reachable, broadcast at every step. If unreachable,
+warn the operator that visibility is degraded and continue locally.
+
+| Event | Level | Message prefix |
+|---|---|---|
+| Session start | info | `[HARNESS] Starting: feature={input.feature}` |
+| Tasks loaded | info | `[HARNESS] Ready tasks: {task_count}` |
+| Codebase analyzed | info | `[HARNESS] Context gathered: {module_count} modules` |
+| Harness generated | info | `[HARNESS] Generated: {test_file} ({scenario_count} scenarios)` |
+| Compilation check | info | `[HARNESS] Compilation: {result}` |
+| Red phase check | info | `[HARNESS] Red phase: {result}` |
+| Label applied | success | `[HARNESS] harness-ready: {task_id}` |
+| Complete | success | `[HARNESS] Complete: {task_count} tasks harnessed` |
 
 ## Inputs
 
-* `${input:feature}`: (Required) Feature ID such as `015-F`
-* `${input:tasks}`: (Optional) Comma-separated task IDs to scaffold. When
-  omitted, use all ready tasks under the feature
+* `${input:feature}`: (Required) Feature or chore ID such as `001-F`
+* `${input:tasks}`: (Optional) Comma-separated task IDs to scaffold.
+  When omitted, use all ready tasks under the feature.
 
 ## Workflow
 
 ### Step 1: Claim the ready task set
 
-1. Load the feature and its ready descendants through backlogit-native queue or
-   query operations.
-2. If `${input:tasks}` is present, restrict the scope to that explicit task set.
+1. Load the feature or chore and its ready descendants through backlog
+   query or queue operations.
+2. If `${input:tasks}` is present, restrict the scope to that explicit
+   task set.
 3. Exclude blocked, done, or otherwise non-ready work items.
-4. Preserve the feature-to-task mapping so each harness can be traced back to
-   the correct backlogit item.
+4. Preserve the work-item-to-task mapping so each harness can be traced
+   back to the correct backlog item.
 
 ### Step 2: Read task intent
 
-1. Read each selected task's title, description, acceptance criteria, and file
-   references.
-2. Pull in feature-level acceptance criteria when task text depends on broader
-   feature behavior.
-3. Translate acceptance criteria into named test scenarios before writing code.
-4. Identify the correct package, test tier, and affected files for each harness.
+1. Read each selected task's title, description, acceptance criteria,
+   and file references.
+2. Pull in feature-level acceptance criteria when task text depends on
+   broader feature behavior.
+3. Translate acceptance criteria into named test scenarios before writing
+   code.
+4. Identify the correct module, test tier, and affected files for each
+   harness.
 
-### Step 3: Generate failing harness skeletons
+When the `agent-engram` capability pack is installed, prefer indexed
+symbol lookup and code-graph tools over broad grep when surveying
+existing modules, test patterns, and import paths.
 
-1. Create `_test.go` files that express the task intent as compilable Go tests.
-2. Prefer table-driven tests when the task describes multiple scenarios.
-3. Create matching production stubs or structural helpers with
-   `panic("not implemented: ...")` bodies so the module compiles while the tests
-   still fail for the intended reason.
-4. Keep signatures, types, and package names aligned with the current codebase.
+### Step 3: Determine execution posture
 
-## File Placement Rules
+For each task, select the appropriate harness strategy:
 
-Write harness files into the package that matches the work item's scope:
+| Posture | When to use | Harness pattern |
+|---|---|---|
+| **test-first** | New functionality with clear inputs/outputs | Write failing tests for expected behavior |
+| **characterization-first** | Modifying existing behavior | Write tests that capture current behavior then modify |
+| **migration-first** | Moving code between modules | Write tests at the destination, verify source behavior |
+| **spike** | Exploratory with uncertain approach | Write minimal integration test, implement spike, expand tests |
 
-* colocated unit harnesses under `internal\...\*_test.go` when the task targets
-  package-local behavior
-* integration harnesses under `tests\integration\` when the task spans packages
-  or runtime boundaries
-* contract harnesses under `tests\contract\` when the task defines CLI, MCP, or
-  schema behavior
+### Step 4: Generate failing harness skeletons
 
-Write any companion stub files into the production package that the tests
-exercise. Do not place scaffolding in unrelated packages.
+1. Create test files that express the task intent as compilable tests.
+2. Prefer table-driven or parameterized tests when the task describes
+   multiple scenarios.
+3. Create matching production stubs with // TODO: implement bodies
+   so the module compiles while the tests still fail for the intended
+   reason.
+4. Keep signatures, types, and module names aligned with the current
+   codebase.
 
-## Verification
+### File placement rules
 
-After scaffolding:
+Write harness files into the module that matches the work item's scope:
 
-1. Run `go build ./...` to confirm the repository still compiles.
-2. Confirm the new harness imports successfully.
-3. Confirm the harness remains in the red phase because of the intentional
-   panicking stubs or other not-implemented markers.
-4. Report the generated test files, stub files, and harness commands so the
-   downstream build loop can use them directly.
+* **Unit harnesses**: colocated with the production code in the
+  appropriate cmd/, internal/, tests/ subdirectory
+* **Integration harnesses**: in `tests//integration/` when the
+  task spans modules or runtime boundaries
+* **Contract harnesses**: in `tests//contract/` when the task
+  defines API, CLI, or schema behavior
+
+Write companion stub files into the production module that the tests
+exercise. Do not place scaffolding in unrelated modules.
+
+### Step 5: Verify harness
+
+#### Step 5.1: Compilation check
+
+Run `go test -run=^$ -count=1 ./...` including tests. The harness MUST compile.
+
+If compilation fails, fix the harness until it compiles. Do not proceed
+with a non-compiling harness.
+
+#### Step 5.2: Red phase check
+
+Run `go test ./...` for the harness tests. ALL tests MUST fail with
+the expected failure marker (// TODO: implement).
+
+If any test passes (false positive) or fails with an unexpected error
+(compilation vs runtime), fix the harness.
+
+### Step 6: Apply harness-ready label
+
+After both checks pass (P-004 gate satisfied):
+
+1. Update each task with `harness-ready` label using the backlog tool's
+   update operation.
+2. Add an implementation note with the harness command.
+3. Record the harness manifest: `Compilation: PASS`,
+   `Red Phase: CONFIRMED`.
 
 ## Completion Criteria
 
 The skill is complete only when the selected tasks have:
 
-* harness files in the correct packages
+* harness files in the correct modules
 * structural stubs with intentional not-implemented behavior
-* a successful `go build ./...` result after scaffolding
-* clear mapping from backlogit task to harness command
+* a successful `go test -run=^$ -count=1 ./...` result after scaffolding
+* all harness tests failing with the expected marker
+* clear mapping from backlog task to harness command
+
+## Guardrails
+
+* Do not implement production logic — stubs only.
+* Do not skip compilation verification.
+* Do not apply the harness-ready label until both compilation and red
+  phase checks pass.
+* Keep test scenarios traceable to acceptance criteria.
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — test scaffolding is structured but routine.

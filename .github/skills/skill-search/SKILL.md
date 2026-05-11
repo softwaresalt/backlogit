@@ -1,9 +1,8 @@
 ---
-name: skill-search
-description: "Dynamic skill discovery: search available skills by keyword instead of loading all skill definitions into the system prompt"
+description: "Dynamic skill discovery — search available skills by keyword instead of loading all skill definitions into the system prompt"
 ---
 
-# Skill Search
+## Skill Search
 
 Search the installed skill registry by keyword and return a summarized list
 of matching skills. This prevents context window bloat by loading skill

@@ -1,167 +1,295 @@
 ---
-name: deliberate
-description: "Explore requirements and approaches through collaborative dialogue, capture the result in the backlogit stash, and create a linked deliberation artifact for later planning and harvest. Use when the user says 'deliberate', 'explore', 'think this through', 'what should we build', or 'help me think through'."
-argument-hint: "[feature idea or problem to explore]"
+description: "Interactively deliberate on a request, feature, or chore — frame the problem, research options, compare trade-offs, and produce a decision artifact that links into the backlog queue"
 ---
 
-# Deliberate on a Feature or Improvement
+## Deliberate
 
-Deliberation answers **WHAT** to build through collaborative dialogue. It precedes deeper planning work. The durable output is backlogit-native: a stash entry in `.backlogit/stash.jsonl` plus a linked `deliberation` artifact in `.backlogit/queue` so later harvest and planning flows can recover the full discussion.
+Explore WHAT to build and WHY through structured operator dialogue. Produces a
+decision artifact that captures the problem frame, research findings, evaluated
+options, recommendation, and backlog-link targets. The artifact feeds directly
+into `impl-plan` for technical planning or into the backlog queue as a stashed
+work item for future pursuit.
 
-## Agent-Intercom Communication (NON-NEGOTIABLE)
+This skill replaces the earlier `brainstorm` entry point with a richer protocol
+that adds explicit research synthesis, option comparison, and queue/stash
+linkage.
 
-Call `ping` at session start. If agent-intercom is reachable, broadcast at every step. If unreachable, warn the user that operator visibility is degraded.
+## When to Use
 
-| Event | Level | Message prefix |
+Invoke when the operator wants to think through a feature, chore, request, or
+architectural question before committing to implementation. Use for:
+
+* Problem framing and requirements shaping
+* Targeted research and findings presentation
+* Option evaluation and trade-off analysis
+* Deferring work into a queue or stash for later pursuit
+* Any time the operator says "deliberate", "let's think through", "explore
+  options", "what are our choices", or "help me decide"
+
+## Inputs
+
+* `topic`: (Required) The feature idea, chore idea, request, or question to deliberate on.
+* `depth`: (Optional) `lightweight`, `standard`, or `deep`. Defaults to `standard`.
+* `promote_to`: (Optional) Where the outcome should go after deliberation:
+  `plan` (feed into impl-plan), `queue` (stash for later), `both` (plan + queue),
+  `none` (leave the artifact unlinked), or `ask` (ask the operator at the end).
+  Defaults to `ask`.
+
+## Output
+
+A decision artifact at `docs/decisions/{YYYY-MM-DD}-{slug}-deliberation.md`.
+
+When `promote_to` includes `queue`, also creates or updates a work item in
+`.backlogit/queue/` linking the decision artifact for future pursuit.
+
+When `promote_to` includes `plan`, the artifact path is passed to `impl-plan`
+as its source document.
+
+## Required Protocol
+
+When the `agent-intercom` capability pack is installed, follow
+`.github/instructions/agent-intercom.instructions.md`: establish heartbeat /
+ping visibility at the start of deliberation, broadcast major phase transitions,
+and use the intercom clarification flow when the operator needs to be consulted
+between phases.
+
+When the `agent-engram` capability pack is installed, follow
+`.github/instructions/agent-engram.instructions.md`: verify the engram search
+surface before relying on indexed discovery, and prefer engram-first lookup
+while researching the codebase.
+
+### Phase 1: Frame the Problem
+
+#### Step 1.1: Classify Depth
+
+| Depth | Criteria | Approach |
 |---|---|---|
-| Session start | info | `[DELIBERATE] Starting: {topic}` |
-| Scope assessed | info | `[DELIBERATE] Scope: {lightweight\|standard\|deep}` |
-| Learnings found | info | `[DELIBERATE] Learnings researcher found {count} relevant solutions` |
-| Question asked | info | `[DELIBERATE] Asking user: {question_summary}` |
-| Waiting for input | warning | `[WAIT] Blocked on user response` |
-| Stash item created | success | `[DELIBERATE] Stash created: {stash_id}` |
-| Deliberation created | success | `[DELIBERATE] Deliberation created: {deliberation_id}` |
-| Session complete | success | `[DELIBERATE] Complete: {topic}` |
+| **Lightweight** | Single, well-defined question | 1-2 questions, then document |
+| **Standard** | Multi-faceted feature, chore, or request | Full 5-phase protocol |
+| **Deep** | Complex system change or architectural decision | All phases + extended research + risk modeling |
 
-## Core Principles
+#### Step 1.2: Understand the Request
 
-1. **Assess scope first** -- Match ceremony to size and ambiguity of the work.
-2. **Be a thinking partner** -- Suggest alternatives, challenge assumptions, explore what-ifs.
-3. **Resolve product decisions here** -- User-facing behavior, scope boundaries, and success criteria belong in deliberation. Detailed implementation belongs in planning.
-4. **Keep implementation out** -- Do not include libraries, schemas, endpoints, or code-level design unless the deliberation is inherently about a technical or architectural change.
-5. **Right-size the artifact** -- Simple work gets a compact deliberation. Larger work gets a fuller one.
-6. **Apply YAGNI to carrying cost** -- Prefer the simplest approach that delivers meaningful value.
-7. **Use backlogit-native artifacts only** -- Capture the outcome through `backlogit stash add` and `backlogit deliberate`, not legacy `.backlog/...` files.
-8. **Prefer durable lineage** -- Every completed session should leave behind a stash item and linked deliberation so planning and implementation can trace the origin.
+Ask focused questions to establish:
 
-## Feature Description
+* The problem being solved (user pain, technical need, business goal)
+* Who cares about the outcome and why
+* Constraints and requirements (performance, compatibility, security, timeline)
+* Success criteria (how do we know we chose well?)
+* Scope boundaries (what is explicitly out of scope?)
 
-The user provides the feature idea or problem to explore as input when invoking this skill.
+Capture the operator's answers as the **problem frame** section of the artifact.
 
-If no feature description is provided, ask: "What would you like to explore? Please describe the feature, problem, or improvement you are thinking about."
+### Phase 2: Research
 
-Do not proceed until you have a feature description.
+#### Step 2.1: Retrieve Prior Knowledge
 
-## Workflow
+Search the learnings library (`docs/compound/`) for relevant
+past solutions, decisions, and gotchas BEFORE deeper investigation. Treat
+retrieval as mandatory pre-research context, not optional.
 
-### Phase 0: Resume, Assess, and Route
+When the `agent-engram` capability pack is installed, prefer `unified_search`
+for broad discovery, `list_symbols` for inventory, and `query_memory` for prior
+session context.
 
-#### 0.1 Resume Existing Work
+#### Step 2.2: Investigate the Codebase
 
-If the topic matches an existing stash-linked deliberation artifact in `.backlogit/queue`:
+Use workspace search tools to understand:
 
-- Read the deliberation artifact
-- Confirm with the user: "Found an existing deliberation for [topic]. Continue from this, or start fresh?"
-- If resuming, summarize current state and continue from existing decisions
+* Existing patterns and conventions relevant to the topic
+* Modules, symbols, and integration points that would be affected
+* Precedents — how similar problems were solved before
+* Constraints imposed by the current architecture
 
-#### 0.2 Assess Whether Deliberation Is Needed
+#### Step 2.3: External Research (Deep only)
 
-If the user provides specific acceptance criteria, exact expected behavior, well-defined scope, and referenced existing patterns:
+For `deep` scope, investigate beyond the codebase:
 
-- Keep the interaction brief
-- Confirm understanding and present concise next-step options
-- Still create a concise stash entry and deliberation when a durable handoff to planning is valuable
-- Skip Phases 1.1 and 1.2; go directly to Phase 1.3 or Phase 3
+* Technology alternatives and ecosystem options
+* Known pitfalls, performance characteristics, and compatibility risks
+* Community consensus or best practices
 
-#### 0.3 Assess Scope
+Present research findings to the operator before moving to options.
 
-Use the feature description plus a light scan to classify:
+### Phase 3: Evaluate Options
 
-- **Lightweight** -- small, well-bounded, low ambiguity
-- **Standard** -- normal feature or bounded refactor with some decisions
-- **Deep** -- cross-cutting, strategic, or highly ambiguous
+#### Step 3.1: Identify Options
 
-Broadcast the scope assessment.
+Based on research, identify 2-4 viable approaches. For each option, specify:
 
-### Phase 1: Understand the Idea
+* **Name**: A short, descriptive label
+* **Description**: What this approach entails
+* **Pros**: Advantages and strengths
+* **Cons**: Disadvantages and risks
+* **Effort estimate**: Relative complexity (low / medium / high)
+* **Fit**: How well it matches the stated constraints and success criteria
 
-#### 1.1 Existing Context Scan
+#### Step 3.2: Compare Trade-offs
 
-Search the codebase for relevant context, matching depth to scope:
+Present a structured comparison to the operator:
 
-**Codebase search**:
+| Criterion | Option A | Option B | Option C |
+|---|---|---|---|
+| Complexity | … | … | … |
+| Risk | … | … | … |
+| Alignment with constraints | … | … | … |
 
-- Use grep/glob to search for the feature's key concepts across the codebase
-- Identify affected modules and related code patterns
-- Review existing implementations for consistency
+#### Step 3.3: Discuss and Refine
 
-**Learnings check**: Invoke `learnings-researcher` as a subagent to search `docs/compound/` for relevant past solutions. Broadcast the result count.
+Engage the operator in evaluating the options. The operator may:
 
-#### 1.2 Collaborative Dialogue
+* Ask for deeper analysis of a specific option
+* Introduce new constraints or preferences
+* Combine elements from multiple options
+* Request additional research
 
-Ask one question at a time. Prefer single-select choices when natural options exist.
+Iterate until the operator is satisfied or explicitly defers the decision.
 
-Cover these areas based on scope:
+### Phase 4: Decide and Link
 
-- **Lightweight**: 1-2 clarifying questions, then proceed
-- **Standard**: Problem frame, intended behavior, scope boundaries, success criteria
-- **Deep**: All standard areas plus: trade-offs, alternatives considered, risks, dependencies, migration concerns
+#### Step 4.1: Capture the Decision
 
-Broadcast each question for operator visibility.
+Record the operator's decision (or explicit deferral) with:
 
-#### 1.3 Boundary Setting
+* **Recommendation**: The chosen approach and rationale
+* **Rejected alternatives**: Why other options were set aside
+* **Unresolved questions**: Items that need further investigation
+* **Risks and mitigations**: Known risks of the chosen approach
 
-Establish:
+#### Step 4.2: Determine Promotion Path
 
-- What is in scope
-- What is explicitly out of scope (non-goals)
-- Success criteria (concrete, testable)
-- Blocking assumptions
+If `promote_to` was not specified or is `ask`, present the operator with
+promotion options:
 
-### Phase 2: Explore Approaches (Standard and Deep only)
+* **Plan now** → hand the artifact to `impl-plan` as a source document
+* **Queue for later** → create a queue entry linking the artifact
+* **Both** → plan immediately AND stash a queue reference for tracking
+* **None** → leave the artifact in `docs/decisions/` without linking
 
-For standard and deep scope:
+#### Step 4.3: Execute Promotion
 
-1. Present 2-3 approaches with trade-offs
-2. Get user preference
-3. Document rationale for chosen approach
+**When promoting to plan:**
 
-### Phase 3: Persist the Deliberation in backlogit
+Pass the artifact path to the downstream planning flow. The artifact satisfies
+the same source-document contract that `impl-plan` expects:
 
-Persist the outcome through backlogit only:
+* Problem frame maps to requirements
+* Recommendation maps to chosen approach
+* Success criteria carry forward
 
-1. Create a stash entry with `backlogit stash add "{topic}" --kind feature --priority {priority}` unless resuming an existing stash-linked deliberation.
-2. Use the returned stash ID to create the linked deliberation with `backlogit deliberate <stash-id>`.
-3. Populate the artifact sections with the discussion outcome.
-4. Treat the stash entry and deliberation artifact as the durable handoff to later planning and harvest workflows.
+**When promoting to queue:**
+
+If the promoted top-level work is a maintenance, migration, tech-debt, or internal-improvement stream that must ship together, classify it as a **chore** rather than a feature.
+
+When the `backlogit` capability pack is installed and the backlog tool supports
+`create_task` operations, create a queue entry through the backlog tool:
+
+* Title derived from the deliberation topic
+* Description linking to the decision artifact path
+* Status set to `queued`
+* Labels include `deliberation-outcome`
+* Reference the artifact path in the description or a comment
+
+When `backlog-md` is the installed backlog tool, create a queue entry using
+`backlogit_create_item` with `title` derived from the deliberation topic,
+`description` linking to the decision artifact path,
+`status: "queued"`, and `labels: ["deliberation-outcome"]`.
+
+When no backlog tool is available, append a structured entry to
+`.backlogit/queue/.stash.md`:
 
 ```markdown
-## Problem Frame
-
-{1-2 paragraphs describing the problem and why it matters}
-
-## Options
-
-{Alternatives considered and their trade-offs}
-
-## Chosen Direction
-
-{The selected direction and rationale}
-
-## Open Questions
-
-{Questions that remain unresolved}
-
-## Notes
-
-{Supporting research, references, or follow-up notes}
+- **[{YYYY-MM-DD}] {topic}** — `docs/decisions/{YYYY-MM-DD}-{slug}-deliberation.md`
+  Status: queued | Decided: {yes/no/deferred}
 ```
 
-When populating the sections:
+When the `backlogit` capability pack is installed and comment operations are
+supported, append a summary comment to the created queue entry with the
+recommendation rationale.
 
-* Use **Problem Frame** for the problem, goals, and scope framing
-* Use **Options** for alternatives and trade-offs
-* Use **Chosen Direction** for the selected path and rationale
-* Use **Open Questions** for anything that must be resolved later
-* Use **Notes** for references, research, and follow-up context
+### Phase 5: Write the Decision Artifact
 
-Broadcast the stash ID and resulting deliberation artifact ID when written.
+Produce the artifact with this structure:
 
-### Phase 4: Next Steps
+```markdown
+---
+title: "{Title}"
+description: "{One-line description}"
+topic: "{topic}"
+depth: "{depth}"
+decision_status: "decided|deferred|exploring"
+promoted_to: "plan|queue|both|none"
+linked_artifacts:
+  - "{Linked plan or queue path}"
+tags:
+  - "{tag}"
+  - "{tag}"
+---
 
-Present options:
+## Problem Frame
 
-1. "Harvest the stash entry into a backlogit work item and use the linked deliberation as planning context"
-2. "Run the impl-plan skill standalone with the deliberation artifact as the planning source"
-3. "Revise specific sections of the deliberation artifact"
-4. "Park this for later"
+{Problem description}
+
+## Research Findings
+
+{Research summary}
+
+## Options Evaluated
+
+### Option A: {name}
+
+{Description with pros and cons}
+
+### Option B: {name}
+
+{Description with pros and cons}
+
+## Trade-off Comparison
+
+| Criterion | Option A | Option B |
+|---|---|---|
+| … | … | … |
+
+## Decision
+
+{Recommendation and rationale}
+
+## Rejected Alternatives
+
+{Why other options were set aside}
+
+## Unresolved Questions
+
+{Items needing further investigation}
+
+## Risks and Mitigations
+
+{Known risks and mitigation strategies}
+```
+
+## Quality Criteria
+
+* Problem is clearly framed from the operator's perspective
+* Research findings are grounded in codebase evidence and prior learnings
+* At least 2 options are presented for standard and deep scopes
+* Trade-offs are structured and comparable, not vague prose
+* Decision rationale is explicit — the artifact should explain WHY, not just WHAT
+* Scope boundaries are explicit (what is NOT included)
+* Unresolved questions are captured for follow-up
+* Promotion path is executed — the artifact is linked, not orphaned
+* When backlog tool operations are available, queue entries are created through
+  the tool rather than only as markdown
+
+## Resumption Protocol
+
+If the skill is interrupted (context overflow, session timeout, or operator
+halt), write a checkpoint to `docs/memory/` capturing: current phase,
+options explored, operator decisions recorded, and next step. On re-invocation,
+check for an existing checkpoint. If found, resume from the recorded phase
+rather than restarting from scratch.
+
+## Model Routing
+
+This skill operates at **Tier 3 (Frontier)** — structured decision-making and option evaluation require deep analysis.
+
+Generated by autoharness | Template: deliberate/SKILL.md.tmpl

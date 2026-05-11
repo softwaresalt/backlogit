@@ -99,6 +99,7 @@ Append a `## Plan Hardening` section to the plan with:
 * the output remains a single plan artifact that can travel directly into
   `plan-review`
 
+
 ## Model Routing
 
 This skill operates at **Tier 2 (Standard)** — risk-triggered plan enrichment from defined signals.

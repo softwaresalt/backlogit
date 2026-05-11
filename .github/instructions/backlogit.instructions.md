@@ -21,7 +21,7 @@ advertises them:
 * **comments** — append operator- or agent-visible execution notes to a task
 * **commit tracking** — associate commits with task IDs for traceability
 * **sync / rehydrate** — refresh the query index after out-of-band edits
-* **hook event polling** — check priority signals at session start (`backlogit_poll_hook_events`, `backlogit_ack_hook_events`)
+* **hook event polling** — check priority signals at session start when the registry advertises hook operations
 
 Use the workspace's registered backlogit operation names or aliases. Do not invent a parallel task
 tracking system when backlogit is available.
@@ -80,18 +80,6 @@ When work changes backlog state materially:
 2. Associate commits with task IDs when commit-tracking is supported.
 3. Keep comments focused on operationally relevant facts rather than verbose narration.
 
-## Write-Only Discipline
-
-Agents MUST NOT write directly to `.backlogit/` files. All mutations must go through backlogit CLI
-commands or MCP tools. Direct file edits bypass validation, event logging, index maintenance, and
-naming conventions enforced by the tool surface.
-
-## Hierarchy Ordering Rule
-
-When creating tasks, you MUST provide a `parent_id` referencing an existing feature. Create the
-parent feature first if one does not exist. When adding items to a shipment, always add the parent
-feature before its child tasks so dependency and hierarchy constraints resolve correctly.
-
 ## Index Freshness Rule
 
 If `.backlogit/` content was edited outside the usual backlogit mutation flow, refresh the index
@@ -102,5 +90,50 @@ before relying on query or queue output. Treat stale index results as suspect un
 Treat backlogit's markdown files as the current-state source of truth, its query index as a
 disposable cache, and its event or telemetry streams as append-only tool-managed history. Do not
 edit generated cache artifacts directly.
+
+## Stash Protocol
+
+When stash operations are supported:
+
+1. Use `fetch_stash` to list active stash entries, optionally filtering by `kind` or `priority`.
+2. Use `stash` to add new intake items. Always set `kind` and `priority` at creation.
+3. Use `stash_get` to inspect a single entry before triage decisions.
+4. Use `stash_edit` to refine kind, priority, or text as understanding improves during triage.
+5. Use `deliberate` to create a structured deliberation artifact from a stash entry before harvesting complex items.
+6. Use `harvest_stash` to promote a stash entry into a work item (feature, task, or subtask). Set `parent_id` when the harvest target belongs under an existing feature.
+7. Use `stash_archive` to retire consumed or obsolete entries. Prefer `stash_archive` over `stash_remove` — archiving preserves traceability; removal is destructive and deprecated.
+
+## Semantic Links Protocol
+
+When link operations are supported:
+
+1. Use typed links (`add_link`, `remove_link`, `get_links`) for relationships that are informational — `related_to`, `duplicate_of`, `informs`, `supersedes`, `spike_ref`.
+2. Use dependency operations (`add_dependency`, `remove_dependency`) for relationships that are execution-blocking — `blocks`, `relates_to`, `parent_of`.
+3. Do not duplicate a dependency as a link or vice versa. Each relationship type has one home.
+4. Note the naming similarity: `related_to` (link, informational) vs `relates_to` (dependency, execution-blocking). When in doubt, ask: "Does this relationship block execution?" If yes, use a dependency. If no, use a link.
+5. Before creating a `duplicate_of` link, verify the entries are truly duplicates, not just related.
+6. Use `get_links` to inspect existing relationships before adding new ones to avoid redundancy.
+
+## Discovery & Introspection Protocol
+
+When discovery operations are supported:
+
+1. Use `get_metadata_catalog` to retrieve the full catalog of available metadata and configuration at session start.
+2. Use `get_wit_metadata` to inspect field definitions, allowed values, and constraints for a specific artifact type before creating or updating items.
+3. Use `list_types` to discover the set of artifact types the workspace supports.
+4. Use `list_templates` to discover available artifact templates for structured creation.
+5. Use `get_version` to confirm the backlogit version when diagnosing compatibility issues.
+6. Use `export_command_map` to generate a human-readable command reference when onboarding or debugging.
+7. Use `merge_sync` with `dry_run: true` to preview index drift before committing a full sync.
+
+## Lifecycle Hygiene Protocol
+
+When lifecycle and maintenance operations are supported:
+
+1. Use `archive_item` to move completed or abandoned artifacts to the archive. Include `commit_sha` when archiving work that has a final commit for traceability.
+2. Use `adopt_item` to re-parent orphaned tasks under the correct feature when hierarchy errors are detected.
+3. Run `doctor` periodically (at session start or after bulk edits) to detect orphaned artifacts and duplicate IDs. Use `fix_orphans: true` only when confident the detected orphans should be archived.
+4. Use `cleanup_checkpoints` to prune stale checkpoint files. Override `retention_days` only when the default is inappropriate.
+5. Treat hygiene findings as first-class maintenance signals — address orphans and duplicates promptly rather than allowing them to accumulate.
 
 Generated by autoharness | Template: backlogit.instructions.md.tmpl

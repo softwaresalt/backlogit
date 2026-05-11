@@ -1,11 +1,10 @@
 ---
-name: operational-closure
-description: "Produce release-readiness, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification - Brought to you by microsoft/hve-core"
+description: "Produce release-readiness, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification"
 ---
 
 ## Operational Closure
 
-Turn "implemented" into "safely absorbed by the running system". This skill creates the artifacts and decisions that close the loop after code review, CI, and runtime verification.
+Turn “implemented” into “safely absorbed by the running system”. This skill creates the artifacts and decisions that close the loop after code review, CI, and runtime verification.
 
 ## When to Use
 
@@ -69,7 +68,6 @@ The closure artifact MUST include:
 * **Deployment or rollout path** — merge-only, deploy, canary, phased rollout, maintenance window, or handoff path
 * **Post-deploy checks** — the first concrete observations or smoke checks to run after release
 * **Risky action record** — the `ProposedAction` entries that materially affected rollout or rollback, their `ActionRisk`, and final `ActionResult`
-* **Source artifact cleanup** — stash entries removed (ID + reason tag) and deliberation artifacts archived (ID + reason tag) during this closure; list source artifact IDs not found (already cleaned up or never created). Omit this section when no features in the shipment have `source_stash_id` or `source_deliberation_id` populated.
 * **Healthy signals** — what success should look like
 * **Failure signals** — what indicates rollback or intervention is needed
 * **Monitoring plan** — logs, dashboards, alerts, or smoke checks to watch

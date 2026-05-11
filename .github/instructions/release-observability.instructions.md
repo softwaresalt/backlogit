@@ -14,13 +14,13 @@ with concrete monitoring, alerting, and rollback expectations.
 Every release unit that changes a runtime surface MUST produce a monitoring
 plan before merge. The plan covers:
 
-* **SLIs / key metrics**: the specific signals that indicate the change is
+* **SLIs / key metrics** — the specific signals that indicate the change is
   healthy or degrading
-* **Dashboard or query**: where the operator will observe the signals (named
+* **Dashboard or query** — where the operator will observe the signals (named
   dashboard, log query, alert rule, or equivalent)
-* **Baseline**: the expected metric range before the change ships
-* **Alert threshold**: the value or condition that triggers investigation
-* **Owner**: who responds to the alert during the validation window
+* **Baseline** — the expected metric range before the change ships
+* **Alert threshold** — the value or condition that triggers investigation
+* **Owner** — who responds to the alert during the validation window
 
 If the workspace does not have a monitoring system, record the monitoring plan
 as a structured checklist in the closure artifact and flag it as a manual
@@ -62,7 +62,7 @@ Release-observability artifacts feed INTO operational closure. The
 `release-observability` instruction file defines WHAT monitoring, auditing, and
 rollback discipline must be produced; `operational-closure/SKILL.md` defines
 WHERE those artifacts land in the closure record. When both are active, do not
-duplicate content; produce it once and carry it into closure:
+duplicate content — produce it once and carry it into closure:
 
 * monitoring plan → closure healthy signals and failure signals
 * pre-deploy audit → closure pre-deploy checks
