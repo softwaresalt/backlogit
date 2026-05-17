@@ -3,7 +3,12 @@ name: Adversarial Review
 description: "Multi-model parallel review using independent reviewer agents with different models, assembled into a consensus report with confidence-weighted findings and remediation queue"
 maturity: stable
 tools: read, agent, search, edit
-model_routing: "Tier 3 (Frontier)"
+model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
+model_tier: 3
+max_subagent_tier: 1
+reasoning_effort: "high"
+model_provider: "anthropic"
+model_family: "claude-opus-4.6"
 subagent_depth: 2
 ---
 
@@ -58,7 +63,7 @@ findings or trusting any single model too much.
    `confidence × severity`, with estimated action class (`safe_auto`, `gated_auto`,
    `manual`, `advisory`).
 5. **Bug/issue queue entries** — For each P0 and P1 finding, a structured work item
-   ready to create in the backlog using `backlogit add --type <artifact_type> --title <title>`.
+   ready to create in the backlog using `backlogit add --type {{artifact_type}} --title {{title}}`.
 
 Output file at `docs/closure/{YYYY-MM-DD}-{slug}-adversarial-review.md`.
 

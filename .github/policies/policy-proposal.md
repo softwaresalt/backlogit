@@ -1,12 +1,12 @@
 ---
-policy_id: "{P-NNN}"
+policy_id: "{{POLICY_ID}}"
 policy_type: "workspace-specific"
 status: "proposed"
-proposed_at: "{YYYY-MM-DD}"
-evidence_count: {N}
+proposed_at: "{{PROPOSED_AT}}"
+evidence_count: {{EVIDENCE_COUNT}}
 ---
 
-# {Policy Title}
+# {{POLICY_TITLE}}
 
 ## Status: Proposed
 
@@ -18,23 +18,23 @@ learning library. Review and decide: accept (copy to `.github/policies/` or appe
 
 | Field | Value |
 |---|---|
-| **APPLIES_TO** | {agents/skills affected} |
-| **GATE_POINT** | {Where in the pipeline this gate is enforced} |
-| **PRECONDITION** | {What must be true before the gate} |
-| **POSTCONDITION** | {What must be true after the gate} |
-| **VIOLATION_ACTION** | {What happens when violated} |
+| **APPLIES_TO** | {{APPLIES_TO}} |
+| **GATE_POINT** | {{GATE_POINT}} |
+| **PRECONDITION** | {{PRECONDITION}} |
+| **POSTCONDITION** | {{POSTCONDITION}} |
+| **VIOLATION_ACTION** | {{VIOLATION_ACTION}} |
 
 ## Rationale
 
-{Why this policy is needed}
+{{POLICY_RATIONALE}}
 
 ## Evidence
 
-Derived from {N} compound learnings sharing the pattern `{pattern_key}`.
+Derived from {{EVIDENCE_COUNT}} compound learnings sharing the pattern `{{PATTERN_KEY}}`.
 
 Evidence references:
 
-{artifact references}
+{{EVIDENCE_REFS}}
 
 ## Acceptance Path
 
