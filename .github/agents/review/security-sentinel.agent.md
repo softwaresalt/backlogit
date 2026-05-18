@@ -31,7 +31,7 @@ The audit covers:
 * **OWASP Top 10 Compliance** — Assess coverage across A01-A10 with language-specific patterns
 * **Third-Party Dependency Review** — Known vulnerable dependencies (if package manifest is present)
 
-Language-specific detection uses `- Path traversal (`..`, symlink following)
+Language-specific detection uses `- Path traversal (.., symlink following)
 - SQL injection in dynamic queries
 - Command injection in shell invocations
 - Hardcoded credentials or API keys
@@ -59,7 +59,7 @@ Default scope when no argument is provided: `full`.
 ### Phase 2: Input Validation and Injection Analysis
 
 1. Scan source files matching `**/*.go` for unvalidated external inputs
-2. Apply injection detection patterns from `- Path traversal (`..`, symlink following)
+2. Apply injection detection patterns from `- Path traversal (.., symlink following)
 - SQL injection in dynamic queries
 - Command injection in shell invocations
 - Hardcoded credentials or API keys
@@ -88,7 +88,7 @@ Default scope when no argument is provided: `full`.
 
 ### Phase 5: OWASP Top 10 Assessment
 
-Score the workspace against OWASP Top 10 categories using `- Path traversal (`..`, symlink following)
+Score the workspace against OWASP Top 10 categories using `- Path traversal (.., symlink following)
 - SQL injection in dynamic queries
 - Command injection in shell invocations
 - Hardcoded credentials or API keys

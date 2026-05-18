@@ -37,7 +37,7 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 | Variable | Purpose |
 |---|---|
 | `.autoharness/harness-manifest.yaml` | Path to the installed harness manifest (default: `.autoharness/harness-manifest.yaml`) |
-| `1.4.0` | Expected autoharness version string from `autoharness_home` metadata |
+| `1.4.4` | Expected autoharness version string from `autoharness_home` metadata |
 
 ## Workflow
 
@@ -69,7 +69,7 @@ Determine what is installed before running any checks.
 Compare the installed version with the current `autoharness_home` version.
 
 1. Read `autoharness_version` from the manifest.
-2. Compare against `1.4.0` (the version of the autoharness installation that would perform upgrades).
+2. Compare against `1.4.4` (the version of the autoharness installation that would perform upgrades).
 3. Classify the drift:
 
 | Condition | Signal |

@@ -1,17 +1,17 @@
 ---
 name: shipment-reconcile
-description: "GI/GR reconciliation gate for shipment manifests — verifies every manifest item exists in queue (pre-mode) or archive (post-mode) with the expected status before or after  runs."
+description: "GI/GR reconciliation gate for shipment manifests — verifies every manifest item exists in queue (pre-mode) or archive (post-mode) with the expected status before or after backlogit_ship_shipment runs."
 ---
 
 # Shipment Reconcile
 
 Provides a double-entry (GI/GR) integrity check for shipment manifests. Run
-`mode: pre` before calling `` and `mode: post` after
+`mode: pre` before calling `backlogit_ship_shipment` and `mode: post` after
 the archive + restore steps complete.
 
 ## When to Use
 
-* **Ship Step 6** (mandatory): pre-mode immediately before ``;
+* **Ship Step 6** (mandatory): pre-mode immediately before `backlogit_ship_shipment`;
   post-mode immediately after the `git restore .backlogit/archive/` step.
 * **Ship Step 0.5** (sanity check): pre-mode at intake with `expected_status: queued`
   (or `active` if the shipment was already claimed in a prior session)
@@ -61,7 +61,7 @@ The report ends with a `recommendation`:
   `.backlogit/queue/{shipment_id}.md` file lock (via the `file-lock` skill) for
   the duration of pre-mode → post-mode. See lock protocol in the Required Protocol
   section below.
-* **Halt on RECONCILE_FAIL.** Do not proceed to `` unless
+* **Halt on RECONCILE_FAIL.** Do not proceed to `backlogit_ship_shipment` unless
   pre-mode returns `PROCEED`. Surface the report path to the operator.
 
 ## Required Protocol
@@ -73,7 +73,7 @@ The report ends with a `recommendation`:
    If lock acquisition fails, count as a session stall (circuit-breaker protocol)
    and prompt the operator.
 
-2. **Load manifest** via `(shipment_id)`.
+2. **Load manifest** via `backlogit_get_shipment(shipment_id)`.
    Extract the `items` list.
 
 3. **Check each manifest item**:
@@ -97,7 +97,7 @@ The report ends with a `recommendation`:
    * If any `missing`, `status-mismatch`, or `orphan` items exist →
      `recommendation: HALT — operator reconcile required`
    * On `HALT`: emit the report path, release the lock, and halt with
-     `RECONCILE_FAIL`. Do NOT call ``.
+     `RECONCILE_FAIL`. Do NOT call `backlogit_ship_shipment`.
    * On `PROCEED` from Ship Step 6: retain the lock until post-mode completes.
 
 ### Post-Mode
@@ -110,7 +110,7 @@ The report ends with a `recommendation`:
    For every item in the manifest, verify a corresponding archive file exists.
    If any are absent, flag them in the report.
 
-3. **Deleted-file guard** (known `` quirk — see P-007):
+3. **Deleted-file guard** (known `backlogit_ship_shipment` quirk — see P-007):
    Run `git status -- ".backlogit/archive/"` and inspect for deletions.
    If any archive files are reported as deleted, recommend
    `git restore .backlogit/archive/` before the commit step.
@@ -134,11 +134,11 @@ If pre-mode cannot acquire the lock because another process holds it:
 1. Retry once after 30 seconds.
 2. If retry also fails, count as a session stall and prompt the operator:
    `Shipment lock conflict on {shipment_id}. Another process holds the lock.`
-3. Do NOT proceed without the lock. Do NOT call ``.
+3. Do NOT proceed without the lock. Do NOT call `backlogit_ship_shipment`.
 
 ## Quality Criteria
 
-* `mode: pre` runs before every `` call in Ship Step 6
+* `mode: pre` runs before every `backlogit_ship_shipment` call in Ship Step 6
 * `mode: pre` with `expected_status: queued` (or `active` for already-claimed shipments) runs at Ship Step 0.5 intake
 * `mode: post` runs after every archive + restore sequence in Ship Step 6
 * All five item classifications are represented in the schema
