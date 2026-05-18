@@ -4,6 +4,10 @@ logs/
 .vscode/
 .engram/
 .copilot/
+.cursor/
+.graphtor/
+.worktrees/
+.github/copilot/
 .env
 .env.*
 !.env.example
@@ -38,6 +42,8 @@ backlogit.db
 
 # Runtime state (per-consumer checkpoints, not committed)
 .backlogit/runtime/
+.backlogit/quarantine/
+.autoharness/quarantine/
 *.exe~
 prompt.md
 
