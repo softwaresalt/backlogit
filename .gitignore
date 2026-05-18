@@ -38,6 +38,8 @@ backlogit.db
 
 # Runtime state (per-consumer checkpoints, not committed)
 .backlogit/runtime/
+.autoharness/staging/
+.autoharness/backups/
 *.exe~
 prompt.md
 
