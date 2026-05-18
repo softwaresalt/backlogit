@@ -5,7 +5,7 @@ maturity: stable
 tools: read, agent, search, edit
 model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
-max_subagent_tier: 1
+max_subagent_tier: 3
 reasoning_effort: "high"
 model_provider: "anthropic"
 model_family: "claude-opus-4.6"

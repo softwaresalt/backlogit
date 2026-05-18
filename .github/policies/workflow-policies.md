@@ -21,9 +21,9 @@ Agents must read this file at each declared gate point and enforce the relevant 
 | Applies To | `ship`           |
 | Gate Point | Pre-flight (Step 1)            |
 
-**Statement**: The ship agent must complete one top-level release unit (feature or chore) through PR merge **and any required post-merge release closure** before starting a new one. When `true` is `true`, a merged release unit remains in-flight until Ship Step 5 has finished any required tag, publish, release-record, or post-merge closure-branch work. Parallel in-flight release units create branch conflicts, context fragmentation, and agent interference.
+**Statement**: The ship agent must complete one top-level release unit (feature or chore) through PR merge **and any required post-merge release closure** before starting a new one. When `feature_shipments` is `true`, a merged release unit remains in-flight until Ship Step 5 has finished any required tag, publish, release-record, or post-merge closure-branch work. Parallel in-flight release units create branch conflicts, context fragmentation, and agent interference.
 
-**Precondition**: No backlog tasks with status `Active` exist under any top-level work item other than the current feature or chore, and no previously merged top-level release unit is still awaiting required post-merge release closure (for example, an open post-merge closure branch/PR, a missing tag, or a pending publish step when `true` is `true`).
+**Precondition**: No backlog tasks with status `Active` exist under any top-level work item other than the current feature or chore, and no previously merged top-level release unit is still awaiting required post-merge release closure (for example, an open post-merge closure branch/PR, a missing tag, or a pending publish step when `feature_shipments` is `true`).
 
 **Postcondition**: All tasks under the current top-level work item are `Done`, and any required post-merge release closure is complete, before the orchestrator claims work on a new feature or chore.
 
@@ -134,7 +134,7 @@ If the impl-plan output does not contain a `Requires plan hardening` conclusion,
 
 ## P-007: Backlogit Archive Integrity After Shipment
 
-**Applies when**: `true` is true and `backlogit` is `backlogit`.
+**Applies when**: `feature_shipments` is true and the configured backlog tool is `backlogit`.
 
 **Scope**: Ensures archive files are not silently lost after `backlogit_ship_shipment` runs during Ship Step 6 post-merge closure in backlogit workspaces.
 

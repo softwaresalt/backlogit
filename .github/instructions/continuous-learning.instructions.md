@@ -27,7 +27,7 @@ Hook capture is optional and environment-specific:
 - After CI fix resolution (fix-ci skill, 3+ attempts)
 - After review findings with P0/P1 severity
 - After operational closure with incident findings`
-* `environment_adapter`: `Observations stored in docs/learnings/observations/, instincts in docs/learnings/instincts/, evolved artifacts in docs/learnings/evolved/. File format: Markdown with YAML frontmatter for searchability.`
+* `environment_adapter`: `Observations stored in .autoharness/continuous-learning/observations/, instincts in .autoharness/continuous-learning/instincts/, evolved artifacts in .autoharness/continuous-learning/learned/. File format: Markdown with YAML frontmatter for searchability.`
 
 If hooks are unavailable or disabled, capture observations through manual
 workflow steps, review findings, runtime verification artifacts, memory files,

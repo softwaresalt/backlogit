@@ -34,7 +34,7 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 | Variable | Purpose |
 |---|---|
 | `.github/**/*.md` | Glob patterns for agentic config files (e.g., `.github/**`, `.vscode/**`) |
-| `**/*.go` | Application source file patterns (e.g., `src/**/*..go`) |
+| `**/*.go` | Application source file patterns (e.g., `src/**/*.go`) |
 | `Go` | Primary language for pattern selection |
 | `docs/security` | Output directory for persisted reports (default: `docs/security`) |
 | `- Workspace root isolation enforcement

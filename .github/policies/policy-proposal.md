@@ -3,7 +3,7 @@ policy_id: "{{POLICY_ID}}"
 policy_type: "workspace-specific"
 status: "proposed"
 proposed_at: "{{PROPOSED_AT}}"
-evidence_count: {{EVIDENCE_COUNT}}
+evidence_count: "{{EVIDENCE_COUNT}}"
 ---
 
 # {{POLICY_TITLE}}

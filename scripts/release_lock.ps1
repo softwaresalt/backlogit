@@ -26,7 +26,12 @@ if (-not (Test-Path -LiteralPath $FilePath)) {
 $resolvedDir = if (Test-Path -LiteralPath $FilePath) {
     Split-Path -Parent (Resolve-Path -LiteralPath $FilePath)
 } else {
-    Split-Path -Parent $FilePath
+    $parent = Split-Path -Parent $FilePath
+    if ([string]::IsNullOrWhiteSpace($parent)) {
+        (Get-Location).Path
+    } else {
+        $parent
+    }
 }
 
 $fileName = Split-Path -Leaf $FilePath
