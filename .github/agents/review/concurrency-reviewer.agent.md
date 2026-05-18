@@ -7,8 +7,8 @@ model_routing: "Tier 1 (Fast/Cheap)"  # DEPRECATED — use model_tier
 model_tier: 1
 max_subagent_tier: 1
 reasoning_effort: "low"
-model_provider: "Anthropic"
-model_family: "Claude Haiku 4.5"
+model_provider: "anthropic"
+model_family: "claude-haiku-4.5"
 subagent_depth: 0
 ---
 
@@ -30,12 +30,7 @@ You are the Concurrency Reviewer persona. You evaluate code changes that involve
 
 This persona is conditionally invoked when the diff contains patterns suggesting concurrency:
 
-- Use `sync.Mutex` / `sync.RWMutex` for shared state protection
-- Use channels for goroutine communication and signaling
-- Use `context.Context` for cancellation propagation
-- Use `sync.WaitGroup` for goroutine lifecycle management
-- Use `sync.Once` for lazy initialization
-- Use `select` with `context.Done()` for timeout-aware operations
+goroutine, channel, mutex, WaitGroup, context.Context
 
 ## Output Format
 
@@ -44,8 +39,8 @@ Return a JSON array of findings:
 ```json
 [
   {
-    "file": "{file_path}",
-    "line": {line},
+    "file": "{{file_path}}",
+    "line": {{line_number}},
     "severity": "P0|P1|P2|P3",
     "autofix_class": "safe_auto|gated_auto|manual|advisory",
     "category": "concurrency",

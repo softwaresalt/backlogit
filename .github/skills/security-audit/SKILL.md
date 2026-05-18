@@ -33,12 +33,20 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 
 | Variable | Purpose |
 |---|---|
-| `.mcp.json, .copilot/**` | Glob patterns for agentic config files (e.g., `.github/**`, `.vscode/**`) |
-| `cmd/**/*.go, internal/**/*.go` | Application source file patterns (e.g., `src/**/*.go`) |
+| `.github/**/*.md` | Glob patterns for agentic config files (e.g., `.github/**`, `.vscode/**`) |
+| `**/*.go` | Application source file patterns (e.g., `src/**/*.go`) |
 | `Go` | Primary language for pattern selection |
 | `docs/security` | Output directory for persisted reports (default: `docs/security`) |
-| `Enforce parameterized SQL queries, validate all file paths against workspace root, sanitize MCP tool inputs` | Per-environment config rule table |
-| `A01:BrokenAccessControl, A02:CryptoFailures, A03:Injection, A04:InsecureDesign, A05:SecurityMisconfiguration` | Language-specific OWASP detection patterns |
+| `- Workspace root isolation enforcement
+- MCP tool input validation
+- File path resolution within sandbox
+- SQLite query parameterization` | Per-environment config rule table |
+| `- A01:2021 Broken Access Control (path traversal, workspace escape)
+- A03:2021 Injection (SQL injection, command injection)
+- A04:2021 Insecure Design (missing validation, unsafe defaults)
+- A05:2021 Security Misconfiguration (exposed config, permissive settings)
+- A07:2021 Authentication Failures (credential handling)
+- A09:2021 Security Logging Failures (missing audit trails)` | Language-specific OWASP detection patterns |
 
 ## Workflow
 
@@ -50,8 +58,8 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 - `scope:<path>` — enumerate only files under the specified path
 - `scope:full` — enumerate all surfaces
 
-1. Enumerate agentic config surfaces matching `.mcp.json, .copilot/**`
-2. Enumerate application source files matching `cmd/**/*.go, internal/**/*.go`
+1. Enumerate agentic config surfaces matching `.github/**/*.md`
+2. Enumerate application source files matching `**/*.go`
 3. Identify the primary language (`Go`) and select corresponding OWASP patterns
 4. Record the audit scope, file counts, and entry points found
 
@@ -61,7 +69,10 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 
 Apply deterministic regex checks to config surfaces found in Phase 1. Findings in this tier are eligible for `mode:fix` auto-remediation.
 
-Rules from `Enforce parameterized SQL queries, validate all file paths against workspace root, sanitize MCP tool inputs`:
+Rules from `- Workspace root isolation enforcement
+- MCP tool input validation
+- File path resolution within sandbox
+- SQLite query parameterization`:
 
 * Hardcoded credential patterns (passwords, tokens, keys) in config files
 * Overly permissive tool allow-lists (e.g., `always: true` on destructive terminal commands)
@@ -88,7 +99,12 @@ Apply judgment: record findings with reasoning, not just pattern matches. These 
 
 **Skip condition**: Skip unless `scope:full`, `scope:owasp`, or `scope:<path>`.
 
-Scan source files matching `cmd/**/*.go, internal/**/*.go` (or the specified path) using `A01:BrokenAccessControl, A02:CryptoFailures, A03:Injection, A04:InsecureDesign, A05:SecurityMisconfiguration`:
+Scan source files matching `**/*.go` (or the specified path) using `- A01:2021 Broken Access Control (path traversal, workspace escape)
+- A03:2021 Injection (SQL injection, command injection)
+- A04:2021 Insecure Design (missing validation, unsafe defaults)
+- A05:2021 Security Misconfiguration (exposed config, permissive settings)
+- A07:2021 Authentication Failures (credential handling)
+- A09:2021 Security Logging Failures (missing audit trails)`:
 
 | Category | What to look for |
 |---|---|

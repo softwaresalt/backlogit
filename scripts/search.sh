@@ -14,11 +14,10 @@ if [ $# -lt 1 ]; then
 fi
 
 KEYWORD="$1"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILLS_ROOT="$SCRIPT_DIR/../.github/skills"
+SKILLS_ROOT=".github/skills"
 
 if [ ! -d "$SKILLS_ROOT" ]; then
-    echo "Error: Skills directory not found: .github/skills/" >&2
+    echo "Error: Skills directory not found: $SKILLS_ROOT" >&2
     exit 1
 fi
 
