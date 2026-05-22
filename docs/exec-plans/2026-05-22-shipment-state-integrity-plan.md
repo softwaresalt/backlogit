@@ -8,8 +8,6 @@ stash_ids:
   - 36F1CB1A
 ---
 
-# Shipment State Integrity
-
 ## Problem Frame
 
 Shipment lifecycle code can leave partially transitioned state behind: a claim

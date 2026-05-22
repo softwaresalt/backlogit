@@ -10,8 +10,6 @@ stash_ids:
   - 0B9C7903
 ---
 
-# Archive and Hierarchy Rollback Integrity
-
 ## Problem Frame
 
 Several lifecycle mutations can leave backlog artifacts split across queue,

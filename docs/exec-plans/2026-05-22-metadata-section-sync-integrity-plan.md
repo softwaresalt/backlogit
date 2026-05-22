@@ -11,8 +11,6 @@ stash_ids:
   - EE33B6ED
 ---
 
-# Metadata and Section Sync Integrity
-
 ## Problem Frame
 
 The metadata and sync surfaces drift across CLI, MCP, file rewrite, and SQLite

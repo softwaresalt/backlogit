@@ -9,8 +9,6 @@ stash_ids:
   - ED0DAA74
 ---
 
-# Dependency Queue Integrity
-
 ## Problem Frame
 
 Dependency creation and queue filtering disagree about what counts as a valid

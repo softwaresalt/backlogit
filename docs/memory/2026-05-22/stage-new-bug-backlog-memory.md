@@ -5,8 +5,6 @@ ms.date: 2026-05-22
 ms.topic: reference
 ---
 
-# Stage memory — new bug backlog staged into queued shipments
-
 ## Session summary
 
 Processed the current bug stash autonomously and staged four queued shipments

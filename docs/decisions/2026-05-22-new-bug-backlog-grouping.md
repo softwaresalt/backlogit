@@ -20,8 +20,6 @@ stash_ids:
   - 21E17BFC
 ---
 
-# New bug backlog grouping and staging decision
-
 ## Problem frame
 
 The new stash backlog is almost entirely bug-shaped work. The fastest safe path
