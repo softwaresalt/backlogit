@@ -19,14 +19,9 @@ func TestQueryQueue_DependencyLookupFailureDoesNotSilentlyHideItems(t *testing.T
 	_, err := ws.DB.ExecContext(ctx, `DROP TABLE item_deps`)
 	require.NoError(t, err)
 
-	view, err := core.QueryQueue(ctx, ws.DB, &core.QueueFilter{Statuses: []string{"queued"}})
-	if err != nil {
-		assert.Contains(t, err.Error(), "item_deps", "dependency lookup failures should be explicit")
-		return
-	}
-
-	assert.ElementsMatch(t, []string{"B001", "T001"}, queueIDs(view.Items),
-		"dependency lookup failures must not silently hide queued items")
+	_, err = core.QueryQueue(ctx, ws.DB, &core.QueueFilter{Statuses: []string{"queued"}})
+	require.Error(t, err, "dependency lookup failures must be explicit")
+	assert.Contains(t, err.Error(), "item_deps", "dependency lookup failures should mention the missing table")
 }
 
 func TestQueryQueue_BlocksExpectedDependencyTypes(t *testing.T) {
