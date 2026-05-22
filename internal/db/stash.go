@@ -196,6 +196,18 @@ func mustParseTime(value string) time.Time {
 	return time.Time{}
 }
 
+// DeleteStashLink removes the harvest link row for a given stash entry ID.
+// It is used during rollback when a writeStashEntries failure occurs after
+// LinkStashEntry has already committed, to restore the stash entry to a
+// consistent "active" state.
+func DeleteStashLink(ctx context.Context, database *sql.DB, stashID string) error {
+	_, err := database.ExecContext(ctx, `DELETE FROM stash_links WHERE stash_id = ?`, stashID)
+	if err != nil {
+		return fmt.Errorf("delete stash link %s: %w", stashID, err)
+	}
+	return nil
+}
+
 // GetStashLinksForItem returns active stash entry IDs linked to the given item ID.
 func GetStashLinksForItem(ctx context.Context, database *sql.DB, itemID string) ([]string, error) {
 	rows, err := database.QueryContext(ctx,

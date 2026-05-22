@@ -618,8 +618,16 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 
 		var renamedMD, renamedLog bool
 		var newMDPath string
+		// 060.004-T: Snapshot the old file content before overwriting with the new
+		// ID so every rollback path can restore the exact original file content.
+		// Without this, the rename-based rollback places a file with frontmatter
+		// "id: newID" at oldMDPath, making the artifact undiscoverable by oldID.
+		var oldMDRaw []byte
 
 		if findErr == nil {
+			// Snapshot the original content before any file operations.
+			oldMDRaw, _ = os.ReadFile(oldMDPath)
+
 			// Compute new filename using the configured naming resolver to
 			// respect artifact_types[*].file_name_format when configured.
 			dir := filepath.Dir(oldMDPath)
@@ -648,7 +656,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		// Rewrite frontmatter in other artifacts that reference oldID.
 		if applyErr := applyCrossArtifactRewrites(ctx, tx, ws, crossRefs); applyErr != nil {
 			if renamedMD {
-				_ = os.Rename(newMDPath, oldMDPath)
+				rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
 			}
 			return nil, fmt.Errorf("adopt item %s: apply cross-artifact rewrites: %w", oldID, applyErr)
 		}
@@ -658,7 +666,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			if renameErr := os.Rename(oldLogPath, newLogPath); renameErr != nil {
 				// Rollback MD rename
 				if renamedMD {
-					_ = os.Rename(newMDPath, oldMDPath)
+					rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
 				}
 				return nil, fmt.Errorf("adopt item %s: rename log: %w", oldID, renameErr)
 			}
@@ -672,7 +680,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				_ = os.Rename(newLogPath, oldLogPath)
 			}
 			if renamedMD {
-				_ = os.Rename(newMDPath, oldMDPath)
+				rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
 			}
 			for _, u := range crossRefs {
 				tmp := u.filePath + ".rollback-tmp"
@@ -742,6 +750,23 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 // suggests it originated under a parent (contains a dot separator).
 func IsOrphan(a *models.Artifact) bool {
 	return a.ParentID == "" && strings.Contains(a.ID, ".")
+}
+
+// rollbackMDFile undoes a WriteArtifactFile + os.Remove pair that advanced
+// the artifact from oldMDPath → newMDPath. It removes newMDPath and restores
+// oldMDPath to its original byte content. If oldMDRaw is empty it falls back
+// to a simple rename (pre-060.004-T behaviour).
+func rollbackMDFile(newMDPath, oldMDPath string, oldMDRaw []byte) {
+	_ = os.Remove(newMDPath)
+	if len(oldMDRaw) > 0 {
+		if restoreErr := os.WriteFile(oldMDPath, oldMDRaw, 0o644); restoreErr != nil {
+			slog.Warn("adopt item: rollback md content restore failed", "path", oldMDPath, "error", restoreErr)
+		}
+	} else {
+		// Fallback: rename may place new-ID content at oldMDPath, but it is
+		// better than leaving the workspace with no file at all.
+		_ = os.Rename(newMDPath, oldMDPath)
+	}
 }
 
 // extractIDPrefix returns the portion of a hierarchical ID before the last dot

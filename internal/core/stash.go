@@ -411,6 +411,16 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
 			_ = os.Remove(artifactPath)
 		}
+		// 060.001-T: Rollback DB stash state committed before the JSONL write.
+		// Without this, stash_entries remains "harvested" and stash_links persists
+		// even though the JSONL was not rewritten — leaving the workspace in an
+		// inconsistent state where the entry appears harvested but has no artifact.
+		if ws.DB != nil {
+			_ = db.DeleteItemCascade(ctx, ws.DB, artifact.ID)
+			_ = db.DeleteStashLink(ctx, ws.DB, entry.ID)
+			_ = db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text,
+				entry.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC())
+		}
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
 	}
 
