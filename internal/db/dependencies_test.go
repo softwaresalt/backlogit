@@ -106,3 +106,39 @@ func TestDetectCycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, hasCycle, "should detect cycle: T001→T002→T003→T001")
 }
+
+func TestAddDependencyChecked_ValidatesTargetsBeforeInsert(t *testing.T) {
+	testCases := []struct {
+		name      string
+		itemID    string
+		dependsOn string
+	}{
+		{
+			name:      "missing source item",
+			itemID:    "T404",
+			dependsOn: "T001",
+		},
+		{
+			name:      "missing target item",
+			itemID:    "T001",
+			dependsOn: "T404",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			database := setupDepsTestDB(t)
+			ctx := context.Background()
+
+			err := db.AddDependencyChecked(ctx, database, tc.itemID, tc.dependsOn, "blocks")
+			require.Error(t, err, "invalid dependency targets must return an error")
+
+			var count int
+			require.NoError(t, database.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM item_deps WHERE item_id = ? AND depends_on = ?`,
+				tc.itemID, tc.dependsOn,
+			).Scan(&count))
+			assert.Zero(t, count, "invalid dependency targets must not be persisted")
+		})
+	}
+}
