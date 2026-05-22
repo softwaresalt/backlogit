@@ -119,7 +119,10 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 
 	// Filter out items with unresolved dependencies (dependency-aware queue).
 	if len(items) > 0 {
-		items = filterByResolvedDependencies(ctx, db, items)
+		items, err = filterByResolvedDependencies(ctx, db, items)
+		if err != nil {
+			return nil, fmt.Errorf("filter queue by resolved dependencies: %w", err)
+		}
 	}
 
 	// Annotate orphan status for items whose ID implies a parent but parent_id is empty.
@@ -401,10 +404,10 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 	return result, nil
 }
 
-// filterByResolvedDependencies removes items from the queue whose blocking dependencies
-// are not yet in a terminal state (as defined by core.TerminalStatuses: done, accepted,
-// archived, shipped, abandoned, rejected).
-func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) []*models.Artifact {
+// filterByResolvedDependencies removes items from the queue whose execution-blocking
+// dependencies are not yet in a terminal state (as defined by core.TerminalStatuses:
+// done, accepted, archived, shipped, abandoned, rejected).
+func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) ([]*models.Artifact, error) {
 	terminalStatuses := make(map[string]bool, len(TerminalStatuses))
 	for _, s := range TerminalStatuses {
 		terminalStatuses[s] = true
@@ -416,13 +419,11 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 		statusMap[item.ID] = string(item.Status)
 	}
 
-	var result []*models.Artifact
+	result := make([]*models.Artifact, 0, len(items))
 	for _, item := range items {
 		deps, err := bldb.GetDependencies(ctx, database, item.ID)
 		if err != nil {
-			slog.Warn("filterByResolvedDependencies: failed to fetch deps, skipping item",
-				"item_id", item.ID, "error", err)
-			continue
+			return nil, fmt.Errorf("load dependencies for %s: %w", item.ID, err)
 		}
 		if len(deps) == 0 {
 			result = append(result, item)
@@ -438,15 +439,18 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 			} else {
 				// Look up from DB if not in current result set.
 				var s sql.NullString
-				if scanErr := database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
-					slog.Warn("filterByResolvedDependencies: failed to look up dependency status",
-						"dep_id", dep.DependsOn, "error", scanErr)
+				if scanErr := database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s); scanErr != nil {
+					if errors.Is(scanErr, sql.ErrNoRows) {
+						s = sql.NullString{}
+					} else {
+						return nil, fmt.Errorf("look up dependency status for %s (dependency of %s): %w", dep.DependsOn, item.ID, scanErr)
+					}
 				}
 				if s.Valid {
 					depStatus = s.String
 				}
 			}
-			if dep.DepType == "blocks" && !terminalStatuses[depStatus] {
+			if isExecutionBlockingDependency(dep.DepType) && !terminalStatuses[depStatus] {
 				blocked = true
 				break
 			}
@@ -455,5 +459,14 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 			result = append(result, item)
 		}
 	}
-	return result
+	return result, nil
+}
+
+func isExecutionBlockingDependency(depType string) bool {
+	switch strings.ToLower(strings.TrimSpace(depType)) {
+	case "blocks", "parent_of", "relates_to":
+		return true
+	default:
+		return false
+	}
 }
