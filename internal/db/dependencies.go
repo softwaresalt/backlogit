@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	blErrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // DependencyEdge represents a single dependency relationship between two artifacts.
@@ -104,6 +106,10 @@ func AddDependencyChecked(ctx context.Context, database *sql.DB, itemID, depends
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	if err := validateDependencyTargetsTx(ctx, tx, itemID, dependsOn); err != nil {
+		return err
+	}
+
 	hasCycle, err := detectCycleTx(ctx, tx, itemID, dependsOn)
 	if err != nil {
 		return fmt.Errorf("detect cycle: %w", err)
@@ -119,6 +125,50 @@ func AddDependencyChecked(ctx context.Context, database *sql.DB, itemID, depends
 		return fmt.Errorf("upsert dependency %s→%s: %w", itemID, dependsOn, err)
 	}
 	return tx.Commit()
+}
+
+func validateDependencyTargetsTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn string) error {
+	var itemExists bool
+	var dependsOnExists bool
+
+	if err := tx.QueryRowContext(
+		ctx,
+		`SELECT EXISTS(SELECT 1 FROM items WHERE id = ?), EXISTS(SELECT 1 FROM items WHERE id = ?)`,
+		itemID,
+		dependsOn,
+	).Scan(&itemExists, &dependsOnExists); err != nil {
+		return fmt.Errorf("validate dependency targets %s→%s: %w", itemID, dependsOn, err)
+	}
+
+	switch {
+	case !itemExists && !dependsOnExists:
+		return fmt.Errorf(
+			"validate dependency targets %s→%s: source %q and target %q: %w",
+			itemID,
+			dependsOn,
+			itemID,
+			dependsOn,
+			blErrors.ErrNotFound,
+		)
+	case !itemExists:
+		return fmt.Errorf(
+			"validate dependency targets %s→%s: source %q: %w",
+			itemID,
+			dependsOn,
+			itemID,
+			blErrors.ErrNotFound,
+		)
+	case !dependsOnExists:
+		return fmt.Errorf(
+			"validate dependency targets %s→%s: target %q: %w",
+			itemID,
+			dependsOn,
+			dependsOn,
+			blErrors.ErrNotFound,
+		)
+	default:
+		return nil
+	}
 }
 
 // detectCycleTx performs a BFS cycle check within an existing transaction.
@@ -150,7 +200,7 @@ func detectCycleTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn string) (b
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
-			return false, err
+			return false, fmt.Errorf("detect cycle rows at %s: %w", current, err)
 		}
 		queue = append(queue, deps...)
 	}
