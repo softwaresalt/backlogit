@@ -5,7 +5,7 @@ ms.date: 2026-05-22
 ms.topic: reference
 ---
 
-# Ship Session Memory: 063-S Post-Merge Closure
+## Ship Session Memory: 063-S Post-Merge Closure
 
 **Date**: 2026-05-22 (late evening PDT)
 **Branch**: `post-merge/063-f-schema-discoverability`

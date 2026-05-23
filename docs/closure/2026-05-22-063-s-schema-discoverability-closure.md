@@ -9,7 +9,7 @@ merge_sha: ca26d887232214596392b0af848b48ee360eb010
 status: READY
 ---
 
-# Post-Merge Closure: 063-S Schema Discoverability
+## Post-Merge Closure: 063-S Schema Discoverability
 
 **Shipment**: `063-S` — Ship: Schema Discoverability
 **PR**: [#123](https://github.com/softwaresalt/backlogit/pull/123)

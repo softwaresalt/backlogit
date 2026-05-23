@@ -7,7 +7,7 @@ tags: ["sqlite", "security", "pragma", "schema-introspection"]
 source_shipment: 063-S
 ---
 
-# PRAGMA Introspection Allowlist Gate
+## PRAGMA Introspection Allowlist Gate
 
 ## Problem
 

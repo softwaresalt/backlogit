@@ -7,7 +7,7 @@ tags: ["go", "testing", "schema", "reflection", "telemetry"]
 source_shipment: 063-S
 ---
 
-# Manual Schema Registry with Drift-Detection Test
+## Manual Schema Registry with Drift-Detection Test
 
 ## Problem
 

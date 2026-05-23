@@ -7,7 +7,7 @@ shipment: 063-S
 mode: propose
 ---
 
-# Compound Refresh: 063-S Schema Discoverability
+## Compound Refresh: 063-S Schema Discoverability
 
 **Scope**: `recent` — entries in `docs/compound/` relevant to 063-S shipped surfaces
 **Context**: `063-S` shipped `db.IntrospectSchema`, `core.MetadataCatalog.SQLSchema`, and

@@ -5,7 +5,7 @@ ms.date: 2026-05-22
 ms.topic: reference
 ---
 
-# backlogit Architecture
+## backlogit Architecture
 
 backlogit is a Go CLI tool and MCP server for structured backlog management. It stores work
 items as Markdown files with YAML frontmatter, maintains an ephemeral SQLite index for
