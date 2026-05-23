@@ -1,9 +1,12 @@
 ---
+title: "Stage Session: Planning Queue Harvest"
+description: "Stage session memory for harvest of deliberations 047-DL and 048-DL into shipments 063-S and 064-S"
+ms.date: 2026-05-11
+ms.topic: reference
 type: session-memory
 timestamp: 2026-05-11T10:00:00-07:00
 agent: stage
 phase: harvest-and-shipment-assembly
-title: "Stage Session: Planning Queue Harvest"
 ---
 
 ## What Was Done
