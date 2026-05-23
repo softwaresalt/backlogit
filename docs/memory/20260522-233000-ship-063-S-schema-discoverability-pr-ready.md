@@ -1,3 +1,10 @@
+---
+title: "Ship session: 063-S Schema Discoverability — PR ready"
+description: "Session continuity for shipping 063-S — sql_schema in MetadataCatalog and backlogit telemetry schema CLI"
+ms.date: 2026-05-22
+ms.topic: reference
+---
+
 # Ship 063-S: Schema Discoverability — PR-Ready Checkpoint
 
 **Date**: 2026-05-22T23:30:00-07:00
