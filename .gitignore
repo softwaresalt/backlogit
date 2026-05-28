@@ -2,8 +2,11 @@
 bin/
 logs/
 .vscode/
+.cursor/
 .engram/
 .copilot/
+.github/copilot/
+.worktrees/
 .env
 .env.*
 !.env.example
@@ -48,3 +51,10 @@ prompt.md
 
 # Machine-local telemetry harvest checkpoint (changes per machine/run)
 .backlogit/.telemetry-checkpoint.json
+.gitignore
+
+.graphtor/bin/
+.graphtor/cache/
+.graphtor/logs/
+.graphtor/data/
+!.graphtor/config/sources.yaml

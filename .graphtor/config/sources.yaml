@@ -1,0 +1,33 @@
+# graphtor-docs sources.yaml
+# Documentation source registry. Add sources below to index them.
+# Run `graphtor-docs sync` to ingest all sources.
+#
+# Supported source types:
+#   git   — shallow-clone a Git repository
+#   local — scan a local directory
+
+sources:
+  - id: repo-docs
+    type: local
+    path: ./docs
+    include:
+      - "**/*.md"
+    formats: [md]
+
+  - id: backlog
+    type: local
+    path: ./.backlogit
+    include:
+      - "**/*.md"
+    formats: [md]
+
+# Example Git source:
+# sources:
+#   - id: azure-docs
+#     type: git
+#     url: https://github.com/MicrosoftDocs/azure-docs.git
+#     branch: main
+#     include:
+#       - "**/*.md"
+#     exclude:
+#       - "**/node_modules/**"
