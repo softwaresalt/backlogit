@@ -1,5 +1,4 @@
 {
-  "schema_version": "V1",
   "consumer_id": "ship",
   "phase": "session-complete",
   "shipment_id": "v1.1.0-release",

@@ -37,18 +37,23 @@ cmd → cli → core, db, mcp, models, telemetry
              core → models, db
              mcp  → core, db, models, telemetry
              cli  → core, db, models, telemetry
-             db   → (stdlib only)
-             telemetry → (stdlib only)
-             models → (stdlib only)
+             db        → models, events, stash, config, errors, modernc.org/sqlite
+             telemetry → db, errors, modernc.org/sqlite
+             models    → validator/v10
+             events    → errors, validator/v10
+             stash     → models, errors
+             config    → stash, validator/v10
+             errors    → (stdlib only)
 ```
 
 Cross-cutting rules:
 
-* `db` and `models` have no dependencies on higher-level packages.
+* `db` imports domain-support packages (`models`, `events`, `stash`, `config`, `errors`)
+  and `modernc.org/sqlite`; it does not depend on higher-level packages (`cli`, `mcp`, `core`).
+* `models` depends only on `validator/v10`; it has no internal package dependencies.
 * `core` accesses `db` through typed function calls, not embedded `*sql.DB`.
 * `mcp` and `cli` are parallel entry-point layers; neither depends on the other.
-* `telemetry` is self-contained: records, schema reference, and harvesting are
-  internal to the package.
+* `telemetry` imports `db` and `errors`; it is not fully self-contained.
 
 ## Key Surfaces
 
