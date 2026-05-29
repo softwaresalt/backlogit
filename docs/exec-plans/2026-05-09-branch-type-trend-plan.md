@@ -2,7 +2,7 @@
 title: "Branch-Level Telemetry Metrics"
 date: 2026-05-09
 origin: ".backlogit/queue/048-DL.md"
-status: approved
+status: harvested
 ---
 
 # Branch-Level Telemetry Metrics

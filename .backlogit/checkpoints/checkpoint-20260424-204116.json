@@ -1,0 +1,24 @@
+{
+  "consumer_id": "ship",
+  "phase": "session-complete",
+  "shipment_id": "v1.1.0-release",
+  "branch": "main",
+  "pr_number": 71,
+  "pr_url": "https://github.com/softwaresalt/backlogit/pull/71",
+  "merge_sha": "9fd04b1",
+  "items_completed": [
+    "Tag v1.1.0 pushed at 7e87e79",
+    "GitHub Release v1.1.0 published — 6 platform binaries + SHA256SUMS",
+    "Closure artifact merged: docs/closure/2026-04-24-v1.1.0-release-closure.md",
+    "Session memory merged: docs/memory/[20260424-200000]-v1.1.0-release-complete-memory.md",
+    "PR #71 merged at 9fd04b1 — main clean"
+  ],
+  "items_blocked": [],
+  "decisions": [
+    "All 9 Copilot review comments addressed: frontmatter, H1→H2, bare URLs, table formatting",
+    "Used merge commit (not squash) per repository settings"
+  ],
+  "errors": [],
+  "status": "SHIPPED",
+  "resume_hint": "Session complete. No pending work. Next session should start fresh from stash/queue."
+}

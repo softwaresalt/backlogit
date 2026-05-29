@@ -2,7 +2,7 @@
 title: "Schema Discoverability"
 date: 2026-05-09
 origin: ".backlogit/queue/047-DL.md"
-status: reviewed
+status: harvested
 ---
 
 # Schema Discoverability
