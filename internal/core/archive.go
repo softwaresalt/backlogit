@@ -96,6 +96,16 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
 
+	// 060.002-T: When FindArtifactPath returns an archive-dir path but a queue
+	// copy also exists for the same ID (e.g., from a half-completed archive),
+	// prefer the queue copy as the canonical source so the queue is fully drained.
+	if filepath.Clean(filepath.Dir(currentPath)) == filepath.Clean(archiveDir) {
+		queueDir := filepath.Join(backlogDir, queueRootDir(ws))
+		if queuePath, queueErr := findArtifactInDir(queueDir, itemID); queueErr == nil && queuePath != "" {
+			currentPath = queuePath
+		}
+	}
+
 	// Stamp the original path into frontmatter for later restoration.
 	raw, err := os.ReadFile(currentPath)
 	if err != nil {
@@ -128,6 +138,8 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	}
 
 	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	// 060.003-T: Preserve the pre-archive status so UnarchiveItem can restore it.
+	fm["archived_status"] = oldStatus
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
 
@@ -322,7 +334,16 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	}
 
 	// Restore frontmatter without the archived_from field.
+	// 060.003-T: Also restore the pre-archive status from archived_status.
 	delete(fm, "archived_from")
+	archivedStatus, _ := fm["archived_status"].(string)
+	delete(fm, "archived_status")
+	if archivedStatus == "" {
+		// Backward compat: items archived before the fix have no archived_status;
+		// default to "queued" so they become accessible in normal list flows.
+		archivedStatus = string(models.StatusQueued)
+	}
+	fm["status"] = archivedStatus
 	restored := models.SerializeFrontmatter(fm, body)
 
 	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
@@ -366,6 +387,39 @@ func fmArtifactType(fm map[string]any) string {
 		return t
 	}
 	return ""
+}
+
+// findArtifactInDir searches a single directory (non-recursive) for a .md file
+// whose frontmatter ID matches id. Returns ("", nil) when not found.
+func findArtifactInDir(dirPath, id string) (string, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read dir %s: %w", dirPath, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		path := filepath.Join(dirPath, entry.Name())
+		a, _, parseErr := parseFile(path)
+		if parseErr != nil {
+			continue
+		}
+		if a.ID == id {
+			return path, nil
+		}
+	}
+	return "", nil
+}
+
+func queueRootDir(ws *Workspace) string {
+	if ws != nil && ws.Config != nil && ws.Config.QueueLayout != nil && ws.Config.QueueLayout.RootDir != "" {
+		return ws.Config.QueueLayout.RootDir
+	}
+	return "queue"
 }
 
 func workspaceRelativePath(rootPath string, target string) string {

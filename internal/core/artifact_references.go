@@ -187,6 +187,17 @@ func applyCrossArtifactRewrites(
 	}
 
 	for _, u := range updates {
+		// Cross-platform write-guard: on Linux, os.Rename can silently replace a
+		// read-only file when the parent directory is writable, so WriteArtifactFile
+		// would succeed without surfacing an error. Reject the write explicitly when
+		// the target file's user-write permission bit is unset so the failure mode is
+		// consistent across operating systems (Windows already enforces this at the OS
+		// layer, but Linux requires an explicit application-level check).
+		if info, statErr := os.Stat(u.filePath); statErr == nil && info.Mode().Perm()&0o200 == 0 {
+			restoreWritten()
+			return fmt.Errorf("apply cross-artifact rewrite for %s: file is read-only: %s",
+				u.artifact.ID, u.filePath)
+		}
 		if writeErr := WriteArtifactFile(u.artifact, u.filePath); writeErr != nil {
 			restoreWritten()
 			return fmt.Errorf("apply cross-artifact rewrite for %s: %w", u.artifact.ID, writeErr)
