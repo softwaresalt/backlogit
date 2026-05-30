@@ -159,7 +159,7 @@ func EnsureStashFile(rootPath string) error {
 		return fmt.Errorf("stat legacy stash file: %w", err)
 	}
 
-	if err := writeStashEntries(path, jsonlEntries); err != nil {
+	if err := writeStashEntries(nil, path, jsonlEntries); err != nil {
 		return err
 	}
 	if legacyExists {
@@ -279,7 +279,7 @@ func AddStashEntry(ctx context.Context, ws *Workspace, kind, priority, text stri
 	now := time.Now().UTC()
 	entry := stash.Entry{ID: id, Priority: normalizedPriority, Kind: normalizedKind, Text: trimmedText, CreatedAt: &now}
 	entries = append(entries, entry)
-	if err := writeStashEntries(path, entries); err != nil {
+	if err := writeStashEntries(ws, path, entries); err != nil {
 		return nil, err
 	}
 	if ws.DB != nil {
@@ -407,19 +407,25 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 	}
 
 	// All DB ops committed — now commit the JSONL removal under the held lock.
-	if writeErr := writeStashEntries(path, remaining); writeErr != nil {
+	if writeErr := writeStashEntries(ws, path, remaining); writeErr != nil {
 		if artifactPath, pathErr := FindArtifactPath(ctx, ws, artifact.ID); pathErr == nil {
-			_ = os.Remove(artifactPath)
+			if removeErr := os.Remove(artifactPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("stash harvest: failed to remove artifact after stash rewrite error",
+					"artifact_id", artifact.ID, "path", artifactPath, "error", removeErr)
+			}
 		}
 		// 060.001-T: Rollback DB stash state committed before the JSONL write.
 		// Without this, stash_entries remains "harvested" and stash_links persists
 		// even though the JSONL was not rewritten — leaving the workspace in an
 		// inconsistent state where the entry appears harvested but has no artifact.
 		if ws.DB != nil {
-			_ = db.DeleteItemCascade(ctx, ws.DB, artifact.ID)
-			_ = db.DeleteStashLink(ctx, ws.DB, entry.ID)
-			_ = db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text,
-				entry.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC())
+			rollbackErr := rollbackHarvestWriteFailure(ctx, ws, entry, artifact.ID)
+			if rollbackErr != nil {
+				return nil, errors.Join(
+					fmt.Errorf("rewrite stash file: %w", writeErr),
+					fmt.Errorf("rollback stash state: %w", rollbackErr),
+				)
+			}
 		}
 		return nil, fmt.Errorf("rewrite stash file: %w", writeErr)
 	}
@@ -563,7 +569,7 @@ func LinkDeliberationToStashEntry(ctx context.Context, ws *Workspace, stashID, d
 	if !found {
 		return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
-	if err := writeStashEntries(path, entries); err != nil {
+	if err := writeStashEntries(ws, path, entries); err != nil {
 		return nil, err
 	}
 	if ws.DB != nil {
@@ -608,12 +614,36 @@ func readStashEntries(path string) ([]stash.Entry, error) {
 	return entries, nil
 }
 
-func writeStashEntries(path string, entries []stash.Entry) error {
+func stashEntriesWriter(ws *Workspace) func(path, content string) error {
+	if ws != nil && ws.writeStashEntriesAtomically != nil {
+		return ws.writeStashEntriesAtomically
+	}
+	return writeStringAtomically
+}
+
+func writeStashEntries(ws *Workspace, path string, entries []stash.Entry) error {
 	var buf bytes.Buffer
 	if err := stash.WriteJSONL(&buf, entries); err != nil {
 		return fmt.Errorf("serialize stash entries: %w", err)
 	}
-	return writeStringAtomically(path, buf.String())
+	return stashEntriesWriter(ws)(path, buf.String())
+}
+
+func rollbackHarvestWriteFailure(ctx context.Context, ws *Workspace, entry stash.Entry, artifactID string) error {
+	var rollbackErrs []error
+	if err := db.DeleteItemCascade(ctx, ws.DB, artifactID); err != nil {
+		rollbackErrs = append(rollbackErrs,
+			fmt.Errorf("delete harvested artifact index %s: %w", artifactID, err))
+	}
+	if err := db.DeleteStashLink(ctx, ws.DB, entry.ID); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("delete stash link %s: %w", entry.ID, err))
+	}
+	if err := db.UpsertStashEntry(ctx, ws.DB, entry.ID, entry.Priority, entry.Kind, entry.Text,
+		entry.DeliberationID, stashStateActive, stashRelativePath(), time.Now().UTC()); err != nil {
+		rollbackErrs = append(rollbackErrs,
+			fmt.Errorf("restore stash entry %s to active: %w", entry.ID, err))
+	}
+	return errors.Join(rollbackErrs...)
 }
 
 func mergeStashEntries(primary []stash.Entry, fallback []stash.Entry) []stash.Entry {
@@ -705,7 +735,7 @@ func ArchiveStashEntry(ctx context.Context, ws *Workspace, stashID string) (*sta
 	if archErr := appendToStashArchive(ws.RootPath, archiveEntry); archErr != nil {
 		slog.Warn("stash archive: failed to append to archive", "stash_id", entry.ID, "error", archErr)
 	}
-	if err := writeStashEntries(path, remaining); err != nil {
+	if err := writeStashEntries(ws, path, remaining); err != nil {
 		return nil, fmt.Errorf("rewrite stash file: %w", err)
 	}
 	if ws.DB != nil {
@@ -815,7 +845,7 @@ func EditStashEntry(ctx context.Context, ws *Workspace, stashID string, opts Edi
 	if !found {
 		return nil, fmt.Errorf("stash entry not found: %s: %w", stashID, corerrors.ErrNotFound)
 	}
-	if err := writeStashEntries(path, entries); err != nil {
+	if err := writeStashEntries(ws, path, entries); err != nil {
 		return nil, fmt.Errorf("rewrite stash file: %w", err)
 	}
 	if ws.DB != nil {

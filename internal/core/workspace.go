@@ -24,6 +24,9 @@ type Workspace struct {
 	DB        *sql.DB
 	HeaderDef *config.HeaderDefConfig
 	Templates []*config.TemplateConfig
+	// writeStashEntriesAtomically allows stash persistence to be overridden per
+	// workspace in tests without introducing a package-level mutable hook.
+	writeStashEntriesAtomically func(path, content string) error
 	// HookRunner dispatches lifecycle hooks. May be nil in tests that
 	// construct Workspace{} directly; all call sites must nil-guard.
 	HookRunner *hooks.HookRunner
@@ -152,13 +155,14 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 	}
 
 	workspace := &Workspace{
-		RootPath:   resolvedRoot,
-		Config:     cfg,
-		DB:         database,
-		HeaderDef:  headerDef,
-		Templates:  templates,
-		HookRunner: hookRunner,
-		Hooks:      hooksCfg,
+		RootPath:                    resolvedRoot,
+		Config:                      cfg,
+		DB:                          database,
+		HeaderDef:                   headerDef,
+		Templates:                   templates,
+		writeStashEntriesAtomically: writeStringAtomically,
+		HookRunner:                  hookRunner,
+		Hooks:                       hooksCfg,
 	}
 	// Assign only when non-nil to avoid storing a typed-nil *WebhookNotifier
 	// inside the interface, which would bypass the != nil guard in Close().

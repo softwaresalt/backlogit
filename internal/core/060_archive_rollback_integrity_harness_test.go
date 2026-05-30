@@ -17,6 +17,7 @@ package core_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -34,10 +36,14 @@ import (
 // both the queue directory (canonical) and the archive directory (stale copy
 // from a previously half-completed archive operation).
 func setupDuplicateArchiveWorkspace(t *testing.T) (*core.Workspace, string, string) {
+	return setupDuplicateArchiveWorkspaceWithQueueRoot(t, "queue")
+}
+
+func setupDuplicateArchiveWorkspaceWithQueueRoot(t *testing.T, queueRoot string) (*core.Workspace, string, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	backlogDir := filepath.Join(tmpDir, ".backlogit")
-	queueDir := filepath.Join(backlogDir, "queue")
+	queueDir := filepath.Join(backlogDir, filepath.FromSlash(queueRoot))
 	archiveDir := filepath.Join(backlogDir, "archive")
 	require.NoError(t, os.MkdirAll(queueDir, 0o755))
 	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
@@ -48,10 +54,10 @@ func setupDuplicateArchiveWorkspace(t *testing.T) (*core.Workspace, string, stri
 	require.NoError(t, db.EnsureSchema(database))
 	t.Cleanup(func() { database.Close() })
 
-	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
-		[]byte("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\n"), 0o644))
+	configYAML := fmt.Sprintf("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\nqueue_layout:\n  root_dir: %s\n", queueRoot)
+	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"), []byte(configYAML), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("directories:\n  - path: archive\n    condition:\n      status: [archived]\n"), 0o644))
 
 	const itemID = "077-T"
 	// Queue copy — the canonical unarchived state.
@@ -60,7 +66,7 @@ func setupDuplicateArchiveWorkspace(t *testing.T) (*core.Workspace, string, stri
 	require.NoError(t, os.WriteFile(queuePath, []byte(queueContent), 0o644))
 
 	// Stale archive copy — left behind by a previously interrupted archive.
-	archiveContent := "---\nid: 077-T\ntitle: Duplicate source test\nstatus: archived\narchived_from: queue/077-T.md\nartifact_type: task\n---\nBody\n"
+	archiveContent := fmt.Sprintf("---\nid: 077-T\ntitle: Duplicate source test\nstatus: archived\narchived_from: %s/077-T.md\nartifact_type: task\n---\nBody\n", filepath.ToSlash(queueRoot))
 	archivePath := filepath.Join(archiveDir, itemID+".md")
 	require.NoError(t, os.WriteFile(archivePath, []byte(archiveContent), 0o644))
 
@@ -68,7 +74,13 @@ func setupDuplicateArchiveWorkspace(t *testing.T) (*core.Workspace, string, stri
 		ID: itemID, Title: "Duplicate source test", Status: models.StatusDone, ArtifactType: "task",
 	}))
 
-	ws := &core.Workspace{RootPath: tmpDir, DB: database}
+	ws := &core.Workspace{
+		RootPath: tmpDir,
+		DB:       database,
+		Config: &config.WorkspaceConfig{
+			QueueLayout: &config.QueueLayoutConfig{RootDir: queueRoot},
+		},
+	}
 	return ws, queuePath, archivePath
 }
 
@@ -109,6 +121,23 @@ func TestArchiveItem_DuplicateSourcePaths_ArchiveFileCorrect(t *testing.T) {
 	assert.Equal(t, archivePath, record.ArchivePath,
 		"archive record must point to the archive directory")
 	assert.FileExists(t, archivePath, "archive file must exist after archive")
+}
+
+// TestArchiveItem_DuplicateSourcePaths_UsesConfiguredQueueRoot verifies that
+// ArchiveItem respects the configured queue root when resolving the canonical
+// source file during duplicate-source recovery.
+func TestArchiveItem_DuplicateSourcePaths_UsesConfiguredQueueRoot(t *testing.T) {
+	ws, queuePath, archivePath := setupDuplicateArchiveWorkspaceWithQueueRoot(t, "inbox")
+	ctx := context.Background()
+
+	record, err := core.ArchiveItem(ctx, ws.DB, ws, "077-T")
+
+	require.NoError(t, err)
+	assert.Equal(t, queuePath, record.OriginalPath,
+		"configured queue-root copy must be chosen as the canonical source")
+	assert.Equal(t, archivePath, record.ArchivePath)
+	assert.NoFileExists(t, queuePath)
+	assert.FileExists(t, archivePath)
 }
 
 // ---------------------------------------------------------------------------

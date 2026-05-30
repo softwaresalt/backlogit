@@ -100,7 +100,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// copy also exists for the same ID (e.g., from a half-completed archive),
 	// prefer the queue copy as the canonical source so the queue is fully drained.
 	if filepath.Clean(filepath.Dir(currentPath)) == filepath.Clean(archiveDir) {
-		queueDir := filepath.Join(backlogDir, "queue")
+		queueDir := filepath.Join(backlogDir, queueRootDir(ws))
 		if queuePath, queueErr := findArtifactInDir(queueDir, itemID); queueErr == nil && queuePath != "" {
 			currentPath = queuePath
 		}
@@ -413,6 +413,13 @@ func findArtifactInDir(dirPath, id string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func queueRootDir(ws *Workspace) string {
+	if ws != nil && ws.Config != nil && ws.Config.QueueLayout != nil && ws.Config.QueueLayout.RootDir != "" {
+		return ws.Config.QueueLayout.RootDir
+	}
+	return "queue"
 }
 
 func workspaceRelativePath(rootPath string, target string) string {

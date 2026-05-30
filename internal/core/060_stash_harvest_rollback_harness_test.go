@@ -1,4 +1,4 @@
-package core_test
+package core
 
 // 060.001-T: Make stash harvest rollback atomic
 //
@@ -22,12 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/config"
-	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
 )
 
 // setupHarvestRollbackWorkspace builds a workspace with a seed stash entry.
-func setupHarvestRollbackWorkspace(t *testing.T) *core.Workspace {
+func setupHarvestRollbackWorkspace(t *testing.T) *Workspace {
 	t.Helper()
 	tmpDir := t.TempDir()
 	backlogDir := filepath.Join(tmpDir, ".backlogit")
@@ -37,7 +36,7 @@ func setupHarvestRollbackWorkspace(t *testing.T) *core.Workspace {
 	stashContent := `{"id":"CCCCDDDD","priority":"medium","kind":"task","text":"Harvest rollback atomicity entry"}` + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "stash.jsonl"), []byte(stashContent), 0o644))
 
-	ws, wsErr := core.NewWorkspace(context.Background(), tmpDir)
+	ws, wsErr := NewWorkspace(context.Background(), tmpDir)
 	require.NoError(t, wsErr)
 	t.Cleanup(func() { ws.Close() })
 	return ws
@@ -47,67 +46,67 @@ func setupHarvestRollbackWorkspace(t *testing.T) *core.Workspace {
 // when the JSONL rewrite fails after DB state is committed, the DB stash entry
 // is reverted to "active" and the stash_link row is removed.
 //
-// Failure is injected by a background goroutine that watches for an artifact
-// file to appear in the queue directory (proof that CreateArtifact succeeded and
-// the DB ops are in progress) and then replaces stash.jsonl with a directory.
-// The atomic rename in writeStringAtomically (stash.jsonl.tmp → stash.jsonl)
-// fails because the destination is now a directory, returning an error only
-// after UpsertStashEntry and LinkStashEntry have already committed.
+// Failure is injected deterministically by pausing the final stash.jsonl rewrite
+// inside writeStashEntries, replacing stash.jsonl with a directory, then letting
+// the atomic rename proceed. That guarantees the failure occurs after
+// UpsertStashEntry and LinkStashEntry have already committed.
 func TestHarvestStashEntry_JSONLWriteFailure_DBStashStateRolledBack(t *testing.T) {
 	ws := setupHarvestRollbackWorkspace(t)
 	ctx := context.Background()
 
 	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
-	queueDir := filepath.Join(backlogDir, "queue")
 	stashPath := filepath.Join(backlogDir, "stash.jsonl")
+	const maxWait = 10 * time.Second
+
+	originalWriter := ws.writeStashEntriesAtomically
+	enterWriteCh := make(chan struct{}, 1)
+	releaseWriteCh := make(chan struct{})
+	writeCalls := 0
+	releaseWrite := func() {
+		select {
+		case <-releaseWriteCh:
+		default:
+			close(releaseWriteCh)
+		}
+	}
+	ws.writeStashEntriesAtomically = func(path, content string) error {
+		if filepath.Clean(path) == filepath.Clean(stashPath) {
+			writeCalls++
+			if writeCalls == 1 {
+				select {
+				case enterWriteCh <- struct{}{}:
+				default:
+				}
+				<-releaseWriteCh
+			}
+		}
+		return originalWriter(path, content)
+	}
+	t.Cleanup(func() {
+		ws.writeStashEntriesAtomically = originalWriter
+		releaseWrite()
+	})
 
 	harvestErrCh := make(chan error, 1)
 
-	// Run the harvest in a background goroutine so we can manipulate the
-	// filesystem from the main test goroutine while it executes.
 	go func() {
-		_, err := core.HarvestStashEntry(ctx, ws, core.HarvestStashOptions{
+		_, err := HarvestStashEntry(ctx, ws, HarvestStashOptions{
 			StashID:      "CCCCDDDD",
 			ArtifactType: "feature",
 		})
 		harvestErrCh <- err
 	}()
 
-	// Poll until an artifact .md file appears in the queue directory tree.
-	// This proves CreateArtifact has succeeded and the DB stash ops are
-	// in progress (or about to start). Replace stash.jsonl with a directory
-	// so the final writeStringAtomically rename fails.
-	const pollInterval = 100 * time.Microsecond
-	const maxWait = 10 * time.Second
-	blocked := false
-	deadline := time.Now().Add(maxWait)
-
-	for !blocked && time.Now().Before(deadline) {
-		if mdFound(queueDir) {
-			// CreateArtifact has run.  Swap stash.jsonl → directory so
-			// the rename in writeStringAtomically(stash.jsonl.tmp → stash.jsonl) fails.
-			_ = os.Remove(stashPath)
-			if err := os.MkdirAll(stashPath, 0o755); err == nil {
-				t.Cleanup(func() { _ = os.RemoveAll(stashPath) })
-				blocked = true
-			}
-		}
-		if !blocked {
-			time.Sleep(pollInterval)
-		}
+	select {
+	case <-enterWriteCh:
+	case <-time.After(maxWait):
+		t.Fatal("HarvestStashEntry did not reach the stash rewrite step within timeout")
 	}
 
-	if !blocked {
-		// We could not inject the failure in time — the harvest may have
-		// already completed successfully.  Skip rather than report a false result.
-		select {
-		case <-harvestErrCh:
-		case <-time.After(maxWait):
-		}
-		t.Skip("could not inject JSONL write failure: artifact file appeared too late or harvest already completed")
-	}
+	require.NoError(t, os.Remove(stashPath))
+	require.NoError(t, os.Mkdir(stashPath, 0o755))
+	releaseWrite()
 
-	// Wait for the harvest to finish.
 	var harvestErr error
 	select {
 	case harvestErr = <-harvestErrCh:
@@ -135,27 +134,4 @@ func TestHarvestStashEntry_JSONLWriteFailure_DBStashStateRolledBack(t *testing.T
 		"stash entry state must be reverted to 'active' after JSONL write failure; got %q", found.State)
 	assert.Empty(t, found.ItemID,
 		"stash_links row must be removed: ItemID must be empty after JSONL write failure; got %q", found.ItemID)
-}
-
-// mdFound returns true if any .md file exists under dir (non-recursive first-level walk).
-func mdFound(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			// Recurse one level only — queue may have subdirectories.
-			sub := filepath.Join(dir, e.Name())
-			subEntries, _ := os.ReadDir(sub)
-			for _, se := range subEntries {
-				if !se.IsDir() && filepath.Ext(se.Name()) == ".md" {
-					return true
-				}
-			}
-		} else if filepath.Ext(e.Name()) == ".md" {
-			return true
-		}
-	}
-	return false
 }

@@ -626,7 +626,10 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 
 		if findErr == nil {
 			// Snapshot the original content before any file operations.
-			oldMDRaw, _ = os.ReadFile(oldMDPath)
+			oldMDRaw, err = os.ReadFile(oldMDPath)
+			if err != nil {
+				return nil, fmt.Errorf("adopt item %s: read old md: %w", oldID, err)
+			}
 
 			// Compute new filename using the configured naming resolver to
 			// respect artifact_types[*].file_name_format when configured.
@@ -757,15 +760,20 @@ func IsOrphan(a *models.Artifact) bool {
 // oldMDPath to its original byte content. If oldMDRaw is empty it falls back
 // to a simple rename (pre-060.004-T behaviour).
 func rollbackMDFile(newMDPath, oldMDPath string, oldMDRaw []byte) {
-	_ = os.Remove(newMDPath)
-	if len(oldMDRaw) > 0 {
-		if restoreErr := os.WriteFile(oldMDPath, oldMDRaw, 0o644); restoreErr != nil {
-			slog.Warn("adopt item: rollback md content restore failed", "path", oldMDPath, "error", restoreErr)
-		}
-	} else {
+	if len(oldMDRaw) == 0 {
 		// Fallback: rename may place new-ID content at oldMDPath, but it is
 		// better than leaving the workspace with no file at all.
-		_ = os.Rename(newMDPath, oldMDPath)
+		if renameErr := os.Rename(newMDPath, oldMDPath); renameErr != nil {
+			slog.Warn("adopt item: rollback md rename failed", "from", newMDPath, "to", oldMDPath, "error", renameErr)
+		}
+		return
+	}
+
+	if removeErr := os.Remove(newMDPath); removeErr != nil && !os.IsNotExist(removeErr) {
+		slog.Warn("adopt item: rollback md remove failed", "path", newMDPath, "error", removeErr)
+	}
+	if restoreErr := os.WriteFile(oldMDPath, oldMDRaw, 0o644); restoreErr != nil {
+		slog.Warn("adopt item: rollback md content restore failed", "path", oldMDPath, "error", restoreErr)
 	}
 }
 
