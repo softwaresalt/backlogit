@@ -185,7 +185,7 @@ artifacts:
     primitive: 6
     template: "templates/instructions/agent-engram.instructions.md.tmpl"
     checksum: "b56571bee11546bcb716c3f05904fbd0c0eab2c5f88a20c006b659a437982904"
-  - path: ".github/agents/adversarial-review.agent.md"
+  - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
     checksum: "3cbaa7bf179b0fdcc803c6c634bee7d00fc7cbb8c6d25d9e1d7a39efc38b4ded"
@@ -265,7 +265,7 @@ artifacts:
     primitive: 6
     template: "templates/instructions/technology.instructions.md.tmpl"
     checksum: "c8ab57ede898ba9b484f67983b70063c78a50f6992885a6953cc6841c4acac27"
-  - path: ".github/agents/security-sentinel.agent.md"
+  - path: ".github/agents/review/security-sentinel.agent.md"
     primitive: 5
     template: "templates/agents/security-sentinel.agent.md.tmpl"
     checksum: "273c01e927f36527ee8e6831633acee30b23d48435235f0054c7d24d21539c0c"
@@ -301,11 +301,11 @@ artifacts:
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
     checksum: "d9cdc97d07fde6f09a0b3bfaac6252f46ca2c7ebca42503ceb4c0a99835be78e"
-  - path: ".github/agents/prompt-builder.agent.md"
+  - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
     checksum: "ad4523e1930f311c99d199b6e456a233342e066ea318f7410c3e11e4e0504498"
-  - path: ".github/agents/go-engineer.agent.md"
+  - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
     checksum: "0a0ea35f4e0bd6f4db4378eb0d5e9a13a9c52ee21231ce4e33c45aafd4cc960c"

@@ -48,7 +48,7 @@ func NewDepAddCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
+			if err := core.AddDependency(ctx, ws, itemID, dependsOn, depType); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)
@@ -78,7 +78,7 @@ func NewDepRemoveCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			if err := db.DeleteDependency(ctx, ws.DB, itemID, dependsOn); err != nil {
+			if err := core.RemoveDependency(ctx, ws, itemID, dependsOn); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Removed dependency %s → %s\n", itemID, dependsOn)

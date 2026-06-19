@@ -30,10 +30,6 @@ docs:
     closure: closure
     design_docs: design-docs
     product_specs: product-specs
-model_routing:
-  tier1: "Claude Haiku 4.5"
-  tier2: "Claude Sonnet 4.6"
-  tier3: "Claude Opus 4.6"
 primitives:
   - 1
   - 2
@@ -46,3 +42,25 @@ primitives:
   - 9
   - 10
 overrides: {}
+
+# Model routing preferences (map tiers to model identifiers and per-tier config)
+model_routing:
+  tier1:
+    model: claude-haiku-4.5              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
+    reasoning_effort: ""  # Leave empty to use model default
+    model_provider: "anthropic"       # e.g., openai, anthropic — leave empty for default
+    model_family: "claude-haiku-4.5"           # Resolved into Tier 1 agent frontmatter
+  tier2:
+    model: claude-sonnet-4.6              # Standard: orchestration, code, review (e.g., claude-sonnet-4.6)
+    reasoning_effort: "high"
+    model_provider: "anthropic"
+    model_family: "claude-sonnet-4.6"
+  tier3:
+    model: claude-opus-4.8              # Frontier: planning, architecture, analysis (e.g., claude-opus-4.6)
+    reasoning_effort: "high"
+    model_provider: "anthropic"
+    model_family: "claude-opus-4.8"
+  orchestrator:
+    model_family: "claude-opus-4.8"     # Orchestrator model override (default: claude-opus-4.8)
+    reasoning_effort: "high"
+    model_provider: "anthropic"
