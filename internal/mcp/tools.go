@@ -1172,7 +1172,7 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 	if v, ok := request.Params.Arguments["dep_type"].(string); ok && v != "" {
 		depType = v
 	}
-	if err := db.AddDependencyChecked(ctx, s.Workspace.DB, itemID, dependsOn, depType); err != nil {
+	if err := core.AddDependency(ctx, s.Workspace, itemID, dependsOn, depType); err != nil {
 		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
 	}
 	return toolResultJSON(map[string]string{
@@ -1195,7 +1195,7 @@ func (s *Server) handleRemoveDependency(ctx context.Context, request mcplib.Call
 	if dependsOn == "" {
 		return ValidationFailed("depends_on is required"), nil
 	}
-	if err := db.DeleteDependency(ctx, s.Workspace.DB, itemID, dependsOn); err != nil {
+	if err := core.RemoveDependency(ctx, s.Workspace, itemID, dependsOn); err != nil {
 		return InternalError(fmt.Sprintf("remove dependency: %v", err)), nil
 	}
 	return toolResultJSON(map[string]string{
