@@ -87,7 +87,7 @@ For **destructive operations** (file deletion, directory removal), route through
    * Search for each domain class and function found in the test to locate the source files in `src/` containing the `panic("not implemented")` stubs that require attention.
    * Search for the feature's key concepts to find related code and prior decisions that inform the implementation.
    * Use glob to discover available modules in specific packages.
-3. Read `.github/copilot-instructions.md` and `.github/agents/go-engineer.agent.md` (if it exists) for project coding standards and Python-specific conventions.
+3. Read `.github/copilot-instructions.md` and `.github/agents/subagents/go-engineer.agent.md` (if it exists) for project coding standards and Python-specific conventions.
 4. `broadcast` at `info` level: `[BUILD] Starting task {task-id}: {harness-cmd}` with a summary of the test scenarios and stub files.
 
 ### Step 2: Mechanical Feedback Loop (Actor-Critic)
@@ -100,7 +100,7 @@ Execute the following loop with a **hard limit of 5 attempts**:
 3. **If it fails** (exit code != 0):
    a. Capture the raw output (import errors, type errors, or assertion failures).
    b. `broadcast` the failure summary at `warning` level.
-   c. **Instruction reinforcement**: Read `.github/agents/go-engineer.agent.md` (if it exists) or `.github/copilot-instructions.md` coding standards section to refresh project conventions before implementing the fix. `broadcast` at `info` level: `[REINFORCE] Coding standards refreshed for attempt {N}/5`.
+   c. **Instruction reinforcement**: Read `.github/agents/subagents/go-engineer.agent.md` (if it exists) or `.github/copilot-instructions.md` coding standards section to refresh project conventions before implementing the fix. `broadcast` at `info` level: `[REINFORCE] Coding standards refreshed for attempt {N}/5`.
    d. Analyze the error output and implement the fix:
       * **Import errors**: Fix missing packages, incorrect imports, circular imports in the `internal/` stubs.
       * **Panic (not implemented)**: Implement the underlying logic inside the `internal/` stubs to make the harness pass. Replace the `panic("not implemented")` markers with real logic.

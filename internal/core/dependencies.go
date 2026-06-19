@@ -16,12 +16,17 @@ import (
 // rebuild (sync_index / Rehydrate clears item_deps and repopulates it solely
 // from frontmatter). If the frontmatter write fails, the cache insert is rolled
 // back to keep the two representations consistent.
+//
+// Note: only the edge itself is durable. The frontmatter dependencies list
+// records target IDs without a dep_type, so a non-"blocks" depType is honored
+// only in the live cache until the next Rehydrate, which rebuilds every edge as
+// "blocks". Callers must not rely on a custom depType surviving sync_index.
 func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depType string) error {
 	if depType == "" {
 		depType = "blocks"
 	}
 	if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
-		return err
+		return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
 	}
 
 	artifact, err := findArtifact(ctx, ws, itemID)
@@ -69,7 +74,7 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 	}
 
 	if err := db.DeleteDependency(ctx, ws.DB, itemID, dependsOn); err != nil {
-		return err
+		return fmt.Errorf("remove dependency %s->%s: %w", itemID, dependsOn, err)
 	}
 
 	artifact, err := findArtifact(ctx, ws, itemID)

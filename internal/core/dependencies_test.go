@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -95,11 +96,11 @@ func artifactFilePath(t *testing.T, ws *core.Workspace, id string) string {
 		}
 		data, readErr := os.ReadFile(p)
 		if readErr != nil {
-			return nil
+			return fmt.Errorf("read %s: %w", p, readErr)
 		}
 		fm, _, parseErr := models.ParseFrontmatter(string(data))
 		if parseErr != nil {
-			return nil
+			return fmt.Errorf("parse frontmatter %s: %w", p, parseErr)
 		}
 		if idv, _ := fm["id"].(string); idv == id {
 			found = p

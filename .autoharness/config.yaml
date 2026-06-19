@@ -30,10 +30,6 @@ docs:
     closure: closure
     design_docs: design-docs
     product_specs: product-specs
-model_routing:
-  tier1: "Claude Haiku 4.5"
-  tier2: "Claude Sonnet 4.6"
-  tier3: "Claude Opus 4.6"
 primitives:
   - 1
   - 2
@@ -63,9 +59,8 @@ model_routing:
     model: claude-opus-4.8              # Frontier: planning, architecture, analysis (e.g., claude-opus-4.6)
     reasoning_effort: "high"
     model_provider: "anthropic"
-    model_family: "claude-opus-4.8 "
+    model_family: "claude-opus-4.8"
   orchestrator:
     model_family: "claude-opus-4.8"     # Orchestrator model override (default: claude-opus-4.8)
     reasoning_effort: "high"
     model_provider: "anthropic"
-    model_family: "claude-opus-4.8 "
