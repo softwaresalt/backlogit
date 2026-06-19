@@ -7,8 +7,8 @@ model_routing: "Tier 1 (Fast/Cheap)"  # DEPRECATED — use model_tier
 model_tier: 1
 max_subagent_tier: 1
 reasoning_effort: "low"
-model_provider: "anthropic"
-model_family: "claude-haiku-4.5"
+model_provider: "Anthropic"
+model_family: "Claude Haiku 4.5"
 subagent_depth: 0
 ---
 
