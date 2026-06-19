@@ -87,7 +87,7 @@ For **destructive operations** (file deletion, directory removal), route through
    * Search for each domain class and function found in the test to locate the source files in `src/` containing the `panic("not implemented")` stubs that require attention.
    * Search for the feature's key concepts to find related code and prior decisions that inform the implementation.
    * Use glob to discover available modules in specific packages.
-3. Read `.github/copilot-instructions.md` and `.github/agents/subagents/go-engineer.agent.md` (if it exists) for project coding standards and Python-specific conventions.
+3. Read `.github/copilot-instructions.md` and `.github/agents/subagents/go-engineer.agent.md` (if it exists) for project coding standards and Go-specific conventions.
 4. `broadcast` at `info` level: `[BUILD] Starting task {task-id}: {harness-cmd}` with a summary of the test scenarios and stub files.
 
 ### Step 2: Mechanical Feedback Loop (Actor-Critic)
