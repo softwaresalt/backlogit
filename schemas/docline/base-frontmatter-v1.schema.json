@@ -38,6 +38,7 @@
     },
     "ingested_at": {
       "format": "date-time",
+      "minLength": 1,
       "title": "Ingested At",
       "type": "string"
     },
