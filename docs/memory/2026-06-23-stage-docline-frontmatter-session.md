@@ -43,9 +43,10 @@ T2←T1; T4←T1,T2,T3; T5←T3,T4; T6←T4,T5; T7←T6; T8←T6,T7; T9←T2,T7;
 Critical path: T1→T2→T4→T5→T6→T7→T9→T10. No cycles.
 
 ## Key mechanics learned (durable)
-- `backlogit dep add` writes ONLY to the index `item_deps` table; `backlogit sync` rebuilds
-  the index from files and WIPES index-only edges. Durable dependencies MUST be written as a
-  `dependencies:` list in each task file's YAML frontmatter (then `sync`). This was the fix.
+- `backlogit dep add` (via `core.AddDependency`, `internal/core/dependencies.go`) persists each
+  edge to BOTH the index `item_deps` table AND the source task file's `dependencies:` YAML
+  frontmatter list, so the edge survives `backlogit sync` / rehydration. No manual frontmatter
+  edit is required.
 - `backlogit add --section name=value` only honors `description`; acceptance criteria must be
   added via `backlogit update <id> --section "Acceptance Criteria=..."` (managed section markers).
 - `backlogit shipment create --items a,b,c` accepts the full membership at create time
@@ -53,7 +54,7 @@ Critical path: T1→T2→T4→T5→T6→T7→T9→T10. No cycles.
 - `backlogit stash archive <id>` archives a consumed entry; no promotion-target flag, so the
   forward reference was appended to the entry text via `stash edit` before archiving.
 
-## Resolved design decisions (the 6 questions)
+## Design decisions (proposed defaults; Q1 `ingested_at` / Q2 `source` ownership pending T2 operator sign-off)
 1. Scope = `docs/**` minus `docs/memory/**` & `docs/archive/**`, plus README/AGENTS/ARCHITECTURE;
    exclude `.github/**` (autoharness-generated, conflicting prompt-artifact schema) and `prompt.md`.
 2. Authoring/ingestion profile split: repo authors {title, doc_type, source, description}; pipeline

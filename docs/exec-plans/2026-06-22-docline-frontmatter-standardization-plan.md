@@ -356,8 +356,6 @@ Edges (blocked-by):
 | Operator policy (Q1/Q2) not confirmed | T2 gate blocks T9; T4/T5 consume the recorded decision |
 | `.github` regen clobbers any standardization | `.github/**` excluded from scope globs (T1/T4) |
 | CI gate flips red before tree is compliant | T10 depends on T9; gate added only after the tree is migrated |
-| `.github` regen clobbers any standardization | `.github/**` excluded from scope (T1 globs) |
-| CI gate flips red before tree is compliant | T8 depends on T7; gate is added only after the tree is migrated |
 
 ## Plan Hardening Signals (REQUIRED)
 
