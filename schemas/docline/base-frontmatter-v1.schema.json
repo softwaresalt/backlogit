@@ -11,6 +11,7 @@
     },
     "content_sha256": {
       "default": "",
+      "pattern": "^([a-fA-F0-9]{64})?$",
       "title": "Content Sha256",
       "type": "string"
     },
