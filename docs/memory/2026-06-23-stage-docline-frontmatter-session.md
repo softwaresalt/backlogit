@@ -9,8 +9,6 @@ feature_id: 065-F
 shipment_id: 065-S
 ---
 
-# Stage Session Checkpoint — docline Frontmatter Standardization
-
 ## Outcome
 Stash entry `29A71E9C` (high, feature) was taken through the full Stage pipeline and
 harvested into a QUEUED backlog feature with a decomposed, dependency-wired task graph
