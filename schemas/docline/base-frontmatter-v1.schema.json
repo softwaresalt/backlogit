@@ -1,0 +1,70 @@
+{
+  "$id": "https://docline.softwaresalt.dev/schema/base-frontmatter/v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Common frontmatter fields shared across all document types.\n\nThe v1 schema extends the original fields with five additions required by\nthe graphtor-docs ingestion contract plus a ``docline`` namespace for\ndocline-only metadata that must not leak into the shared contract surface.\n\nAttributes:\n    title: Human-readable document title. Must be non-empty.\n    source: Origin URI or path of the document. Must be non-empty.\n    ingested_at: Timestamp when the document was ingested.\n    doc_type: Document type identifier. Must be non-empty.\n    description: Short human-readable description. Defaults to \"\".\n    content_sha256: SHA-256 hex digest over the assembled markdown body\n        bytes. Populated by the assemble pipeline; defaults to \"\".\n    source_path: Project-relative POSIX path of the source artifact.\n        Populated by the assemble pipeline; defaults to \"\".\n    chunk_strategy: Chunk-boundary strategy identifier. Defaults to\n        ``\"h1-h2-h3\"``.\n    schema_version: Semantic version of the frontmatter contract.\n        Defaults to ``\"1.0\"``.\n    docline: Optional namespace dict for docline-only metadata. Keys placed\n        here are intentionally NOT promoted to top-level frontmatter fields\n        so they cannot be mistaken for graphtor-contract fields.",
+  "properties": {
+    "chunk_strategy": {
+      "default": "h1-h2-h3",
+      "title": "Chunk Strategy",
+      "type": "string"
+    },
+    "content_sha256": {
+      "default": "",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "doc_type": {
+      "title": "Doc Type",
+      "type": "string"
+    },
+    "docline": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Docline"
+    },
+    "ingested_at": {
+      "format": "date-time",
+      "title": "Ingested At",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "source_path": {
+      "default": "",
+      "title": "Source Path",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "source",
+    "ingested_at",
+    "doc_type"
+  ],
+  "title": "BaseFrontmatter",
+  "type": "object"
+}
