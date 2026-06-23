@@ -19,6 +19,7 @@
       "type": "string"
     },
     "doc_type": {
+      "minLength": 1,
       "title": "Doc Type",
       "type": "string"
     },
@@ -46,6 +47,7 @@
       "type": "string"
     },
     "source": {
+      "minLength": 1,
       "title": "Source",
       "type": "string"
     },
@@ -55,6 +57,7 @@
       "type": "string"
     },
     "title": {
+      "minLength": 1,
       "title": "Title",
       "type": "string"
     }
