@@ -47,12 +47,21 @@
 
 ## Key technical findings (carry forward)
 
-- **`dep add` does NOT persist to canonical `.md` frontmatter** — it only mutates
-  the disposable SQLite index, which `sync` (rebuild from canonical) wipes. Durable
-  deps must be written into the item `.md` `dependencies:` frontmatter list (then
-  synced). This is itself an index-vs-canonical drift symptom — flag for operator
-  as a possible tooling gap. 066 edges were persisted via frontmatter edit + sync;
-  verified in `item_deps`.
+- **`dep add` frontmatter persistence / stale binary:** The repo-root prebuilt
+  `backlogit.exe` (built 2026-05-11) is STALE relative to source — it predates the
+  `core.AddDependency` frontmatter-persistence fix (`internal/core/dependencies.go`,
+  committed 2026-06-19, with regression test
+  `TestAddDependency_PersistsToFrontmatterAndSurvivesSync`). With the stale binary,
+  `dep add` only mutated the disposable SQLite index, so `sync` (rebuild from
+  canonical) wiped the 066 edges — which is what was observed empirically. In
+  CURRENT source, `AddDependency` writes the target IDs into the item `.md`
+  `dependencies:` frontmatter (source of truth) and survives sync; only the
+  `dep_type` is non-durable (frontmatter stores target IDs without a type, so a
+  non-`blocks` type is rebuilt as `blocks` on Rehydrate). Workaround applied: the
+  066 edges were written directly into frontmatter and verified in `item_deps`
+  after sync — equivalent to what a current-source `dep add` produces (all edges
+  are `blocks`, so no dep_type loss). **Operator action: rebuild/refresh the
+  repo-root `backlogit.exe` from source so CLI behavior matches the code.**
 - Detection (doctor `CheckDuplicates`) already runs by default — U1 is EXTEND not
   build-new. U2 must guard the `NextTypedHierarchicalID(parentID="")` root path
   (the actual bug site), full `artifactSearchDirs` scope, fail-loud. U3 must key
@@ -64,7 +73,8 @@
 1. Durable-counter persistence model (carried with `C55C5158`; non-blocking).
 2. Manifest-drift repair ownership — Stage-planned + Ship-executed vs operator
    direct (carried with `B8FF7590`).
-3. `dep add` non-persistence to canonical frontmatter — possible tooling gap.
+3. Stale repo-root `backlogit.exe` (2026-05-11) lags source (2026-06-19 dep
+   persistence fix). Rebuild it so `dep add` persists to frontmatter directly.
 
 ## Next steps (landing)
 

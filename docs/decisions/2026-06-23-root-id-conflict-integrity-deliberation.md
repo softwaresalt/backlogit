@@ -284,8 +284,8 @@ manifests.
 
 | Risk | Mitigation |
 |---|---|
-| Pre-write guard adds a filesystem scan to the hot create path | Scope the scan to the two canonical dirs (queue+archive), reuse the doctor walk helper, and add only on the standalone/top-level path |
+| Pre-write guard adds a filesystem scan to the hot create path | Scan the full canonical `artifactSearchDirs(ws)` set (parity with the doctor audit, to prevent detection/prevention divergence across registry-routed dirs), reuse the doctor walk helper, and guard at the single post-resolution chokepoint covering both the hierarchical-root and standalone allocators |
 | Archive refusal breaks the legitimate same-path in-place archive | Unit 3 must preserve the existing `currentPath == archivePath` handling and only refuse on a *different* item sharing the filename |
 | Rehydrate change risks the atomic transaction (prior incident) | Unit 4 adds detection at collection time only; transaction boundary untouched; regression test asserts row count preserved |
-| Durable counter diverges from canonical files | Seed/repair the counter from the canonical max across queue+archive; doctor audit can reconcile |
+| Durable counter diverges from canonical files | Seed/repair the counter from the canonical max across all `artifactSearchDirs` (queue + archive + routed dirs); doctor audit can reconcile |
 | Over-scoping into the 060/061/062 repair | Explicitly routed to a separate stash entry; Stage does not mutate manifests |
