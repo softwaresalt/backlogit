@@ -24,6 +24,7 @@ internal/cli/            ← CLI commands (cobra subcommands per feature domain)
 internal/core/           ← Domain logic: metadata catalog, queue, config, types
 internal/db/             ← SQLite database layer: schema, migrations, queries
 internal/mcp/            ← MCP server: tool registrations, handlers
+internal/docline/        ← Documentation frontmatter contract: codec, classifier, normalizer, lint/migrate service
 internal/models/         ← Shared domain models (work item types, statuses)
 internal/telemetry/      ← Telemetry harvesting: JSONL fact tables, schema reference
   ↓
@@ -69,6 +70,7 @@ Cross-cutting rules:
 | `backlogit queue view` | View prioritized work queue |
 | `backlogit shipment` | Shipment lifecycle (create, claim, ship) |
 | `backlogit stash` | Stash entry management |
+| `backlogit docs` | Lint/migrate documentation frontmatter (docline base schema) |
 | `backlogit telemetry schema` | Print fact table and SQLite telemetry schemas |
 
 ### MCP Tools (`internal/mcp/`)
@@ -81,6 +83,7 @@ discovery tools include:
 | `backlogit_get_metadata_catalog` | Unified workspace metadata including `sql_schema` |
 | `backlogit_query_sql` | Read-only SQL against the SQLite index |
 | `backlogit_sync_index` | Rebuild the SQLite cache from Markdown |
+| `backlogit_docs_lint` / `_migrate` / `_scope` | Documentation frontmatter standardization (docline) |
 
 For the full tool inventory, call `backlogit_get_metadata_catalog` at runtime or see
 `docs/cli-reference/` for generated reference docs.
@@ -111,6 +114,31 @@ static instruction files for schema knowledge:
 * Schema is maintained as a manually curated registry with a drift-detection test that
   validates field names against Go struct JSON tags.
 * Exposed via `backlogit telemetry schema [--format text|json|markdown]`.
+
+### Documentation Frontmatter Standard (`internal/docline/`)
+
+Documentation in the durable knowledge surface (`docs/**`, plus `README.md` and
+`AGENTS.md`) is standardized on the **docline base frontmatter v1** contract
+(`schemas/docline/base-frontmatter-v1.schema.json`) so it is ingestible by the
+`graphtor-docs` pipeline. The `internal/docline/` package is the single
+application service behind both the CLI and MCP surfaces:
+
+* **codec** — a body-preserving Markdown frontmatter reader/writer (CRLF and
+  body bytes are never mutated; only the frontmatter block is rewritten).
+* **policy + classifier** — the closed `doc_type` taxonomy, path → `doc_type`
+  map, scope globs, and contract-field set.
+* **validator** — authoring vs ingestion validation profiles.
+* **normalizer** — idempotent rewrite to the canonical authoring profile,
+  folding heterogeneous legacy keys under the `docline` namespace (move, never
+  drop) and seeding repo-derived fields.
+* **service** — `LintTree` / `PlanMigration` / `ApplyMigration` over the
+  in-scope tree, path-contained via `core.SafeResolve`, with atomic writes.
+
+Surfaces: `backlogit docs lint|migrate|scope|classify` (CLI) and
+`backlogit_docs_lint` / `backlogit_docs_migrate` / `backlogit_docs_scope` (MCP,
+with apply gated server-side). See the
+[authoring guide](docline-frontmatter-authoring-guide.md) for the field
+reference and workflow.
 
 ### SQLite Index (`internal/db/`)
 
@@ -146,6 +174,7 @@ Use `backlogit_get_metadata_catalog` as the runtime source for current table def
 | Design philosophy and CQRS rationale | `docs/research/Backlogit-Architecture-Design.md` |
 | SQL schema table reference | `.github/instructions/backlogit-sql-schema.instructions.md` |
 | CLI reference | `docs/cli-reference/` |
+| Documentation frontmatter authoring | `docs/docline-frontmatter-authoring-guide.md` |
 | Compound learnings | `docs/compound/` |
 | Decisions and spike findings | `docs/decisions/` |
 | Workflow policies | `.github/policies/workflow-policies.md` |
