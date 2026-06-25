@@ -59,8 +59,10 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 			}
 			a, _, parseErr := parseFile(path)
 			if parseErr != nil {
-				// Skip unparseable files: the doctor's orphan/parse audit reports
-				// these separately; the canonical-ID scan only indexes valid refs.
+				// Skip unparseable files: without parseable frontmatter we cannot
+				// extract a canonical ID, so they cannot participate in ID
+				// duplicate/collision detection. They are intentionally excluded
+				// here rather than indexed or treated as collisions.
 				return nil
 			}
 			if a.ID == "" {
