@@ -121,6 +121,14 @@ func TestDocsMigrate_ApplyRequiresYesAndPath(t *testing.T) {
 	// --apply --yes without --path (refuses whole-tree apply)
 	_, err = runDocs(t, root, "docs", "migrate", "--apply", "--yes")
 	require.Error(t, err)
+
+	// --apply --yes with a path that resolves to the workspace root must also be
+	// refused (closes the `--path .` / `--path docs/..` whole-tree bypass).
+	_, err = runDocs(t, root, "docs", "migrate", "--apply", "--yes", "--path", ".")
+	require.Error(t, err, "--path . must be refused as a whole-tree apply")
+
+	_, err = runDocs(t, root, "docs", "migrate", "--apply", "--yes", "--path", "docs/..")
+	require.Error(t, err, "--path docs/.. (resolves to root) must be refused")
 }
 
 func TestDocsMigrate_ApplyWritesScopedPath(t *testing.T) {

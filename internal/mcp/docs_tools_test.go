@@ -110,6 +110,20 @@ func TestDocsMigrateTool_ApplyRequiresPathWhenEnabled(t *testing.T) {
 	res := callDocsTool(t, s.handleDocsMigrate, map[string]any{"apply": true})
 	assert.True(t, res.IsError)
 	assert.Contains(t, docsResultText(t, res), "validation_failed")
+
+	// apply enabled with path="." (resolves to workspace root) must also be
+	// refused — closes the whole-tree apply bypass an agent could trigger.
+	badPath := filepath.Join(root, "docs", "reviews", "bad.md")
+	before, err := os.ReadFile(badPath)
+	require.NoError(t, err)
+
+	res = callDocsTool(t, s.handleDocsMigrate, map[string]any{"apply": true, "path": "."})
+	assert.True(t, res.IsError, `path="." must be refused as a whole-tree apply`)
+	assert.Contains(t, docsResultText(t, res), "validation_failed")
+
+	after, err := os.ReadFile(badPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "no writes on refused whole-tree apply")
 }
 
 func TestDocsMigrateTool_ApplyWritesWhenEnabledAndScoped(t *testing.T) {

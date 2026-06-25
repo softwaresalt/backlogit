@@ -141,3 +141,40 @@ func TestNormalize_NoFrontmatterCreatesContractBlock(t *testing.T) {
 	assert.Equal(t, "docs/research/z.md", md.Frontmatter["source"])
 	assert.Equal(t, "# Just a body\n\nNo frontmatter.\n", string(md.Body))
 }
+
+func TestNormalize_PreservesScalarDoclineValue(t *testing.T) {
+	t.Parallel()
+	// A malformed/legacy scalar `docline:` value must be preserved (move,
+	// never drop) rather than silently discarded by the map type assertion.
+	raw := "---\ntitle: Doc\ndocline: legacy-scalar\n---\nBody.\n"
+	got := normalizeOnce(t, "docs/decisions/x.md", raw)
+
+	md, err := Decode([]byte(got))
+	require.NoError(t, err)
+	dl, ok := md.Frontmatter["docline"].(map[string]any)
+	require.True(t, ok, "docline namespace materialized as a map")
+	assert.Equal(t, "legacy-scalar", dl["docline"], "scalar docline value preserved under docline namespace")
+
+	// And it must be idempotent.
+	second := normalizeOnce(t, "docs/decisions/x.md", got)
+	assert.Equal(t, got, second, "scalar-docline normalization is idempotent")
+}
+
+func TestNormalize_PreservesCollidingFoldedKeys(t *testing.T) {
+	t.Parallel()
+	// A top-level non-contract key that collides with an existing docline key
+	// must not overwrite (drop) the nested value: both are preserved.
+	raw := "---\ntitle: Doc\ntags: top-value\ndocline:\n  tags: nested-value\n---\nBody.\n"
+	got := normalizeOnce(t, "docs/decisions/x.md", raw)
+
+	md, err := Decode([]byte(got))
+	require.NoError(t, err)
+	dl, ok := md.Frontmatter["docline"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "nested-value", dl["tags"], "existing nested value retained")
+	assert.Equal(t, "top-value", dl["tags_top1"], "colliding top-level value preserved, not dropped")
+
+	// Idempotent: no top-level tags remains to re-collide on a second pass.
+	second := normalizeOnce(t, "docs/decisions/x.md", got)
+	assert.Equal(t, got, second, "collision-preserving normalization is idempotent")
+}

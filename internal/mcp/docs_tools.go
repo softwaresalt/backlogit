@@ -78,8 +78,8 @@ func (s *Server) handleDocsMigrate(_ context.Context, request mcplib.CallToolReq
 		if !docsApplyEnabled() {
 			return applyNotPermitted(fmt.Sprintf("docs migrate apply is disabled; set %s=1 to enable server-side writes", docsApplyAllowEnv)), nil
 		}
-		if path == "" {
-			return ValidationFailed("docs migrate apply requires an explicit path (whole-tree apply is refused)"), nil
+		if err := docline.ValidateApplyPath(s.RootPath, path); err != nil {
+			return ValidationFailed(err.Error()), nil
 		}
 		plan, err := docline.PlanMigration(opts)
 		if err != nil {

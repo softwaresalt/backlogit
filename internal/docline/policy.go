@@ -18,6 +18,11 @@ var (
 	// ErrBodyMutated indicates a migration changed body bytes (a hard invariant
 	// violation; migration must only change the frontmatter block).
 	ErrBodyMutated = errors.New("docline: body bytes mutated")
+	// ErrWholeTreeApply indicates an apply was attempted without a real
+	// sub-path scope (empty, or a path that resolves to the workspace root). A
+	// single apply invocation must never be able to rewrite the entire docs
+	// surface — callers must narrow apply to an explicit sub-path.
+	ErrWholeTreeApply = errors.New("docline: whole-tree apply refused")
 )
 
 // DocType is a member of the closed controlled vocabulary of document types.

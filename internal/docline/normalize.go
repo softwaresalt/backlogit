@@ -30,17 +30,26 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 
 	// Build the docline namespace: start from any existing docline map, then
 	// fold every non-contract top-level key into it (move, never drop).
+	// Collisions and a non-map existing docline value are preserved without
+	// dropping data.
 	docline := map[string]any{}
-	if existing, ok := fm["docline"].(map[string]any); ok {
+	switch existing := fm["docline"].(type) {
+	case map[string]any:
 		for k, v := range existing {
 			docline[k] = v
 		}
+	case nil:
+		// No existing docline namespace.
+	default:
+		// A non-map docline value (malformed/legacy input) is preserved, never
+		// silently dropped.
+		foldUnderDocline(docline, "docline", existing)
 	}
 	for k, v := range fm {
 		if k == "docline" || isContractField(k) {
 			continue
 		}
-		docline[k] = v
+		foldUnderDocline(docline, k, v)
 	}
 
 	// Read the contract surface, then override the repo-derived fields.
@@ -63,4 +72,22 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 		return nil, fmt.Errorf("docline.Normalize: encode %s: %w", relPath, err)
 	}
 	return encoded, nil
+}
+
+// foldUnderDocline stores val under key in the docline namespace without ever
+// overwriting (dropping) an existing value. On collision the incoming value is
+// preserved under a deterministic suffixed key so the fold remains lossless and
+// idempotent across repeated normalization runs.
+func foldUnderDocline(ns map[string]any, key string, val any) {
+	if _, exists := ns[key]; !exists {
+		ns[key] = val
+		return
+	}
+	for i := 1; ; i++ {
+		alt := fmt.Sprintf("%s_top%d", key, i)
+		if _, exists := ns[alt]; !exists {
+			ns[alt] = val
+			return
+		}
+	}
 }

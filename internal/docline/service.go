@@ -254,9 +254,40 @@ func bodyBytesChanged(before, after []byte) bool {
 	return !bytes.Equal(mb.Body, ma.Body)
 }
 
+// ValidateApplyPath enforces that a migration apply is narrowed to a real
+// sub-path of the workspace. It rejects an empty scope and any path that
+// resolves to the workspace root itself (e.g. ".", "docs/.."), closing the
+// whole-tree apply rail that the per-surface CLI/MCP "path is required" guards
+// miss because core.SafeResolve treats the root as a valid in-bounds target.
+// Both the CLI and MCP apply boundaries call this so they cannot drift.
+func ValidateApplyPath(workspaceRoot, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("docline.ValidateApplyPath: apply requires an explicit sub-path: %w", ErrWholeTreeApply)
+	}
+	abs, err := core.SafeResolve(workspaceRoot, path)
+	if err != nil {
+		return fmt.Errorf("docline.ValidateApplyPath: %w", ErrPathEscapesWorkspace)
+	}
+	absRoot, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("docline.ValidateApplyPath: resolve root: %w", err)
+	}
+	if abs == filepath.Clean(absRoot) {
+		return fmt.Errorf("docline.ValidateApplyPath: path %q resolves to the workspace root: %w", path, ErrWholeTreeApply)
+	}
+	return nil
+}
+
 // atomicWrite writes data to path via a same-directory temp file and rename so a
-// partial write can never leave a corrupt document.
+// partial write can never leave a corrupt document. The temp file is chmod'd to
+// match the original file's mode (or 0644 for a new file) so an in-place rewrite
+// never silently downgrades permissions from the 0600 CreateTemp default.
 func atomicWrite(path string, data []byte) error {
+	mode := os.FileMode(0o644)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".docline-*.tmp")
 	if err != nil {
@@ -268,6 +299,10 @@ func atomicWrite(path string, data []byte) error {
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)

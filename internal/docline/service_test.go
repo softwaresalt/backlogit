@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -183,3 +184,64 @@ func TestApplyMigration_RejectsBodyMutation(t *testing.T) {
 
 // guard against accidental import removal
 var _ = errors.Is
+
+func TestValidateApplyPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cases := []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{"empty is whole-tree", "", ErrWholeTreeApply},
+		{"dot resolves to root", ".", ErrWholeTreeApply},
+		{"dotdot back to root", "docs/..", ErrWholeTreeApply},
+		{"escape outside root", "../escape", ErrPathEscapesWorkspace},
+		{"scoped sub-path allowed", "docs/decisions", nil},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateApplyPath(root, tc.path)
+			if tc.wantErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestAtomicWrite_PreservesExistingFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not represented on Windows filesystems")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	require.NoError(t, os.WriteFile(path, []byte("orig"), 0o644))
+
+	require.NoError(t, atomicWrite(path, []byte("updated")))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "in-place rewrite preserves original mode, not the 0600 temp default")
+	assert.Equal(t, "updated", readDoc(t, dir, "doc.md"))
+}
+
+func TestAtomicWrite_NewFileDefaultsTo0644(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not represented on Windows filesystems")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new.md")
+
+	require.NoError(t, atomicWrite(path, []byte("data")))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "new file gets the 0644 default, not 0600")
+}

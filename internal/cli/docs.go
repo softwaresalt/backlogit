@@ -105,8 +105,8 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 				if !yes {
 					return fmt.Errorf("docs migrate --apply requires --yes to confirm writes")
 				}
-				if path == "" {
-					return fmt.Errorf("docs migrate --apply requires an explicit --path (whole-tree apply is refused)")
+				if err := docline.ValidateApplyPath(root, path); err != nil {
+					return fmt.Errorf("docs migrate --apply requires an explicit scoped --path (whole-tree apply is refused): %w", err)
 				}
 				plan, err := docline.PlanMigration(opts)
 				if err != nil {
