@@ -143,6 +143,13 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 				return nil, fmt.Errorf("archive %q: destination %q is occupied by a distinct item: %w",
 					itemID, workspaceRelativePath(ws.RootPath, archivePath), blerrors.ErrArchiveDestinationOccupied)
 			}
+		} else if !os.IsNotExist(statErr) {
+			// A non-not-exist stat error (permission/IO) means we cannot safely
+			// determine whether the destination is occupied. Fail loud with context
+			// rather than proceeding into a write that would fail in less clear ways,
+			// matching CreateArtifact's destination stat handling.
+			return nil, fmt.Errorf("archive %q: stat destination %q: %w",
+				itemID, workspaceRelativePath(ws.RootPath, archivePath), statErr)
 		}
 	}
 

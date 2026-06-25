@@ -240,6 +240,11 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					relPaths = append(relPaths, p)
 				}
 			}
+			// scanCanonicalArtifacts returns paths in filesystem-walk order, which
+			// is not guaranteed stable across runs. Sort so the finding description
+			// (which embeds relPaths) is fully deterministic, matching the sorted
+			// id iteration above.
+			sort.Strings(relPaths)
 			report.Findings = append(report.Findings, DoctorFinding{
 				Type:        FindingDuplicateID,
 				ArtifactID:  id,
