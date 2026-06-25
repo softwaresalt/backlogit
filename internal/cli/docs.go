@@ -67,12 +67,7 @@ func newDocsLintCommand(cwd *string) *cobra.Command {
 			}
 			valid := len(findings) == 0
 			if resolveFormat(format) == "json" {
-				payload := map[string]any{
-					"valid":           valid,
-					"violation_count": len(findings),
-					"findings":        findingsPayload(findings),
-				}
-				if err := writeDocsJSON(cmd.OutOrStdout(), payload); err != nil {
+				if err := writeDocsJSON(cmd.OutOrStdout(), docline.NewLintReport(findings)); err != nil {
 					return err
 				}
 			} else {
@@ -182,61 +177,11 @@ func newDocsClassifyCommand(cwd *string) *cobra.Command {
 	return cmd
 }
 
-// findingPayload is the pinned JSON shape for a lint finding, shared with the
-// MCP docs tools (065.008-T) for surface parity.
-type findingPayload struct {
-	File     string `json:"file"`
-	Field    string `json:"field"`
-	Rule     string `json:"rule"`
-	Severity string `json:"severity"`
-	Fix      string `json:"fix"`
-}
-
-func findingsPayload(findings []docline.Finding) []findingPayload {
-	out := make([]findingPayload, 0, len(findings))
-	for _, f := range findings {
-		out = append(out, findingPayload{
-			File:     f.File,
-			Field:    f.Field,
-			Rule:     f.Rule,
-			Severity: string(f.Severity),
-			Fix:      f.Fix,
-		})
-	}
-	return out
-}
-
-// changePayload is the pinned JSON shape for a migration change.
-type changePayload struct {
-	File             string `json:"file"`
-	Action           string `json:"action"`
-	BodyBytesChanged bool   `json:"body_bytes_changed"`
-}
-
-func changesPayload(changes []docline.Change) []changePayload {
-	out := make([]changePayload, 0, len(changes))
-	for _, c := range changes {
-		out = append(out, changePayload{
-			File:             c.File,
-			Action:           string(c.Action),
-			BodyBytesChanged: c.BodyBytesChanged,
-		})
-	}
-	return out
-}
-
-// writeMigrateResult renders a migration plan (and optional apply result).
+// writeMigrateResult renders a migration plan (and optional apply result). The
+// JSON form uses the shared docline report types for CLI↔MCP parity.
 func writeMigrateResult(cmd *cobra.Command, format string, plan docline.MigrationPlan, res *docline.Result, dryRun bool) error {
 	if resolveFormat(format) == "json" {
-		payload := map[string]any{
-			"dry_run": dryRun,
-			"changes": changesPayload(plan.Changes),
-		}
-		if res != nil {
-			payload["applied"] = res.Applied
-			payload["skipped"] = res.Skipped
-		}
-		return writeDocsJSON(cmd.OutOrStdout(), payload)
+		return writeDocsJSON(cmd.OutOrStdout(), docline.NewMigrateReport(plan, res, dryRun))
 	}
 
 	out := cmd.OutOrStdout()
