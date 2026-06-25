@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // canonical_scan.go (066.001-T / Unit 1) provides a single reusable, recursive
@@ -47,6 +48,13 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 				return walkErr
 			}
 			if d.IsDir() || filepath.Ext(path) != ".md" {
+				return nil
+			}
+			// Mirror Rehydrate's contract: the legacy multi-entry stash file is
+			// not a canonical artifact and must never participate in ID
+			// duplicate/collision detection, even if a future stash format gains
+			// a top-level id frontmatter field.
+			if strings.EqualFold(filepath.Base(path), ".stash.md") {
 				return nil
 			}
 			a, _, parseErr := parseFile(path)
