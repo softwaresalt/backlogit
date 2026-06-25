@@ -31,11 +31,33 @@ type artifactRef struct {
 // and returns a map from artifact ID to every canonical .md file that declares
 // that ID. Files that fail to parse or carry an empty ID are skipped. Returning
 // every ref (not just the first) lets callers detect duplicate / colliding IDs
-// across the queue and archive directories.
+// across the queue and archive directories. The fixed .backlogit/archive
+// directory is always included in the scan set (see below) so cross-boundary
+// root-ID collisions are detectable even when the registry is missing.
 func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 	dirs, err := artifactSearchDirs(ws)
 	if err != nil {
 		return nil, fmt.Errorf("resolve artifact search dirs: %w", err)
+	}
+
+	// ArchiveItem always relocates items into the fixed .backlogit/archive
+	// directory, regardless of registry configuration. artifactSearchDirs only
+	// surfaces the archive dir via registry.yaml when ws.Config != nil, so a
+	// missing/unreadable registry (a degraded-but-loadable workspace) would drop
+	// the archive from the scan set -- letting a queued + an archived item share
+	// a root ID undetected, exactly the 066-F data-loss path this scanner exists
+	// to close. Force the canonical archive directory into the scan set so the
+	// collision guard and doctor audit never go blind to already-archived IDs.
+	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
+	archivePresent := false
+	for _, d := range dirs {
+		if filepath.Clean(d) == filepath.Clean(archiveDir) {
+			archivePresent = true
+			break
+		}
+	}
+	if !archivePresent {
+		dirs = append(dirs, archiveDir)
 	}
 
 	refs := make(map[string][]artifactRef)

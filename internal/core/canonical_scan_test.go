@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,4 +92,54 @@ Body.
 	require.NoError(t, err)
 	require.Len(t, refs["001.001-T"], 1, "scanner must recurse into nested hierarchy directories")
 	assert.Equal(t, "001-F", refs["001.001-T"][0].parentID)
+}
+
+// TestScanCanonicalArtifacts_IncludesArchiveWhenRegistryOmitsIt guards the
+// 066-F core invariant in the degraded-config case: when ws.Config is non-nil
+// and a registry.yaml loads successfully but does NOT route the archive
+// directory (a custom/misconfigured registry), artifactSearchDirs surfaces only
+// the registry-listed dirs plus the queue root. Because ArchiveItem always
+// relocates into the fixed .backlogit/archive directory, the canonical scan
+// must still include the archive so a queued + an archived item sharing a root
+// ID is detected, rather than silently missed and later overwritten at archive
+// time.
+func TestScanCanonicalArtifacts_IncludesArchiveWhenRegistryOmitsIt(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	queueDir := filepath.Join(wsRoot, "queue")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(queueDir, 0o755))
+	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+
+	helperWriteArtifact(t, queueDir, "003-F.md", `---
+id: "003-F"
+title: "Queued feature"
+status: active
+artifact_type: feature
+level: 1
+---
+Body.
+`)
+	helperWriteArtifact(t, archiveDir, "003-F.md", `---
+id: "003-F"
+title: "Archived feature"
+status: archived
+artifact_type: feature
+level: 1
+---
+Body.
+`)
+
+	// A valid registry that routes only a non-archive directory. LoadRegistry
+	// succeeds, so artifactSearchDirs adds "review" + the queue root but NOT the
+	// archive. The scanner must force the fixed archive dir into the scan set
+	// regardless, or the collision guard goes blind to already-archived IDs.
+	registry := "directories:\n  - path: review\n    condition:\n      status:\n        - in-review\n"
+	require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "registry.yaml"), []byte(registry), 0o644))
+	ws := &Workspace{RootPath: tmp, Config: config.DefaultConfig()}
+
+	refs, err := scanCanonicalArtifacts(ws)
+	require.NoError(t, err)
+	require.Len(t, refs["003-F"], 2,
+		"archived 003-F must be discovered even when registry.yaml does not route the archive dir, or the collision guard goes blind to the archive")
 }
