@@ -2,6 +2,7 @@ package docline
 
 import (
 	"errors"
+	"sort"
 	"strings"
 )
 
@@ -199,4 +200,59 @@ func inScope(relPath string) bool {
 		return true
 	}
 	return strings.HasPrefix(relPath, "docs/")
+}
+
+// ScopeDescriptor is a serializable description of the docline scope and
+// taxonomy. It backs both `backlogit docs scope` (065.007-T) and the MCP
+// `backlogit_docs_scope` tool (065.008-T) so the two surfaces stay in parity.
+type ScopeDescriptor struct {
+	IncludeDirs  []string          `json:"include_dirs"`
+	IncludeFiles []string          `json:"include_files"`
+	ExcludeDirs  []string          `json:"exclude_dirs"`
+	ExcludeFiles []string          `json:"exclude_files"`
+	DocTypes     []string          `json:"doc_types"`
+	PathMap      map[string]string `json:"path_map"`
+	Profiles     []string          `json:"profiles"`
+}
+
+// Scope returns the active docline scope globs, taxonomy, path map, and the
+// validation profiles, as a deterministic, serializable descriptor.
+func Scope() ScopeDescriptor {
+	docTypes := make([]string, 0, len(knownDocTypes))
+	for _, dt := range KnownDocTypes() {
+		docTypes = append(docTypes, string(dt))
+	}
+
+	pathMap := make(map[string]string, len(pathRules)+len(fileOverrides))
+	for _, r := range pathRules {
+		pathMap[r.prefix] = string(r.docType)
+	}
+	for f, dt := range fileOverrides {
+		pathMap[f] = string(dt)
+	}
+
+	excludeDirs := append([]string(nil), scopeExcludeDirs...)
+	sort.Strings(excludeDirs)
+	excludeFiles := mapKeys(scopeExcludeFiles)
+	includeFiles := mapKeys(scopeIncludeFiles)
+
+	return ScopeDescriptor{
+		IncludeDirs:  []string{"docs/"},
+		IncludeFiles: includeFiles,
+		ExcludeDirs:  excludeDirs,
+		ExcludeFiles: excludeFiles,
+		DocTypes:     docTypes,
+		PathMap:      pathMap,
+		Profiles:     []string{string(ProfileAuthoring), string(ProfileIngestion)},
+	}
+}
+
+// mapKeys returns the sorted keys of a set.
+func mapKeys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
