@@ -1,6 +1,15 @@
 package docline
 
-import "path/filepath"
+import "strings"
+
+// toPOSIX normalizes any path separators to forward slashes deterministically
+// across platforms. filepath.ToSlash only rewrites the OS-native separator, so
+// a Windows-derived path (backslashes) reaching this code on Linux would keep
+// its backslashes; replacing explicitly makes classification and source
+// derivation platform-independent.
+func toPOSIX(relPath string) string {
+	return strings.ReplaceAll(relPath, `\`, "/")
+}
 
 // Classify returns the doc_type for a repo-relative POSIX path. Classification
 // is purely directory-based (longest-prefix), then explicit root-file
@@ -9,7 +18,7 @@ import "path/filepath"
 // `type` field never overrides it; the normalizer folds that legacy key under
 // docline.type (move, never drop).
 func Classify(relPath string) DocType {
-	return classifyDocType(filepath.ToSlash(relPath))
+	return classifyDocType(toPOSIX(relPath))
 }
 
 // DeriveSource returns the repo-relative POSIX `source` value for a path. Per
@@ -17,5 +26,5 @@ func Classify(relPath string) DocType {
 // Backslashes are converted to forward slashes so Windows-derived paths
 // normalize deterministically across platforms.
 func DeriveSource(relPath string) string {
-	return filepath.ToSlash(relPath)
+	return toPOSIX(relPath)
 }
