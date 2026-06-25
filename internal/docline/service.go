@@ -189,14 +189,22 @@ func collectInScopeDocs(root, subPath string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
-			return nil
-		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return err
 		}
 		relPosix := filepath.ToSlash(rel)
+		if d.IsDir() {
+			// Skip excluded subtrees (docs/memory/, docs/archive/, .github/)
+			// entirely rather than descending and filtering file-by-file.
+			if isExcludedDir(relPosix) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
+			return nil
+		}
 		if !inScope(relPosix) {
 			return nil
 		}

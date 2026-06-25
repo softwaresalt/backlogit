@@ -225,6 +225,23 @@ func inScope(relPath string) bool {
 	return strings.HasPrefix(relPath, "docs/")
 }
 
+// isExcludedDir reports whether a repo-relative POSIX directory path is within
+// (or equal to) an excluded subtree, so a tree walk can skip it wholesale via
+// filepath.SkipDir instead of descending into high-churn excluded directories
+// like docs/memory/ and docs/archive/.
+func isExcludedDir(relDir string) bool {
+	if relDir == "." || relDir == "" {
+		return false
+	}
+	rel := strings.TrimSuffix(relDir, "/") + "/"
+	for _, d := range scopeExcludeDirs {
+		if strings.HasPrefix(rel, d) {
+			return true
+		}
+	}
+	return false
+}
+
 // ScopeDescriptor is a serializable description of the docline scope and
 // taxonomy. It backs both `backlogit docs scope` (065.007-T) and the MCP
 // `backlogit_docs_scope` tool (065.008-T) so the two surfaces stay in parity.

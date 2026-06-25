@@ -5,7 +5,7 @@ source: docs/memory/2026-06-25-ship-065-docline-run1-final.md
 description: "Ship run-1 closure state for shipment 065-S: tooling stack complete, gated tasks deferred, PR awaiting operator sign-off + merge."
 ---
 
-# Ship 065-S — Run 1 Final Session Memory
+## Ship 065-S — Run 1 Final Session Memory
 
 **Date:** 2026-06-25
 **Agent:** Ship

@@ -5,7 +5,7 @@ doc_type: guide
 description: How to author documentation frontmatter on the docline base schema — required and optional fields, the doc_type taxonomy, the docline namespace, ownership tiers, and the backlogit docs workflow.
 ---
 
-# Docline Frontmatter Authoring Guide
+## Docline Frontmatter Authoring Guide
 
 This guide explains how to author YAML frontmatter for documentation in this
 repository so it conforms to the **docline base frontmatter v1** contract

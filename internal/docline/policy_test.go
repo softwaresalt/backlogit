@@ -83,3 +83,14 @@ func TestParseProfile(t *testing.T) {
 		assert.Equal(t, tc.want, got, "input %q", tc.in)
 	}
 }
+
+func TestIsExcludedDir(t *testing.T) {
+	excluded := []string{"docs/memory", "docs/memory/", "docs/memory/sub", "docs/archive", "docs/archive/2026", ".github", ".github/workflows"}
+	for _, d := range excluded {
+		assert.True(t, isExcludedDir(d), "expected excluded dir: %s", d)
+	}
+	included := []string{".", "", "docs", "docs/decisions", "docs/reviews/nested", "docs/memorabilia"}
+	for _, d := range included {
+		assert.False(t, isExcludedDir(d), "expected non-excluded dir: %s", d)
+	}
+}

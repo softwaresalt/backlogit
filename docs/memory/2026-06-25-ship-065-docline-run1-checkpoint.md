@@ -4,7 +4,7 @@ doc_type: closure
 date: 2026-06-25
 ---
 
-# Ship Session Checkpoint — 065-S (run 1)
+## Ship Session Checkpoint — 065-S (run 1)
 
 Branch: `feat/065-docline-frontmatter` (base `5b34ed1d` on main).
 Shipment 065-S claimed (active). Goal: build the non-gated tooling stack,
