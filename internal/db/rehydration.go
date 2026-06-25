@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,29 @@ const rehydrateBatchSize = 100
 // collectedArtifact holds a parsed artifact ready for batch insertion.
 type collectedArtifact struct {
 	artifact *models.Artifact
+}
+
+// warnOnDuplicateSourceIDs emits exactly one warning per artifact ID that is
+// declared by two or more source files (066.004-T). Duplicate source files --
+// most acutely the same root ID present in both the queue and the archive (the
+// 066-F bug) -- are otherwise masked by the PK-keyed upsert, which silently
+// collapses them to a single indexed row. The warning is observational only:
+// it does not modify the rebuild transaction or the collapse result. IDs are
+// reported in sorted order for deterministic output.
+func warnOnDuplicateSourceIDs(idToPaths map[string][]string) {
+	ids := make([]string, 0, len(idToPaths))
+	for id, paths := range idToPaths {
+		if len(paths) >= 2 {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		paths := append([]string(nil), idToPaths[id]...)
+		sort.Strings(paths)
+		slog.Warn("rehydrate: duplicate source id detected; sources collapse to a single indexed row",
+			"id", id, "paths", paths)
+	}
 }
 
 // Rehydrate walks the workspace directory tree and rebuilds the SQLite index
@@ -50,6 +74,12 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 
 	// ── Phase 1: Collect ──────────────────────────────────────────────────────
 	var collected []collectedArtifact
+	// 066.004-T: Track every source file per ID so duplicate source files (e.g.
+	// the same root ID present in both queue and archive -- the 066-F bug) can be
+	// surfaced as a warning. This is purely observational: it does not alter the
+	// atomic clear+rebuild transaction below, and the PK-keyed upsert still
+	// collapses duplicates to a single indexed row.
+	idToPaths := make(map[string][]string)
 	if walkErr := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			slog.Debug("walk error, skipping", "path", path, "error", walkErr)
@@ -72,6 +102,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		}
 
 		collected = append(collected, collectedArtifact{artifact: artifact})
+		idToPaths[artifact.ID] = append(idToPaths[artifact.ID], path)
 		if record, ok := stashRecordFromArtifact(artifact); ok {
 			harvestedStash[record.ID] = record
 		}
@@ -79,6 +110,11 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	}); walkErr != nil {
 		return 0, fmt.Errorf("rehydrate walk: %w", walkErr)
 	}
+
+	// 066.004-T: Emit exactly one warning per duplicated source ID before the
+	// transaction begins. The atomic clear+rebuild below is left untouched so the
+	// SQLite rebuild keeps its single-transaction integrity guarantee.
+	warnOnDuplicateSourceIDs(idToPaths)
 
 	// ── Phase 2: Clear ────────────────────────────────────────────────────────
 	if clearErr := RetryWrite(ctx, func() error {
