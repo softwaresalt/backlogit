@@ -36,7 +36,7 @@ func TestRootIDConflict_EndToEndIntegrity(t *testing.T) {
 
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	// 1. Create feature A and archive it -> archive/<id>.md.
 	featureA, err := core.CreateArtifact(ctx, ws, "Original feature A", "feature")

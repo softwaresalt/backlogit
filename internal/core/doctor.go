@@ -223,9 +223,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	if opts.CheckDuplicates {
-		reported := make(map[string]bool)
-		for id, paths := range idToFiles {
-			if len(paths) < 2 || reported[id] {
+		// Iterate the pre-sorted id list (not the idToFiles map) so duplicate-ID
+		// findings are emitted in deterministic order, matching the root-collision
+		// pass below.
+		for _, id := range ids {
+			paths := idToFiles[id]
+			if len(paths) < 2 {
 				continue
 			}
 			// Convert to workspace-relative paths to keep the report portable.
@@ -242,7 +245,6 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				ArtifactID:  id,
 				Description: fmt.Sprintf("artifact ID %q appears in %d locations: %v", id, len(relPaths), relPaths),
 			})
-			reported[id] = true
 		}
 
 		// 066.001-T: Root-ID collision is the acute, data-loss-prone case from

@@ -46,7 +46,7 @@ var (
 	// ErrIDCollision indicates a freshly resolved artifact ID already exists as a
 	// canonical file on the filesystem (queue, archive, or a routed directory),
 	// so creation must fail loud rather than silently reuse the ID.
-	ErrIDCollision = errors.New("backlogit: artifact id already exists on the canonical filesystem")
+	ErrIDCollision = errors.New("backlogit: artifact ID already exists on the canonical filesystem")
 	// ErrArchiveDestinationOccupied indicates the archive destination is already
 	// occupied by a different item that shares the filename, so archiving must
 	// refuse rather than overwrite the existing archived item.

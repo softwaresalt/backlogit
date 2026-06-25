@@ -276,6 +276,19 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	fileName := ResolveFileName(typeConfig, artifact.ID, title, ws.Config.MaxSlugLength)
 	filePath := filepath.Join(dirAbs, fileName+".md")
 
+	// 066.002-T (review hardening): defense-in-depth for the corruption case the
+	// canonical scan above cannot see. scanCanonicalArtifacts keys on parsed
+	// frontmatter IDs, so a file already sitting at this exact destination path
+	// that is unparseable -- or whose frontmatter ID does not match its filename
+	// -- would be skipped by that scan and then silently clobbered by the rename
+	// below. Stat the concrete destination and fail loud if it is already
+	// occupied, so a create never overwrites an existing canonical file.
+	if _, statErr := os.Stat(filePath); statErr == nil {
+		return nil, fmt.Errorf("create artifact %q: destination %q already exists: %w", artifactID, fileName+".md", blerrors.ErrIDCollision)
+	} else if !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("create artifact %q: stat destination %q: %w", artifactID, fileName+".md", statErr)
+	}
+
 	tmpPath := filePath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
 		return nil, fmt.Errorf("write artifact file: %w", err)

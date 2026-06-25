@@ -33,8 +33,8 @@ type collectedArtifact struct {
 // most acutely the same root ID present in both the queue and the archive (the
 // 066-F bug) -- are otherwise masked by the PK-keyed upsert, which silently
 // collapses them to a single indexed row. The warning is observational only:
-// it does not modify the rebuild transaction or the collapse result. IDs are
-// reported in sorted order for deterministic output.
+// it does not change the rebuild work or the collapse result. IDs are reported
+// in sorted order for deterministic output.
 func warnOnDuplicateSourceIDs(idToPaths map[string][]string) {
 	ids := make([]string, 0, len(idToPaths))
 	for id, paths := range idToPaths {
@@ -76,9 +76,9 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	var collected []collectedArtifact
 	// 066.004-T: Track every source file per ID so duplicate source files (e.g.
 	// the same root ID present in both queue and archive -- the 066-F bug) can be
-	// surfaced as a warning. This is purely observational: it does not alter the
-	// atomic clear+rebuild transaction below, and the PK-keyed upsert still
-	// collapses duplicates to a single indexed row.
+	// surfaced as a warning. This is purely observational: it does not change the
+	// clear+rebuild work below or the PK-keyed upsert that collapses duplicates
+	// to a single indexed row.
 	idToPaths := make(map[string][]string)
 	if walkErr := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -111,9 +111,10 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 		return 0, fmt.Errorf("rehydrate walk: %w", walkErr)
 	}
 
-	// 066.004-T: Emit exactly one warning per duplicated source ID before the
-	// transaction begins. The atomic clear+rebuild below is left untouched so the
-	// SQLite rebuild keeps its single-transaction integrity guarantee.
+	// 066.004-T: Emit exactly one warning per duplicated source ID before any
+	// database work starts. The clear + batch-insert rebuild below (a clear
+	// transaction followed by batched insert transactions) is left untouched;
+	// this warning is observational only and does not change rebuild behavior.
 	warnOnDuplicateSourceIDs(idToPaths)
 
 	// ── Phase 2: Clear ────────────────────────────────────────────────────────
