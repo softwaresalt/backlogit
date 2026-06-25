@@ -1,8 +1,8 @@
 package db_test
 
 // 066.004-T (Unit 4) harness: Rehydrate warns (once) when two source files map
-// to the same ID, without altering the atomic transaction or the collapse
-// result. RED until Rehydrate emits the duplicate-source warning.
+// to the same ID, without altering the clear+batch-insert rebuild or the
+// collapse result. RED until Rehydrate emits the duplicate-source warning.
 
 import (
 	"bytes"
