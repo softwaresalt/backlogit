@@ -156,6 +156,21 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		artifactID = ResolveName(typeConfig, title, nextID, ws.Config.MaxSlugLength)
 	}
 
+	// 066.002-T: Single pre-write chokepoint guarding canonical ID uniqueness.
+	// The DB-backed allocators (NextID / NextTypedHierarchicalID) derive the next
+	// ID from the SQLite index, which can lag the filesystem (e.g. a stale-index
+	// window where an archived ordinal is no longer visible to the allocator).
+	// Scan the full canonical artifactSearchDirs set once and fail loud if the
+	// resolved ID already exists on disk, rather than letting a later write
+	// silently overwrite a distinct artifact that shares the ID/filename.
+	canonical, scanErr := scanCanonicalArtifacts(ws)
+	if scanErr != nil {
+		return nil, fmt.Errorf("create artifact %q: canonical uniqueness scan: %w", artifactID, scanErr)
+	}
+	if existing := canonical[artifactID]; len(existing) > 0 {
+		return nil, fmt.Errorf("create artifact %q: %w", artifactID, blerrors.ErrIDCollision)
+	}
+
 	status := o.Status
 	if status == "" {
 		status = "queued"
