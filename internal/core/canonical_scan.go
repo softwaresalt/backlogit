@@ -1,5 +1,11 @@
 package core
 
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
 // canonical_scan.go (066.001-T / Unit 1) provides a single reusable, recursive
 // scanner over the canonical artifact source files (the full artifactSearchDirs
 // set: queue + archive + any registry-routed directories). The same parsed
@@ -26,6 +32,49 @@ type artifactRef struct {
 // every ref (not just the first) lets callers detect duplicate / colliding IDs
 // across the queue and archive directories.
 func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
-	// TODO(066.001-T): implement the shared recursive canonical-ID scanner.
-	return nil, nil
+	dirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return nil, fmt.Errorf("resolve artifact search dirs: %w", err)
+	}
+
+	refs := make(map[string][]artifactRef)
+	for _, dirPath := range dirs {
+		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+			continue
+		}
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() || filepath.Ext(path) != ".md" {
+				return nil
+			}
+			a, _, parseErr := parseFile(path)
+			if parseErr != nil {
+				// Skip unparseable files: the doctor's orphan/parse audit reports
+				// these separately; the canonical-ID scan only indexes valid refs.
+				return nil
+			}
+			if a.ID == "" {
+				return nil
+			}
+			level := a.Level
+			if level == 0 {
+				level = levelFromID(a.ID)
+			}
+			refs[a.ID] = append(refs[a.ID], artifactRef{
+				path:         path,
+				id:           a.ID,
+				artifactType: a.ArtifactType,
+				parentID:     a.ParentID,
+				status:       string(a.Status),
+				level:        level,
+			})
+			return nil
+		})
+		if walkErr != nil {
+			return nil, fmt.Errorf("walk %s: %w", dirPath, walkErr)
+		}
+	}
+	return refs, nil
 }
