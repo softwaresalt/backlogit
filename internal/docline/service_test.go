@@ -1,7 +1,6 @@
 package docline
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -182,8 +181,30 @@ func TestApplyMigration_RejectsBodyMutation(t *testing.T) {
 	assert.Equal(t, before, readDoc(t, root, target), "no write on body-mutation refusal")
 }
 
-// guard against accidental import removal
-var _ = errors.Is
+func TestApplyMigration_PreflightAbortsBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
+	root := newTree(t)
+
+	good := "docs/reviews/bad.md"
+	bad := "docs/research/none.md"
+	goodBefore := readDoc(t, root, good)
+	badBefore := readDoc(t, root, bad)
+
+	// A valid change ordered before an invalid (body-mutating) change. The
+	// preflight pass must reject the whole plan with zero writes, so the valid
+	// earlier file stays untouched (all-or-nothing apply).
+	plan := MigrationPlan{Changes: []Change{
+		{File: good, Action: ActionUpdate, Before: goodBefore, After: goodBefore + "\nappended.\n"},
+		{File: bad, Action: ActionUpdate, Before: badBefore, After: badBefore + "tampered", BodyBytesChanged: true},
+	}}
+
+	res, err := ApplyMigration(plan, Options{Root: root})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrBodyMutated)
+	assert.Empty(t, res.Applied, "no file may be applied when a later change is invalid")
+	assert.Equal(t, goodBefore, readDoc(t, root, good), "earlier valid file must not be written")
+	assert.Equal(t, badBefore, readDoc(t, root, bad), "invalid file must not be written")
+}
 
 func TestValidateApplyPath(t *testing.T) {
 	t.Parallel()

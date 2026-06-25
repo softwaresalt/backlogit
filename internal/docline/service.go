@@ -153,9 +153,21 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 
 // ApplyMigration writes the planned changes atomically (temp + rename) and is
 // path-contained: every target is resolved through core.SafeResolve and any
-// escape is rejected with ErrPathEscapesWorkspace before a single write.
+// escape is rejected with ErrPathEscapesWorkspace before a single write. All
+// non-noop changes are validated in a preflight pass, so an invalid later
+// change cannot leave earlier files partially migrated.
 func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	var res Result
+
+	// Preflight: validate every non-noop change before writing anything. A body
+	// mutation or path escape on any change aborts the whole apply with zero
+	// writes, preserving the all-or-nothing guarantee in the doc comment.
+	type pendingWrite struct {
+		file string
+		abs  string
+		data []byte
+	}
+	var writes []pendingWrite
 	for _, c := range plan.Changes {
 		if c.Action == ActionNoop {
 			res.Skipped = append(res.Skipped, c.File)
@@ -168,10 +180,15 @@ func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 		if err != nil {
 			return res, fmt.Errorf("docline.ApplyMigration: %s: %w", c.File, ErrPathEscapesWorkspace)
 		}
-		if err := atomicWrite(abs, []byte(c.After)); err != nil {
-			return res, fmt.Errorf("docline.ApplyMigration: write %s: %w", c.File, err)
+		writes = append(writes, pendingWrite{file: c.File, abs: abs, data: []byte(c.After)})
+	}
+
+	// All changes validated; perform the writes.
+	for _, w := range writes {
+		if err := atomicWrite(w.abs, w.data); err != nil {
+			return res, fmt.Errorf("docline.ApplyMigration: write %s: %w", w.file, err)
 		}
-		res.Applied = append(res.Applied, c.File)
+		res.Applied = append(res.Applied, w.file)
 	}
 	return res, nil
 }
