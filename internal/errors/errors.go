@@ -41,6 +41,16 @@ var (
 	ErrHook                    = errors.New("backlogit: hook error")
 	ErrInvalidStatusTransition = errors.New("backlogit: invalid status transition")
 	ErrWebhookDispatch         = errors.New("backlogit: webhook dispatch error")
+
+	// Root-ID conflict integrity sentinel errors (066-F).
+	// ErrIDCollision indicates a freshly resolved artifact ID already exists as a
+	// canonical file on the filesystem (queue, archive, or a routed directory),
+	// so creation must fail loud rather than silently reuse the ID.
+	ErrIDCollision = errors.New("backlogit: artifact id already exists on the canonical filesystem")
+	// ErrArchiveDestinationOccupied indicates the archive destination is already
+	// occupied by a different item that shares the filename, so archiving must
+	// refuse rather than overwrite the existing archived item.
+	ErrArchiveDestinationOccupied = errors.New("backlogit: archive destination already occupied by a different item")
 )
 
 // ConfigError wraps a configuration failure with field context.

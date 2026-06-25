@@ -31,6 +31,14 @@ const (
 	// workspace directories simultaneously (e.g., both queue and archive, or
 	// across multiple registry-routed directories).
 	FindingDuplicateID DoctorFindingType = "duplicate_id"
+
+	// FindingRootIDCollision indicates a level-1 (root) work-item ID is present
+	// in both the archive directory and at least one non-archive (e.g. queue)
+	// location. This is the acute, data-loss-prone case from 066-F: archiving the
+	// non-archive copy would overwrite a distinct archived item that shares the
+	// filename. It is emitted in addition to FindingDuplicateID so the
+	// queue/archive root collision is explicitly distinguishable in the report.
+	FindingRootIDCollision DoctorFindingType = "root_id_collision"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
