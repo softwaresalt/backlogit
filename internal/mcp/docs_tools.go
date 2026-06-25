@@ -33,7 +33,6 @@ func (s *Server) registerDocsTools() {
 		mcplib.NewTool("backlogit_docs_migrate",
 			mcplib.WithDescription("Plan (default) or apply an idempotent, body-preserving frontmatter migration. apply=true is gated server-side and requires an explicit scoped path."),
 			mcplib.WithString("path", mcplib.Description("Repo-relative sub-path (required when apply=true)")),
-			mcplib.WithString("profile", mcplib.Description("Validation profile (reserved; planning uses the authoring contract)")),
 			mcplib.WithBoolean("apply", mcplib.Description("Write changes (default false). Gated by the BACKLOGIT_DOCS_ALLOW_APPLY environment flag.")),
 		),
 		s.handleDocsMigrate,

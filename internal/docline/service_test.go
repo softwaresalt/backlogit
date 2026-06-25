@@ -76,6 +76,32 @@ func TestLintTree_ReportsFindingsWithoutMutation(t *testing.T) {
 	assert.Equal(t, before, readDoc(t, root, "docs/reviews/bad.md"))
 }
 
+func TestLintTree_SkipsNonDocsTopLevelDirs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// In scope: a docs/ file missing required fields.
+	writeDoc(t, root, "docs/decisions/x.md", "---\ntitle: X\n---\nBody.\n")
+	// Out of scope: markdown nested under non-docs top-level dirs the walk now
+	// skips wholesale (cmd/, internal/, schemas/). None may be linted.
+	writeDoc(t, root, "internal/notes.md", "---\ntitle: Internal\n---\nBody.\n")
+	writeDoc(t, root, "cmd/tool/readme.md", "---\ntitle: Tool\n---\nBody.\n")
+	writeDoc(t, root, "schemas/spec.md", "---\ntitle: Spec\n---\nBody.\n")
+
+	findings, err := LintTree(Options{Root: root, Profile: ProfileAuthoring})
+	require.NoError(t, err)
+
+	var files []string
+	for _, f := range findings {
+		files = append(files, f.File)
+	}
+	assert.Contains(t, files, "docs/decisions/x.md")
+	for _, f := range files {
+		assert.NotContains(t, f, "internal/", "non-docs top-level dir must not be linted")
+		assert.NotContains(t, f, "cmd/", "non-docs top-level dir must not be linted")
+		assert.NotContains(t, f, "schemas/", "non-docs top-level dir must not be linted")
+	}
+}
+
 func TestPlanMigration_ComputesDiffWithoutWriting(t *testing.T) {
 	t.Parallel()
 	root := newTree(t)

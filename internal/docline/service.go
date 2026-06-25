@@ -212,9 +212,18 @@ func collectInScopeDocs(root, subPath string) ([]string, error) {
 		}
 		relPosix := filepath.ToSlash(rel)
 		if d.IsDir() {
+			if relPosix == "." {
+				return nil
+			}
 			// Skip excluded subtrees (docs/memory/, docs/archive/, .github/)
-			// entirely rather than descending and filtering file-by-file.
+			// and any top-level directory other than docs/ (cmd/, internal/,
+			// schemas/, ...) wholesale, rather than descending and filtering
+			// file-by-file. Only docs/** plus a few root-level knowledge files
+			// can ever be in scope, and root files are still visited directly.
 			if isExcludedDir(relPosix) {
+				return filepath.SkipDir
+			}
+			if !strings.Contains(relPosix, "/") && relPosix != "docs" {
 				return filepath.SkipDir
 			}
 			return nil
