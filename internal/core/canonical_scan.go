@@ -33,7 +33,8 @@ type artifactRef struct {
 // every ref (not just the first) lets callers detect duplicate / colliding IDs
 // across the queue and archive directories. The fixed .backlogit/archive
 // directory is always included in the scan set (see below) so cross-boundary
-// root-ID collisions are detectable even when the registry is missing.
+// root-ID collisions are detectable even when the registry does not route the
+// archive.
 func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 	dirs, err := artifactSearchDirs(ws)
 	if err != nil {
@@ -42,12 +43,15 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 
 	// ArchiveItem always relocates items into the fixed .backlogit/archive
 	// directory, regardless of registry configuration. artifactSearchDirs only
-	// surfaces the archive dir via registry.yaml when ws.Config != nil, so a
-	// missing/unreadable registry (a degraded-but-loadable workspace) would drop
-	// the archive from the scan set -- letting a queued + an archived item share
-	// a root ID undetected, exactly the 066-F data-loss path this scanner exists
-	// to close. Force the canonical archive directory into the scan set so the
-	// collision guard and doctor audit never go blind to already-archived IDs.
+	// surfaces the archive dir via registry.yaml when ws.Config != nil. A MISSING
+	// registry.yaml is handled gracefully (LoadRegistry falls back to
+	// DefaultRegistry, which routes the archive), but a registry that is present
+	// yet unreadable, or that loads successfully without an archive-routing rule,
+	// would drop the archive from the scan set -- letting a queued + an archived
+	// item share a root ID undetected, exactly the 066-F data-loss path this
+	// scanner exists to close. Force the canonical archive directory into the
+	// scan set so the collision guard and doctor audit never go blind to
+	// already-archived IDs.
 	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
 	archivePresent := false
 	for _, d := range dirs {

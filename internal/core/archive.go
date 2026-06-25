@@ -138,7 +138,16 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 			occupant, _, occErr := parseFile(archivePath)
 			sourceID, _ := fm["id"].(string)
 			sourceTitle, _ := fm["title"].(string)
-			sameItem := occErr == nil && occupant.ID == sourceID && occupant.Title == sourceTitle
+			if occErr != nil {
+				// The destination is occupied by a file we cannot parse. Refuse
+				// rather than overwrite it (it may be a distinct item with corrupt
+				// frontmatter), but report the unparseable-occupant case explicitly
+				// instead of mislabeling it a "distinct item" -- the parse error is
+				// the actionable detail during incident/debugging.
+				return nil, fmt.Errorf("archive %q: destination %q is occupied by an unparseable file (%v): %w",
+					itemID, workspaceRelativePath(ws.RootPath, archivePath), occErr, blerrors.ErrArchiveDestinationOccupied)
+			}
+			sameItem := occupant.ID == sourceID && occupant.Title == sourceTitle
 			if !sameItem {
 				return nil, fmt.Errorf("archive %q: destination %q is occupied by a distinct item: %w",
 					itemID, workspaceRelativePath(ws.RootPath, archivePath), blerrors.ErrArchiveDestinationOccupied)
