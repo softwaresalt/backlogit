@@ -18,7 +18,7 @@ inspect the active scope, and classify a path's doc_type.
 ```text
   backlogit docs lint
   backlogit docs lint --profile ingestion --format json
-  backlogit docs migrate --dry-run
+  backlogit docs migrate
   backlogit docs migrate --apply --yes --path docs/decisions
   backlogit docs scope
   backlogit docs classify docs/decisions/x.md

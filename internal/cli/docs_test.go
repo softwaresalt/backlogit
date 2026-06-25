@@ -148,6 +148,13 @@ func TestDocsMigrate_RejectsPathEscape(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDocsLint_RejectsUnknownProfile(t *testing.T) {
+	root := docsFixtureTree(t)
+	// A profile typo must fail fast rather than silently defaulting to authoring.
+	_, err := runDocs(t, root, "docs", "lint", "--profile", "authroing", "--format", "json")
+	require.Error(t, err)
+}
+
 func TestDocsClassify_PrintsDocType(t *testing.T) {
 	root := t.TempDir()
 	out, err := runDocs(t, root, "docs", "classify", "docs/decisions/x.md")

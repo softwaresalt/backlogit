@@ -161,6 +161,16 @@ func TestDocsTools_RejectPathEscape(t *testing.T) {
 	assert.Contains(t, docsResultText(t, res), "validation_failed")
 }
 
+func TestDocsLintTool_RejectsUnknownProfile(t *testing.T) {
+	root := docsToolTree(t)
+	s := NewServerForRoot(root)
+
+	// A profile typo must fail fast (validation error), not silently default.
+	res := callDocsTool(t, s.handleDocsLint, map[string]any{"profile": "authroing"})
+	assert.True(t, res.IsError)
+	assert.Contains(t, docsResultText(t, res), "validation_failed")
+}
+
 func TestDocsTools_DiscoverableViaListTools(t *testing.T) {
 	root := docsToolTree(t)
 	s := NewServerForRoot(root)

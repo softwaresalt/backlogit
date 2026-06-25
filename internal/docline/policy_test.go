@@ -60,3 +60,26 @@ func TestIsContractField(t *testing.T) {
 		assert.False(t, isContractField(f), "non-contract field: %s", f)
 	}
 }
+
+func TestParseProfile(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    Profile
+		wantErr bool
+	}{
+		{"", ProfileAuthoring, false},
+		{"authoring", ProfileAuthoring, false},
+		{"ingestion", ProfileIngestion, false},
+		{"authroing", "", true}, // typo must fail fast, not silently default
+		{"bogus", "", true},
+	}
+	for _, tc := range cases {
+		got, err := ParseProfile(tc.in)
+		if tc.wantErr {
+			assert.ErrorIs(t, err, ErrUnknownProfile, "input %q", tc.in)
+			continue
+		}
+		assert.NoError(t, err, "input %q", tc.in)
+		assert.Equal(t, tc.want, got, "input %q", tc.in)
+	}
+}

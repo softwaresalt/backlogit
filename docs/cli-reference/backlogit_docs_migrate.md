@@ -14,8 +14,7 @@ backlogit docs migrate [flags]
 ### Options
 
 ```text
-      --apply           write changes; requires --yes and an explicit --path
-      --dry-run         compute the plan without writing (default) (default true)
+      --apply           write changes; without it migrate only plans (dry-run). Requires --yes and an explicit --path
       --format string   output format: text, json (default: text on TTY, json otherwise)
   -h, --help            help for migrate
       --path string     limit to a repo-relative sub-path (required for --apply)

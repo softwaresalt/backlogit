@@ -49,14 +49,15 @@ func (s *Server) registerDocsTools() {
 func (s *Server) handleDocsLint(_ context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	path, _ := request.Params.Arguments["path"].(string)
 	profile, _ := request.Params.Arguments["profile"].(string)
-	if profile == "" {
-		profile = string(docline.ProfileAuthoring)
+	prof, err := docline.ParseProfile(profile)
+	if err != nil {
+		return ValidationFailed(err.Error()), nil
 	}
 
 	findings, err := docline.LintTree(docline.Options{
 		Root:    s.RootPath,
 		Path:    path,
-		Profile: docline.Profile(profile),
+		Profile: prof,
 	})
 	if err != nil {
 		if errors.Is(err, docline.ErrPathEscapesWorkspace) {

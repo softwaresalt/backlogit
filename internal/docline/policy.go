@@ -2,6 +2,7 @@ package docline
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -23,6 +24,8 @@ var (
 	// single apply invocation must never be able to rewrite the entire docs
 	// surface — callers must narrow apply to an explicit sub-path.
 	ErrWholeTreeApply = errors.New("docline: whole-tree apply refused")
+	// ErrUnknownProfile indicates a validation profile outside the known set.
+	ErrUnknownProfile = errors.New("docline: unknown profile")
 )
 
 // DocType is a member of the closed controlled vocabulary of document types.
@@ -93,6 +96,21 @@ func requiredFields(p Profile) []string {
 		return []string{"title", "source", "ingested_at", "doc_type"}
 	default: // authoring (and any unknown profile) — the repo-owned subset
 		return []string{"title", "source", "doc_type"}
+	}
+}
+
+// ParseProfile validates and returns a known Profile. An empty string defaults
+// to the authoring profile; any other unrecognized value is rejected with
+// ErrUnknownProfile so a typo (e.g. "authroing") fails fast instead of silently
+// falling back to authoring via requiredFields' default branch.
+func ParseProfile(s string) (Profile, error) {
+	switch Profile(s) {
+	case "", ProfileAuthoring:
+		return ProfileAuthoring, nil
+	case ProfileIngestion:
+		return ProfileIngestion, nil
+	default:
+		return "", fmt.Errorf("docline.ParseProfile: %q (want authoring or ingestion): %w", s, ErrUnknownProfile)
 	}
 }
 

@@ -30,7 +30,7 @@ frontmatter contract: lint in-scope docs, plan and apply idempotent migrations,
 inspect the active scope, and classify a path's doc_type.`,
 		Example: `  backlogit docs lint
   backlogit docs lint --profile ingestion --format json
-  backlogit docs migrate --dry-run
+  backlogit docs migrate
   backlogit docs migrate --apply --yes --path docs/decisions
   backlogit docs scope
   backlogit docs classify docs/decisions/x.md`,
@@ -57,10 +57,14 @@ func newDocsLintCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			prof, err := docline.ParseProfile(profile)
+			if err != nil {
+				return err
+			}
 			findings, err := docline.LintTree(docline.Options{
 				Root:    root,
 				Path:    path,
-				Profile: docline.Profile(profile),
+				Profile: prof,
 			})
 			if err != nil {
 				return err
@@ -86,7 +90,7 @@ func newDocsLintCommand(cwd *string) *cobra.Command {
 }
 
 func newDocsMigrateCommand(cwd *string) *cobra.Command {
-	var apply, yes, dryRun bool
+	var apply, yes bool
 	var format, path string
 	cmd := &cobra.Command{
 		Use:          "migrate",
@@ -119,8 +123,7 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 				return writeMigrateResult(cmd, format, plan, &res, false)
 			}
 
-			// Default: dry-run plan, no writes.
-			_ = dryRun
+			// Default (no --apply): compute and report the plan without writing.
 			plan, err := docline.PlanMigration(opts)
 			if err != nil {
 				return err
@@ -128,8 +131,7 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 			return writeMigrateResult(cmd, format, plan, nil, true)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", true, "compute the plan without writing (default)")
-	cmd.Flags().BoolVar(&apply, "apply", false, "write changes; requires --yes and an explicit --path")
+	cmd.Flags().BoolVar(&apply, "apply", false, "write changes; without it migrate only plans (dry-run). Requires --yes and an explicit --path")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a write (required with --apply)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: text, json (default: text on TTY, json otherwise)")
 	cmd.Flags().StringVar(&path, "path", "", "limit to a repo-relative sub-path (required for --apply)")

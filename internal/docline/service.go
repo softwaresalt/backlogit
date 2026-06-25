@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -308,7 +309,20 @@ func atomicWrite(path string, data []byte) error {
 		return fmt.Errorf("close temp: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename temp: %w", err)
+		// On Windows os.Rename can fail when the destination already exists
+		// (e.g. a locked file); POSIX rename replaces atomically. Remove the
+		// destination and retry so an in-place doc rewrite still succeeds. The
+		// original is only removed once the fully written temp file is ready to
+		// take its place, mirroring the repo's other atomic writers.
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("rename temp: %w", err)
+		}
+		if rmErr := os.Remove(path); rmErr != nil {
+			return fmt.Errorf("remove destination before rename: %w", rmErr)
+		}
+		if err := os.Rename(tmpName, path); err != nil {
+			return fmt.Errorf("rename temp after destination removal: %w", err)
+		}
 	}
 	return nil
 }
