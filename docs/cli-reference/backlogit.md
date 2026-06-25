@@ -50,6 +50,7 @@ stash follow-up work for later planning.
 * [backlogit delete](backlogit_delete.md)	 - Delete an artifact
 * [backlogit deliberate](backlogit_deliberate.md)	 - Create a deliberation artifact linked to a stash entry
 * [backlogit dep](backlogit_dep.md)	 - Manage artifact dependencies
+* [backlogit docs](backlogit_docs.md)	 - Lint and migrate documentation frontmatter (docline base schema)
 * [backlogit doctor](backlogit_doctor.md)	 - Check workspace integrity
 * [backlogit get](backlogit_get.md)	 - Retrieve an artifact by ID
 * [backlogit init](backlogit_init.md)	 - Initialize a new backlogit workspace
