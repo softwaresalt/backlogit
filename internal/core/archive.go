@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -121,6 +122,46 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	oldStatus, _ := fm["status"].(string)
 	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
 
+	// 066.003-T: Refuse to overwrite a DISTINCT item already occupying the
+	// path-keyed archive destination. Computed and checked here -- before the
+	// pre-archive hooks fire and before any file is written -- so a refused
+	// archive has no side effects. When a foreign item (same root ID/filename
+	// but different identity) already sits at the destination, archiving the
+	// live copy would silently destroy it (the 066-F data-loss scenario). The
+	// legitimate 060.002-T half-archive recovery (the SAME logical item already
+	// half-copied into the archive) must still succeed, so the guard only fires
+	// when the occupant is a different item (distinct id or title). Same-path
+	// in-place archival (currentPath == archivePath) is never a collision.
+	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
+	if filepath.Clean(archivePath) != filepath.Clean(currentPath) {
+		if _, statErr := os.Stat(archivePath); statErr == nil {
+			occupant, _, occErr := parseFile(archivePath)
+			sourceID, _ := fm["id"].(string)
+			sourceTitle, _ := fm["title"].(string)
+			if occErr != nil {
+				// The destination is occupied by a file we cannot parse. Refuse
+				// rather than overwrite it (it may be a distinct item with corrupt
+				// frontmatter), but report the unparseable-occupant case explicitly
+				// instead of mislabeling it a "distinct item" -- the parse error is
+				// the actionable detail during incident/debugging.
+				return nil, fmt.Errorf("archive %q: destination %q is occupied by an unparseable file (%v): %w",
+					itemID, workspaceRelativePath(ws.RootPath, archivePath), occErr, blerrors.ErrArchiveDestinationOccupied)
+			}
+			sameItem := occupant.ID == sourceID && occupant.Title == sourceTitle
+			if !sameItem {
+				return nil, fmt.Errorf("archive %q: destination %q is occupied by a distinct item: %w",
+					itemID, workspaceRelativePath(ws.RootPath, archivePath), blerrors.ErrArchiveDestinationOccupied)
+			}
+		} else if !os.IsNotExist(statErr) {
+			// A non-not-exist stat error (permission/IO) means we cannot safely
+			// determine whether the destination is occupied. Fail loud with context
+			// rather than proceeding into a write that would fail in less clear ways,
+			// matching CreateArtifact's destination stat handling.
+			return nil, fmt.Errorf("archive %q: stat destination %q: %w",
+				itemID, workspaceRelativePath(ws.RootPath, archivePath), statErr)
+		}
+	}
+
 	// Fire pre-archive hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
@@ -142,8 +183,6 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	fm["archived_status"] = oldStatus
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
-
-	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
 
 	// Atomic write: write to a temp file then rename.
 	tmpPath := archivePath + ".tmp"

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,14 @@ const (
 	// workspace directories simultaneously (e.g., both queue and archive, or
 	// across multiple registry-routed directories).
 	FindingDuplicateID DoctorFindingType = "duplicate_id"
+
+	// FindingRootIDCollision indicates a level-1 (root) work-item ID is present
+	// in both the archive directory and at least one non-archive (e.g. queue)
+	// location. This is the acute, data-loss-prone case from 066-F: archiving the
+	// non-archive copy would overwrite a distinct archived item that shares the
+	// filename. It is emitted in addition to FindingDuplicateID so the
+	// queue/archive root collision is explicitly distinguishable in the report.
+	FindingRootIDCollision DoctorFindingType = "root_id_collision"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -89,49 +98,44 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		CheckedAt: time.Now().UTC(),
 	}
 
-	searchDirs, err := artifactSearchDirs(ws)
-	if err != nil {
-		return nil, fmt.Errorf("doctor: %w", err)
-	}
-
 	type artifactInfo struct {
 		id           string
 		artifactType string
 		parentID     string
 		status       string
-		level        int // stored level from frontmatter (0 when absent)
+		level        int // effective level (frontmatter level, or derived from ID)
 	}
 
-	var artifacts []artifactInfo
-	idToFiles := make(map[string][]string)
+	// 066.001-T: a single shared canonical scan feeds the orphan, duplicate, and
+	// root-ID collision checks. One recursive walk over the full artifactSearchDirs
+	// set replaces the per-check walks so files are parsed exactly once.
+	refs, err := scanCanonicalArtifacts(ws)
+	if err != nil {
+		return nil, fmt.Errorf("doctor: %w", err)
+	}
 
-	for _, dir := range searchDirs {
-		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
-			continue
-		}
-		walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-				return err
-			}
-			a, _, parseErr := parseFile(path)
-			if parseErr != nil || a.ID == "" {
-				return nil
-			}
-			// Track first occurrence for orphan checking; track all paths for duplicate detection.
-			if _, seen := idToFiles[a.ID]; !seen {
-				artifacts = append(artifacts, artifactInfo{
-					id:           a.ID,
-					artifactType: a.ArtifactType,
-					parentID:     a.ParentID,
-					status:       string(a.Status),
-					level:        a.Level,
-				})
-			}
-			idToFiles[a.ID] = append(idToFiles[a.ID], path)
-			return nil
+	// Deterministic ID ordering keeps orphan/fix/duplicate finding order stable
+	// regardless of the (unordered) scan map iteration.
+	ids := make([]string, 0, len(refs))
+	for id := range refs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var artifacts []artifactInfo
+	idToFiles := make(map[string][]string, len(refs))
+	for _, id := range ids {
+		group := refs[id]
+		first := group[0]
+		artifacts = append(artifacts, artifactInfo{
+			id:           first.id,
+			artifactType: first.artifactType,
+			parentID:     first.parentID,
+			status:       first.status,
+			level:        first.level,
 		})
-		if walkErr != nil {
-			return nil, fmt.Errorf("doctor: walk %s: %w", dir, walkErr)
+		for _, r := range group {
+			idToFiles[id] = append(idToFiles[id], r.path)
 		}
 	}
 
@@ -219,9 +223,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	if opts.CheckDuplicates {
-		reported := make(map[string]bool)
-		for id, paths := range idToFiles {
-			if len(paths) < 2 || reported[id] {
+		// Iterate the pre-sorted id list (not the idToFiles map) so duplicate-ID
+		// findings are emitted in deterministic order, matching the root-collision
+		// pass below.
+		for _, id := range ids {
+			paths := idToFiles[id]
+			if len(paths) < 2 {
 				continue
 			}
 			// Convert to workspace-relative paths to keep the report portable.
@@ -233,12 +240,59 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					relPaths = append(relPaths, p)
 				}
 			}
+			// scanCanonicalArtifacts returns paths in filesystem-walk order, which
+			// is not guaranteed stable across runs. Sort so the finding description
+			// (which embeds relPaths) is fully deterministic, matching the sorted
+			// id iteration above.
+			sort.Strings(relPaths)
 			report.Findings = append(report.Findings, DoctorFinding{
 				Type:        FindingDuplicateID,
 				ArtifactID:  id,
 				Description: fmt.Sprintf("artifact ID %q appears in %d locations: %v", id, len(relPaths), relPaths),
 			})
-			reported[id] = true
+		}
+
+		// 066.001-T: Root-ID collision is the acute, data-loss-prone case from
+		// 066-F. A level-1 (root) work-item ID present in BOTH the archive
+		// directory and a non-archive location means archiving the non-archive
+		// copy would overwrite a distinct archived item that shares the filename.
+		// Emitted in addition to FindingDuplicateID so the queue/archive root
+		// collision is explicitly distinguishable. Level-2+ duplicates are routed
+		// into per-parent subdirectories and do not share the same destination,
+		// so they are intentionally excluded here.
+		archiveDir := filepath.Clean(filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive"))
+		isUnderArchive := func(p string) bool {
+			cp := filepath.Clean(p)
+			return cp == archiveDir || strings.HasPrefix(cp, archiveDir+string(filepath.Separator))
+		}
+		for _, id := range ids {
+			group := refs[id]
+			if len(group) < 2 {
+				continue
+			}
+			effectiveLevel := group[0].level
+			if effectiveLevel == 0 {
+				effectiveLevel = levelFromID(id)
+			}
+			if effectiveLevel != 1 {
+				continue
+			}
+			var inArchive, outsideArchive bool
+			for _, r := range group {
+				if isUnderArchive(r.path) {
+					inArchive = true
+				} else {
+					outsideArchive = true
+				}
+			}
+			if !inArchive || !outsideArchive {
+				continue
+			}
+			report.Findings = append(report.Findings, DoctorFinding{
+				Type:        FindingRootIDCollision,
+				ArtifactID:  id,
+				Description: fmt.Sprintf("root work-item ID %q occupies both the archive and a non-archive location; archiving the live copy would overwrite the distinct archived item sharing the filename", id),
+			})
 		}
 	}
 
