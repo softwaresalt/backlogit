@@ -1,17 +1,30 @@
 ---
-title: "Post-Merge Closure Must Archive Source Stash Entries and Deliberations"
-description: "Protocol for archiving source stash entries and deliberations during ship post-merge closure to prevent stale-scope accumulation."
-problem_type: workflow_issue
-category: workflow_issue
-component: ship_agent
-root_cause: missing_protocol_step
-resolution_type: agent_protocol
-severity: medium
-message: "ShipShipment archives implemented features and tasks but ship agent protocol never traces back to source stash entries or deliberations, leaving orphaned artifacts that clutter future triage."
-file_path: ".github/agents/ship.agent.md"
-resolved: true
-tags: [stash, ship-cycle, closure, archival, source-artifacts, deliberation, workflow-hygiene]
-date: 2026-04-20
+chunk_strategy: h1-h2-h3
+description: Protocol for archiving source stash entries and deliberations during ship post-merge closure to prevent stale-scope accumulation.
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: ship_agent
+    date: 2026-04-20T00:00:00Z
+    file_path: .github/agents/ship.agent.md
+    message: ShipShipment archives implemented features and tasks but ship agent protocol never traces back to source stash entries or deliberations, leaving orphaned artifacts that clutter future triage.
+    problem_type: workflow_issue
+    resolution_type: agent_protocol
+    resolved: true
+    root_cause: missing_protocol_step
+    severity: medium
+    tags:
+        - stash
+        - ship-cycle
+        - closure
+        - archival
+        - source-artifacts
+        - deliberation
+        - workflow-hygiene
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/source-artifact-archival-pattern-2026-04-20.md
+title: Post-Merge Closure Must Archive Source Stash Entries and Deliberations
 ---
 
 ## Post-Merge Closure Must Archive Source Stash Entries and Deliberations

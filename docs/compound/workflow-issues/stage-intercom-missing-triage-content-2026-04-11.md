@@ -1,16 +1,30 @@
 ---
-title: "Stage intercom broadcast protocol missing triage and shipment content"
-problem_type: workflow_issue
-category: workflow_issue
-component: cli
-root_cause: missing_type_hint
-resolution_type: documentation
-severity: high
-message: "Stage agent broadcasts lifecycle transitions but not triage decisions or shipment grouping content, leaving operator blind to substantive results"
-file_path: ".github/agents/stage.agent.md"
-resolved: true
-tags: [agent-intercom, stage, broadcast, operator-visibility, triage, shipment-grouping, gating]
-date: 2026-04-11
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: cli
+    date: 2026-04-11T00:00:00Z
+    file_path: .github/agents/stage.agent.md
+    message: Stage agent broadcasts lifecycle transitions but not triage decisions or shipment grouping content, leaving operator blind to substantive results
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: missing_type_hint
+    severity: high
+    tags:
+        - agent-intercom
+        - stage
+        - broadcast
+        - operator-visibility
+        - triage
+        - shipment-grouping
+        - gating
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/stage-intercom-missing-triage-content-2026-04-11.md
+title: Stage intercom broadcast protocol missing triage and shipment content
 ---
 
 # Stage Intercom Broadcast Protocol Missing Triage and Shipment Content

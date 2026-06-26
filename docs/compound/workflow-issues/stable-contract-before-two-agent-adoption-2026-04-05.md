@@ -1,24 +1,30 @@
 ---
-title: "Keep the stable backlogit contract separate from the emerging two-agent workflow"
-description: "Documents why backlogit should incubate the groomer and shipper workflow internally while autoharness consumes only stable backlogit capabilities."
-problem_type: workflow_issue
-category: workflow_issue
-component: task_manager
-root_cause: schema_mismatch
-resolution_type: documentation
-severity: medium
-message: "Do not promote backlogit's experimental two-agent workflow into autoharness until the external contract is proven."
-file_path: "docs/memory/2026-04-05/two-agent-workflow-design-session.md"
-resolved: true
-tags:
-  - backlogit
-  - autoharness
-  - workflow
-  - groomer
-  - shipper
-  - operating-model
-  - contract-boundary
-date: 2026-04-05
+chunk_strategy: h1-h2-h3
+description: Documents why backlogit should incubate the groomer and shipper workflow internally while autoharness consumes only stable backlogit capabilities.
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: task_manager
+    date: 2026-04-05T00:00:00Z
+    file_path: docs/memory/2026-04-05/two-agent-workflow-design-session.md
+    message: Do not promote backlogit's experimental two-agent workflow into autoharness until the external contract is proven.
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: schema_mismatch
+    severity: medium
+    tags:
+        - backlogit
+        - autoharness
+        - workflow
+        - groomer
+        - shipper
+        - operating-model
+        - contract-boundary
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/stable-contract-before-two-agent-adoption-2026-04-05.md
+title: Keep the stable backlogit contract separate from the emerging two-agent workflow
 ---
 
 ## Problem

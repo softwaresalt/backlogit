@@ -1,15 +1,21 @@
 ---
-title: "Ship Agent: Incomplete Git Staging Caused PR to Bypass Working-Tree Changes"
-description: "Ship agent merged PRs without committing all locally-modified files, bypassing the PR review cycle for those changes."
-ms.date: 2026-04-14
-ms.topic: troubleshooting
-keywords:
-  - ship agent
-  - git staging
-  - pr cycle
-  - working tree
-  - gofmt
-  - line endings
+chunk_strategy: h1-h2-h3
+description: Ship agent merged PRs without committing all locally-modified files, bypassing the PR review cycle for those changes.
+doc_type: learning
+docline:
+    keywords:
+        - ship agent
+        - git staging
+        - pr cycle
+        - working tree
+        - gofmt
+        - line endings
+    ms.date: 2026-04-14T00:00:00Z
+    ms.topic: troubleshooting
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/ship-agent-incomplete-git-staging-pr-bypass-2026-04-14.md
+title: 'Ship Agent: Incomplete Git Staging Caused PR to Bypass Working-Tree Changes'
 ---
 
 ## Problem

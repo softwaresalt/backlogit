@@ -1,22 +1,28 @@
 ---
-title: "Post-Merge Closure Silently Skipped When PR Merged Outside Active Ship Session"
-problem_type: workflow_issue
-component: task_manager
-root_cause: timeout
-resolution_type: documentation
-severity: medium
-message: "Ship agent post-merge closure (6 steps) never executed after shipment 044-S was archived. PR #66 merged via GitHub UI while Ship agent was idle; ship_shipment fired but closure protocol had no execution context."
-file_path: ".github/agents/ship.agent.md"
-resolved: true
-description: "Ship agent post-merge closure silently skipped when PR merged via GitHub UI while Ship agent was idle; ship_shipment fires but the 6-step closure workflow has no execution context to run."
-tags:
-  - ship-agent
-  - post-merge-closure
-  - session-continuity
-  - shipment-lifecycle
-  - idle-merge
-  - hook-gap
-date: 2026-04-24
+chunk_strategy: h1-h2-h3
+description: Ship agent post-merge closure silently skipped when PR merged via GitHub UI while Ship agent was idle; ship_shipment fires but the 6-step closure workflow has no execution context to run.
+doc_type: learning
+docline:
+    component: task_manager
+    date: 2026-04-24T00:00:00Z
+    file_path: .github/agents/ship.agent.md
+    message: 'Ship agent post-merge closure (6 steps) never executed after shipment 044-S was archived. PR #66 merged via GitHub UI while Ship agent was idle; ship_shipment fired but closure protocol had no execution context.'
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: timeout
+    severity: medium
+    tags:
+        - ship-agent
+        - post-merge-closure
+        - session-continuity
+        - shipment-lifecycle
+        - idle-merge
+        - hook-gap
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/ship-agent-post-merge-closure-skipped-on-idle-merge-2026-04-24.md
+title: Post-Merge Closure Silently Skipped When PR Merged Outside Active Ship Session
 ---
 
 ## Problem

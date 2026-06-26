@@ -1,24 +1,30 @@
 ---
-title: "Stash Staleness Detection and Removal Requires Custom Scripting"
-description: "Documents the gap in backlogit's stash command surface that forced an agent to use custom PowerShell scripting to identify and remove stale stash entries, and prescribes the metadata and tooling additions needed to make staleness management a native capability."
-problem_type: workflow_issue
-category: workflow_issue
-component: stash
-root_cause: missing_tooling
-resolution_type: documentation
-severity: high
-message: "No native backlogit command or metadata supports stash staleness detection or removal. Agents must resort to custom scripting."
-file_path: "internal/core/stash.go"
-resolved: true
-tags:
-  - stash
-  - staleness
-  - grooming
-  - agent-tooling
-  - command-surface
-  - metadata-gap
-  - custom-scripting
-date: 2026-04-09
+chunk_strategy: h1-h2-h3
+description: Documents the gap in backlogit's stash command surface that forced an agent to use custom PowerShell scripting to identify and remove stale stash entries, and prescribes the metadata and tooling additions needed to make staleness management a native capability.
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: stash
+    date: 2026-04-09T00:00:00Z
+    file_path: internal/core/stash.go
+    message: No native backlogit command or metadata supports stash staleness detection or removal. Agents must resort to custom scripting.
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: missing_tooling
+    severity: high
+    tags:
+        - stash
+        - staleness
+        - grooming
+        - agent-tooling
+        - command-surface
+        - metadata-gap
+        - custom-scripting
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/stash-staleness-requires-custom-scripting-2026-04-09.md
+title: Stash Staleness Detection and Removal Requires Custom Scripting
 ---
 
 ## Problem

@@ -1,16 +1,31 @@
 ---
-title: "bufio.Scanner fix for oversized JSONL lines missed in db package"
-problem_type: runtime_error
-category: runtime_error
-component: db_schema
-root_cause: encoding_error
-resolution_type: code_fix
-severity: high
-message: "bufio.Scanner 1MB limit fix applied to telemetry/ package but same pattern in db/telemetry_schema.go:RehydrateTelemetry was missed, leaving oversized JSONL lines silently dropped during SQLite rehydration"
-file_path: "internal/db/telemetry_schema.go"
-resolved: true
-tags: [bufio-scanner, bufio-newreader, jsonl, oversized-lines, incomplete-fix, telemetry, rehydration, cross-package-search]
-date: 2026-04-25
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: runtime_error
+    component: db_schema
+    date: 2026-04-25T00:00:00Z
+    file_path: internal/db/telemetry_schema.go
+    message: bufio.Scanner 1MB limit fix applied to telemetry/ package but same pattern in db/telemetry_schema.go:RehydrateTelemetry was missed, leaving oversized JSONL lines silently dropped during SQLite rehydration
+    problem_type: runtime_error
+    resolution_type: code_fix
+    resolved: true
+    root_cause: encoding_error
+    severity: high
+    tags:
+        - bufio-scanner
+        - bufio-newreader
+        - jsonl
+        - oversized-lines
+        - incomplete-fix
+        - telemetry
+        - rehydration
+        - cross-package-search
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/runtime-errors/bufio-scanner-incomplete-fix-missed-db-package-2026-04-25.md
+title: bufio.Scanner fix for oversized JSONL lines missed in db package
 ---
 
 # bufio.Scanner fix for oversized JSONL lines missed in db package

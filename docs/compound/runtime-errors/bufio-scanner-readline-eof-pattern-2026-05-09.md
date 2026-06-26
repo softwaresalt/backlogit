@@ -1,11 +1,22 @@
 ---
-title: "bufio.Reader + ReadString EOF handling pattern for unbounded JSONL lines"
-description: "Correct pattern for reading arbitrarily large JSONL lines without scanner token-too-long panics, including the EOF last-line gotcha."
-ms.date: 2026-05-09
-ms.topic: reference
-tags: ["go", "bufio", "jsonl", "telemetry", "runtime-error"]
-feature: "052-F"
-pr: "92"
+chunk_strategy: h1-h2-h3
+description: Correct pattern for reading arbitrarily large JSONL lines without scanner token-too-long panics, including the EOF last-line gotcha.
+doc_type: learning
+docline:
+    feature: 052-F
+    ms.date: 2026-05-09T00:00:00Z
+    ms.topic: reference
+    pr: "92"
+    tags:
+        - go
+        - bufio
+        - jsonl
+        - telemetry
+        - runtime-error
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/runtime-errors/bufio-scanner-readline-eof-pattern-2026-05-09.md
+title: bufio.Reader + ReadString EOF handling pattern for unbounded JSONL lines
 ---
 
 ## Problem

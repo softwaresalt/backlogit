@@ -1,16 +1,32 @@
 ---
-title: "GitHub PR Review Threads: Bulk Resolve via GraphQL When Branch Protection Blocks Merge"
-problem_type: workflow_issue
-category: workflow_issue
-component: cli
-root_cause: incorrect_error_type
-resolution_type: documentation
-severity: medium
-message: "branch-protection conversation-resolution rule is not bypassable by --admin; use resolveReviewThread GraphQL mutation to bulk-resolve threads before merge"
-file_path: ".github/skills/pr-lifecycle/SKILL.md"
-resolved: true
-tags: [github, graphql, pr-review, conversation-resolution, branch-protection, merge-blocked, copilot-review, resolveReviewThread, gh-cli]
-date: 2026-04-23
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: cli
+    date: 2026-04-23T00:00:00Z
+    file_path: .github/skills/pr-lifecycle/SKILL.md
+    message: branch-protection conversation-resolution rule is not bypassable by --admin; use resolveReviewThread GraphQL mutation to bulk-resolve threads before merge
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: incorrect_error_type
+    severity: medium
+    tags:
+        - github
+        - graphql
+        - pr-review
+        - conversation-resolution
+        - branch-protection
+        - merge-blocked
+        - copilot-review
+        - resolveReviewThread
+        - gh-cli
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/github-pr-bulk-resolve-review-threads-graphql-2026-04-23.md
+title: 'GitHub PR Review Threads: Bulk Resolve via GraphQL When Branch Protection Blocks Merge'
 ---
 
 # GitHub PR Review Threads: Bulk Resolve via GraphQL When Branch Protection Blocks Merge
