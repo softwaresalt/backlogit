@@ -1,13 +1,20 @@
 ---
-title: "Root-ID Conflict Integrity: Detection, Allocation, and Archive Safety"
-date: 2026-06-23
-origin: "docs/decisions/2026-06-23-root-id-conflict-integrity-deliberation.md"
-status: reviewed
-stash_ids:
-  - "0F65FBC9"
-related_stash:
-  - "B8FF7590"
-  - "C55C5158"
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-06-23T00:00:00Z
+    origin: docs/decisions/2026-06-23-root-id-conflict-integrity-deliberation.md
+    related_stash:
+        - B8FF7590
+        - C55C5158
+    stash_ids:
+        - 0F65FBC9
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-06-23-root-id-conflict-integrity-plan.md
+title: 'Root-ID Conflict Integrity: Detection, Allocation, and Archive Safety'
 ---
 
 ## Problem Frame

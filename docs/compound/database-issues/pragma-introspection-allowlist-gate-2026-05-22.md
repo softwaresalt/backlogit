@@ -1,10 +1,20 @@
 ---
-title: "PRAGMA Introspection Allowlist Gate"
-description: "Validate PRAGMA names against an explicit allowlist before string interpolation — prevents injection via corrupted sqlite_master entries"
-ms.date: 2026-05-22
-ms.topic: reference
-tags: ["sqlite", "security", "pragma", "schema-introspection"]
-source_shipment: 063-S
+chunk_strategy: h1-h2-h3
+description: Validate PRAGMA names against an explicit allowlist before string interpolation — prevents injection via corrupted sqlite_master entries
+doc_type: learning
+docline:
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+    source_shipment: 063-S
+    tags:
+        - sqlite
+        - security
+        - pragma
+        - schema-introspection
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/database-issues/pragma-introspection-allowlist-gate-2026-05-22.md
+title: PRAGMA Introspection Allowlist Gate
 ---
 
 ## PRAGMA Introspection Allowlist Gate

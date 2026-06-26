@@ -1,9 +1,15 @@
 ---
-title: "MCP Merge Sync: Incremental Cache Refresh for .backlogit Drift"
-description: "Implementation plan for the backlogit_merge_sync MCP tool: incremental SQLite cache refresh from .backlogit/ file diffs"
-date: 2026-04-21
-origin: ".backlogit/queue/037-DL.md"
-status: draft
+chunk_strategy: h1-h2-h3
+description: 'Implementation plan for the backlogit_merge_sync MCP tool: incremental SQLite cache refresh from .backlogit/ file diffs'
+doc_type: plan
+docline:
+    date: 2026-04-21T00:00:00Z
+    origin: .backlogit/queue/037-DL.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-21-mcp-merge-sync-plan.md
+title: 'MCP Merge Sync: Incremental Cache Refresh for .backlogit Drift'
 ---
 
 ## Problem Frame

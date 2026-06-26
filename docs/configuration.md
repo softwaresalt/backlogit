@@ -1,17 +1,23 @@
 ---
-title: Configuration Reference
+chunk_strategy: h1-h2-h3
 description: Reference and examples for configuring backlogit workspaces
-author: backlogit contributors
-ms.date: 2026-04-03
-ms.topic: reference
-keywords:
-  - backlogit
-  - configuration
-  - config.yaml
-  - header-def.yaml
-  - migration.yaml
-  - registry.yaml
-  - templates
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - configuration
+        - config.yaml
+        - header-def.yaml
+        - migration.yaml
+        - registry.yaml
+        - templates
+    ms.date: 2026-04-03T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/configuration.md
+title: Configuration Reference
 ---
 
 ## Configuration Surfaces

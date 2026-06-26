@@ -1,6 +1,11 @@
 ---
-title: "backlogit metadata"
-description: "Discover backlogit metadata for agents and tooling"
+chunk_strategy: h1-h2-h3
+description: Discover backlogit metadata for agents and tooling
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_metadata.md
+title: backlogit metadata
 ---
 
 ## backlogit metadata

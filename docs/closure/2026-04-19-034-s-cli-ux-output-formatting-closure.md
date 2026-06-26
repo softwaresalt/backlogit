@@ -1,7 +1,13 @@
 ---
-title: "034-S CLI UX & Output Formatting — Post-Merge Closure"
-description: "Release-readiness, monitoring, and rollback record for Shipment 034-S (Feature 033-F). PR #43 merged to main on 2026-04-20."
-ms.date: 2026-04-19
+chunk_strategy: h1-h2-h3
+description: 'Release-readiness, monitoring, and rollback record for Shipment 034-S (Feature 033-F). PR #43 merged to main on 2026-04-20.'
+doc_type: closure
+docline:
+    ms.date: 2026-04-19T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-19-034-s-cli-ux-output-formatting-closure.md
+title: 034-S CLI UX & Output Formatting — Post-Merge Closure
 ---
 
 ## Closure Summary

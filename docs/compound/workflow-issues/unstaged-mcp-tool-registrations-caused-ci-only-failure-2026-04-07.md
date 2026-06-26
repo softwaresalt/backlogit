@@ -1,24 +1,30 @@
 ---
-title: "Unstaged MCP tool registrations caused a CI-only failure"
-description: "Documents the local-versus-remote drift that hid missing MCP tool registrations until GitHub CI exercised the pushed branch."
-problem_type: workflow_issue
-category: workflow_issue
-component: mcp_tools
-root_cause: missing_test_fixture
-resolution_type: code_fix
-severity: high
-message: "Local validation can go false-green when required MCP registrations exist only in unstaged changes instead of the pushed branch."
-file_path: "internal/mcp/tools.go"
-resolved: true
-tags:
-  - backlogit
-  - mcp
-  - ci
-  - git
-  - workflow
-  - pr-8
-  - shipment
-date: 2026-04-07
+chunk_strategy: h1-h2-h3
+description: Documents the local-versus-remote drift that hid missing MCP tool registrations until GitHub CI exercised the pushed branch.
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: mcp_tools
+    date: 2026-04-07T00:00:00Z
+    file_path: internal/mcp/tools.go
+    message: Local validation can go false-green when required MCP registrations exist only in unstaged changes instead of the pushed branch.
+    problem_type: workflow_issue
+    resolution_type: code_fix
+    resolved: true
+    root_cause: missing_test_fixture
+    severity: high
+    tags:
+        - backlogit
+        - mcp
+        - ci
+        - git
+        - workflow
+        - pr-8
+        - shipment
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/unstaged-mcp-tool-registrations-caused-ci-only-failure-2026-04-07.md
+title: Unstaged MCP tool registrations caused a CI-only failure
 ---
 
 ## Problem

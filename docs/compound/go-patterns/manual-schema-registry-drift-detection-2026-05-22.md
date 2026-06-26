@@ -1,10 +1,21 @@
 ---
-title: "Manual Schema Registry with Drift-Detection Test"
-description: "Use a manually curated schema registry for production API surfaces; guard it with a reflection-based drift-detection test to prevent stale entries"
-ms.date: 2026-05-22
-ms.topic: reference
-tags: ["go", "testing", "schema", "reflection", "telemetry"]
-source_shipment: 063-S
+chunk_strategy: h1-h2-h3
+description: Use a manually curated schema registry for production API surfaces; guard it with a reflection-based drift-detection test to prevent stale entries
+doc_type: learning
+docline:
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+    source_shipment: 063-S
+    tags:
+        - go
+        - testing
+        - schema
+        - reflection
+        - telemetry
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/go-patterns/manual-schema-registry-drift-detection-2026-05-22.md
+title: Manual Schema Registry with Drift-Detection Test
 ---
 
 ## Manual Schema Registry with Drift-Detection Test

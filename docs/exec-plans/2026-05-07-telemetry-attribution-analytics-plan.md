@@ -1,8 +1,15 @@
 ---
-title: "Telemetry Attribution & Analytics Enhancement"
-date: 2026-05-07
-origin: ".backlogit/queue/043-DL.md"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-07T00:00:00Z
+    origin: .backlogit/queue/043-DL.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-07-telemetry-attribution-analytics-plan.md
+title: Telemetry Attribution & Analytics Enhancement
 ---
 
 # Telemetry Attribution & Analytics Enhancement

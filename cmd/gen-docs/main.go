@@ -9,17 +9,27 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
 	"github.com/softwaresalt/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/docline"
 )
+
+// refDocRelDir is the canonical repo-relative POSIX directory the generated CLI
+// reference pages live in. It drives docline classification (doc_type:
+// reference) and source derivation regardless of the physical output directory,
+// so generated pages carry correct frontmatter even when written to a temp dir
+// under test.
+const refDocRelDir = "docs/cli-reference"
 
 func main() {
 	outDir := "docs/cli-reference"
@@ -34,11 +44,20 @@ func main() {
 
 // generateDocs writes Markdown CLI reference pages for all backlogit commands
 // into outDir. Previously generated pages are removed before regeneration so
-// deleted or renamed commands do not leave stale files behind.
+// deleted or renamed commands do not leave stale files behind. Every generated
+// page carries docline-conformant frontmatter (reference doc_type, repo-relative
+// source, seed-once ingested_at) so the docs are born-compliant for the CI lint
+// gate and a docline migration over them is a no-op.
 func generateDocs(outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
+
+	// Capture existing ingested_at timestamps before removing pages so the
+	// seed-once value is preserved across regenerations. This keeps output
+	// byte-stable so the CLI-Reference-Drift check stays green.
+	ingested := captureIngestedAt(outDir)
+
 	// Remove stale generated pages before regenerating, preserving README.md
 	// and any other hand-written files.
 	if err := removeGeneratedPages(outDir); err != nil {
@@ -60,7 +79,16 @@ func generateDocs(outDir string) error {
 		if desc == "" {
 			desc = title
 		}
-		return fmt.Sprintf("---\ntitle: %q\ndescription: %q\n---\n\n", title, desc)
+		var b strings.Builder
+		b.WriteString("---\n")
+		fmt.Fprintf(&b, "title: %q\n", title)
+		fmt.Fprintf(&b, "description: %q\n", desc)
+		// Re-emit any preserved ingested_at so normalization keeps it stable.
+		if ts := ingested[base]; ts != "" {
+			fmt.Fprintf(&b, "ingested_at: %q\n", ts)
+		}
+		b.WriteString("---\n\n")
+		return b.String()
 	}
 	linkHandler := func(name string) string { return name }
 
@@ -68,7 +96,74 @@ func generateDocs(outDir string) error {
 		return fmt.Errorf("generate markdown tree: %w", err)
 	}
 
-	return addCodeBlockLanguages(outDir)
+	if err := addCodeBlockLanguages(outDir); err != nil {
+		return err
+	}
+
+	// Rewrite frontmatter to the canonical docline form via the shared codec so
+	// generated pages match exactly what `docs migrate` would produce.
+	return normalizeFrontmatter(outDir, time.Now().UTC())
+}
+
+// captureIngestedAt reads the existing generated pages and returns a map of
+// filename → ingested_at so regeneration can preserve the seed-once timestamp.
+// Missing or unreadable files are skipped; a fresh tree seeds new timestamps.
+func captureIngestedAt(dir string) map[string]string {
+	out := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		md, err := docline.Decode(raw)
+		if err != nil || !md.HasFrontmatter {
+			continue
+		}
+		if ts := docline.FromMap(md.Frontmatter).IngestedAt; ts != "" {
+			out[e.Name()] = ts
+		}
+	}
+	return out
+}
+
+// normalizeFrontmatter rewrites every generated page's frontmatter to the
+// canonical docline authoring form via the shared codec, preserving body bytes.
+// README.md is hand-written and migrated separately, so it is left untouched.
+// now seeds ingested_at for pages that did not carry a preserved value.
+func normalizeFrontmatter(dir string, now time.Time) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" || e.Name() == "README.md" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		relPath := refDocRelDir + "/" + e.Name()
+		normalized, err := docline.Normalize(relPath, raw, docline.NormalizeOptions{Now: now})
+		if err != nil {
+			return fmt.Errorf("normalize %s: %w", e.Name(), err)
+		}
+		if bytes.Equal(raw, normalized) {
+			continue
+		}
+		if err := os.WriteFile(path, normalized, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", e.Name(), err)
+		}
+	}
+	return nil
 }
 
 // disableAutoGenTag recursively sets DisableAutoGenTag = true on every command

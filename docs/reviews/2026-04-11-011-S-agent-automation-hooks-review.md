@@ -1,9 +1,16 @@
 ---
-title: "Review: 011-S Agent Automation Hooks"
-date: 2026-04-11
-shipment: 011-S
-branch: ship/011-S-agent-automation-hooks
-status: PASS
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: review
+docline:
+    branch: ship/011-S-agent-automation-hooks
+    date: 2026-04-11T00:00:00Z
+    shipment: 011-S
+    status: PASS
+ingested_at: "2026-06-26T02:33:53Z"
+schema_version: "1.0"
+source: docs/reviews/2026-04-11-011-S-agent-automation-hooks-review.md
+title: 'Review: 011-S Agent Automation Hooks'
 ---
 
 ## Summary

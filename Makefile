@@ -1,4 +1,4 @@
-.PHONY: all build test lint vet fmt cover clean install docs verify-plugin
+.PHONY: all build test lint vet fmt cover clean install docs docs-lint verify-plugin
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -35,6 +35,9 @@ install:
 
 docs:
 	go run ./cmd/gen-docs docs/cli-reference
+
+docs-lint: ## Enforce docline frontmatter compliance on authored docs
+	go run ./cmd/backlogit docs lint
 
 verify-plugin: ## Check plugin copies are in sync with .github/ sources
 	@echo "Checking plugin agent copies..."

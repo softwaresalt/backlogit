@@ -1,8 +1,14 @@
 ---
-title: "059-S Post-Merge Closure"
-description: "Operational closure record for shipment 059-S after feature PR #125 merged without the follow-on closure landing on main"
-ms.date: 2026-05-30
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 059-S after feature PR #125 merged without the follow-on closure landing on main'
+doc_type: closure
+docline:
+    ms.date: 2026-05-30T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-30-059-s-archive-and-hierarchy-rollback-integrity-closure.md
+title: 059-S Post-Merge Closure
 ---
 
 ## Scope

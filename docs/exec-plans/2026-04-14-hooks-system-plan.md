@@ -1,8 +1,15 @@
 ---
-title: "Hooks System: Internal Lifecycle Hooks and External Webhook Dispatch"
-date: 2026-04-14
-origin: ".backlogit/archive/007-DL.md, .backlogit/queue/032-DL.md"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-14T00:00:00Z
+    origin: .backlogit/archive/007-DL.md, .backlogit/queue/032-DL.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-14-hooks-system-plan.md
+title: 'Hooks System: Internal Lifecycle Hooks and External Webhook Dispatch'
 ---
 
 <!-- plan-review-attempt: 2 -->

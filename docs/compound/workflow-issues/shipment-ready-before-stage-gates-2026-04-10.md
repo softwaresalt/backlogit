@@ -1,27 +1,33 @@
 ---
-title: "Shipment ready before Stage gates completed"
-description: "Documents how shipment 006-S was marked ready for Ship before deliberation, exec plan, and plan review existed for harvested stash scope 834CCDB7 / 023.008-T."
-problem_type: workflow_issue
-category: workflow_issue
-component: task_manager
-root_cause: missing_tooling
-resolution_type: documentation
-severity: high
-message: "Shipment 006-S was marked ready for Ship even though harvested stash scope 834CCDB7 lacked deliberation, exec plan, and plan review gates."
-file_path: "docs/memory/2026-04-10-stage-stash-triage.md"
-resolved: false
-tags:
-  - stage
-  - shipment
-  - stage-gating
-  - pre-shipment-validation
-  - stash-harvest
-  - deliberation
-  - exec-plan
-  - plan-review
-  - retroactive-gating
-  - ready-for-ship
-date: 2026-04-10
+chunk_strategy: h1-h2-h3
+description: Documents how shipment 006-S was marked ready for Ship before deliberation, exec plan, and plan review existed for harvested stash scope 834CCDB7 / 023.008-T.
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: task_manager
+    date: 2026-04-10T00:00:00Z
+    file_path: docs/memory/2026-04-10-stage-stash-triage.md
+    message: Shipment 006-S was marked ready for Ship even though harvested stash scope 834CCDB7 lacked deliberation, exec plan, and plan review gates.
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: false
+    root_cause: missing_tooling
+    severity: high
+    tags:
+        - stage
+        - shipment
+        - stage-gating
+        - pre-shipment-validation
+        - stash-harvest
+        - deliberation
+        - exec-plan
+        - plan-review
+        - retroactive-gating
+        - ready-for-ship
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/shipment-ready-before-stage-gates-2026-04-10.md
+title: Shipment ready before Stage gates completed
 ---
 
 ## Problem

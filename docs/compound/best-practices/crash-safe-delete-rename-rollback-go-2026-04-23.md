@@ -1,16 +1,32 @@
 ---
-title: "Crash-Safe Delete: Rename Temp Back to Original Path on os.Remove Failure"
-problem_type: best_practice
-category: best_practice
-component: cli
-root_cause: incorrect_error_type
-resolution_type: code_fix
-severity: medium
-message: "when os.Remove(tempPath) fails after a DB delete in a rename→DB→remove sequence, rename temp back to the original canonical path before returning the error"
-file_path: "internal/core/delete_crashsafe_042.go"
-resolved: true
-tags: [crash-safety, delete, atomicity, file-rename, rollback, recovery, golang, best-practice, workspace-integrity]
-date: 2026-04-23
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: best_practice
+    component: cli
+    date: 2026-04-23T00:00:00Z
+    file_path: internal/core/delete_crashsafe_042.go
+    message: when os.Remove(tempPath) fails after a DB delete in a rename→DB→remove sequence, rename temp back to the original canonical path before returning the error
+    problem_type: best_practice
+    resolution_type: code_fix
+    resolved: true
+    root_cause: incorrect_error_type
+    severity: medium
+    tags:
+        - crash-safety
+        - delete
+        - atomicity
+        - file-rename
+        - rollback
+        - recovery
+        - golang
+        - best-practice
+        - workspace-integrity
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/crash-safe-delete-rename-rollback-go-2026-04-23.md
+title: 'Crash-Safe Delete: Rename Temp Back to Original Path on os.Remove Failure'
 ---
 
 # Crash-Safe Delete: Rename Temp Back to Original Path on os.Remove Failure

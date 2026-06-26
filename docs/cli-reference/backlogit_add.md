@@ -1,6 +1,11 @@
 ---
-title: "backlogit add"
-description: "Create a new artifact"
+chunk_strategy: h1-h2-h3
+description: Create a new artifact
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_add.md
+title: backlogit add
 ---
 
 ## backlogit add

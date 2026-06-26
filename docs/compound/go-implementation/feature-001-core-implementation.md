@@ -1,3 +1,12 @@
+---
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/go-implementation/feature-001-core-implementation.md
+title: 'Compound Learnings: Feature 001 — Backlogit Core Implementation'
+---
 # Compound Learnings: Feature 001 — Backlogit Core Implementation
 
 ## Session Summary

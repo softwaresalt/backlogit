@@ -1,6 +1,11 @@
 ---
-title: "backlogit sync"
-description: "Rehydrate the SQLite index from Markdown source files"
+chunk_strategy: h1-h2-h3
+description: Rehydrate the SQLite index from Markdown source files
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_sync.md
+title: backlogit sync
 ---
 
 ## backlogit sync

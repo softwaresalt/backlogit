@@ -1,12 +1,18 @@
 ---
-title: "Stale backlogit binary causes SQLite 'out of memory (14)' after schema changes"
-description: "After a merge that adds new SQLite columns, an older compiled backlogit binary reports 'unable to open database file: out of memory (14)' - this is a binary version mismatch, not a real database error"
-ms.date: 2026-04-13
-tags:
-  - sqlite
-  - runtime
-  - debugging
-  - ship
+chunk_strategy: h1-h2-h3
+description: 'After a merge that adds new SQLite columns, an older compiled backlogit binary reports ''unable to open database file: out of memory (14)'' - this is a binary version mismatch, not a real database error'
+doc_type: learning
+docline:
+    ms.date: 2026-04-13T00:00:00Z
+    tags:
+        - sqlite
+        - runtime
+        - debugging
+        - ship
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/runtime-errors/stale-binary-sqlite-out-of-memory-after-schema-merge-2026-04-13.md
+title: Stale backlogit binary causes SQLite 'out of memory (14)' after schema changes
 ---
 
 ## Problem

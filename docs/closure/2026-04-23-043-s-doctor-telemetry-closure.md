@@ -1,13 +1,19 @@
 ---
-title: "043-S Doctor Completion & Telemetry Parser — Post-Merge Closure"
-description: "Operational closure for PR #64: doctor orphan fix, CLI doctor command, and telemetry parser multi-line format support"
-ms.date: 2026-04-23
-ms.topic: reference
-author: Copilot
-shipment: 043-S
-merge_sha: afe1a16
-pr: "https://github.com/softwaresalt/backlogit/pull/64"
-status: READY
+chunk_strategy: h1-h2-h3
+description: 'Operational closure for PR #64: doctor orphan fix, CLI doctor command, and telemetry parser multi-line format support'
+doc_type: closure
+docline:
+    author: Copilot
+    merge_sha: afe1a16
+    ms.date: 2026-04-23T00:00:00Z
+    ms.topic: reference
+    pr: https://github.com/softwaresalt/backlogit/pull/64
+    shipment: 043-S
+    status: READY
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-23-043-s-doctor-telemetry-closure.md
+title: 043-S Doctor Completion & Telemetry Parser — Post-Merge Closure
 ---
 
 ## Summary

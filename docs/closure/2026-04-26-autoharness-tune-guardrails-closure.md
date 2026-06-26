@@ -1,8 +1,14 @@
 ---
-title: "Autoharness Tune Guardrails Closure"
-description: "Post-merge operational closure for PR #77 and merge commit f894f9e"
-ms.date: 2026-04-26
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Post-merge operational closure for PR #77 and merge commit f894f9e'
+doc_type: closure
+docline:
+    ms.date: 2026-04-26T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-26-autoharness-tune-guardrails-closure.md
+title: Autoharness Tune Guardrails Closure
 ---
 
 ## Closure Context

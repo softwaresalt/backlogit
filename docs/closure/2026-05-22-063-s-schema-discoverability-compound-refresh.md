@@ -1,10 +1,16 @@
 ---
-title: "Compound Refresh: 063-S Schema Discoverability"
-description: "Compound library review for shipment 063-S — evaluating entries affected by schema discoverability shipping"
-ms.date: 2026-05-22
-ms.topic: reference
-shipment: 063-S
-mode: propose
+chunk_strategy: h1-h2-h3
+description: Compound library review for shipment 063-S — evaluating entries affected by schema discoverability shipping
+doc_type: closure
+docline:
+    mode: propose
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+    shipment: 063-S
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-22-063-s-schema-discoverability-compound-refresh.md
+title: 'Compound Refresh: 063-S Schema Discoverability'
 ---
 
 ## Compound Refresh: 063-S Schema Discoverability

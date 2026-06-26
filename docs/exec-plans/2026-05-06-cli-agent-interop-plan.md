@@ -1,8 +1,15 @@
 ---
-title: "CLI Agent Interop — JSON-RPC Output & Stash Kind Expansion"
-date: 2026-05-06
-origin: "stash:B76EB8C4,B387FFA9"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-06T00:00:00Z
+    origin: stash:B76EB8C4,B387FFA9
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-06-cli-agent-interop-plan.md
+title: CLI Agent Interop — JSON-RPC Output & Stash Kind Expansion
 ---
 
 # CLI Agent Interop — JSON-RPC Output & Stash Kind Expansion

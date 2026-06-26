@@ -1,7 +1,13 @@
 ---
-title: "035-S CLI UX Polish Follow-ups — Post-Merge Closure"
-description: "Release-readiness, monitoring, and rollback record for Shipment 035-S. PR #45 merged to main on 2026-04-20."
-ms.date: 2026-04-20
+chunk_strategy: h1-h2-h3
+description: 'Release-readiness, monitoring, and rollback record for Shipment 035-S. PR #45 merged to main on 2026-04-20.'
+doc_type: closure
+docline:
+    ms.date: 2026-04-20T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-20-035-s-cli-ux-polish-closure.md
+title: 035-S CLI UX Polish Follow-ups — Post-Merge Closure
 ---
 
 ## Closure Summary

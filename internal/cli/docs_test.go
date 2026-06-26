@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,6 +85,36 @@ func TestDocsLint_FailsOnMissingRequired(t *testing.T) {
 	for _, f := range res.Findings {
 		assert.NotEqual(t, "docs/memory/skip.md", f.File)
 	}
+}
+
+// TestDocsLint_CIGateContract pins the exit-code contract that the docs-lint CI
+// gate and the `make docs-lint` target depend on: `docs lint` returns
+// errLintViolations (which the binary maps to a non-zero process exit) when an
+// in-scope doc violates the authoring profile, and returns nil (exit 0) when the
+// tree is clean. If this contract ever regresses — e.g. lint starts exiting zero
+// on violations — the CI gate would silently stop blocking non-compliant docs,
+// so this test fails closed to protect 065.010-T's enforcement guarantee.
+func TestDocsLint_CIGateContract(t *testing.T) {
+	t.Run("fails closed on an in-scope violation", func(t *testing.T) {
+		root := t.TempDir()
+		// Missing source + doc_type → authoring-profile violation.
+		writeFixtureDoc(t, root, "docs/reviews/bad.md", "---\ntitle: Bad\n---\nBody.\n")
+
+		// Invoked exactly as the CI gate runs it: default profile.
+		_, err := runDocs(t, root, "docs", "lint")
+		require.Error(t, err, "lint must fail closed (non-zero exit) on violations")
+		assert.True(t, errors.Is(err, errLintViolations),
+			"the gate relies on errLintViolations to map to a non-zero exit code")
+	})
+
+	t.Run("passes on a clean tree", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureDoc(t, root, "docs/decisions/good.md",
+			"---\nchunk_strategy: h1-h2-h3\ndescription: \"\"\ndoc_type: decision\ningested_at: \"2026-06-01T00:00:00Z\"\nschema_version: \"1.0\"\nsource: docs/decisions/good.md\ntitle: Good\n---\nBody.\n")
+
+		_, err := runDocs(t, root, "docs", "lint")
+		require.NoError(t, err, "a clean tree must exit zero so CI passes")
+	})
 }
 
 func TestDocsMigrate_DryRunWritesNothing(t *testing.T) {

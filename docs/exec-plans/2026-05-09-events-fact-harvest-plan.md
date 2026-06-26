@@ -1,14 +1,20 @@
 ---
-title: "events.jsonl Fact Table Harvest — Implementation Plan"
-description: "Retroactive exec-plan for PR #98: adds granular tool-call and session-fact JSONL tables with --by tool and --by context reporting dimensions"
-feature_id: "055-F"
-deliberation_id: "045-DL"
-branch: "feat/054-events-fact-harvest"
-pr: "#98"
-commit: "68fa483f081e5536b8a66b4ffe999922b6a6e977"
-date: 2026-05-09
-origin: ".backlogit/queue/045-DL.md"
-status: approved
+chunk_strategy: h1-h2-h3
+description: 'Retroactive exec-plan for PR #98: adds granular tool-call and session-fact JSONL tables with --by tool and --by context reporting dimensions'
+doc_type: plan
+docline:
+    branch: feat/054-events-fact-harvest
+    commit: 68fa483f081e5536b8a66b4ffe999922b6a6e977
+    date: 2026-05-09T00:00:00Z
+    deliberation_id: 045-DL
+    feature_id: 055-F
+    origin: .backlogit/queue/045-DL.md
+    pr: '#98'
+    status: approved
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-09-events-fact-harvest-plan.md
+title: events.jsonl Fact Table Harvest — Implementation Plan
 ---
 
 ## Overview

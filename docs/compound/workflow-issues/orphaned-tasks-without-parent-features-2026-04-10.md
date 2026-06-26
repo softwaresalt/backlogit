@@ -1,26 +1,33 @@
 ---
-title: "Orphaned Tasks: Missing Parent Features, Non-Hierarchical IDs, and Incomplete Shipment Manifests"
-problem_type: workflow_issue
-category: workflow_issue
-component: task_manager
-root_cause: schema_mismatch
-resolution_type: code_fix
-severity: high
-message: "Level-2 tasks created with null parent_id; adoption did not rewrite IDs or filenames; shipment manifests omitted parent features"
-file_path: "internal/core/artifacts.go"
-resolved: true
-tags:
-  - hierarchy
-  - orphan
-  - parent_id
-  - hierarchical-ids
-  - filename-convention
-  - shipment-manifest
-  - stash-harvest
-  - wit-enforcement
-  - task-creation
-  - validation
-date: 2026-04-10
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: task_manager
+    date: 2026-04-10T00:00:00Z
+    file_path: internal/core/artifacts.go
+    message: Level-2 tasks created with null parent_id; adoption did not rewrite IDs or filenames; shipment manifests omitted parent features
+    problem_type: workflow_issue
+    resolution_type: code_fix
+    resolved: true
+    root_cause: schema_mismatch
+    severity: high
+    tags:
+        - hierarchy
+        - orphan
+        - parent_id
+        - hierarchical-ids
+        - filename-convention
+        - shipment-manifest
+        - stash-harvest
+        - wit-enforcement
+        - task-creation
+        - validation
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/orphaned-tasks-without-parent-features-2026-04-10.md
+title: 'Orphaned Tasks: Missing Parent Features, Non-Hierarchical IDs, and Incomplete Shipment Manifests'
 ---
 
 ## Problem

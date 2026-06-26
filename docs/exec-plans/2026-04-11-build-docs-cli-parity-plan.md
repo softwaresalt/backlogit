@@ -1,8 +1,15 @@
 ---
-title: "Build, Docs & CLI Parity"
-date: 2026-04-11
-origin: "stash entries FFF344F2, BC78CBDA, E3627E50, D7B72D92"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-11T00:00:00Z
+    origin: stash entries FFF344F2, BC78CBDA, E3627E50, D7B72D92
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-11-build-docs-cli-parity-plan.md
+title: Build, Docs & CLI Parity
 ---
 
 ## Problem Frame

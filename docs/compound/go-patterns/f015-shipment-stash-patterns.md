@@ -1,25 +1,31 @@
 ---
-title: "F015 shipment and stash patterns from the two-agent workflow refactor"
-description: "Hard-won Go, SQLite, stash migration, and regression-test patterns learned while building F015 in backlogit."
-problem_type: best_practice
-category: best_practice
-component: migrations
-root_cause: schema_mismatch
-resolution_type: documentation
-severity: medium
-message: "F015 exposed repeatable patterns for tab-indented edits, SQLite JSON decoding, stash migration, rehydration counts, and default-type regressions."
-file_path: "internal/stash/jsonl.go"
-resolved: true
-tags:
-  - backlogit
-  - f015
-  - shipment
-  - stash
-  - sqlite
-  - rehydration
-  - migration
-  - go-patterns
-date: 2026-04-06
+chunk_strategy: h1-h2-h3
+description: Hard-won Go, SQLite, stash migration, and regression-test patterns learned while building F015 in backlogit.
+doc_type: learning
+docline:
+    category: best_practice
+    component: migrations
+    date: 2026-04-06T00:00:00Z
+    file_path: internal/stash/jsonl.go
+    message: F015 exposed repeatable patterns for tab-indented edits, SQLite JSON decoding, stash migration, rehydration counts, and default-type regressions.
+    problem_type: best_practice
+    resolution_type: documentation
+    resolved: true
+    root_cause: schema_mismatch
+    severity: medium
+    tags:
+        - backlogit
+        - f015
+        - shipment
+        - stash
+        - sqlite
+        - rehydration
+        - migration
+        - go-patterns
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/go-patterns/f015-shipment-stash-patterns.md
+title: F015 shipment and stash patterns from the two-agent workflow refactor
 ---
 
 ## TL;DR summary

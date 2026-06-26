@@ -1,17 +1,31 @@
 ---
-title: "Hybrid npm wrapper for Go binary distribution (three-tier resolver)"
-description: "Distribute a native Go binary via npm without requiring Go on the user's system using a three-tier PATH/optionalDep/GitHub-Releases resolver with SHA256 verification."
-problem_type: best_practice
-category: best_practice
-component: cli
-root_cause: missing_import
-resolution_type: feature_gate
-severity: high
-message: "Distribute a native Go binary via npm without requiring Go on the user's system using a three-tier PATH/optionalDep/GitHub-Releases resolver with SHA256 verification."
-file_path: "npm/backlogit-mcp/lib/resolve.js"
-resolved: true
-tags: [npm, go, binary-distribution, copilot-plugin, nodejs, sha256, optional-dependencies, postinstall]
-date: 2026-04-28
+chunk_strategy: h1-h2-h3
+description: Distribute a native Go binary via npm without requiring Go on the user's system using a three-tier PATH/optionalDep/GitHub-Releases resolver with SHA256 verification.
+doc_type: learning
+docline:
+    category: best_practice
+    component: cli
+    date: 2026-04-28T00:00:00Z
+    file_path: npm/backlogit-mcp/lib/resolve.js
+    message: Distribute a native Go binary via npm without requiring Go on the user's system using a three-tier PATH/optionalDep/GitHub-Releases resolver with SHA256 verification.
+    problem_type: best_practice
+    resolution_type: feature_gate
+    resolved: true
+    root_cause: missing_import
+    severity: high
+    tags:
+        - npm
+        - go
+        - binary-distribution
+        - copilot-plugin
+        - nodejs
+        - sha256
+        - optional-dependencies
+        - postinstall
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/npm-hybrid-go-binary-resolver-2026-04-28.md
+title: Hybrid npm wrapper for Go binary distribution (three-tier resolver)
 ---
 
 ## Problem

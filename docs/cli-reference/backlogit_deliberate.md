@@ -1,6 +1,11 @@
 ---
-title: "backlogit deliberate"
-description: "Create a deliberation artifact linked to a stash entry"
+chunk_strategy: h1-h2-h3
+description: Create a deliberation artifact linked to a stash entry
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_deliberate.md
+title: backlogit deliberate
 ---
 
 ## backlogit deliberate

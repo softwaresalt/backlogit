@@ -1,9 +1,15 @@
 ---
-title: "Feature 002 Code Review: Queue Features CLI, Templates, and MCP Tools"
-description: "Structured code review of branch 002-queue-features-cli-header-templates-tools via 5 review personas"
-author: review-skill
-ms.date: 2026-03-31
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Structured code review of branch 002-queue-features-cli-header-templates-tools via 5 review personas
+doc_type: review
+docline:
+    author: review-skill
+    ms.date: 2026-03-31T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:33:53Z"
+schema_version: "1.0"
+source: docs/reviews/2026-03-31-feature-002-code-review.md
+title: 'Feature 002 Code Review: Queue Features CLI, Templates, and MCP Tools'
 ---
 
 # Feature 002 Code Review

@@ -1,6 +1,11 @@
 ---
-title: "backlogit checkpoint cleanup"
-description: "Archive resolved and stale checkpoints"
+chunk_strategy: h1-h2-h3
+description: Archive resolved and stale checkpoints
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_checkpoint_cleanup.md
+title: backlogit checkpoint cleanup
 ---
 
 ## backlogit checkpoint cleanup

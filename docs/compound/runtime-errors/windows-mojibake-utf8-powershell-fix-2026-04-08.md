@@ -1,17 +1,31 @@
 ---
-title: "Windows-1252 Mojibake in UTF-8 JSONL: Detection and Fix with PowerShell"
-description: "How to detect and fix Windows-1252 mojibake bytes written into UTF-8 JSONL files by PowerShell's default system-codepage encoding on Windows."
-problem_type: runtime_error
-category: runtime_error
-component: event_log
-root_cause: encoding_error
-resolution_type: code_fix
-severity: medium
-message: "Windows-1252 bytes written to a UTF-8 JSONL file produce mojibake characters that break JSON parsing."
-file_path: ".backlogit/stash.jsonl"
-resolved: true
-tags: [encoding, utf-8, windows-1252, mojibake, powershell, jsonl, go, windows]
-date: 2026-04-08
+chunk_strategy: h1-h2-h3
+description: How to detect and fix Windows-1252 mojibake bytes written into UTF-8 JSONL files by PowerShell's default system-codepage encoding on Windows.
+doc_type: learning
+docline:
+    category: runtime_error
+    component: event_log
+    date: 2026-04-08T00:00:00Z
+    file_path: .backlogit/stash.jsonl
+    message: Windows-1252 bytes written to a UTF-8 JSONL file produce mojibake characters that break JSON parsing.
+    problem_type: runtime_error
+    resolution_type: code_fix
+    resolved: true
+    root_cause: encoding_error
+    severity: medium
+    tags:
+        - encoding
+        - utf-8
+        - windows-1252
+        - mojibake
+        - powershell
+        - jsonl
+        - go
+        - windows
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/runtime-errors/windows-mojibake-utf8-powershell-fix-2026-04-08.md
+title: 'Windows-1252 Mojibake in UTF-8 JSONL: Detection and Fix with PowerShell'
 ---
 
 ## Problem

@@ -1,19 +1,26 @@
 ---
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: closure
+docline:
+    base: 5b34ed1d
+    branch: feat/065-docline-frontmatter
+    date: 2026-06-25T00:00:00Z
+    mode: report-only (no code modified)
+    review_models:
+        - reviewer-A: claude-sonnet-4.6 (Tier 2)
+        - reviewer-B: gpt-5.5 (Tier 3)
+        - reviewer-C: gemini-3.1-pro-preview (Tier 1)
+    reviewers: 3 (independent, multi-model consensus)
+    schema: schemas/docline/base-frontmatter-v1.schema.json
+    scope:
+        - internal/docline/ (codec, policy, frontmatter, validate, classify, normalize, service, report)
+        - internal/cli/docs.go (+ root.go wiring)
+        - internal/mcp/docs_tools.go (+ tools.go wiring)
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-06-25-docline-frontmatter-adversarial-review.md
 title: Adversarial Review — docline frontmatter tooling
-date: 2026-06-25
-branch: feat/065-docline-frontmatter
-base: 5b34ed1d
-mode: report-only (no code modified)
-reviewers: 3 (independent, multi-model consensus)
-review_models:
-  - reviewer-A: claude-sonnet-4.6 (Tier 2)
-  - reviewer-B: gpt-5.5 (Tier 3)
-  - reviewer-C: gemini-3.1-pro-preview (Tier 1)
-scope:
-  - internal/docline/ (codec, policy, frontmatter, validate, classify, normalize, service, report)
-  - internal/cli/docs.go (+ root.go wiring)
-  - internal/mcp/docs_tools.go (+ tools.go wiring)
-schema: schemas/docline/base-frontmatter-v1.schema.json
 ---
 
 # Adversarial Review: docline frontmatter tooling

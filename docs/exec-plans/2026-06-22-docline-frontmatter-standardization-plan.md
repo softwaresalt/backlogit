@@ -1,11 +1,17 @@
 ---
-title: "Standardize documentation frontmatter on the docline base schema"
-description: "Implementation plan: Go docline validator + native backlogit docs lint/migrate (CLI+MCP), batched content migration, CI gate, and authoring guidance"
-date: 2026-06-22
-origin: "docs/decisions/2026-06-22-docline-frontmatter-standardization-deliberation.md"
-status: planned
-stash_ids:
-  - "29A71E9C"
+chunk_strategy: h1-h2-h3
+description: 'Implementation plan: Go docline validator + native backlogit docs lint/migrate (CLI+MCP), batched content migration, CI gate, and authoring guidance'
+doc_type: plan
+docline:
+    date: 2026-06-22T00:00:00Z
+    origin: docs/decisions/2026-06-22-docline-frontmatter-standardization-deliberation.md
+    stash_ids:
+        - 29A71E9C
+    status: planned
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md
+title: Standardize documentation frontmatter on the docline base schema
 ---
 
 ## Problem Frame

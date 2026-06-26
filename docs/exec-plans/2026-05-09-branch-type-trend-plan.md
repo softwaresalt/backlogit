@@ -1,8 +1,15 @@
 ---
-title: "Branch-Level Telemetry Metrics"
-date: 2026-05-09
-origin: ".backlogit/queue/048-DL.md"
-status: harvested
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-09T00:00:00Z
+    origin: .backlogit/queue/048-DL.md
+    status: harvested
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-09-branch-type-trend-plan.md
+title: Branch-Level Telemetry Metrics
 ---
 
 # Branch-Level Telemetry Metrics

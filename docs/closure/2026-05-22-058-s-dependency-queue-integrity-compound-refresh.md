@@ -1,8 +1,14 @@
 ---
-title: "058-S Compound Refresh Review"
-description: "Compound-refresh assessment for the dependency queue integrity post-merge closure"
-ms.date: 2026-05-22
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Compound-refresh assessment for the dependency queue integrity post-merge closure
+doc_type: closure
+docline:
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-22-058-s-dependency-queue-integrity-compound-refresh.md
+title: 058-S Compound Refresh Review
 ---
 
 ## Scope

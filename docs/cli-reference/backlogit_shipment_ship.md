@@ -1,6 +1,11 @@
 ---
-title: "backlogit shipment ship"
-description: "Close a released shipment and archive the released scope"
+chunk_strategy: h1-h2-h3
+description: Close a released shipment and archive the released scope
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_shipment_ship.md
+title: backlogit shipment ship
 ---
 
 ## backlogit shipment ship

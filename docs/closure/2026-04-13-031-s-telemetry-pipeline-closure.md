@@ -1,8 +1,14 @@
 ---
-title: "031-S Telemetry Pipeline Enhancements: Post-Merge Closure"
-description: "Operational closure record for shipment 031-S, PR #32, merge commit 8e736c7"
-ms.date: 2026-04-13
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 031-S, PR #32, merge commit 8e736c7'
+doc_type: closure
+docline:
+    ms.date: 2026-04-13T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-13-031-s-telemetry-pipeline-closure.md
+title: '031-S Telemetry Pipeline Enhancements: Post-Merge Closure'
 ---
 
 ## Closure Summary

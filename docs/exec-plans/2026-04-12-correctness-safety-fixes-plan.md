@@ -1,8 +1,15 @@
 ---
-title: "Correctness & Safety Fixes"
-date: 2026-04-12
-origin: "Stash entries 042C1812, 6D175713, 3F71C20D, D6E4B181, 53EC8F4C"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-12T00:00:00Z
+    origin: Stash entries 042C1812, 6D175713, 3F71C20D, D6E4B181, 53EC8F4C
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-12-correctness-safety-fixes-plan.md
+title: Correctness & Safety Fixes
 ---
 
 ## Overview

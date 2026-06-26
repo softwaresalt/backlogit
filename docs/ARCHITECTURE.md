@@ -1,8 +1,14 @@
 ---
-title: "backlogit Architecture"
-description: "Top-level domain map, dependency direction, and key surface reference for the backlogit repository"
-ms.date: 2026-05-22
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Top-level domain map, dependency direction, and key surface reference for the backlogit repository
+doc_type: reference
+docline:
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/ARCHITECTURE.md
+title: backlogit Architecture
 ---
 
 ## backlogit Architecture

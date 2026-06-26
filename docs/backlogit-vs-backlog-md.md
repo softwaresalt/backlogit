@@ -1,14 +1,20 @@
 ---
-title: backlogit vs Backlog.md
+chunk_strategy: h1-h2-h3
 description: Feature comparison and architectural differences
-author: backlogit contributors
-ms.date: 2026-04-01
-ms.topic: concept
-keywords:
-  - backlogit
-  - backlog.md
-  - comparison
-  - migration
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - backlog.md
+        - comparison
+        - migration
+    ms.date: 2026-04-01T00:00:00Z
+    ms.topic: concept
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/backlogit-vs-backlog-md.md
+title: backlogit vs Backlog.md
 ---
 
 ## Introduction

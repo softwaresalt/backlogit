@@ -1,6 +1,11 @@
 ---
-title: "backlogit telemetry list"
-description: "List harvested session summaries"
+chunk_strategy: h1-h2-h3
+description: List harvested session summaries
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_telemetry_list.md
+title: backlogit telemetry list
 ---
 
 ## backlogit telemetry list

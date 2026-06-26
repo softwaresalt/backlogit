@@ -1,9 +1,15 @@
 ---
-title: "AdoptItem Cross-Reference Rewrite"
-description: "Implementation plan for fixing stale cross-artifact frontmatter references after AdoptItem ID rewrites"
-date: 2026-04-20
-origin: ".backlogit/queue/035-F.md"
-status: draft
+chunk_strategy: h1-h2-h3
+description: Implementation plan for fixing stale cross-artifact frontmatter references after AdoptItem ID rewrites
+doc_type: plan
+docline:
+    date: 2026-04-20T00:00:00Z
+    origin: .backlogit/queue/035-F.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-20-adoptitem-cross-reference-rewrite-plan.md
+title: AdoptItem Cross-Reference Rewrite
 ---
 
 ## Problem Frame

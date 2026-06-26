@@ -1,13 +1,20 @@
 ---
-title: "Archive and Hierarchy Rollback Integrity"
-date: 2026-05-22
-origin: "docs/decisions/2026-05-22-new-bug-backlog-grouping.md"
-status: reviewed
-stash_ids:
-  - D3BC5A25
-  - 3BA4181D
-  - 88A64440
-  - 0B9C7903
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-22T00:00:00Z
+    origin: docs/decisions/2026-05-22-new-bug-backlog-grouping.md
+    stash_ids:
+        - D3BC5A25
+        - 3BA4181D
+        - 88A64440
+        - 0B9C7903
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-22-lifecycle-archive-rollback-plan.md
+title: Archive and Hierarchy Rollback Integrity
 ---
 
 ## Problem Frame

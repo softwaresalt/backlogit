@@ -1,3 +1,12 @@
+---
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: research
+ingested_at: "2026-06-26T02:33:59Z"
+schema_version: "1.0"
+source: docs/research/Backlogit-Architecture-Design.md
+title: 'Backlogit: Architecture & Design'
+---
 # **Backlogit: Architecture & Design**
 
 ## **1\. Core Concept & Philosophy**

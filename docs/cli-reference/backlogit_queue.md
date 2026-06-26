@@ -1,6 +1,11 @@
 ---
-title: "backlogit queue"
-description: "Manage the work queue"
+chunk_strategy: h1-h2-h3
+description: Manage the work queue
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_queue.md
+title: backlogit queue
 ---
 
 ## backlogit queue

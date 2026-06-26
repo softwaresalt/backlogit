@@ -1,14 +1,20 @@
 ---
-title: Migration Guide
+chunk_strategy: h1-h2-h3
 description: Migrating from Backlog.md to backlogit
-author: backlogit contributors
-ms.date: 2026-04-01
-ms.topic: how-to
-keywords:
-  - backlogit
-  - migration
-  - backlog.md
-  - migrate
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - migration
+        - backlog.md
+        - migrate
+    ms.date: 2026-04-01T00:00:00Z
+    ms.topic: how-to
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/migration-guide.md
+title: Migration Guide
 ---
 
 ## Prerequisites

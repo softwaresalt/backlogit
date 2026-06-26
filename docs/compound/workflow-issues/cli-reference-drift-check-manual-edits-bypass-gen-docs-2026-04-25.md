@@ -1,16 +1,31 @@
 ---
-title: "CLI Reference Drift Check fails when docs/cli-reference/ files are edited manually"
-problem_type: workflow_issue
-category: workflow_issue
-component: cli
-root_cause: schema_mismatch
-resolution_type: code_fix
-severity: medium
-message: "Manually editing docs/cli-reference/*.md bypasses gen-docs and causes CLI Reference Drift Check CI failure; documentation source must live in the Cobra command Long field"
-file_path: "internal/cli/telemetry.go"
-resolved: true
-tags: [cli-reference, cobra, long-field, gen-docs, make-docs, ci-drift, documentation-generation, workflow]
-date: 2026-04-25
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: cli
+    date: 2026-04-25T00:00:00Z
+    file_path: internal/cli/telemetry.go
+    message: Manually editing docs/cli-reference/*.md bypasses gen-docs and causes CLI Reference Drift Check CI failure; documentation source must live in the Cobra command Long field
+    problem_type: workflow_issue
+    resolution_type: code_fix
+    resolved: true
+    root_cause: schema_mismatch
+    severity: medium
+    tags:
+        - cli-reference
+        - cobra
+        - long-field
+        - gen-docs
+        - make-docs
+        - ci-drift
+        - documentation-generation
+        - workflow
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md
+title: CLI Reference Drift Check fails when docs/cli-reference/ files are edited manually
 ---
 
 # CLI Reference Drift Check fails when docs/cli-reference/ files are edited manually

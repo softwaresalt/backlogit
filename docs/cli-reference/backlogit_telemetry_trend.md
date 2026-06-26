@@ -1,6 +1,11 @@
 ---
-title: "backlogit telemetry trend"
-description: "Show token usage trends grouped by date, branch, or model class"
+chunk_strategy: h1-h2-h3
+description: Show token usage trends grouped by date, branch, or model class
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_telemetry_trend.md
+title: backlogit telemetry trend
 ---
 
 ## backlogit telemetry trend

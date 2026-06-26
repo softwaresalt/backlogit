@@ -1,8 +1,14 @@
 ---
-title: "010-S Core Data Integrity & CQRS Compliance: Post-Merge Closure"
-description: "Operational closure record for shipment 010-S, PR #23, merge commit ec7a847"
-ms.date: 2026-04-11
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 010-S, PR #23, merge commit ec7a847'
+doc_type: closure
+docline:
+    ms.date: 2026-04-11T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-11-010-s-core-data-integrity-closure.md
+title: '010-S Core Data Integrity & CQRS Compliance: Post-Merge Closure'
 ---
 
 ## Closure Summary

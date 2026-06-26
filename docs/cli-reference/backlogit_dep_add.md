@@ -1,6 +1,11 @@
 ---
-title: "backlogit dep add"
-description: "Add a dependency edge"
+chunk_strategy: h1-h2-h3
+description: Add a dependency edge
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_dep_add.md
+title: backlogit dep add
 ---
 
 ## backlogit dep add

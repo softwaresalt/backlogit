@@ -1,6 +1,11 @@
 ---
-title: "backlogit telemetry top"
-description: "Show top N servers by token usage"
+chunk_strategy: h1-h2-h3
+description: Show top N servers by token usage
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_telemetry_top.md
+title: backlogit telemetry top
 ---
 
 ## backlogit telemetry top

@@ -1,8 +1,15 @@
 ---
-title: "Agent-Automation Hooks for MCP Event Signals"
-date: 2026-04-11
-origin: ".backlogit/queue/008-DL.md"
-status: revised
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-11T00:00:00Z
+    origin: .backlogit/queue/008-DL.md
+    status: revised
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-11-agent-automation-hooks-plan.md
+title: Agent-Automation Hooks for MCP Event Signals
 ---
 
 ## Problem Frame

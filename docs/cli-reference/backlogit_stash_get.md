@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash get"
-description: "Get a stash entry by ID"
+chunk_strategy: h1-h2-h3
+description: Get a stash entry by ID
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash_get.md
+title: backlogit stash get
 ---
 
 ## backlogit stash get

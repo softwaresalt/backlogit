@@ -1,8 +1,15 @@
 ---
-title: "Shipment B: CLI UX & Output Formatting"
-date: 2026-04-19
-origin: ".backlogit/queue/036-DL.md"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-19T00:00:00Z
+    origin: .backlogit/queue/036-DL.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-19-cli-ux-output-formatting-plan.md
+title: 'Shipment B: CLI UX & Output Formatting'
 ---
 
 # Shipment B: CLI UX & Output Formatting

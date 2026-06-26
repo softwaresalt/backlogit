@@ -1,16 +1,30 @@
 ---
-title: "Empty-String vs Sentinel Discipline in Classification Functions"
-problem_type: best_practice
-category: best_practice
-component: models
-root_cause: type_mismatch
-resolution_type: code_fix
-severity: medium
-message: "Classification functions should return empty string for empty input, not a sentinel; keep display labels at render boundaries only"
-file_path: "internal/telemetry/records.go"
-resolved: true
-tags: [classification, sentinel, empty-string, aggregation, omitempty, telemetry, go]
-date: 2026-05-09
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: best_practice
+    component: models
+    date: 2026-05-09T00:00:00Z
+    file_path: internal/telemetry/records.go
+    message: Classification functions should return empty string for empty input, not a sentinel; keep display labels at render boundaries only
+    problem_type: best_practice
+    resolution_type: code_fix
+    resolved: true
+    root_cause: type_mismatch
+    severity: medium
+    tags:
+        - classification
+        - sentinel
+        - empty-string
+        - aggregation
+        - omitempty
+        - telemetry
+        - go
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/empty-string-vs-sentinel-in-classification-2026-05-09.md
+title: Empty-String vs Sentinel Discipline in Classification Functions
 ---
 
 ## Empty-String vs Sentinel Discipline in Classification Functions

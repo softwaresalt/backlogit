@@ -1,8 +1,14 @@
 ---
-title: "058-S Dependency Queue Integrity Closure"
-description: "Post-merge operational closure for PR #120 and shipment 058-S"
-ms.date: 2026-05-22
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Post-merge operational closure for PR #120 and shipment 058-S'
+doc_type: closure
+docline:
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-22-058-s-dependency-queue-integrity-closure.md
+title: 058-S Dependency Queue Integrity Closure
 ---
 
 ## Closure Context

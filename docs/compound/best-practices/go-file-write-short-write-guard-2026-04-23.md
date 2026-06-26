@@ -1,17 +1,33 @@
 ---
-title: "Go os.File.Write Short-Write Guard: Always Check n == len(data)"
-description: "Check that os.File.Write writes all bytes because short writes can occur without returning an error."
-problem_type: best_practice
-category: best_practice
-component: event_log
-root_cause: incorrect_error_type
-resolution_type: code_fix
-severity: high
-message: "os.File.Write can return n < len(data) with err == nil; not checking n causes silent partial writes that corrupt JSONL and checkpoint files"
-file_path: "internal/events/fsutil.go"
-resolved: true
-tags: [go, os.File, Write, short-write, data-corruption, JSONL, write-durability, fsync, file-io, event_log]
-date: 2026-04-23
+chunk_strategy: h1-h2-h3
+description: Check that os.File.Write writes all bytes because short writes can occur without returning an error.
+doc_type: learning
+docline:
+    category: best_practice
+    component: event_log
+    date: 2026-04-23T00:00:00Z
+    file_path: internal/events/fsutil.go
+    message: os.File.Write can return n < len(data) with err == nil; not checking n causes silent partial writes that corrupt JSONL and checkpoint files
+    problem_type: best_practice
+    resolution_type: code_fix
+    resolved: true
+    root_cause: incorrect_error_type
+    severity: high
+    tags:
+        - go
+        - os.File
+        - Write
+        - short-write
+        - data-corruption
+        - JSONL
+        - write-durability
+        - fsync
+        - file-io
+        - event_log
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/go-file-write-short-write-guard-2026-04-23.md
+title: 'Go os.File.Write Short-Write Guard: Always Check n == len(data)'
 ---
 
 ## Problem

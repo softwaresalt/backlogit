@@ -1,22 +1,28 @@
 ---
-title: "Standardize documentation frontmatter on the docline base schema"
-description: "Deliberation on refactoring backlogit documentation frontmatter to satisfy the docline BaseFrontmatter v1 contract for graphtor-docs vector + graph indexing"
-topic: "Documentation frontmatter standardization on docline base-frontmatter-v1"
-depth: "deep"
-decision_status: "decided"
-promoted_to: "plan"
-linked_artifacts:
-  - "schemas/docline/base-frontmatter-v1.schema.json"
-  - "docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md"
-stash_ids:
-  - "29A71E9C"
-tags:
-  - "documentation"
-  - "frontmatter"
-  - "docline"
-  - "graphtor-docs"
-  - "schema"
-  - "migration"
+chunk_strategy: h1-h2-h3
+description: Deliberation on refactoring backlogit documentation frontmatter to satisfy the docline BaseFrontmatter v1 contract for graphtor-docs vector + graph indexing
+doc_type: decision
+docline:
+    decision_status: decided
+    depth: deep
+    linked_artifacts:
+        - schemas/docline/base-frontmatter-v1.schema.json
+        - docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md
+    promoted_to: plan
+    stash_ids:
+        - 29A71E9C
+    tags:
+        - documentation
+        - frontmatter
+        - docline
+        - graphtor-docs
+        - schema
+        - migration
+    topic: Documentation frontmatter standardization on docline base-frontmatter-v1
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/2026-06-22-docline-frontmatter-standardization-deliberation.md
+title: Standardize documentation frontmatter on the docline base schema
 ---
 
 ## Problem Frame

@@ -37,6 +37,36 @@ func TestNormalize_SetsRepoDerivedFields(t *testing.T) {
 	assert.Equal(t, "1.0", md.Frontmatter["schema_version"])
 }
 
+func TestNormalize_PreservesFullURISource(t *testing.T) {
+	t.Parallel()
+	// A pre-existing full-URI source (a known online source) must be preserved
+	// verbatim, not rewritten to the repo-relative path (Q2 sign-off, 065.002-T).
+	raw := "---\ntitle: Doc\nsource: https://learn.microsoft.com/azure/some-doc\n---\nBody.\n"
+	got := normalizeOnce(t, "docs/research/x.md", raw)
+
+	md, err := Decode([]byte(got))
+	require.NoError(t, err)
+	assert.Equal(t, "https://learn.microsoft.com/azure/some-doc", md.Frontmatter["source"],
+		"full-URI source preserved, not rewritten to a repo-relative path")
+	assert.Equal(t, "research", md.Frontmatter["doc_type"], "doc_type still path-derived")
+
+	// Idempotent: a second pass keeps the same URI source.
+	second := normalizeOnce(t, "docs/research/x.md", got)
+	assert.Equal(t, got, second, "full-URI source preservation is idempotent")
+}
+
+func TestNormalize_DerivesRepoRelativeForNonURISource(t *testing.T) {
+	t.Parallel()
+	// A non-URI (e.g. stale relative) source is (re)derived to the canonical
+	// repo-relative POSIX path — only full-URI sources are preserved.
+	raw := "---\ntitle: Doc\nsource: old/wrong/path.md\n---\nBody.\n"
+	got := normalizeOnce(t, "docs/decisions/x.md", raw)
+	md, err := Decode([]byte(got))
+	require.NoError(t, err)
+	assert.Equal(t, "docs/decisions/x.md", md.Frontmatter["source"],
+		"non-URI source is rederived to the repo-relative POSIX path")
+}
+
 func TestNormalize_FoldsLegacyTypeUnderDocline(t *testing.T) {
 	t.Parallel()
 	raw := "---\ntitle: Doc\ntype: legacy-kind\ntags: [a, b]\nseverity: high\n---\nBody.\n"

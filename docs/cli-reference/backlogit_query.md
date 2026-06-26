@@ -1,6 +1,11 @@
 ---
-title: "backlogit query"
-description: "Execute a read-only SQL query against the index"
+chunk_strategy: h1-h2-h3
+description: Execute a read-only SQL query against the index
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_query.md
+title: backlogit query
 ---
 
 ## backlogit query

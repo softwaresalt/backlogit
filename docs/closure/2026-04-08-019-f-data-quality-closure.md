@@ -1,8 +1,14 @@
 ---
-title: "019-F Data Quality & Tool Efficiency — Post-Merge Closure"
-description: "Operational closure record for shipment 004-S, PR #13, merge commit e4b3289"
-ms.date: 2026-04-08
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 004-S, PR #13, merge commit e4b3289'
+doc_type: closure
+docline:
+    ms.date: 2026-04-08T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-08-019-f-data-quality-closure.md
+title: 019-F Data Quality & Tool Efficiency — Post-Merge Closure
 ---
 
 ## Closure Summary

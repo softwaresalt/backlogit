@@ -1,9 +1,20 @@
 ---
-title: Ghost session filtering pattern in Go telemetry reporters
+chunk_strategy: h1-h2-h3
 description: How to exclude zero-activity sessions from telemetry aggregation while preserving them for auditability
-ms.date: 2026-05-08
-ms.topic: reference
-tags: [telemetry, go, reporter, ghost-session, filtering]
+doc_type: learning
+docline:
+    ms.date: 2026-05-08T00:00:00Z
+    ms.topic: reference
+    tags:
+        - telemetry
+        - go
+        - reporter
+        - ghost-session
+        - filtering
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/telemetry-ghost-session-filtering-pattern.md
+title: Ghost session filtering pattern in Go telemetry reporters
 ---
 
 ## Problem

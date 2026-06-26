@@ -1,17 +1,31 @@
 ---
-title: "Node.js https.get crash on malformed 3xx redirect without Location header"
-description: "Node.js https.get() silently passes undefined to a recursive call when a 3xx redirect is missing the Location header, causing an opaque crash and socket leak."
-problem_type: runtime_error
-category: runtime_error
-component: cli
-root_cause: incorrect_error_type
-resolution_type: code_fix
-severity: high
-message: "https.get() passes undefined to recursive get() call when 3xx response lacks Location header, causing an opaque crash instead of a descriptive error."
-file_path: "npm/backlogit-mcp/lib/resolve.js"
-resolved: true
-tags: [nodejs, https, redirect, undefined, crash, fetch, binary-resolver, socket-leak]
-date: 2026-04-28
+chunk_strategy: h1-h2-h3
+description: Node.js https.get() silently passes undefined to a recursive call when a 3xx redirect is missing the Location header, causing an opaque crash and socket leak.
+doc_type: learning
+docline:
+    category: runtime_error
+    component: cli
+    date: 2026-04-28T00:00:00Z
+    file_path: npm/backlogit-mcp/lib/resolve.js
+    message: https.get() passes undefined to recursive get() call when 3xx response lacks Location header, causing an opaque crash instead of a descriptive error.
+    problem_type: runtime_error
+    resolution_type: code_fix
+    resolved: true
+    root_cause: incorrect_error_type
+    severity: high
+    tags:
+        - nodejs
+        - https
+        - redirect
+        - undefined
+        - crash
+        - fetch
+        - binary-resolver
+        - socket-leak
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/runtime-errors/nodejs-https-redirect-missing-location-2026-04-28.md
+title: Node.js https.get crash on malformed 3xx redirect without Location header
 ---
 
 ## Problem

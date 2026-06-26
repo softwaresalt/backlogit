@@ -1,8 +1,15 @@
 ---
-title: "Model-Aware Telemetry"
-date: 2026-05-08
-origin: "stash:5F0AAB28,stash:B68AED87,stash:6646ACA1"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-08T00:00:00Z
+    origin: stash:5F0AAB28,stash:B68AED87,stash:6646ACA1
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-08-model-aware-telemetry-plan.md
+title: Model-Aware Telemetry
 ---
 
 # Model-Aware Telemetry

@@ -1,17 +1,31 @@
 ---
-title: "Advisory File Lock with Stale TTL: Go Pattern for Crash-Safe Sidecar Locks"
-description: "Go pattern for advisory sidecar file locks with TTL-based stale detection that handles crash-left lock files safely without manual cleanup."
-problem_type: best_practice
-category: best_practice
-component: task_manager
-root_cause: sqlite_locking
-resolution_type: code_fix
-severity: medium
-message: "O_CREATE|O_EXCL sidecar lock files persist after process crash; subsequent writes fail until manual cleanup."
-file_path: "internal/core/stash_lock.go"
-resolved: true
-tags: [go, file-lock, sidecar, crash-safety, stash, concurrency, advisory-lock, ttl]
-date: 2026-04-08
+chunk_strategy: h1-h2-h3
+description: Go pattern for advisory sidecar file locks with TTL-based stale detection that handles crash-left lock files safely without manual cleanup.
+doc_type: learning
+docline:
+    category: best_practice
+    component: task_manager
+    date: 2026-04-08T00:00:00Z
+    file_path: internal/core/stash_lock.go
+    message: O_CREATE|O_EXCL sidecar lock files persist after process crash; subsequent writes fail until manual cleanup.
+    problem_type: best_practice
+    resolution_type: code_fix
+    resolved: true
+    root_cause: sqlite_locking
+    severity: medium
+    tags:
+        - go
+        - file-lock
+        - sidecar
+        - crash-safety
+        - stash
+        - concurrency
+        - advisory-lock
+        - ttl
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/advisory-file-lock-stale-ttl-go-2026-04-08.md
+title: 'Advisory File Lock with Stale TTL: Go Pattern for Crash-Safe Sidecar Locks'
 ---
 
 ## Problem

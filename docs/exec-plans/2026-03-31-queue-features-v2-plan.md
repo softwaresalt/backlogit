@@ -1,9 +1,16 @@
 ---
-title: "Queue Features V2: WIT Metadata, Archive Lifecycle, Dependency Queue, and Hierarchical File Organization"
-date: 2026-03-31
-origin: ".backlog/queue.md"
-status: draft
-predecessor: ".backlog/exec-plans/2026-03-30-queue-features-plan.md"
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-03-31T00:00:00Z
+    origin: .backlog/queue.md
+    predecessor: .backlog/exec-plans/2026-03-30-queue-features-plan.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-03-31-queue-features-v2-plan.md
+title: 'Queue Features V2: WIT Metadata, Archive Lifecycle, Dependency Queue, and Hierarchical File Organization'
 ---
 
 ## Problem Statement

@@ -1,16 +1,30 @@
 ---
-title: "PR Review Comment Reply Protocol: Always Reply After Fixing"
-problem_type: workflow_issue
-category: workflow_issue
-component: cli
-root_cause: incorrect_error_type
-resolution_type: documentation
-severity: medium
-message: "After fixing PR review comments, always post a reply to each comment thread explaining the fix — a commit alone is not enough."
-file_path: ".github/skills/fix-ci/SKILL.md"
-resolved: true
-tags: [pr-review, github, fix-ci, comment-reply, workflow, protocol, review-comments]
-date: 2026-04-10
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: cli
+    date: 2026-04-10T00:00:00Z
+    file_path: .github/skills/fix-ci/SKILL.md
+    message: After fixing PR review comments, always post a reply to each comment thread explaining the fix — a commit alone is not enough.
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: incorrect_error_type
+    severity: medium
+    tags:
+        - pr-review
+        - github
+        - fix-ci
+        - comment-reply
+        - workflow
+        - protocol
+        - review-comments
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/pr-review-comment-reply-protocol-2026-04-10.md
+title: 'PR Review Comment Reply Protocol: Always Reply After Fixing'
 ---
 
 ## Problem

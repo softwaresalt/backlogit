@@ -1,6 +1,11 @@
 ---
-title: "backlogit queue move"
-description: "Reorder an item in the queue"
+chunk_strategy: h1-h2-h3
+description: Reorder an item in the queue
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_queue_move.md
+title: backlogit queue move
 ---
 
 ## backlogit queue move

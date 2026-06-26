@@ -1,8 +1,14 @@
 ---
-title: Telemetry fields reference
+chunk_strategy: h1-h2-h3
 description: Reference for harvested telemetry JSONL fields, derived metrics, and SQLite column mappings
-ms.date: 2026-05-05
-ms.topic: reference
+doc_type: guide
+docline:
+    ms.date: 2026-05-05T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/telemetry-fields.md
+title: Telemetry fields reference
 ---
 
 ## Overview

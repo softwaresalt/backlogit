@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash list"
-description: "List the current active stash entries"
+chunk_strategy: h1-h2-h3
+description: List the current active stash entries
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash_list.md
+title: backlogit stash list
 ---
 
 ## backlogit stash list

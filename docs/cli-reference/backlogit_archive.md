@@ -1,6 +1,11 @@
 ---
-title: "backlogit archive"
-description: "Archive a completed artifact"
+chunk_strategy: h1-h2-h3
+description: Archive a completed artifact
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_archive.md
+title: backlogit archive
 ---
 
 ## backlogit archive

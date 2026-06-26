@@ -1,8 +1,15 @@
 ---
-title: "Stash Lifecycle & Hygiene"
-date: 2026-04-13
-origin: "013-DL, 014-DL"
-status: approved
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-13T00:00:00Z
+    origin: 013-DL, 014-DL
+    status: approved
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-13-stash-lifecycle-hygiene-plan.md
+title: Stash Lifecycle & Hygiene
 ---
 
 ## Overview

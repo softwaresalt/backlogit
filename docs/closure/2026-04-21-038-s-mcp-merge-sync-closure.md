@@ -1,7 +1,13 @@
 ---
-title: "Closure: 038-S MCP Merge Sync — Incremental Cache Refresh"
-description: "Post-merge operational closure for shipment 038-S — backlogit_merge_sync MCP tool for incremental SQLite cache refresh from .backlogit/ file diffs"
-ms.date: 2026-04-21
+chunk_strategy: h1-h2-h3
+description: Post-merge operational closure for shipment 038-S — backlogit_merge_sync MCP tool for incremental SQLite cache refresh from .backlogit/ file diffs
+doc_type: closure
+docline:
+    ms.date: 2026-04-21T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-21-038-s-mcp-merge-sync-closure.md
+title: 'Closure: 038-S MCP Merge Sync — Incremental Cache Refresh'
 ---
 
 ## Context

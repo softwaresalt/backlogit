@@ -1,6 +1,11 @@
 ---
-title: "backlogit metadata export-command-map"
-description: "Write an agent-readable command map into the workspace"
+chunk_strategy: h1-h2-h3
+description: Write an agent-readable command map into the workspace
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_metadata_export-command-map.md
+title: backlogit metadata export-command-map
 ---
 
 ## backlogit metadata export-command-map

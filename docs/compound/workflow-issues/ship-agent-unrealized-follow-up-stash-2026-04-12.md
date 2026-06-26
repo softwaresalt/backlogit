@@ -1,16 +1,29 @@
 ---
-title: "Follow-up Items Must Be Stashed, Not Just Reported"
-problem_type: workflow_issue
-category: workflow_issue
-component: task_manager
-root_cause: missing_test_fixture
-resolution_type: documentation
-severity: high
-message: "Agent closure summaries that say 'Follow-up filed' without calling backlogit_stash create silent data loss: no stash entry, no follow-up."
-file_path: "internal/mcp/tools.go"
-resolved: true
-tags: [stash, ship-cycle, follow-up, agent-discipline, closure, backlogit_stash]
-date: 2026-04-12
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    category: workflow_issue
+    component: task_manager
+    date: 2026-04-12T00:00:00Z
+    file_path: internal/mcp/tools.go
+    message: 'Agent closure summaries that say ''Follow-up filed'' without calling backlogit_stash create silent data loss: no stash entry, no follow-up.'
+    problem_type: workflow_issue
+    resolution_type: documentation
+    resolved: true
+    root_cause: missing_test_fixture
+    severity: high
+    tags:
+        - stash
+        - ship-cycle
+        - follow-up
+        - agent-discipline
+        - closure
+        - backlogit_stash
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/workflow-issues/ship-agent-unrealized-follow-up-stash-2026-04-12.md
+title: Follow-up Items Must Be Stashed, Not Just Reported
 ---
 
 ## Follow-up Items Must Be Stashed, Not Just Reported

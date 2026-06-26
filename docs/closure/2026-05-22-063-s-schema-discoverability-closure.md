@@ -1,12 +1,18 @@
 ---
-title: "Post-merge closure: 063-S Schema Discoverability"
-description: "Operational closure record for shipment 063-S — sql_schema in MetadataCatalog and backlogit telemetry schema CLI"
-ms.date: 2026-05-22
-ms.topic: reference
-shipment: 063-S
-pr: "123"
-merge_sha: ca26d887232214596392b0af848b48ee360eb010
-status: READY
+chunk_strategy: h1-h2-h3
+description: Operational closure record for shipment 063-S — sql_schema in MetadataCatalog and backlogit telemetry schema CLI
+doc_type: closure
+docline:
+    merge_sha: ca26d887232214596392b0af848b48ee360eb010
+    ms.date: 2026-05-22T00:00:00Z
+    ms.topic: reference
+    pr: "123"
+    shipment: 063-S
+    status: READY
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-22-063-s-schema-discoverability-closure.md
+title: 'Post-merge closure: 063-S Schema Discoverability'
 ---
 
 ## Post-Merge Closure: 063-S Schema Discoverability

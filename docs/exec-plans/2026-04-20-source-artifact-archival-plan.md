@@ -1,8 +1,15 @@
 ---
-title: "Workflow Hygiene: Source Artifact Archival Pattern"
-date: 2026-04-20
-origin: ".backlogit/queue/034-F.md (stash B155D9DA)"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-20T00:00:00Z
+    origin: .backlogit/queue/034-F.md (stash B155D9DA)
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-20-source-artifact-archival-plan.md
+title: 'Workflow Hygiene: Source Artifact Archival Pattern'
 ---
 
 ## Problem Frame

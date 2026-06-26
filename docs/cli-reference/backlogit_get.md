@@ -1,6 +1,11 @@
 ---
-title: "backlogit get"
-description: "Retrieve an artifact by ID"
+chunk_strategy: h1-h2-h3
+description: Retrieve an artifact by ID
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_get.md
+title: backlogit get
 ---
 
 ## backlogit get

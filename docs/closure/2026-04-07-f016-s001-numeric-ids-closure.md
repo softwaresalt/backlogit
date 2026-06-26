@@ -1,16 +1,22 @@
 ---
-title: "F016 S001 numeric IDs closure"
-description: "Post-merge closure record for shipment S001 and PR #8."
-author: Copilot
-ms.date: 2026-04-07
-ms.topic: reference
-keywords:
-  - closure
-  - shipment
-  - feature-016
-  - numeric-ids
-  - migration
-estimated_reading_time: 4
+chunk_strategy: h1-h2-h3
+description: 'Post-merge closure record for shipment S001 and PR #8.'
+doc_type: closure
+docline:
+    author: Copilot
+    estimated_reading_time: 4
+    keywords:
+        - closure
+        - shipment
+        - feature-016
+        - numeric-ids
+        - migration
+    ms.date: 2026-04-07T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-07-f016-s001-numeric-ids-closure.md
+title: F016 S001 numeric IDs closure
 ---
 
 ## Post-merge closure

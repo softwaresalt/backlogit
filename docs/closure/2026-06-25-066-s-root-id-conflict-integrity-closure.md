@@ -1,8 +1,14 @@
 ---
-title: "066-S Post-Merge Closure — Root-ID Conflict Integrity"
-description: "Operational closure record for shipment 066-S after feature PR #132 merged at 80ce5f12, covering archive lifecycle, monitoring via doctor audit, and rollback"
-ms.date: 2026-06-25
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 066-S after feature PR #132 merged at 80ce5f12, covering archive lifecycle, monitoring via doctor audit, and rollback'
+doc_type: closure
+docline:
+    ms.date: 2026-06-25T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-06-25-066-s-root-id-conflict-integrity-closure.md
+title: 066-S Post-Merge Closure — Root-ID Conflict Integrity
 ---
 
 ## Scope

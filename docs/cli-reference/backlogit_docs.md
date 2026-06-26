@@ -1,6 +1,11 @@
 ---
-title: "backlogit docs"
-description: "Lint and migrate documentation frontmatter (docline base schema)"
+chunk_strategy: h1-h2-h3
+description: Lint and migrate documentation frontmatter (docline base schema)
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_docs.md
+title: backlogit docs
 ---
 
 ## backlogit docs

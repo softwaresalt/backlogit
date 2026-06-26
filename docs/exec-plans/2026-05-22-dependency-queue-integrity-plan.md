@@ -1,12 +1,19 @@
 ---
-title: "Dependency Queue Integrity"
-date: 2026-05-22
-origin: "docs/decisions/2026-05-22-new-bug-backlog-grouping.md"
-status: reviewed
-stash_ids:
-  - 250CC1F9
-  - 3E33EE12
-  - ED0DAA74
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-22T00:00:00Z
+    origin: docs/decisions/2026-05-22-new-bug-backlog-grouping.md
+    stash_ids:
+        - 250CC1F9
+        - 3E33EE12
+        - ED0DAA74
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-22-dependency-queue-integrity-plan.md
+title: Dependency Queue Integrity
 ---
 
 ## Problem Frame

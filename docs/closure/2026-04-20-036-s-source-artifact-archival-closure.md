@@ -1,7 +1,13 @@
 ---
-title: "036-S Post-Merge Closure: Workflow Hygiene — Source Artifact Archival Pattern"
-description: "Operational closure for shipment 036-S after merge of PR #47 to main at 9a7af9f."
-ms.date: 2026-04-20
+chunk_strategy: h1-h2-h3
+description: 'Operational closure for shipment 036-S after merge of PR #47 to main at 9a7af9f.'
+doc_type: closure
+docline:
+    ms.date: 2026-04-20T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-20-036-s-source-artifact-archival-closure.md
+title: '036-S Post-Merge Closure: Workflow Hygiene — Source Artifact Archival Pattern'
 ---
 
 ## Summary
