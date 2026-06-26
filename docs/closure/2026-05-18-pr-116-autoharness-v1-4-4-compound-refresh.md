@@ -1,8 +1,14 @@
 ---
-title: "PR 116 Compound Refresh Review"
-description: "Compound-refresh assessment for the autoharness v1.4.4 post-merge closure"
-ms.date: 2026-05-18
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Compound-refresh assessment for the autoharness v1.4.4 post-merge closure
+doc_type: closure
+docline:
+    ms.date: 2026-05-18T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-18-pr-116-autoharness-v1-4-4-compound-refresh.md
+title: PR 116 Compound Refresh Review
 ---
 
 ## Scope

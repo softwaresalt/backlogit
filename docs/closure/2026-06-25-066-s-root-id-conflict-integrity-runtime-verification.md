@@ -1,8 +1,14 @@
 ---
-title: "066-S Runtime Verification — Root-ID Conflict Integrity"
-description: "Lightweight runtime verification for shipment 066-S after PR #132 merged, exercising the doctor root-ID collision audit and the allocation/archive guards"
-ms.date: 2026-06-25
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Lightweight runtime verification for shipment 066-S after PR #132 merged, exercising the doctor root-ID collision audit and the allocation/archive guards'
+doc_type: closure
+docline:
+    ms.date: 2026-06-25T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-06-25-066-s-root-id-conflict-integrity-runtime-verification.md
+title: 066-S Runtime Verification — Root-ID Conflict Integrity
 ---
 
 ## Scope

@@ -1,8 +1,14 @@
 ---
-title: "Telemetry Quality Closure"
-description: "Post-merge operational closure for PR #83 and shipment 047-S"
-ms.date: 2026-05-06
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Post-merge operational closure for PR #83 and shipment 047-S'
+doc_type: closure
+docline:
+    ms.date: 2026-05-06T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-06-047-s-telemetry-quality-closure.md
+title: Telemetry Quality Closure
 ---
 
 ## Closure Context

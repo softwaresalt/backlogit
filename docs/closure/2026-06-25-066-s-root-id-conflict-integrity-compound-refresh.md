@@ -1,9 +1,15 @@
 ---
-title: "066-S Compound Refresh Review"
-description: "Compound-refresh assessment for the root-ID conflict integrity shipment (066-S, PR #132)"
-ms.date: 2026-06-25
-ms.topic: reference
-mode: propose
+chunk_strategy: h1-h2-h3
+description: 'Compound-refresh assessment for the root-ID conflict integrity shipment (066-S, PR #132)'
+doc_type: closure
+docline:
+    mode: propose
+    ms.date: 2026-06-25T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-06-25-066-s-root-id-conflict-integrity-compound-refresh.md
+title: 066-S Compound Refresh Review
 ---
 
 ## Scope

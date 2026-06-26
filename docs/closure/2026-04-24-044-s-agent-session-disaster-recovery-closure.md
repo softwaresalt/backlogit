@@ -1,15 +1,21 @@
 ---
-title: "044-S Agent Session Disaster Recovery — Post-Merge Closure"
-description: "Post-merge closure record for shipment 044-S covering agent session disaster recovery delivery, verification, and operational follow-up."
-shipment: 044-S
-feature: 045-F
-pr: "66"
-merge_sha: "71e392a6dc0f99a74e1b1c695251404014a56c7d"
-branch: feat/045-agent-session-disaster-recovery
-status: SHIPPED
-closure_pr: "67"
-closure_sha: "edf91d1dd24d8818779ff8cf0c9e4af0ef264b20"
-ms.date: 2026-04-24
+chunk_strategy: h1-h2-h3
+description: Post-merge closure record for shipment 044-S covering agent session disaster recovery delivery, verification, and operational follow-up.
+doc_type: closure
+docline:
+    branch: feat/045-agent-session-disaster-recovery
+    closure_pr: "67"
+    closure_sha: edf91d1dd24d8818779ff8cf0c9e4af0ef264b20
+    feature: 045-F
+    merge_sha: 71e392a6dc0f99a74e1b1c695251404014a56c7d
+    ms.date: 2026-04-24T00:00:00Z
+    pr: "66"
+    shipment: 044-S
+    status: SHIPPED
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-24-044-s-agent-session-disaster-recovery-closure.md
+title: 044-S Agent Session Disaster Recovery — Post-Merge Closure
 ---
 
 ## 044-S — Agent Session Disaster Recovery Post-Merge Closure

@@ -1,8 +1,14 @@
 ---
-title: "059-S Compound Refresh Review"
-description: "Compound-refresh assessment for the archive and hierarchy rollback integrity closure repair"
-ms.date: 2026-05-30
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Compound-refresh assessment for the archive and hierarchy rollback integrity closure repair
+doc_type: closure
+docline:
+    ms.date: 2026-05-30T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-05-30-059-s-archive-and-hierarchy-rollback-integrity-compound-refresh.md
+title: 059-S Compound Refresh Review
 ---
 
 ## Scope

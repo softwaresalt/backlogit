@@ -1,9 +1,15 @@
 ---
-title: "Operational Closure — 041-S Write Durability and Hook Reliability"
-description: "Post-merge closure artifact for shipment 041-S covering release readiness, monitoring, and rollback plan"
-author: backlogit ship agent
-ms.date: 2026-04-23
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: Post-merge closure artifact for shipment 041-S covering release readiness, monitoring, and rollback plan
+doc_type: closure
+docline:
+    author: backlogit ship agent
+    ms.date: 2026-04-23T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-23-041-s-write-durability-closure.md
+title: Operational Closure — 041-S Write Durability and Hook Reliability
 ---
 
 ## Release Summary
