@@ -24,10 +24,12 @@
    renames; ZERO deletions. No restore needed.
 7. **Reconcile post**: all archive files present, deleted-file guard clean → PROCEED.
    Report: `.backlogit/reconcile/065-S-post-20260626-000043.md`.
-8. **Index verify**: all 13 ids `archived`/`shipped`; 0 active/queued.
+8. **Index verify**: all 13 ids resolve to `status: archived` in the index and archive
+   files (the shipment additionally records `archived_status: shipped`); 0 active/queued.
 9. **Backlog commit**: `191c3b1c` chore(backlog): archive 065-S shipment artifacts.
 10. **Runtime verification** (PASS): docs lint 0 violations; migrate dry-run 213 entries /
-    0 body-byte changes; single-file apply idempotent (empty diff); classify→closure;
+    0 body-byte changes; single-file apply preserves body bytes (frontmatter
+    re-canonicalized, `action: update`) and converges to a no-op; classify→closure;
     `go test ./internal/docline/... ./cmd/gen-docs/...` PASS.
 11. **Closure artifacts** under docs/closure/ + compound learning under docs/compound/.
 12. **Knowledge graduation**: ARCHITECTURE.md already documents docline (RUN 2) — no

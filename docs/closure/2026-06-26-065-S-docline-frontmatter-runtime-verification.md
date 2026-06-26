@@ -34,7 +34,9 @@ guardrails that the shipment introduced.
 1. **Lint guardrail green** — all in-scope docs satisfy the docline base
    frontmatter v1 contract (`backlogit docs lint` reports zero violations).
 2. **Idempotent migration** — re-running the migration produces **zero body-byte
-   changes** and is a true no-op on already-compliant files.
+   changes** and converges to a no-op (subsequent runs report no changes); a run
+   over an already-migrated file preserves body bytes even when the docline
+   service re-canonicalizes the frontmatter block.
 3. **Codec body preservation** — the frontmatter codec never mutates Markdown
    body bytes (only the frontmatter block is rewritten).
 4. **Package tests green** — `internal/docline` and `cmd/gen-docs` behaviour is
