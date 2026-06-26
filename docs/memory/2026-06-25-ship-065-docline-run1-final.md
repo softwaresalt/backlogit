@@ -96,3 +96,44 @@ Recommendations are from the 065.001-T decision doc
   (repo has `core.autocrlf=true`, no `.gitattributes` → CRLF noise).
 - Stay on `feat/065-docline-frontmatter` through merge approval — never checkout `main`.
 - Merge strategy MUST be merge commit (P-009); operator performs the admin merge.
+
+## Run-1 review remediation (Copilot cycles 2–7, all resolved)
+
+After PR #136 was opened, Copilot review ran across successive HEADs. Every CODE
+finding was fixed via TDD; the gated cli-reference policy items were deferred. Final
+HEAD `2d3c3c90` has a fresh Copilot review covering it with **0 unresolved threads**;
+CI green (test 1.23, test 1.24, CLI Reference Drift).
+
+- `68640b7f` — adversarial-review MEDIUM fixes: apply gate (`ErrWholeTreeApply`), fold
+  move-never-drop, atomic write mode preservation.
+- `ac1083c5` — cross-platform POSIX path normalization (`toPOSIX`); fixed a Linux-only
+  CI failure (`filepath.ToSlash` does not convert `\` on Linux).
+- `887522ad` — Windows rename retry, profile validation (`ParseProfile`), removed the
+  decorative `--dry-run` flag from `docs migrate` (addresses stash `A2436E1E`).
+- `18bbe121` — `collectInScopeDocs` skips excluded subtrees via `filepath.SkipDir`;
+  markdown H1→`##` (MD025) on three docs.
+- `a366bd3d` — `ApplyMigration` preflight validates all changes before any write
+  (all-or-nothing); dropped a dead `errors.Is` test guard.
+- `f82d9f57` — walk skips all non-`docs/` top-level dirs; removed the unused `profile`
+  arg from the `backlogit_docs_migrate` MCP tool (CLI/MCP parity).
+- `727edeb5` — `Normalize` fails fast (`ErrMissingSeedTime`) when `ingested_at` needs
+  seeding but `Now` is zero (defensive; Q1 ownership remains gated).
+- `582332b0` — `resolveFormat` uses the command writer for TTY detection + validates
+  `--format` (fail fast on typos).
+- `2d3c3c90` — removed redundant `RegisterTools()` double-registration in an MCP test.
+
+### Gated cli-reference policy item (run 2)
+
+Copilot repeatedly flagged that generated `docs/cli-reference/**` (from `cmd/gen-docs`)
+carries only `title`/`description` and would fail `backlogit docs lint`. This cannot be
+resolved in run 1 without pre-empting the gated Q2 `source`-format decision or making a
+Stage-level scope-exclusion call. Resolved-with-justification on the PR and tracked in
+stash `98C4F063` (related `E4B7767C`). It will re-surface on future reviews until run-2
+migration or a scope decision addresses it.
+
+### Follow-up stashes open for Stage triage
+
+`0615F487` (L1 zero-write preflight — partially addressed by the `a366bd3d` preflight),
+`B349CBED` (L2 full JSON-schema validation), `A2436E1E` (L3 `--dry-run` — DONE this run,
+flag removed), `AE53BC5C` (L4 apply-time TOCTOU re-read), `E4B7767C` (run-2 gen-docs vs
+docline scope conflict), `98C4F063` (cli-reference docline policy).
