@@ -1,6 +1,11 @@
 ---
-title: "backlogit init"
-description: "Initialize a new backlogit workspace"
+chunk_strategy: h1-h2-h3
+description: Initialize a new backlogit workspace
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_init.md
+title: backlogit init
 ---
 
 ## backlogit init

@@ -1,6 +1,11 @@
 ---
-title: "backlogit queue bulk-status"
-description: "Update status for multiple items"
+chunk_strategy: h1-h2-h3
+description: Update status for multiple items
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_queue_bulk-status.md
+title: backlogit queue bulk-status
 ---
 
 ## backlogit queue bulk-status

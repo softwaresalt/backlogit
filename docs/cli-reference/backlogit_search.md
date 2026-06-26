@@ -1,6 +1,11 @@
 ---
-title: "backlogit search"
-description: "Full-text search across artifacts"
+chunk_strategy: h1-h2-h3
+description: Full-text search across artifacts
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_search.md
+title: backlogit search
 ---
 
 ## backlogit search

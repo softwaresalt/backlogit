@@ -1,6 +1,11 @@
 ---
-title: "backlogit shipment claim"
-description: "Claim a queued shipment"
+chunk_strategy: h1-h2-h3
+description: Claim a queued shipment
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_shipment_claim.md
+title: backlogit shipment claim
 ---
 
 ## backlogit shipment claim

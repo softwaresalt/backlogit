@@ -1,6 +1,11 @@
 ---
-title: "backlogit mcp"
-description: "Start the backlogit MCP stdio server"
+chunk_strategy: h1-h2-h3
+description: Start the backlogit MCP stdio server
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_mcp.md
+title: backlogit mcp
 ---
 
 ## backlogit mcp

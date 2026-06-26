@@ -1,6 +1,11 @@
 ---
-title: "backlogit manifest"
-description: "Print a JSON-RPC manifest of all backlogit MCP tool definitions"
+chunk_strategy: h1-h2-h3
+description: Print a JSON-RPC manifest of all backlogit MCP tool definitions
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_manifest.md
+title: backlogit manifest
 ---
 
 ## backlogit manifest
