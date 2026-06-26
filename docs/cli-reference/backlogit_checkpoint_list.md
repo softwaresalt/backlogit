@@ -1,6 +1,11 @@
 ---
-title: "backlogit checkpoint list"
-description: "List session state checkpoints"
+chunk_strategy: h1-h2-h3
+description: List session state checkpoints
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_checkpoint_list.md
+title: backlogit checkpoint list
 ---
 
 ## backlogit checkpoint list

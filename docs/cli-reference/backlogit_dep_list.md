@@ -1,6 +1,11 @@
 ---
-title: "backlogit dep list"
-description: "List dependencies for an artifact"
+chunk_strategy: h1-h2-h3
+description: List dependencies for an artifact
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_dep_list.md
+title: backlogit dep list
 ---
 
 ## backlogit dep list

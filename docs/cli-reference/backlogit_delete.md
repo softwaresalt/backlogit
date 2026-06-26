@@ -1,6 +1,11 @@
 ---
-title: "backlogit delete"
-description: "Delete an artifact"
+chunk_strategy: h1-h2-h3
+description: Delete an artifact
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_delete.md
+title: backlogit delete
 ---
 
 ## backlogit delete

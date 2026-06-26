@@ -1,6 +1,11 @@
 ---
-title: "backlogit checkpoint get"
-description: "Get and validate a specific checkpoint"
+chunk_strategy: h1-h2-h3
+description: Get and validate a specific checkpoint
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_checkpoint_get.md
+title: backlogit checkpoint get
 ---
 
 ## backlogit checkpoint get

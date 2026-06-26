@@ -1,6 +1,11 @@
 ---
-title: "backlogit adopt"
-description: "Adopt an orphaned item under a new parent feature"
+chunk_strategy: h1-h2-h3
+description: Adopt an orphaned item under a new parent feature
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_adopt.md
+title: backlogit adopt
 ---
 
 ## backlogit adopt

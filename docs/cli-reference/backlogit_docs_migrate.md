@@ -1,6 +1,11 @@
 ---
-title: "backlogit docs migrate"
-description: "Plan (default) or apply an idempotent frontmatter migration"
+chunk_strategy: h1-h2-h3
+description: Plan (default) or apply an idempotent frontmatter migration
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_docs_migrate.md
+title: backlogit docs migrate
 ---
 
 ## backlogit docs migrate

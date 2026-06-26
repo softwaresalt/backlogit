@@ -1,6 +1,11 @@
 ---
-title: "backlogit dep"
-description: "Manage artifact dependencies"
+chunk_strategy: h1-h2-h3
+description: Manage artifact dependencies
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_dep.md
+title: backlogit dep
 ---
 
 ## backlogit dep

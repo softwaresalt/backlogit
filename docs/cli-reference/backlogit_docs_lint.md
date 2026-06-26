@@ -1,6 +1,11 @@
 ---
-title: "backlogit docs lint"
-description: "Validate in-scope documentation frontmatter"
+chunk_strategy: h1-h2-h3
+description: Validate in-scope documentation frontmatter
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_docs_lint.md
+title: backlogit docs lint
 ---
 
 ## backlogit docs lint

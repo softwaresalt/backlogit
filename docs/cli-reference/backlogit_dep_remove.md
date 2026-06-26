@@ -1,6 +1,11 @@
 ---
-title: "backlogit dep remove"
-description: "Remove a dependency edge"
+chunk_strategy: h1-h2-h3
+description: Remove a dependency edge
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_dep_remove.md
+title: backlogit dep remove
 ---
 
 ## backlogit dep remove
