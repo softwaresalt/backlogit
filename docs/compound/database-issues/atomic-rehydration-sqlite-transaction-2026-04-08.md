@@ -1,17 +1,30 @@
 ---
-title: "Atomic SQLite Rehydration: Wrap DELETE + WalkDir in a Single Transaction"
-description: "How to wrap SQLite rehydration (DELETE then WalkDir rebuild) in a single transaction to prevent an empty index on process crash mid-walk."
-problem_type: database_issue
-category: database_issue
-component: db_cache
-root_cause: timeout
-resolution_type: code_fix
-severity: high
-message: "Rehydrate() cleared items with DELETE then rebuilt via WalkDir with no transaction; crash mid-walk yields empty index."
-file_path: "internal/db/rehydration.go"
-resolved: true
-tags: [sqlite, transaction, rehydration, atomicity, crash-safety, cqrs, go]
-date: 2026-04-08
+chunk_strategy: h1-h2-h3
+description: How to wrap SQLite rehydration (DELETE then WalkDir rebuild) in a single transaction to prevent an empty index on process crash mid-walk.
+doc_type: learning
+docline:
+    category: database_issue
+    component: db_cache
+    date: 2026-04-08T00:00:00Z
+    file_path: internal/db/rehydration.go
+    message: Rehydrate() cleared items with DELETE then rebuilt via WalkDir with no transaction; crash mid-walk yields empty index.
+    problem_type: database_issue
+    resolution_type: code_fix
+    resolved: true
+    root_cause: timeout
+    severity: high
+    tags:
+        - sqlite
+        - transaction
+        - rehydration
+        - atomicity
+        - crash-safety
+        - cqrs
+        - go
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/database-issues/atomic-rehydration-sqlite-transaction-2026-04-08.md
+title: 'Atomic SQLite Rehydration: Wrap DELETE + WalkDir in a Single Transaction'
 ---
 
 ## Problem

@@ -1,17 +1,33 @@
 ---
-title: "Windows-Safe Atomic Rename: Gate os.Remove on runtime.GOOS"
-description: "Gate pre-rename removal to Windows so os.Rename works on Windows without breaking POSIX atomic replacement semantics."
-problem_type: best_practice
-category: best_practice
-component: event_log
-root_cause: platform_compat
-resolution_type: feature_gate
-severity: high
-message: "os.Rename fails with ERROR_ALREADY_EXISTS on Windows; gating os.Remove on runtime.GOOS == \"windows\" preserves POSIX atomicity while fixing Windows compat"
-file_path: "internal/events/fsutil.go"
-resolved: true
-tags: [go, os.Rename, Windows, atomic, rename, cross-platform, runtime.GOOS, temp-file-rename, write-durability, fsync]
-date: 2026-04-23
+chunk_strategy: h1-h2-h3
+description: Gate pre-rename removal to Windows so os.Rename works on Windows without breaking POSIX atomic replacement semantics.
+doc_type: learning
+docline:
+    category: best_practice
+    component: event_log
+    date: 2026-04-23T00:00:00Z
+    file_path: internal/events/fsutil.go
+    message: os.Rename fails with ERROR_ALREADY_EXISTS on Windows; gating os.Remove on runtime.GOOS == "windows" preserves POSIX atomicity while fixing Windows compat
+    problem_type: best_practice
+    resolution_type: feature_gate
+    resolved: true
+    root_cause: platform_compat
+    severity: high
+    tags:
+        - go
+        - os.Rename
+        - Windows
+        - atomic
+        - rename
+        - cross-platform
+        - runtime.GOOS
+        - temp-file-rename
+        - write-durability
+        - fsync
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md
+title: 'Windows-Safe Atomic Rename: Gate os.Remove on runtime.GOOS'
 ---
 
 ## Problem

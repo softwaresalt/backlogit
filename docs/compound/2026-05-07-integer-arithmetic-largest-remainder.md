@@ -1,8 +1,21 @@
 ---
-title: "Integer arithmetic in largest-remainder token allocation"
-tags: [telemetry, tokens, allocation, arithmetic, float, integer]
-date: 2026-05-07
-severity: high
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    date: 2026-05-07T00:00:00Z
+    severity: high
+    tags:
+        - telemetry
+        - tokens
+        - allocation
+        - arithmetic
+        - float
+        - integer
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/2026-05-07-integer-arithmetic-largest-remainder.md
+title: Integer arithmetic in largest-remainder token allocation
 ---
 
 # Integer Arithmetic in Largest-Remainder Token Allocation

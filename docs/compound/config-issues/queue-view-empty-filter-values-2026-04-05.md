@@ -1,24 +1,30 @@
 ---
-title: "Queue view mismatch from blank CLI filters"
-description: "Compound learning from fixing backlogit queue view after omitted flags were treated as active blank filters and masked real F013 status."
-ms.date: 2026-04-05
-ms.topic: reference
-problem_type: config_issue
-category: config_issue
-component: cli
-root_cause: type_mismatch
-resolution_type: code_fix
-severity: high
-message: "Omitted queue filter flags became blank active filters and hid real queue items."
-file_path: "internal/cli/queue_cmd.go, internal/core/queue.go"
-resolved: true
-tags:
-  - queue-view
-  - cli
-  - filters
-  - artifact-cleanup
-  - F013
-date: 2026-04-05
+chunk_strategy: h1-h2-h3
+description: Compound learning from fixing backlogit queue view after omitted flags were treated as active blank filters and masked real F013 status.
+doc_type: learning
+docline:
+    category: config_issue
+    component: cli
+    date: 2026-04-05T00:00:00Z
+    file_path: internal/cli/queue_cmd.go, internal/core/queue.go
+    message: Omitted queue filter flags became blank active filters and hid real queue items.
+    ms.date: 2026-04-05T00:00:00Z
+    ms.topic: reference
+    problem_type: config_issue
+    resolution_type: code_fix
+    resolved: true
+    root_cause: type_mismatch
+    severity: high
+    tags:
+        - queue-view
+        - cli
+        - filters
+        - artifact-cleanup
+        - F013
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/config-issues/queue-view-empty-filter-values-2026-04-05.md
+title: Queue view mismatch from blank CLI filters
 ---
 
 ## Problem

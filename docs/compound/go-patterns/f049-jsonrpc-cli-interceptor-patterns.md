@@ -1,21 +1,27 @@
 ---
-title: "F049 JSON-RPC CLI interceptor and Cobra error-path wrapping patterns"
-description: "Patterns for wrapping Cobra CLI stdout in JSON-RPC 2.0 envelopes, handling Cobra's PostRun-skips-on-error limitation, and boolean flag pre-scanning."
-problem_type: best_practice
-category: best_practice
-component: cli
-root_cause: cobra_postrun_skip
-resolution_type: implementation
-severity: high
-message: "Cobra skips PersistentPostRunE when RunE returns an error; wrapping the full Execute path is required for error-path JSON-RPC coverage."
-file_path: "internal/cli/root.go"
-resolved: true
-tags:
-  - backlogit
-  - f049
-  - jsonrpc
-  - cobra
-  - cli
+chunk_strategy: h1-h2-h3
+description: Patterns for wrapping Cobra CLI stdout in JSON-RPC 2.0 envelopes, handling Cobra's PostRun-skips-on-error limitation, and boolean flag pre-scanning.
+doc_type: learning
+docline:
+    category: best_practice
+    component: cli
+    file_path: internal/cli/root.go
+    message: Cobra skips PersistentPostRunE when RunE returns an error; wrapping the full Execute path is required for error-path JSON-RPC coverage.
+    problem_type: best_practice
+    resolution_type: implementation
+    resolved: true
+    root_cause: cobra_postrun_skip
+    severity: high
+    tags:
+        - backlogit
+        - f049
+        - jsonrpc
+        - cobra
+        - cli
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/go-patterns/f049-jsonrpc-cli-interceptor-patterns.md
+title: F049 JSON-RPC CLI interceptor and Cobra error-path wrapping patterns
 ---
 
 ## F049: JSON-RPC CLI Interceptor Patterns

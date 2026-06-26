@@ -1,8 +1,20 @@
 ---
-title: "BuildAttributor pattern: compile prefix registry once per harvest run"
-tags: [telemetry, attribution, performance, pattern, prefix-registry]
-date: 2026-05-07
-severity: medium
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: learning
+docline:
+    date: 2026-05-07T00:00:00Z
+    severity: medium
+    tags:
+        - telemetry
+        - attribution
+        - performance
+        - pattern
+        - prefix-registry
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/2026-05-07-build-attributor-pattern.md
+title: 'BuildAttributor pattern: compile prefix registry once per harvest run'
 ---
 
 # BuildAttributor Pattern

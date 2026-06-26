@@ -1,17 +1,30 @@
 ---
-title: "Per-type MAX(ordinal)+1 over a PK-collapsed index masks duplicate root IDs — allocate from the canonical filesystem"
-description: "Root-ID allocation that derives the next ordinal from the SQLite index can silently reuse an ID, because the index keys on ID (so duplicates collapse to one row) and omits archived/out-of-view artifacts"
-problem_type: silent-data-loss
-category: db-reliability
-component: id-allocation
-root_cause: next-ID derived from an index that collapses duplicate IDs and excludes archived/out-of-view artifacts
-resolution_type: canonical-filesystem-scan + pre-write-guard + overwrite-refusal
-message: "CreateArtifact could allocate a root ID already occupied by an archived or index-invisible artifact, then ArchiveItem could overwrite the distinct occupant"
-file_path: internal/core/canonical_scan.go
-resolved: true
-severity: high
-tags: [reliability, id-allocation, archive-safety, sqlite, index-vs-source-of-truth, data-loss, anti-pattern]
-date: 2026-06-25
+chunk_strategy: h1-h2-h3
+description: Root-ID allocation that derives the next ordinal from the SQLite index can silently reuse an ID, because the index keys on ID (so duplicates collapse to one row) and omits archived/out-of-view artifacts
+doc_type: learning
+docline:
+    category: db-reliability
+    component: id-allocation
+    date: 2026-06-25T00:00:00Z
+    file_path: internal/core/canonical_scan.go
+    message: CreateArtifact could allocate a root ID already occupied by an archived or index-invisible artifact, then ArchiveItem could overwrite the distinct occupant
+    problem_type: silent-data-loss
+    resolution_type: canonical-filesystem-scan + pre-write-guard + overwrite-refusal
+    resolved: true
+    root_cause: next-ID derived from an index that collapses duplicate IDs and excludes archived/out-of-view artifacts
+    severity: high
+    tags:
+        - reliability
+        - id-allocation
+        - archive-safety
+        - sqlite
+        - index-vs-source-of-truth
+        - data-loss
+        - anti-pattern
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/db-reliability/canonical-filesystem-scan-vs-index-id-allocation-2026-06-25.md
+title: Per-type MAX(ordinal)+1 over a PK-collapsed index masks duplicate root IDs — allocate from the canonical filesystem
 ---
 
 ## Problem

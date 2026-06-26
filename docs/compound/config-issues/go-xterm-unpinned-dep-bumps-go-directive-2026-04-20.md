@@ -1,17 +1,31 @@
 ---
-title: "Unpinned golang.org/x/term Transitively Bumps go Directive via x/sys"
-description: "Adding golang.org/x/term without pinning x/sys can silently bump the go directive in go.mod to a newer version, breaking CI matrix enforcement."
-problem_type: config_issue
-category: config_issue
-component: config
-root_cause: schema_mismatch
-resolution_type: dependency_update
-severity: high
-message: "go get golang.org/x/term (unpinned) pulls x/sys@v0.43.0 which declares go 1.25.0, propagating the directive into the main module"
-file_path: "go.mod"
-resolved: true
-tags: [go.mod, go-directive, dependency-pinning, golang.org/x/term, golang.org/x/sys, ci-failure, version-bump, transitive-dependency]
-date: 2026-04-20
+chunk_strategy: h1-h2-h3
+description: Adding golang.org/x/term without pinning x/sys can silently bump the go directive in go.mod to a newer version, breaking CI matrix enforcement.
+doc_type: learning
+docline:
+    category: config_issue
+    component: config
+    date: 2026-04-20T00:00:00Z
+    file_path: go.mod
+    message: go get golang.org/x/term (unpinned) pulls x/sys@v0.43.0 which declares go 1.25.0, propagating the directive into the main module
+    problem_type: config_issue
+    resolution_type: dependency_update
+    resolved: true
+    root_cause: schema_mismatch
+    severity: high
+    tags:
+        - go.mod
+        - go-directive
+        - dependency-pinning
+        - golang.org/x/term
+        - golang.org/x/sys
+        - ci-failure
+        - version-bump
+        - transitive-dependency
+ingested_at: "2026-06-26T02:32:58Z"
+schema_version: "1.0"
+source: docs/compound/config-issues/go-xterm-unpinned-dep-bumps-go-directive-2026-04-20.md
+title: Unpinned golang.org/x/term Transitively Bumps go Directive via x/sys
 ---
 
 ## Problem
