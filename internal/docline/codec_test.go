@@ -1,6 +1,7 @@
 package docline
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -91,8 +92,8 @@ func TestEncode_SortedKeysStable(t *testing.T) {
 	assert.Equal(t, out1, out2, "encoding must be deterministic")
 
 	s := string(out1)
-	assert.Less(t, indexOf(s, "alpha"), indexOf(s, "zebra"), "keys must be sorted")
-	assert.Less(t, indexOf(s, "title"), indexOf(s, "zebra"), "keys must be sorted")
+	assert.Less(t, requireIndexOf(t, s, "alpha"), requireIndexOf(t, s, "zebra"), "keys must be sorted")
+	assert.Less(t, requireIndexOf(t, s, "title"), requireIndexOf(t, s, "zebra"), "keys must be sorted")
 }
 
 func TestEncode_NoFrontmatter_BodyOnly(t *testing.T) {
@@ -143,12 +144,13 @@ func TestModelsArtifactSerialization_Unchanged(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-// indexOf is a tiny helper to avoid pulling strings into assertions inline.
-func indexOf(haystack, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return i
-		}
-	}
-	return -1
+// requireIndexOf returns the byte offset of needle in haystack, failing the test
+// when needle is absent. Returning a sentinel (e.g. -1) would let an ordering
+// assertion like assert.Less(indexOf(...), indexOf(...)) pass even when a key is
+// missing, masking a real regression; failing fast keeps the test meaningful.
+func requireIndexOf(t *testing.T, haystack, needle string) int {
+	t.Helper()
+	i := strings.Index(haystack, needle)
+	require.GreaterOrEqualf(t, i, 0, "expected %q to be present in output", needle)
+	return i
 }
