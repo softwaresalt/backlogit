@@ -1,6 +1,11 @@
 ---
-title: "backlogit status"
-description: "Show workspace artifact summary"
+chunk_strategy: h1-h2-h3
+description: Show workspace artifact summary
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_status.md
+title: backlogit status
 ---
 
 ## backlogit status

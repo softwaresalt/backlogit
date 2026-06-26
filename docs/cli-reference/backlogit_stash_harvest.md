@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash harvest"
-description: "Harvest a stash item into a planned work item"
+chunk_strategy: h1-h2-h3
+description: Harvest a stash item into a planned work item
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash_harvest.md
+title: backlogit stash harvest
 ---
 
 ## backlogit stash harvest

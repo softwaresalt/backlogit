@@ -1,6 +1,11 @@
 ---
-title: "backlogit"
-description: "Backlogit — AI-native agile workspace"
+chunk_strategy: h1-h2-h3
+description: Backlogit — AI-native agile workspace
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit.md
+title: backlogit
 ---
 
 ## backlogit

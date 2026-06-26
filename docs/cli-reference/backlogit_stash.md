@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash"
-description: "Manage the deferred work stash"
+chunk_strategy: h1-h2-h3
+description: Manage the deferred work stash
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash.md
+title: backlogit stash
 ---
 
 ## backlogit stash

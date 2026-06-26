@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash edit"
-description: "Edit a stash entry's text, kind, or priority"
+chunk_strategy: h1-h2-h3
+description: Edit a stash entry's text, kind, or priority
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash_edit.md
+title: backlogit stash edit
 ---
 
 ## backlogit stash edit

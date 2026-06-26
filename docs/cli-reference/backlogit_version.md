@@ -1,6 +1,11 @@
 ---
-title: "backlogit version"
-description: "Print version, commit, build date, and Go runtime information"
+chunk_strategy: h1-h2-h3
+description: Print version, commit, build date, and Go runtime information
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_version.md
+title: backlogit version
 ---
 
 ## backlogit version

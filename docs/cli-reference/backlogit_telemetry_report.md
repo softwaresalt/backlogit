@@ -1,6 +1,11 @@
 ---
-title: "backlogit telemetry report"
-description: "Generate a formatted telemetry report from harvested data"
+chunk_strategy: h1-h2-h3
+description: Generate a formatted telemetry report from harvested data
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_telemetry_report.md
+title: backlogit telemetry report
 ---
 
 ## backlogit telemetry report

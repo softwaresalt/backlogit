@@ -1,6 +1,11 @@
 ---
-title: "backlogit stash add"
-description: "Add an item to the stash"
+chunk_strategy: h1-h2-h3
+description: Add an item to the stash
+doc_type: reference
+ingested_at: "2026-06-26T02:27:58Z"
+schema_version: "1.0"
+source: docs/cli-reference/backlogit_stash_add.md
+title: backlogit stash add
 ---
 
 ## backlogit stash add
