@@ -42,8 +42,11 @@ guardrails that the shipment introduced.
 
 ## Environment Prechecks
 
-* Build under test: `backlogit.exe` (v1.2.0, go1.26.4) built from current `main`,
-  exposes the `docs` subcommand tree (`lint`, `migrate`, `scope`, `classify`).
+* Build under test: `backlogit.exe` (v1.2.0) built from current `main`, exposes
+  the `docs` subcommand tree (`lint`, `migrate`, `scope`, `classify`). The repo
+  targets **Go 1.24.0** (`go.mod`) and CI validates against the **1.23 / 1.24**
+  matrix; the local verification toolchain was `go1.26.4` (forward-compatible,
+  used only to run the same `go test` targets locally).
 * Worktree: clean, synced with `origin/main` @ `23a8b045`.
 * Docline scope (`backlogit docs scope`): include `docs/`, `AGENTS.md`,
   `README.md`; exclude `.github/`, `docs/archive/`, `docs/memory/`.
