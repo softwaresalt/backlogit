@@ -174,7 +174,8 @@ func TestDocsLintTool_RejectsUnknownProfile(t *testing.T) {
 func TestDocsTools_DiscoverableViaListTools(t *testing.T) {
 	root := docsToolTree(t)
 	s := NewServerForRoot(root)
-	s.RegisterTools()
+	// NewServerForRoot already calls RegisterTools() during construction; do not
+	// re-register here or every tool would be registered twice.
 
 	names := map[string]bool{}
 	for _, td := range s.ToolDefs() {
