@@ -1,8 +1,14 @@
 ---
-title: "033-S Hooks System: Post-Merge Closure"
-description: "Operational closure record for shipment 033-S, PR #36, merge commit 1f927c9"
-ms.date: 2026-04-14
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 033-S, PR #36, merge commit 1f927c9'
+doc_type: closure
+docline:
+    ms.date: 2026-04-14T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-14-033-s-hooks-system-closure.md
+title: '033-S Hooks System: Post-Merge Closure'
 ---
 
 ## Closure Summary

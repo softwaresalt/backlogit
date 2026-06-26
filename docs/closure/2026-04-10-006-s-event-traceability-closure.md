@@ -1,8 +1,14 @@
 ---
-title: "006-S Event Traceability and Commit Tracking: Post-Merge Closure"
-description: "Operational closure record for shipment 006-S, PR #21, merge commit 8e0dd27"
-ms.date: 2026-04-10
-ms.topic: reference
+chunk_strategy: h1-h2-h3
+description: 'Operational closure record for shipment 006-S, PR #21, merge commit 8e0dd27'
+doc_type: closure
+docline:
+    ms.date: 2026-04-10T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-10-006-s-event-traceability-closure.md
+title: '006-S Event Traceability and Commit Tracking: Post-Merge Closure'
 ---
 
 ## Closure Summary

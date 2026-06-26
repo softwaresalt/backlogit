@@ -1,7 +1,13 @@
 ---
-title: "040-S Post-Merge Closure"
-description: Operational closure for shipment 040-S after merging PR #56
-ms.date: 2026-04-21
+chunk_strategy: h1-h2-h3
+description: Operational closure for shipment 040-S after merging PR
+doc_type: closure
+docline:
+    ms.date: 2026-04-21T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-21-040-s-binary-release-telemetry-closure.md
+title: 040-S Post-Merge Closure
 ---
 
 ## Status

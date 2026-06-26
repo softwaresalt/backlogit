@@ -1,7 +1,13 @@
 ---
-title: "Closure: 037-S AdoptItem Cross-Reference Rewrite"
-description: "Post-merge operational closure for shipment 037-S — data integrity fix for AdoptItem cross-artifact frontmatter reference staleness"
-ms.date: 2026-04-20
+chunk_strategy: h1-h2-h3
+description: Post-merge operational closure for shipment 037-S — data integrity fix for AdoptItem cross-artifact frontmatter reference staleness
+doc_type: closure
+docline:
+    ms.date: 2026-04-20T00:00:00Z
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-20-037-s-adoptitem-cross-reference-closure.md
+title: 'Closure: 037-S AdoptItem Cross-Reference Rewrite'
 ---
 
 ## Context

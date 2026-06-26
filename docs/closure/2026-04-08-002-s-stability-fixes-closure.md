@@ -1,18 +1,24 @@
 ---
-title: "002-S stability fixes closure"
-description: "Post-merge closure record for shipment 002-S and PR #11."
-author: Copilot
-ms.date: 2026-04-08
-ms.topic: reference
-keywords:
-  - closure
-  - shipment
-  - 002-s
-  - stability
-  - stash-rehydration
-  - upsert-tx
-  - completion-scope
-estimated_reading_time: 4
+chunk_strategy: h1-h2-h3
+description: 'Post-merge closure record for shipment 002-S and PR #11.'
+doc_type: closure
+docline:
+    author: Copilot
+    estimated_reading_time: 4
+    keywords:
+        - closure
+        - shipment
+        - 002-s
+        - stability
+        - stash-rehydration
+        - upsert-tx
+        - completion-scope
+    ms.date: 2026-04-08T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-08-002-s-stability-fixes-closure.md
+title: 002-S stability fixes closure
 ---
 
 ## Post-merge closure

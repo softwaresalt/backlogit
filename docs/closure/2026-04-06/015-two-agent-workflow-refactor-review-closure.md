@@ -1,16 +1,22 @@
 ---
-title: "015 Two-Agent Workflow Refactor Review Closure"
-description: "Closure record for the branch review and remediation pass on 015-two-agent-workflow-refactor."
-author: Copilot
-ms.date: 2026-04-06
-ms.topic: reference
-keywords:
-  - review
-  - closure
-  - feature-015
-  - shipments
-  - mcp
-estimated_reading_time: 4
+chunk_strategy: h1-h2-h3
+description: Closure record for the branch review and remediation pass on 015-two-agent-workflow-refactor.
+doc_type: closure
+docline:
+    author: Copilot
+    estimated_reading_time: 4
+    keywords:
+        - review
+        - closure
+        - feature-015
+        - shipments
+        - mcp
+    ms.date: 2026-04-06T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-06/015-two-agent-workflow-refactor-review-closure.md
+title: 015 Two-Agent Workflow Refactor Review Closure
 ---
 
 ## Branch review closure

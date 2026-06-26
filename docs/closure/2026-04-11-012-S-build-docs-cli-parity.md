@@ -1,8 +1,14 @@
 ---
-title: "012-S Closure: Build, Docs & CLI Parity"
+chunk_strategy: h1-h2-h3
 description: Post-merge closure record for shipment 012-S
-ms.date: 2026-04-11
-ms.topic: reference
+doc_type: closure
+docline:
+    ms.date: 2026-04-11T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-11-012-S-build-docs-cli-parity.md
+title: '012-S Closure: Build, Docs & CLI Parity'
 ---
 
 ## Shipment

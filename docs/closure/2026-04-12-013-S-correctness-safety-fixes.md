@@ -1,8 +1,14 @@
 ---
-title: "013-S Closure: Correctness & Safety Fixes"
+chunk_strategy: h1-h2-h3
 description: Post-merge closure record for shipment 013-S
-ms.date: 2026-04-12
-ms.topic: reference
+doc_type: closure
+docline:
+    ms.date: 2026-04-12T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:32:32Z"
+schema_version: "1.0"
+source: docs/closure/2026-04-12-013-S-correctness-safety-fixes.md
+title: '013-S Closure: Correctness & Safety Fixes'
 ---
 
 ## Shipment
