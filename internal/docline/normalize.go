@@ -56,8 +56,13 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 	b := FromMap(fm)
 	b.DocType = string(Classify(relPath))
 	b.Source = DeriveSource(relPath)
-	// Seed ingested_at once: preserve any existing non-empty value.
+	// Seed ingested_at once: preserve any existing non-empty value. Seeding from
+	// a zero Now would write a nonsense 0001-01-01T00:00:00Z timestamp, so fail
+	// fast and require callers to supply a real clock when a seed is needed.
 	if b.IngestedAt == "" {
+		if opts.Now.IsZero() {
+			return nil, fmt.Errorf("docline.Normalize: %s: %w", relPath, ErrMissingSeedTime)
+		}
 		b.IngestedAt = opts.Now.UTC().Format(time.RFC3339)
 	}
 	b.Docline = docline

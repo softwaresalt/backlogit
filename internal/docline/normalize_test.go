@@ -129,6 +129,22 @@ func TestNormalize_SeedsIngestedAtOnceThenPreserves(t *testing.T) {
 	assert.Equal(t, seeded, md2.Frontmatter["ingested_at"], "ingested_at is seed-once")
 }
 
+func TestNormalize_RejectsZeroSeedTime(t *testing.T) {
+	t.Parallel()
+	// A doc that needs ingested_at seeded with a zero Now must fail fast rather
+	// than writing a nonsense 0001-01-01T00:00:00Z timestamp.
+	raw := "---\ntitle: Doc\n---\nBody.\n"
+	_, err := Normalize("docs/decisions/x.md", []byte(raw), NormalizeOptions{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrMissingSeedTime)
+
+	// A doc that already carries ingested_at needs no seed, so a zero Now is
+	// acceptable and normalization succeeds.
+	seeded := normalizeOnce(t, "docs/decisions/x.md", raw)
+	_, err = Normalize("docs/decisions/x.md", []byte(seeded), NormalizeOptions{})
+	require.NoError(t, err)
+}
+
 func TestNormalize_NoFrontmatterCreatesContractBlock(t *testing.T) {
 	t.Parallel()
 	raw := "# Just a body\n\nNo frontmatter.\n"

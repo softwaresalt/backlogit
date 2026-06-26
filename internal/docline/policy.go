@@ -26,6 +26,10 @@ var (
 	ErrWholeTreeApply = errors.New("docline: whole-tree apply refused")
 	// ErrUnknownProfile indicates a validation profile outside the known set.
 	ErrUnknownProfile = errors.New("docline: unknown profile")
+	// ErrMissingSeedTime indicates ingested_at must be seeded but the caller
+	// supplied a zero NormalizeOptions.Now, which would otherwise write a
+	// nonsense 0001-01-01T00:00:00Z timestamp into the document.
+	ErrMissingSeedTime = errors.New("docline: ingested_at seed requires a non-zero Now")
 )
 
 // DocType is a member of the closed controlled vocabulary of document types.
