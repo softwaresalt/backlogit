@@ -1,9 +1,16 @@
 ---
-title: "Workspace Governance and Integrity"
-date: 2026-04-10
-origin: ".backlogit/queue/025-F.md"
-status: revised
-review: ".copilot-tracking/plan-review/2026-04-10-workspace-governance-integrity-plan-review.md"
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-10T00:00:00Z
+    origin: .backlogit/queue/025-F.md
+    review: .copilot-tracking/plan-review/2026-04-10-workspace-governance-integrity-plan-review.md
+    status: revised
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-10-workspace-governance-integrity-plan.md
+title: Workspace Governance and Integrity
 ---
 
 ## Problem Frame

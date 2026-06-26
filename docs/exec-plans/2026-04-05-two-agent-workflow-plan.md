@@ -1,18 +1,24 @@
 ---
-title: Two-agent workflow refactor plan
+chunk_strategy: h1-h2-h3
 description: Implementation plan for refactoring backlogit to a groomer and shipper workflow with shipment support and stash JSONL storage
-author: GitHub Copilot
-ms.date: 2026-04-05
-ms.topic: reference
-keywords:
-  - backlogit
-  - workflow
-  - agents
-  - shipment
-  - stash
-estimated_reading_time: 14
-origin: ".backlogit/queue/DL001.md"
-status: reviewed
+doc_type: plan
+docline:
+    author: GitHub Copilot
+    estimated_reading_time: 14
+    keywords:
+        - backlogit
+        - workflow
+        - agents
+        - shipment
+        - stash
+    ms.date: 2026-04-05T00:00:00Z
+    ms.topic: reference
+    origin: .backlogit/queue/DL001.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-05-two-agent-workflow-plan.md
+title: Two-agent workflow refactor plan
 ---
 
 ## Problem Frame

@@ -1,12 +1,19 @@
 ---
-title: "Event Traceability and Commit Tracking"
-date: 2026-04-10
-origin: ".backlogit/queue/011-DL.md"
-feature: "023-F"
-task: "023.008-T"
-shipment: "006-S"
-status: reviewed
-review: ".copilot-tracking/plan-review/2026-04-10-event-traceability-commit-tracking-plan-review.md"
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-10T00:00:00Z
+    feature: 023-F
+    origin: .backlogit/queue/011-DL.md
+    review: .copilot-tracking/plan-review/2026-04-10-event-traceability-commit-tracking-plan-review.md
+    shipment: 006-S
+    status: reviewed
+    task: 023.008-T
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-10-event-traceability-commit-tracking-plan.md
+title: Event Traceability and Commit Tracking
 ---
 
 ## Problem Frame

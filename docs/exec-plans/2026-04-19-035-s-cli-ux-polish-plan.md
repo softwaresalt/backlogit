@@ -1,8 +1,15 @@
 ---
-title: "Shipment 035-S: CLI UX Review Follow-ups"
-date: 2026-04-19
-origin: "docs/closure/2026-04-19-034-s-cli-ux-output-formatting-closure.md"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-19T00:00:00Z
+    origin: docs/closure/2026-04-19-034-s-cli-ux-output-formatting-closure.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-19-035-s-cli-ux-polish-plan.md
+title: 'Shipment 035-S: CLI UX Review Follow-ups'
 ---
 
 ## Problem Frame

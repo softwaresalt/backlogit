@@ -1,9 +1,16 @@
 ---
-title: "Telemetry Pipeline Enhancements"
-date: 2026-04-13
-origin: "001-DL (deliberation), stash DDD1F38A/AB6959FC/73E63809/91D459D8"
-status: revised
-requires_plan_hardening: no
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-13T00:00:00Z
+    origin: 001-DL (deliberation), stash DDD1F38A/AB6959FC/73E63809/91D459D8
+    requires_plan_hardening: "no"
+    status: revised
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-13-telemetry-pipeline-enhancements-plan.md
+title: Telemetry Pipeline Enhancements
 ---
 
 ## Overview

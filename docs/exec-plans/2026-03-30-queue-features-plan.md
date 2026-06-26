@@ -1,9 +1,16 @@
 ---
-title: "Queue Features: CLI Commands, Header Definitions, Templates, and Section-Aware Tools"
-date: 2026-03-30
-origin: ".backlog/queue.md"
-status: revision-3
-review: ".backlog/reviews/2026-03-30-queue-features-plan-review.md"
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-03-30T00:00:00Z
+    origin: .backlog/queue.md
+    review: .backlog/reviews/2026-03-30-queue-features-plan-review.md
+    status: revision-3
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-03-30-queue-features-plan.md
+title: 'Queue Features: CLI Commands, Header Definitions, Templates, and Section-Aware Tools'
 ---
 
 # Queue Features: CLI Commands, Header Definitions, Templates, and Section-Aware Tools

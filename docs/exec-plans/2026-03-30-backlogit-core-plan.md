@@ -1,8 +1,13 @@
 ---
-title: "Backlogit Core Implementation Plan"
-description: "Structured implementation plan for the backlogit file-backed task management system with MCP server, SQLite CQRS cache, and CLI"
-source: ".backlog/research/Backlogit-Architecture-Design.md"
-ms.date: 2026-03-30
+chunk_strategy: h1-h2-h3
+description: Structured implementation plan for the backlogit file-backed task management system with MCP server, SQLite CQRS cache, and CLI
+doc_type: plan
+docline:
+    ms.date: 2026-03-30T00:00:00Z
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-03-30-backlogit-core-plan.md
+title: Backlogit Core Implementation Plan
 ---
 
 ## Problem Statement

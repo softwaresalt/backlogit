@@ -1,10 +1,17 @@
 ---
-title: "Core Data Integrity & CQRS Compliance"
-date: 2026-04-10
-origin: ".backlogit/queue/012-DL.md"
-status: reviewed
-review: ".copilot-tracking/plan-review/2026-04-10-core-data-integrity-cqrs-plan-review.md"
-review_gate: advisory
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-10T00:00:00Z
+    origin: .backlogit/queue/012-DL.md
+    review: .copilot-tracking/plan-review/2026-04-10-core-data-integrity-cqrs-plan-review.md
+    review_gate: advisory
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-10-core-data-integrity-cqrs-plan.md
+title: Core Data Integrity & CQRS Compliance
 ---
 
 ## Problem Frame

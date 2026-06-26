@@ -1,8 +1,15 @@
 ---
-title: "Token and Context Window Efficiency Telemetry"
-date: 2026-04-09
-origin: ".backlogit/queue/005-DL.md"
-status: revised
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-09T00:00:00Z
+    origin: .backlogit/queue/005-DL.md
+    status: revised
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-09-token-telemetry-plan.md
+title: Token and Context Window Efficiency Telemetry
 ---
 
 ## Problem Frame
