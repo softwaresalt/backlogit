@@ -129,6 +129,22 @@ func TestValidate_IngestionProfile(t *testing.T) {
 	assert.NoError(t, Validate(full, ProfileIngestion))
 }
 
+func TestValidate_RejectsUnknownProfile(t *testing.T) {
+	// A fully valid authoring doc still fails fast when the profile itself is a
+	// typo, rather than silently validating against the authoring subset.
+	b := FromMap(map[string]any{
+		"title":    "T",
+		"source":   "docs/x.md",
+		"doc_type": "guide",
+	})
+	err := Validate(b, Profile("authroing"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnknownProfile)
+
+	// The empty profile is accepted as the authoring default (mirrors ParseProfile).
+	assert.NoError(t, Validate(b, Profile("")))
+}
+
 func TestIsKnownDocType(t *testing.T) {
 	assert.True(t, IsKnownDocType("decision"))
 	assert.True(t, IsKnownDocType("learning"))

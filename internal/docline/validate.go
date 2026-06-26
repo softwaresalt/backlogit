@@ -46,8 +46,13 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 
 // Validate reports whether b satisfies the contract for the given profile.
 // Violations are joined; "required" violations match ErrMissingRequiredField
-// and "unknown_doc_type" violations match ErrUnknownDocType via errors.Is.
+// and "unknown_doc_type" violations match ErrUnknownDocType via errors.Is. An
+// unrecognized profile fails fast with ErrUnknownProfile rather than silently
+// validating against the authoring subset.
 func Validate(b BaseFrontmatter, profile Profile) error {
+	if !isKnownProfile(profile) {
+		return fmt.Errorf("docline.Validate: unknown profile %q (want authoring or ingestion): %w", profile, ErrUnknownProfile)
+	}
 	vs := ValidateFields(b, profile)
 	if len(vs) == 0 {
 		return nil

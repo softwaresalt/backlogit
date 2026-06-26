@@ -118,6 +118,19 @@ func ParseProfile(s string) (Profile, error) {
 	}
 }
 
+// isKnownProfile reports whether p is a recognized validation profile. The empty
+// string is accepted as the authoring default, mirroring ParseProfile, so the
+// error-returning Validate entry point can reject typo'd profiles instead of
+// silently under-validating via requiredFields' default branch.
+func isKnownProfile(p Profile) bool {
+	switch p {
+	case "", ProfileAuthoring, ProfileIngestion:
+		return true
+	default:
+		return false
+	}
+}
+
 // contractFields is the closed set of top-level keys that belong on the docline
 // contract surface. Any other key is folded under the docline namespace by the
 // normalizer (move, never drop).
