@@ -78,7 +78,8 @@ See the runtime verification report. All PASS:
 
 * `backlogit docs lint` → 0 violations on current `main`.
 * `backlogit docs migrate` dry-run → 213 entries, **0 body-byte changes**;
-  single-file apply on a compliant doc is a byte-identical no-op (idempotent).
+  single-file apply on a compliant doc re-canonicalizes frontmatter while
+  preserving body bytes (`body_bytes_changed: false`), with no content-diff hunks.
 * `backlogit docs classify` → correct doc_type derivation.
 * `go test -count=1 ./internal/docline/... ./cmd/gen-docs/...` → PASS.
 

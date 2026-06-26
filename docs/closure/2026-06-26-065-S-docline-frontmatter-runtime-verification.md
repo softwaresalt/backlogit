@@ -70,21 +70,26 @@ $ backlogit docs migrate            # dry-run plan
  → 213 entries: 1 noop, 212 update; body_bytes_changed=true count: 0
 ```
 
-The 212 `update` entries are frontmatter re-canonicalizations that produce
-**byte-identical content** on already-compliant files. Confirmed by applying the
-migration to one already-compliant file and inspecting the diff:
+The 212 `update` entries are frontmatter re-canonicalizations that **preserve
+the Markdown body bytes** (`body_bytes_changed: false`). The docline service
+labels a file `noop` only when its raw bytes already equal the normalized bytes;
+otherwise the frontmatter block is rewritten (key ordering / quoting / line
+endings) and the file is reported as `update` — without ever touching body bytes.
+Confirmed by applying the migration to one already-compliant file and inspecting
+the diff:
 
 ```text
 $ backlogit docs migrate --apply --yes --path docs/ARCHITECTURE.md
  → action: update, body_bytes_changed: false
 $ git diff -- docs/ARCHITECTURE.md
- → (no content hunks; line-ending touch only)
+ → (no content hunks; frontmatter re-canonicalization / line-ending touch only)
 $ git checkout -- docs/ARCHITECTURE.md   # reverted clean
 ```
 
-**Expected**: zero body-byte changes; apply on a compliant file is a no-op.
-**Observed**: 0/213 body-byte changes; single-file apply produced an empty
-content diff (idempotent). **Result**: PASS.
+**Expected**: zero body-byte changes; migration converges (re-running does not
+drift the body). **Observed**: 0/213 body-byte changes; the single-file apply
+re-canonicalized frontmatter while preserving body bytes (`body_bytes_changed:
+false`) and produced no content-diff hunks. **Result**: PASS.
 
 ### 3. Doc-type classification smoke
 
