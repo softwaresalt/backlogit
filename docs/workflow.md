@@ -1,15 +1,21 @@
 ---
-title: Workflow Guide
+chunk_strategy: h1-h2-h3
 description: Developer and agent workflows with backlogit
-author: backlogit contributors
-ms.date: 2026-04-06
-ms.topic: tutorial
-keywords:
-  - backlogit
-  - workflow
-  - mcp
-  - cli
-  - agent
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - workflow
+        - mcp
+        - cli
+        - agent
+    ms.date: 2026-04-06T00:00:00Z
+    ms.topic: tutorial
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/workflow.md
+title: Workflow Guide
 ---
 
 ## Workspace Lifecycle

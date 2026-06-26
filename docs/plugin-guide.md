@@ -1,8 +1,14 @@
 ---
-title: backlogit Plugin Guide
+chunk_strategy: h1-h2-h3
 description: Installing backlogit as a Copilot CLI plugin with hybrid binary distribution
-ms.date: 2026-04-27
-ms.topic: guide
+doc_type: guide
+docline:
+    ms.date: 2026-04-27T00:00:00Z
+    ms.topic: guide
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/plugin-guide.md
+title: backlogit Plugin Guide
 ---
 
 ## Overview

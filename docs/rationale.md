@@ -1,15 +1,21 @@
 ---
-title: Why backlogit
+chunk_strategy: h1-h2-h3
 description: Design rationale and agent harness value proposition
-author: backlogit contributors
-ms.date: 2026-04-06
-ms.topic: concept
-keywords:
-  - backlogit
-  - rationale
-  - design
-  - ai agents
-  - cqrs
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - rationale
+        - design
+        - ai agents
+        - cqrs
+    ms.date: 2026-04-06T00:00:00Z
+    ms.topic: concept
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/rationale.md
+title: Why backlogit
 ---
 
 ## The Fundamental Tension

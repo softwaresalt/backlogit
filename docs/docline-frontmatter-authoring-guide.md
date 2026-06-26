@@ -1,8 +1,11 @@
 ---
-title: Docline Frontmatter Authoring Guide
-source: docs/docline-frontmatter-authoring-guide.md
-doc_type: guide
+chunk_strategy: h1-h2-h3
 description: How to author documentation frontmatter on the docline base schema — required and optional fields, the doc_type taxonomy, the docline namespace, ownership tiers, and the backlogit docs workflow.
+doc_type: guide
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/docline-frontmatter-authoring-guide.md
+title: Docline Frontmatter Authoring Guide
 ---
 
 ## Docline Frontmatter Authoring Guide

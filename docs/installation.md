@@ -1,15 +1,21 @@
 ---
-title: Installation
+chunk_strategy: h1-h2-h3
 description: Install backlogit from pre-built binaries or from source
-author: backlogit contributors
-ms.date: 2026-04-21
-ms.topic: how-to
-keywords:
-  - backlogit
-  - installation
-  - binary download
-  - go install
-  - PATH
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - installation
+        - binary download
+        - go install
+        - PATH
+    ms.date: 2026-04-21T00:00:00Z
+    ms.topic: how-to
+ingested_at: "2026-06-26T02:34:29Z"
+schema_version: "1.0"
+source: docs/installation.md
+title: Installation
 ---
 
 ## Method 1: One-line install
