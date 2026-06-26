@@ -316,6 +316,7 @@ This file is a map, not a manual. For deeper context, consult these sources:
 | Quality grades per domain | `docs/QUALITY_SCORE.md` |
 | External references | `docs/references/` |
 | Coding conventions | `.github/instructions/` |
+| Documentation frontmatter (docline) | `docs/docline-frontmatter-authoring-guide.md` |
 | Workflow policies | `.github/policies/workflow-policies.md` |
 | Constitutional principles | `.github/instructions/constitution.instructions.md` |
 

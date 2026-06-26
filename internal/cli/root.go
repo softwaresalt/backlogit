@@ -207,6 +207,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewTelemetryCmd(&cwd))
 	root.AddCommand(NewCheckpointCmd(&cwd))
 	root.AddCommand(newDoctorCommand(&cwd))
+	root.AddCommand(newDocsCommand(&cwd))
 	root.AddCommand(newVersionCommand())
 	root.AddCommand(newManifestCommand(&cwd))
 

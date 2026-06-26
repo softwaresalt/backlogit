@@ -460,6 +460,7 @@ func (s *Server) RegisterTools() {
 		s.handleGetVersion,
 	)
 	s.registerHookTools()
+	s.registerDocsTools()
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
