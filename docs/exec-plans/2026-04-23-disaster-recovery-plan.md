@@ -1,9 +1,15 @@
 ---
-title: "Agent Session Disaster Recovery"
-description: "Implementation plan for checkpoint discovery, lifecycle tooling, and agent harness recovery protocol to support interrupted session resumption."
-date: 2026-04-23
-origin: ".backlogit/queue/040-DL.md"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: Implementation plan for checkpoint discovery, lifecycle tooling, and agent harness recovery protocol to support interrupted session resumption.
+doc_type: plan
+docline:
+    date: 2026-04-23T00:00:00Z
+    origin: .backlogit/queue/040-DL.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-23-disaster-recovery-plan.md
+title: Agent Session Disaster Recovery
 ---
 
 # Agent Session Disaster Recovery

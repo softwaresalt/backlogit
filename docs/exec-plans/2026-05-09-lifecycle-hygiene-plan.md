@@ -1,9 +1,15 @@
 ---
-title: "Lifecycle Hygiene: Cascading Archive & Stash Cleanup"
-description: "Cascading archive for child items, stash cleanup on feature archive, doctor --fix-orphans, and stash_remove rename"
-date: 2026-05-09
-origin: ".backlogit/queue/046-DL.md"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: Cascading archive for child items, stash cleanup on feature archive, doctor --fix-orphans, and stash_remove rename
+doc_type: plan
+docline:
+    date: 2026-05-09T00:00:00Z
+    origin: .backlogit/queue/046-DL.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-09-lifecycle-hygiene-plan.md
+title: 'Lifecycle Hygiene: Cascading Archive & Stash Cleanup'
 ---
 
 ## Problem Frame

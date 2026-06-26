@@ -1,8 +1,15 @@
 ---
-title: "Release Binary Readiness"
-date: 2026-05-08
-origin: ".backlogit/queue/044-DL.md"
-status: draft
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-08T00:00:00Z
+    origin: .backlogit/queue/044-DL.md
+    status: draft
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-08-release-binary-readiness-plan.md
+title: Release Binary Readiness
 ---
 
 ## Problem Frame

@@ -1,9 +1,15 @@
 ---
-title: "Write Durability and Hook Reliability"
-description: "Implementation plan for crash-durable writes and TOCTOU race fix across hook event, checkpoint, and telemetry subsystems"
-date: 2026-04-22
-origin: ".backlogit/queue/040-F.md"
-status: reviewed
+chunk_strategy: h1-h2-h3
+description: Implementation plan for crash-durable writes and TOCTOU race fix across hook event, checkpoint, and telemetry subsystems
+doc_type: plan
+docline:
+    date: 2026-04-22T00:00:00Z
+    origin: .backlogit/queue/040-F.md
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-22-write-durability-hook-reliability-plan.md
+title: Write Durability and Hook Reliability
 ---
 
 ## Write Durability and Hook Reliability

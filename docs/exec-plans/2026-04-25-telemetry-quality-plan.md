@@ -1,14 +1,21 @@
 ---
-title: "Telemetry Quality — Parser Fix & Documentation"
-date: 2026-04-25
-origin: ".backlogit/queue/041-DL.md"
-status: reviewed
-stash_ids:
-  - D001CBE0
-  - 144CA2BB
-  - 736ABA8A
-  - 1FB3E504
-  - 6DE63CCD
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-04-25T00:00:00Z
+    origin: .backlogit/queue/041-DL.md
+    stash_ids:
+        - D001CBE0
+        - 144CA2BB
+        - 736ABA8A
+        - 1FB3E504
+        - 6DE63CCD
+    status: reviewed
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-04-25-telemetry-quality-plan.md
+title: Telemetry Quality — Parser Fix & Documentation
 ---
 
 # Telemetry Quality — Parser Fix & Documentation

@@ -1,8 +1,15 @@
 ---
-title: "Schema Discoverability"
-date: 2026-05-09
-origin: ".backlogit/queue/047-DL.md"
-status: harvested
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: plan
+docline:
+    date: 2026-05-09T00:00:00Z
+    origin: .backlogit/queue/047-DL.md
+    status: harvested
+ingested_at: "2026-06-26T02:33:21Z"
+schema_version: "1.0"
+source: docs/exec-plans/2026-05-09-schema-discoverability-plan.md
+title: Schema Discoverability
 ---
 
 # Schema Discoverability
