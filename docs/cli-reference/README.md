@@ -1,8 +1,14 @@
 ---
-title: backlogit CLI Reference
+chunk_strategy: h1-h2-h3
 description: Auto-generated Markdown reference for all backlogit CLI commands
-ms.date: 2026-04-19
-ms.topic: reference
+doc_type: reference
+docline:
+    ms.date: 2026-04-19T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-06-26T02:34:05Z"
+schema_version: "1.0"
+source: docs/cli-reference/README.md
+title: backlogit CLI Reference
 ---
 
 ## backlogit CLI Reference

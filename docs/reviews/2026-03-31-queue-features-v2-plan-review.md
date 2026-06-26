@@ -1,13 +1,20 @@
 ---
-title: "Plan Review: Queue Features V2"
-date: 2026-03-31
-plan: ".backlog/exec-plans/2026-03-31-queue-features-v2-plan.md"
-gate: ADVISORY
-reviewers:
-  - Constitution Reviewer (claude-opus-4.6)
-  - Go Quality Reviewer (claude-opus-4.6)
-  - Architecture Strategist (gpt-5.4)
-  - Scope Boundary Auditor (gpt-5.4-mini)
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: review
+docline:
+    date: 2026-03-31T00:00:00Z
+    gate: ADVISORY
+    plan: .backlog/exec-plans/2026-03-31-queue-features-v2-plan.md
+    reviewers:
+        - Constitution Reviewer (claude-opus-4.6)
+        - Go Quality Reviewer (claude-opus-4.6)
+        - Architecture Strategist (gpt-5.4)
+        - Scope Boundary Auditor (gpt-5.4-mini)
+ingested_at: "2026-06-26T02:33:53Z"
+schema_version: "1.0"
+source: docs/reviews/2026-03-31-queue-features-v2-plan-review.md
+title: 'Plan Review: Queue Features V2'
 ---
 
 ## Gate Decision: ADVISORY

@@ -1,24 +1,30 @@
 ---
-title: "Shipment Manifest Drift (060/061/062): Benign Counter Offset vs. Genuine Defect"
-description: "Reviewed determination that the 060-S/061-S queued-shipment off-by-one is a benign, cosmetic ID-numbering artifact, not a data defect requiring manifest mutation"
-topic: "Off-by-one drift in queued shipment manifests 060-S/061-S and feature titles 061-F/062-F (stash B8FF7590)"
-depth: "standard"
-decision_status: "decided"
-promoted_to: "none"
-linked_artifacts:
-  - "docs/decisions/2026-06-23-root-id-conflict-integrity-deliberation.md"
-  - "docs/exec-plans/2026-05-22-shipment-state-integrity-plan.md"
-  - "docs/exec-plans/2026-05-22-metadata-section-sync-integrity-plan.md"
-  - "docs/exec-plans/2026-05-22-lifecycle-archive-rollback-plan.md"
-stash_ids:
-  - "B8FF7590"
-tags:
-  - "shipment-state"
-  - "data-integrity"
-  - "manifest-drift"
-  - "id-allocation"
-  - "least-mutation"
-  - "no-op-decision"
+chunk_strategy: h1-h2-h3
+description: Reviewed determination that the 060-S/061-S queued-shipment off-by-one is a benign, cosmetic ID-numbering artifact, not a data defect requiring manifest mutation
+doc_type: decision
+docline:
+    decision_status: decided
+    depth: standard
+    linked_artifacts:
+        - docs/decisions/2026-06-23-root-id-conflict-integrity-deliberation.md
+        - docs/exec-plans/2026-05-22-shipment-state-integrity-plan.md
+        - docs/exec-plans/2026-05-22-metadata-section-sync-integrity-plan.md
+        - docs/exec-plans/2026-05-22-lifecycle-archive-rollback-plan.md
+    promoted_to: none
+    stash_ids:
+        - B8FF7590
+    tags:
+        - shipment-state
+        - data-integrity
+        - manifest-drift
+        - id-allocation
+        - least-mutation
+        - no-op-decision
+    topic: Off-by-one drift in queued shipment manifests 060-S/061-S and feature titles 061-F/062-F (stash B8FF7590)
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/2026-06-25-shipment-manifest-drift-determination-deliberation.md
+title: 'Shipment Manifest Drift (060/061/062): Benign Counter Offset vs. Genuine Defect'
 ---
 
 ## Problem Frame

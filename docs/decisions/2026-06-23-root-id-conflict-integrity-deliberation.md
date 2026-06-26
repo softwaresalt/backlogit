@@ -1,20 +1,26 @@
 ---
-title: "Root-ID Conflict Integrity: Detection, Allocation, and Archive Safety"
-description: "Deliberation on preventing and detecting undetected top-level work-item ID conflicts between queue and archive"
-topic: "Top-level work-item ID conflicts go undetected until archive time (stash 0F65FBC9)"
-depth: "deep"
-decision_status: "decided"
-promoted_to: "plan"
-stash_ids:
-  - "0F65FBC9"
-linked_artifacts:
-  - "docs/exec-plans/2026-06-23-root-id-conflict-integrity-plan.md"
-tags:
-  - "id-allocation"
-  - "archive-safety"
-  - "data-integrity"
-  - "doctor-audit"
-  - "rehydration"
+chunk_strategy: h1-h2-h3
+description: Deliberation on preventing and detecting undetected top-level work-item ID conflicts between queue and archive
+doc_type: decision
+docline:
+    decision_status: decided
+    depth: deep
+    linked_artifacts:
+        - docs/exec-plans/2026-06-23-root-id-conflict-integrity-plan.md
+    promoted_to: plan
+    stash_ids:
+        - 0F65FBC9
+    tags:
+        - id-allocation
+        - archive-safety
+        - data-integrity
+        - doctor-audit
+        - rehydration
+    topic: Top-level work-item ID conflicts go undetected until archive time (stash 0F65FBC9)
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/2026-06-23-root-id-conflict-integrity-deliberation.md
+title: 'Root-ID Conflict Integrity: Detection, Allocation, and Archive Safety'
 ---
 
 ## Problem Frame

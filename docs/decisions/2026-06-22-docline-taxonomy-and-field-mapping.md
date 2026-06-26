@@ -1,8 +1,11 @@
 ---
-title: "Docline doc_type taxonomy, field mapping, and profile split"
+chunk_strategy: h1-h2-h3
+description: Closed doc_type vocabulary, per-directory path mapping, legacy-field routing, authoring/ingestion/pipeline ownership tiers, and scope globs for the docline frontmatter contract. Explanatory rationale; the executable copy lives in internal/docline/policy.go.
 doc_type: decision
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
 source: docs/decisions/2026-06-22-docline-taxonomy-and-field-mapping.md
-description: "Closed doc_type vocabulary, per-directory path mapping, legacy-field routing, authoring/ingestion/pipeline ownership tiers, and scope globs for the docline frontmatter contract. Explanatory rationale; the executable copy lives in internal/docline/policy.go."
+title: Docline doc_type taxonomy, field mapping, and profile split
 ---
 
 ## Purpose

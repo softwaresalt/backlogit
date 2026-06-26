@@ -1,9 +1,14 @@
 ---
-title: "Plan Review: Backlogit Core Implementation"
-description: "Multi-persona review gate results for the backlogit core implementation plan"
-source: ".backlog/exec-plans/2026-03-30-backlogit-core-plan.md"
-gate_decision: "ADVISORY"
-ms.date: 2026-03-30
+chunk_strategy: h1-h2-h3
+description: Multi-persona review gate results for the backlogit core implementation plan
+doc_type: review
+docline:
+    gate_decision: ADVISORY
+    ms.date: 2026-03-30T00:00:00Z
+ingested_at: "2026-06-26T02:33:53Z"
+schema_version: "1.0"
+source: docs/reviews/2026-03-30-backlogit-core-plan-review.md
+title: 'Plan Review: Backlogit Core Implementation'
 ---
 
 ## Review Summary

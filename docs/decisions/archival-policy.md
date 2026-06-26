@@ -1,9 +1,15 @@
 ---
-title: Queue Archival Policy for Completed Work Items
+chunk_strategy: h1-h2-h3
 description: Evaluation of four archival strategies for completed backlogit artifacts and the recommended hybrid approach
-date: 2026-04-10
-origin: 025-F / 025.012-T
-status: accepted
+doc_type: decision
+docline:
+    date: 2026-04-10T00:00:00Z
+    origin: 025-F / 025.012-T
+    status: accepted
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/archival-policy.md
+title: Queue Archival Policy for Completed Work Items
 ---
 
 ## Context

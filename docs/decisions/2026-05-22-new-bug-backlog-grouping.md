@@ -1,23 +1,30 @@
 ---
-title: "New bug backlog grouping and staging decision"
-date: 2026-05-22
-status: approved-for-planning
-stash_ids:
-  - 250CC1F9
-  - 3E33EE12
-  - ED0DAA74
-  - D3BC5A25
-  - 3BA4181D
-  - 88A64440
-  - 0B9C7903
-  - FE806724
-  - 36F1CB1A
-  - 5A41B7C3
-  - 6DD3062F
-  - 6235FF06
-  - 51D7384A
-  - EE33B6ED
-  - 21E17BFC
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: decision
+docline:
+    date: 2026-05-22T00:00:00Z
+    stash_ids:
+        - 250CC1F9
+        - 3E33EE12
+        - ED0DAA74
+        - D3BC5A25
+        - 3BA4181D
+        - 88A64440
+        - 0B9C7903
+        - FE806724
+        - 36F1CB1A
+        - 5A41B7C3
+        - 6DD3062F
+        - 6235FF06
+        - 51D7384A
+        - EE33B6ED
+        - 21E17BFC
+    status: approved-for-planning
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/2026-05-22-new-bug-backlog-grouping.md
+title: New bug backlog grouping and staging decision
 ---
 
 ## Problem frame

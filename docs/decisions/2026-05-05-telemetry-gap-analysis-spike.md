@@ -1,19 +1,25 @@
 ---
-title: "Telemetry gap analysis for token-efficiency trends"
-description: "Spike evaluating feature 046-F and current telemetry capabilities against trend analysis, context-window analytics, and per-tool token attribution goals"
-type: spike
-date: 2026-05-05
-time_box: "2h"
-conclusion: "pivot"
-confidence: "high"
-linked_parent_work_item: "046-F"
-promoted_to:
-  - none
-tags:
-  - telemetry
-  - copilot-cli
-  - token-analytics
-  - context-window
+chunk_strategy: h1-h2-h3
+description: Spike evaluating feature 046-F and current telemetry capabilities against trend analysis, context-window analytics, and per-tool token attribution goals
+doc_type: decision
+docline:
+    conclusion: pivot
+    confidence: high
+    date: 2026-05-05T00:00:00Z
+    linked_parent_work_item: 046-F
+    promoted_to:
+        - none
+    tags:
+        - telemetry
+        - copilot-cli
+        - token-analytics
+        - context-window
+    time_box: 2h
+    type: spike
+ingested_at: "2026-06-26T02:33:47Z"
+schema_version: "1.0"
+source: docs/decisions/2026-05-05-telemetry-gap-analysis-spike.md
+title: Telemetry gap analysis for token-efficiency trends
 ---
 
 ## Goal
