@@ -98,7 +98,7 @@ func requiredFields(p Profile) []string {
 	switch p {
 	case ProfileIngestion:
 		return []string{"title", "source", "ingested_at", "doc_type"}
-	default: // authoring (and any unknown profile) — the repo-owned subset
+	default: // authoring — the repo-owned subset (unknown profiles are rejected upstream by ValidateFields)
 		return []string{"title", "source", "doc_type"}
 	}
 }

@@ -15,8 +15,18 @@ type Violation struct {
 
 // ValidateFields returns the structured validation violations for b under the
 // given profile: required-field presence (per profile) plus closed-vocabulary
-// membership for doc_type. An empty slice means valid.
+// membership for doc_type. An unrecognized profile yields a single
+// "unknown_profile" violation so direct callers cannot silently fall back to
+// the weaker authoring rules. An empty slice means valid.
 func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
+	if !isKnownProfile(profile) {
+		return []Violation{{
+			Field: "profile",
+			Rule:  "unknown_profile",
+			Msg:   fmt.Sprintf("unknown profile %q (want authoring or ingestion)", profile),
+		}}
+	}
+
 	values := map[string]string{
 		"title":       b.Title,
 		"source":      b.Source,
@@ -45,14 +55,11 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 }
 
 // Validate reports whether b satisfies the contract for the given profile.
-// Violations are joined; "required" violations match ErrMissingRequiredField
-// and "unknown_doc_type" violations match ErrUnknownDocType via errors.Is. An
-// unrecognized profile fails fast with ErrUnknownProfile rather than silently
-// validating against the authoring subset.
+// Violations are joined; "required" violations match ErrMissingRequiredField,
+// "unknown_doc_type" violations match ErrUnknownDocType, and "unknown_profile"
+// violations match ErrUnknownProfile via errors.Is. An unrecognized profile
+// fails fast rather than silently validating against the authoring subset.
 func Validate(b BaseFrontmatter, profile Profile) error {
-	if !isKnownProfile(profile) {
-		return fmt.Errorf("docline.Validate: unknown profile %q (want authoring or ingestion): %w", profile, ErrUnknownProfile)
-	}
 	vs := ValidateFields(b, profile)
 	if len(vs) == 0 {
 		return nil
@@ -60,8 +67,11 @@ func Validate(b BaseFrontmatter, profile Profile) error {
 	errs := make([]error, 0, len(vs))
 	for _, v := range vs {
 		sentinel := ErrMissingRequiredField
-		if v.Rule == "unknown_doc_type" {
+		switch v.Rule {
+		case "unknown_doc_type":
 			sentinel = ErrUnknownDocType
+		case "unknown_profile":
+			sentinel = ErrUnknownProfile
 		}
 		errs = append(errs, fmt.Errorf("docline.Validate: %s (field %q): %w", v.Msg, v.Field, sentinel))
 	}

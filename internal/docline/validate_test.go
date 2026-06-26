@@ -145,6 +145,24 @@ func TestValidate_RejectsUnknownProfile(t *testing.T) {
 	assert.NoError(t, Validate(b, Profile("")))
 }
 
+func TestValidateFields_RejectsUnknownProfile(t *testing.T) {
+	// ValidateFields is exported; a misspelled profile must surface a single
+	// unknown_profile violation rather than silently applying authoring rules.
+	b := FromMap(map[string]any{
+		"title":    "T",
+		"source":   "docs/x.md",
+		"doc_type": "guide",
+	})
+	vs := ValidateFields(b, Profile("authroing"))
+	require.Len(t, vs, 1)
+	assert.Equal(t, "unknown_profile", vs[0].Rule)
+	assert.Equal(t, "profile", vs[0].Field)
+
+	// Known profiles (including the empty default) do not emit a profile violation.
+	assert.Empty(t, ValidateFields(b, Profile("")))
+	assert.Empty(t, ValidateFields(b, ProfileAuthoring))
+}
+
 func TestIsKnownDocType(t *testing.T) {
 	assert.True(t, IsKnownDocType("decision"))
 	assert.True(t, IsKnownDocType("learning"))
