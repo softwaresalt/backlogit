@@ -168,3 +168,18 @@ func TestDocsScope_PrintsScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "doc_types")
 }
+
+func TestDocs_RejectsUnknownFormat(t *testing.T) {
+	root := docsFixtureTree(t)
+	// An unrecognized --format must fail fast rather than silently falling back
+	// to text. Covers every surface that resolves a format.
+	for _, args := range [][]string{
+		{"docs", "scope", "--format", "jsn"},
+		{"docs", "lint", "--format", "jsn"},
+		{"docs", "migrate", "--format", "jsn"},
+	} {
+		_, err := runDocs(t, root, args...)
+		require.Errorf(t, err, "args=%v", args)
+		assert.ErrorContainsf(t, err, "invalid --format", "args=%v", args)
+	}
+}

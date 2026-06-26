@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/softwaresalt/backlogit/internal/docline"
 )
@@ -57,6 +55,10 @@ func newDocsLintCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			outFormat, err := resolveFormat(cmd.OutOrStdout(), format)
+			if err != nil {
+				return err
+			}
 			prof, err := docline.ParseProfile(profile)
 			if err != nil {
 				return err
@@ -70,7 +72,7 @@ func newDocsLintCommand(cwd *string) *cobra.Command {
 				return err
 			}
 			valid := len(findings) == 0
-			if resolveFormat(format) == "json" {
+			if outFormat == "json" {
 				if err := writeDocsJSON(cmd.OutOrStdout(), docline.NewLintReport(findings)); err != nil {
 					return err
 				}
@@ -102,6 +104,9 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 				return err
 			}
 			opts := docline.Options{Root: root, Path: path, Now: time.Now().UTC()}
+			if _, err := resolveFormat(cmd.OutOrStdout(), format); err != nil {
+				return err
+			}
 
 			if apply {
 				// Apply is guarded: it requires explicit confirmation and an
@@ -146,7 +151,11 @@ func newDocsScopeCommand(cwd *string) *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			sc := docline.Scope()
-			if resolveFormat(format) == "json" {
+			outFormat, err := resolveFormat(cmd.OutOrStdout(), format)
+			if err != nil {
+				return err
+			}
+			if outFormat == "json" {
 				return writeDocsJSON(cmd.OutOrStdout(), sc)
 			}
 			out := cmd.OutOrStdout()
@@ -182,7 +191,11 @@ func newDocsClassifyCommand(cwd *string) *cobra.Command {
 // writeMigrateResult renders a migration plan (and optional apply result). The
 // JSON form uses the shared docline report types for CLI↔MCP parity.
 func writeMigrateResult(cmd *cobra.Command, format string, plan docline.MigrationPlan, res *docline.Result, dryRun bool) error {
-	if resolveFormat(format) == "json" {
+	outFormat, err := resolveFormat(cmd.OutOrStdout(), format)
+	if err != nil {
+		return err
+	}
+	if outFormat == "json" {
 		return writeDocsJSON(cmd.OutOrStdout(), docline.NewMigrateReport(plan, res, dryRun))
 	}
 
@@ -237,14 +250,21 @@ func resolveDocsRoot(cwd *string) (string, error) {
 	return abs, nil
 }
 
-// resolveFormat picks the output format: an explicit value wins; otherwise text
-// on a TTY and json on a non-TTY (pipe/CI).
-func resolveFormat(explicit string) string {
-	if explicit != "" {
-		return explicit
+// resolveFormat picks the output format: an explicit value wins (validated to
+// the allowed set), otherwise text on a TTY and json on a non-TTY (pipe/CI).
+// TTY detection is based on the command's actual output writer so redirected
+// output (cmd.SetOut) is honored, and an unrecognized explicit format fails
+// fast instead of silently falling back to text.
+func resolveFormat(out io.Writer, explicit string) (string, error) {
+	switch explicit {
+	case "":
+		if isTerminal(out) {
+			return "text", nil
+		}
+		return "json", nil
+	case "text", "json":
+		return explicit, nil
+	default:
+		return "", fmt.Errorf("invalid --format %q: must be text or json", explicit)
 	}
-	if term.IsTerminal(int(os.Stdout.Fd())) {
-		return "text"
-	}
-	return "json"
 }
