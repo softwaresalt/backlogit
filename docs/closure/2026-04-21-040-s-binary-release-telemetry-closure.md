@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Operational closure for shipment 040-S after merging PR
+description: 'Operational closure for shipment 040-S after merging PR #56'
 doc_type: closure
 docline:
     ms.date: 2026-04-21T00:00:00Z
