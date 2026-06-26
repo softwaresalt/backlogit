@@ -1,3 +1,12 @@
+---
+chunk_strategy: h1-h2-h3
+description: ""
+doc_type: guide
+ingested_at: "2026-06-26T02:34:57Z"
+schema_version: "1.0"
+source: AGENTS.md
+title: Agent Instructions
+---
 # Agent Instructions
 
 This file is read automatically by AI coding assistants and defines the

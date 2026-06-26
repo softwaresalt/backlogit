@@ -1,15 +1,21 @@
 ---
-title: backlogit
+chunk_strategy: h1-h2-h3
 description: AI-native agile workspace with MCP and CLI interfaces
-author: backlogit contributors
-ms.date: 2026-04-14
-ms.topic: overview
-keywords:
-  - backlogit
-  - mcp
-  - agile
-  - ai agents
-  - task management
+doc_type: guide
+docline:
+    author: backlogit contributors
+    keywords:
+        - backlogit
+        - mcp
+        - agile
+        - ai agents
+        - task management
+    ms.date: 2026-04-14T00:00:00Z
+    ms.topic: overview
+ingested_at: "2026-06-26T02:34:51Z"
+schema_version: "1.0"
+source: README.md
+title: backlogit
 ---
 
 # backlogit
