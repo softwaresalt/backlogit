@@ -55,7 +55,12 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 	// Read the contract surface, then override the repo-derived fields.
 	b := FromMap(fm)
 	b.DocType = string(Classify(relPath))
-	b.Source = DeriveSource(relPath)
+	// Source defaults to the repo-relative POSIX path, but a pre-existing
+	// full-URI source (a known online source) is preserved verbatim and never
+	// rewritten — Q2 sign-off, task 065.002-T.
+	if !hasURIScheme(b.Source) {
+		b.Source = DeriveSource(relPath)
+	}
 	// Seed ingested_at once: preserve any existing non-empty value. Seeding from
 	// a zero Now would write a nonsense 0001-01-01T00:00:00Z timestamp, so fail
 	// fast and require callers to supply a real clock when a seed is needed.

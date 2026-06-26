@@ -1,6 +1,22 @@
 package docline
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+// uriSchemeRE matches a leading RFC 3986 scheme followed by "://" (e.g.
+// "https://"), used to distinguish a full origin URI source from a
+// repo-relative POSIX path.
+var uriSchemeRE = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.\-]*://`)
+
+// hasURIScheme reports whether s begins with a URI scheme followed by "://".
+// Per the Q2 sign-off (task 065.002-T), a source that is a full origin URI (a
+// known online source) is preserved by the normalizer instead of being
+// rewritten to a repo-relative POSIX path.
+func hasURIScheme(s string) bool {
+	return uriSchemeRE.MatchString(s)
+}
 
 // toPOSIX normalizes any path separators to forward slashes deterministically
 // across platforms. filepath.ToSlash only rewrites the OS-native separator, so
