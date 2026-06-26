@@ -2,8 +2,10 @@ package docline
 
 // This file defines the pinned, serializable report shapes shared by the CLI
 // adapter (065.007-T) and the MCP parity tools (065.008-T). Both surfaces
-// marshal these exact types so their JSON payloads are byte-for-byte equivalent
-// for the same scenario.
+// marshal these exact types, so their JSON is structurally identical for the
+// same scenario — same fields, values, and key order. The byte output differs
+// only in formatting: the CLI pretty-prints with two-space indentation while
+// the MCP emits compact JSON via json.Marshal.
 
 // FindingReport is the serializable form of a lint Finding.
 type FindingReport struct {

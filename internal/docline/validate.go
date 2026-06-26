@@ -9,7 +9,7 @@ import (
 // Violation is a single validation failure for one frontmatter field.
 type Violation struct {
 	Field string // the offending field name
-	Rule  string // the rule that failed: "required" | "unknown_doc_type"
+	Rule  string // the rule that failed: "required" | "unknown_doc_type" | "unknown_profile"
 	Msg   string // an actionable human-readable message
 }
 
