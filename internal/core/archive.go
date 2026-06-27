@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/db"
@@ -459,6 +461,45 @@ func queueRootDir(ws *Workspace) string {
 		return ws.Config.QueueLayout.RootDir
 	}
 	return "queue"
+}
+
+// canonicalRestorePath returns the repo-root-relative, .backlogit/-prefixed POSIX
+// restore path for a record basename: ".backlogit/<queueRootDir(ws)>/<basename>"
+// (default "queue"). It is pure over ws.Config.QueueLayout (mirrors queueRootDir)
+// and deliberately does NOT consult the status-keyed registry routing, which would
+// re-introduce the archive self-reference for terminal-status items.
+//
+// The output format matches workspaceRelativePath(ws.RootPath, …) — the
+// ".backlogit/queue/<id>.md" form asserted by archive_test.go and accepted by the
+// UnarchiveItem F-006 traversal guard (archive.go:368-373). A QueueLayout.RootDir
+// that is absolute or escapes its parent is rejected: the resolver falls back to
+// the default "queue" so the returned path is always workspace-contained.
+func canonicalRestorePath(ws *Workspace, basename string) string {
+	const storageRoot = ".backlogit"
+	root := queueRootDir(ws)
+	if isUnsafeRootDir(root) {
+		root = "queue"
+	}
+	return path.Join(storageRoot, filepath.ToSlash(filepath.Clean(root)), filepath.Base(basename))
+}
+
+// isUnsafeRootDir reports whether a configured QueueLayout.RootDir would escape
+// the .backlogit workspace storage root if used directly. It rejects absolute
+// paths (POSIX or OS-specific), volume-qualified paths, and any ".." parent
+// traversal so canonicalRestorePath can fall back to a contained default.
+func isUnsafeRootDir(root string) bool {
+	if root == "" {
+		return true
+	}
+	if filepath.IsAbs(root) || path.IsAbs(filepath.ToSlash(root)) || filepath.VolumeName(root) != "" {
+		return true
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(root))
+	if cleaned == "." || cleaned == ".." ||
+		strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return true
+	}
+	return false
 }
 
 func workspaceRelativePath(rootPath string, target string) string {
