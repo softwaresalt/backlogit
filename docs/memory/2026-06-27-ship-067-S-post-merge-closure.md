@@ -25,11 +25,12 @@
 14. **Source-artifact cleanup** — no-op (067-F custom_fields = {harness_status: pending}; no source_stash_id/source_deliberation_id → no heuristic search, nothing archived).
 15. **Docline gate** — `docs lint` = 0 violations across all 4 new docs. `migrate --apply` deliberately NOT run (223 repo-wide files share the same pending-normalization status incl. committed baselines; my files match → no scope creep). CI gate = `make docs-lint` = `docs lint` → will pass.
 
-## compact-context assessment (Step 6 item 8)
+## compact-context EXECUTED (Step 6 item 8)
 
-- THIS session's durable knowledge is already persisted directly to `docs/` (3 closure artifacts, 1 compound entry, 2 reconcile reports, this memory file). Persistence does not depend on a compaction sweep.
-- 067-S memory files (this + the feature-session file, age 0–1d) are below the 14-day compaction threshold; consolidated here into one session-end summary. Verbose feature-session memory retained (detailed Copilot-cycle history, valuable).
-- **Repo-wide stale-memory sweep deliberately deferred**: ~141 `docs/memory/` files older than 14 days exceed the 40-file threshold, but they belong to unrelated prior shipments. Bundling that sweep into this 067-S closure PR is scope creep — it is already tracked by stash `71A2CB10`. Not executed here.
+- THIS session's durable knowledge is persisted directly to `docs/` (3 closure artifacts, 1 compound entry, 2 reconcile reports, this memory file). Persistence does not depend on a compaction sweep.
+- **Mandatory compaction executed**: `docs/memory/` had exceeded the 40-file mandatory threshold (164 files / 491.6 KB) per `.github/instructions/context-efficiency.instructions.md` and the ship agent's mandatory compact-context closure step. Per the documented workflow, the compaction was run (not deferred): **150 verbose checkpoint files older than 14 days were archived** (move-only) from `docs/memory/` to `docs/archive/memory/`, preserving relative paths. `docs/memory/` now holds 13 recent (<14d) checkpoints + the `compacted/` index, well under the threshold. No file deleted; full traceable index at `docs/memory/compacted/2026-06-27-pre-067-S-memory-compaction.md`.
+- The archived checkpoints belong to already-shipped, already-closed release units whose durable decisions/learnings were graduated at each shipment closure into `docs/closure/`, `docs/compound/`, `docs/decisions/`, and `docs/design-docs/` — the sweep removes session verbosity, not substance.
+- 067-S memory files (this + the feature-session file, age 0–1d) are below the 14-day threshold and retained in `docs/memory/`.
 
 ## STATUS
 
