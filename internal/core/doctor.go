@@ -121,6 +121,14 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		opts = &DoctorOptions{}
 	}
 
+	// 067.005-T: FixArchivedFrom is destructive and only meaningful alongside the
+	// archived_from audit. Reject the contradictory combination explicitly rather
+	// than silently skipping the repair, which would be surprising for a
+	// destructive fix flag and hard to debug in automation.
+	if opts.FixArchivedFrom && !opts.CheckArchivedFrom {
+		return nil, fmt.Errorf("doctor: FixArchivedFrom requires CheckArchivedFrom to be true")
+	}
+
 	report := &DoctorReport{
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
@@ -602,21 +610,25 @@ func pathContained(root, p string) bool {
 // atomicWriteArchiveFile writes data to path via a temp file and rename, mirroring
 // the atomic-write pattern used by ArchiveItem/UnarchiveItem and SaveCheckpoint.
 // On POSIX, os.Rename atomically replaces the destination. On Windows, os.Rename
-// can fail when the destination already exists, so the destination is removed
-// first (the same convention documented in internal/telemetry/checkpoint.go). The
-// removal window is narrow and the complete new content already lives in tmpPath,
-// so a crash mid-rename leaves the rewrite recoverable rather than the record lost.
+// can fail when the destination already exists (the convention documented in
+// internal/telemetry/checkpoint.go); on failure it removes the destination and
+// retries once. The complete new content lives in tmpPath until the rename
+// commits, and the destination is only removed after a failed rename (when it
+// still exists), so the original record is never lost in the success path.
 func atomicWriteArchiveFile(path string, data []byte) error {
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return fmt.Errorf("write temp: %w", err)
 	}
-	if runtime.GOOS == "windows" {
-		_ = os.Remove(path)
-	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck
-		return fmt.Errorf("rename temp: %w", err)
+		if runtime.GOOS == "windows" {
+			_ = os.Remove(path)
+			err = os.Rename(tmpPath, path)
+		}
+		if err != nil {
+			os.Remove(tmpPath) //nolint:errcheck
+			return fmt.Errorf("rename temp: %w", err)
+		}
 	}
 	return nil
 }

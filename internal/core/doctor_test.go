@@ -388,3 +388,15 @@ func TestDoctor_FixArchivedFromRepairsSelfRef(t *testing.T) {
 	rawSecond, _ := os.ReadFile(selfRefPath)
 	assert.Equal(t, rawAfter, rawSecond, "second run must be byte-stable")
 }
+
+// TestDoctor_FixArchivedFromRequiresCheck verifies the destructive repair flag is
+// rejected with an explicit error when the archived_from audit is not also enabled,
+// instead of silently doing nothing.
+func TestDoctor_FixArchivedFromRequiresCheck(t *testing.T) {
+	tmp := t.TempDir()
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	_, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: false, FixArchivedFrom: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "FixArchivedFrom requires CheckArchivedFrom")
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -201,8 +202,18 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("write archive file: %w", err)
 	}
 	if err := os.Rename(tmpPath, archivePath); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck
-		return nil, fmt.Errorf("rename archive file: %w", err)
+		// On Windows os.Rename can fail when the destination already exists (e.g. a
+		// pre-archived item whose archivePath == currentPath). Remove the stale
+		// destination and retry; the new content is preserved in tmpPath until the
+		// rename commits. See internal/telemetry/checkpoint.go:119-128.
+		if runtime.GOOS == "windows" {
+			_ = os.Remove(archivePath)
+			err = os.Rename(tmpPath, archivePath)
+		}
+		if err != nil {
+			os.Remove(tmpPath) //nolint:errcheck
+			return nil, fmt.Errorf("rename archive file: %w", err)
+		}
 	}
 	// Only remove the source file when it differs from the archive destination.
 	// When the registry routes a terminal status (e.g. "done") to the archive
