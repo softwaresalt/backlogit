@@ -671,3 +671,4 @@
 {"seq":671,"timestamp":"2026-06-27T07:13:19.2451032Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"067.006-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
 {"seq":672,"timestamp":"2026-06-27T07:18:52.0416394Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["commit"],"item_id":"067.007-T","schema_version":1}}
 {"seq":673,"timestamp":"2026-06-27T07:19:27.4334429Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"067.007-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
+{"seq":674,"timestamp":"2026-06-27T18:49:37.1234814Z","event_type":"ship_shipment","payload":{"actor":"backlogit","artifact_type":"shipment","changed_fields":["status"],"item_id":"067-S","schema_version":1,"status_delta":{"from":"active","to":"shipped"}}}
