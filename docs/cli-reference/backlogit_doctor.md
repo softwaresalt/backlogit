@@ -19,6 +19,9 @@ orphaned artifacts (child types with no parent) and duplicate IDs
 across queue and archive directories.
 
 Use --fix-orphans to archive orphaned artifacts automatically.
+Use --fix-archived-from to repair legacy self-referential archived_from
+records (rewrites them to their canonical queue restore path). This is a
+destructive, CLI-only migration: it is not exposed on the MCP doctor tool.
 
 ```text
 backlogit doctor [flags]
@@ -30,17 +33,20 @@ backlogit doctor [flags]
   backlogit doctor
   backlogit doctor --check-orphans=false
   backlogit doctor --fix-orphans
+  backlogit doctor --fix-archived-from
   backlogit doctor --format json
 ```
 
 ### Options
 
 ```text
-      --check-duplicates   check for duplicate IDs across directories (default true)
-      --check-orphans      check for orphaned child artifacts (default true)
-      --fix-orphans        archive orphaned artifacts instead of just reporting them
-      --format string      output format: text or json (default "text")
-  -h, --help               help for doctor
+      --check-archived-from   check archive records for self-referential/malformed archived_from fields (default true)
+      --check-duplicates      check for duplicate IDs across directories (default true)
+      --check-orphans         check for orphaned child artifacts (default true)
+      --fix-archived-from     repair legacy self-referential archived_from records (destructive, CLI-only)
+      --fix-orphans           archive orphaned artifacts instead of just reporting them
+      --format string         output format: text or json (default "text")
+  -h, --help                  help for doctor
 ```
 
 ### Options inherited from parent commands

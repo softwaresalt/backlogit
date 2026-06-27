@@ -12,10 +12,12 @@ import (
 
 func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
-		checkOrphans     bool
-		checkDuplicates  bool
-		fixOrphans       bool
-		outputFormatFlag string
+		checkOrphans      bool
+		checkDuplicates   bool
+		checkArchivedFrom bool
+		fixOrphans        bool
+		fixArchivedFrom   bool
+		outputFormatFlag  string
 	)
 
 	cmd := &cobra.Command{
@@ -25,10 +27,14 @@ func newDoctorCommand(cwd *string) *cobra.Command {
 orphaned artifacts (child types with no parent) and duplicate IDs
 across queue and archive directories.
 
-Use --fix-orphans to archive orphaned artifacts automatically.`,
+Use --fix-orphans to archive orphaned artifacts automatically.
+Use --fix-archived-from to repair legacy self-referential archived_from
+records (rewrites them to their canonical queue restore path). This is a
+destructive, CLI-only migration: it is not exposed on the MCP doctor tool.`,
 		Example: `  backlogit doctor
   backlogit doctor --check-orphans=false
   backlogit doctor --fix-orphans
+  backlogit doctor --fix-archived-from
   backlogit doctor --format json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -44,9 +50,11 @@ Use --fix-orphans to archive orphaned artifacts automatically.`,
 			defer ws.Close()
 
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
-				CheckOrphans:    checkOrphans,
-				CheckDuplicates: checkDuplicates,
-				FixOrphans:      fixOrphans,
+				CheckOrphans:      checkOrphans,
+				CheckDuplicates:   checkDuplicates,
+				CheckArchivedFrom: checkArchivedFrom,
+				FixOrphans:        fixOrphans,
+				FixArchivedFrom:   fixArchivedFrom,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -77,7 +85,9 @@ Use --fix-orphans to archive orphaned artifacts automatically.`,
 
 	cmd.Flags().BoolVar(&checkOrphans, "check-orphans", true, "check for orphaned child artifacts")
 	cmd.Flags().BoolVar(&checkDuplicates, "check-duplicates", true, "check for duplicate IDs across directories")
+	cmd.Flags().BoolVar(&checkArchivedFrom, "check-archived-from", true, "check archive records for self-referential/malformed archived_from fields")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
+	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
 	cmd.Flags().StringVar(&outputFormatFlag, "format", "text", "output format: text or json")
 
 	return cmd

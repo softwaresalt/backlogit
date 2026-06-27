@@ -186,25 +186,53 @@ func TestArchiveItem_ItemAlreadyInArchiveDir(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(queueDir, "002-T.md"), "no queue file should be created")
 }
 
-// TestUnarchiveItem_ArchiveFromEqualsArchivePath verifies that UnarchiveItem
-// does not delete the file when archived_from resolves to the same path as
-// the current archive location. This can happen when ArchiveItem encountered
-// an item already in archive/ (same-path scenario) and stored the archive-dir
-// path in the archived_from field. Without the same-path guard, os.Remove
-// would delete the file that Rename just wrote in place.
-func TestUnarchiveItem_ArchiveFromEqualsArchivePath(t *testing.T) {
+// TestArchiveItem_PreArchivedStampsCanonicalArchivedFrom verifies U2 (067.002-T):
+// when an item is already inside the archive directory (pre-archived — a terminal
+// status routed it there before ArchiveItem runs, so currentPath == archivePath),
+// ArchiveItem stamps archived_from with the canonical .backlogit/queue/<id>.md
+// restore path rather than self-referencing its own archive path. The normal
+// queued->archive branch (asserted by TestArchiveItem_MovesToArchive) is unchanged.
+func TestArchiveItem_PreArchivedStampsCanonicalArchivedFrom(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	archiveFilePath := filepath.Join(archiveDir, "050-T.md")
+	content := "---\nid: 050-T\ntitle: Pre-archived task\nstatus: done\nartifact_type: task\n---\nBody\n"
+	require.NoError(t, os.WriteFile(archiveFilePath, []byte(content), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "050-T", Title: "Pre-archived task", Status: models.StatusDone, ArtifactType: "task",
+	}))
+
+	record, err := core.ArchiveItem(ctx, ws.DB, ws, "050-T")
+	require.NoError(t, err)
+
+	raw, readErr := os.ReadFile(record.ArchivePath)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	assert.Equal(t, ".backlogit/queue/050-T.md", fm["archived_from"],
+		"pre-archived item must stamp the canonical queue restore path, not a self-reference")
+}
+
+// TestUnarchiveItem_SelfHealsLegacySelfRef verifies U3 (067.003-T): a legacy
+// self-referential record (archived_from pointing at its own archive path, minted
+// by the pre-067 ArchiveItem bug) is self-healed at read time. UnarchiveItem
+// recomputes the canonical queue restore target and restores the item to the
+// queue instead of leaving it stranded in the archive, so invertibility does NOT
+// depend on the doctor --fix-archived-from migration having run.
+func TestUnarchiveItem_SelfHealsLegacySelfRef(t *testing.T) {
 	ws := setupArchiveWorkspace(t)
 	ctx := context.Background()
 
 	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
 	archiveDir := filepath.Join(backlogDir, "archive")
+	queueDir := filepath.Join(backlogDir, "queue")
 
-	// archived_from stores the archive-dir path (same as current location)
+	// archived_from stores the workspace-relative archive path: the legacy self-ref
+	// form minted by the pre-067 ArchiveItem bug.
 	archivePath := filepath.Join(archiveDir, "003-T.md")
-	content := fmt.Sprintf(
-		"---\nid: 003-T\ntitle: Self-archived task\nstatus: archived\nartifact_type: task\narchived_from: %s\n---\nBody\n",
-		archivePath,
-	)
+	content := "---\nid: 003-T\ntitle: Self-archived task\nstatus: archived\narchived_status: done\nartifact_type: task\narchived_from: .backlogit/archive/003-T.md\n---\nBody\n"
 	require.NoError(t, os.WriteFile(archivePath, []byte(content), 0o644))
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
 		ID: "003-T", Title: "Self-archived task", Status: models.StatusArchived, ArtifactType: "task",
@@ -213,14 +241,108 @@ func TestUnarchiveItem_ArchiveFromEqualsArchivePath(t *testing.T) {
 	// Act
 	err := core.UnarchiveItem(ctx, ws.DB, ws, "003-T")
 
-	// Assert: no error, file survives in archive dir
+	// Assert: restored to the queue, removed from the archive, archived_from cleared,
+	// and the pre-archive status restored from archived_status.
 	require.NoError(t, err)
-	assert.FileExists(t, archivePath, "archive file must survive when archived_from == archivePath")
+	restoredPath := filepath.Join(queueDir, "003-T.md")
+	assert.FileExists(t, restoredPath, "self-ref record must be restored to the queue")
+	assert.NoFileExists(t, archivePath, "archive copy must be removed after restore")
 
-	// Content should be readable and no longer contain archived_from
-	raw, readErr := os.ReadFile(archivePath)
+	raw, readErr := os.ReadFile(restoredPath)
 	require.NoError(t, readErr)
-	assert.NotContains(t, string(raw), "archived_from", "restored file must not contain archived_from field")
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	assert.NotContains(t, fm, "archived_from", "restored file must not contain archived_from field")
+	assert.Equal(t, "done", fm["status"], "restored status must come from archived_status")
+}
+
+// TestUnarchiveItem_RefusesToClobberExistingQueueFile verifies the data-safety
+// guard added alongside the read-time self-heal (067.003-T): when a distinct
+// record already occupies the canonical restore target, UnarchiveItem refuses to
+// overwrite it (a silent clobber on POSIX / a cryptic os.Rename failure on
+// Windows) and leaves both the queue record and the archive copy untouched.
+func TestUnarchiveItem_RefusesToClobberExistingQueueFile(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	archiveDir := filepath.Join(backlogDir, "archive")
+	queueDir := filepath.Join(backlogDir, "queue")
+
+	// A legacy self-ref archive record whose self-heal target is the queue path.
+	archivePath := filepath.Join(archiveDir, "003-T.md")
+	archiveContent := "---\nid: 003-T\ntitle: Archived task\nstatus: archived\narchived_status: done\nartifact_type: task\narchived_from: .backlogit/archive/003-T.md\n---\nArchive body\n"
+	require.NoError(t, os.WriteFile(archivePath, []byte(archiveContent), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "003-T", Title: "Archived task", Status: models.StatusArchived, ArtifactType: "task",
+	}))
+
+	// A pre-existing, distinct live record already occupies the restore target.
+	restoredPath := filepath.Join(queueDir, "003-T.md")
+	queueContent := "---\nid: 003-T\ntitle: Live queue record\nstatus: queued\nartifact_type: task\n---\nLive body that must not be clobbered\n"
+	require.NoError(t, os.WriteFile(restoredPath, []byte(queueContent), 0o644))
+
+	// Act: unarchive must refuse rather than overwrite the live queue record.
+	err := core.UnarchiveItem(ctx, ws.DB, ws, "003-T")
+
+	// Assert: error returned, both files preserved byte-for-byte.
+	require.Error(t, err, "unarchive must refuse to clobber an existing restore target")
+	assert.Contains(t, err.Error(), "already exists")
+
+	queueRaw, qErr := os.ReadFile(restoredPath)
+	require.NoError(t, qErr)
+	assert.Equal(t, queueContent, string(queueRaw), "existing queue record must be preserved unchanged")
+
+	archiveRaw, aErr := os.ReadFile(archivePath)
+	require.NoError(t, aErr)
+	assert.Equal(t, archiveContent, string(archiveRaw), "archive record must remain after a refused restore")
+
+	// No stray temp file left behind.
+	assert.NoFileExists(t, restoredPath+".tmp", "temp file must be cleaned up on refusal")
+}
+
+// TestArchiveUnarchiveRoundTrip_PreArchived verifies U3 (067.003-T): a pre-archived
+// item round-trips correctly. ArchiveItem stamps the canonical queue restore path
+// (U2), UnarchiveItem restores it to the queue, and re-archiving the restored item
+// is stable — it takes the normal branch and re-stamps .backlogit/queue/<id>.md
+// (never a self-ref), preventing queue/archive oscillation.
+func TestArchiveUnarchiveRoundTrip_PreArchived(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	queueDir := filepath.Join(ws.RootPath, ".backlogit", "queue")
+	archiveFilePath := filepath.Join(archiveDir, "060-T.md")
+	content := "---\nid: 060-T\ntitle: Pre-archived round-trip\nstatus: done\nartifact_type: task\n---\nBody\n"
+	require.NoError(t, os.WriteFile(archiveFilePath, []byte(content), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "060-T", Title: "Pre-archived round-trip", Status: models.StatusDone, ArtifactType: "task",
+	}))
+
+	// Archive the pre-archived item -> archived_from = .backlogit/queue/060-T.md (U2).
+	rec, err := core.ArchiveItem(ctx, ws.DB, ws, "060-T")
+	require.NoError(t, err)
+	raw, readErr := os.ReadFile(rec.ArchivePath)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	require.Equal(t, ".backlogit/queue/060-T.md", fm["archived_from"])
+
+	// Unarchive -> restored to the queue, archive copy removed.
+	require.NoError(t, core.UnarchiveItem(ctx, ws.DB, ws, "060-T"))
+	restoredPath := filepath.Join(queueDir, "060-T.md")
+	assert.FileExists(t, restoredPath, "round-trip must restore to the queue")
+	assert.NoFileExists(t, archiveFilePath, "round-trip must remove the archive copy")
+
+	// Re-archive the restored item -> normal branch, stable canonical archived_from.
+	rec2, err := core.ArchiveItem(ctx, ws.DB, ws, "060-T")
+	require.NoError(t, err)
+	raw2, readErr2 := os.ReadFile(rec2.ArchivePath)
+	require.NoError(t, readErr2)
+	fm2, _, parseErr2 := models.ParseFrontmatter(string(raw2))
+	require.NoError(t, parseErr2)
+	assert.Equal(t, ".backlogit/queue/060-T.md", fm2["archived_from"],
+		"re-archive must re-stamp the canonical queue path, never oscillate to a self-ref")
 }
 
 func TestAutoArchive_ProcessesExpiredItems(t *testing.T) {

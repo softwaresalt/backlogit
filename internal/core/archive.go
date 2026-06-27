@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/db"
@@ -178,7 +181,16 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		}
 	}
 
-	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	// 067.002-T (U2): For a pre-archived item (already at its archive path because a
+	// terminal status routed it to .backlogit/archive/ before ArchiveItem ran),
+	// currentPath == archivePath, so workspaceRelativePath would self-reference the
+	// archive path and strand the item. Stamp the canonical queue restore path
+	// instead. The normal queued->archive branch is unchanged (byte-for-byte).
+	if filepath.Clean(currentPath) == filepath.Clean(archivePath) {
+		fm["archived_from"] = canonicalRestorePath(ws, filepath.Base(currentPath))
+	} else {
+		fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	}
 	// 060.003-T: Preserve the pre-archive status so UnarchiveItem can restore it.
 	fm["archived_status"] = oldStatus
 	fm["status"] = string(models.StatusArchived)
@@ -190,8 +202,18 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("write archive file: %w", err)
 	}
 	if err := os.Rename(tmpPath, archivePath); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck
-		return nil, fmt.Errorf("rename archive file: %w", err)
+		// On Windows os.Rename can fail when the destination already exists (e.g. a
+		// pre-archived item whose archivePath == currentPath). Remove the stale
+		// destination and retry; the new content is preserved in tmpPath until the
+		// rename commits. See internal/telemetry/checkpoint.go:119-128.
+		if runtime.GOOS == "windows" {
+			_ = os.Remove(archivePath)
+			err = os.Rename(tmpPath, archivePath)
+		}
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			return nil, fmt.Errorf("rename archive file: %w", err)
+		}
 	}
 	// Only remove the source file when it differs from the archive destination.
 	// When the registry routes a terminal status (e.g. "done") to the archive
@@ -199,7 +221,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// Removing currentPath in that case would delete the file we just wrote.
 	if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
 		if err := os.Remove(currentPath); err != nil {
-			os.Remove(archivePath) //nolint:errcheck
+			_ = os.Remove(archivePath)
 			return nil, fmt.Errorf("remove original: %w", err)
 		}
 	}
@@ -215,7 +237,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 				"archive_path", archivePath, "original_path", currentPath, "error", restoreErr)
 		} else if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
 			// Remove the stale archive copy only when it is a distinct file.
-			os.Remove(archivePath) //nolint:errcheck
+			_ = os.Remove(archivePath)
 		}
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
@@ -365,6 +387,17 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	}
 	originalPath = resolveWorkspacePath(ws.RootPath, originalPath)
 
+	// 067.003-T (U3): Read-time self-heal. A legacy self-referential record stored
+	// its own archive path in archived_from (the pre-067 ArchiveItem bug). Trusting
+	// it would strand the item in the archive — the same-path branch below skips the
+	// removal when originalPath == archivePath. Recompute the canonical queue restore
+	// target so unarchive invertibility does not depend on the doctor
+	// --fix-archived-from migration having run first. The same-path branch is retained
+	// below as a defensive net for any residual unrecomputed case.
+	if filepath.Clean(originalPath) == filepath.Clean(archivePath) {
+		originalPath = resolveWorkspacePath(ws.RootPath, canonicalRestorePath(ws, filepath.Base(archivePath)))
+	}
+
 	// F-006: Validate the restore path is contained within .backlogit to prevent
 	// path traversal when restoring artifacts from archive.
 	rel, relErr := filepath.Rel(backlogDir, originalPath)
@@ -394,15 +427,39 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	if err := os.WriteFile(tmpPath, []byte(restored), 0o644); err != nil {
 		return fmt.Errorf("write restored file: %w", err)
 	}
+	// After read-time self-heal the restore target is the canonical queue path,
+	// which should not already exist. Guard against clobbering a live record: a
+	// distinct pre-existing destination would be silently overwritten by os.Rename
+	// on POSIX (data loss) and would fail cryptically on Windows. The in-place case
+	// (originalPath == archivePath) legitimately overwrites and is handled below.
+	samePath := filepath.Clean(archivePath) == filepath.Clean(originalPath)
+	if !samePath {
+		if _, statErr := os.Lstat(originalPath); statErr == nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("restore target %q already exists: refusing to overwrite", originalPath)
+		} else if !os.IsNotExist(statErr) {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("stat restore target %q: %w", originalPath, statErr)
+		}
+	}
 	if err := os.Rename(tmpPath, originalPath); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck
-		return fmt.Errorf("rename restored file: %w", err)
+		// In-place update (originalPath == archivePath): on Windows os.Rename can
+		// fail when the destination exists. Remove the stale destination and retry;
+		// the new content is preserved in tmpPath until the rename commits.
+		if samePath && runtime.GOOS == "windows" {
+			_ = os.Remove(originalPath)
+			err = os.Rename(tmpPath, originalPath)
+		}
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("rename restored file: %w", err)
+		}
 	}
 	// Only remove the archive file when it differs from the restored path.
 	// When archived_from stored an archive-dir path (because the file was already
 	// there before ArchiveItem ran), originalPath == archivePath and the rename
 	// above updated the file in place — removing it here would undo that write.
-	if filepath.Clean(archivePath) != filepath.Clean(originalPath) {
+	if !samePath {
 		if err := os.Remove(archivePath); err != nil {
 			return fmt.Errorf("remove archive file: %w", err)
 		}
@@ -459,6 +516,46 @@ func queueRootDir(ws *Workspace) string {
 		return ws.Config.QueueLayout.RootDir
 	}
 	return "queue"
+}
+
+// canonicalRestorePath returns the repo-root-relative, .backlogit/-prefixed POSIX
+// restore path for a record basename: ".backlogit/<queueRootDir(ws)>/<basename>"
+// (default "queue"). It is pure over ws.Config.QueueLayout (mirrors queueRootDir)
+// and deliberately does NOT consult the status-keyed registry routing, which would
+// re-introduce the archive self-reference for terminal-status items.
+//
+// The output format matches workspaceRelativePath(ws.RootPath, …) — the
+// ".backlogit/queue/<id>.md" form asserted by archive_test.go and accepted by the
+// UnarchiveItem F-006 traversal guard (archive.go:368-373). A QueueLayout.RootDir
+// that is empty, absolute, volume-qualified, cleans to "." or "..", or otherwise
+// escapes its parent is rejected: the resolver falls back to the default "queue"
+// so the returned path is always workspace-contained.
+func canonicalRestorePath(ws *Workspace, basename string) string {
+	const storageRoot = ".backlogit"
+	root := queueRootDir(ws)
+	if isUnsafeRootDir(root) {
+		root = "queue"
+	}
+	return path.Join(storageRoot, filepath.ToSlash(filepath.Clean(root)), filepath.Base(basename))
+}
+
+// isUnsafeRootDir reports whether a configured QueueLayout.RootDir would escape
+// the .backlogit workspace storage root if used directly. It rejects absolute
+// paths (POSIX or OS-specific), volume-qualified paths, and any ".." parent
+// traversal so canonicalRestorePath can fall back to a contained default.
+func isUnsafeRootDir(root string) bool {
+	if root == "" {
+		return true
+	}
+	if filepath.IsAbs(root) || path.IsAbs(filepath.ToSlash(root)) || filepath.VolumeName(root) != "" {
+		return true
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(root))
+	if cleaned == "." || cleaned == ".." ||
+		strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return true
+	}
+	return false
 }
 
 func workspaceRelativePath(rootPath string, target string) string {

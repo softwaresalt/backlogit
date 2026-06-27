@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -279,4 +280,123 @@ This task has no parent.
 	assert.Len(t, report.Findings, 1, "orphan should be reported")
 	assert.Empty(t, report.FixActions, "no fix actions when fix-orphans is false")
 	assert.FileExists(t, filepath.Join(queueDir, "099.001-T.md"), "file should remain in queue")
+}
+
+// TestDoctor_ArchivedFromAudit verifies U4 (067.004-T): the read-only audit flags
+// archive records whose archived_from is self-referential (resolves to the record's
+// own archive path) or malformed (not a markdown path), while leaving canonical,
+// fieldless, and legitimate non-self-ref subdir records untouched.
+func TestDoctor_ArchivedFromAudit(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+
+	// Self-referential: archived_from points at its own archive path -> SELF-REF.
+	helperWriteArtifact(t, archiveDir, "100-T.md", "---\nid: 100-T\ntitle: Self ref\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/archive/100-T.md\n---\nBody\n")
+	// Canonical: archived_from points at the queue restore path -> NO finding.
+	helperWriteArtifact(t, archiveDir, "101-T.md", "---\nid: 101-T\ntitle: Canonical\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/queue/101-T.md\n---\nBody\n")
+	// Fieldless: no archived_from at all -> NO finding.
+	helperWriteArtifact(t, archiveDir, "102-T.md", "---\nid: 102-T\ntitle: Fieldless\nstatus: archived\nartifact_type: task\n---\nBody\n")
+	// Legitimate non-self-ref subdir record (036-DL style) -> NO finding.
+	helperWriteArtifact(t, archiveDir, "036-DL.md", "---\nid: 036-DL\ntitle: Deliberation\nstatus: archived\nartifact_type: deliberation\narchived_from: .backlogit/deliberations/036-DL.md\n---\nBody\n")
+	// Malformed: archived_from is a stray status value, not a markdown path -> MALFORMED.
+	helperWriteArtifact(t, archiveDir, "103-T.md", "---\nid: 103-T\ntitle: Malformed\nstatus: archived\nartifact_type: task\narchived_from: done\n---\nBody\n")
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true})
+	require.NoError(t, err)
+
+	var selfRef, malformed []string
+	for _, f := range report.Findings {
+		switch f.Type {
+		case FindingArchivedFromSelfRef:
+			selfRef = append(selfRef, f.ArtifactID)
+		case FindingArchivedFromMalformed:
+			malformed = append(malformed, f.ArtifactID)
+		default:
+			t.Errorf("unexpected finding type %q for %s", f.Type, f.ArtifactID)
+		}
+	}
+
+	assert.Equal(t, []string{"100-T"}, selfRef, "only the self-ref record must be flagged self-ref")
+	assert.Equal(t, []string{"103-T"}, malformed, "only the malformed record must be flagged malformed")
+	assert.NotContains(t, selfRef, "101-T")
+	assert.NotContains(t, selfRef, "102-T")
+	assert.NotContains(t, selfRef, "036-DL")
+}
+
+// TestDoctor_FixArchivedFromRepairsSelfRef verifies U5 (067.005-T): the
+// --fix-archived-from repair rewrites a self-referential archived_from to the
+// canonical queue restore path using the body-preserving docline codec, emits a
+// per-record FixAction, is idempotent (a second run is a byte-stable no-op), and
+// leaves canonical and malformed records untouched.
+func TestDoctor_FixArchivedFromRepairsSelfRef(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+
+	// Self-ref record with a CRLF body to prove body bytes are preserved verbatim.
+	selfRefContent := "---\nid: 200-T\ntitle: Self ref\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/archive/200-T.md\n---\nBody line 1\r\nBody line 2\n"
+	helperWriteArtifact(t, archiveDir, "200-T.md", selfRefContent)
+	// Canonical record: must be left byte-for-byte untouched.
+	canonContent := "---\nid: 201-T\ntitle: Canonical\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/queue/201-T.md\n---\nCanon body\n"
+	helperWriteArtifact(t, archiveDir, "201-T.md", canonContent)
+	// Malformed record: flagged only, never repaired.
+	malformedContent := "---\nid: 202-T\ntitle: Malformed\nstatus: archived\nartifact_type: task\narchived_from: done\n---\nMal body\n"
+	helperWriteArtifact(t, archiveDir, "202-T.md", malformedContent)
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+	selfRefPath := filepath.Join(archiveDir, "200-T.md")
+	const wantBody = "Body line 1\r\nBody line 2\n"
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixArchivedFrom: true})
+	require.NoError(t, err)
+
+	// Exactly one FixAction, for the self-ref record only.
+	var repaired []string
+	for _, a := range report.FixActions {
+		if a.Type == FixArchivedFromRepaired {
+			repaired = append(repaired, a.ArtifactID)
+		}
+	}
+	assert.Equal(t, []string{"200-T"}, repaired, "only the self-ref record is repaired")
+
+	// archived_from rewritten to the canonical queue path; body bytes preserved.
+	rawAfter, readErr := os.ReadFile(selfRefPath)
+	require.NoError(t, readErr)
+	fm, _, perr := models.ParseFrontmatter(string(rawAfter))
+	require.NoError(t, perr)
+	assert.Equal(t, ".backlogit/queue/200-T.md", fm["archived_from"])
+	assert.True(t, bytes.HasSuffix(rawAfter, []byte(wantBody)),
+		"body bytes must be preserved verbatim (incl. CRLF)")
+
+	// Canonical and malformed records left byte-for-byte untouched.
+	canonAfter, _ := os.ReadFile(filepath.Join(archiveDir, "201-T.md"))
+	assert.Equal(t, canonContent, string(canonAfter), "canonical record must be untouched")
+	malAfter, _ := os.ReadFile(filepath.Join(archiveDir, "202-T.md"))
+	assert.Equal(t, malformedContent, string(malAfter), "malformed record must be untouched (flag-only)")
+
+	// Idempotency: a second --fix run is a no-op and byte-stable.
+	report2, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixArchivedFrom: true})
+	require.NoError(t, err)
+	for _, a := range report2.FixActions {
+		assert.NotEqual(t, FixArchivedFromRepaired, a.Type, "second run must not repair anything")
+	}
+	rawSecond, _ := os.ReadFile(selfRefPath)
+	assert.Equal(t, rawAfter, rawSecond, "second run must be byte-stable")
+}
+
+// TestDoctor_FixArchivedFromRequiresCheck verifies the destructive repair flag is
+// rejected with an explicit error when the archived_from audit is not also enabled,
+// instead of silently doing nothing.
+func TestDoctor_FixArchivedFromRequiresCheck(t *testing.T) {
+	tmp := t.TempDir()
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	_, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: false, FixArchivedFrom: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "FixArchivedFrom requires CheckArchivedFrom")
 }
