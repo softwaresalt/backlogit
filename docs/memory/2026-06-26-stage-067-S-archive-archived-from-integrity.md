@@ -4,8 +4,6 @@ description: "Session memory for staging production bug 53F22794 through deliber
 ms.date: 2026-06-26
 ---
 
-# Stage Session — 067-S ArchiveItem archived_from Integrity
-
 **Date**: 2026-06-26
 **Agent**: Stage (stash → backlog pipeline)
 **Stash consumed**: `53F22794` (high-priority production bug) → archived
