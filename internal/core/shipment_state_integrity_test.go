@@ -69,10 +69,13 @@ func TestClaimShipment_RollsBackOnMidFlightActivationFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusQueued, fileTask.Status, "file: partially activated item must revert to queued")
 
-	// Assert — the cascade-activated parent reverted to queued (no torn state)
+	// Assert — the cascade-activated parent reverted to queued (DB + file agree)
 	dbFeat, err := bldb.GetItem(ctx, ws.DB, feat.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.StatusQueued, dbFeat.Status, "cascade-activated parent must revert to queued")
+	assert.Equal(t, models.StatusQueued, dbFeat.Status, "DB: cascade-activated parent must revert to queued")
+	fileFeat, err := loadArtifact(ctx, ws, feat.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, fileFeat.Status, "file: cascade-activated parent must revert to queued")
 }
 
 // TestClaimShipment_SuccessActivatesAllItems guards the normal claim path: a

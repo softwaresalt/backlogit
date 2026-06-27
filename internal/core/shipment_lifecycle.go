@@ -72,11 +72,16 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 				fmt.Errorf("load item %s: %w", itemID, loadErr))
 		}
 		if item.Status == models.StatusQueued {
+			// Record the item as activation-attempted *before* mutating it:
+			// setArtifactStatus persists the item active before cascading parent
+			// statuses, so a failure mid-call can leave the item active on disk.
+			// Tracking it up front guarantees rollback reverts it; a queued->queued
+			// revert is a safe no-op when activation never landed.
+			activatedIDs = append(activatedIDs, itemID)
 			if _, setErr := setArtifactStatus(ctx, ws, itemID, models.StatusActive, "shipment claimed"); setErr != nil {
 				return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
 					fmt.Errorf("activate item %s: %w", itemID, setErr))
 			}
-			activatedIDs = append(activatedIDs, itemID)
 		}
 	}
 
@@ -96,6 +101,12 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 // is restored to its pre-claim snapshot. The original claim error is wrapped
 // together with any rollback error so the caller sees the full failure context.
 func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string, preClaimShipment *models.Artifact, activatedIDs []string, claimErr error) error {
+	// Guard against a nil triggering error: rollback must never collapse to a
+	// nil return that silently drops the failure (a future caller that passes
+	// nil would otherwise hide a torn-state rollback behind a success).
+	if claimErr == nil {
+		claimErr = fmt.Errorf("claim rollback invoked without a triggering error")
+	}
 	var rollbackErrs []error
 	for i := len(activatedIDs) - 1; i >= 0; i-- {
 		if _, err := setArtifactStatus(ctx, ws, activatedIDs[i], models.StatusQueued, "shipment claim rolled back"); err != nil {
