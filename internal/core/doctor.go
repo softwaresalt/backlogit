@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -599,11 +600,19 @@ func pathContained(root, p string) bool {
 }
 
 // atomicWriteArchiveFile writes data to path via a temp file and rename, mirroring
-// the atomic-write pattern used by ArchiveItem/UnarchiveItem.
+// the atomic-write pattern used by ArchiveItem/UnarchiveItem and SaveCheckpoint.
+// On POSIX, os.Rename atomically replaces the destination. On Windows, os.Rename
+// can fail when the destination already exists, so the destination is removed
+// first (the same convention documented in internal/telemetry/checkpoint.go). The
+// removal window is narrow and the complete new content already lives in tmpPath,
+// so a crash mid-rename leaves the rewrite recoverable rather than the record lost.
 func atomicWriteArchiveFile(path string, data []byte) error {
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return fmt.Errorf("write temp: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath) //nolint:errcheck
