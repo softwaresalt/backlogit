@@ -211,7 +211,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 			err = os.Rename(tmpPath, archivePath)
 		}
 		if err != nil {
-			os.Remove(tmpPath) //nolint:errcheck
+			_ = os.Remove(tmpPath)
 			return nil, fmt.Errorf("rename archive file: %w", err)
 		}
 	}
@@ -221,7 +221,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// Removing currentPath in that case would delete the file we just wrote.
 	if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
 		if err := os.Remove(currentPath); err != nil {
-			os.Remove(archivePath) //nolint:errcheck
+			_ = os.Remove(archivePath)
 			return nil, fmt.Errorf("remove original: %w", err)
 		}
 	}
@@ -237,7 +237,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 				"archive_path", archivePath, "original_path", currentPath, "error", restoreErr)
 		} else if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
 			// Remove the stale archive copy only when it is a distinct file.
-			os.Remove(archivePath) //nolint:errcheck
+			_ = os.Remove(archivePath)
 		}
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
@@ -427,15 +427,39 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	if err := os.WriteFile(tmpPath, []byte(restored), 0o644); err != nil {
 		return fmt.Errorf("write restored file: %w", err)
 	}
+	// After read-time self-heal the restore target is the canonical queue path,
+	// which should not already exist. Guard against clobbering a live record: a
+	// distinct pre-existing destination would be silently overwritten by os.Rename
+	// on POSIX (data loss) and would fail cryptically on Windows. The in-place case
+	// (originalPath == archivePath) legitimately overwrites and is handled below.
+	samePath := filepath.Clean(archivePath) == filepath.Clean(originalPath)
+	if !samePath {
+		if _, statErr := os.Lstat(originalPath); statErr == nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("restore target %q already exists: refusing to overwrite", originalPath)
+		} else if !os.IsNotExist(statErr) {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("stat restore target %q: %w", originalPath, statErr)
+		}
+	}
 	if err := os.Rename(tmpPath, originalPath); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck
-		return fmt.Errorf("rename restored file: %w", err)
+		// In-place update (originalPath == archivePath): on Windows os.Rename can
+		// fail when the destination exists. Remove the stale destination and retry;
+		// the new content is preserved in tmpPath until the rename commits.
+		if samePath && runtime.GOOS == "windows" {
+			_ = os.Remove(originalPath)
+			err = os.Rename(tmpPath, originalPath)
+		}
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("rename restored file: %w", err)
+		}
 	}
 	// Only remove the archive file when it differs from the restored path.
 	// When archived_from stored an archive-dir path (because the file was already
 	// there before ArchiveItem ran), originalPath == archivePath and the rename
 	// above updated the file in place — removing it here would undo that write.
-	if filepath.Clean(archivePath) != filepath.Clean(originalPath) {
+	if !samePath {
 		if err := os.Remove(archivePath); err != nil {
 			return fmt.Errorf("remove archive file: %w", err)
 		}

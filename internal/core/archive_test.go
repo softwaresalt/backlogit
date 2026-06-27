@@ -256,6 +256,51 @@ func TestUnarchiveItem_SelfHealsLegacySelfRef(t *testing.T) {
 	assert.Equal(t, "done", fm["status"], "restored status must come from archived_status")
 }
 
+// TestUnarchiveItem_RefusesToClobberExistingQueueFile verifies the data-safety
+// guard added alongside the read-time self-heal (067.003-T): when a distinct
+// record already occupies the canonical restore target, UnarchiveItem refuses to
+// overwrite it (a silent clobber on POSIX / a cryptic os.Rename failure on
+// Windows) and leaves both the queue record and the archive copy untouched.
+func TestUnarchiveItem_RefusesToClobberExistingQueueFile(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	archiveDir := filepath.Join(backlogDir, "archive")
+	queueDir := filepath.Join(backlogDir, "queue")
+
+	// A legacy self-ref archive record whose self-heal target is the queue path.
+	archivePath := filepath.Join(archiveDir, "003-T.md")
+	archiveContent := "---\nid: 003-T\ntitle: Archived task\nstatus: archived\narchived_status: done\nartifact_type: task\narchived_from: .backlogit/archive/003-T.md\n---\nArchive body\n"
+	require.NoError(t, os.WriteFile(archivePath, []byte(archiveContent), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "003-T", Title: "Archived task", Status: models.StatusArchived, ArtifactType: "task",
+	}))
+
+	// A pre-existing, distinct live record already occupies the restore target.
+	restoredPath := filepath.Join(queueDir, "003-T.md")
+	queueContent := "---\nid: 003-T\ntitle: Live queue record\nstatus: queued\nartifact_type: task\n---\nLive body that must not be clobbered\n"
+	require.NoError(t, os.WriteFile(restoredPath, []byte(queueContent), 0o644))
+
+	// Act: unarchive must refuse rather than overwrite the live queue record.
+	err := core.UnarchiveItem(ctx, ws.DB, ws, "003-T")
+
+	// Assert: error returned, both files preserved byte-for-byte.
+	require.Error(t, err, "unarchive must refuse to clobber an existing restore target")
+	assert.Contains(t, err.Error(), "already exists")
+
+	queueRaw, qErr := os.ReadFile(restoredPath)
+	require.NoError(t, qErr)
+	assert.Equal(t, queueContent, string(queueRaw), "existing queue record must be preserved unchanged")
+
+	archiveRaw, aErr := os.ReadFile(archivePath)
+	require.NoError(t, aErr)
+	assert.Equal(t, archiveContent, string(archiveRaw), "archive record must remain after a refused restore")
+
+	// No stray temp file left behind.
+	assert.NoFileExists(t, restoredPath+".tmp", "temp file must be cleaned up on refusal")
+}
+
 // TestArchiveUnarchiveRoundTrip_PreArchived verifies U3 (067.003-T): a pre-archived
 // item round-trips correctly. ArchiveItem stamps the canonical queue restore path
 // (U2), UnarchiveItem restores it to the queue, and re-archiving the restored item
