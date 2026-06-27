@@ -28,7 +28,7 @@ title: 067-S archived_from Integrity — Post-Merge Runtime Verification
 
 ## Environment prechecks
 
-- Binary under test: repo-root `backlogit.exe` (v1.2.0, go1.26.4), freshly built from `main` @ `41f6ff7d`, carrying the new `doctor --check-archived-from`/`--fix-archived-from` flags and the `docs` subcommand.
+- Binary under test: repo-root `backlogit.exe` (v1.2.0), freshly built from `main` @ `41f6ff7d`, carrying the new `doctor --check-archived-from`/`--fix-archived-from` flags and the `docs` subcommand. Module target is `go 1.24.0` (`go.mod`) and CI validates the matrix `["1.23", "1.24"]`; the local build toolchain (`go1.26.4`) is forward-compatible with that target.
 - Workspace: `.backlogit/` (637 artifacts indexed). No service/port/credential dependencies — this is a library + CLI change.
 - A live archive→unarchive→re-archive round trip on real 067 records was **intentionally not performed** to avoid mutating freshly-shipped canonical archive state. The equivalent invariant is proven by the dedicated round-trip test on isolated fixtures (below) plus the live canonical-stamping evidence from the ship itself.
 
