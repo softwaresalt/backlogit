@@ -80,7 +80,14 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 		}
 	}
 
-	return GetShipment(ctx, ws, shipmentID)
+	// The shipment artifact itself is not mutated by item activation (its
+	// manifest items are children of the feature, not of the shipment), so the
+	// snapshot loaded above already reflects the post-activation truth. Return
+	// it directly rather than performing another read-back: a read-back here
+	// could fail after every item is active, leaving a torn state with no
+	// remaining operation to roll back. Eliminating it keeps the claim
+	// all-or-nothing by construction.
+	return shipment, nil
 }
 
 // rollbackShipmentClaim reverts a partially applied shipment claim. Each item
