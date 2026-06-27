@@ -38,7 +38,7 @@ title: 067-S archived_from Integrity — Post-Merge Runtime Verification
 
 This was the **first `shipment ship` since the `archived_from` fix merged**. All 9 newly-archived 067 records carry canonical `archived_from`:
 
-```
+```text
 067-F.md    -> archived_from: .backlogit/queue/067-F.md
 067-S.md    -> archived_from: .backlogit/queue/067-S.md
 067.001-T.md .. 067.007-T.md -> archived_from: .backlogit/queue/067.00N-T.md
@@ -48,7 +48,7 @@ The 7 tasks had been archived **fieldless** during the feature build; `ShipShipm
 
 ### E2 — Live doctor audit
 
-```
+```text
 backlogit doctor --check-orphans=false --check-duplicates=false --check-archived-from --format json
 ```
 

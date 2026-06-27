@@ -1,3 +1,9 @@
+---
+title: "Ship 067-S Post-Merge Closure (archived_from Integrity)"
+description: "Session memory for the 067-S post-merge closure: shipment ship, dogfooding verification, reconcile, closure/compound artifacts, mandatory compaction, and closure PR #142"
+ms.date: 2026-06-27
+---
+
 # Ship Session — 067-S Post-Merge Closure (archived_from Integrity)
 
 - **Date**: 2026-06-27
