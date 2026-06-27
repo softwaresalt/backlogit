@@ -172,6 +172,40 @@ func TestSetArtifactStatus_ClearsStaleBlockedReason(t *testing.T) {
 	assert.False(t, hasReason, "blocked_reason must be cleared by setArtifactStatus when leaving blocked")
 }
 
+// TestCascadeParentStatus_ClearsStaleBlockedReason asserts that when a parent's
+// rolled-up status is recomputed away from blocked by the cascade (its last
+// blocked child is unblocked), the parent's stale blocked_reason is also
+// cleared. (061.001-T — cascade choke point)
+func TestCascadeParentStatus_ClearsStaleBlockedReason(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "Cascade reentry feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feat))
+	task, err := CreateArtifact(ctx, ws, "Cascade reentry task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+
+	// Force the parent into a blocked state carrying a stale reason.
+	feat.Status = models.StatusBlocked
+	if feat.CustomFields == nil {
+		feat.CustomFields = map[string]any{}
+	}
+	feat.CustomFields["blocked_reason"] = "stale parent reason"
+	require.NoError(t, persistArtifact(ctx, ws, feat, true))
+
+	// Activating the child recomputes the parent off blocked via the cascade.
+	_, err = setArtifactStatus(ctx, ws, task.ID, models.StatusActive, "child picked up")
+	require.NoError(t, err)
+
+	dbFeat, err := bldb.GetItem(ctx, ws.DB, feat.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, models.StatusBlocked, dbFeat.Status, "parent must have left blocked via cascade")
+	_, hasReason := dbFeat.CustomFields["blocked_reason"]
+	assert.False(t, hasReason, "cascade must clear the parent's stale blocked_reason")
+}
+
 // TestUpdateArtifact_KeepsBlockedReasonWhileStillBlocked asserts the cleanup is
 // scoped: an item that remains blocked keeps its blocked_reason. (061.001-T
 // negative guard)

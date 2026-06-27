@@ -502,6 +502,7 @@ func cascadePersistedParentStatuses(ctx context.Context, ws *Workspace, itemID s
 	previous := parent.Status
 	parent.Status = newStatus
 	parent.UpdatedAt = time.Now()
+	clearStaleBlockedReason(parent, previous)
 	if err := persistArtifact(ctx, ws, parent, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return err
 	}
