@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -40,6 +41,17 @@ const (
 	// filename. It is emitted in addition to FindingDuplicateID so the
 	// queue/archive root collision is explicitly distinguishable in the report.
 	FindingRootIDCollision DoctorFindingType = "root_id_collision"
+
+	// FindingArchivedFromSelfRef indicates an archive record whose archived_from
+	// resolves to its own archive path (self-referential). UnarchiveItem cannot
+	// restore such a record to the queue without the read-time self-heal, and the
+	// stored value is the migration target for doctor --fix-archived-from.
+	FindingArchivedFromSelfRef DoctorFindingType = "archived_from_self_ref"
+
+	// FindingArchivedFromMalformed indicates an archive record whose archived_from
+	// is present but is not a markdown path (e.g. a stray status token). Flagged for
+	// manual review only; never auto-repaired.
+	FindingArchivedFromMalformed DoctorFindingType = "archived_from_malformed"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -80,6 +92,14 @@ type DoctorOptions struct {
 	// FixOrphans archives orphaned artifacts instead of just reporting them.
 	// Requires CheckOrphans to be true.
 	FixOrphans bool
+	// CheckArchivedFrom enables the read-only archived_from invertibility audit
+	// (self-referential and malformed archive records). Detection only; safe to
+	// expose on the MCP doctor tool.
+	CheckArchivedFrom bool
+	// FixArchivedFrom rewrites self-referential archived_from records to their
+	// canonical queue restore path. Destructive: CLI-only (never wired to the MCP
+	// tool, whose params are model-settable). Requires CheckArchivedFrom to be true.
+	FixArchivedFrom bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -296,7 +316,111 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		}
 	}
 
+	// 067.004-T (U4): read-only archived_from invertibility audit. Flags archive
+	// records whose archived_from self-references its own archive path or is
+	// malformed (not a markdown path). Detection only — safe to surface on MCP.
+	if opts.CheckArchivedFrom {
+		records, afErr := scanArchivedFrom(ws)
+		if afErr != nil {
+			return nil, fmt.Errorf("doctor: %w", afErr)
+		}
+		for _, r := range records {
+			switch r.kind {
+			case archivedFromSelfRef:
+				report.Findings = append(report.Findings, DoctorFinding{
+					Type:        FindingArchivedFromSelfRef,
+					ArtifactID:  r.id,
+					Description: fmt.Sprintf("archive record %q has a self-referential archived_from %q (resolves to its own archive path); unarchive cannot restore it to the queue without the read-time self-heal", r.id, r.value),
+				})
+			case archivedFromMalformed:
+				report.Findings = append(report.Findings, DoctorFinding{
+					Type:        FindingArchivedFromMalformed,
+					ArtifactID:  r.id,
+					Description: fmt.Sprintf("archive record %q has a malformed archived_from %q (not a markdown path); flagged for manual review, not auto-repaired", r.id, r.value),
+				})
+			}
+		}
+	}
+
 	return report, nil
+}
+
+// archivedFromKind classifies an archive record's archived_from value for the
+// invertibility audit.
+type archivedFromKind int
+
+const (
+	archivedFromOK archivedFromKind = iota
+	archivedFromSelfRef
+	archivedFromMalformed
+)
+
+// archivedFromRecord is a single archive record flagged by the archived_from
+// audit, retaining the absolute file path and raw value so the --fix repair can
+// rewrite it in place.
+type archivedFromRecord struct {
+	path  string // absolute archive file path
+	id    string
+	value string // raw archived_from value
+	kind  archivedFromKind
+}
+
+// scanArchivedFrom walks the archive directory and returns the records whose
+// archived_from is self-referential (resolves to the record's own archive path)
+// or malformed (not a markdown path). Fieldless and canonical/legitimate records
+// are excluded. The self-reference comparison mirrors ArchiveItem/UnarchiveItem
+// (archive.go) exactly. Results are sorted by path for deterministic reporting.
+func scanArchivedFrom(ws *Workspace) ([]archivedFromRecord, error) {
+	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
+	var records []archivedFromRecord
+	walkErr := filepath.WalkDir(archiveDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // archive dir absent: nothing to audit
+			}
+			return err
+		}
+		if d.IsDir() || filepath.Ext(d.Name()) != ".md" {
+			return nil
+		}
+		raw, readErr := os.ReadFile(p)
+		if readErr != nil {
+			slog.Warn("doctor: archived_from audit: read failed", "path", p, "error", readErr)
+			return nil
+		}
+		fm, _, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil {
+			slog.Warn("doctor: archived_from audit: parse failed", "path", p, "error", parseErr)
+			return nil
+		}
+		value := ""
+		if v, ok := fm["archived_from"].(string); ok {
+			value = strings.TrimSpace(v)
+		}
+		if value == "" {
+			return nil // fieldless: not an invertibility hazard
+		}
+		id, _ := fm["id"].(string)
+		if id == "" {
+			id = strings.TrimSuffix(d.Name(), ".md")
+		}
+		rec := archivedFromRecord{path: p, id: id, value: value, kind: archivedFromOK}
+		switch {
+		case filepath.Clean(resolveWorkspacePath(ws.RootPath, value)) == filepath.Clean(p):
+			rec.kind = archivedFromSelfRef
+		case filepath.Ext(value) != ".md":
+			rec.kind = archivedFromMalformed
+		}
+		if rec.kind != archivedFromOK {
+			records = append(records, rec)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("archived_from audit: %w", walkErr)
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].path < records[j].path })
+	return records, nil
 }
 
 // hasReturnedToBacklogEvent reports whether the item's event log contains a

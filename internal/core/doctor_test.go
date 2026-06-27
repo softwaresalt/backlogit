@@ -280,3 +280,48 @@ This task has no parent.
 	assert.Empty(t, report.FixActions, "no fix actions when fix-orphans is false")
 	assert.FileExists(t, filepath.Join(queueDir, "099.001-T.md"), "file should remain in queue")
 }
+
+// TestDoctor_ArchivedFromAudit verifies U4 (067.004-T): the read-only audit flags
+// archive records whose archived_from is self-referential (resolves to the record's
+// own archive path) or malformed (not a markdown path), while leaving canonical,
+// fieldless, and legitimate non-self-ref subdir records untouched.
+func TestDoctor_ArchivedFromAudit(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+
+	// Self-referential: archived_from points at its own archive path -> SELF-REF.
+	helperWriteArtifact(t, archiveDir, "100-T.md", "---\nid: 100-T\ntitle: Self ref\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/archive/100-T.md\n---\nBody\n")
+	// Canonical: archived_from points at the queue restore path -> NO finding.
+	helperWriteArtifact(t, archiveDir, "101-T.md", "---\nid: 101-T\ntitle: Canonical\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/queue/101-T.md\n---\nBody\n")
+	// Fieldless: no archived_from at all -> NO finding.
+	helperWriteArtifact(t, archiveDir, "102-T.md", "---\nid: 102-T\ntitle: Fieldless\nstatus: archived\nartifact_type: task\n---\nBody\n")
+	// Legitimate non-self-ref subdir record (036-DL style) -> NO finding.
+	helperWriteArtifact(t, archiveDir, "036-DL.md", "---\nid: 036-DL\ntitle: Deliberation\nstatus: archived\nartifact_type: deliberation\narchived_from: .backlogit/deliberations/036-DL.md\n---\nBody\n")
+	// Malformed: archived_from is a stray status value, not a markdown path -> MALFORMED.
+	helperWriteArtifact(t, archiveDir, "103-T.md", "---\nid: 103-T\ntitle: Malformed\nstatus: archived\nartifact_type: task\narchived_from: done\n---\nBody\n")
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true})
+	require.NoError(t, err)
+
+	var selfRef, malformed []string
+	for _, f := range report.Findings {
+		switch f.Type {
+		case FindingArchivedFromSelfRef:
+			selfRef = append(selfRef, f.ArtifactID)
+		case FindingArchivedFromMalformed:
+			malformed = append(malformed, f.ArtifactID)
+		default:
+			t.Errorf("unexpected finding type %q for %s", f.Type, f.ArtifactID)
+		}
+	}
+
+	assert.Equal(t, []string{"100-T"}, selfRef, "only the self-ref record must be flagged self-ref")
+	assert.Equal(t, []string{"103-T"}, malformed, "only the malformed record must be flagged malformed")
+	assert.NotContains(t, selfRef, "101-T")
+	assert.NotContains(t, selfRef, "102-T")
+	assert.NotContains(t, selfRef, "036-DL")
+}
