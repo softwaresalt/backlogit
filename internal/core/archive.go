@@ -376,6 +376,17 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	}
 	originalPath = resolveWorkspacePath(ws.RootPath, originalPath)
 
+	// 067.003-T (U3): Read-time self-heal. A legacy self-referential record stored
+	// its own archive path in archived_from (the pre-067 ArchiveItem bug). Trusting
+	// it would strand the item in the archive — the same-path branch below skips the
+	// removal when originalPath == archivePath. Recompute the canonical queue restore
+	// target so unarchive invertibility does not depend on the doctor
+	// --fix-archived-from migration having run first. The same-path branch is retained
+	// below as a defensive net for any residual unrecomputed case.
+	if filepath.Clean(originalPath) == filepath.Clean(archivePath) {
+		originalPath = resolveWorkspacePath(ws.RootPath, canonicalRestorePath(ws, filepath.Base(archivePath)))
+	}
+
 	// F-006: Validate the restore path is contained within .backlogit to prevent
 	// path traversal when restoring artifacts from archive.
 	rel, relErr := filepath.Rel(backlogDir, originalPath)
