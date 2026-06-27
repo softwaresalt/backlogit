@@ -115,14 +115,16 @@ The 130 matches the stash's "~130" estimate exactly.
 
 **Anomalies in the "other" bucket (important for migration scoping):**
 
-* `036-DL.md` → `archived_from: .backlogit/deliberations/036-DL.md` — a
-  **legitimate** non-queue restore path whose value is **not** self-referential (it
-  does not equal the record's own archive path). The v1 self-reference comparator
-  (`archived_from == <record's archive path>`) therefore **excludes** it automatically,
-  so the migration leaves it untouched. (Note: it is excluded because it is
-  non-self-referential, **not** because any resolver reproduces a type-specific path —
-  see the Refinement note under Decision: the registry routes by *status*, not artifact
-  *type*, so there is no type→directory map to resolve against.)
+* `036-DL.md` → `archived_from: .backlogit/deliberations/036-DL.md` — its
+  `archived_from` value is simply **not self-referential** (it does not equal the
+  record's own archive path), so the v1 self-reference comparator
+  (`archived_from == <record's archive path>`) **excludes** it automatically and the
+  migration leaves it untouched. This is **not** evidence that
+  `.backlogit/deliberations/` is a valid restore location: this workspace's registry
+  routes artifacts only between `queue/` and `archive/` by *status* (there are no
+  type-based directory rules), so no resolver reproduces a `deliberations/` path and
+  none needs to. The record is preserved purely because the comparator skips it — its
+  exact value is out of scope for the self-reference repair.
 * `038-DL.md`, `039-DL.md` → `archived_from: done` — **malformed**: a status value
   leaked into the field. These are a distinct corruption class the audit should
   flag (v1 detect/report only, no auto-repair), but they are not part of the
