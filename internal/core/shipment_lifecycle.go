@@ -36,30 +36,99 @@ type ShipShipmentResult struct {
 	CommitSHA      string   `json:"commit_sha,omitempty"`
 }
 
-// ClaimShipment moves a queued shipment to active and marks the included work scope active.
+// ClaimShipment moves a queued shipment to active and marks the included work
+// scope active. Activation is all-or-nothing: if any item fails to load or
+// activate mid-flight, the shipment and every already-activated item (plus any
+// cascade-activated parent) are restored to their pre-claim state so no
+// partial/torn activation is left behind.
 func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*models.Artifact, error) {
+	// Snapshot the pre-claim shipment before any mutation so a mid-flight
+	// failure can be rolled back to a fully queued state.
+	current, err := GetShipment(ctx, ws, shipmentID)
+	if err != nil {
+		return nil, err
+	}
+	preClaimShipment := cloneArtifact(current)
+
 	if err := MoveShipmentStatus(ctx, ws, shipmentID, ShipmentActive); err != nil {
 		return nil, err
 	}
 
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
-		return nil, err
+		// The shipment is active but no items have been activated yet; restore
+		// it to queued so a failed read-back does not leave a torn state.
+		return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, nil,
+			fmt.Errorf("reload shipment after activation: %w", err))
 	}
 
+	// activatedIDs records every item this claim transitioned to active, in
+	// application order, so rollback can revert them (newest first) on failure.
+	var activatedIDs []string
 	for _, itemID := range shipmentItems(shipment) {
 		item, loadErr := loadArtifact(ctx, ws, itemID)
 		if loadErr != nil {
-			return nil, fmt.Errorf("claim shipment %s: load item %s: %w", shipmentID, itemID, loadErr)
+			return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
+				fmt.Errorf("load item %s: %w", itemID, loadErr))
 		}
 		if item.Status == models.StatusQueued {
+			// Record the item as activation-attempted *before* mutating it:
+			// setArtifactStatus persists the item active before cascading parent
+			// statuses, so a failure mid-call can leave the item active on disk.
+			// Tracking it up front guarantees rollback reverts it; a queued->queued
+			// revert is a safe no-op when activation never landed.
+			activatedIDs = append(activatedIDs, itemID)
 			if _, setErr := setArtifactStatus(ctx, ws, itemID, models.StatusActive, "shipment claimed"); setErr != nil {
-				return nil, fmt.Errorf("claim shipment %s: activate item %s: %w", shipmentID, itemID, setErr)
+				return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
+					fmt.Errorf("activate item %s: %w", itemID, setErr))
 			}
 		}
 	}
 
-	return GetShipment(ctx, ws, shipmentID)
+	// The shipment artifact itself is not mutated by item activation (its
+	// manifest items are children of the feature, not of the shipment), so the
+	// snapshot loaded above already reflects the post-activation truth. Return
+	// it directly rather than performing another read-back: a read-back here
+	// could fail after every item is active, leaving a torn state with no
+	// remaining operation to roll back. Eliminating it keeps the claim
+	// all-or-nothing by construction.
+	return shipment, nil
+}
+
+// rollbackShipmentClaim reverts a partially applied shipment claim. Each item
+// the claim activated is returned to queued in reverse order so child statuses
+// settle before their parents are recomputed by the cascade, and the shipment
+// is restored to its pre-claim snapshot. The original claim error is wrapped
+// together with any rollback error so the caller sees the full failure context.
+func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string, preClaimShipment *models.Artifact, activatedIDs []string, claimErr error) error {
+	// Guard against a nil triggering error: rollback must never collapse to a
+	// nil return that silently drops the failure (a future caller that passes
+	// nil would otherwise hide a torn-state rollback behind a success).
+	if claimErr == nil {
+		claimErr = fmt.Errorf("claim rollback invoked without a triggering error")
+	}
+	var rollbackErrs []error
+	for i := len(activatedIDs) - 1; i >= 0; i-- {
+		if _, err := setArtifactStatus(ctx, ws, activatedIDs[i], models.StatusQueued, "shipment claim rolled back"); err != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("revert item %s: %w", activatedIDs[i], err))
+		}
+	}
+	if preClaimShipment != nil {
+		if err := persistArtifact(ctx, ws, preClaimShipment, true); err != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore shipment %s: %w", shipmentID, err))
+		}
+	}
+
+	slog.WarnContext(ctx, "shipment claim rolled back",
+		"shipment_id", shipmentID, "reverted_items", len(activatedIDs), "error", claimErr)
+	appendItemEvent(ctx, ws, shipmentID, "shipment_claim_rolled_back", map[string]any{
+		"reverted_items": len(activatedIDs),
+	})
+
+	if len(rollbackErrs) > 0 {
+		return fmt.Errorf("claim shipment %s: %w; rollback failed: %w", shipmentID, claimErr, errors.Join(rollbackErrs...))
+	}
+	return fmt.Errorf("claim shipment %s: %w", shipmentID, claimErr)
 }
 
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
@@ -412,6 +481,7 @@ func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newSta
 	previous := artifact.Status
 	artifact.Status = newStatus
 	artifact.UpdatedAt = time.Now()
+	clearStaleBlockedReason(artifact, previous)
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return nil, err
 	}
@@ -450,6 +520,7 @@ func cascadePersistedParentStatuses(ctx context.Context, ws *Workspace, itemID s
 	previous := parent.Status
 	parent.Status = newStatus
 	parent.UpdatedAt = time.Now()
+	clearStaleBlockedReason(parent, previous)
 	if err := persistArtifact(ctx, ws, parent, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return err
 	}

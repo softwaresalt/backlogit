@@ -478,6 +478,7 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 		artifact.CustomFields["harness_status"] = v
 	}
 	artifact.UpdatedAt = time.Now()
+	clearStaleBlockedReason(artifact, previousStatus)
 
 	// Validate against header-def if available.
 	if ws.HeaderDef != nil {
