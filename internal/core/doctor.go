@@ -6,6 +6,7 @@ package core
 // and nil-layout guard failures.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -67,6 +70,10 @@ type FixActionType string
 const (
 	// FixArchived indicates the item was archived by the fix-orphans path.
 	FixArchived FixActionType = "archived"
+
+	// FixArchivedFromRepaired indicates a self-referential archived_from field was
+	// rewritten to its canonical queue restore path by doctor --fix-archived-from.
+	FixArchivedFromRepaired FixActionType = "archived_from_repaired"
 )
 
 // FixAction describes a repair action taken by Doctor in fix mode.
@@ -340,6 +347,13 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				})
 			}
 		}
+
+		// 067.005-T (U5): destructive repair, CLI-gated by the caller. Rewrite each
+		// self-referential record's archived_from to its canonical queue restore
+		// path. Continue-on-error per record; malformed records are flagged only.
+		if opts.FixArchivedFrom {
+			report.FixActions = append(report.FixActions, repairArchivedFrom(ws, records)...)
+		}
 	}
 
 	return report, nil
@@ -421,6 +435,181 @@ func scanArchivedFrom(ws *Workspace) ([]archivedFromRecord, error) {
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].path < records[j].path })
 	return records, nil
+}
+
+// repairArchivedFrom rewrites each self-referential archive record's archived_from
+// to its canonical queue restore path. It is destructive and must only be reached
+// when the caller explicitly opted in (CLI-only --fix-archived-from). Safety rules:
+// records reached through a symlink (record or any path component) are refused, and
+// a record is skipped unless both it and its recomputed restore target are provably
+// contained within the workspace storage root. Repair is continue-on-error per
+// record (each failure is logged, not fatal) and emits one FixAction per repaired
+// record so the structured report is the authoritative migration manifest.
+// Malformed records are flagged only (never rewritten).
+func repairArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction {
+	storageRoot := WorkspaceStorageRoot(ws.RootPath)
+	realRoot, rootErr := filepath.EvalSymlinks(storageRoot)
+	if rootErr != nil {
+		realRoot = storageRoot
+	}
+
+	var actions []FixAction
+	for _, r := range records {
+		if r.kind != archivedFromSelfRef {
+			continue // malformed/OK records are never auto-repaired
+		}
+		// Symlink refusal: never rewrite through a symlinked record.
+		info, lerr := os.Lstat(r.path)
+		if lerr != nil {
+			slog.Warn("doctor: fix-archived-from: lstat failed", "path", r.path, "error", lerr)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			slog.Warn("doctor: fix-archived-from: refusing symlinked record", "path", r.path)
+			continue
+		}
+		// Realpath containment: resolve symlinks on both sides and require the record
+		// to live under the workspace storage root.
+		real, evalErr := filepath.EvalSymlinks(r.path)
+		if evalErr != nil {
+			slog.Warn("doctor: fix-archived-from: evalsymlinks failed", "path", r.path, "error", evalErr)
+			continue
+		}
+		if !pathContained(realRoot, real) {
+			slog.Warn("doctor: fix-archived-from: record escapes workspace storage", "path", r.path)
+			continue
+		}
+		// Recompute the canonical restore target and prove it is workspace-contained
+		// (lexical: the target file does not exist yet).
+		target := canonicalRestorePath(ws, filepath.Base(r.path))
+		if !pathContained(storageRoot, resolveWorkspacePath(ws.RootPath, target)) {
+			slog.Warn("doctor: fix-archived-from: recomputed target not contained", "path", r.path, "target", target)
+			continue
+		}
+
+		raw, readErr := os.ReadFile(r.path)
+		if readErr != nil {
+			slog.Warn("doctor: fix-archived-from: read failed", "path", r.path, "error", readErr)
+			continue
+		}
+		out, rewriteErr := rewriteArchivedFromField(raw, target)
+		if rewriteErr != nil {
+			slog.Warn("doctor: fix-archived-from: rewrite failed", "path", r.path, "error", rewriteErr)
+			continue
+		}
+		if err := atomicWriteArchiveFile(r.path, out); err != nil {
+			slog.Warn("doctor: fix-archived-from: write failed", "path", r.path, "error", err)
+			continue
+		}
+		actions = append(actions, FixAction{
+			Type:       FixArchivedFromRepaired,
+			ArtifactID: r.id,
+			Detail:     fmt.Sprintf("rewrote self-referential archived_from to %q", target),
+		})
+	}
+	return actions
+}
+
+// rewriteArchivedFromField rewrites ONLY the archived_from frontmatter field of a
+// markdown record to newValue while preserving the body bytes verbatim. It mirrors
+// the internal/docline Decode/Encode codec, which core cannot import directly:
+// internal/docline depends on internal/core (docline/service.go), so importing it
+// would introduce a package import cycle. The frontmatter block is re-marshaled with
+// yaml's deterministic sorted keys; the body after the closing fence is never
+// touched, so CRLF, trailing whitespace, and horizontal rules survive unchanged.
+func rewriteArchivedFromField(raw []byte, newValue string) ([]byte, error) {
+	openLen := frontmatterOpenLen(raw)
+	if openLen == 0 {
+		return nil, fmt.Errorf("no opening frontmatter fence")
+	}
+	yamlBlock, body, ok := splitAtFrontmatterFence(raw[openLen:])
+	if !ok {
+		return nil, fmt.Errorf("no closing frontmatter fence")
+	}
+	fm := map[string]any{}
+	normalized := bytes.ReplaceAll(yamlBlock, []byte("\r\n"), []byte("\n"))
+	if len(bytes.TrimSpace(normalized)) > 0 {
+		if err := yaml.Unmarshal(normalized, &fm); err != nil {
+			return nil, fmt.Errorf("parse frontmatter: %w", err)
+		}
+	}
+	if fm == nil {
+		fm = map[string]any{}
+	}
+	fm["archived_from"] = newValue
+	data, err := yaml.Marshal(fm)
+	if err != nil {
+		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+	}
+	var buf bytes.Buffer
+	buf.Grow(len(data) + len(body) + 8)
+	buf.WriteString("---\n")
+	buf.Write(data) // yaml.Marshal output is LF-terminated
+	buf.WriteString("---\n")
+	buf.Write(body)
+	return buf.Bytes(), nil
+}
+
+// frontmatterOpenLen returns the byte length of the opening "---" fence line
+// (including its terminator) when raw begins with it, or 0.
+func frontmatterOpenLen(raw []byte) int {
+	switch {
+	case bytes.HasPrefix(raw, []byte("---\n")):
+		return 4
+	case bytes.HasPrefix(raw, []byte("---\r\n")):
+		return 5
+	default:
+		return 0
+	}
+}
+
+// splitAtFrontmatterFence scans rest line-by-line and splits at the first line whose
+// content is exactly "---" (a trailing CR is tolerated; leading whitespace is not, so
+// an indented block-scalar fence is never mistaken for the closing fence). It returns
+// the frontmatter YAML bytes, the verbatim body bytes after the fence line, and
+// whether a closing fence was found.
+func splitAtFrontmatterFence(rest []byte) (yamlBlock, body []byte, ok bool) {
+	for i := 0; i < len(rest); {
+		nl := bytes.IndexByte(rest[i:], '\n')
+		var lineEnd, nextStart int
+		if nl == -1 {
+			lineEnd, nextStart = len(rest), len(rest)
+		} else {
+			lineEnd, nextStart = i+nl, i+nl+1
+		}
+		line := rest[i:lineEnd]
+		if n := len(line); n > 0 && line[n-1] == '\r' {
+			line = line[:n-1]
+		}
+		if string(line) == "---" {
+			return rest[:i], rest[nextStart:], true
+		}
+		i = nextStart
+	}
+	return nil, nil, false
+}
+
+// pathContained reports whether p resolves to a location inside root.
+func pathContained(root, p string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// atomicWriteArchiveFile writes data to path via a temp file and rename, mirroring
+// the atomic-write pattern used by ArchiveItem/UnarchiveItem.
+func atomicWriteArchiveFile(path string, data []byte) error {
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath) //nolint:errcheck
+		return fmt.Errorf("rename temp: %w", err)
+	}
+	return nil
 }
 
 // hasReturnedToBacklogEvent reports whether the item's event log contains a

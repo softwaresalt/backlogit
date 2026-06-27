@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -324,4 +325,66 @@ func TestDoctor_ArchivedFromAudit(t *testing.T) {
 	assert.NotContains(t, selfRef, "101-T")
 	assert.NotContains(t, selfRef, "102-T")
 	assert.NotContains(t, selfRef, "036-DL")
+}
+
+// TestDoctor_FixArchivedFromRepairsSelfRef verifies U5 (067.005-T): the
+// --fix-archived-from repair rewrites a self-referential archived_from to the
+// canonical queue restore path using the body-preserving docline codec, emits a
+// per-record FixAction, is idempotent (a second run is a byte-stable no-op), and
+// leaves canonical and malformed records untouched.
+func TestDoctor_FixArchivedFromRepairsSelfRef(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+
+	// Self-ref record with a CRLF body to prove body bytes are preserved verbatim.
+	selfRefContent := "---\nid: 200-T\ntitle: Self ref\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/archive/200-T.md\n---\nBody line 1\r\nBody line 2\n"
+	helperWriteArtifact(t, archiveDir, "200-T.md", selfRefContent)
+	// Canonical record: must be left byte-for-byte untouched.
+	canonContent := "---\nid: 201-T\ntitle: Canonical\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/queue/201-T.md\n---\nCanon body\n"
+	helperWriteArtifact(t, archiveDir, "201-T.md", canonContent)
+	// Malformed record: flagged only, never repaired.
+	malformedContent := "---\nid: 202-T\ntitle: Malformed\nstatus: archived\nartifact_type: task\narchived_from: done\n---\nMal body\n"
+	helperWriteArtifact(t, archiveDir, "202-T.md", malformedContent)
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+	selfRefPath := filepath.Join(archiveDir, "200-T.md")
+	const wantBody = "Body line 1\r\nBody line 2\n"
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixArchivedFrom: true})
+	require.NoError(t, err)
+
+	// Exactly one FixAction, for the self-ref record only.
+	var repaired []string
+	for _, a := range report.FixActions {
+		if a.Type == FixArchivedFromRepaired {
+			repaired = append(repaired, a.ArtifactID)
+		}
+	}
+	assert.Equal(t, []string{"200-T"}, repaired, "only the self-ref record is repaired")
+
+	// archived_from rewritten to the canonical queue path; body bytes preserved.
+	rawAfter, readErr := os.ReadFile(selfRefPath)
+	require.NoError(t, readErr)
+	fm, _, perr := models.ParseFrontmatter(string(rawAfter))
+	require.NoError(t, perr)
+	assert.Equal(t, ".backlogit/queue/200-T.md", fm["archived_from"])
+	assert.True(t, bytes.HasSuffix(rawAfter, []byte(wantBody)),
+		"body bytes must be preserved verbatim (incl. CRLF)")
+
+	// Canonical and malformed records left byte-for-byte untouched.
+	canonAfter, _ := os.ReadFile(filepath.Join(archiveDir, "201-T.md"))
+	assert.Equal(t, canonContent, string(canonAfter), "canonical record must be untouched")
+	malAfter, _ := os.ReadFile(filepath.Join(archiveDir, "202-T.md"))
+	assert.Equal(t, malformedContent, string(malAfter), "malformed record must be untouched (flag-only)")
+
+	// Idempotency: a second --fix run is a no-op and byte-stable.
+	report2, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixArchivedFrom: true})
+	require.NoError(t, err)
+	for _, a := range report2.FixActions {
+		assert.NotEqual(t, FixArchivedFromRepaired, a.Type, "second run must not repair anything")
+	}
+	rawSecond, _ := os.ReadFile(selfRefPath)
+	assert.Equal(t, rawAfter, rawSecond, "second run must be byte-stable")
 }
