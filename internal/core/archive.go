@@ -180,7 +180,16 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		}
 	}
 
-	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	// 067.002-T (U2): For a pre-archived item (already at its archive path because a
+	// terminal status routed it to .backlogit/archive/ before ArchiveItem ran),
+	// currentPath == archivePath, so workspaceRelativePath would self-reference the
+	// archive path and strand the item. Stamp the canonical queue restore path
+	// instead. The normal queued->archive branch is unchanged (byte-for-byte).
+	if filepath.Clean(currentPath) == filepath.Clean(archivePath) {
+		fm["archived_from"] = canonicalRestorePath(ws, filepath.Base(currentPath))
+	} else {
+		fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	}
 	// 060.003-T: Preserve the pre-archive status so UnarchiveItem can restore it.
 	fm["archived_status"] = oldStatus
 	fm["status"] = string(models.StatusArchived)

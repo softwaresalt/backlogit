@@ -186,6 +186,35 @@ func TestArchiveItem_ItemAlreadyInArchiveDir(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(queueDir, "002-T.md"), "no queue file should be created")
 }
 
+// TestArchiveItem_PreArchivedStampsCanonicalArchivedFrom verifies U2 (067.002-T):
+// when an item is already inside the archive directory (pre-archived — a terminal
+// status routed it there before ArchiveItem runs, so currentPath == archivePath),
+// ArchiveItem stamps archived_from with the canonical .backlogit/queue/<id>.md
+// restore path rather than self-referencing its own archive path. The normal
+// queued->archive branch (asserted by TestArchiveItem_MovesToArchive) is unchanged.
+func TestArchiveItem_PreArchivedStampsCanonicalArchivedFrom(t *testing.T) {
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	archiveDir := filepath.Join(ws.RootPath, ".backlogit", "archive")
+	archiveFilePath := filepath.Join(archiveDir, "050-T.md")
+	content := "---\nid: 050-T\ntitle: Pre-archived task\nstatus: done\nartifact_type: task\n---\nBody\n"
+	require.NoError(t, os.WriteFile(archiveFilePath, []byte(content), 0o644))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID: "050-T", Title: "Pre-archived task", Status: models.StatusDone, ArtifactType: "task",
+	}))
+
+	record, err := core.ArchiveItem(ctx, ws.DB, ws, "050-T")
+	require.NoError(t, err)
+
+	raw, readErr := os.ReadFile(record.ArchivePath)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	assert.Equal(t, ".backlogit/queue/050-T.md", fm["archived_from"],
+		"pre-archived item must stamp the canonical queue restore path, not a self-reference")
+}
+
 // TestUnarchiveItem_ArchiveFromEqualsArchivePath verifies that UnarchiveItem
 // does not delete the file when archived_from resolves to the same path as
 // the current archive location. This can happen when ArchiveItem encountered
