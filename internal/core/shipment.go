@@ -280,6 +280,19 @@ func appendItemEvent(ctx context.Context, ws *Workspace, itemID, eventType strin
 	appendItemEventWithCommit(ctx, ws, itemID, eventType, delta, "")
 }
 
+// clearStaleBlockedReason removes blocked_reason metadata once an artifact
+// leaves the blocked status. The reason is only meaningful while the item is
+// blocked; retaining it after the item re-enters the backlog (queued) or is
+// re-activated misrepresents the item's current availability.
+func clearStaleBlockedReason(artifact *models.Artifact, previousStatus models.ArtifactStatus) {
+	if artifact == nil || artifact.CustomFields == nil {
+		return
+	}
+	if previousStatus == models.StatusBlocked && artifact.Status != models.StatusBlocked {
+		delete(artifact.CustomFields, "blocked_reason")
+	}
+}
+
 func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any, commitSHA string) {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
