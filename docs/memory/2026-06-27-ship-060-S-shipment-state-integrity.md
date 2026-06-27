@@ -52,7 +52,34 @@ branch: feat/061-shipment-state-integrity
   through rollback). P3s (best-effort rollback limits; pre-existing `cloneArtifact` shallow
   Links/nested-slice copy not triggered here) acknowledged, out of scope.
 
+## PR #143 + Copilot review-fix cycles (all complete)
+- PR #143: https://github.com/softwaresalt/backlogit/pull/143 (branch `feat/061-shipment-state-integrity`).
+- Three Copilot review-fix cycles, each TDD (red→green), each its own commit:
+  - **Cycle 1 — `7a1215f0`**: cascade choke point. `cascadePersistedParentStatuses` now calls
+    `clearStaleBlockedReason(parent, previous)` so a parent recomputed off `blocked` by a child
+    cascade also clears stale `blocked_reason` (third choke point for 061.001-T). New test
+    `TestCascadeParentStatus_ClearsStaleBlockedReason`.
+  - **Cycle 2 — `c5da0e64`**: eliminated the final post-activation `GetShipment` read-back in
+    `ClaimShipment`. The shipment artifact is never mutated by item activation (manifest items are
+    children of the feature, not the shipment), so the already-loaded snapshot is returned directly
+    — removing the only fallible op after the last activation (torn-state window closed by
+    construction). Success test now asserts the returned shipment carries its full manifest.
+  - **Cycle 3 — `5e895193`**: hardened rollback. (a) `activatedIDs` records each item *before*
+    `setArtifactStatus` so an item persisted active before a cascade failure is still reverted
+    (queued→queued revert is a safe no-op); (b) `rollbackShipmentClaim` guards a nil `claimErr`
+    so rollback can never collapse to silent success; (c) mid-flight rollback test now asserts the
+    cascade-activated parent's on-disk state via `loadArtifact`.
+- Final confirmation Copilot review on HEAD `5e895193` posted **no new threads**. All 5 review
+  threads resolved (0 unresolved). Replies posted + threads resolved via REST + GraphQL.
+
+## Merge-gate status (HALTED for operator)
+- CI all green on HEAD `5e895193`: test (1.23), test (1.24), CLI Reference Drift, Docline frontmatter gate.
+- `mergeable: MERGEABLE`; `mergeState: BLOCKED` = branch protection requires an approving review
+  (Copilot only COMMENTED) — expected; operator provides the approving review + admin merge.
+- P-009 verified: repo allows merge commit only (`allow_squash_merge: false`,
+  `allow_rebase_merge: false`).
+- Both tasks `done`; feature 061-F + shipment 060-S left **active** for post-merge closure.
+
 ## Next steps
-- Open PR, request Copilot review, drive CI green, resolve Copilot threads. HALT at merge gate
-  for operator approval (merge commit strategy, P-009). Post-merge closure ships 060-S and
-  archives 061-F + tasks in a separate step.
+- Operator: review + merge PR #143 via **merge commit** (P-009). After merge, run post-merge
+  closure as a separate step: ship 060-S and archive 061-F + tasks.
