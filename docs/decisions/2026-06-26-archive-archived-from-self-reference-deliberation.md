@@ -116,13 +116,16 @@ The 130 matches the stash's "~130" estimate exactly.
 **Anomalies in the "other" bucket (important for migration scoping):**
 
 * `036-DL.md` → `archived_from: .backlogit/deliberations/036-DL.md` — a
-  **legitimate** non-queue restore path. A deliberation artifact routes to a
-  `deliberations/` subdir, not `queue/`. This proves the canonical restore path is
-  **artifact-type / registry dependent**, not universally `queue/`. A naive
-  "rewrite archive→queue" migration would corrupt this record.
+  **legitimate** non-queue restore path whose value is **not** self-referential (it
+  does not equal the record's own archive path). The v1 self-reference comparator
+  (`archived_from == <record's archive path>`) therefore **excludes** it automatically,
+  so the migration leaves it untouched. (Note: it is excluded because it is
+  non-self-referential, **not** because any resolver reproduces a type-specific path —
+  see the Refinement note under Decision: the registry routes by *status*, not artifact
+  *type*, so there is no type→directory map to resolve against.)
 * `038-DL.md`, `039-DL.md` → `archived_from: done` — **malformed**: a status value
   leaked into the field. These are a distinct corruption class the audit should
-  flag (and ideally repair via registry resolution), but they are not part of the
+  flag (v1 detect/report only, no auto-repair), but they are not part of the
   130 self-reference set.
 
 ### Prior learnings
@@ -203,9 +206,12 @@ regression test (archive → unarchive → file back in queue) locks this in.
 
 1. **Code fix (R2 + Decision 3).** In `ArchiveItem`, when the item is pre-archived
    (`filepath.Clean(currentPath) == filepath.Clean(archivePath)`), set
-   `archived_from` to the **registry/queue-layout-resolved canonical restore path**
-   (fallback `queue/<basename>`) instead of `currentPath`. Leave the normal
-   queued→archive behavior byte-for-byte unchanged so contract test
+   `archived_from` to the **`.backlogit/`-prefixed canonical restore path** derived
+   from `ws.Config.QueueLayout.RootDir` (default `.backlogit/queue/<basename>`)
+   instead of `currentPath`. The path must be repo-root-relative and `.backlogit/`-prefixed
+   to match `workspaceRelativePath` / `archive_test.go:70` and to satisfy
+   `UnarchiveItem`'s F-006 guard (a prefix-less `queue/...` would be rejected). Leave
+   the normal queued→archive behavior byte-for-byte unchanged so contract test
    `archive_test.go:70` still passes. Add a regression test mirroring `:70` for the
    pre-archived path.
 2. **Unarchive consistency.** Confirm/adjust `UnarchiveItem` so the new
@@ -214,18 +220,35 @@ regression test (archive → unarchive → file back in queue) locks this in.
    case.
 3. **Migration (Option B — recommended, flagged for operator sign-off).** Add an
    `archived_from` invertibility audit to `backlogit doctor` (detect by default,
-   repair under `--fix`) that rewrites the 130 self-referential records to their
-   registry-resolved canonical restore path, using the **same resolver** as the
-   code fix. Idempotent, reviewable batches, post-scan verifies zero self-ref
-   records remain. The audit also flags the 2 malformed `archived_from: done`
-   records and must **not** touch the 258 canonical, 211 fieldless, or 1
-   legitimate DL-subdir records.
+   repair under a **CLI-only** `--fix-archived-from` flag, not exposed on the MCP
+   `backlogit_doctor` tool per Principle VII). Detection is by path-equality
+   (`archived_from` equals the record's own archive path); repair rewrites only those
+   130 self-referential records to `.backlogit/<queue-root>/<basename>` derived from
+   `QueueLayout.RootDir`, using the **same restore-path resolver** as the code fix.
+   Idempotent, reviewable batches, post-scan verifies zero self-ref records remain.
+   The audit also flags the 2 malformed `archived_from: done` records (detect/report
+   only in v1) and must **not** touch the 258 canonical, 211 fieldless, or 1
+   legitimate DL-subdir records (the latter is excluded by the self-ref comparator).
 
-Rationale: R2 is mandatory once the `036-DL` evidence is on the table — a hardcoded
-`queue/` would corrupt correct data. Option B reuses the existing integrity
-surface, converts a one-time repair into durable regression detection, and shares
-one resolver across fix + migration. The work decomposes cleanly into 2-hour,
-single-domain, TDD-first tasks.
+Rationale: R2 (a `QueueLayout.RootDir`-derived resolver) is preferred over R1 (a
+hardcoded `queue/`) so the restore path honors a workspace's configured queue root
+rather than assuming the default — the resolver stays correct if `QueueLayout.RootDir`
+is ever customized. Option B reuses the existing integrity surface, converts a
+one-time repair into durable regression detection, and shares one resolver across
+fix + migration. The work decomposes cleanly into 2-hour, single-domain, TDD-first
+tasks.
+
+> **Refinement (plan-review, attempt 1 → 2).** Plan-review corrected three framing
+> errors carried in the earlier draft of this deliberation, now reflected above:
+> (1) the restore path must be **repo-root-relative and `.backlogit/`-prefixed**
+> (a prefix-less `queue/...` is rejected by `UnarchiveItem`'s F-006 guard);
+> (2) the backlogit registry routes archive/queue placement by **status**, not
+> artifact **type** — there is no type→directory map, so the resolver is pure over
+> `QueueLayout.RootDir` and the `036-DL` record is retained because it is
+> **non-self-referential** (excluded by the comparator), not because a resolver
+> reproduces a type-specific path; (3) the migration `--fix` is **CLI-only**
+> (Principle VII), not exposed on the MCP doctor tool. See the `## Plan Review`
+> section of the reviewed plan for the full attempt-1 FAIL → attempt-2 PASS record.
 
 ## Rejected Alternatives
 

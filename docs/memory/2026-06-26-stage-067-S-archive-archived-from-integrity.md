@@ -1,3 +1,9 @@
+---
+title: "Stage 067-S ArchiveItem archived_from Integrity"
+description: "Session memory for staging production bug 53F22794 through deliberation, plan-harden, plan-review, harvest, and shipment 067-S assembly"
+ms.date: 2026-06-26
+---
+
 # Stage Session — 067-S ArchiveItem archived_from Integrity
 
 **Date**: 2026-06-26
