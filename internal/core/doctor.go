@@ -449,12 +449,13 @@ func scanArchivedFrom(ws *Workspace) ([]archivedFromRecord, error) {
 // repairArchivedFrom rewrites each self-referential archive record's archived_from
 // to its canonical queue restore path. It is destructive and must only be reached
 // when the caller explicitly opted in (CLI-only --fix-archived-from). Safety rules:
-// records reached through a symlink (record or any path component) are refused, and
-// a record is skipped unless both it and its recomputed restore target are provably
-// contained within the workspace storage root. Repair is continue-on-error per
-// record (each failure is logged, not fatal) and emits one FixAction per repaired
-// record so the structured report is the authoritative migration manifest.
-// Malformed records are flagged only (never rewritten).
+// a record whose final path component is itself a symlink is refused (Lstat); every
+// other record is resolved with EvalSymlinks (collapsing any intermediate symlinked
+// components) and skipped unless the resulting realpath — and the recomputed restore
+// target — are provably contained within the workspace storage root. Repair is
+// continue-on-error per record (each failure is logged, not fatal) and emits one
+// FixAction per repaired record so the structured report is the authoritative
+// migration manifest. Malformed records are flagged only (never rewritten).
 func repairArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction {
 	storageRoot := WorkspaceStorageRoot(ws.RootPath)
 	realRoot, rootErr := filepath.EvalSymlinks(storageRoot)
@@ -626,7 +627,7 @@ func atomicWriteArchiveFile(path string, data []byte) error {
 			err = os.Rename(tmpPath, path)
 		}
 		if err != nil {
-			os.Remove(tmpPath) //nolint:errcheck
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("rename temp: %w", err)
 		}
 	}

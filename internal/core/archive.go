@@ -503,8 +503,9 @@ func queueRootDir(ws *Workspace) string {
 // The output format matches workspaceRelativePath(ws.RootPath, …) — the
 // ".backlogit/queue/<id>.md" form asserted by archive_test.go and accepted by the
 // UnarchiveItem F-006 traversal guard (archive.go:368-373). A QueueLayout.RootDir
-// that is absolute or escapes its parent is rejected: the resolver falls back to
-// the default "queue" so the returned path is always workspace-contained.
+// that is empty, absolute, volume-qualified, cleans to "." or "..", or otherwise
+// escapes its parent is rejected: the resolver falls back to the default "queue"
+// so the returned path is always workspace-contained.
 func canonicalRestorePath(ws *Workspace, basename string) string {
 	const storageRoot = ".backlogit"
 	root := queueRootDir(ws)
