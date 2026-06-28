@@ -736,8 +736,9 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return domainError("update artifact", err), nil
 	}
 	// Write section content when provided. UpdateArtifact already wrote the
-	// frontmatter file and upserted the DB index; sections are markdown body
-	// only and do not require a follow-up upsert.
+	// frontmatter and upserted the DB with the prior body; writeSectionsToFile
+	// rewrites the body and re-upserts so the DB/FTS reflect the new section
+	// content immediately.
 	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
@@ -1091,6 +1092,20 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 	if err := os.Rename(tmp, filePath); err != nil {
 		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("rename artifact: %w", err)
+	}
+
+	// Re-upsert the rewritten artifact so SQLite (items.description) and the FTS
+	// index match the file body immediately. Without this, get-item without a
+	// section view and FTS search return the stale pre-rewrite body until a
+	// manual sync.
+	if ws.DB != nil {
+		updated, parseErr := models.ArtifactFromFrontmatter(fm, body)
+		if parseErr != nil {
+			return fmt.Errorf("parse artifact after section write: %w", parseErr)
+		}
+		if upsertErr := db.UpsertItem(ctx, ws.DB, updated); upsertErr != nil {
+			return fmt.Errorf("sync index after section write: %w", upsertErr)
+		}
 	}
 	return nil
 }
