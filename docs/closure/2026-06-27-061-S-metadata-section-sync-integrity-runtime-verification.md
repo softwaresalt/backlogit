@@ -29,7 +29,7 @@ title: 061-S Metadata and Section Sync Integrity — Post-Merge Runtime Verifica
 
 ## Environment prechecks
 
-- Binary under test: `backlogit.exe` at repo root, freshly built from current `main` @ `006bb854` (carries `docs` + `doctor` subcommands).
+- Binary under test: the repo-root `backlogit` binary (named `backlogit.exe` on Windows, `backlogit` on macOS/Linux), freshly built from current `main` @ `006bb854` (carries `docs` + `doctor` subcommands). This verification run was executed on Windows, hence the `.exe` form in the command transcripts below.
 - Workspace: `.backlogit/` index rebuilt (638 artifacts) before and after the ship.
 - Go toolchain present; targeted package tests runnable.
 - No external service, port, fixture, or credential dependency — the affected surface is a local CLI/MCP/library.
