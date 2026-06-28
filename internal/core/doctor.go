@@ -6,7 +6,6 @@ package core
 // and nil-layout guard failures.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,14 +13,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -507,7 +505,7 @@ func repairArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction
 			slog.Warn("doctor: fix-archived-from: rewrite failed", "path", r.path, "error", rewriteErr)
 			continue
 		}
-		if err := atomicWriteArchiveFile(r.path, out); err != nil {
+		if err := atomicfile.WriteFileAtomic(r.path, out); err != nil {
 			slog.Warn("doctor: fix-archived-from: write failed", "path", r.path, "error", err)
 			continue
 		}
@@ -521,82 +519,37 @@ func repairArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction
 }
 
 // rewriteArchivedFromField rewrites ONLY the archived_from frontmatter field of a
-// markdown record to newValue while preserving the body bytes verbatim. It mirrors
-// the internal/docline Decode/Encode codec, which core cannot import directly:
-// internal/docline depends on internal/core (docline/service.go), so importing it
-// would introduce a package import cycle. The frontmatter block is re-marshaled with
-// yaml's deterministic sorted keys; the body after the closing fence is never
-// touched, so CRLF, trailing whitespace, and horizontal rules survive unchanged.
+// markdown record to newValue while preserving the body bytes verbatim. It uses
+// the shared internal/mdfront body-preserving codec (the single canonical
+// implementation, now importable here because mdfront is a stdlib-only leaf
+// package with no dependency on internal/core). The frontmatter block is
+// re-marshaled with yaml's deterministic sorted keys; the body after the closing
+// fence is never touched, so CRLF, trailing whitespace, and horizontal rules
+// survive unchanged.
+//
+// F1 guard: mdfront.Decode returns HasFrontmatter=false with a nil Frontmatter
+// map and NO error on a fence-less record, whereas this repair's contract
+// requires an error so the caller SKIPS the record. Without the explicit
+// HasFrontmatter guard a fence-less record would either nil-map-panic on the
+// archived_from assignment or be wrapped in a synthetic frontmatter block and
+// written atomically (corruption). The guard preserves the error->skip parity.
 func rewriteArchivedFromField(raw []byte, newValue string) ([]byte, error) {
-	openLen := frontmatterOpenLen(raw)
-	if openLen == 0 {
-		return nil, fmt.Errorf("no opening frontmatter fence")
-	}
-	yamlBlock, body, ok := splitAtFrontmatterFence(raw[openLen:])
-	if !ok {
-		return nil, fmt.Errorf("no closing frontmatter fence")
-	}
-	fm := map[string]any{}
-	normalized := bytes.ReplaceAll(yamlBlock, []byte("\r\n"), []byte("\n"))
-	if len(bytes.TrimSpace(normalized)) > 0 {
-		if err := yaml.Unmarshal(normalized, &fm); err != nil {
-			return nil, fmt.Errorf("parse frontmatter: %w", err)
-		}
-	}
-	if fm == nil {
-		fm = map[string]any{}
-	}
-	fm["archived_from"] = newValue
-	data, err := yaml.Marshal(fm)
+	md, err := mdfront.Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+		return nil, fmt.Errorf("decode archive record: %w", err)
 	}
-	var buf bytes.Buffer
-	buf.Grow(len(data) + len(body) + 8)
-	buf.WriteString("---\n")
-	buf.Write(data) // yaml.Marshal output is LF-terminated
-	buf.WriteString("---\n")
-	buf.Write(body)
-	return buf.Bytes(), nil
-}
-
-// frontmatterOpenLen returns the byte length of the opening "---" fence line
-// (including its terminator) when raw begins with it, or 0.
-func frontmatterOpenLen(raw []byte) int {
-	switch {
-	case bytes.HasPrefix(raw, []byte("---\n")):
-		return 4
-	case bytes.HasPrefix(raw, []byte("---\r\n")):
-		return 5
-	default:
-		return 0
+	if !md.HasFrontmatter {
+		return nil, fmt.Errorf("no frontmatter fence")
 	}
-}
-
-// splitAtFrontmatterFence scans rest line-by-line and splits at the first line whose
-// content is exactly "---" (a trailing CR is tolerated; leading whitespace is not, so
-// an indented block-scalar fence is never mistaken for the closing fence). It returns
-// the frontmatter YAML bytes, the verbatim body bytes after the fence line, and
-// whether a closing fence was found.
-func splitAtFrontmatterFence(rest []byte) (yamlBlock, body []byte, ok bool) {
-	for i := 0; i < len(rest); {
-		nl := bytes.IndexByte(rest[i:], '\n')
-		var lineEnd, nextStart int
-		if nl == -1 {
-			lineEnd, nextStart = len(rest), len(rest)
-		} else {
-			lineEnd, nextStart = i+nl, i+nl+1
-		}
-		line := rest[i:lineEnd]
-		if n := len(line); n > 0 && line[n-1] == '\r' {
-			line = line[:n-1]
-		}
-		if string(line) == "---" {
-			return rest[:i], rest[nextStart:], true
-		}
-		i = nextStart
+	if md.Frontmatter == nil {
+		md.Frontmatter = map[string]any{}
 	}
-	return nil, nil, false
+	md.Frontmatter["archived_from"] = newValue
+	out, err := md.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode archive record: %w", err)
+	}
+	return out, nil
 }
 
 // pathContained reports whether p resolves to a location inside root.
@@ -606,32 +559,6 @@ func pathContained(root, p string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// atomicWriteArchiveFile writes data to path via a temp file and rename, mirroring
-// the atomic-write pattern used by ArchiveItem/UnarchiveItem and SaveCheckpoint.
-// On POSIX, os.Rename atomically replaces the destination. On Windows, os.Rename
-// can fail when the destination already exists (the convention documented in
-// internal/telemetry/checkpoint.go); on failure it removes the destination and
-// retries once. The complete new content lives in tmpPath until the rename
-// commits, and the destination is only removed after a failed rename (when it
-// still exists), so the original record is never lost in the success path.
-func atomicWriteArchiveFile(path string, data []byte) error {
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("write temp: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(path)
-			err = os.Rename(tmpPath, path)
-		}
-		if err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("rename temp: %w", err)
-		}
-	}
-	return nil
 }
 
 // hasReturnedToBacklogEvent reports whether the item's event log contains a
