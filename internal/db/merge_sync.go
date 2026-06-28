@@ -93,6 +93,18 @@ func MergeSync(
 	// Step 3: Fall back to full rehydrate when the delta exceeds the threshold.
 	fallback, reason := ShouldFallback(diff, len(manifest), mergeSyncFallbackThreshold)
 	if fallback {
+		// A dry run must never write to the database. Report that a fallback
+		// would be used, along with the computed diff, without performing the
+		// rehydrate (which clears and repopulates every table).
+		if dryRun {
+			result.FallbackUsed = true
+			result.FallbackReason = reason
+			result.Added = artifactSyncEntries(diff.Added)
+			result.Changed = artifactSyncEntries(diff.Changed)
+			result.Deleted = artifactSyncEntries(diff.Deleted)
+			result.Relocated = relocationSyncEntries(diff.Relocated)
+			return result, current, nil
+		}
 		log.Info("falling back to full rehydrate", "reason", reason)
 		_, newManifest, rehydrateErr := RehydrateWithManifest(ctx, workspacePath, database)
 		if rehydrateErr != nil {
