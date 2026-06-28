@@ -81,6 +81,12 @@ still be schema-valid), so it must be handled at authoring time.
 
 * `internal/docline/` (codec, normalize, classify, policy, validate, service) +
   `cmd/gen-docs` — merged via PR #136 (`2a5df85b`) and PR #137 (`23a8b045`).
+  Note: as of 068-S (PR #148, merge `7450271a`) the body-preserving **codec**
+  was extracted to the stdlib-only leaf package `internal/mdfront` (and the
+  atomic-write helper to `internal/atomicfile`); `internal/docline` re-exports
+  it via a true type alias. The four-part contract pattern below is unchanged —
+  only the codec's location moved. See
+  `docs/compound/2026-06-28-codec-extraction-leaf-packages.md`.
 * Migration of ~213 docs with **0 body-byte changes**; single-file re-apply is a
   byte-identical no-op (idempotency proof).
 * CI "Docline frontmatter gate" (`.github/workflows/ci.yml` → `make docs-lint`).
