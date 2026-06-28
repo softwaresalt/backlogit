@@ -1071,10 +1071,10 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 		singleSection := map[string]string{name: value}
 		updated, writeErr := parser.WriteSections(body, singleSection)
 		if writeErr != nil {
-			// Distinguish "not found" from structural errors. WriteSections returns
-			// an error when the section markers are not present in the body.
-			// For missing sections, append the markers. For other errors, propagate.
-			if strings.Contains(writeErr.Error(), "not found") || strings.Contains(writeErr.Error(), "no section") {
+			// A genuinely absent section is appended; malformed markers (a
+			// BEGIN with no matching END) are surfaced as an error so the write
+			// never silently duplicates or masks corruption.
+			if errors.Is(writeErr, parser.ErrSectionNotFound) {
 				body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
 			} else {
 				return fmt.Errorf("write section %q: %w", name, writeErr)

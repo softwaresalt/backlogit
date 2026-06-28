@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,13 +131,29 @@ replacing the rest of the document body.`,
 				if parseErr != nil {
 					return parseErr
 				}
-				newBody, writeErr := parser.WriteSections(body, sectionUpdates)
-				if writeErr != nil {
-					// Section not found: append new sections.
-					for name, value := range sectionUpdates {
-						body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+				// Apply each section update independently so that a missing
+				// section is appended without re-appending sections that already
+				// exist (which would duplicate them), and a malformed section
+				// (BEGIN with no matching END) surfaces an error instead of being
+				// masked by a blind append. Sort for deterministic output.
+				sectionNames := make([]string, 0, len(sectionUpdates))
+				for name := range sectionUpdates {
+					sectionNames = append(sectionNames, name)
+				}
+				sort.Strings(sectionNames)
+				newBody := body
+				for _, name := range sectionNames {
+					value := sectionUpdates[name]
+					updated, writeErr := parser.WriteSection(newBody, name, value)
+					if writeErr != nil {
+						if errors.Is(writeErr, parser.ErrSectionMalformed) {
+							return fmt.Errorf("update section %q: %w", name, writeErr)
+						}
+						// Section absent: append a well-formed block.
+						newBody += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+						continue
 					}
-					newBody = body
+					newBody = updated
 				}
 
 				// Bump updated_at so callers can detect the change.

@@ -1,9 +1,20 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+)
+
+// Sentinel errors returned by the section primitives so callers can distinguish
+// a genuinely absent section (safe to append) from malformed markers (corruption
+// that must be surfaced as an error, never silently repaired).
+var (
+	// ErrSectionNotFound indicates the named section's BEGIN marker is absent.
+	ErrSectionNotFound = errors.New("not found in document")
+	// ErrSectionMalformed indicates a BEGIN marker without a matching END marker.
+	ErrSectionMalformed = errors.New("missing END tag")
 )
 
 // beginRE matches <!-- BEGIN:{name} --> tags and captures the section name.
@@ -28,7 +39,7 @@ func ParseSections(content string) (map[string]string, error) {
 
 		endRelIdx := strings.Index(content[afterBegin:], endTag)
 		if endRelIdx == -1 {
-			return nil, fmt.Errorf("section %q: missing END tag", name)
+			return nil, fmt.Errorf("section %q: %w", name, ErrSectionMalformed)
 		}
 
 		// Trim only leading/trailing newlines; preserve internal whitespace.
@@ -51,14 +62,14 @@ func WriteSections(content string, updates map[string]string) (string, error) {
 
 		beginIdx := strings.Index(result, beginTag)
 		if beginIdx == -1 {
-			return "", fmt.Errorf("section %q: not found in document", name)
+			return "", fmt.Errorf("section %q: %w", name, ErrSectionNotFound)
 		}
 
 		afterBegin := beginIdx + len(beginTag)
 
 		endRelIdx := strings.Index(result[afterBegin:], endTag)
 		if endRelIdx == -1 {
-			return "", fmt.Errorf("section %q: missing END tag", name)
+			return "", fmt.Errorf("section %q: %w", name, ErrSectionMalformed)
 		}
 
 		endIdx := afterBegin + endRelIdx
