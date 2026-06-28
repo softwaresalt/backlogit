@@ -1,11 +1,11 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Implementation plan to extract the body-preserving frontmatter codec and a hardened atomic-write helper into the internal/mdfront leaf package, retiring the internal/docline <-> internal/core duplication
+description: Implementation plan to extract the body-preserving frontmatter codec into the internal/mdfront leaf package and a hardened atomic-write helper into the internal/atomicfile leaf package, retiring the internal/docline <-> internal/core duplication
 doc_type: plan
 ingested_at: "2026-06-28T05:45:29Z"
 schema_version: "1.0"
 source: docs/exec-plans/2026-06-27-shared-frontmatter-codec-extraction-plan.md
-title: 'Shared frontmatter codec extraction: internal/mdfront leaf package'
+title: 'Shared frontmatter codec extraction: internal/mdfront + internal/atomicfile leaf packages'
 ---
 
 ## Source
@@ -34,7 +34,7 @@ Fix: introduce **two** stdlib-only leaf packages (a plan-review refinement of th
 "leaf package", separating two distinct concerns for cohesion — see Decisions):
 
 - `internal/mdfront` (`bytes`+`fmt`+`yaml.v3` only) — the single canonical body-preserving codec.
-- `internal/atomicfile` (`fmt`+`os`+`path/filepath`+`runtime` only) — the single hardened atomic
+- `internal/atomicfile` (`fmt`+`io`+`os`+`path/filepath`+`runtime` only) — the single hardened atomic
   file writer (a generic filesystem primitive, NOT markdown-specific; siblings exist in
   `internal/telemetry/checkpoint.go` and `internal/core/archive.go`, deliberately left untouched here).
 
@@ -50,7 +50,7 @@ decision is two cohesive leaf packages, not one mixed-concern package.
 | One body-preserving codec imported by both packages | Create `internal/mdfront` codec; migrate both consumers | U1, U3, U4 |
 | Atomic-write helper shared (stash scope) | Add hardened `WriteFileAtomic` to `internal/atomicfile`; migrate both write sites | U2, U3, U4 |
 | No import cycle | Both leaf packages import only stdlib (+ `yaml.v3` for the codec) | U1, U2 |
-| Preserve `docline` public codec API (gen-docs) | `docline.Decode/Encode/Markdown` become re-exports (`Markdown` a true alias) | U3 |
+| Preserve `docline` public codec API (gen-docs) | `docline.Decode` + the `Markdown` alias (which preserves the `(*Markdown).Encode()` method) become re-exports | U3 |
 | Behavior preserved on body/fence/encode + on `docline` write path | Characterization tests + existing suites; `git diff` no content hunks | U1, U3, U4 |
 | `core` archive-write mode/temp-naming is an INTENDED change, pinned | Characterization-pin `archived_from` self-ref repair byte output AND mode policy before swap | U4 |
 | docline lint + CLI-Reference-Drift gate stay green | `backlogit docs lint`; `go test ./cmd/gen-docs/...` | U3, U4 |
@@ -134,7 +134,8 @@ decision is two cohesive leaf packages, not one mixed-concern package.
   swapping the writer.
 - **Error-context note (F10):** verify no test/log/caller matches the old `docline.Decode:`/`atomicWrite`
   error prefixes; if any does, wrap the leaf error with docline-qualified context to keep traces stable.
-- **Preserve:** `docline.Decode`, `docline.Encode`, `docline.Markdown` stay exported, behavior-identical.
+- **Preserve:** the `docline` public codec surface — `docline.Decode` (package function) and
+  `docline.Markdown` with its inherited `(*Markdown).Encode()` method — stays exported, behavior-identical.
 - **Tests:** keep existing `internal/docline/codec_test.go` + `service_test.go` as the regression net
   (they now exercise the re-export); they must stay green unchanged.
 - **Posture:** characterization-first (existing docline tests pin behavior across the swap).

@@ -62,8 +62,9 @@ must keep two codecs in lock-step by hand.
 - Fence semantics: opening fence is `---\n` or `---\r\n` at byte 0; closing fence is the FIRST line
   that is exactly `---` (trailing CR tolerated, no leading whitespace).
 - Deterministic encode: `yaml.Marshal` sorted keys, `---\n` … `---\n` framing, LF-terminated.
-- `docline`'s public API (`docline.Decode`, `docline.Encode`, `docline.Markdown`) is consumed by
-  `cmd/gen-docs/main.go` (calls `docline.Decode`) — it must NOT break.
+- `docline`'s public codec surface — `docline.Decode` (package function) and `docline.Markdown` with
+  its `(*Markdown).Encode()` method — is consumed by `cmd/gen-docs/main.go` (calls `docline.Decode`) —
+  it must NOT break.
 - Idempotency: `Normalize(Normalize(x)) == Normalize(x)`; single-file re-apply is a byte-identical no-op.
 - The CLI-Reference-Drift gate and `backlogit docs lint` must stay green.
 
