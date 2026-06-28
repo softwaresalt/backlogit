@@ -52,7 +52,7 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 		}
 	}
 
-	return core.BuildMetadataCatalog(
+	catalog, err := core.BuildMetadataCatalog(
 		s.Workspace,
 		templateInfos,
 		registry,
@@ -61,6 +61,24 @@ func (s *Server) loadMetadataCatalog(ctx context.Context) (*core.MetadataCatalog
 		s.DescribeTools(),
 		sqlSchema,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Restore CLI/MCP metadata parity: the cli package injects a provider that
+	// describes the CLI command tree (internal/mcp cannot import internal/cli
+	// because cli imports mcp). When wired, the MCP catalog carries the same CLI
+	// command data the CLI metadata path produces.
+	if s.CLICommandProvider != nil {
+		catalog.CLI = s.CLICommandProvider()
+	}
+	return catalog, nil
+}
+
+// MetadataCatalog builds the unified metadata catalog for this server. It is
+// exported so cross-package tests can assert CLI/MCP catalog parity.
+func (s *Server) MetadataCatalog(ctx context.Context) (*core.MetadataCatalog, error) {
+	return s.loadMetadataCatalog(ctx)
 }
 
 func (s *Server) handleGetMetadataCatalog(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
