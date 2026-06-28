@@ -87,3 +87,25 @@ func WriteSections(content string, updates map[string]string) (string, error) {
 func WriteSection(content string, name string, value string) (string, error) {
 	return WriteSections(content, map[string]string{name: value})
 }
+
+// ValidateSectionName rejects section names that would produce malformed
+// BEGIN/END markers or be unparseable by ParseSections. Section names must be
+// non-empty, contain no whitespace (beginRE requires a contiguous \S+ name),
+// no "-->" sequence (which would terminate the comment early), and no newlines.
+// Both the CLI and MCP section-write paths call this so a corrupt name can
+// never be persisted via either surface.
+func ValidateSectionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("section name must not be empty")
+	}
+	if strings.Contains(name, "-->") {
+		return fmt.Errorf("section name %q contains invalid sequence \"-->\"", name)
+	}
+	if strings.ContainsAny(name, "\n\r") {
+		return fmt.Errorf("section name %q must not contain newlines", name)
+	}
+	if strings.ContainsAny(name, " \t") {
+		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
+	}
+	return nil
+}

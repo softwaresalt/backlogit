@@ -1014,33 +1014,13 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 	return toolResultJSON(cleanupResult)
 }
 
-// validateSectionName rejects section names that would produce malformed HTML
-// comment markers or be unparseable by the section parser. Section names must
-// be non-empty, contain no whitespace (the parser regex requires \S+), no
-// "-->" sequences, and no newlines.
-func validateSectionName(name string) error {
-	if name == "" {
-		return fmt.Errorf("section name must not be empty")
-	}
-	if strings.Contains(name, "-->") {
-		return fmt.Errorf("section name %q contains invalid sequence \"-->\"", name)
-	}
-	if strings.ContainsAny(name, "\n\r") {
-		return fmt.Errorf("section name %q must not contain newlines", name)
-	}
-	if strings.ContainsAny(name, " \t") {
-		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
-	}
-	return nil
-}
-
 // writeSectionsToFile appends named section content to an artifact's Markdown body
 // using BEGIN/END markers. It reads the existing file, processes each section
 // individually to prevent duplication, and atomically rewrites the file.
 func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
 	// Validate all section names before any I/O.
 	for name := range sections {
-		if err := validateSectionName(name); err != nil {
+		if err := parser.ValidateSectionName(name); err != nil {
 			return err
 		}
 	}
@@ -1087,6 +1067,7 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 	newContent := models.SerializeFrontmatter(fm, body)
 	tmp := filePath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("write artifact: %w", err)
 	}
 	if err := os.Rename(tmp, filePath); err != nil {

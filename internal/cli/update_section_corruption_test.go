@@ -105,3 +105,35 @@ func TestUpdateCommand_MixedExistingAndMissing_NoDuplicate(t *testing.T) {
 	assert.Contains(t, content, "<!-- BEGIN:notes -->", "missing section should be appended")
 	assert.Contains(t, content, "Fresh notes", "appended section content should be present")
 }
+
+// A section name that would produce unparseable markers (e.g. one containing
+// whitespace) must be rejected before any write, matching the MCP path so the
+// CLI cannot persist a corrupt section block.
+func TestUpdateCommand_InvalidSectionName_Rejected(t *testing.T) {
+	root, ws := setupUpdateTestWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := core.CreateArtifact(ctx, ws, "Invalid name feature", "feature")
+	require.NoError(t, err)
+	artifact, err := core.CreateArtifact(ctx, ws, "Invalid name task", "task", core.WithParent(feat.ID))
+	require.NoError(t, err)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
+
+	body := "Intro.\n\n<!-- BEGIN:description -->\nExisting description\n<!-- END:description -->\n"
+	filePath := writeRawArtifact(t, ws, artifact.ID, body)
+
+	cwd := root
+	cmd := newUpdateCommand(&cwd)
+	// "bad name" contains whitespace, which the parser regex cannot round-trip.
+	cmd.SetArgs([]string{artifact.ID, "--section", "bad name=value"})
+	err = cmd.Execute()
+	require.Error(t, err, "an invalid section name must be rejected, not written")
+
+	raw, readErr := os.ReadFile(filePath)
+	require.NoError(t, readErr)
+	content := string(raw)
+	assert.NotContains(t, content, "BEGIN:bad name",
+		"the invalid section must never be written to the file")
+	assert.Equal(t, 1, strings.Count(content, "<!-- BEGIN:description -->"),
+		"the pre-existing section must be left untouched on rejection")
+}

@@ -141,17 +141,27 @@ replacing the rest of the document body.`,
 					sectionNames = append(sectionNames, name)
 				}
 				sort.Strings(sectionNames)
+				// Reject names that would produce unparseable markers before any
+				// write, matching the MCP path so neither surface can persist a
+				// corrupt section.
+				for _, name := range sectionNames {
+					if nameErr := parser.ValidateSectionName(name); nameErr != nil {
+						return nameErr
+					}
+				}
 				newBody := body
 				for _, name := range sectionNames {
 					value := sectionUpdates[name]
 					updated, writeErr := parser.WriteSection(newBody, name, value)
 					if writeErr != nil {
-						if errors.Is(writeErr, parser.ErrSectionMalformed) {
-							return fmt.Errorf("update section %q: %w", name, writeErr)
+						// A genuinely absent section is appended; any other error
+						// (malformed markers or otherwise) is surfaced so the write
+						// never silently duplicates or masks corruption.
+						if errors.Is(writeErr, parser.ErrSectionNotFound) {
+							newBody += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+							continue
 						}
-						// Section absent: append a well-formed block.
-						newBody += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
-						continue
+						return fmt.Errorf("update section %q: %w", name, writeErr)
 					}
 					newBody = updated
 				}
@@ -163,6 +173,7 @@ replacing the rest of the document body.`,
 				newContent := models.SerializeFrontmatter(fm, newBody)
 				tmp := filePath + ".tmp"
 				if writeErr2 := os.WriteFile(tmp, []byte(newContent), 0o644); writeErr2 != nil {
+					os.Remove(tmp) //nolint:errcheck
 					return fmt.Errorf("write artifact: %w", writeErr2)
 				}
 				if renameErr := os.Rename(tmp, filePath); renameErr != nil {
