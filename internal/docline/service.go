@@ -6,11 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
@@ -313,50 +313,11 @@ func ValidateApplyPath(workspaceRoot, path string) error {
 	return nil
 }
 
-// atomicWrite writes data to path via a same-directory temp file and rename so a
-// partial write can never leave a corrupt document. The temp file is chmod'd to
-// match the original file's mode (or 0644 for a new file) so an in-place rewrite
-// never silently downgrades permissions from the 0600 CreateTemp default.
+// atomicWrite writes data to path atomically by delegating to the shared
+// internal/atomicfile.WriteFileAtomic primitive (temp + rename, clamped mode
+// preservation, Windows rename fallback, sync-free). The destination path is
+// already containment-checked by ApplyMigration via core.SafeResolve before this
+// is reached, satisfying atomicfile's path-agnostic caller-validates contract.
 func atomicWrite(path string, data []byte) error {
-	mode := os.FileMode(0o644)
-	if info, statErr := os.Stat(path); statErr == nil {
-		mode = info.Mode().Perm()
-	}
-
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".docline-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temp: %w", err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temp: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		// On Windows os.Rename can fail when the destination already exists
-		// (e.g. a locked file); POSIX rename replaces atomically. Remove the
-		// destination and retry so an in-place doc rewrite still succeeds. The
-		// original is only removed once the fully written temp file is ready to
-		// take its place, mirroring the repo's other atomic writers.
-		if runtime.GOOS != "windows" {
-			return fmt.Errorf("rename temp: %w", err)
-		}
-		if rmErr := os.Remove(path); rmErr != nil {
-			return fmt.Errorf("remove destination before rename: %w", rmErr)
-		}
-		if err := os.Rename(tmpName, path); err != nil {
-			return fmt.Errorf("rename temp after destination removal: %w", err)
-		}
-	}
-	return nil
+	return atomicfile.WriteFileAtomic(path, data)
 }
