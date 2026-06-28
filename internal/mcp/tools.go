@@ -736,8 +736,9 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return domainError("update artifact", err), nil
 	}
 	// Write section content when provided. UpdateArtifact already wrote the
-	// frontmatter file and upserted the DB index; sections are markdown body
-	// only and do not require a follow-up upsert.
+	// frontmatter and upserted the DB with the prior body; writeSectionsToFile
+	// rewrites the body and re-upserts so the DB/FTS reflect the new section
+	// content immediately.
 	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
@@ -1013,33 +1014,13 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 	return toolResultJSON(cleanupResult)
 }
 
-// validateSectionName rejects section names that would produce malformed HTML
-// comment markers or be unparseable by the section parser. Section names must
-// be non-empty, contain no whitespace (the parser regex requires \S+), no
-// "-->" sequences, and no newlines.
-func validateSectionName(name string) error {
-	if name == "" {
-		return fmt.Errorf("section name must not be empty")
-	}
-	if strings.Contains(name, "-->") {
-		return fmt.Errorf("section name %q contains invalid sequence \"-->\"", name)
-	}
-	if strings.ContainsAny(name, "\n\r") {
-		return fmt.Errorf("section name %q must not contain newlines", name)
-	}
-	if strings.ContainsAny(name, " \t") {
-		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
-	}
-	return nil
-}
-
 // writeSectionsToFile appends named section content to an artifact's Markdown body
 // using BEGIN/END markers. It reads the existing file, processes each section
 // individually to prevent duplication, and atomically rewrites the file.
 func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *models.Artifact, sections map[string]string) error {
 	// Validate all section names before any I/O.
 	for name := range sections {
-		if err := validateSectionName(name); err != nil {
+		if err := parser.ValidateSectionName(name); err != nil {
 			return err
 		}
 	}
@@ -1070,10 +1051,10 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 		singleSection := map[string]string{name: value}
 		updated, writeErr := parser.WriteSections(body, singleSection)
 		if writeErr != nil {
-			// Distinguish "not found" from structural errors. WriteSections returns
-			// an error when the section markers are not present in the body.
-			// For missing sections, append the markers. For other errors, propagate.
-			if strings.Contains(writeErr.Error(), "not found") || strings.Contains(writeErr.Error(), "no section") {
+			// A genuinely absent section is appended; malformed markers (a
+			// BEGIN with no matching END) are surfaced as an error so the write
+			// never silently duplicates or masks corruption.
+			if errors.Is(writeErr, parser.ErrSectionNotFound) {
 				body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
 			} else {
 				return fmt.Errorf("write section %q: %w", name, writeErr)
@@ -1086,11 +1067,27 @@ func writeSectionsToFile(ctx context.Context, ws *core.Workspace, artifact *mode
 	newContent := models.SerializeFrontmatter(fm, body)
 	tmp := filePath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(newContent), 0o644); err != nil {
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("write artifact: %w", err)
 	}
 	if err := os.Rename(tmp, filePath); err != nil {
 		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("rename artifact: %w", err)
+	}
+
+	// Re-parse the rewritten artifact so the in-memory copy, SQLite
+	// (items.description), and the FTS index all reflect the new file body.
+	updated, parseErr := models.ArtifactFromFrontmatter(fm, body)
+	if parseErr != nil {
+		return fmt.Errorf("parse artifact after section write: %w", parseErr)
+	}
+	// Propagate the rewritten body back to the caller's artifact so the tool
+	// response (create-item / update-item) does not echo a stale description.
+	artifact.Description = updated.Description
+	if ws.DB != nil {
+		if upsertErr := db.UpsertItem(ctx, ws.DB, updated); upsertErr != nil {
+			return fmt.Errorf("sync index after section write: %w", upsertErr)
+		}
 	}
 	return nil
 }

@@ -342,10 +342,24 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 func openMCPServer(ctx context.Context, rootPath string) (*mcpinternal.Server, error) {
 	ws, err := core.NewWorkspace(ctx, rootPath)
 	if err == nil {
-		return mcpinternal.NewServer(ws), nil
+		s := mcpinternal.NewServer(ws)
+		wireMCPMetadataProvider(s, rootPath)
+		return s, nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		return mcpinternal.NewServerForRoot(rootPath), nil
+		s := mcpinternal.NewServerForRoot(rootPath)
+		wireMCPMetadataProvider(s, rootPath)
+		return s, nil
 	}
 	return nil, fmt.Errorf("open workspace: %w", err)
+}
+
+// wireMCPMetadataProvider injects the CLI command catalog into the MCP server so
+// its metadata catalog reaches parity with the CLI metadata path. The cli
+// package owns the cobra command tree, so it supplies the described commands to
+// the mcp package (which cannot import cli without an import cycle).
+func wireMCPMetadataProvider(s *mcpinternal.Server, cwd string) {
+	s.CLICommandProvider = func() []core.CommandInfo {
+		return core.DescribeCLICommands(buildMetadataRootCommand(cwd))
+	}
 }

@@ -30,10 +30,17 @@ type Server struct {
 	Telemetry   *events.TelemetryWriter
 	HookEvents  *events.HookEventWriter
 	templateSvc *templates.Service
-	mcp         *mcpserver.MCPServer
-	toolNames   []string
-	toolDefs    []mcplib.Tool
-	workspaceMu sync.Mutex
+	// CLICommandProvider, when set, supplies the CLI command catalog so the
+	// metadata catalog returned over MCP reaches parity with the CLI metadata
+	// path. It is injected by the cli package (which builds the cobra command
+	// tree) to avoid an import cycle: the cli package imports internal/mcp, so
+	// internal/mcp cannot import cli directly. When nil, the catalog omits CLI
+	// command data (e.g. for a server constructed without CLI wiring).
+	CLICommandProvider func() []core.CommandInfo
+	mcp                *mcpserver.MCPServer
+	toolNames          []string
+	toolDefs           []mcplib.Tool
+	workspaceMu        sync.Mutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
 	// Protected by manifestMu; lock ordering: workspaceMu must be held before

@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,13 +131,39 @@ replacing the rest of the document body.`,
 				if parseErr != nil {
 					return parseErr
 				}
-				newBody, writeErr := parser.WriteSections(body, sectionUpdates)
-				if writeErr != nil {
-					// Section not found: append new sections.
-					for name, value := range sectionUpdates {
-						body += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+				// Apply each section update independently so that a missing
+				// section is appended without re-appending sections that already
+				// exist (which would duplicate them), and a malformed section
+				// (BEGIN with no matching END) surfaces an error instead of being
+				// masked by a blind append. Sort for deterministic output.
+				sectionNames := make([]string, 0, len(sectionUpdates))
+				for name := range sectionUpdates {
+					sectionNames = append(sectionNames, name)
+				}
+				sort.Strings(sectionNames)
+				// Reject names that would produce unparseable markers before any
+				// write, matching the MCP path so neither surface can persist a
+				// corrupt section.
+				for _, name := range sectionNames {
+					if nameErr := parser.ValidateSectionName(name); nameErr != nil {
+						return nameErr
 					}
-					newBody = body
+				}
+				newBody := body
+				for _, name := range sectionNames {
+					value := sectionUpdates[name]
+					updated, writeErr := parser.WriteSection(newBody, name, value)
+					if writeErr != nil {
+						// A genuinely absent section is appended; any other error
+						// (malformed markers or otherwise) is surfaced so the write
+						// never silently duplicates or masks corruption.
+						if errors.Is(writeErr, parser.ErrSectionNotFound) {
+							newBody += "\n\n<!-- BEGIN:" + name + " -->\n" + value + "\n<!-- END:" + name + " -->"
+							continue
+						}
+						return fmt.Errorf("update section %q: %w", name, writeErr)
+					}
+					newBody = updated
 				}
 
 				// Bump updated_at so callers can detect the change.
@@ -145,6 +173,7 @@ replacing the rest of the document body.`,
 				newContent := models.SerializeFrontmatter(fm, newBody)
 				tmp := filePath + ".tmp"
 				if writeErr2 := os.WriteFile(tmp, []byte(newContent), 0o644); writeErr2 != nil {
+					os.Remove(tmp) //nolint:errcheck
 					return fmt.Errorf("write artifact: %w", writeErr2)
 				}
 				if renameErr := os.Rename(tmp, filePath); renameErr != nil {

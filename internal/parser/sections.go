@@ -1,9 +1,20 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+)
+
+// Sentinel errors returned by the section primitives so callers can distinguish
+// a genuinely absent section (safe to append) from malformed markers (corruption
+// that must be surfaced as an error, never silently repaired).
+var (
+	// ErrSectionNotFound indicates the named section's BEGIN marker is absent.
+	ErrSectionNotFound = errors.New("not found in document")
+	// ErrSectionMalformed indicates a BEGIN marker without a matching END marker.
+	ErrSectionMalformed = errors.New("missing END tag")
 )
 
 // beginRE matches <!-- BEGIN:{name} --> tags and captures the section name.
@@ -28,7 +39,7 @@ func ParseSections(content string) (map[string]string, error) {
 
 		endRelIdx := strings.Index(content[afterBegin:], endTag)
 		if endRelIdx == -1 {
-			return nil, fmt.Errorf("section %q: missing END tag", name)
+			return nil, fmt.Errorf("section %q: %w", name, ErrSectionMalformed)
 		}
 
 		// Trim only leading/trailing newlines; preserve internal whitespace.
@@ -51,14 +62,14 @@ func WriteSections(content string, updates map[string]string) (string, error) {
 
 		beginIdx := strings.Index(result, beginTag)
 		if beginIdx == -1 {
-			return "", fmt.Errorf("section %q: not found in document", name)
+			return "", fmt.Errorf("section %q: %w", name, ErrSectionNotFound)
 		}
 
 		afterBegin := beginIdx + len(beginTag)
 
 		endRelIdx := strings.Index(result[afterBegin:], endTag)
 		if endRelIdx == -1 {
-			return "", fmt.Errorf("section %q: missing END tag", name)
+			return "", fmt.Errorf("section %q: %w", name, ErrSectionMalformed)
 		}
 
 		endIdx := afterBegin + endRelIdx
@@ -75,4 +86,27 @@ func WriteSections(content string, updates map[string]string) (string, error) {
 // It is a convenience wrapper around WriteSections.
 func WriteSection(content string, name string, value string) (string, error) {
 	return WriteSections(content, map[string]string{name: value})
+}
+
+// ValidateSectionName rejects section names that would produce malformed
+// BEGIN/END markers or be unparseable by ParseSections. Section names must be
+// non-empty, contain no whitespace (beginRE requires a contiguous \S+ name),
+// no "--" sequence (which is invalid inside an HTML comment and includes the
+// "-->" comment terminator), and no newlines. Both the CLI and MCP
+// section-write paths call this so a corrupt name can never be persisted via
+// either surface.
+func ValidateSectionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("section name must not be empty")
+	}
+	if strings.Contains(name, "--") {
+		return fmt.Errorf("section name %q must not contain \"--\"; it is invalid inside an HTML comment marker", name)
+	}
+	if strings.ContainsAny(name, "\n\r") {
+		return fmt.Errorf("section name %q must not contain newlines", name)
+	}
+	if strings.ContainsAny(name, " \t") {
+		return fmt.Errorf("section name %q must not contain whitespace; the section parser requires contiguous non-whitespace names", name)
+	}
+	return nil
 }

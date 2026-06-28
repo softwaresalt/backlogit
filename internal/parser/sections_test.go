@@ -185,3 +185,48 @@ Original notes
 	assert.Equal(t, "Modified description", sections2["description"])
 	assert.Equal(t, sections["notes"], sections2["notes"])
 }
+
+// ValidateSectionName must reject names that would produce markers ParseSections
+// cannot read back, and accept ordinary contiguous names. This guards both the
+// CLI and MCP section-write paths against persisting an unparseable section.
+func TestValidateSectionName(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantError bool
+	}{
+		{name: "simple", input: "description", wantError: false},
+		{name: "hyphenated", input: "acceptance-criteria", wantError: false},
+		{name: "dotted", input: "spec.notes", wantError: false},
+		{name: "empty", input: "", wantError: true},
+		{name: "space", input: "my section", wantError: true},
+		{name: "tab", input: "my\tsection", wantError: true},
+		{name: "newline", input: "my\nsection", wantError: true},
+		{name: "comment-terminator", input: "evil-->", wantError: true},
+		{name: "double-hyphen", input: "bad--name", wantError: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := parser.ValidateSectionName(tc.input)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// A name rejected by ValidateSectionName must also be impossible to round-trip
+// through the parser, proving the validator's constraints match the parser's
+// grammar. A whitespace name is silently lost: the begin regex (\S+?) never
+// matches it, so the "section" written to the file disappears on read-back.
+func TestValidateSectionName_RejectsUnparseable(t *testing.T) {
+	require.Error(t, parser.ValidateSectionName("two words"))
+
+	content := "<!-- BEGIN:two words -->\nbody\n<!-- END:two words -->"
+	sections, err := parser.ParseSections(content)
+	require.NoError(t, err)
+	_, ok := sections["two words"]
+	assert.False(t, ok, "a whitespace name is silently dropped, never round-tripped")
+}
