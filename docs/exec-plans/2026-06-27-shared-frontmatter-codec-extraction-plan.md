@@ -188,7 +188,7 @@ decision is two cohesive leaf packages, not one mixed-concern package.
 
 ## Dependency Graph
 
-```
+```text
 U1 (internal/mdfront codec)      U2 (internal/atomicfile writer)
         │                                 │
         └────────────┬────────────────────┘
