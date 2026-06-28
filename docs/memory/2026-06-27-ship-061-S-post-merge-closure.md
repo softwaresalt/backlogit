@@ -85,3 +85,33 @@ to version-controlled docs/.
 3. Push `post-merge/062-metadata-section-sync-integrity`, open closure PR to main.
 4. Request Copilot review, drive CI green (incl. docline gate), readiness gate, then HALT for
    operator merge approval (merge-commit strategy, P-009). Do NOT self-merge.
+
+## Closure PR + final terminal state (session end)
+
+- **PR #146** — https://github.com/softwaresalt/backlogit/pull/146
+  - base `main`, head `post-merge/062-metadata-section-sync-integrity`, HEAD `50c0e2c2`.
+  - Commits: `ceafbeb9` (backlog archive state), `872ac845` (closure docs + ARCHITECTURE),
+    `50c0e2c2` (review-fix: platform-agnostic binary name). All carry Co-authored-by: Copilot.
+  - CI: **all 4 green** on `50c0e2c2` — test (1.24), test (1.23), Docline frontmatter gate,
+    CLI Reference Drift.
+  - P-009: allow_merge_commit=true, squash=false, rebase=false → merge commit is only strategy.
+- **Copilot review**: 1 thread raised (runtime-verification doc line 32, Windows-specific
+  `backlogit.exe`). Fixed in `50c0e2c2`, replied (comment 3487253628 → reply 3487255737),
+  thread **resolved** (`PRRT_kwDORzozKM6MxSr_`, isResolved: true).
+- **§1.9 readiness gate**: Check 1 (no pending request) PASS; Check 3 (no unresolved Copilot
+  threads) PASS; **Check 2 (freshness) FAIL** — latest Copilot review is on `872ac845`, HEAD is
+  `50c0e2c2`. The one-line doc delta is exactly the fix that addressed Copilot's own (resolved)
+  comment; zero production code in entire PR.
+- **Copilot re-request: EXHAUSTED.** Methods tried & failed: `gh pr edit --add-reviewer copilot`
+  / `Copilot` ('not found'); GraphQL requestReviews(userIds) (bot rejected); REST
+  requested_reviewers POST "Copilot" (200 but no standing request registered, no review);
+  REST POST `copilot-pull-request-reviewer` (HTTP 422 not-a-collaborator). 15-min budget exhausted.
+- **TERMINAL STATE** (§1.9.4 row: "Copilot review stale, wait budget exhausted → Halt, report
+  stale review + current HEAD to operator"). **HALTED. Awaiting operator merge approval.**
+  Note: operator `softwaresalt` already has a COMMENTED (not APPROVED) review on `50c0e2c2`.
+- `reviewDecision: REVIEW_REQUIRED`; `mergeStateStatus: BLOCKED` (needs approving review;
+  Copilot never approves). `mergeable: MERGEABLE`.
+- **Resume hint**: To clear Check 2, operator clicks "Re-request review" on Copilot in the GitHub
+  UI (only reliable path), wait for fresh review on `50c0e2c2`, confirm no new threads; OR operator
+  accepts the stale review given the trivial doc-only delta and merges via merge commit after
+  approving. Stay on closure branch; never self-merge.
