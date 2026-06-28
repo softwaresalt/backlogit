@@ -59,7 +59,15 @@ Cross-cutting rules:
   and `modernc.org/sqlite`; it does not depend on higher-level packages (`cli`, `mcp`, `core`).
 * `models` depends only on `validator/v10`; it has no internal package dependencies.
 * `core` accesses `db` through typed function calls, not embedded `*sql.DB`.
-* `mcp` and `cli` are parallel entry-point layers; neither depends on the other.
+* `mcp` and `cli` are parallel entry-point layers. `internal/mcp` must not import
+  `internal/cli` (enforced via a dependency-injection seam); the reverse
+  direction — `cli` wiring `mcp` at startup — is allowed.
+  When one layer needs data owned by the other — e.g. the MCP metadata catalog must
+  expose the same CLI command descriptors as the CLI surface — it is supplied by
+  **dependency injection**, never an upward import: `cli` wires
+  `mcp.Server.CLICommandProvider` (a `func() []core.CommandInfo`) at startup, so
+  `internal/mcp` stays free of any `internal/cli` import. The CLI ≡ MCP catalog
+  contract is locked by `TestMetadataCatalog_CLIAndMCPParity` (shipped 061-S / 062-F).
 * `telemetry` imports `db` and `errors`; it is not fully self-contained.
 
 ## Key Surfaces
