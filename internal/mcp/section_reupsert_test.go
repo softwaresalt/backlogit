@@ -88,3 +88,35 @@ func TestHandleGetItem_AfterSectionRewrite_ReturnsUpdatedBody(t *testing.T) {
 	assert.Contains(t, desc, newBody,
 		"get-item (no section view) must show the rewritten body without a manual sync")
 }
+
+// The update-item tool RESPONSE (not just the DB) must reflect the rewritten
+// section body. writeSectionsToFile rewrites the file but the in-memory artifact
+// returned to the caller must also be refreshed, else create/update responses
+// echo a stale description.
+func TestHandleUpdateItem_SectionRewrite_ResponseReflectsNewBody(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+
+	artifact := seedArtifactWithSections(t, ws)
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, artifact))
+
+	const newBody = "Fresh body that must appear in the tool response"
+	req := mcplib.CallToolRequest{}
+	req.Params.Name = "backlogit_update_item"
+	req.Params.Arguments = map[string]any{
+		"id": artifact.ID,
+		"sections": map[string]any{
+			"description": newBody,
+		},
+	}
+	result, err := s.handleUpdateItem(ctx, req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	data := extractResultJSON(t, result)
+	desc, _ := data["description"].(string)
+	assert.Contains(t, desc, newBody,
+		"update-item response must carry the rewritten body, not the stale description")
+	assert.NotContains(t, desc, "This is the description section",
+		"the stale pre-rewrite body must not remain in the response")
+}

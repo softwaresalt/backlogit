@@ -203,6 +203,7 @@ func TestValidateSectionName(t *testing.T) {
 		{name: "tab", input: "my\tsection", wantError: true},
 		{name: "newline", input: "my\nsection", wantError: true},
 		{name: "comment-terminator", input: "evil-->", wantError: true},
+		{name: "double-hyphen", input: "bad--name", wantError: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
