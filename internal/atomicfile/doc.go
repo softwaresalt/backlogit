@@ -28,9 +28,9 @@
 //
 // On overwrite the destination's existing mode is preserved but CLAMPED: the
 // group/world write bits are stripped (perm &^ 0o022) so an in-place rewrite
-// never perpetuates an over-permissive 0666/0777 source and never downgrades a
-// tightened 0600 record to the 0600 temp default by accident. A newly created
-// file is written at 0644. (POSIX permission bits are not represented on Windows
+// never perpetuates an over-permissive 0666/0777 source. Preserving the source
+// mode also keeps a tightened 0600 record at 0600 rather than resetting it to
+// the 0644 new-file default. A newly created file is written at 0644. (POSIX permission bits are not represented on Windows
 // filesystems, where the mode is effectively advisory.)
 //
 // # Sync-free by design
