@@ -30,7 +30,9 @@ internal/cli/            ← CLI commands (cobra subcommands per feature domain)
 internal/core/           ← Domain logic: metadata catalog, queue, config, types
 internal/db/             ← SQLite database layer: schema, migrations, queries
 internal/mcp/            ← MCP server: tool registrations, handlers
-internal/docline/        ← Documentation frontmatter contract: codec, classifier, normalizer, lint/migrate service
+internal/docline/        ← Documentation frontmatter contract: classifier, normalizer, lint/migrate service (codec via internal/mdfront alias)
+internal/mdfront/        ← Body-preserving frontmatter codec (stdlib-only leaf; shared by docline + core)
+internal/atomicfile/     ← Hardened atomic file write: WriteFileAtomic, temp+rename (stdlib-only leaf)
 internal/models/         ← Shared domain models (work item types, statuses)
 internal/telemetry/      ← Telemetry harvesting: JSONL fact tables, schema reference
   ↓
@@ -41,7 +43,8 @@ internal/telemetry/      ← Telemetry harvesting: JSONL fact tables, schema ref
 
 ```text
 cmd → cli → core, db, mcp, models, telemetry
-             core → models, db
+             core → models, db, mdfront, atomicfile
+             docline   → mdfront, atomicfile
              mcp  → core, db, models, telemetry
              cli  → core, db, models, telemetry
              db        → models, events, stash, config, errors, modernc.org/sqlite
@@ -50,6 +53,8 @@ cmd → cli → core, db, mcp, models, telemetry
              events    → errors, validator/v10
              stash     → models, errors
              config    → stash, validator/v10
+             mdfront    → gopkg.in/yaml.v3 (stdlib otherwise) — leaf, no internal imports
+             atomicfile → (stdlib only) — leaf, no internal imports
              errors    → (stdlib only)
 ```
 
@@ -69,6 +74,15 @@ Cross-cutting rules:
   `internal/mcp` stays free of any `internal/cli` import. The CLI ≡ MCP catalog
   contract is locked by `TestMetadataCatalog_CLIAndMCPParity` (shipped 061-S / 062-F).
 * `telemetry` imports `db` and `errors`; it is not fully self-contained.
+* `mdfront` and `atomicfile` are **stdlib-only leaf packages** (no internal
+  imports): `mdfront` owns the single body-preserving frontmatter codec and
+  `atomicfile` the `WriteFileAtomic` primitive. Both `docline` and `core` depend
+  on them instead of carrying private copies. This is what breaks the former
+  `docline <-> core` duplication and import cycle (the 062-F workaround); because
+  the leaves import nothing internal, the cycle is structurally impossible to
+  reintroduce. `docline.Markdown` is a true type alias of `mdfront.Markdown`, so
+  the codec API is preserved with the `Encode` method inherited (shipped 068-S).
+  See `docs/design-docs/2026-06-28-frontmatter-codec-leaf-packages.md`.
 
 ## Key Surfaces
 
@@ -138,7 +152,10 @@ Documentation in the durable knowledge surface (`docs/**`, plus `README.md` and
 application service behind both the CLI and MCP surfaces:
 
 * **codec** — a body-preserving Markdown frontmatter reader/writer (CRLF and
-  body bytes are never mutated; only the frontmatter block is rewritten).
+  body bytes are never mutated; only the frontmatter block is rewritten). The
+  codec itself now lives in the stdlib-only leaf package `internal/mdfront` and is
+  re-exported by `internal/docline` via a `type Markdown = mdfront.Markdown` alias
+  (shipped 068-S); atomic writes use the `internal/atomicfile` leaf.
 * **policy + classifier** — the closed `doc_type` taxonomy, path → `doc_type`
   map, scope globs, and contract-field set.
 * **validator** — authoring vs ingestion validation profiles.
