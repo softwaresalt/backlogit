@@ -57,7 +57,7 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 			})
 		}
 	}
-	if b.DocType != "" && !IsKnownDocType(b.DocType) {
+	if strings.TrimSpace(b.DocType) != "" && !IsKnownDocType(b.DocType) {
 		vs = append(vs, Violation{
 			Field: "doc_type",
 			Rule:  "unknown_doc_type",

@@ -244,6 +244,21 @@ func TestValidate_SchemaViolationSentinel(t *testing.T) {
 	assert.NotErrorIs(t, err, ErrMissingRequiredField)
 }
 
+// TestValidateFields_BlankDocTypeNoDoubleReport pins the fix: a whitespace-only
+// doc_type reports only a "required" violation, not also "unknown_doc_type".
+func TestValidateFields_BlankDocTypeNoDoubleReport(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"ingested_at": "2026-06-22T00:00:00Z",
+		"doc_type":    "   ",
+	})
+	vs := ValidateFields(b, ProfileAuthoring)
+	for _, v := range vs {
+		assert.NotEqual(t, "unknown_doc_type", v.Rule, "blank doc_type must not be flagged unknown_doc_type")
+	}
+}
+
 func TestIsKnownDocType(t *testing.T) {
 	assert.True(t, IsKnownDocType("decision"))
 	assert.True(t, IsKnownDocType("learning"))

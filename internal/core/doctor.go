@@ -361,10 +361,14 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					Description: fmt.Sprintf("archive record %q has a self-referential archived_from %q (resolves to its own archive path); unarchive cannot restore it to the queue without the read-time self-heal", r.id, r.value),
 				})
 			case archivedFromMalformed:
+				malformedDesc := fmt.Sprintf("archive record %q has a malformed archived_from %q (not a markdown path); flagged for manual review, not auto-repaired", r.id, r.value)
+				if opts.FixMalformed {
+					malformedDesc = fmt.Sprintf("archive record %q has a malformed archived_from %q (not a markdown path); auto-repaired by clearing (no queue restore target)", r.id, r.value)
+				}
 				report.Findings = append(report.Findings, DoctorFinding{
 					Type:        FindingArchivedFromMalformed,
 					ArtifactID:  r.id,
-					Description: fmt.Sprintf("archive record %q has a malformed archived_from %q (not a markdown path); flagged for manual review, not auto-repaired", r.id, r.value),
+					Description: malformedDesc,
 				})
 			}
 		}
