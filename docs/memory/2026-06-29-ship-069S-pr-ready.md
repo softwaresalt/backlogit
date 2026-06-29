@@ -24,6 +24,6 @@ Copilot review covers HEAD, 0 unresolved threads. NOT merged (operator gate).
 
 ## Gates: go test ./... green, go vet clean, gofmt clean (CI LF), docs lint 0.
 
-## Left for post-merge closure: 069-S + 069-F queued. Merge commit only (P-009).
+## Left for post-merge closure: 069-S + 069-F active (claimed); archived on merge. Merge commit only (P-009).
 
 ## Follow-up to stash: key-presence threading for ValidateFields (deferred).
