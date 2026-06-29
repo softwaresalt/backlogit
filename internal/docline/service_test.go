@@ -271,6 +271,26 @@ func TestApplyMigration_AbortsOnConcurrentEdit(t *testing.T) {
 	assert.Empty(t, res3.Applied, "idempotent re-apply writes nothing")
 }
 
+// TestApplyMigration_AbortsOnConcurrentDelete verifies a target removed between
+// plan and apply surfaces as ErrConcurrentEdit (uniform concurrent-change
+// detection), not a raw not-exist error, and applies nothing.
+func TestApplyMigration_AbortsOnConcurrentDelete(t *testing.T) {
+	t.Parallel()
+	root := newTree(t)
+
+	plan, err := PlanMigration(Options{Root: root, Now: svcNow})
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Changes)
+
+	deleted := "docs/reviews/bad.md"
+	require.NoError(t, os.Remove(filepath.Join(root, filepath.FromSlash(deleted))))
+
+	res, err := ApplyMigration(plan, Options{Root: root, Now: svcNow})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrConcurrentEdit)
+	assert.Empty(t, res.Applied, "no file may be applied when a target was deleted concurrently")
+}
+
 func TestValidateApplyPath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

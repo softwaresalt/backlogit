@@ -2,6 +2,7 @@ package docline
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -196,6 +197,12 @@ func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	for _, w := range writes {
 		current, err := os.ReadFile(w.abs)
 		if err != nil {
+			// A target removed between plan and apply is itself a plan/apply
+			// divergence; surface it as ErrConcurrentEdit so callers can detect
+			// all concurrent-change cases uniformly via errors.Is.
+			if errors.Is(err, os.ErrNotExist) {
+				return res, fmt.Errorf("docline.ApplyMigration: %s: %w", w.file, ErrConcurrentEdit)
+			}
 			return res, fmt.Errorf("docline.ApplyMigration: re-read %s: %w", w.file, err)
 		}
 		if string(current) != w.before {
