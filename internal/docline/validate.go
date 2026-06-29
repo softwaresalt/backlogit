@@ -11,11 +11,12 @@ import (
 // content_sha256 must be empty or a 64-char lowercase/uppercase hex digest.
 var contentSHA256Pattern = regexp.MustCompile(`^([a-fA-F0-9]{64})?$`)
 
-// minLengthFields mirrors the v1 schema's minLength:1 + required surface: these
-// contract fields must be non-empty when present. Presence is already enforced by
-// requiredFields. Note: JSON Schema minLength:1 counts whitespace as length, but
-// this implementation intentionally treats whitespace-only values as blank and
-// rejects them — a deliberate stricter-than-schema choice, not exact parity.
+// minLengthFields mirrors the v1 schema's minLength:1 + required surface.
+// Behavior: requiredFields rejects absent/empty required keys; this min_length
+// pass additionally rejects only whitespace-only values (v != "" && TrimSpace
+// == ""). Explicit empty strings for non-required keys are not flagged here.
+// JSON Schema minLength:1 counts whitespace as length; rejecting whitespace-only
+// is a deliberate stricter-than-schema choice, not exact parity.
 var minLengthFields = []string{"title", "source", "ingested_at", "doc_type"}
 
 // Violation is a single validation failure for one frontmatter field.
