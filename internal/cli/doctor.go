@@ -17,6 +17,7 @@ func newDoctorCommand(cwd *string) *cobra.Command {
 		checkArchivedFrom bool
 		fixOrphans        bool
 		fixArchivedFrom   bool
+		fixMalformed      bool
 		outputFormatFlag  string
 	)
 
@@ -29,8 +30,9 @@ across queue and archive directories.
 
 Use --fix-orphans to archive orphaned artifacts automatically.
 Use --fix-archived-from to repair legacy self-referential archived_from
-records (rewrites them to their canonical queue restore path). This is a
-destructive, CLI-only migration: it is not exposed on the MCP doctor tool.`,
+records (rewrites them to their canonical queue restore path). Use
+--fix-malformed to clear malformed archived_from records that have no restore
+target. Both are destructive, CLI-only migrations: not exposed on the MCP doctor tool.`,
 		Example: `  backlogit doctor
   backlogit doctor --check-orphans=false
   backlogit doctor --fix-orphans
@@ -55,6 +57,7 @@ destructive, CLI-only migration: it is not exposed on the MCP doctor tool.`,
 				CheckArchivedFrom: checkArchivedFrom,
 				FixOrphans:        fixOrphans,
 				FixArchivedFrom:   fixArchivedFrom,
+				FixMalformed:      fixMalformed,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -88,6 +91,7 @@ destructive, CLI-only migration: it is not exposed on the MCP doctor tool.`,
 	cmd.Flags().BoolVar(&checkArchivedFrom, "check-archived-from", true, "check archive records for self-referential/malformed archived_from fields")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
+	cmd.Flags().BoolVar(&fixMalformed, "fix-malformed", false, "clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)")
 	cmd.Flags().StringVar(&outputFormatFlag, "format", "text", "output format: text or json")
 
 	return cmd

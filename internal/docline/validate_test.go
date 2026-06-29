@@ -1,6 +1,7 @@
 package docline
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,6 +162,101 @@ func TestValidateFields_RejectsUnknownProfile(t *testing.T) {
 	// Known profiles (including the empty default) do not emit a profile violation.
 	assert.Empty(t, ValidateFields(b, Profile("")))
 	assert.Empty(t, ValidateFields(b, ProfileAuthoring))
+}
+
+// TestValidateFields_SchemaPatternAndMinLength verifies 069.003-T: ValidateFields
+// enforces the base-frontmatter v1 schema beyond presence — content_sha256 must
+// match the 64-hex pattern, required fields must satisfy minLength, and a valid
+// fully-populated record passes with no violations.
+func TestValidateFields_SchemaPatternAndMinLength(t *testing.T) {
+	// Bad content_sha256: present but not a 64-char hex digest.
+	bad := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": "not-a-hash",
+	})
+	vs := ValidateFields(bad, ProfileIngestion)
+	var hasPattern bool
+	for _, v := range vs {
+		if v.Field == "content_sha256" && v.Rule == "pattern" {
+			hasPattern = true
+		}
+	}
+	assert.True(t, hasPattern, "malformed content_sha256 must report a pattern violation")
+
+	// Empty content_sha256 (pipeline-owned, not fabricated) is allowed.
+	emptyOK := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"ingested_at": "2026-06-22T00:00:00Z",
+		"doc_type":    "guide",
+	})
+	assert.Empty(t, ValidateFields(emptyOK, ProfileIngestion))
+
+	// Valid 64-hex content_sha256 passes.
+	valid := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": strings.Repeat("a", 64),
+	})
+	assert.Empty(t, ValidateFields(valid, ProfileIngestion))
+}
+
+// TestValidateFields_MinLengthNonRequired verifies the min_length rule fires
+// for a contract field that is present-but-blank yet NOT required in the profile
+// (ingested_at under authoring), where the required loop does not already cover it.
+func TestValidateFields_MinLengthNonRequired(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"doc_type":    "guide",
+		"ingested_at": "   ",
+	})
+	vs := ValidateFields(b, ProfileAuthoring)
+	var hasMinLen bool
+	for _, v := range vs {
+		if v.Field == "ingested_at" && v.Rule == "min_length" {
+			hasMinLen = true
+		}
+		assert.NotEqual(t, "required", v.Rule, "ingested_at is not required under authoring; must not double-report")
+	}
+	assert.True(t, hasMinLen, "blank non-required ingested_at must report a min_length violation under authoring")
+}
+
+// TestValidate_SchemaViolationSentinel locks in that Validate() maps schema
+// constraint failures (pattern/min_length) to ErrSchemaViolation, not to
+// ErrMissingRequiredField.
+func TestValidate_SchemaViolationSentinel(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": "not-a-hash",
+	})
+	err := Validate(b, ProfileIngestion)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSchemaViolation)
+	assert.NotErrorIs(t, err, ErrMissingRequiredField)
+}
+
+// TestValidateFields_BlankDocTypeNoDoubleReport pins the fix: a whitespace-only
+// doc_type reports only a "required" violation, not also "unknown_doc_type".
+func TestValidateFields_BlankDocTypeNoDoubleReport(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"ingested_at": "2026-06-22T00:00:00Z",
+		"doc_type":    "   ",
+	})
+	vs := ValidateFields(b, ProfileAuthoring)
+	for _, v := range vs {
+		assert.NotEqual(t, "unknown_doc_type", v.Rule, "blank doc_type must not be flagged unknown_doc_type")
+	}
 }
 
 func TestIsKnownDocType(t *testing.T) {
