@@ -34,6 +34,9 @@ var (
 	// apply: its current bytes no longer match the plan-time Before. Apply aborts
 	// with zero writes so a concurrent edit cannot be silently clobbered.
 	ErrConcurrentEdit = errors.New("docline: target changed since plan (concurrent edit)")
+	// ErrSchemaViolation indicates a v1 schema constraint failure (minLength/pattern)
+	// distinct from required-field presence and doc_type vocabulary.
+	ErrSchemaViolation = errors.New("docline: schema constraint violation")
 )
 
 // DocType is a member of the closed controlled vocabulary of document types.

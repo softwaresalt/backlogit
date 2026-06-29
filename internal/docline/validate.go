@@ -62,11 +62,20 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 		})
 	}
 
-	// Full schema constraints (base-frontmatter-v1): minLength on the required
-	// fields (reject whitespace-only) and the content_sha256 hex pattern. A
-	// hand-rolled validator avoids a new JSON-schema dependency for this tiny,
-	// fixed contract while staying byte-consistent with the migrated corpus.
+	// Full schema constraints (base-frontmatter-v1): minLength on contract fields
+	// (reject whitespace-only) and the content_sha256 hex pattern. A hand-rolled
+	// validator avoids a new JSON-schema dependency for this tiny, fixed contract.
+	// Required fields are already flagged blank by the required loop above, so
+	// min_length only applies to fields NOT required in this profile to avoid
+	// double-reporting the same underlying problem.
+	required := make(map[string]bool, 4)
+	for _, f := range requiredFields(profile) {
+		required[f] = true
+	}
 	for _, f := range minLengthFields {
+		if required[f] {
+			continue
+		}
 		if v, ok := values[f]; ok && v != "" && strings.TrimSpace(v) == "" {
 			vs = append(vs, Violation{
 				Field: f,
@@ -87,9 +96,11 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 
 // Validate reports whether b satisfies the contract for the given profile.
 // Violations are joined; "required" violations match ErrMissingRequiredField,
-// "unknown_doc_type" violations match ErrUnknownDocType, and "unknown_profile"
-// violations match ErrUnknownProfile via errors.Is. An unrecognized profile
-// fails fast rather than silently validating against the authoring subset.
+// "unknown_doc_type" violations match ErrUnknownDocType, "unknown_profile"
+// violations match ErrUnknownProfile, and schema-constraint violations
+// ("min_length"/"pattern") match ErrSchemaViolation via errors.Is. An
+// unrecognized profile fails fast rather than silently validating against the
+// authoring subset.
 func Validate(b BaseFrontmatter, profile Profile) error {
 	vs := ValidateFields(b, profile)
 	if len(vs) == 0 {
@@ -103,6 +114,8 @@ func Validate(b BaseFrontmatter, profile Profile) error {
 			sentinel = ErrUnknownDocType
 		case "unknown_profile":
 			sentinel = ErrUnknownProfile
+		case "min_length", "pattern":
+			sentinel = ErrSchemaViolation
 		}
 		errs = append(errs, fmt.Errorf("docline.Validate: %s (field %q): %w", v.Msg, v.Field, sentinel))
 	}

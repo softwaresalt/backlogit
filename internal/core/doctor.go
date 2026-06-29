@@ -636,7 +636,7 @@ func rewriteArchivedFromField(raw []byte, newValue string) ([]byte, error) {
 // mdfront body-preserving codec as rewriteArchivedFromField. Used by --fix-malformed
 // to clear bogus archived_from values on records with no restore target. A record
 // with no frontmatter fence is refused so the caller skips it; an already-absent
-// field re-encodes byte-stably (idempotent).
+// field re-encodes via the deterministic codec (idempotent on canonical frontmatter).
 func removeArchivedFromField(raw []byte) ([]byte, error) {
 	md, err := mdfront.Decode(raw)
 	if err != nil {
