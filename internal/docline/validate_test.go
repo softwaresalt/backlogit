@@ -227,6 +227,23 @@ func TestValidateFields_MinLengthNonRequired(t *testing.T) {
 	assert.True(t, hasMinLen, "blank non-required ingested_at must report a min_length violation under authoring")
 }
 
+// TestValidate_SchemaViolationSentinel locks in that Validate() maps schema
+// constraint failures (pattern/min_length) to ErrSchemaViolation, not to
+// ErrMissingRequiredField.
+func TestValidate_SchemaViolationSentinel(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": "not-a-hash",
+	})
+	err := Validate(b, ProfileIngestion)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSchemaViolation)
+	assert.NotErrorIs(t, err, ErrMissingRequiredField)
+}
+
 func TestIsKnownDocType(t *testing.T) {
 	assert.True(t, IsKnownDocType("decision"))
 	assert.True(t, IsKnownDocType("learning"))

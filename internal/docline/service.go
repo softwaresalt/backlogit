@@ -187,11 +187,12 @@ func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	}
 
 	// TOCTOU guard: re-read every target and verify the on-disk bytes still match
-	// the plan-time Before before writing anything. A file edited between plan and
-	// apply aborts the whole apply with zero writes, so concurrent edits cannot be
-	// silently overwritten with stale After bytes. Note: containment is enforced
-	// lexically via core.SafeResolve above; this guard does not add symlink-based
-	// realpath containment (preserving the pre-existing path-isolation contract).
+	// the plan-time Before before the write loop begins. A file already edited
+	// between plan and apply aborts the whole apply with zero writes. This detects
+	// edits up to the moment apply starts; it is not a lock, so an edit landing
+	// mid-write-loop is not guaranteed to be caught — external locking is required
+	// for that. Containment is enforced lexically via core.SafeResolve above; this
+	// guard does not add symlink-based realpath containment.
 	for _, w := range writes {
 		current, err := os.ReadFile(w.abs)
 		if err != nil {
