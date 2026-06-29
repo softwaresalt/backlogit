@@ -86,7 +86,12 @@ still be schema-valid), so it must be handled at authoring time.
   atomic-write helper to `internal/atomicfile`); `internal/docline` re-exports
   it via a true type alias. The four-part contract pattern below is unchanged —
   only the codec's location moved. See
-  `docs/compound/2026-06-28-codec-extraction-leaf-packages.md`.
+  `docs/compound/2026-06-28-codec-extraction-leaf-packages.md`. As of 069-S
+  (PR #152, merge `1dd4e69a`) the gate hardened on two axes: `ValidateFields`
+  now enforces the full pattern/minLength/additionalProperties schema
+  (`ErrSchemaViolation`, 0 new deps), and `ApplyMigration` re-reads targets at
+  apply time, aborting on drift with `ErrConcurrentEdit` to keep migration
+  body-preserving under concurrent edits.
 * Migration of ~213 docs with **0 body-byte changes**; single-file re-apply is a
   byte-identical no-op (idempotency proof).
 * CI "Docline frontmatter gate" (`.github/workflows/ci.yml` → `make docs-lint`).
