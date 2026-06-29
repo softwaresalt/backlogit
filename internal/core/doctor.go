@@ -73,6 +73,13 @@ const (
 	// FixArchivedFromRepaired indicates a self-referential archived_from field was
 	// rewritten to its canonical queue restore path by doctor --fix-archived-from.
 	FixArchivedFromRepaired FixActionType = "archived_from_repaired"
+
+	// FixArchivedFromCleared indicates a malformed archived_from field was removed
+	// (body-preserving) by doctor --fix-malformed. The malformed class are archive
+	// records with no queue restore target (e.g. deliberation artifacts stamped with
+	// a stray status token), so clearing the field is correct: there is no path to
+	// stamp, and a blank field is fieldless-tolerant in the invertibility audit.
+	FixArchivedFromCleared FixActionType = "archived_from_cleared"
 )
 
 // FixAction describes a repair action taken by Doctor in fix mode.
@@ -106,6 +113,10 @@ type DoctorOptions struct {
 	// canonical queue restore path. Destructive: CLI-only (never wired to the MCP
 	// tool, whose params are model-settable). Requires CheckArchivedFrom to be true.
 	FixArchivedFrom bool
+	// FixMalformed clears (removes) malformed archived_from fields on archive
+	// records that have no queue restore target. Body-preserving and CLI-only.
+	// Requires CheckArchivedFrom to be true.
+	FixMalformed bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -125,6 +136,9 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	// destructive fix flag and hard to debug in automation.
 	if opts.FixArchivedFrom && !opts.CheckArchivedFrom {
 		return nil, fmt.Errorf("doctor: FixArchivedFrom requires CheckArchivedFrom to be true")
+	}
+	if opts.FixMalformed && !opts.CheckArchivedFrom {
+		return nil, fmt.Errorf("doctor: FixMalformed requires CheckArchivedFrom to be true")
 	}
 
 	report := &DoctorReport{
@@ -361,6 +375,9 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		if opts.FixArchivedFrom {
 			report.FixActions = append(report.FixActions, repairArchivedFrom(ws, records)...)
 		}
+		if opts.FixMalformed {
+			report.FixActions = append(report.FixActions, clearMalformedArchivedFrom(ws, records)...)
+		}
 	}
 
 	return report, nil
@@ -518,6 +535,68 @@ func repairArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction
 	return actions
 }
 
+// clearMalformedArchivedFrom removes the malformed archived_from field from each
+// malformed archive record, preserving body bytes verbatim. The malformed class
+// are records whose archived_from is not a markdown path (e.g. deliberation
+// artifacts with no queue restore target); clearing the field is the correct
+// disposition — a blank/absent value is fieldless-tolerant in the invertibility
+// audit. It is destructive and must only be reached when the caller explicitly
+// opted in (CLI-only --fix-malformed). Same safety rails as repairArchivedFrom:
+// symlink refusal, EvalSymlinks containment, continue-on-error per record, one
+// FixAction per cleared record. Self-ref/OK records are never touched.
+func clearMalformedArchivedFrom(ws *Workspace, records []archivedFromRecord) []FixAction {
+	storageRoot := WorkspaceStorageRoot(ws.RootPath)
+	realRoot, rootErr := filepath.EvalSymlinks(storageRoot)
+	if rootErr != nil {
+		realRoot = storageRoot
+	}
+
+	var actions []FixAction
+	for _, r := range records {
+		if r.kind != archivedFromMalformed {
+			continue // only malformed records are cleared
+		}
+		info, lerr := os.Lstat(r.path)
+		if lerr != nil {
+			slog.Warn("doctor: fix-malformed: lstat failed", "path", r.path, "error", lerr)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			slog.Warn("doctor: fix-malformed: refusing symlinked record", "path", r.path)
+			continue
+		}
+		real, evalErr := filepath.EvalSymlinks(r.path)
+		if evalErr != nil {
+			slog.Warn("doctor: fix-malformed: evalsymlinks failed", "path", r.path, "error", evalErr)
+			continue
+		}
+		if !pathContained(realRoot, real) {
+			slog.Warn("doctor: fix-malformed: record escapes workspace storage", "path", r.path)
+			continue
+		}
+		raw, readErr := os.ReadFile(r.path)
+		if readErr != nil {
+			slog.Warn("doctor: fix-malformed: read failed", "path", r.path, "error", readErr)
+			continue
+		}
+		out, rewriteErr := removeArchivedFromField(raw)
+		if rewriteErr != nil {
+			slog.Warn("doctor: fix-malformed: rewrite failed", "path", r.path, "error", rewriteErr)
+			continue
+		}
+		if err := atomicfile.WriteFileAtomic(r.path, out); err != nil {
+			slog.Warn("doctor: fix-malformed: write failed", "path", r.path, "error", err)
+			continue
+		}
+		actions = append(actions, FixAction{
+			Type:       FixArchivedFromCleared,
+			ArtifactID: r.id,
+			Detail:     fmt.Sprintf("cleared malformed archived_from %q (no restore target)", r.value),
+		})
+	}
+	return actions
+}
+
 // rewriteArchivedFromField rewrites ONLY the archived_from frontmatter field of a
 // markdown record to newValue while preserving the body bytes verbatim. It uses
 // the shared internal/mdfront body-preserving codec (the single canonical
@@ -545,6 +624,30 @@ func rewriteArchivedFromField(raw []byte, newValue string) ([]byte, error) {
 		md.Frontmatter = map[string]any{}
 	}
 	md.Frontmatter["archived_from"] = newValue
+	out, err := md.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode archive record: %w", err)
+	}
+	return out, nil
+}
+
+// removeArchivedFromField deletes ONLY the archived_from frontmatter field of a
+// markdown record while preserving the body bytes verbatim, using the same shared
+// mdfront body-preserving codec as rewriteArchivedFromField. Used by --fix-malformed
+// to clear bogus archived_from values on records with no restore target. A record
+// with no frontmatter fence is refused so the caller skips it; an already-absent
+// field re-encodes byte-stably (idempotent).
+func removeArchivedFromField(raw []byte) ([]byte, error) {
+	md, err := mdfront.Decode(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode archive record: %w", err)
+	}
+	if !md.HasFrontmatter {
+		return nil, fmt.Errorf("no frontmatter fence")
+	}
+	if md.Frontmatter != nil {
+		delete(md.Frontmatter, "archived_from")
+	}
 	out, err := md.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encode archive record: %w", err)

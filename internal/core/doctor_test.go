@@ -400,3 +400,82 @@ func TestDoctor_FixArchivedFromRequiresCheck(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "FixArchivedFrom requires CheckArchivedFrom")
 }
+
+// TestDoctor_FixMalformedClearsArchivedFrom verifies 069.001-T: --fix-malformed
+// clears the bogus archived_from field on the malformed class (records with no
+// queue restore target), body-preserving, leaving self-ref and canonical records
+// untouched, dropping the malformed audit count to zero, and idempotent.
+func TestDoctor_FixMalformedClearsArchivedFrom(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+
+	// Malformed record with a CRLF body to prove body bytes are preserved verbatim.
+	malformedContent := "---\nid: 202-T\ntitle: Malformed\nstatus: archived\narchived_from: done\nartifact_type: deliberation\n---\nMal line 1\r\nMal line 2\n"
+	helperWriteArtifact(t, archiveDir, "202-T.md", malformedContent)
+	// Self-ref record: --fix-malformed must NOT touch it.
+	selfRefContent := "---\nid: 200-T\ntitle: Self ref\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/archive/200-T.md\n---\nSelf body\n"
+	helperWriteArtifact(t, archiveDir, "200-T.md", selfRefContent)
+	// Canonical record: untouched.
+	canonContent := "---\nid: 201-T\ntitle: Canonical\nstatus: archived\nartifact_type: task\narchived_from: .backlogit/queue/201-T.md\n---\nCanon body\n"
+	helperWriteArtifact(t, archiveDir, "201-T.md", canonContent)
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+	malPath := filepath.Join(archiveDir, "202-T.md")
+	const wantBody = "Mal line 1\r\nMal line 2\n"
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixMalformed: true})
+	require.NoError(t, err)
+
+	// Exactly one cleared FixAction, for the malformed record only.
+	var cleared []string
+	for _, a := range report.FixActions {
+		if a.Type == FixArchivedFromCleared {
+			cleared = append(cleared, a.ArtifactID)
+		}
+	}
+	assert.Equal(t, []string{"202-T"}, cleared, "only the malformed record is cleared")
+
+	// archived_from removed entirely (not stamped); body bytes preserved (incl. CRLF).
+	rawAfter, readErr := os.ReadFile(malPath)
+	require.NoError(t, readErr)
+	fm, _, perr := models.ParseFrontmatter(string(rawAfter))
+	require.NoError(t, perr)
+	_, present := fm["archived_from"]
+	assert.False(t, present, "archived_from field must be removed, not stamped")
+	assert.True(t, bytes.HasSuffix(rawAfter, []byte(wantBody)), "body bytes preserved verbatim (incl. CRLF)")
+
+	// Self-ref and canonical untouched.
+	selfAfter, _ := os.ReadFile(filepath.Join(archiveDir, "200-T.md"))
+	assert.Equal(t, selfRefContent, string(selfAfter), "self-ref record must be untouched by --fix-malformed")
+	canonAfter, _ := os.ReadFile(filepath.Join(archiveDir, "201-T.md"))
+	assert.Equal(t, canonContent, string(canonAfter), "canonical record must be untouched")
+
+	// Audit after fix: zero malformed findings.
+	report2, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true})
+	require.NoError(t, err)
+	for _, f := range report2.Findings {
+		assert.NotEqual(t, FindingArchivedFromMalformed, f.Type, "no malformed findings after clear")
+	}
+
+	// Idempotent: a second --fix-malformed run is a byte-stable no-op.
+	report3, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: true, FixMalformed: true})
+	require.NoError(t, err)
+	for _, a := range report3.FixActions {
+		assert.NotEqual(t, FixArchivedFromCleared, a.Type, "second run must not clear anything")
+	}
+	rawSecond, _ := os.ReadFile(malPath)
+	assert.Equal(t, rawAfter, rawSecond, "second run must be byte-stable")
+}
+
+// TestDoctor_FixMalformedRequiresCheck verifies --fix-malformed is rejected with an
+// explicit error when the archived_from audit is not also enabled.
+func TestDoctor_FixMalformedRequiresCheck(t *testing.T) {
+	tmp := t.TempDir()
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	_, err := Doctor(context.Background(), ws, &DoctorOptions{CheckArchivedFrom: false, FixMalformed: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "FixMalformed requires CheckArchivedFrom")
+}
