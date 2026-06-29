@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: 'Ship session memory — 069-S post-merge closure complete. Shipment shipped at merge 1dd4e69a; 069-F + 3 tasks archived; doctor clean (0 self-ref + 0 malformed dogfood); reconcile pre/post PROCEED; closure + runtime-verification + compound-refresh authored; follow-up stash 997574DD. Closure PR pending operator merge.'
-doc_type: reference
+doc_type: memory
 docline:
     ms.date: 2026-06-28T00:00:00Z
     ms.topic: reference
