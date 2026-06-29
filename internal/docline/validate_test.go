@@ -206,6 +206,27 @@ func TestValidateFields_SchemaPatternAndMinLength(t *testing.T) {
 	assert.Empty(t, ValidateFields(valid, ProfileIngestion))
 }
 
+// TestValidateFields_MinLengthNonRequiredField verifies the min_length rule fires
+// for a contract field that is present-but-blank yet NOT required in the profile
+// (ingested_at under authoring), where the required loop does not already cover it.
+func TestValidateFields_MinLengthNonRequired(t *testing.T) {
+	b := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"doc_type":    "guide",
+		"ingested_at": "   ",
+	})
+	vs := ValidateFields(b, ProfileAuthoring)
+	var hasMinLen bool
+	for _, v := range vs {
+		if v.Field == "ingested_at" && v.Rule == "min_length" {
+			hasMinLen = true
+		}
+		assert.NotEqual(t, "required", v.Rule, "ingested_at is not required under authoring; must not double-report")
+	}
+	assert.True(t, hasMinLen, "blank non-required ingested_at must report a min_length violation under authoring")
+}
+
 func TestIsKnownDocType(t *testing.T) {
 	assert.True(t, IsKnownDocType("decision"))
 	assert.True(t, IsKnownDocType("learning"))
