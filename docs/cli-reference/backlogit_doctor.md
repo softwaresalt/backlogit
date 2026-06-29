@@ -20,8 +20,9 @@ across queue and archive directories.
 
 Use --fix-orphans to archive orphaned artifacts automatically.
 Use --fix-archived-from to repair legacy self-referential archived_from
-records (rewrites them to their canonical queue restore path). This is a
-destructive, CLI-only migration: it is not exposed on the MCP doctor tool.
+records (rewrites them to their canonical queue restore path). Use
+--fix-malformed to clear malformed archived_from records that have no restore
+target. Both are destructive, CLI-only migrations: not exposed on the MCP doctor tool.
 
 ```text
 backlogit doctor [flags]
@@ -44,6 +45,7 @@ backlogit doctor [flags]
       --check-duplicates      check for duplicate IDs across directories (default true)
       --check-orphans         check for orphaned child artifacts (default true)
       --fix-archived-from     repair legacy self-referential archived_from records (destructive, CLI-only)
+      --fix-malformed         clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)
       --fix-orphans           archive orphaned artifacts instead of just reporting them
       --format string         output format: text or json (default "text")
   -h, --help                  help for doctor

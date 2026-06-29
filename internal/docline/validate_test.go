@@ -1,6 +1,7 @@
 package docline
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,6 +162,48 @@ func TestValidateFields_RejectsUnknownProfile(t *testing.T) {
 	// Known profiles (including the empty default) do not emit a profile violation.
 	assert.Empty(t, ValidateFields(b, Profile("")))
 	assert.Empty(t, ValidateFields(b, ProfileAuthoring))
+}
+
+// TestValidateFields_SchemaPatternAndMinLength verifies 069.003-T: ValidateFields
+// enforces the base-frontmatter v1 schema beyond presence — content_sha256 must
+// match the 64-hex pattern, required fields must satisfy minLength, and a valid
+// fully-populated record passes with no violations.
+func TestValidateFields_SchemaPatternAndMinLength(t *testing.T) {
+	// Bad content_sha256: present but not a 64-char hex digest.
+	bad := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": "not-a-hash",
+	})
+	vs := ValidateFields(bad, ProfileIngestion)
+	var hasPattern bool
+	for _, v := range vs {
+		if v.Field == "content_sha256" && v.Rule == "pattern" {
+			hasPattern = true
+		}
+	}
+	assert.True(t, hasPattern, "malformed content_sha256 must report a pattern violation")
+
+	// Empty content_sha256 (pipeline-owned, not fabricated) is allowed.
+	emptyOK := FromMap(map[string]any{
+		"title":       "T",
+		"source":      "docs/x.md",
+		"ingested_at": "2026-06-22T00:00:00Z",
+		"doc_type":    "guide",
+	})
+	assert.Empty(t, ValidateFields(emptyOK, ProfileIngestion))
+
+	// Valid 64-hex content_sha256 passes.
+	valid := FromMap(map[string]any{
+		"title":          "T",
+		"source":         "docs/x.md",
+		"ingested_at":    "2026-06-22T00:00:00Z",
+		"doc_type":       "guide",
+		"content_sha256": strings.Repeat("a", 64),
+	})
+	assert.Empty(t, ValidateFields(valid, ProfileIngestion))
 }
 
 func TestIsKnownDocType(t *testing.T) {

@@ -3,13 +3,23 @@ package docline
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// contentSHA256Pattern mirrors schemas/docline/base-frontmatter-v1.schema.json:
+// content_sha256 must be empty or a 64-char lowercase/uppercase hex digest.
+var contentSHA256Pattern = regexp.MustCompile(`^([a-fA-F0-9]{64})?$`)
+
+// minLengthFields mirrors the v1 schema's minLength:1 + required surface: these
+// contract fields must be non-empty when present. Presence is already enforced by
+// requiredFields; this also rejects whitespace-only values to match minLength.
+var minLengthFields = []string{"title", "source", "ingested_at", "doc_type"}
 
 // Violation is a single validation failure for one frontmatter field.
 type Violation struct {
 	Field string // the offending field name
-	Rule  string // the rule that failed: "required" | "unknown_doc_type" | "unknown_profile"
+	Rule  string // "required" | "unknown_doc_type" | "unknown_profile" | "min_length" | "pattern"
 	Msg   string // an actionable human-readable message
 }
 
@@ -49,6 +59,27 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 			Field: "doc_type",
 			Rule:  "unknown_doc_type",
 			Msg:   fmt.Sprintf("doc_type %q is not in the closed vocabulary", b.DocType),
+		})
+	}
+
+	// Full schema constraints (base-frontmatter-v1): minLength on the required
+	// fields (reject whitespace-only) and the content_sha256 hex pattern. A
+	// hand-rolled validator avoids a new JSON-schema dependency for this tiny,
+	// fixed contract while staying byte-consistent with the migrated corpus.
+	for _, f := range minLengthFields {
+		if v, ok := values[f]; ok && v != "" && strings.TrimSpace(v) == "" {
+			vs = append(vs, Violation{
+				Field: f,
+				Rule:  "min_length",
+				Msg:   fmt.Sprintf("field %q must not be blank (minLength 1)", f),
+			})
+		}
+	}
+	if b.ContentSHA256 != "" && !contentSHA256Pattern.MatchString(b.ContentSHA256) {
+		vs = append(vs, Violation{
+			Field: "content_sha256",
+			Rule:  "pattern",
+			Msg:   "content_sha256 must be a 64-char hex digest",
 		})
 	}
 	return vs
