@@ -206,7 +206,7 @@ func TestValidateFields_SchemaPatternAndMinLength(t *testing.T) {
 	assert.Empty(t, ValidateFields(valid, ProfileIngestion))
 }
 
-// TestValidateFields_MinLengthNonRequiredField verifies the min_length rule fires
+// TestValidateFields_MinLengthNonRequired verifies the min_length rule fires
 // for a contract field that is present-but-blank yet NOT required in the profile
 // (ingested_at under authoring), where the required loop does not already cover it.
 func TestValidateFields_MinLengthNonRequired(t *testing.T) {
