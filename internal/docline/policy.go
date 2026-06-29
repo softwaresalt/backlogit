@@ -30,6 +30,10 @@ var (
 	// supplied a zero NormalizeOptions.Now, which would otherwise write a
 	// nonsense 0001-01-01T00:00:00Z timestamp into the document.
 	ErrMissingSeedTime = errors.New("docline: ingested_at seed requires a non-zero Now")
+	// ErrConcurrentEdit indicates a target file changed on disk between plan and
+	// apply: its current bytes no longer match the plan-time Before. Apply aborts
+	// with zero writes so a concurrent edit cannot be silently clobbered.
+	ErrConcurrentEdit = errors.New("docline: target changed since plan (concurrent edit)")
 )
 
 // DocType is a member of the closed controlled vocabulary of document types.

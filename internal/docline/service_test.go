@@ -232,6 +232,45 @@ func TestApplyMigration_PreflightAbortsBeforeAnyWrite(t *testing.T) {
 	assert.Equal(t, badBefore, readDoc(t, root, bad), "invalid file must not be written")
 }
 
+// TestApplyMigration_AbortsOnConcurrentEdit verifies 069.002-T: apply re-reads
+// every target at apply time and aborts with ErrConcurrentEdit (zero writes) when
+// the on-disk bytes no longer match the plan-time Before, so a concurrent edit
+// between plan and apply cannot be silently clobbered.
+func TestApplyMigration_AbortsOnConcurrentEdit(t *testing.T) {
+	t.Parallel()
+	root := newTree(t)
+
+	plan, err := PlanMigration(Options{Root: root, Now: svcNow})
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Changes)
+
+	bad := "docs/reviews/bad.md"
+	other := "docs/research/none.md"
+	// Simulate a concurrent edit between plan and apply on one target.
+	concurrent := readDoc(t, root, bad) + "\nconcurrent edit\n"
+	writeDoc(t, root, bad, concurrent)
+	otherBefore := readDoc(t, root, other)
+
+	res, err := ApplyMigration(plan, Options{Root: root, Now: svcNow})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrConcurrentEdit)
+	assert.Empty(t, res.Applied, "no file may be applied when a target was edited concurrently")
+	assert.Equal(t, concurrent, readDoc(t, root, bad), "concurrently edited file must not be clobbered")
+	assert.Equal(t, otherBefore, readDoc(t, root, other), "other target must not be written on abort")
+
+	// Unchanged tree applies normally and a re-apply is a clean noop.
+	root2 := newTree(t)
+	plan2, err := PlanMigration(Options{Root: root2, Now: svcNow})
+	require.NoError(t, err)
+	_, err = ApplyMigration(plan2, Options{Root: root2, Now: svcNow})
+	require.NoError(t, err)
+	plan3, err := PlanMigration(Options{Root: root2, Now: svcNow})
+	require.NoError(t, err)
+	res3, err := ApplyMigration(plan3, Options{Root: root2, Now: svcNow})
+	require.NoError(t, err)
+	assert.Empty(t, res3.Applied, "idempotent re-apply writes nothing")
+}
+
 func TestValidateApplyPath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

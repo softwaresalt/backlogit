@@ -155,7 +155,9 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 // path-contained: every target is resolved through core.SafeResolve and any
 // escape is rejected with ErrPathEscapesWorkspace before a single write. All
 // non-noop changes are validated in a preflight pass, so an invalid later
-// change cannot leave earlier files partially migrated.
+// change cannot leave earlier files partially migrated. As a final TOCTOU guard,
+// every target is re-read at apply time and the apply aborts with ErrConcurrentEdit
+// (zero writes) if any on-disk bytes diverged from the plan-time Before.
 func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	var res Result
 
@@ -163,9 +165,10 @@ func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	// mutation or path escape on any change aborts the whole apply with zero
 	// writes, preserving the all-or-nothing guarantee in the doc comment.
 	type pendingWrite struct {
-		file string
-		abs  string
-		data []byte
+		file   string
+		abs    string
+		before string
+		data   []byte
 	}
 	var writes []pendingWrite
 	for _, c := range plan.Changes {
@@ -180,7 +183,21 @@ func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 		if err != nil {
 			return res, fmt.Errorf("docline.ApplyMigration: %s: %w", c.File, ErrPathEscapesWorkspace)
 		}
-		writes = append(writes, pendingWrite{file: c.File, abs: abs, data: []byte(c.After)})
+		writes = append(writes, pendingWrite{file: c.File, abs: abs, before: c.Before, data: []byte(c.After)})
+	}
+
+	// TOCTOU guard: re-read every target and verify the on-disk bytes still match
+	// the plan-time Before before writing anything. A file edited between plan and
+	// apply aborts the whole apply with zero writes, so concurrent edits cannot be
+	// silently overwritten with stale After bytes.
+	for _, w := range writes {
+		current, err := os.ReadFile(w.abs)
+		if err != nil {
+			return res, fmt.Errorf("docline.ApplyMigration: re-read %s: %w", w.file, err)
+		}
+		if string(current) != w.before {
+			return res, fmt.Errorf("docline.ApplyMigration: %s: %w", w.file, ErrConcurrentEdit)
+		}
 	}
 
 	// All changes validated; perform the writes.
