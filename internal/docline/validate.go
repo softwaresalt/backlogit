@@ -13,10 +13,14 @@ var contentSHA256Pattern = regexp.MustCompile(`^([a-fA-F0-9]{64})?$`)
 
 // minLengthFields mirrors the v1 schema's minLength:1 + required surface.
 // Behavior: requiredFields rejects absent/empty required keys; this min_length
-// pass additionally rejects only whitespace-only values (v != "" && TrimSpace
-// == ""). Explicit empty strings for non-required keys are not flagged here.
-// JSON Schema minLength:1 counts whitespace as length; rejecting whitespace-only
-// is a deliberate stricter-than-schema choice, not exact parity.
+// pass additionally governs minLength fields that are NOT required in the active
+// profile. For those, a key that is PRESENT but blank (empty string OR
+// whitespace-only) violates minLength:1, while an ABSENT optional key does not
+// (070.003-T: empty-vs-absent parity, driven by BaseFrontmatter.present). When
+// presence is unknown (a value built directly, not via FromMap), the historical
+// whitespace-only-only behavior is preserved. Rejecting whitespace-only is a
+// deliberate stricter-than-schema choice; JSON Schema minLength:1 counts
+// whitespace as length 1.
 var minLengthFields = []string{"title", "source", "ingested_at", "doc_type"}
 
 // Violation is a single validation failure for one frontmatter field.
@@ -66,11 +70,10 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 	}
 
 	// Full schema constraints (base-frontmatter-v1): minLength on contract fields
-	// (reject whitespace-only) and the content_sha256 hex pattern. A hand-rolled
-	// validator avoids a new JSON-schema dependency for this tiny, fixed contract.
-	// Required fields are already flagged blank by the required loop above, so
-	// min_length only applies to fields NOT required in this profile to avoid
-	// double-reporting the same underlying problem.
+	// and the content_sha256 hex pattern. A hand-rolled validator avoids a new
+	// JSON-schema dependency for this tiny, fixed contract. Required fields are
+	// already flagged blank by the required loop above, so min_length only applies
+	// to fields NOT required in this profile to avoid double-reporting.
 	required := make(map[string]bool, 4)
 	for _, f := range requiredFields(profile) {
 		required[f] = true
@@ -79,7 +82,24 @@ func ValidateFields(b BaseFrontmatter, profile Profile) []Violation {
 		if required[f] {
 			continue
 		}
-		if v, ok := values[f]; ok && v != "" && strings.TrimSpace(v) == "" {
+		v := values[f]
+		if strings.TrimSpace(v) != "" {
+			continue // non-blank value satisfies minLength:1
+		}
+		// v is blank (empty string or whitespace-only). 070.003-T: decide using
+		// key presence so an empty string is treated distinctly from an absent key.
+		var violate bool
+		if b.present != nil {
+			// Presence is known (built via FromMap): a present minLength key that
+			// is blank violates minLength:1; an absent optional key does not.
+			violate = b.present[f]
+		} else {
+			// Presence unknown (value built directly): an empty string is
+			// indistinguishable from an absent key, so preserve the historical
+			// behavior of flagging only whitespace-only values.
+			violate = v != ""
+		}
+		if violate {
 			vs = append(vs, Violation{
 				Field: f,
 				Rule:  "min_length",
