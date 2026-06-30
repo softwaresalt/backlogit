@@ -89,8 +89,24 @@ Three independent, narrow hardening tasks shipped under one feature:
 ## Source artifact cleanup
 
 - Source deliberation **049-DL** was archived to `.backlogit/archive/049-DL.md` by `shipment ship 070-S` (in the same archival commit `a1a3941`).
-- Feature 070-F frontmatter carries no `source_stash_id` (no originating stash entry to remove) — none to clean up.
+- Feature 070-F frontmatter carries no `source_stash_id` (no originating stash entry to remove) — none to clean up at the feature level.
+- The three task source stash entries (`D6B44FF6`, `2797E9F8`, `997574DD`) were already consumed/removed at harvest time (not present in `.backlogit/stash.jsonl`) — nothing to clean up.
 - Commit traceability: merge SHA `b4c317e` stamped as the single `commit` value on archived 070-S, 070-F, and all three tasks. The explicit `track_commit` step was satisfied by `shipment ship` stamping; a redundant `update --commit` was deliberately skipped to avoid re-appending a duplicate SHA into the `commit` frontmatter (the dual-SHA ambiguity Copilot flagged on 070.001-T and that was resolved in this PR).
+
+## Archive metadata remediation (closure-PR Copilot review)
+
+`shipment ship` re-archived four items (070-F, 070.001-T/002-T/003-T) that the
+build session had already moved into `.backlogit/archive/` (left as
+`status: done` with no archive metadata). Because the source path was already the
+archive path, the re-stamp wrote a **self-referential `archived_from`** and
+omitted `archived_status`, which would have made `UnarchiveItem` restore the
+items as `queued` instead of `done` (lossless-unarchive break — flagged by
+Copilot on PR #155). Remediated on the closure branch: `archived_from` repointed
+to the canonical `.backlogit/queue/{id}.md` restore path and `archived_status:
+done` added, matching the proven pattern on 066-F→069-F. Verified with
+`backlogit doctor` = 0 self-referential/malformed `archived_from`; `docs lint`
+clean. The shipment record (070-S) and deliberation (049-DL) came from queue and
+were already correct.
 
 ## Follow-up
 
