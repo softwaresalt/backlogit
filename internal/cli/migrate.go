@@ -236,6 +236,19 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		return sorted[i].Depth < sorted[j].Depth
 	})
 
+	// 070.001-T: scan the canonical artifact set once for the whole import batch
+	// and share it across every CreateArtifact call, instead of re-walking
+	// queue+archive on each imported item (O(files) per create -> O(N^2) on a
+	// large backlog). Each create records its minted ID back into the cache, so
+	// within-batch ID collisions are still detected without a re-scan.
+	var canonicalCache *core.CanonicalCache
+	if len(sorted) > 0 {
+		canonicalCache, err = core.NewCanonicalCache(ws)
+		if err != nil {
+			return nil, fmt.Errorf("prepare import canonical cache: %w", err)
+		}
+	}
+
 	for _, item := range sorted {
 		targetType := item.ArtifactType
 		if targetType == "" {
@@ -258,6 +271,9 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			core.WithStatus(item.Status),
 			core.WithDescription(item.Body),
 			core.WithFields(fields),
+		}
+		if canonicalCache != nil {
+			opts = append(opts, core.WithCanonicalCache(canonicalCache))
 		}
 		if item.AssignedTo != "" {
 			opts = append(opts, core.WithAssignedTo(item.AssignedTo))

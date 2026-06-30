@@ -26,6 +26,22 @@ type BaseFrontmatter struct {
 	ChunkStrategy string
 	SchemaVersion string
 	Docline       map[string]any
+
+	// present records which contract keys were actually present in the source
+	// frontmatter map passed to FromMap (070.003-T). It lets ValidateFields
+	// distinguish "key present but empty string" from "key absent" for minLength
+	// parity. A nil present map means presence is unknown (the value was built
+	// directly rather than via FromMap), in which case ValidateFields falls back
+	// to its historical whitespace-only behavior.
+	present map[string]bool
+}
+
+// contractFrontmatterKeys are the top-level contract keys FromMap reads. Presence
+// is tracked for these so minLength parity can treat an empty string distinctly
+// from an absent key.
+var contractFrontmatterKeys = []string{
+	"title", "source", "ingested_at", "doc_type", "description",
+	"content_sha256", "source_path", "chunk_strategy", "schema_version",
 }
 
 // FromMap builds a BaseFrontmatter from a decoded frontmatter map, reading only
@@ -47,6 +63,17 @@ func FromMap(fm map[string]any) BaseFrontmatter {
 	if d, ok := fm["docline"].(map[string]any); ok && len(d) > 0 {
 		b.Docline = d
 	}
+	// 070.003-T: capture key presence BEFORE applying defaults below, so a
+	// defaulted chunk_strategy/schema_version is not mistaken for a present key.
+	// ValidateFields uses this to flag a present-but-empty minLength field while
+	// leaving an absent optional key alone.
+	present := make(map[string]bool, len(contractFrontmatterKeys))
+	for _, k := range contractFrontmatterKeys {
+		if _, ok := fm[k]; ok {
+			present[k] = true
+		}
+	}
+	b.present = present
 	if b.ChunkStrategy == "" {
 		b.ChunkStrategy = DefaultChunkStrategy
 	}
