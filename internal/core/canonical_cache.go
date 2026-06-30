@@ -38,6 +38,29 @@ func NewCanonicalCache(ws *Workspace) (*CanonicalCache, error) {
 	return &CanonicalCache{refs: refs}, nil
 }
 
+// ensureSeeded lazily performs the one-time canonical scan when the cache was
+// constructed as a zero value (refs == nil) rather than via NewCanonicalCache.
+// Because CanonicalCache is exported, a caller in another package can pass a
+// &CanonicalCache{} whose refs map is nil; without seeding, the per-create
+// uniqueness guard would treat every ID as unseen and silently bypass collision
+// detection. Seeding on first use closes that gap. A cache already seeded (refs
+// != nil), including an empty-but-non-nil map from NewCanonicalCache, is left
+// untouched so a batch still scans exactly once.
+func (c *CanonicalCache) ensureSeeded(ws *Workspace) error {
+	if c == nil || c.refs != nil {
+		return nil
+	}
+	refs, err := scanCanonicalArtifactsFn(ws)
+	if err != nil {
+		return fmt.Errorf("seed canonical cache: %w", err)
+	}
+	if refs == nil {
+		refs = make(map[string][]artifactRef)
+	}
+	c.refs = refs
+	return nil
+}
+
 // lookup returns the recorded refs for an ID (empty when the ID is unseen).
 func (c *CanonicalCache) lookup(id string) []artifactRef {
 	if c == nil {
@@ -51,6 +74,11 @@ func (c *CanonicalCache) lookup(id string) []artifactRef {
 func (c *CanonicalCache) record(id, path string) {
 	if c == nil || id == "" {
 		return
+	}
+	if c.refs == nil {
+		// Defense-in-depth: a zero-value cache that reached record without being
+		// seeded must not panic assigning into a nil map.
+		c.refs = make(map[string][]artifactRef)
 	}
 	c.refs[id] = append(c.refs[id], artifactRef{path: path, id: id})
 }

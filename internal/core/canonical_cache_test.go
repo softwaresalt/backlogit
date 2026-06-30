@@ -123,6 +123,31 @@ func TestCanonicalCache_RecordMakesIDVisible(t *testing.T) {
 	assert.NotEmpty(t, cache.lookup("999-X"), "recorded ids must be visible to later batch creates")
 }
 
+// TestCanonicalCache_ZeroValueSeedsOnUse guards the exported-type footgun raised
+// in PR review: a caller in another package can construct a zero-value
+// &CanonicalCache{} (refs == nil) and pass it to CreateArtifact. Such a cache
+// must NOT bypass the canonical uniqueness scan (which would allow duplicate IDs)
+// nor panic recording into a nil map; it must lazily seed itself by scanning once
+// on first use, then behave like a NewCanonicalCache-built cache for the batch.
+func TestCanonicalCache_ZeroValueSeedsOnUse(t *testing.T) {
+	ws := newCacheTestWorkspace(t)
+	ctx := context.Background()
+	count := installScanCounter(t)
+
+	cache := &CanonicalCache{} // zero value: refs == nil (not built via NewCanonicalCache)
+
+	const n = 3
+	ids := make(map[string]bool, n)
+	for i := 0; i < n; i++ {
+		a, err := CreateArtifact(ctx, ws, fmt.Sprintf("Zero-cache feature %d", i), "feature", WithCanonicalCache(cache))
+		require.NoError(t, err)
+		assert.False(t, ids[a.ID], "batch must mint distinct IDs even with a zero-value cache")
+		ids[a.ID] = true
+	}
+	assert.Equal(t, 1, *count, "a zero-value cache seeds itself with exactly one scan, never bypassing the uniqueness guard")
+	assert.Len(t, ids, n, "every create produced a distinct artifact")
+}
+
 // TestHarvestStashByPriority_ScansCanonicalOnce proves the real bulk caller
 // (priority harvest) scans the canonical set once for the whole batch.
 func TestHarvestStashByPriority_ScansCanonicalOnce(t *testing.T) {

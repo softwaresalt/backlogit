@@ -176,6 +176,12 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	// interactive creates pass no cache and scan per call, exactly as before.
 	var canonical map[string][]artifactRef
 	if o.canonicalCache != nil {
+		// Seed a zero-value (externally constructed) cache on first use so an
+		// unseeded refs map cannot bypass the uniqueness guard; a cache built via
+		// NewCanonicalCache is already seeded and this is a no-op.
+		if err := o.canonicalCache.ensureSeeded(ws); err != nil {
+			return nil, fmt.Errorf("create artifact %q: canonical uniqueness scan: %w", artifactID, err)
+		}
 		canonical = o.canonicalCache.refs
 	} else {
 		scanned, scanErr := scanCanonicalArtifactsFn(ws)
