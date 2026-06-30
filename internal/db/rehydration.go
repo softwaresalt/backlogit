@@ -23,6 +23,35 @@ import (
 // reducing contention under concurrent MCP workloads.
 const rehydrateBatchSize = 100
 
+// RehydrateOption configures a Rehydrate call.
+type RehydrateOption func(*rehydrateConfig)
+
+// rehydrateConfig holds the resolved settings for a single Rehydrate call.
+type rehydrateConfig struct {
+	logger *slog.Logger
+}
+
+// WithLogger injects the *slog.Logger that Rehydrate and its duplicate-source
+// warnings write to (070.002-T). Injecting a logger lets tests capture log
+// output without mutating the global slog default via slog.SetDefault. When
+// omitted, Rehydrate logs to slog.Default(), preserving prior behavior.
+func WithLogger(logger *slog.Logger) RehydrateOption {
+	return func(c *rehydrateConfig) { c.logger = logger }
+}
+
+// newRehydrateConfig applies the given options and resolves an effective logger,
+// defaulting to slog.Default() when none is injected.
+func newRehydrateConfig(opts ...RehydrateOption) rehydrateConfig {
+	cfg := rehydrateConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.logger == nil {
+		cfg.logger = slog.Default()
+	}
+	return cfg
+}
+
 // collectedArtifact holds a parsed artifact ready for batch insertion.
 type collectedArtifact struct {
 	artifact *models.Artifact
@@ -34,8 +63,12 @@ type collectedArtifact struct {
 // 066-F bug) -- are otherwise masked by the PK-keyed upsert, which silently
 // collapses them to a single indexed row. The warning is observational only:
 // it does not change the rebuild work or the collapse result. IDs are reported
-// in sorted order for deterministic output.
-func warnOnDuplicateSourceIDs(idToPaths map[string][]string) {
+// in sorted order for deterministic output. The logger is injected (070.002-T)
+// so callers/tests can capture output without mutating the global slog default.
+func warnOnDuplicateSourceIDs(logger *slog.Logger, idToPaths map[string][]string) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	ids := make([]string, 0, len(idToPaths))
 	for id, paths := range idToPaths {
 		if len(paths) >= 2 {
@@ -46,7 +79,7 @@ func warnOnDuplicateSourceIDs(idToPaths map[string][]string) {
 	for _, id := range ids {
 		paths := append([]string(nil), idToPaths[id]...)
 		sort.Strings(paths)
-		slog.Warn("rehydrate: duplicate source id detected; sources collapse to a single indexed row",
+		logger.Warn("rehydrate: duplicate source id detected; sources collapse to a single indexed row",
 			"id", id, "paths", paths)
 	}
 }
@@ -69,7 +102,8 @@ func warnOnDuplicateSourceIDs(idToPaths map[string][]string) {
 // Note: between the clear commit and the final batch commit the index is empty
 // or partially populated. This is acceptable because backlogit.db is an
 // ephemeral cache that can be rebuilt at any time.
-func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, error) {
+func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...RehydrateOption) (int, error) {
+	logger := newRehydrateConfig(opts...).logger
 	harvestedStash := make(map[string]StashRecord)
 
 	// ── Phase 1: Collect ──────────────────────────────────────────────────────
@@ -82,7 +116,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	idToPaths := make(map[string][]string)
 	if walkErr := filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			slog.Debug("walk error, skipping", "path", path, "error", walkErr)
+			logger.Debug("walk error, skipping", "path", path, "error", walkErr)
 			return nil
 		}
 		if d.IsDir() || filepath.Ext(path) != ".md" {
@@ -94,7 +128,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 
 		artifact, parseErr := parseMarkdownArtifact(path)
 		if parseErr != nil {
-			slog.Debug("skipping unparseable file", "path", path, "error", parseErr)
+			logger.Debug("skipping unparseable file", "path", path, "error", parseErr)
 			return nil
 		}
 		if artifact == nil {
@@ -115,7 +149,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 	// database work starts. The clear + batch-insert rebuild below (a clear
 	// transaction followed by batched insert transactions) is left untouched;
 	// this warning is observational only and does not change rebuild behavior.
-	warnOnDuplicateSourceIDs(idToPaths)
+	warnOnDuplicateSourceIDs(logger, idToPaths)
 
 	// ── Phase 2: Clear ────────────────────────────────────────────────────────
 	if clearErr := RetryWrite(ctx, func() error {
@@ -165,7 +199,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 			for _, ca := range batch {
 				artifact := ca.artifact
 				if upsertErr := upsertItemTx(ctx, tx, artifact); upsertErr != nil {
-					slog.Warn("failed to upsert artifact", "id", artifact.ID, "error", upsertErr)
+					logger.Warn("failed to upsert artifact", "id", artifact.ID, "error", upsertErr)
 					continue
 				}
 
@@ -176,7 +210,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 						`UPDATE items SET level = ?, hierarchy_path = ? WHERE id = ?`,
 						level, hierarchyPath, artifact.ID,
 					); execErr != nil {
-						slog.Warn("failed to set level/hierarchy_path", "id", artifact.ID, "error", execErr)
+						logger.Warn("failed to set level/hierarchy_path", "id", artifact.ID, "error", execErr)
 					}
 				}
 
@@ -185,7 +219,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 						continue
 					}
 					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
-						slog.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+						logger.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
 					}
 				}
 				for _, link := range artifact.Links {
@@ -193,7 +227,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 						continue
 					}
 					if !isValidLinkType(link.LinkType) {
-						slog.Warn("rehydration: skipping invalid link_type",
+						logger.Warn("rehydration: skipping invalid link_type",
 							"source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType)
 						continue
 					}
@@ -201,7 +235,7 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB) (int, erro
 						`INSERT OR IGNORE INTO item_links (source_id, target_id, link_type) VALUES (?, ?, ?)`,
 						artifact.ID, link.TargetID, link.LinkType,
 					); execErr != nil {
-						slog.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
+						logger.Warn("failed to upsert link", "source_id", artifact.ID, "target_id", link.TargetID, "link_type", link.LinkType, "error", execErr)
 					}
 				}
 

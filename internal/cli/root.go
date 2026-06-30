@@ -309,7 +309,12 @@ force the disposable cache to match the file-backed source of truth.`,
 			}
 			defer ws.Close()
 
-			count, err := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+			// 070.002-T: thread the CLI's configured logger through Rehydrate's
+			// dependency-injection seam. applyLogLevel has already installed the
+			// level/format-configured handler as the slog default, so this passes
+			// the same logger explicitly rather than relying on the implicit
+			// global fallback.
+			count, err := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB, db.WithLogger(slog.Default()))
 			if err != nil {
 				return fmt.Errorf("sync: %w", err)
 			}
