@@ -322,13 +322,16 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 	}
 	defer func() { _ = unlock() }()
 
-	return harvestStashEntryLocked(ctx, ws, harvestOpts, path)
+	return harvestStashEntryLocked(ctx, ws, harvestOpts, path, nil)
 }
 
 // harvestStashEntryLocked is the internal harvest implementation that assumes the
 // caller already holds the stash lock. It must not acquire the lock itself to
 // avoid deadlock on the non-reentrant sync.Mutex.
-func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts HarvestStashOptions, path string) (*HarvestedStashResult, error) {
+//
+// cache, when non-nil, shares one canonical-uniqueness scan across a batch
+// harvest (070.001-T); a nil cache makes the single create scan per call.
+func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts HarvestStashOptions, path string, cache *CanonicalCache) (*HarvestedStashResult, error) {
 	entry, remaining, err := removeStashEntry(ws.RootPath, harvestOpts.StashID)
 	if err != nil {
 		return nil, err
@@ -349,6 +352,9 @@ func harvestStashEntryLocked(ctx context.Context, ws *Workspace, harvestOpts Har
 		fields["source_deliberation_id"] = entry.DeliberationID
 	}
 	createOpts := []Option{WithFields(fields)}
+	if cache != nil {
+		createOpts = append(createOpts, WithCanonicalCache(cache))
+	}
 	if entry.Priority != "" {
 		createOpts = append(createOpts, WithPriority(entry.Priority))
 	}
@@ -461,6 +467,16 @@ func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStas
 		return nil, err
 	}
 	results := make([]HarvestedStashResult, 0, len(fetched.Entries))
+	// 070.001-T: scan the canonical artifact set once for the whole batch and
+	// share it across every create, instead of re-walking queue+archive on each
+	// harvested entry (O(files) per entry -> O(N^2) on a large backlog).
+	var cache *CanonicalCache
+	if len(fetched.Entries) > 0 {
+		cache, err = NewCanonicalCache(ws)
+		if err != nil {
+			return nil, fmt.Errorf("prepare batch harvest canonical cache: %w", err)
+		}
+	}
 	for _, entry := range fetched.Entries {
 		result, err := harvestStashEntryLocked(ctx, ws, HarvestStashOptions{
 			StashID:      entry.ID,
@@ -469,7 +485,7 @@ func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStas
 			Description:  opts.Description,
 			Status:       opts.Status,
 			ParentID:     opts.ParentID,
-		}, path)
+		}, path, cache)
 		if err != nil {
 			return nil, err
 		}

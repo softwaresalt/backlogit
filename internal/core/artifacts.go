@@ -31,6 +31,10 @@ type createOptions struct {
 	Dependencies []string
 	References   []string
 	Commit       string
+
+	// canonicalCache, when set via WithCanonicalCache, shares a single canonical
+	// scan across a bulk-create batch instead of scanning once per create.
+	canonicalCache *CanonicalCache
 }
 
 // WithParent sets the parent artifact ID.
@@ -163,9 +167,22 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	// Scan the full canonical artifactSearchDirs set once and fail loud if the
 	// resolved ID already exists on disk, rather than letting a later write
 	// silently overwrite a distinct artifact that shares the ID/filename.
-	canonical, scanErr := scanCanonicalArtifacts(ws)
-	if scanErr != nil {
-		return nil, fmt.Errorf("create artifact %q: canonical uniqueness scan: %w", artifactID, scanErr)
+	//
+	// 070.001-T: bulk callers (migrate import loop, priority harvest) pass a
+	// CanonicalCache via WithCanonicalCache so this O(files) scan runs once per
+	// batch instead of once per create (avoiding the O(N^2) blowup on a large
+	// backlog). Each successful create records its ID back into the cache below,
+	// so within-batch collisions are still detected without a re-scan. Single
+	// interactive creates pass no cache and scan per call, exactly as before.
+	var canonical map[string][]artifactRef
+	if o.canonicalCache != nil {
+		canonical = o.canonicalCache.refs
+	} else {
+		scanned, scanErr := scanCanonicalArtifactsFn(ws)
+		if scanErr != nil {
+			return nil, fmt.Errorf("create artifact %q: canonical uniqueness scan: %w", artifactID, scanErr)
+		}
+		canonical = scanned
 	}
 	if existing := canonical[artifactID]; len(existing) > 0 {
 		return nil, fmt.Errorf("create artifact %q: %w", artifactID, blerrors.ErrIDCollision)
@@ -296,6 +313,13 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if err := os.Rename(tmpPath, filePath); err != nil {
 		os.Remove(tmpPath)
 		return nil, fmt.Errorf("rename artifact file: %w", err)
+	}
+
+	// 070.001-T: when this create is part of a batch, register the freshly
+	// written ID into the shared cache so later creates in the same batch detect
+	// a collision against it without re-scanning the filesystem.
+	if o.canonicalCache != nil {
+		o.canonicalCache.record(artifactID, filePath)
 	}
 
 	// Upsert to the SQLite index so that NextID and query-based callers see
