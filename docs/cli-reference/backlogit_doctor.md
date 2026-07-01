@@ -24,6 +24,23 @@ records (rewrites them to their canonical queue restore path). Use
 --fix-malformed to clear malformed archived_from records that have no restore
 target. Both are destructive, CLI-only migrations: not exposed on the MCP doctor tool.
 
+Target mode (--target {file}) validates ONE .backlogit artifact file against
+the header-def schema, with a 5s deadline, and returns a versioned, gate-stable
+exit code:
+
+  0  pass
+  1  validation fail (required field errors)
+  2  timeout (validation exceeded the 5s deadline)
+  3  scope or IO error (path outside .backlogit storage root, unreadable/undecodable)
+  4  busy (the task's advisory lock is held by a concurrent operation)
+
+Target mode confines the path to the .backlogit storage root and never reads
+outside it. With --format json it emits a versioned target-mode schema
+(mode:"target"). autoharness's subprocess timeout_seconds: 5 is the
+authoritative outer bound. On repeated gate failure, transition the task with
+the existing 'backlogit move {id} --status blocked' (and '--status queued' to
+resume) — no new command; retry policy is owned by the caller.
+
 ```text
 backlogit doctor [flags]
 ```
@@ -36,6 +53,8 @@ backlogit doctor [flags]
   backlogit doctor --fix-orphans
   backlogit doctor --fix-archived-from
   backlogit doctor --format json
+  backlogit doctor --target .backlogit/queue/001.001-T.md
+  backlogit doctor --target .backlogit/queue/001.001-T.md --format json
 ```
 
 ### Options
@@ -49,6 +68,7 @@ backlogit doctor [flags]
       --fix-orphans           archive orphaned artifacts instead of just reporting them
       --format string         output format: text or json (default "text")
   -h, --help                  help for doctor
+      --target string         validate a single .backlogit artifact file against header-def (versioned exit-code gate)
 ```
 
 ### Options inherited from parent commands

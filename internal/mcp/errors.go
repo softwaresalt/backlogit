@@ -83,6 +83,7 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 	case errors.Is(err, corerrors.ErrShipmentConflict),
 		errors.Is(err, corerrors.ErrItemAlreadyAssigned),
 		errors.Is(err, corerrors.ErrCannotReturnItem),
+		errors.Is(err, core.ErrTaskBusy),
 		errors.Is(err, corerrors.ErrChildrenNotTerminal):
 		return Conflict(err.Error())
 	case errors.Is(err, corerrors.ErrValidation),

@@ -61,6 +61,11 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Values:  []string{"low", "medium", "high", "critical"},
 						Default: "medium",
 					},
+					"size": {
+						Type:     "enum",
+						Values:   []string{"XS", "S", "M", "L", "XL"},
+						Optional: true,
+					},
 				},
 			},
 			"review": {
