@@ -8,6 +8,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -105,14 +106,19 @@ func validateSizeValue(ws *Workspace, artifactType, size string) error {
 	}
 	def, ok := schema["size"]
 	if !ok {
-		return fmt.Errorf("artifact type %q does not define a size field", artifactType)
+		// User-correctable: this artifact type simply has no size field. Wrap
+		// ErrValidation so the MCP layer surfaces it as validation_failed (422)
+		// rather than an opaque internal (500) error.
+		return fmt.Errorf("artifact type %q does not define a size field: %w", artifactType, blerrors.ErrValidation)
 	}
 	for _, v := range def.Values {
 		if v == size {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid size %q: must be one of %v", size, def.Values)
+	// User-correctable: the supplied value is not in the enum. Wrap
+	// ErrValidation for a deterministic validation_failed (422) MCP response.
+	return fmt.Errorf("invalid size %q: must be one of %v: %w", size, def.Values, blerrors.ErrValidation)
 }
 
 // setDecodedCustomField sets key=value inside the decoded frontmatter's

@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Pre-merge runtime verification for shipment 071-S — deterministic-gates slice (PR #156). Nine TDD units proven via full go test suite (green), vet/lint/gofmt clean, and isolated-workspace dogfooding of the freshly built binary: doctor --target returns the versioned exit-code contract (0 pass / 1 validation / 3 scope|io / 4 busy), and update --size performs a body-preserving mutation with custom_fields.size set while title/status/priority survive in both the on-disk frontmatter and the SQLite index (full-row UpsertItem reconstruction). Live aggregate doctor shows no regression across the workspace.'
+description: 'Pre-merge runtime verification for shipment 071-S — deterministic-gates slice (PR #156). Nine TDD units proven via full go test suite (green), vet/lint/gofmt clean, and isolated-workspace dogfooding of the freshly built binary: doctor --target returns the versioned exit-code contract (0 pass / 1 validation / 2 timeout / 3 scope|io / 4 busy), and update --size performs a body-preserving mutation with custom_fields.size set while title/status/priority survive in both the on-disk frontmatter and the SQLite index (full-row UpsertItem reconstruction). Live aggregate doctor shows no regression across the workspace.'
 doc_type: closure
 docline:
     ms.date: 2026-06-30T00:00:00Z

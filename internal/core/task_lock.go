@@ -112,7 +112,15 @@ func lockTaskFile(taskFilePath string) (unlock func() error, err error) {
 		}
 		// Stale (older than the TTL) → crash residue: reclaim it once.
 		slog.Warn("removing stale task lock file", "path", lockPath, "age", time.Since(info.ModTime()))
-		_ = os.Remove(lockPath)
+		if rmErr := os.Remove(lockPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			// Failing to remove the stale sidecar (permission denied, read-only
+			// filesystem) is an IO fault, not contention. If we fell through, the
+			// re-OpenFile below would hit EEXIST and be misclassified as busy,
+			// breaking the busy-vs-IO exit-code contract (busy=4 vs io=3). Surface
+			// it as an ordinary error instead.
+			mu.Unlock()
+			return nil, fmt.Errorf("remove stale task lock sidecar %s: %w", lockPath, rmErr)
+		}
 		f, createErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if createErr != nil {
 			mu.Unlock()

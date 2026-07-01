@@ -7,6 +7,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -122,4 +123,16 @@ func TestHandleUpdateItem_Size_InvalidEnum(t *testing.T) {
 	result, err := s.handleUpdateItem(ctx, req)
 	require.NoError(t, err)
 	require.True(t, result.IsError, "out-of-enum size must be an error result")
+
+	// An out-of-enum size is user-correctable and MUST surface as
+	// validation_failed (422), not an opaque internal (500) error, so callers
+	// can handle it deterministically.
+	require.NotEmpty(t, result.Content)
+	text, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok, "expected text content, got %T", result.Content[0])
+	var resp struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &resp))
+	assert.Equal(t, "validation_failed", resp.Error, "invalid size must map to validation_failed")
 }
