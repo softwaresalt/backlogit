@@ -11,7 +11,9 @@ import (
 func main() {
 	initLogger()
 	if err := cli.Execute(); err != nil {
-		os.Exit(1)
+		// Honor an explicit exit code (e.g. doctor --target's versioned
+		// 0/1/2/3/4 contract); fall back to 1 for generic failures.
+		os.Exit(cli.ExitCodeFor(err))
 	}
 }
 
