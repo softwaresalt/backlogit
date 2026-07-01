@@ -46,6 +46,7 @@ backlogit update <id> [flags]
       --owner string            owner
       --priority string         new priority
       --section stringArray     section update as name=value (repeatable)
+      --size string             T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags
       --sprint string           sprint ID
       --status string           new status
       --title string            new title
