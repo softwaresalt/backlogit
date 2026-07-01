@@ -32,6 +32,7 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		owner         string
 		labels        string
 		commit        string
+		size          string
 	)
 
 	cmd := &cobra.Command{
@@ -59,6 +60,32 @@ replacing the rest of the document body.`,
 				return fmt.Errorf("open workspace: %w", err)
 			}
 			defer ws.Close()
+
+			// --size is a single-purpose, body-preserving mutation routed through
+			// core.SetArtifactSize. It is MUTUALLY EXCLUSIVE with every other
+			// frontmatter-mutating flag (and --section), because those route through
+			// the generic UpdateArtifact -> WriteArtifactFile rebuild path; running
+			// both in one invocation would double-write and negate body
+			// preservation. The exclusion is checked BEFORE any write.
+			if cmd.Flags().Changed("size") {
+				if conflicts := conflictingSizeFlags(cmd); len(conflicts) > 0 {
+					return fmt.Errorf(
+						"--size cannot be combined with %s: run the size mutation separately to preserve the body",
+						strings.Join(conflicts, ", "))
+				}
+				if _, sizeErr := core.SetArtifactSize(ctx, ws, id, size); sizeErr != nil {
+					// A busy task lock surfaces the same non-zero exit code as the
+					// doctor --target table (4) instead of blocking, so the
+					// autoharness sizing hook sees deterministic contention.
+					if errors.Is(sizeErr, core.ErrTaskBusy) {
+						cmd.SilenceErrors = true
+						return &ExitError{Code: 4, Msg: fmt.Sprintf("task %s is busy: %v", id, sizeErr)}
+					}
+					return sizeErr
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+				return nil
+			}
 
 			// Build frontmatter updates map.
 			updates := map[string]any{}
@@ -209,5 +236,23 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&owner, "owner", "", "owner")
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
+	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
 	return cmd
+}
+
+// conflictingSizeFlags returns the set of frontmatter-mutating flags (rendered as
+// --name) that were set alongside --size. --size is single-purpose, so any of
+// these makes the invocation ambiguous and must error before any write.
+func conflictingSizeFlags(cmd *cobra.Command) []string {
+	candidates := []string{
+		"title", "status", "priority", "harness-status", "description",
+		"sprint", "assigned-to", "owner", "labels", "commit", "section",
+	}
+	var conflicts []string
+	for _, name := range candidates {
+		if cmd.Flags().Changed(name) {
+			conflicts = append(conflicts, "--"+name)
+		}
+	}
+	return conflicts
 }
