@@ -66,6 +66,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("owner", mcplib.Description("Owner")),
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
+			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
 		),
 		s.handleUpdateItem,
@@ -450,6 +451,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
 			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
+			mcplib.WithString("target", mcplib.Description("Validate a single artifact file (path relative to the workspace, confined to the storage root) and return a versioned DoctorTargetResult instead of a full workspace scan")),
 		),
 		s.handleDoctor,
 	)
@@ -730,6 +732,20 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	sections, sectionsErr := ParseSectionsParam(request.Params.Arguments)
 	if sectionsErr != nil {
 		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
+	}
+	// size is a single-purpose, body-preserving mutation routed through
+	// core.SetArtifactSize. It is mutually exclusive with generic field updates and
+	// section writes, which go through the rebuild path; combining them would
+	// double-write and negate body preservation.
+	if size, ok := request.Params.Arguments["size"].(string); ok && size != "" {
+		if len(updates) > 0 || sections != nil {
+			return ValidationFailed("size cannot be combined with other field updates or sections"), nil
+		}
+		artifact, err := core.SetArtifactSize(ctx, s.Workspace, id, size)
+		if err != nil {
+			return domainError("set artifact size", err), nil
+		}
+		return toolResultJSON(artifact)
 	}
 	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
 	if err != nil {
@@ -1773,6 +1789,17 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	ws, result := s.requireWorkspace(ctx)
 	if result != nil {
 		return result, nil
+	}
+
+	// target mode: validate a single artifact file and return a structured,
+	// versioned result (MCP surfaces the DoctorTargetResult, not a process exit
+	// code — the exit-code table is the CLI's contract).
+	if target, ok := request.Params.Arguments["target"].(string); ok && target != "" {
+		res, err := core.DoctorTarget(ws, target)
+		if err != nil {
+			return InternalError(fmt.Sprintf("doctor target: %v", err)), nil
+		}
+		return toolResultJSON(res)
 	}
 
 	checkOrphans := true

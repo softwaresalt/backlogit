@@ -49,6 +49,7 @@ operations:
       labels: "labels"
       assignee: "assigned_to"
       priority: "priority"
+      size: "size"
 
   move_task:
     mcp_tool: "backlogit_move_item"
@@ -388,6 +389,7 @@ operations:
       check_orphans: "check_orphans"
       check_duplicates: "check_duplicates"
       fix_orphans: "fix_orphans"
+      target: "target"
 
   cleanup_checkpoints:
     mcp_tool: "backlogit_cleanup_checkpoints"
