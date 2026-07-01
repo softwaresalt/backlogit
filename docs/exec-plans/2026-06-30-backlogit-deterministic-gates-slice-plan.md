@@ -2,6 +2,8 @@
 title: "backlogit Deterministic-Gates slice — implementation plan"
 description: "Doctor target-mode, per-task locking, task size schema, and body-preserving size mutation CLI (+ MCP parity)"
 source: "docs/decisions/2026-06-30-backlogit-deterministic-gates-slice-deliberation.md"
+doc_type: "plan"
+ingested_at: "2026-06-30T00:00:00Z"
 design_doc: "docs/design-docs/autoharness-evals-gates-design.md"
 stash_id: "AE0838A9"
 slug: "backlogit-deterministic-gates-slice"

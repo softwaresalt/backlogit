@@ -1,3 +1,11 @@
+---
+title: "Design Document: Deterministic Gates, Telemetry & Evaluation Engine"
+source: "docs/design-docs/autoharness-evals-gates-design.md"
+doc_type: "design"
+ingested_at: "2026-06-30T00:00:00Z"
+description: "Cross-repo design for deterministic gating, telemetry, and evaluation engine (autoharness, backlogit, agent-engram / docline)"
+---
+
 # **Design Document: Deterministic Gates, Telemetry, & Evaluation Engine**
 
 **Date:** 2026-06-30

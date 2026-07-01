@@ -1,5 +1,8 @@
 ---
 title: "backlogit slice of Deterministic Gates, Telemetry & Evaluation Engine"
+source: "docs/design-docs/autoharness-evals-gates-design.md"
+doc_type: "decision"
+ingested_at: "2026-06-30T00:00:00Z"
 description: "Scope, design decisions, and open-question resolutions for the backlogit-owned portion of the Deterministic Gates initiative"
 topic: "Deterministic Gates state authority in backlogit: doctor target-mode, per-task locking, task size schema + mutation CLI"
 depth: "standard"
