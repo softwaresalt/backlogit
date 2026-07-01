@@ -79,3 +79,21 @@ func TestTaskLock_StaleSidecarRecoveredWithWarn(t *testing.T) {
 
 	require.NoError(t, unlock())
 }
+
+// TestTaskLock_IOErrorNotClassifiedAsBusy is the regression guard for the
+// exit-code contract: a sidecar-creation failure for a reason OTHER than
+// "already exists" (here, a missing parent directory → ENOENT) must surface as
+// an ordinary error, NOT ErrTaskBusy. Misclassifying it as busy would map a
+// genuine IO fault to exit 4 instead of exit 3 and trigger misleading retries.
+func TestTaskLock_IOErrorNotClassifiedAsBusy(t *testing.T) {
+	dir := t.TempDir()
+	// Parent directory intentionally does NOT exist, so O_CREATE|O_EXCL fails
+	// with ENOENT (not EEXIST).
+	taskPath := filepath.Join(dir, "no-such-dir", "100.004-T.md")
+
+	unlock, err := lockTaskFile(taskPath)
+	assert.Nil(t, unlock)
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrTaskBusy),
+		"a non-EEXIST IO error must NOT be reported as busy, got %v", err)
+}

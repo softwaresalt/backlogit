@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,8 +111,16 @@ func DoctorTarget(ws *Workspace, filePath string) (*DoctorTargetResult, error) {
 	// a mid-write read and never a block. Released via defer on every path.
 	unlock, lockErr := lockTaskFile(absTarget)
 	if lockErr != nil {
-		res := newDoctorTargetResult(filePath, DoctorTargetBusy)
-		res.Message = fmt.Sprintf("task is locked by a concurrent operation: %v", lockErr)
+		if errors.Is(lockErr, ErrTaskBusy) {
+			res := newDoctorTargetResult(filePath, DoctorTargetBusy)
+			res.Message = fmt.Sprintf("task is locked by a concurrent operation: %v", lockErr)
+			return res, nil
+		}
+		// A non-contention lock failure (e.g. permission/IO error creating the
+		// sidecar) is an IO fault (exit 3), not busy (exit 4): preserve the
+		// exit-code contract rather than reporting misleading contention.
+		res := newDoctorTargetResult(filePath, DoctorTargetIO)
+		res.Message = fmt.Sprintf("acquire task lock: %v", lockErr)
 		return res, nil
 	}
 	defer func() { _ = unlock() }()
@@ -177,8 +186,35 @@ func confineToStorageRoot(ws *Workspace, filePath string) (absTarget string, inS
 		// The storage root directory itself is not a validatable artifact file.
 		return absTarget, false, nil
 	}
-	inScope = strings.HasPrefix(absTarget, absStorage+string(filepath.Separator))
-	return absTarget, inScope, nil
+	if !strings.HasPrefix(absTarget, absStorage+string(filepath.Separator)) {
+		return absTarget, false, nil
+	}
+
+	// Defense-in-depth against symlink escapes: lexical prefix matching alone can
+	// be bypassed if a component under the storage root is a symlink pointing
+	// outside it, because os.ReadFile follows symlinks. Resolve realpaths on both
+	// sides and require containment — mirroring repairArchivedFrom's EvalSymlinks
+	// + pathContained guard (doctor.go).
+	realRoot, rootErr := filepath.EvalSymlinks(absStorage)
+	if rootErr != nil {
+		realRoot = absStorage
+	}
+	realTarget, evalErr := filepath.EvalSymlinks(absTarget)
+	if evalErr != nil {
+		// The leaf may legitimately not exist yet (a missing file is an IO, not a
+		// scope, failure downstream). Resolve the parent directory and re-attach
+		// the base so an intermediate symlinked directory is still caught; if even
+		// the parent is unresolvable, accept the lexical result.
+		realParent, perr := filepath.EvalSymlinks(filepath.Dir(absTarget))
+		if perr != nil {
+			return absTarget, true, nil
+		}
+		realTarget = filepath.Join(realParent, filepath.Base(absTarget))
+	}
+	if !pathContained(realRoot, realTarget) {
+		return absTarget, false, nil
+	}
+	return absTarget, true, nil
 }
 
 // parseMissingFields extracts the field names from a ValidateArtifactFields

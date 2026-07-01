@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -57,9 +58,12 @@ func taskLockSidecarPath(taskFilePath string) string {
 // creates an O_CREATE|O_EXCL sidecar for cross-process safety. A sidecar older
 // than taskStaleLockTTL is treated as crash residue: it is removed with a WARN
 // and creation is retried once. On a held mutex or a live sidecar it returns
-// ErrTaskBusy without blocking. The returned unlock releases BOTH the sidecar
-// and the mutex and is safe to call multiple times; callers MUST defer it so
-// every error path releases both.
+// ErrTaskBusy without blocking. A sidecar-creation failure for any reason OTHER
+// than "already exists" (permission, missing directory, read-only filesystem)
+// is returned as an ordinary wrapped error — NOT ErrTaskBusy — so gate consumers
+// preserve the busy-vs-IO exit-code contract. The returned unlock releases BOTH
+// the sidecar and the mutex and is safe to call multiple times; callers MUST
+// defer it so every error path releases both.
 func lockTaskFile(taskFilePath string) (unlock func() error, err error) {
 	resolved, err := filepath.Abs(taskFilePath)
 	if err != nil {
@@ -76,18 +80,33 @@ func lockTaskFile(taskFilePath string) (unlock func() error, err error) {
 	lockPath := taskLockSidecarPath(resolved)
 	f, createErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if createErr != nil {
-		// The sidecar exists. Reclaim it only if it is older than the TTL.
-		if info, statErr := os.Stat(lockPath); statErr == nil {
-			age := time.Since(info.ModTime())
-			if age > taskStaleLockTTL {
-				slog.Warn("removing stale task lock file", "path", lockPath, "age", age)
-				_ = os.Remove(lockPath)
-				f, createErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-			}
+		// Only an "already exists" (EEXIST) failure means contention. Any other
+		// error (permission denied, missing parent directory, read-only
+		// filesystem) is a genuine IO fault and must NOT be classified as busy:
+		// doing so would break the gate exit-code contract (busy=4 vs io=3) and
+		// trigger misleading contention retries. Surface those as ordinary errors.
+		if !errors.Is(createErr, os.ErrExist) {
+			mu.Unlock()
+			return nil, fmt.Errorf("create task lock sidecar %s: %w", lockPath, createErr)
 		}
+		// The sidecar exists. Reclaim it only if it is older than the TTL
+		// (crash residue); an in-TTL sidecar is a live lock → busy.
+		info, statErr := os.Stat(lockPath)
+		if statErr != nil || time.Since(info.ModTime()) <= taskStaleLockTTL {
+			mu.Unlock()
+			return nil, ErrTaskBusy
+		}
+		slog.Warn("removing stale task lock file", "path", lockPath, "age", time.Since(info.ModTime()))
+		_ = os.Remove(lockPath)
+		f, createErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if createErr != nil {
 			mu.Unlock()
-			return nil, fmt.Errorf("%w: %v", ErrTaskBusy, createErr)
+			if errors.Is(createErr, os.ErrExist) {
+				// Another operation re-created the sidecar between our remove and
+				// recreate — genuine contention.
+				return nil, ErrTaskBusy
+			}
+			return nil, fmt.Errorf("recreate task lock sidecar %s: %w", lockPath, createErr)
 		}
 	}
 	_ = f.Close()

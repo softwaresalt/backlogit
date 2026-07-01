@@ -108,3 +108,29 @@ func TestDoctorTarget_UnreadableFileIsIO(t *testing.T) {
 	assert.False(t, res.OK)
 	assert.Equal(t, DoctorTargetIO, res.Kind)
 }
+
+// TestDoctorTarget_SymlinkEscapeRejectedAsScope is the regression guard for
+// symlink-based scope confinement bypass: a path that is lexically inside
+// .backlogit but is a symlink to a file OUTSIDE the storage root must be
+// rejected as scope (not followed and read), because os.ReadFile follows
+// symlinks.
+func TestDoctorTarget_SymlinkEscapeRejectedAsScope(t *testing.T) {
+	ws, queueDir := newTargetTestWorkspace(t)
+
+	// A secret file well outside the workspace storage root.
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "secret.md")
+	require.NoError(t, os.WriteFile(outside, []byte(validTaskContent), 0o644))
+
+	// A symlink INSIDE .backlogit/queue pointing at the outside file.
+	link := filepath.Join(queueDir, "100.009-T.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks not creatable in this environment: %v", err)
+	}
+
+	res, err := DoctorTarget(ws, link)
+	require.NoError(t, err)
+	assert.False(t, res.OK, "a symlink escaping the storage root must not pass: %+v", res)
+	assert.Equal(t, DoctorTargetScope, res.Kind,
+		"symlink escape must be rejected as scope, not read through: %+v", res)
+}
