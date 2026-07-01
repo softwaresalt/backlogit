@@ -60,6 +60,15 @@ types:
           - medium
           - high
         default: medium
+      size:
+        type: enum
+        values:
+          - XS
+          - S
+          - M
+          - L
+          - XL
+        optional: true
   review:
     prefix: R
     suffix: "-R"
