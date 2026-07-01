@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // domainErrorType calls domainError and returns the "error" field from the JSON body.
@@ -74,6 +76,8 @@ func TestDomainError_Conflict_MapsCorrectly(t *testing.T) {
 		{name: "ErrItemAlreadyAssigned", err: corerrors.ErrItemAlreadyAssigned},
 		{name: "ErrCannotReturnItem", err: corerrors.ErrCannotReturnItem},
 		{name: "ErrChildrenNotTerminal", err: corerrors.ErrChildrenNotTerminal},
+		{name: "ErrTaskBusy", err: core.ErrTaskBusy},
+		{name: "wrapped ErrTaskBusy", err: fmt.Errorf("set artifact size: %w", core.ErrTaskBusy)},
 		{name: "wrapped ErrShipmentConflict", err: fmt.Errorf("wrap: %w", corerrors.ErrShipmentConflict)},
 		{name: "wrapped ErrChildrenNotTerminal", err: fmt.Errorf("wrap: %w", corerrors.ErrChildrenNotTerminal)},
 	}
