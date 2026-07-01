@@ -44,28 +44,70 @@ Body.
 // timeout kind and exit code 2 (a bare context.WithTimeout would not interrupt
 // synchronous work, so this proves the select actually races the deadline).
 func TestRunDoctorTarget_TimeoutIsExit2(t *testing.T) {
-	slow := func(_ *core.Workspace, target string) (*core.DoctorTargetResult, error) {
+	slow := func(_ *core.Workspace, target, _ string) *core.DoctorTargetResult {
 		time.Sleep(250 * time.Millisecond)
-		return core.NewDoctorTargetResult(target, core.DoctorTargetPass), nil
+		return core.NewDoctorTargetResult(target, core.DoctorTargetPass)
 	}
 	var buf bytes.Buffer
-	code, res := runDoctorTargetWithTimeout(context.Background(), nil, "x.md", "text",
+	code, res := runDoctorTargetWithTimeout(context.Background(), nil, "x.md", "x.md", "text",
 		5*time.Millisecond, slow, &buf)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, core.DoctorTargetTimeout, res.Kind)
 }
 
-// TestRunDoctorTarget_BusyIsExit4 covers the busy → exit 4 mapping through the
-// runner (a held task lock elsewhere yields the busy kind).
-func TestRunDoctorTarget_BusyIsExit4(t *testing.T) {
-	busy := func(_ *core.Workspace, target string) (*core.DoctorTargetResult, error) {
-		return core.NewDoctorTargetResult(target, core.DoctorTargetBusy), nil
+// TestRunDoctorTargetMode_TimeoutDoesNotStrandLock is the regression for the
+// Copilot cycle-2 finding: on timeout, the still-running validation goroutine
+// must NOT hold the task lock. Because runDoctorTargetMode owns the lock in its
+// synchronous frame (PrepareDoctorTarget + defer unlock) and only the lock-free
+// validate runs in the goroutine, the sidecar must be gone once the mode
+// function returns — even though the (leaked) goroutine sleeps past the deadline.
+func TestRunDoctorTargetMode_TimeoutDoesNotStrandLock(t *testing.T) {
+	root, queueDir := setupDoctorTargetWorkspace(t)
+	require.NoError(t, os.WriteFile(filepath.Join(queueDir, "100.001-T.md"), []byte(cliValidTask), 0o644))
+
+	ws, err := core.NewWorkspace(context.Background(), root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+
+	slow := func(_ *core.Workspace, target, _ string) *core.DoctorTargetResult {
+		time.Sleep(300 * time.Millisecond)
+		return core.NewDoctorTargetResult(target, core.DoctorTargetPass)
 	}
 	var buf bytes.Buffer
-	code, res := runDoctorTargetWithTimeout(context.Background(), nil, "x.md", "text",
-		doctorTargetTimeout, busy, &buf)
-	assert.Equal(t, 4, code)
-	assert.Equal(t, core.DoctorTargetBusy, res.Kind)
+	code, res := runDoctorTargetMode(context.Background(), ws, ".backlogit/queue/100.001-T.md",
+		"text", 5*time.Millisecond, slow, &buf)
+	assert.Equal(t, 2, code)
+	assert.Equal(t, core.DoctorTargetTimeout, res.Kind)
+
+	// The deferred unlock in runDoctorTargetMode's frame has already run by the
+	// time it returns, so the lock sidecar must not survive the timeout.
+	sidecar := filepath.Join(queueDir, ".100.001-T.md.lock")
+	_, statErr := os.Stat(sidecar)
+	assert.Truef(t, errors.Is(statErr, os.ErrNotExist),
+		"timeout must not strand the lock sidecar (stat err: %v)", statErr)
+}
+
+// TestDoctorTargetCLI_BusyExit4 covers the busy → exit 4 mapping end-to-end
+// through the full command: a fresh (in-TTL) lock sidecar simulates a concurrent
+// holder, so PrepareDoctorTarget short-circuits to busy BEFORE the timeout
+// wrapper is ever reached.
+func TestDoctorTargetCLI_BusyExit4(t *testing.T) {
+	root, queueDir := setupDoctorTargetWorkspace(t)
+	require.NoError(t, os.WriteFile(filepath.Join(queueDir, "100.001-T.md"), []byte(cliValidTask), 0o644))
+	// Plant a fresh sidecar to simulate a live concurrent lock holder.
+	require.NoError(t, os.WriteFile(filepath.Join(queueDir, ".100.001-T.md.lock"), []byte("held"), 0o644))
+
+	cmd := NewRootCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--cwd", root, "doctor", "--target", ".backlogit/queue/100.001-T.md"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	var ee *ExitError
+	require.True(t, errors.As(err, &ee), "expected ExitError, got %T: %v", err, err)
+	assert.Equal(t, 4, ee.Code)
 }
 
 func TestDoctorTargetExitCode_Table(t *testing.T) {

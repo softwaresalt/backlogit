@@ -19,9 +19,11 @@ import (
 // deterministic on its own.
 const doctorTargetTimeout = 5 * time.Second
 
-// doctorTargetFunc is the validation seam so the timeout/select path can be
-// exercised non-vacuously in tests with a slow stub.
-type doctorTargetFunc func(ws *core.Workspace, target string) (*core.DoctorTargetResult, error)
+// doctorTargetFunc is the LOCK-FREE validation seam so the timeout/select path
+// can be exercised non-vacuously in tests with a slow stub. The lock is owned by
+// runDoctorTargetMode's synchronous frame (see PrepareDoctorTarget), never by
+// this function, so an abandoned timeout run strands nothing.
+type doctorTargetFunc func(ws *core.Workspace, target, absTarget string) *core.DoctorTargetResult
 
 func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
@@ -91,8 +93,8 @@ resume) — no new command; retry policy is owned by the caller.`,
 				}
 				defer ws.Close()
 
-				code, res := runDoctorTargetWithTimeout(ctx, ws, targetFlag,
-					outputFormatFlag, doctorTargetTimeout, core.DoctorTarget, cmd.OutOrStdout())
+				code, res := runDoctorTargetMode(ctx, ws, targetFlag,
+					outputFormatFlag, doctorTargetTimeout, core.ValidateDoctorTargetResolved, cmd.OutOrStdout())
 				if code == 0 {
 					return nil
 				}
@@ -152,17 +154,46 @@ resume) — no new command; retry policy is owned by the caller.`,
 	return cmd
 }
 
-// runDoctorTargetWithTimeout runs validate(ws, target) under a real deadline
-// enforced via a goroutine + select on ctx.Done(). A bare context.WithTimeout
-// cannot interrupt synchronous I/O, so the work runs in a goroutine and the
-// select races the deadline. The result channel is BUFFERED (cap 1) so that on
-// timeout the still-running goroutine can send and exit rather than leaking
-// blocked on the channel. It writes the versioned output and returns the mapped
-// exit code plus the result used for the outcome summary.
-func runDoctorTargetWithTimeout(
+// runDoctorTargetMode owns the doctor --target lock lifecycle in a SYNCHRONOUS
+// frame whose deferred unlock is guaranteed to run before the command returns
+// (and thus before main's os.Exit). It confines + locks the target via
+// core.PrepareDoctorTarget; a scope/busy/IO short-circuit is handled directly.
+// Only the lock-free read+validate runs under the goroutine-enforced timeout, so
+// a timed-out (abandoned) validation never strands the lock sidecar.
+func runDoctorTargetMode(
 	ctx context.Context,
 	ws *core.Workspace,
 	target, format string,
+	timeout time.Duration,
+	validate doctorTargetFunc,
+	w io.Writer,
+) (int, *core.DoctorTargetResult) {
+	absTarget, unlock, short := core.PrepareDoctorTarget(ws, target)
+	if short != nil {
+		writeDoctorTargetOutput(w, short, format)
+		return doctorTargetExitCode(short), short
+	}
+	// Deferred here — in the command's synchronous call frame — so the sidecar
+	// is released even if the validation below times out. This is the whole
+	// point of splitting Prepare (locked) from Validate (lock-free).
+	defer func() { _ = unlock() }()
+
+	return runDoctorTargetWithTimeout(ctx, ws, target, absTarget, format, timeout, validate, w)
+}
+
+// runDoctorTargetWithTimeout runs validate(ws, target, absTarget) under a real
+// deadline enforced via a goroutine + select on ctx.Done(). A bare
+// context.WithTimeout cannot interrupt synchronous I/O, so the work runs in a
+// goroutine and the select races the deadline. The result channel is BUFFERED
+// (cap 1) so that on timeout the still-running goroutine can send and exit
+// rather than leaking blocked on the channel. validate MUST be lock-free (the
+// lock is owned by runDoctorTargetMode) so an abandoned run strands nothing. It
+// writes the versioned output and returns the mapped exit code plus the result
+// used for the outcome summary.
+func runDoctorTargetWithTimeout(
+	ctx context.Context,
+	ws *core.Workspace,
+	target, absTarget, format string,
 	timeout time.Duration,
 	validate doctorTargetFunc,
 	w io.Writer,
@@ -172,16 +203,12 @@ func runDoctorTargetWithTimeout(
 
 	resCh := make(chan *core.DoctorTargetResult, 1)
 	go func() {
-		res, err := validate(ws, target)
-		if err != nil || res == nil {
-			// DoctorTarget classifies every real outcome into res; a non-nil
-			// err is unexpected → bucket as scope/IO (exit 3).
-			msg := "validation returned no result"
-			if err != nil {
-				msg = err.Error()
-			}
+		res := validate(ws, target, absTarget)
+		if res == nil {
+			// ValidateDoctorTargetResolved classifies every real outcome into
+			// res; a nil result is unexpected → bucket as scope/IO (exit 3).
 			fallback := core.NewDoctorTargetResult(target, core.DoctorTargetIO)
-			fallback.Message = msg
+			fallback.Message = "validation returned no result"
 			res = fallback
 		}
 		resCh <- res

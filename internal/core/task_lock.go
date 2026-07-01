@@ -89,13 +89,28 @@ func lockTaskFile(taskFilePath string) (unlock func() error, err error) {
 			mu.Unlock()
 			return nil, fmt.Errorf("create task lock sidecar %s: %w", lockPath, createErr)
 		}
-		// The sidecar exists. Reclaim it only if it is older than the TTL
-		// (crash residue); an in-TTL sidecar is a live lock → busy.
+		// The sidecar already exists. Inspect its age to distinguish a live lock
+		// (busy) from crash residue (reclaimable).
 		info, statErr := os.Stat(lockPath)
-		if statErr != nil || time.Since(info.ModTime()) <= taskStaleLockTTL {
+		switch {
+		case statErr == nil && time.Since(info.ModTime()) <= taskStaleLockTTL:
+			// A fresh sidecar is a live lock held by another operation.
 			mu.Unlock()
 			return nil, ErrTaskBusy
+		case statErr != nil && errors.Is(statErr, os.ErrNotExist):
+			// The sidecar vanished between OpenFile(EEXIST) and Stat — a race
+			// with a concurrent release. Stay non-blocking: report busy so the
+			// caller can retry rather than silently proceeding.
+			mu.Unlock()
+			return nil, ErrTaskBusy
+		case statErr != nil:
+			// A permission/IO error stat-ing the sidecar is NOT contention:
+			// classifying it as busy would break the busy-vs-IO exit-code
+			// contract. Surface it as an ordinary error.
+			mu.Unlock()
+			return nil, fmt.Errorf("stat task lock sidecar %s: %w", lockPath, statErr)
 		}
+		// Stale (older than the TTL) → crash residue: reclaim it once.
 		slog.Warn("removing stale task lock file", "path", lockPath, "age", time.Since(info.ModTime()))
 		_ = os.Remove(lockPath)
 		f, createErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)

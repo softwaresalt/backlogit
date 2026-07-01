@@ -89,61 +89,92 @@ func NewDoctorTargetResult(path string, kind DoctorTargetKind) *DoctorTargetResu
 // result. It is context-free at the core layer; the 5s timeout is applied by
 // the caller (U2).
 //
+// DoctorTarget owns the per-task advisory lock for the whole read+validate and
+// releases it via defer. It is the right entry point for SYNCHRONOUS callers
+// (e.g. the MCP handler) whose deferred unlock is guaranteed to run. Callers
+// that enforce their own wall-clock timeout in a goroutine (the CLI) MUST NOT
+// use DoctorTarget — a timeout could return while this function is still
+// running, and if the process then exits via os.Exit the deferred unlock never
+// runs, stranding the lock sidecar. Those callers use PrepareDoctorTarget (lock
+// owned in a frame whose defer is guaranteed to run) plus the lock-free
+// ValidateDoctorTargetResolved.
+//
 // Scope confinement (invariant #2): the target path is resolved against the
 // workspace storage root (WorkspaceStorageRoot) — the same boundary used by the
 // artifact search dirs — and any path outside that root is rejected with the
 // scope kind. This is the single source of truth for the .backlogit boundary;
 // no bespoke prefix string is introduced.
 func DoctorTarget(ws *Workspace, filePath string) (*DoctorTargetResult, error) {
-	absTarget, ok, err := confineToStorageRoot(ws, filePath)
+	absTarget, unlock, short := PrepareDoctorTarget(ws, filePath)
+	if short != nil {
+		return short, nil
+	}
+	defer func() { _ = unlock() }()
+	return ValidateDoctorTargetResolved(ws, filePath, absTarget), nil
+}
+
+// PrepareDoctorTarget confines filePath to the workspace storage root and
+// acquires the per-task advisory lock. On a scope rejection or a lock failure
+// (busy/IO) it returns a terminal short result (short != nil) and unlock == nil.
+// On success it returns the resolved absolute target plus an unlock func that
+// the caller MUST own in a frame whose deferred call is guaranteed to run, so a
+// caller-enforced timeout cannot strand the lock sidecar (see DoctorTarget doc).
+func PrepareDoctorTarget(ws *Workspace, filePath string) (absTarget string, unlock func() error, short *DoctorTargetResult) {
+	resolved, ok, err := confineToStorageRoot(ws, filePath)
 	if err != nil {
-		return newDoctorTargetResult(filePath, DoctorTargetScope), nil //nolint:nilerr // resolution failure is a scope rejection, surfaced via Kind
+		return "", nil, newDoctorTargetResult(filePath, DoctorTargetScope)
 	}
 	if !ok {
 		res := newDoctorTargetResult(filePath, DoctorTargetScope)
 		res.Message = fmt.Sprintf("path outside workspace storage root: %s", filePath)
-		return res, nil
+		return "", nil, res
 	}
 
 	// U5: acquire the per-task advisory lock before any read so a concurrent
 	// mutation cannot modify the task while it is under validation. Acquisition
 	// is NON-BLOCKING: a held lock yields the busy kind (→ exit 4 in U2), never
-	// a mid-write read and never a block. Released via defer on every path.
-	unlock, lockErr := lockTaskFile(absTarget)
+	// a mid-write read and never a block.
+	u, lockErr := lockTaskFile(resolved)
 	if lockErr != nil {
 		if errors.Is(lockErr, ErrTaskBusy) {
 			res := newDoctorTargetResult(filePath, DoctorTargetBusy)
 			res.Message = fmt.Sprintf("task is locked by a concurrent operation: %v", lockErr)
-			return res, nil
+			return "", nil, res
 		}
 		// A non-contention lock failure (e.g. permission/IO error creating the
 		// sidecar) is an IO fault (exit 3), not busy (exit 4): preserve the
 		// exit-code contract rather than reporting misleading contention.
 		res := newDoctorTargetResult(filePath, DoctorTargetIO)
 		res.Message = fmt.Sprintf("acquire task lock: %v", lockErr)
-		return res, nil
+		return "", nil, res
 	}
-	defer func() { _ = unlock() }()
+	return resolved, u, nil
+}
 
+// ValidateDoctorTargetResolved runs the lock-free read + decode + header-def
+// validation against a PRE-CONFINED absolute target (as returned by
+// PrepareDoctorTarget). It holds no lock, so it is safe to run inside a
+// caller-enforced timeout goroutine: an abandoned run strands nothing.
+func ValidateDoctorTargetResolved(ws *Workspace, filePath, absTarget string) *DoctorTargetResult {
 	data, readErr := os.ReadFile(absTarget)
 	if readErr != nil {
 		res := newDoctorTargetResult(filePath, DoctorTargetIO)
 		res.Message = fmt.Sprintf("read target file: %v", readErr)
-		return res, nil
+		return res
 	}
 
 	md, decErr := mdfront.Decode(data)
 	if decErr != nil {
 		res := newDoctorTargetResult(filePath, DoctorTargetIO)
 		res.Message = fmt.Sprintf("decode frontmatter: %v", decErr)
-		return res, nil
+		return res
 	}
 
 	artifact, artErr := models.ArtifactFromFrontmatter(md.Frontmatter, string(md.Body))
 	if artErr != nil {
 		res := newDoctorTargetResult(filePath, DoctorTargetValidation)
 		res.Message = fmt.Sprintf("build artifact: %v", artErr)
-		return res, nil
+		return res
 	}
 
 	res := newDoctorTargetResult(filePath, DoctorTargetPass)
@@ -159,7 +190,7 @@ func DoctorTarget(ws *Workspace, filePath string) (*DoctorTargetResult, error) {
 		}
 	}
 
-	return res, nil
+	return res
 }
 
 // confineToStorageRoot resolves filePath (relative paths are interpreted
