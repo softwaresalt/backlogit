@@ -46,10 +46,19 @@
 
 ## Branch / PR state
 
-- Code committed `cedfe94`. Backlog state transition commit pending.
-- Next: commit backlog state, push branch, open feature PR, request Copilot review, run §1.9
-  pre-merge readiness gate, then HALT at P-014 operator merge-approval gate. Do NOT self-merge.
+- **PR #158**: https://github.com/softwaresalt/backlogit/pull/158 (`feat/072-doctor-target-nil-headerdef` → `main`), HEAD `30e0a35`.
+- Commits: `14776b6` (Stage, rides along — origin/main lacked it), `cedfe94` (fix), `30e0a35` (backlog state).
+- **CI**: all 4 checks green (`test 1.23`, `test 1.24`, Docline gate, CLI Reference Drift).
+- **Copilot review**: `COMMENTED`, 11/11 files, zero comments. **§1.9 gate PASS** (covers HEAD, 0 unresolved threads).
+- **P-009**: satisfied (`allow_merge_commit=true`, squash/rebase=false).
+- `reviewDecision=REVIEW_REQUIRED` — branch protection needs a formal approving review (operator/P-014 concern).
+- Runtime verification: **PASS** (pass/io/scope exit codes intact via source build; new branch covered by unit test).
+- Closure: `docs/closure/2026-07-01-072-S-doctor-nil-headerdef-{runtime-verification,closure}.md` — **READY**.
+- Follow-up stashed for Stage: `266816CE` (artifacts.go write-path fail-open shape).
+- **HALTED at P-014**: PR is merge-ready, awaiting explicit operator merge approval. Do NOT self-merge.
+  Post-merge closure (shipment-reconcile → ship_shipment → knowledge graduation) runs in a later
+  Orchestrator-routed session after operator approval.
 
 ## Circuit-breaker counters
 
-- build-feature attempts: 1/5 · review-fix cycles: 0/3 · consecutive failures: 0/3
+- build-feature attempts: 1/5 · review-fix cycles: 0/3 · fix-ci cycles: 0/5 · consecutive failures: 0/3
