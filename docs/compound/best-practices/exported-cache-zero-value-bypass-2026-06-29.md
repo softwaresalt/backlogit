@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Durable gotcha from 070-S (070.001-T, PR #154, merge b4c317e): when you export a cache/memo type that short-circuits a safety scan, a caller in another package can construct its zero value (nil backing map). A nil-backed cache read as "empty" makes the guard treat every key as unseen and silently bypass the very check the cache was meant to optimize. Fix: treat refs == nil as UNSEEDED and lazily run the one-time scan on first use; an empty-but-non-nil map (already seeded) is left untouched so a batch still scans exactly once. Reinforced by 072-S (PR #158, merge d3f0fac): the same nil-zero-value-at-a-safety-boundary shape recurred in doctor --target validation — a nil ws.HeaderDef made ValidateDoctorTargetResolved skip required-field validation and return kind=pass; fixed to fail closed (kind=io / exit 3). The identical nil-HeaderDef fail-open guard recurs at internal/core/artifacts.go write paths (stashed 266816CE), so this entry is now a living record of a recurring codebase pattern.'
+description: 'Durable gotcha from 070-S (070.001-T, PR #154, merge b4c317e): when you export a cache/memo type that short-circuits a safety scan, a caller in another package can construct its zero value (nil backing map). A nil-backed cache read as "empty" makes the guard treat every key as unseen and silently bypass the very check the cache was meant to optimize. Fix: treat refs == nil as UNSEEDED and lazily run the one-time scan on first use; an empty-but-non-nil map (already seeded) is left untouched so a batch still scans exactly once. Reinforced by 072-S (PR #158, merge d3f0fac): the same nil-zero-value-at-a-safety-boundary shape recurred in doctor --target validation — a nil ws.HeaderDef made ValidateDoctorTargetResolved skip required-field validation and return kind=pass; fixed to fail closed (kind=io / exit 3). The identical nil-HeaderDef fail-open guard recurs at internal/core/artifacts.go write paths (stashed 266816CE), so this entry is now a living record of a recurring codebase pattern. Closed by 073-S (feature 073-F, task 073.001-T, PR #160, merge 00b9b1de): the create/update write paths now fail closed via a shared requireHeaderDef(ws) helper wrapping blerrors.ErrConfig (maps to MCP internal / non-zero CLI exit, never validation_failed), remediating the 3rd and final site — the nil-precondition-fail-open family is now fully closed across all three known sites (070-S cache, 072-S doctor --target, 073-S write paths).'
 doc_type: learning
 docline:
     category: best_practice
@@ -25,6 +25,9 @@ docline:
         - validation-precondition
         - fail-closed
         - doctor-target
+        - write-path
+        - errconfig
+        - recurrence-closed
         - go
 ingested_at: "2026-06-29T21:52:00Z"
 schema_version: "1.0"
@@ -192,6 +195,65 @@ fail-closed path, never to skip-and-succeed.**
   loaded-HeaderDef pass regression guard).
 - Closure: `docs/closure/2026-07-01-072-S-doctor-nil-headerdef-closure.md`,
   `docs/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
+
+## Reinforcement — 073-S (2026-07-02): 3rd instance / recurrence family CLOSED
+
+Graduated from shipment 073-S (feature 073-F, task 073.001-T, PR #160, merge
+`00b9b1de`) — the harvest of the deferred follow-up stash `266816CE` that the
+072-S reinforcement above explicitly named. This is the **third and final** instance
+of the rule, closing the recurring nil-precondition-fail-open family.
+
+The two write paths flagged in the 072-S recurrence signal —
+`CreateArtifact` (~line 224) and `UpdateArtifact` (~line 514) in
+`internal/core/artifacts.go` — gated `ValidateArtifactFields` (and, on create,
+`ApplyFieldDefaults`) behind `if ws.HeaderDef != nil`. With a `nil` HeaderDef the
+required-field validation was **silently skipped** and the write succeeded
+unvalidated — the same "cheap path is also the unsafe path" shape as the 070-S cache
+and the 072-S doctor target.
+
+Fix (mirrors the 070-S / 072-S discipline — absent precondition routes to the
+fail-closed path): a single shared helper
+
+```go
+func requireHeaderDef(ws *Workspace) error {
+    if ws.HeaderDef == nil {
+        return fmt.Errorf("header definition not loaded; cannot validate artifact fields: %w", blerrors.ErrConfig)
+    }
+    return nil
+}
+```
+
+is called at both write sites **before** `ApplyFieldDefaults`/`ValidateArtifactFields`.
+That ordering is a **load-bearing invariant**, not a style choice: both downstream
+calls invoke `headerDef.ResolveFieldSchema`, which dereferences the nil receiver with
+no nil-guard and would panic — so the helper must run first. `blerrors` was already
+imported (zero import cost). Wrapping `ErrConfig` (absent from `domainError`'s
+validation case) makes the fault map to **MCP internal (500) / non-zero CLI exit**,
+never `validation_failed` (422) — a system/config fault, not user input — consistent
+with the local `validateSizeValue` / `NewMetadataCatalog` nil-HeaderDef convention and
+reconciling 072-S Option B. Both CLI (add/update/move) and MCP
+(`create_item`/`update_item`/`move_item`) inherit the fix through the single shared
+core functions; `create_item` hard-maps via `InternalError` while
+`update_item`/`move_item` use `domainError`, but both converge to internal for this
+fault. No artifact is persisted on either nil path (guard precedes `persistArtifact`).
+
+**Family status: CLOSED.** All three known sites of the
+"correctness check gated on a precondition → absent precondition must fail closed,
+never skip-and-succeed" shape are now remediated: 070-S (exported cache zero value),
+072-S (doctor --target validation), 073-S (create/update write paths). Future
+occurrences of `if ws.HeaderDef != nil` (or any similar precondition guard around a
+validation/correctness body) should be treated as a regression of this closed family
+and inverted to fail closed.
+
+- Evidence: shipped code at merge `00b9b1de` (PR #160) —
+  `internal/core/artifacts.go` (`requireHeaderDef` helper at line 116; call sites at
+  line 253 `CreateArtifact` and line 546 `UpdateArtifact`),
+  `internal/core/artifacts_headerdef_test.go` (3 scenarios: create nil-HeaderDef
+  fails closed with `errors.Is(err, ErrConfig)` && not `ErrValidation` and no file
+  persisted; update nil-HeaderDef fails closed with on-disk title unchanged;
+  loaded-path create+update regression green).
+- Closure: `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`,
+  `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
 
 ## Related learnings
 
