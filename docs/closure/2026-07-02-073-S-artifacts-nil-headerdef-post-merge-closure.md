@@ -51,10 +51,15 @@ title: 073-S create/update write-path nil-HeaderDef — Post-Merge Operational C
 
 Hardened the create/update artifact write paths so a `nil` workspace `HeaderDef` no
 longer silently skips required-field validation (a fail-open defect). A single shared
-helper `requireHeaderDef(ws)` (`internal/core/artifacts.go:116`) returns
-`fmt.Errorf("header definition not loaded; cannot validate artifact fields: %w",
-blerrors.ErrConfig)` when `ws.HeaderDef == nil`, and is called at both write sites
-**before** `ApplyFieldDefaults`/`ValidateArtifactFields`:
+helper `requireHeaderDef(ws)` (`internal/core/artifacts.go:116`) returns an
+`ErrConfig`-wrapped error when `ws.HeaderDef == nil`:
+
+```go
+fmt.Errorf("header definition not loaded; cannot validate artifact fields: %w", blerrors.ErrConfig)
+```
+
+The helper is called at both write sites **before**
+`ApplyFieldDefaults`/`ValidateArtifactFields`:
 
 - `CreateArtifact` (call site `internal/core/artifacts.go:253`)
 - `UpdateArtifact` (call site `internal/core/artifacts.go:546`)
