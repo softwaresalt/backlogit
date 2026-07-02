@@ -97,6 +97,29 @@ func WithCommit(commit string) Option {
 	return func(o *createOptions) { o.Commit = commit }
 }
 
+// requireHeaderDef fails closed when the workspace header-def schema is not
+// loaded. The create/update write paths gate required-field validation and
+// default application on the header-def; an absent (nil) schema is a
+// system/config precondition fault, so the write must refuse rather than
+// silently skip validation and succeed — the same fail-open shape closed for
+// the doctor --target path in 072-S. It is wrapped in blerrors.ErrConfig (NOT
+// blerrors.ErrValidation): a missing workspace schema is not a user-correctable
+// field error. ErrConfig is absent from domainError's validation case, so the
+// MCP layer still surfaces it as `internal` (500), never `validation_failed`
+// (422) — while giving callers/tests a positive errors.Is seam instead of a
+// brittle message-substring match.
+//
+// This check is load-bearing at the call sites: it MUST run before
+// ApplyFieldDefaults / ValidateArtifactFields, both of which call
+// headerDef.ResolveFieldSchema, which dereferences its (now nil) receiver with
+// no nil-guard and would nil-panic otherwise.
+func requireHeaderDef(ws *Workspace) error {
+	if ws.HeaderDef == nil {
+		return fmt.Errorf("header definition not loaded; cannot validate artifact fields: %w", blerrors.ErrConfig)
+	}
+	return nil
+}
+
 // CreateArtifact creates a new artifact with atomic file write.
 func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactType string, opts ...Option) (*models.Artifact, error) {
 	if ws == nil || ws.Config == nil {
@@ -220,14 +243,21 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		UpdatedAt:    now,
 	}
 
-	// Apply field defaults and validate against header-def if available.
-	if ws.HeaderDef != nil {
-		if err := ApplyFieldDefaults(artifact, ws.HeaderDef); err != nil {
-			return nil, fmt.Errorf("apply field defaults: %w", err)
-		}
-		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
-			return nil, fmt.Errorf("validate artifact fields: %w", err)
-		}
+	// A nil header-def means the workspace schema is absent, so required-field
+	// validation and default application cannot be performed. Fail closed rather
+	// than silently skip them and persist an unvalidated artifact. This check MUST
+	// precede ApplyFieldDefaults/ValidateArtifactFields: both call
+	// headerDef.ResolveFieldSchema, which dereferences the (now nil) receiver with
+	// no nil-guard, so removing the old `if != nil` guard without failing closed
+	// first would nil-pointer panic. The ordering is a load-bearing invariant.
+	if err := requireHeaderDef(ws); err != nil {
+		return nil, err
+	}
+	if err := ApplyFieldDefaults(artifact, ws.HeaderDef); err != nil {
+		return nil, fmt.Errorf("apply field defaults: %w", err)
+	}
+	if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+		return nil, fmt.Errorf("validate artifact fields: %w", err)
 	}
 
 	if err := artifact.Validate(); err != nil {
@@ -510,11 +540,14 @@ func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[s
 	artifact.UpdatedAt = time.Now()
 	clearStaleBlockedReason(artifact, previousStatus)
 
-	// Validate against header-def if available.
-	if ws.HeaderDef != nil {
-		if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
-			return nil, fmt.Errorf("validate artifact fields: %w", err)
-		}
+	// Fail closed when the workspace schema is absent (see requireHeaderDef). This
+	// check MUST precede ValidateArtifactFields, which dereferences the header-def
+	// via ResolveFieldSchema with no nil-guard.
+	if err := requireHeaderDef(ws); err != nil {
+		return nil, err
+	}
+	if err := ValidateArtifactFields(artifact, ws.HeaderDef); err != nil {
+		return nil, fmt.Errorf("validate artifact fields: %w", err)
 	}
 
 	if err := artifact.Validate(); err != nil {
