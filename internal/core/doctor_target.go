@@ -24,7 +24,12 @@ const (
 	// DoctorTargetScope indicates the target path resolved outside the
 	// workspace storage root (.backlogit) — a scope-confinement violation.
 	DoctorTargetScope DoctorTargetKind = "scope"
-	// DoctorTargetIO indicates the file could not be read or decoded.
+	// DoctorTargetIO indicates a system/config fault prevented completing
+	// validation: an unreadable or undecodable target file, a lock-sidecar IO
+	// failure, or an absent workspace header-def schema (nil HeaderDef). It maps
+	// to exit 3 and is distinct from a user-correctable required-field validation
+	// failure (DoctorTargetValidation, exit 1) — the target artifact may be
+	// well-formed; the fault is that validation could not be performed.
 	DoctorTargetIO DoctorTargetKind = "io"
 	// DoctorTargetBusy indicates the per-task advisory lock was already held by
 	// a concurrent mutation/validation (set by U5). Never blocks.
@@ -181,13 +186,25 @@ func ValidateDoctorTargetResolved(ws *Workspace, filePath, absTarget string) *Do
 	res.ArtifactID = artifact.ID
 	res.ArtifactType = artifact.ArtifactType
 
-	if ws.HeaderDef != nil {
-		if vErr := ValidateArtifactFields(artifact, ws.HeaderDef); vErr != nil {
-			res.Kind = DoctorTargetValidation
-			res.OK = false
-			res.Message = vErr.Error()
-			res.FieldErrors = parseMissingFields(vErr.Error())
-		}
+	if ws.HeaderDef == nil {
+		// Fail closed when the workspace header-def schema is absent: a nil
+		// HeaderDef is a system/config precondition fault, not a clean pass.
+		// Returning kind=pass here would make a *skipped* required-field
+		// validation indistinguishable from a real pass (a fail-open defect).
+		// Map it to io/exit 3 with a distinct diagnostic rather than
+		// validation/exit 1 (which would falsely blame the artifact) — the
+		// target may be well-formed; we simply cannot load the schema to check
+		// it.
+		res.Kind = DoctorTargetIO
+		res.OK = false
+		res.Message = "header definition not loaded; cannot perform required-field validation"
+		return res
+	}
+	if vErr := ValidateArtifactFields(artifact, ws.HeaderDef); vErr != nil {
+		res.Kind = DoctorTargetValidation
+		res.OK = false
+		res.Message = vErr.Error()
+		res.FieldErrors = parseMissingFields(vErr.Error())
 	}
 
 	return res

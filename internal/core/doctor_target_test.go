@@ -55,6 +55,38 @@ func TestDoctorTarget_ValidTaskPasses(t *testing.T) {
 	assert.Empty(t, res.FieldErrors)
 }
 
+// TestDoctorTarget_NilHeaderDefFailsClosed is the durable regression guard for
+// the fail-open defect where a nil workspace HeaderDef caused required-field
+// validation to be silently skipped and the target to be reported kind=pass. A
+// nil HeaderDef is a system/config precondition fault (the schema needed to judge
+// the artifact is absent), so it must fail closed to kind=io (exit 3) with a
+// distinct "header definition not loaded" diagnostic — never a false pass. The
+// loaded-vs-nil pair pins the classification precedence deterministically.
+func TestDoctorTarget_NilHeaderDefFailsClosed(t *testing.T) {
+	ws, queueDir := newTargetTestWorkspace(t)
+	path := filepath.Join(queueDir, "100.001-T.md")
+	require.NoError(t, os.WriteFile(path, []byte(validTaskContent), 0o644))
+
+	// Scenario 2 (regression guard): with HeaderDef loaded by WriteDefaults, a
+	// valid artifact still passes — the fix must not regress the loaded path.
+	loaded, err := DoctorTarget(ws, path)
+	require.NoError(t, err)
+	assert.True(t, loaded.OK, "loaded HeaderDef + valid artifact should pass: %+v", loaded)
+	assert.Equal(t, DoctorTargetPass, loaded.Kind)
+
+	// Scenario 1 (fail-closed): nil the HeaderDef so the required-field schema is
+	// absent, then re-validate the same otherwise-valid artifact. Validation
+	// cannot be performed, so the result must fail closed to io (exit 3), NOT pass.
+	ws.HeaderDef = nil
+	res, err := DoctorTarget(ws, path)
+	require.NoError(t, err)
+	assert.False(t, res.OK, "nil HeaderDef must not report a pass: %+v", res)
+	assert.Equal(t, DoctorTargetIO, res.Kind,
+		"nil HeaderDef is a system/config fault → io/exit 3, not pass: %+v", res)
+	assert.Contains(t, res.Message, "header definition not loaded",
+		"io diagnostic must distinguish an absent schema from a file-read IO fault: %+v", res)
+}
+
 func TestDoctorTarget_MissingRequiredFieldFailsValidation(t *testing.T) {
 	ws, queueDir := newTargetTestWorkspace(t)
 	// Omit priority — a header-def-required task field — but keep the
