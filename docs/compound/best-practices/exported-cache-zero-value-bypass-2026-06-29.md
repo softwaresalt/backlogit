@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Durable gotcha from 070-S (070.001-T, PR #154, merge b4c317e): when you export a cache/memo type that short-circuits a safety scan, a caller in another package can construct its zero value (nil backing map). A nil-backed cache read as "empty" makes the guard treat every key as unseen and silently bypass the very check the cache was meant to optimize. Fix: treat refs == nil as UNSEEDED and lazily run the one-time scan on first use; an empty-but-non-nil map (already seeded) is left untouched so a batch still scans exactly once.'
+description: 'Durable gotcha from 070-S (070.001-T, PR #154, merge b4c317e): when you export a cache/memo type that short-circuits a safety scan, a caller in another package can construct its zero value (nil backing map). A nil-backed cache read as "empty" makes the guard treat every key as unseen and silently bypass the very check the cache was meant to optimize. Fix: treat refs == nil as UNSEEDED and lazily run the one-time scan on first use; an empty-but-non-nil map (already seeded) is left untouched so a batch still scans exactly once. Reinforced by 072-S (PR #158, merge d3f0fac): the same nil-zero-value-at-a-safety-boundary shape recurred in doctor --target validation — a nil ws.HeaderDef made ValidateDoctorTargetResolved skip required-field validation and return kind=pass; fixed to fail closed (kind=io / exit 3). The identical nil-HeaderDef fail-open guard recurs at internal/core/artifacts.go write paths (stashed 266816CE), so this entry is now a living record of a recurring codebase pattern.'
 doc_type: learning
 docline:
     category: best_practice
@@ -22,6 +22,9 @@ docline:
         - uniqueness-guard
         - lazy-seeding
         - test-seam
+        - validation-precondition
+        - fail-closed
+        - doctor-target
         - go
 ingested_at: "2026-06-29T21:52:00Z"
 schema_version: "1.0"
@@ -147,6 +150,48 @@ step: validators with a precomputed allow-set, dedup caches, permission/ACL
 memos, "already processed" sets. The rule generalizes the nil-vs-empty-map
 distinction to a safety boundary — when the cheap path is also the unsafe path,
 the zero value must fall back to the safe (re-scan) path.
+
+## Reinforcement — 072-S (2026-07-02): a nil validation precondition must fail closed, not skip-and-pass
+
+Graduated from shipment 072-S (feature 072-F, task 072.001-T, PR #158, merge
+`d3f0fac`) — the deferred 071-S PR#156 Copilot follow-up K (source stash
+`C16DBBEB`). This is a **textbook second instance** of the rule above at a
+different safety boundary: a validation precondition instead of a cache.
+
+`core.ValidateDoctorTargetResolved` gated required-field validation behind
+`if ws.HeaderDef != nil`. When the workspace `HeaderDef` was `nil` (schema not
+loaded), the entire validation body was **silently skipped** and the function
+returned `kind=pass` — the cheap path (skip) was also the unsafe path (report a
+pass that was never actually checked). Same nil-vs-absence conflation as the
+070-S cache: `nil` ("we could not check") collapsed into the success state
+("we checked and it is fine").
+
+Fix (mirrors the 070-S discipline — the absent value falls to the *safe* path):
+invert the guard so a `nil` `HeaderDef` takes an explicit early return
+`kind=DoctorTargetIO` (exit 3), message "header definition not loaded; cannot
+perform required-field validation". Reuses the existing io/exit-3 bucket — no new
+kind, no `schema_version` bump, no exit-code-table change — so the versioned
+071-S contract (`0` pass / `1` validation / `2` timeout / `3` scope\|io / `4`
+busy) is preserved and CLI + MCP inherit the fix through the single shared
+function.
+
+**Recurrence signal (why this doc is now a living pattern record):** the
+identical `if ws.HeaderDef != nil` fail-open shape appears again at
+`internal/core/artifacts.go:224` and `:514` (`ValidateArtifactFields` behind the
+same guard on the create/update write paths). Those sites do not misreport a
+doctor `kind=pass`, so they were out of scope for 072-S and are **stashed as
+`266816CE`** for Stage to decide hard-fail vs warn. Three sites of the same
+nil-precondition-fail-open shape now trace to this one rule: **when a correctness
+check is gated on a precondition, an absent precondition must route to the
+fail-closed path, never to skip-and-succeed.**
+
+- Evidence: shipped code at merge `d3f0fac` (PR #158) —
+  `internal/core/doctor_target.go` (`ValidateDoctorTargetResolved` nil-HeaderDef
+  early return + broadened `DoctorTargetIO` doc comment),
+  `internal/core/doctor_target_test.go` (nil-HeaderDef → io/exit-3 scenario +
+  loaded-HeaderDef pass regression guard).
+- Closure: `docs/closure/2026-07-01-072-S-doctor-nil-headerdef-closure.md`,
+  `docs/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
 
 ## Related learnings
 
