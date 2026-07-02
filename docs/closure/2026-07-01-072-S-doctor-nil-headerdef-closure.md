@@ -1,3 +1,16 @@
+---
+chunk_strategy: h1-h2-h3
+description: 'Pre-merge operational closure for shipment 072-S — doctor --target nil-HeaderDef hardening (PR #158). Records the READY verdict, invariants to preserve (versioned doctor --target exit-code contract 0/1/2/3/4 unchanged, DoctorTargetResult schema_version 1.0.0 unchanged, OK==true iff Kind==pass, loaded-HeaderDef pass regression guard, CLI/MCP consistency via the single shared function), merge-only rollout path, healthy/failure signals, no monitoring or rollback required for the zero-blast-radius defensive edge fix (revert the merge commit if ever needed), validation window, ownership, and the stashed follow-up 266816CE for the internal/core/artifacts.go write-path fail-open shape.'
+doc_type: closure
+docline:
+    ms.date: 2026-07-01T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-01T00:00:00Z"
+schema_version: "1.0"
+source: docs/closure/2026-07-01-072-S-doctor-nil-headerdef-closure.md
+title: 072-S doctor --target nil-HeaderDef — Pre-Merge Operational Closure
+---
+
 # Operational Closure — 072-S doctor --target nil-HeaderDef hardening (pre-merge)
 
 - **Date**: 2026-07-01

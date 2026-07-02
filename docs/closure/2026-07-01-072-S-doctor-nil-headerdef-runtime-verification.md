@@ -1,3 +1,16 @@
+---
+chunk_strategy: h1-h2-h3
+description: 'Pre-merge runtime verification for shipment 072-S — doctor --target nil-HeaderDef hardening (PR #158). PASS: a source-built backlogit binary confirms the doctor --target versioned exit-code contract is intact (pass=exit 0, io=exit 3, scope=exit 3); the new nil-HeaderDef fail-closed branch (kind=io / exit 3 / "header definition not loaded") is unreachable via the normal CLI by design because config.WriteDefaults repopulates ws.HeaderDef at init, and is verified directly by TestDoctorTarget_NilHeaderDefFailsClosed through the DoctorTarget wrapper (red before impl, green after) with a loaded-HeaderDef precedence guard; full go test/vet/golangci-lint suite and changed-file gofmt clean; CI green on PR #158.'
+doc_type: closure
+docline:
+    ms.date: 2026-07-01T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-01T00:00:00Z"
+schema_version: "1.0"
+source: docs/closure/2026-07-01-072-S-doctor-nil-headerdef-runtime-verification.md
+title: 072-S doctor --target nil-HeaderDef — Pre-Merge Runtime Verification
+---
+
 # Runtime Verification — 072-S doctor --target nil-HeaderDef hardening
 
 - **Date**: 2026-07-01
