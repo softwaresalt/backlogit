@@ -194,7 +194,7 @@ func ValidateDoctorTargetResolved(ws *Workspace, filePath, absTarget string) *Do
 		// Map it to io/exit 3 with a distinct diagnostic rather than
 		// validation/exit 1 (which would falsely blame the artifact) — the
 		// target may be well-formed; we simply cannot load the schema to check
-		// it. See docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md.
+		// it.
 		res.Kind = DoctorTargetIO
 		res.OK = false
 		res.Message = "header definition not loaded; cannot perform required-field validation"
