@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -165,4 +166,58 @@ func TestDoctorTarget_SymlinkEscapeRejectedAsScope(t *testing.T) {
 	assert.False(t, res.OK, "a symlink escaping the storage root must not pass: %+v", res)
 	assert.Equal(t, DoctorTargetScope, res.Kind,
 		"symlink escape must be rejected as scope, not read through: %+v", res)
+}
+
+// TestPrepareDoctorTarget_ResolutionErrorIsIO is the durable regression guard for
+// the scope-vs-io misclassification defect (071-S PR#156 Copilot follow-up "J"):
+// when confineToStorageRoot returns a non-nil err (a filepath.Abs path-resolution
+// fault), PrepareDoctorTarget formerly reported kind=scope and DROPPED the
+// underlying error text. A resolution fault is a system/config IO error, not a
+// containment violation, so it must be classified kind=io (exit 3) with the
+// wrapped underlying error preserved in Message.
+//
+// The buggy branch is unreachable via normal inputs (filepath.Abs does not fail
+// for the always-absolute paths a real workspace produces), so this test forces
+// it deterministically by overriding the confineFn boundary seam. It MUST NOT
+// call t.Parallel(): it mutates a package-level seam and restores it via defer.
+func TestPrepareDoctorTarget_ResolutionErrorIsIO(t *testing.T) {
+	ws, queueDir := newTargetTestWorkspace(t)
+	path := filepath.Join(queueDir, "100.001-T.md")
+
+	// Force a path-resolution (IO) fault: ok == false with a non-nil err, which
+	// confineToStorageRoot only ever returns from its two filepath.Abs calls.
+	orig := confineFn
+	confineFn = func(_ *Workspace, _ string) (string, bool, error) {
+		return "", false, errors.New("boom-resolve")
+	}
+	defer func() {
+		confineFn = orig
+		assert.NotNil(t, confineFn, "confineFn seam must be restored to the real function after override")
+	}()
+
+	res, err := DoctorTarget(ws, path)
+	require.NoError(t, err)
+	assert.False(t, res.OK, "a path-resolution fault must not report OK: %+v", res)
+	assert.Equal(t, DoctorTargetIO, res.Kind,
+		"a confineToStorageRoot resolution error (err != nil) is an IO fault, not a scope violation: %+v", res)
+	assert.Contains(t, res.Message, "boom-resolve",
+		"the underlying resolution error text must be preserved, not dropped: %+v", res)
+}
+
+// TestPrepareDoctorTarget_LexicalOutOfScopeStaysScope pairs with
+// TestPrepareDoctorTarget_ResolutionErrorIsIO to make the scope-vs-io
+// classification precedence explicit and deterministic: a genuine containment
+// violation (ok == false, err == nil) stays kind=scope and carries the
+// boundary-rejection message. This locks the 071-S security branch — it must not
+// drift to io when the io reclassification lands.
+func TestPrepareDoctorTarget_LexicalOutOfScopeStaysScope(t *testing.T) {
+	ws, _ := newTargetTestWorkspace(t)
+
+	res, err := DoctorTarget(ws, filepath.Join("..", "escape.md"))
+	require.NoError(t, err)
+	assert.False(t, res.OK)
+	assert.Equal(t, DoctorTargetScope, res.Kind,
+		"a lexical out-of-scope path is a containment violation → scope, not io: %+v", res)
+	assert.Contains(t, res.Message, "path outside workspace storage root",
+		"the scope branch must carry its boundary-rejection message: %+v", res)
 }

@@ -118,6 +118,16 @@ func DoctorTarget(ws *Workspace, filePath string) (*DoctorTargetResult, error) {
 	return ValidateDoctorTargetResolved(ws, filePath, absTarget), nil
 }
 
+// confineFn is a package-level boundary seam over confineToStorageRoot so the
+// (normally unreachable) path-resolution-fault branch of PrepareDoctorTarget is
+// deterministically testable WITHOUT modifying the security-sensitive
+// confineToStorageRoot (which owns the 071-S symlink-escape guard). It MUST
+// remain a pure production pass-through — its default value is the real
+// function, so production behavior is byte-for-byte identical. Only the single
+// non-parallel, defer-restored test in doctor_target_test.go may override it;
+// no other core code should adopt it.
+var confineFn = confineToStorageRoot
+
 // PrepareDoctorTarget confines filePath to the workspace storage root and
 // acquires the per-task advisory lock. On a scope rejection or a lock failure
 // (busy/IO) it returns a terminal short result (short != nil) and unlock == nil.
@@ -125,9 +135,14 @@ func DoctorTarget(ws *Workspace, filePath string) (*DoctorTargetResult, error) {
 // the caller MUST own in a frame whose deferred call is guaranteed to run, so a
 // caller-enforced timeout cannot strand the lock sidecar (see DoctorTarget doc).
 func PrepareDoctorTarget(ws *Workspace, filePath string) (absTarget string, unlock func() error, short *DoctorTargetResult) {
-	resolved, ok, err := confineToStorageRoot(ws, filePath)
+	resolved, ok, err := confineFn(ws, filePath)
 	if err != nil {
-		return "", nil, newDoctorTargetResult(filePath, DoctorTargetScope)
+		// A path-resolution fault is a system/config IO error, not a scope
+		// violation. Classify it as io (exit 3, same as scope) and preserve the
+		// wrapped underlying error text instead of dropping it.
+		res := newDoctorTargetResult(filePath, DoctorTargetIO)
+		res.Message = fmt.Sprintf("confine target to storage root: %v", err)
+		return "", nil, res
 	}
 	if !ok {
 		res := newDoctorTargetResult(filePath, DoctorTargetScope)
