@@ -40,8 +40,10 @@ repository ruleset permits only merge commits — no P-009 violation.
 
 ## Scope of the shipped change
 
-**Behavior-preserving internal Go refactor** (net **-93** lines; 408 insertions / 93 deletions
-across 16 files, most of which is the test relocation and the plan/memory/backlog artifacts). One
+**Behavior-preserving internal Go refactor** (408 insertions / 93 deletions across 16 files — net
+**+315** for the whole feature-PR range, dominated by the test relocation and the plan/memory/backlog
+artifacts; the production Go consolidation itself is a net reduction, since the MCP duplicate is
+deleted and only a small hardening delta is added in core). One
 task, `077.001-T` ("Export core.NormalizeShipmentItems and delete MCP duplicate"):
 
 - `internal/core/shipment.go` — `shipmentItems` renamed to exported **`NormalizeShipmentItems`**
@@ -126,7 +128,7 @@ refresh).
 
 Assessed (`target: all`); **no compaction executed this cycle**. `docs/memory/` remains below every
 compaction trigger (file-count / 500 KB / 14-day age), and no single release unit exceeds the
->10-checkpoint mandatory trigger. The 077-S closure-session memory plus the two new
+mandatory 10+-checkpoint trigger. The 077-S closure-session memory plus the two new
 `docs/closure/2026-07-03-077-S-…` artifacts are the durable per-unit record. Archive-only and
 newest-preserved constraints honored (nothing deleted or moved).
 
