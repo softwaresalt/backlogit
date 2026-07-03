@@ -39,7 +39,7 @@ type ShipmentView struct {
 // its manifest (custom_fields.items), returning (feature, true) on success or
 // (zero-value, false) when the shipment has no resolvable root feature.
 //
-// It is a PURE READ. Member IDs come from shipmentItems (the f015 read-edge
+// It is a PURE READ. Member IDs come from NormalizeShipmentItems (the f015 read-edge
 // normalizer) and are resolved with bldb.GetItem — never loadArtifact, which
 // upserts the index on a cache miss (a DB write). The input shipment is not
 // mutated and nothing is persisted.
@@ -58,7 +58,7 @@ func DeriveCoveringFeature(ctx context.Context, ws *Workspace, shipment *models.
 	if ws == nil || ws.DB == nil || shipment == nil {
 		return CoveringFeature{}, false
 	}
-	for _, itemID := range shipmentItems(shipment) {
+	for _, itemID := range NormalizeShipmentItems(shipment) {
 		item, err := bldb.GetItem(ctx, ws.DB, itemID)
 		if err != nil {
 			if errors.Is(err, blerrors.ErrNotFound) {

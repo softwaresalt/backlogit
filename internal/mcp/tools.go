@@ -1536,38 +1536,6 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 	return toolResultJSON(core.NewShipmentView(ctx, s.Workspace, shipment))
 }
 
-// normalizeShipmentItems ensures that the custom_fields["items"] field of a
-// shipment artifact is always a []string, matching the canonical shape produced
-// by core.GetShipment. Both []string and []any source values are handled, and a
-// nil CustomFields map is initialised before writing.
-func normalizeShipmentItems(shipment *models.Artifact) {
-	if shipment.CustomFields == nil {
-		shipment.CustomFields = map[string]any{}
-	}
-	raw, ok := shipment.CustomFields["items"]
-	if !ok || raw == nil {
-		shipment.CustomFields["items"] = []string{}
-		return
-	}
-	switch items := raw.(type) {
-	case []string:
-		// Already the correct type — clone to avoid aliasing.
-		out := make([]string, len(items))
-		copy(out, items)
-		shipment.CustomFields["items"] = out
-	case []any:
-		out := make([]string, 0, len(items))
-		for _, item := range items {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-		shipment.CustomFields["items"] = out
-	default:
-		shipment.CustomFields["items"] = []string{}
-	}
-}
-
 func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
@@ -1584,7 +1552,13 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 		return domainError("list shipments", err), nil
 	}
 	for _, shipment := range shipments {
-		normalizeShipmentItems(shipment)
+		// The nil-map guard exists solely to provide an assignment target;
+		// the never-null VALUE guarantee comes entirely from
+		// core.NormalizeShipmentItems (the single source of truth).
+		if shipment.CustomFields == nil {
+			shipment.CustomFields = map[string]any{}
+		}
+		shipment.CustomFields["items"] = core.NormalizeShipmentItems(shipment)
 	}
 	// Share the same read-only shaper as get so list carries an identical
 	// covering_feature projection and both surfaces stay same-shape.

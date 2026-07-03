@@ -334,7 +334,7 @@ func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
 	require.NoError(t, err)
 	updated, err := GetShipment(ctx, ws, secondShipment.ID)
 	require.NoError(t, err)
-	assert.Contains(t, shipmentItems(updated), task.ID)
+	assert.Contains(t, NormalizeShipmentItems(updated), task.ID)
 }
 
 // T002 / ST013: Reject adding an item to a shipped shipment.
@@ -383,7 +383,7 @@ func TestAddItemToShipment_AllowsItemAfterArchivedShipment(t *testing.T) {
 	require.NoError(t, err)
 	updated, err := GetShipment(ctx, ws, secondShipment.ID)
 	require.NoError(t, err)
-	assert.Contains(t, shipmentItems(updated), task.ID)
+	assert.Contains(t, NormalizeShipmentItems(updated), task.ID)
 }
 
 // T002 / ST013: Return a blocked item from shipment.
@@ -473,7 +473,7 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 	originalShipment := cloneArtifact(currentShipment)
 	originalItem := cloneArtifact(currentItem)
 
-	currentShipment.CustomFields["items"] = removeString(shipmentItems(currentShipment), task.ID)
+	currentShipment.CustomFields["items"] = removeString(NormalizeShipmentItems(currentShipment), task.ID)
 	currentShipment.UpdatedAt = time.Now()
 	currentItem.Status = models.StatusBlocked
 	currentItem.Title = ""
@@ -487,7 +487,7 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 	assert.True(t, rolledBack)
 	restoredShipment, loadShipmentErr := GetShipment(ctx, ws, shipment.ID)
 	require.NoError(t, loadShipmentErr)
-	assert.Contains(t, shipmentItems(restoredShipment), task.ID)
+	assert.Contains(t, NormalizeShipmentItems(restoredShipment), task.ID)
 	restoredItem, loadItemErr := loadArtifact(ctx, ws, task.ID)
 	require.NoError(t, loadItemErr)
 	assert.Equal(t, models.StatusQueued, restoredItem.Status)
@@ -535,7 +535,7 @@ func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
 	originalItem, err := loadArtifact(ctx, ws, task.ID)
 	require.NoError(t, err)
 	updatedShipment := cloneArtifact(originalShipment)
-	updatedShipment.CustomFields["items"] = removeString(shipmentItems(updatedShipment), task.ID)
+	updatedShipment.CustomFields["items"] = removeString(NormalizeShipmentItems(updatedShipment), task.ID)
 	updatedShipment.UpdatedAt = time.Now()
 	require.NoError(t, writeReturnBlockedJournal(ws.RootPath, originalShipment, originalItem))
 	require.NoError(t, persistArtifact(ctx, ws, updatedShipment, false))
@@ -550,7 +550,7 @@ func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
 	// Assert
 	recoveredShipment, err := GetShipment(ctx, reopened, shipment.ID)
 	require.NoError(t, err)
-	assert.Contains(t, shipmentItems(recoveredShipment), task.ID)
+	assert.Contains(t, NormalizeShipmentItems(recoveredShipment), task.ID)
 	recoveredItem, err := loadArtifact(ctx, reopened, task.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusQueued, recoveredItem.Status)
