@@ -49,7 +49,13 @@ type ShipmentView struct {
 // skipped defensively; any other lookup error is logged (slog.WarnContext) and
 // skipped rather than silently swallowed or failing the whole render.
 func DeriveCoveringFeature(ctx context.Context, ws *Workspace, shipment *models.Artifact) (CoveringFeature, bool) {
-	if ws == nil || shipment == nil {
+	// A nil workspace, an unseeded index handle (ws.DB == nil), or a nil
+	// shipment cannot resolve a covering feature. Guarding ws.DB here keeps the
+	// derivation panic-safe for Workspace values constructed without a DB (e.g.
+	// Workspace{} in tests or future call sites): bldb.GetItem dereferences the
+	// *sql.DB directly, so a nil handle must fall back to the safe (ok=false)
+	// branch rather than panic.
+	if ws == nil || ws.DB == nil || shipment == nil {
 		return CoveringFeature{}, false
 	}
 	for _, itemID := range shipmentItems(shipment) {

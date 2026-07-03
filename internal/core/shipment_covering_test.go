@@ -136,6 +136,21 @@ func TestDeriveCoveringFeature_NilAndEmpty(t *testing.T) {
 	assert.Equal(t, CoveringFeature{}, cf)
 }
 
+// Unit 1 scenario 5 (defensive): a non-nil Workspace with a nil DB handle yields
+// (zero, false) without panicking. bldb.GetItem dereferences ws.DB directly, so
+// the derivation must fall back to the safe branch for Workspace values
+// constructed without a DB (e.g. Workspace{} in tests or future call sites).
+func TestDeriveCoveringFeature_NilDB(t *testing.T) {
+	ctx := context.Background()
+	shipment := shipmentWithItems("410-S", "410-F")
+
+	assert.NotPanics(t, func() {
+		cf, ok := DeriveCoveringFeature(ctx, &Workspace{}, shipment)
+		assert.False(t, ok)
+		assert.Equal(t, CoveringFeature{}, cf)
+	})
+}
+
 // NewShipmentView embeds the shipment and attaches the derived covering feature
 // as a top-level pointer field, omitted when absent.
 func TestNewShipmentView_ShapesEnvelope(t *testing.T) {
