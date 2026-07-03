@@ -64,7 +64,7 @@ The block MUST set these three **gate-required** fields (authoring profile):
 * `title:` — a top-level, single-quoted plan title.
 * `source:` — a top-level field equal to the plan's own repo-relative POSIX path (e.g. `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`).
 
-For green-reference parity (**recommended, not gate-required**), also include `description`, `schema_version`, and `chunk_strategy`, matching the field shape of the green reference plan `docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md`. Use placeholder values below as a copyable template — always set `source` to the plan's **own** path (the self-lint checks presence/format, not path-equality, so a stale copied `source` would pass silently):
+For green-reference parity (**recommended, not gate-required**), also include `description`, `schema_version`, and `chunk_strategy`, matching the field shape of the green reference plan `docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md`. Use placeholder values below as a copyable template — always set `source` to the plan's **own** path. The self-lint (authoring profile) only checks that `source` is **present** (non-empty); it does not validate the format or that it matches the file path, so a stale copied `source` would pass silently:
 
 ```yaml
 ---
@@ -149,9 +149,10 @@ verification, or rollback expectations from scratch.
 After writing the plan, verify its frontmatter against the docline contract
 **before the plan is considered complete**:
 
-1. Run the docline linter via the **same entrypoint CI uses** — `make docs-lint`
-   (i.e. `go run ./cmd/backlogit docs lint`), optionally narrowed with
-   `--path docs/exec-plans/<file>`.
+1. Run the docline linter via the **same entrypoint CI uses**. `make docs-lint`
+   runs the repo-wide gate (`go run ./cmd/backlogit docs lint`, no arguments). To
+   scope the check to just the new plan, call the same source entrypoint directly:
+   `go run ./cmd/backlogit docs lint --path docs/exec-plans/<file>`.
 2. Confirm the result is `valid` with `0 violations`.
 3. Treat **any** violation as a blocker: fix the frontmatter in place (or run
    `backlogit docs migrate` diff-first, then `--apply --yes --path`) and re-run

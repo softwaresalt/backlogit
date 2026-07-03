@@ -72,10 +72,12 @@ carried a plan with `doc_type: exec-plan` and no top-level `title`/`source` into
 PR #164, failing the gate with 3 violations and blocking the PR.
 
 1. Run the docline linter (authoring profile) against `${input:plan}` via the
-   **same entrypoint CI uses** — `make docs-lint` (i.e.
-   `go run ./cmd/backlogit docs lint`), narrowable with `--path ${input:plan}`.
-   Use the source entrypoint, not a possibly-stale installed `backlogit` binary,
-   so the gate cannot pass locally while CI fails.
+   **same entrypoint CI uses**. `make docs-lint` runs the repo-wide gate
+   (`go run ./cmd/backlogit docs lint`, no arguments); to scope the check to the
+   incoming plan, call the same source entrypoint directly:
+   `go run ./cmd/backlogit docs lint --path ${input:plan}`. Use the source
+   entrypoint, not a possibly-stale installed `backlogit` binary, so the gate
+   cannot pass locally while CI fails.
 2. If the linter reports `valid` with `0 violations`, broadcast the pass and
    proceed to Phase 2.
 3. On **any** violation, **HALT** decomposition. Do not parse the plan, create
