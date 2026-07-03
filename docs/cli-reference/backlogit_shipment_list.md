@@ -12,6 +12,16 @@ title: backlogit shipment list
 
 List shipments
 
+### Synopsis
+
+List shipments in table, tile, or JSON format.
+
+Table and tile output include a COVERING FEATURE column, and JSON output
+includes a top-level "covering_feature" object ({id, title}) per shipment. The
+covering feature is a read-only, render-time derivation from each shipment
+manifest (never stored) and is blank/omitted when a shipment has no covering
+feature.
+
 ```text
 backlogit shipment list [flags]
 ```

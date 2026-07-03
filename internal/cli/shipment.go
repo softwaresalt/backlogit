@@ -12,6 +12,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // NewShipmentCmd returns the top-level `backlogit shipment` command group.
@@ -71,8 +72,14 @@ func newShipmentCreateCmd() *cobra.Command {
 // newShipmentGetCmd returns the `backlogit shipment get <id>` subcommand.
 func newShipmentGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "get <id>",
-		Short:   "Get a shipment by ID",
+		Use:   "get <id>",
+		Short: "Get a shipment by ID",
+		Long: `Get a shipment by ID and print it as JSON.
+
+The response includes a top-level "covering_feature" object ({id, title}) when
+the shipment manifest contains a root covering feature. This field is a
+read-only, render-time derivation from the manifest — it is never stored on the
+shipment and is omitted entirely when the shipment has no covering feature.`,
 		Example: `  backlogit shipment get 001-S`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,7 +100,7 @@ func newShipmentGetCmd() *cobra.Command {
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(shipment)
+			return enc.Encode(core.NewShipmentView(ctx, ws, shipment))
 		},
 	}
 }
@@ -103,8 +110,15 @@ func newShipmentListCmd() *cobra.Command {
 	var status, formatOutput string
 
 	cmd := &cobra.Command{
-		Use:     "list",
-		Short:   "List shipments",
+		Use:   "list",
+		Short: "List shipments",
+		Long: `List shipments in table, tile, or JSON format.
+
+Table and tile output include a COVERING FEATURE column, and JSON output
+includes a top-level "covering_feature" object ({id, title}) per shipment. The
+covering feature is a read-only, render-time derivation from each shipment
+manifest (never stored) and is blank/omitted when a shipment has no covering
+feature.`,
 		Example: `  backlogit shipment list --status active`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
@@ -130,17 +144,42 @@ func newShipmentListCmd() *cobra.Command {
 			}
 			switch effectiveFormat {
 			case format.FormatTable, format.FormatTile:
-				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(shipments))
+				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), shipmentColumns(), shipmentRows(ctx, ws, shipments))
 			default: // json
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(shipments)
+				return enc.Encode(core.NewShipmentViews(ctx, ws, shipments))
 			}
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "filter shipments by status")
 	cmd.Flags().StringVar(&formatOutput, "format", "json", "output format: table, json, tile")
 	return cmd
+}
+
+// shipmentColumns returns the table/tile column set for shipment views: a COPY
+// of the shared artifactColumns with a trailing COVERING FEATURE column. It
+// never mutates the shared artifactColumns slice, which also drives the `list`
+// and `queue` views.
+func shipmentColumns() []format.Column {
+	cols := make([]format.Column, len(artifactColumns), len(artifactColumns)+1)
+	copy(cols, artifactColumns)
+	return append(cols, format.Column{Key: "covering_feature", Header: "COVERING FEATURE"})
+}
+
+// shipmentRows builds table/tile rows for shipments by composing over the shared
+// artifactsToRows and appending the derived covering feature (rendered
+// "<id> — <title>", blank when absent). Derivation is read-only.
+func shipmentRows(ctx context.Context, ws *core.Workspace, shipments []*models.Artifact) []map[string]any {
+	rows := artifactsToRows(shipments)
+	for i, shipment := range shipments {
+		if cf, ok := core.DeriveCoveringFeature(ctx, ws, shipment); ok {
+			rows[i]["covering_feature"] = fmt.Sprintf("%s — %s", cf.ID, cf.Title)
+		} else {
+			rows[i]["covering_feature"] = ""
+		}
+	}
+	return rows
 }
 func newShipmentClaimCmd() *cobra.Command {
 	return &cobra.Command{
