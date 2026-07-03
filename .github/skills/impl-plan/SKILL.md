@@ -77,7 +77,7 @@ title: 'Concise plan title'
 ---
 ```
 
-**YAML pitfall (single-quote to avoid silent truncation):** single-quote any scalar containing `#`, `:`, or a leading special character. Plan titles and descriptions routinely cite PR numbers (`#164`) and ratios, so an unquoted `#` or `:` truncates the value and can silently drop a required field.
+**YAML pitfall (single-quote to avoid silent corruption):** single-quote any scalar containing `#`, `:`, or a leading special character. An unquoted `#` (common in PR references like `#164`) is parsed as an inline comment, so the value is silently truncated from `#` onward with no error raised; embedded `:` and leading special characters are related parse hazards. The docline gate will **not** always catch the loss — a truncated value can still be schema-valid (non-empty) and pass the required-field check — so quote defensively at authoring time (see `docs/compound/2026-06-26-docline-frontmatter-contract.md`).
 
 **Optional deterministic derivation:** instead of hand-authoring `source`/`doc_type`, derive them with `backlogit docs migrate`. Run the dry-run/plan first to review the diff, then `backlogit docs migrate --apply --yes --path docs/exec-plans/<file>` to write. Prefer the diff-first flow: `--apply --yes` is an in-place overwrite (git-tracked, so revertible), but standing guidance shows the operator the diff before writing (Principle VII).
 
