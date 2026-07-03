@@ -255,6 +255,35 @@ and inverted to fail closed.
 - Closure: `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`,
   `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
 
+## Reinforcement — 075-S (2026-07-02): distinct shape — nil-DB guard in a read-only derivation (family stays CLOSED)
+
+Noted from shipment 075-S (feature 075-F, tasks 075.001-T/.002-T/.003-T, PR #164,
+merge `842e888`), which added the read-only `covering_feature` projection to CLI + MCP
+shipment views. Copilot review flagged that `core.DeriveCoveringFeature` guarded
+`ws == nil` but not `ws.DB == nil`: because `bldb.GetItem` dereferences the `*sql.DB`
+without a nil check, calling the deriver with a `Workspace{}` value constructed without a
+DB (in tests or a future call site) would **panic** rather than safely returning
+`ok=false`. The fix adds the `ws.DB == nil` guard and returns the zero-value / `ok=false`
+(no covering feature).
+
+This is a **corroboration of the generalized "Applicability" principle above**
+(when a value/precondition is absent at a boundary, fall back to the safe result), but it
+is a **distinct failure mode**, not a member of the closed nil-precondition-*fail-open*
+family:
+
+- The 070-S / 072-S / 073-S family is about a nil precondition causing a correctness check
+  to be **silently skipped** (fail *open* → an unsafe pass or unvalidated write).
+- The 075-S case is a nil precondition causing a **nil-pointer panic** in a read-only
+  derivation; the safe fallback is a graceful `ok=false` (no data), not a validation
+  verdict.
+
+**The fail-open family remains CLOSED.** 075-S does not reopen it; it is recorded here only
+as an adjacent data point for the broader "guard the nil precondition and route to the safe
+result before dereferencing" discipline. No new durable lesson and no duplicate doc were
+warranted for a read-only display feature — the shipped tests
+(`internal/mcp/shipment_covering_test.go` read-only regression;
+`internal/core` `DeriveCoveringFeature` coverage) are the durable regression guard.
+
 ## Related learnings
 
 - `docs/compound/best-practices/empty-string-vs-sentinel-in-classification-2026-05-09.md`
