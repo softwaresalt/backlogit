@@ -184,7 +184,7 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, blerrors.ErrShipmentConflict)
 	}
 
-	items := shipmentItems(shipment)
+	items := NormalizeShipmentItems(shipment)
 	if containsString(items, itemID) {
 		return nil
 	}
@@ -226,7 +226,7 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, blerrors.ErrShipmentConflict)
 	}
 
-	items := shipmentItems(shipment)
+	items := NormalizeShipmentItems(shipment)
 	if !containsString(items, itemID) {
 		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, blerrors.ErrCannotReturnItem)
 	}
@@ -360,7 +360,7 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 	if artifact.CustomFields == nil {
 		artifact.CustomFields = map[string]any{}
 	}
-	artifact.CustomFields["items"] = shipmentItems(artifact)
+	artifact.CustomFields["items"] = NormalizeShipmentItems(artifact)
 }
 
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
@@ -479,7 +479,7 @@ func validateShipmentItemIDs(ctx context.Context, ws *Workspace, currentShipment
 		if existing.ID == currentShipmentID || !shipmentStatusBlocksAssignment(existing.Status) {
 			continue
 		}
-		for _, assignedItemID := range shipmentItems(existing) {
+		for _, assignedItemID := range NormalizeShipmentItems(existing) {
 			activeAssignments[assignedItemID] = existing.ID
 		}
 	}
@@ -522,7 +522,27 @@ func removeString(values []string, target string) []string {
 	return result
 }
 
-func shipmentItems(artifact *models.Artifact) []string {
+// NormalizeShipmentItems is the single source of truth for reading a shipment's
+// custom_fields["items"] into a normalized []string. It is a PURE READ: it does
+// NOT mutate the artifact (unlike the mutator normalizeShipmentArtifact, which
+// wraps this reader to canonicalize items on the CREATE/GET write path).
+//
+// It maps the lossy on-the-way-out representations of the SQLite JSON array
+// (see docs/compound/go-patterns/f015-shipment-stash-patterns.md — treat
+// []interface{} shipment CustomFields as lossy and normalize on every read):
+// a []string is cloned, a []any is filtered to its string elements
+// order-preserving, and nil/absent/unknown inputs yield an empty slice.
+//
+// CONTRACT: this function NEVER returns nil. An empty result is a non-nil
+// []string{}. This is a JSON wire-shape invariant, not a stylistic choice: a
+// nil []string marshals to null, whereas a non-nil empty slice marshals to [].
+// The shipment items field is emitted through core.ShipmentView, which is
+// marshaled by BOTH the CLI and the MCP list/get surfaces, so a nil here would
+// surface as items: null on the wire. The end-to-end guard for this is
+// TestListShipments_EmptyItems_NeverNull (internal/mcp). Do NOT "simplify" the
+// []string branch back to the nil-able append([]string(nil), ...) form — that
+// silently reintroduces the null-on-empty regression this consolidation removed.
+func NormalizeShipmentItems(artifact *models.Artifact) []string {
 	if artifact == nil || artifact.CustomFields == nil {
 		return []string{}
 	}
@@ -534,7 +554,9 @@ func shipmentItems(artifact *models.Artifact) []string {
 
 	switch items := raw.(type) {
 	case []string:
-		return append([]string(nil), items...)
+		out := make([]string, len(items))
+		copy(out, items)
+		return out
 	case []any:
 		normalized := make([]string, 0, len(items))
 		for _, item := range items {

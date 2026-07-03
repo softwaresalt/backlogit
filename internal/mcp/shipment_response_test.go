@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/core"
-	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // shipmentFromResult decodes a non-error CallToolResult into a
@@ -138,42 +137,4 @@ func TestListShipments_EmptyItems_NeverNull(t *testing.T) {
 		_, isSlice := items.([]interface{})
 		assert.True(t, isSlice, "custom_fields.items must be an array, got %T", items)
 	}
-}
-
-// TestNormalizeShipmentItems_AllCases unit-tests normalizeShipmentItems directly
-// to verify all three source-type branches produce []string.
-func TestNormalizeShipmentItems_AllCases(t *testing.T) {
-	tests := []struct {
-		name  string
-		input any // value to set in custom_fields["items"], or nil for absent key
-		want  []string
-	}{
-		{name: "nil custom_fields map", input: nil, want: []string{}},
-		{name: "[]string already typed", input: []string{"a", "b"}, want: []string{"a", "b"}},
-		{name: "[]any with strings", input: []any{"x", "y"}, want: []string{"x", "y"}},
-		{name: "[]any with non-string element", input: []any{"ok", 42}, want: []string{"ok"}},
-		{name: "unknown type falls back", input: 123, want: []string{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			art := buildTestShipmentArtifact(tt.input)
-			normalizeShipmentItems(art)
-			got := art.CustomFields["items"]
-			assert.Equal(t, tt.want, got,
-				"normalizeShipmentItems produced unexpected items for input %v (type %T)", tt.input, tt.input)
-		})
-	}
-}
-
-// buildTestShipmentArtifact constructs a minimal models.Artifact with
-// custom_fields["items"] set to raw. When raw is nil the CustomFields map
-// itself is left nil to test the nil-init path.
-func buildTestShipmentArtifact(raw any) *models.Artifact {
-	a := &models.Artifact{ArtifactType: "shipment"}
-	if raw == nil {
-		// CustomFields is nil — tests the initialisation branch.
-		return a
-	}
-	a.CustomFields = map[string]any{"items": raw}
-	return a
 }

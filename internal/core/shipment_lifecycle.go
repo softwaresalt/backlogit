@@ -65,7 +65,7 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	// activatedIDs records every item this claim transitioned to active, in
 	// application order, so rollback can revert them (newest first) on failure.
 	var activatedIDs []string
-	for _, itemID := range shipmentItems(shipment) {
+	for _, itemID := range NormalizeShipmentItems(shipment) {
 		item, loadErr := loadArtifact(ctx, ws, itemID)
 		if loadErr != nil {
 			return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
@@ -158,7 +158,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}
 
-	explicitScope := uniqueNonEmptyStrings(shipmentItems(shipment))
+	explicitScope := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
 	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)

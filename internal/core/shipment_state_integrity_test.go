@@ -101,7 +101,7 @@ func TestClaimShipment_SuccessActivatesAllItems(t *testing.T) {
 	// The returned shipment is the already-loaded snapshot (no post-activation
 	// read-back); guard that it is still a complete shipment carrying its full
 	// manifest so the read-back elimination cannot silently drop items.
-	assert.ElementsMatch(t, []string{feat.ID, task.ID}, shipmentItems(claimed),
+	assert.ElementsMatch(t, []string{feat.ID, task.ID}, NormalizeShipmentItems(claimed),
 		"returned shipment must carry its full manifest")
 
 	dbTask, err := bldb.GetItem(ctx, ws.DB, task.ID)

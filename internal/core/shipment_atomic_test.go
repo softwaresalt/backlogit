@@ -58,7 +58,7 @@ func TestReturnBlockedItem_ShipmentAndItemAreConsistentInDB(t *testing.T) {
 	// Assert — DB agrees: shipment items list no longer contains the task
 	dbShipment, err := bldb.GetItem(ctx, ws.DB, shipment.ID)
 	require.NoError(t, err)
-	items := shipmentItems(dbShipment)
+	items := NormalizeShipmentItems(dbShipment)
 	assert.NotContains(t, items, task.ID, "DB: shipment must not list blocked task")
 
 	// Assert — file agrees with DB: reload artifact from disk
@@ -100,7 +100,7 @@ func TestReturnBlockedItem_FileAndDBAgreeAfterReturn(t *testing.T) {
 	fileShipment, err := loadArtifact(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, shipmentItems(dbShipment), shipmentItems(fileShipment),
+	assert.Equal(t, NormalizeShipmentItems(dbShipment), NormalizeShipmentItems(fileShipment),
 		"DB and file shipment items list must match")
 }
 
@@ -166,5 +166,5 @@ func TestReturnBlockedItem_MultipleReturnsAreIndependent(t *testing.T) {
 	assert.Equal(t, "reason B", dbB.CustomFields["blocked_reason"])
 
 	dbShipment, _ := bldb.GetItem(ctx, ws.DB, shipment.ID)
-	assert.Empty(t, shipmentItems(dbShipment))
+	assert.Empty(t, NormalizeShipmentItems(dbShipment))
 }
