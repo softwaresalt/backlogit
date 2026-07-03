@@ -33,6 +33,8 @@ warn the operator that visibility is degraded and continue locally.
 |---|---|---|
 | Session start | info | `[HARVEST] Starting: plan={input.plan}` |
 | Plan accepted | info | `[HARVEST] Using reviewed plan: {plan_path}` |
+| Docline gate passed | info | `[HARVEST] Docline gate passed: {plan_path}` |
+| Docline gate HALT | error | `[HARVEST] Docline gate HALT: {violation_count} violation(s) in {plan_path}` |
 | Structure parsed | info | `[HARVEST] Parsed implementation units: {unit_count}` |
 | Dry run | info | `[HARVEST] Dry run: {feature_count} features, {task_count} tasks, {subtask_count} subtasks` |
 | Feature created | info | `[HARVEST] Created feature: {feature_id} — {title}` |
@@ -58,6 +60,35 @@ warn the operator that visibility is degraded and continue locally.
 5. Halt if the plan is missing, unreadable, or clearly not ready for
    backlog creation. Recommend running `plan-review` first when the
    review state is unclear.
+
+### Phase 1.5: Docline frontmatter gate (pre-decomposition)
+
+Before any parsing, backlog mutation, or enclosing Stage harvest commit, gate
+the incoming plan against the docline frontmatter contract. This is the
+shift-left guard that prevents an invalid Stage-authored plan from riding into
+a downstream Ship feature PR and failing the CI "Docline frontmatter gate"
+(`make docs-lint`). It exists because of the 075-S root cause: a harvest commit
+carried a plan with `doc_type: exec-plan` and no top-level `title`/`source` into
+PR #164, failing the gate with 3 violations and blocking the PR.
+
+1. Run the docline linter (authoring profile) against `${input:plan}` via the
+   **same entrypoint CI uses** — `make docs-lint` (i.e.
+   `go run ./cmd/backlogit docs lint`), narrowable with `--path ${input:plan}`.
+   Use the source entrypoint, not a possibly-stale installed `backlogit` binary,
+   so the gate cannot pass locally while CI fails.
+2. If the linter reports `valid` with `0 violations`, broadcast the pass and
+   proceed to Phase 2.
+3. On **any** violation, **HALT** decomposition. Do not parse the plan, create
+   any backlog item, or allow the enclosing Stage harvest commit. Report the
+   violations and direct the author to fix the plan frontmatter (or run
+   `backlogit docs migrate` diff-first, then `--apply --yes --path ${input:plan}`)
+   and re-run this gate. Cite the 075-S root cause so the reason is legible.
+
+Both docline gates sit upstream of every path by which a plan reaches a commit:
+the impl-plan skill's mandatory self-lint runs at authoring time, and this
+Phase 1.5 gate runs before decomposition (and therefore before the enclosing
+Stage harvest commit). The harvest skill itself creates backlog items and does
+not commit; the commit is the enclosing Stage step, which this gate precedes.
 
 ### Phase 2: Parse the plan structure
 
@@ -139,6 +170,8 @@ If `${input:dry_run}` is `false`:
 ## Guardrails
 
 * Do not modify the plan file.
+* Do not decompose or commit a plan that fails `backlogit docs lint` (the
+  Phase 1.5 docline frontmatter gate). HALT and require a fix first.
 * Do not skip duplicate checks.
 * Do not create shipment artifacts from this skill. Shipment assembly
   happens downstream in Stage (Step 5.5) or Ship (fallback path).
