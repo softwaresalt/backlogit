@@ -54,6 +54,33 @@ manual caller tracing.
 
 Produce a plan with these sections:
 
+#### Plan Frontmatter Contract (REQUIRED)
+
+Emit a docline frontmatter block as the **first block** of the plan file. Plans live under `docs/exec-plans/**`, which the CI "Docline frontmatter gate" (`make docs-lint`) lints on every PR, so a non-compliant block blocks the downstream Ship PR — this is the exact 075-S regression this contract prevents (see `docs/compound/2026-06-26-docline-frontmatter-contract.md` and the authoring guide `docs/docline-frontmatter-authoring-guide.md`).
+
+The block MUST set these three **gate-required** fields (authoring profile):
+
+* `doc_type: plan` — the closed-vocabulary value for `docs/exec-plans/**`. Never `exec-plan` (a natural but **invalid** guess that fails the gate with `unknown_doc_type`).
+* `title:` — a top-level, single-quoted plan title.
+* `source:` — a top-level field equal to the plan's own repo-relative POSIX path (e.g. `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`).
+
+For green-reference parity (**recommended, not gate-required**), also include `description`, `schema_version`, and `chunk_strategy`, matching the field shape of the green reference plan `docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md`. The green reference also carries `ingested_at`, but that field is intentionally **omitted** from the authoring template below: it is seeded by the docline ingestion tooling and is not required by the authoring-profile gate. Omit it unless you set a real RFC3339 timestamp — a present-but-blank `ingested_at` fails the min-length check even under the authoring profile. Use the placeholder values below as a copyable template — always set `source` to the plan's **own** path. The self-lint (authoring profile) only checks that `source` is **present** (non-empty); it does not validate the format or that it matches the file path, so a stale copied `source` would pass silently:
+
+```yaml
+---
+chunk_strategy: h1-h2-h3
+description: 'One-sentence summary of the plan.'
+doc_type: plan
+schema_version: "1.0"
+source: docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md
+title: 'Concise plan title'
+---
+```
+
+**YAML pitfall (single-quote to avoid silent corruption):** single-quote any scalar containing `#`, `:`, or a leading special character. An unquoted `#` (common in PR references like `#164`) is parsed as an inline comment, so the value is silently truncated from `#` onward with no error raised; embedded `:` and leading special characters are related parse hazards. The docline gate will **not** always catch the loss — a truncated value can still be schema-valid (non-empty) and pass the required-field check — so quote defensively at authoring time (see `docs/compound/2026-06-26-docline-frontmatter-contract.md`).
+
+**Optional deterministic derivation:** instead of hand-authoring `source`/`doc_type`, derive them with `backlogit docs migrate`. Run the dry-run/plan first to review the diff, then `backlogit docs migrate --apply --yes --path docs/exec-plans/<file>` to write. Prefer the diff-first flow: `--apply --yes` is an in-place overwrite (git-tracked, so revertible), but standing guidance shows the operator the diff before writing (Principle VII).
+
 #### Problem Frame
 
 Restate the problem in technical terms, referencing specific code paths and modules.
@@ -117,6 +144,25 @@ When one or more hardening signals are present, seed enough detail that the
 downstream `plan-harden` step can tighten the plan instead of inventing safety,
 verification, or rollback expectations from scratch.
 
+### Phase 4: Self-Lint the Frontmatter (MANDATORY)
+
+After writing the plan, verify its frontmatter against the docline contract
+**before the plan is considered complete**:
+
+1. Run the docline linter via the **same entrypoint CI uses**. `make docs-lint`
+   runs the repo-wide gate (`go run ./cmd/backlogit docs lint`, no arguments). To
+   scope the check to just the new plan, call the same source entrypoint directly:
+   `go run ./cmd/backlogit docs lint --path docs/exec-plans/<file>`.
+2. Confirm the result is `valid` with `0 violations`.
+3. Treat **any** violation as a blocker: fix the frontmatter in place (or run
+   `backlogit docs migrate` diff-first, then `--apply --yes --path`) and re-run
+   the linter until it reports 0 violations.
+
+Invoke the **source** entrypoint (`go run ./cmd/backlogit ...` / `make docs-lint`),
+not a possibly-stale installed `backlogit` binary. The source entrypoint
+guarantees the self-lint agrees with the CI Docline gate and cannot pass locally
+while CI fails.
+
 ## Quality Criteria
 
 * Every requirement from the source document maps to at least one implementation unit
@@ -127,6 +173,8 @@ verification, or rollback expectations from scratch.
 * Relevant prior learnings are surfaced before planning concludes
 * Plans record whether `plan-harden` is required before review — this field is mandatory, not optional
 * Plans include runtime verification and closure expectations for changed runtime surfaces
+* The plan file opens with a docline frontmatter block setting `doc_type: plan` plus top-level `title` and `source` (the gate-required contract for `docs/exec-plans/**`)
+* The authored plan passes `backlogit docs lint` (`make docs-lint`) with 0 violations before it is handed off to review or harvest
 
 ## Model Routing
 
