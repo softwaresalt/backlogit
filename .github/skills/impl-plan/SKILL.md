@@ -64,7 +64,7 @@ The block MUST set these three **gate-required** fields (authoring profile):
 * `title:` — a top-level, single-quoted plan title.
 * `source:` — a top-level field equal to the plan's own repo-relative POSIX path (e.g. `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`).
 
-For green-reference parity (**recommended, not gate-required**), also include `description`, `schema_version`, and `chunk_strategy`, matching the shape of the green reference plan `docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md`:
+For green-reference parity (**recommended, not gate-required**), also include `description`, `schema_version`, and `chunk_strategy`, matching the field shape of the green reference plan `docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md`. Use placeholder values below as a copyable template — always set `source` to the plan's **own** path (the self-lint checks presence/format, not path-equality, so a stale copied `source` would pass silently):
 
 ```yaml
 ---
@@ -72,7 +72,7 @@ chunk_strategy: h1-h2-h3
 description: 'One-sentence summary of the plan.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md
+source: docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md
 title: 'Concise plan title'
 ---
 ```
