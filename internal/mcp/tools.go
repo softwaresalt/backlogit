@@ -349,14 +349,14 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_get_shipment",
-			mcplib.WithDescription("Get a shipment by ID"),
+			mcplib.WithDescription("Get a shipment by ID. The response includes a top-level, read-only covering_feature {id, title} derived at render time from the shipment manifest; it is omitted when the shipment has no root covering feature and is never persisted."),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
 		),
 		s.handleGetShipment,
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_list_shipments",
-			mcplib.WithDescription("List shipments with an optional status filter"),
+			mcplib.WithDescription("List shipments with an optional status filter. Each shipment includes the same top-level, read-only covering_feature {id, title} projection as get_shipment, derived at render time and omitted when absent."),
 			mcplib.WithString("status", mcplib.Description("Optional shipment status filter")),
 		),
 		s.handleListShipments,
@@ -1529,7 +1529,11 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 	if err != nil {
 		return domainError("get shipment", err), nil
 	}
-	return toolResultJSON(shipment)
+	// Wrap in the shared read-only ShipmentView so the response carries the
+	// render-time covering_feature projection (top-level sibling, omitted when
+	// absent). Purely additive: the shipment artifact is embedded unchanged and
+	// nothing is persisted.
+	return toolResultJSON(core.NewShipmentView(ctx, s.Workspace, shipment))
 }
 
 // normalizeShipmentItems ensures that the custom_fields["items"] field of a
@@ -1582,7 +1586,9 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 	for _, shipment := range shipments {
 		normalizeShipmentItems(shipment)
 	}
-	return toolResultJSON(shipments)
+	// Share the same read-only shaper as get so list carries an identical
+	// covering_feature projection and both surfaces stay same-shape.
+	return toolResultJSON(core.NewShipmentViews(ctx, s.Workspace, shipments))
 }
 
 func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

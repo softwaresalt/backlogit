@@ -12,6 +12,15 @@ title: backlogit shipment get
 
 Get a shipment by ID
 
+### Synopsis
+
+Get a shipment by ID and print it as JSON.
+
+The response includes a top-level "covering_feature" object ({id, title}) when
+the shipment manifest contains a root covering feature. This field is a
+read-only, render-time derivation from the manifest — it is never stored on the
+shipment and is omitted entirely when the shipment has no covering feature.
+
 ```text
 backlogit shipment get <id> [flags]
 ```
