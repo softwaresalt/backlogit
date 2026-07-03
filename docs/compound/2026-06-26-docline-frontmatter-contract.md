@@ -99,8 +99,38 @@ still be schema-valid), so it must be handled at authoring time.
 * Plan: `docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md`.
 * Authoring guide: `docs/docline-frontmatter-authoring-guide.md`.
 
+## Reinforcement — 076-S: born-compliant *agent-authored* plans + self-lint against the same gate
+
+Shipment 076-S (PR #166, merge `ef9dc20`) extends the **born-compliant generation**
+pillar (solution part 3) from machine-generated docs (`cmd/gen-docs`) to
+**agent-authored** plan docs under `docs/exec-plans/**`. Root cause: in 075-S (PR #164)
+a Stage-authored plan was hand-written with `doc_type: exec-plan` (a natural but invalid
+guess, outside the closed vocabulary) and no top-level `title`/`source`; that harvest
+commit rode into the Ship feature branch and failed the CI Docline gate with 3 violations.
+
+The fix hardens the *authoring* surface with two shift-left gates (docs/harness only, no
+Go code):
+
+1. **Contract-at-authoring** — `.github/skills/impl-plan/SKILL.md` now specifies the
+   gate-required frontmatter (`doc_type: plan` + top-level `title`/`source`) with a copyable
+   template and the unquoted-`#` pitfall, so plans are *born* compliant.
+2. **Producer self-lints against the consumer's gate** — both `impl-plan` (mandatory Phase 4
+   self-lint) and `harvest` (Phase 1.5 HALT gate) run `go run ./cmd/backlogit docs lint`,
+   the **same source entrypoint** CI's `make docs-lint` uses. The generalizable pattern: a
+   producer validates its own output against the *identical* gate that will judge it
+   downstream, pinned to the CI entrypoint (never a stale installed binary) so a local pass
+   cannot diverge from the CI backstop. Verified behaviorally in 076-S runtime verification:
+   the shipped plan lints clean; a replica of the 075-S defect is flagged (3 violations,
+   exit 1).
+
+Caveat worth remembering (surfaced in PR #166 review): the authoring-profile self-lint
+checks `source` only for **presence** (non-empty), not format or path-match — a stale copied
+`source` passes silently. Set `source` to the file's own path at authoring time.
+
 ## Applicability
 
 Reuse this four-part pattern for any cross-cutting metadata contract over a large
 file corpus (frontmatter, license headers, SPDX tags, codegen banners): preserve
 content, make the transform idempotent, make generators born-compliant, then gate.
+Extend "generators" to include **agent authoring surfaces** — teach the skill/prompt the
+gate-required shape and make it self-lint against the same CI entrypoint before handoff.
