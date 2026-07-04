@@ -83,5 +83,30 @@ U1‖U2‖U3‖U4‖U5 (independent) → U6 (registry flip + drift flag-parity, 
 - **Operational closure (pre-merge): READY WITH CONDITIONS** (`docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-closure.md`).
 - **Follow-ups**: none net-new. `merge_sync` (phase-3), `export-command-map` pairing (phase-3), `log_telemetry` (permanent mcp_only) are all pre-documented deferrals in the plan (R7/R9/D1/D5) + U7 parity docs; external `.tmpl` already tracked as stash `EED25928`. No redundant re-stash.
 
-## Status: MERGE-READY — HALTED before merge (P-014). Awaiting operator merge approval + admin bypass.
+## Status (pre-merge): MERGE-READY — HALTED before merge (P-014). Awaiting operator merge approval + admin bypass.
+
+## Step 6 Post-Merge Closure — outcome (operator approved merge of PR #172)
+
+- **Merge (admin bypass, operator-authorized P-014)**: `gh pr merge 172 --merge --admin --delete-branch` → exit 0.
+  - **Merge commit SHA: `a8e07ea38f8e153e9a29def264538bcab8222868`** · merged `2026-07-04T06:33:34Z` · `state: MERGED`.
+  - **True merge commit (2 parents)**: `8bf53eb` (base) + `0d5accf` (feature tip). Not squash/rebase — P-009 preserved.
+  - Merge SHA confirmed in `origin/main` (`git merge-base --is-ancestor` exit 0); local `main` fast-forwarded to `a8e07ea`.
+  - **Feature branch `feat/079-cli-mcp-command-parity-phase2` deleted** (remote `ls-remote` empty).
+  - Re-verified on HEAD `0d5accf` before merge: CI 4/4 SUCCESS, `MERGEABLE`, §1.9 gate PASS (all 3 checks).
+- **Closure branch**: `post-merge/079-S` (created from fast-forwarded `main`). All closure commits land here, never on `main`.
+- **Shipment ship**: `backlogit shipment ship 079-S --sha a8e07ea…` → `shipment_status: shipped`. `archived_ids` (17): 15 manifest items + source deliberation `051-DL` + `079-S`. `returned_ids`: none.
+  - **shipment-reconcile pre-gate** (`expected: done`) → **PROCEED** (all 15 `pre-archived` by auto-archive-on-done). Report: `.backlogit/reconcile/079-S-pre-2026-07-03T233640.md`.
+  - **shipment-reconcile post-gate** → **PASS/PROCEED** (all 15 items + `079-S.md` present in archive, status `archived`). Report: `.backlogit/reconcile/079-S-post-2026-07-03T233730.md`.
+  - **P-007 archive integrity**: `git status -- .backlogit/archive/` = **0 deletions** (15 mods = SHA stamp; `079-S.md`+`051-DL.md` queue→archive moves). No restore needed.
+  - Backlog archival committed `1105dd5` `chore: archive 079-S backlog artifacts` (19 files; `hooks_queue.jsonl` env-dirt excluded).
+- **Knowledge graduation**:
+  - New compound learning: `docs/compound/2026-07-04-core-extraction-shared-eventwriter-append-serialization.md` (shared-`EventWriter` threading for append serialization; the Copilot Round-1 fix, generalized).
+  - Compound-refresh report: `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-compound-refresh.md` (3 existing parity entries **keep**; 1 new capture).
+  - Post-merge operational closure: `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-post-merge-closure.md` (release-readiness SHIPPED, monitoring, rollback = `git revert a8e07ea`).
+  - **Docline gate**: `valid: true, violation_count: 0` on all new artifacts (no follow-up frontmatter fix needed, unlike 078-S).
+- **Source-artifact cleanup**: `079-F` has no structured `source_stash_id`/`source_deliberation_id` (no-op). Originating stash `6C6ACE00` already retired by Stage during harvest (not in active stash). Deliberation `051-DL` co-archived by `shipment ship`.
+- **Deferred / out-of-scope left untouched** (per operator): stashes `21E17BFC`, `9140F65C`, `EED25928`, `B55985DD` all still active; `merge_sync`→phase-3, `export-command-map`→phase-3, `log_telemetry`→permanent mcp_only (all pre-documented, not re-stashed).
+- **compact-context**: assessed `target: all` — no compaction executed (below every trigger).
+
+### Status (post-merge): Feature PR #172 MERGED + closed. Closure PR on `post-merge/079-S` → drive to merge-ready and HOLD (own P-014 approval required per §1.10).
 
