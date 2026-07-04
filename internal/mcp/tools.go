@@ -852,7 +852,7 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 	actor, _ := request.Params.Arguments["actor"].(string)
 	comment, _ := request.Params.Arguments["comment"].(string)
 	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
-	if err := core.AppendComment(ctx, s.Workspace, itemID, actor, comment, commitSHA); err != nil {
+	if err := core.AppendComment(ctx, s.Workspace, s.Events, itemID, actor, comment, commitSHA); err != nil {
 		return InternalError(fmt.Sprintf("append comment: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil

@@ -61,6 +61,14 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 // `comment add` command and the MCP append_comment handler so the persisted and
 // indexed comment event is byte-identical across surfaces.
 //
+// The ew parameter lets a long-lived caller (the MCP server) pass its shared
+// *events.EventWriter so concurrent append_comment invocations serialize through
+// that writer's mutex exactly as they did before this path was extracted. A nil
+// ew is valid for one-shot callers (the CLI process) and causes a fresh writer to
+// be created. This mirrors the established handler pattern where the shared
+// s.Events writer performs the append while the index path is derived from the
+// workspace root.
+//
 // Timestamp handling is deliberate and behavior-preserving: the event is built
 // with a zero Timestamp. EventWriter.AppendEvent receives the Event by value and
 // stamps time.Now() on its own copy for the JSONL line, while the same
@@ -68,9 +76,11 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 // pre-extraction inline MCP handler. Do NOT set event.Timestamp here; doing so
 // would change the indexed row's timestamp and break parity with the prior
 // behavior. Errors are wrapped with %w so callers can use errors.Is/As.
-func AppendComment(ctx context.Context, ws *Workspace, itemID, actor, comment, commitSHA string) error {
+func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, itemID, actor, comment, commitSHA string) error {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	ew := events.NewEventWriter(logsDir)
+	if ew == nil {
+		ew = events.NewEventWriter(logsDir)
+	}
 	event := events.Event{
 		Actor:     actor,
 		ItemID:    itemID,

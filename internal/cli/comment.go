@@ -49,7 +49,10 @@ func newCommentAddCmd(cwd *string) *cobra.Command {
 			}
 			defer ws.Close()
 
-			if err := core.AppendComment(ctx, ws, itemID, actor, comment, commitSHA); err != nil {
+			// The CLI is a one-shot process, so a nil writer (fresh per-call
+			// EventWriter) is safe; the MCP server passes its shared writer to
+			// preserve in-process append serialization.
+			if err := core.AppendComment(ctx, ws, nil, itemID, actor, comment, commitSHA); err != nil {
 				return fmt.Errorf("append comment: %w", err)
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
