@@ -59,10 +59,24 @@ Shipment `080-S` "Release pipeline and documentation hygiene" (feature `080-F`),
 - [x] Unit C (080.003-T) -> commit 9b54b53 (docs: distinguish make docs-lint from scoped docs lint --path); done+archived
 - [x] quality gate suite (see below)
 - [x] review gate: PASS (no P0/P1/P2; 2 P3 advisories accepted)
-- [x] mark 080-F feature done + chore(backlog) commit
-- [ ] PR + CI + Copilot
-- [ ] runtime-verification + operational-closure
-- [ ] merge-ready halt
+- [x] mark 080-F feature done + chore(backlog) commit (afab513)
+- [x] PR #174 created; CI 4/4 green; Copilot reviewed 16/16 files, 0 comments, 0 threads; §1.9 gate PASS
+- [x] runtime-verification (PASS WITH FOLLOW-UP) + operational-closure (READY WITH CONDITIONS)
+- [ ] merge-ready halt (awaiting operator approval)
+
+## PR / CI / review
+
+- PR: #174 — https://github.com/softwaresalt/backlogit/pull/174 · base `main` · code-review HEAD `afab513`.
+- PR commit set (vs origin/main af26c71): 40bd121 (Stage harvest, rides along) + 2258f68 + dfbd2a1 + 9b54b53 + afab513. 16 files.
+- CI at afab513: 4/4 green (test 1.23, test 1.24, CLI Reference Drift, Docline frontmatter gate).
+- Copilot review at afab513: COMMENTED, "reviewed 16 out of 16 changed files ... generated no comments"; 0 inline, 0 threads.
+- §1.9 readiness gate at afab513: Check1 (no pending req) PASS; Check2 (freshness commit.oid==HEAD) PASS; Check3 (0 unresolved Copilot threads) PASS. reviewDecision=REVIEW_REQUIRED (branch-protection PR-Review ruleset; needs operator admin-bypass — expected, same as 078/079-S).
+- P-009 verified: repo allows merge_commit only (squash+rebase disabled).
+- Closure artifacts (docs/closure/, docline-clean):
+  - 2026-07-04-080-S-release-docs-hygiene-runtime-verification.md (PASS WITH FOLLOW-UP)
+  - 2026-07-04-080-S-release-docs-hygiene-closure.md (READY WITH CONDITIONS)
+- Closure commit is docs-only -> re-request Copilot + re-run §1.9 on the closure HEAD before halt.
+- Follow-up (deferred): observe guard on next real tagged release; P3 exec.CommandContext timeout in test wrapper; external stash 34F11E5A + EED25928 out of scope (Principle IV).
 
 ## Quality gates (all pass)
 
