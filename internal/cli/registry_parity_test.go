@@ -30,6 +30,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
@@ -270,4 +273,100 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// findCommandByPath resolves a space-delimited cobra command path (e.g.
+// "backlogit link add") to the concrete *cobra.Command, or nil if any segment
+// is missing. The leading token is the root command name and is skipped.
+func findCommandByPath(root *cobra.Command, path string) *cobra.Command {
+	fields := strings.Fields(path)
+	if len(fields) == 0 {
+		return nil
+	}
+	cur := root
+	for _, name := range fields[1:] {
+		var next *cobra.Command
+		for _, sub := range cur.Commands() {
+			if sub.Name() == name {
+				next = sub
+				break
+			}
+		}
+		if next == nil {
+			return nil
+		}
+		cur = next
+	}
+	return cur
+}
+
+// lookupFlag returns the --name flag from the command's local, persistent, or
+// inherited flag sets, or nil if the command exposes no such flag.
+func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
+	for _, fs := range []*pflag.FlagSet{cmd.Flags(), cmd.PersistentFlags(), cmd.InheritedFlags()} {
+		if f := fs.Lookup(name); f != nil {
+			return f
+		}
+	}
+	return nil
+}
+
+// TestRegistryParity_FlagAndPositionalParity is the U6 (079.006-T) load-bearing
+// assertion (v): for every registry cli_command, each literal --flag must
+// resolve to a real flag on the target cobra command, and the number of
+// positional {{...}} placeholders must satisfy the command's declared Args
+// validator. This closes the gap left by resolveCLIPath, which validated only
+// the command PATH — a typo'd flag name or a wrong positional count in a
+// fallback row previously passed drift detection yet broke the fallback at
+// runtime. Optional flags may be omitted from the template (documented in
+// params), mirroring the existing archive_item/commit_sha convention.
+func TestRegistryParity_FlagAndPositionalParity(t *testing.T) {
+	ops := loadRegistryOperations(t)
+	root := NewRootCommand()
+
+	for name, op := range ops {
+		if op.CLICommand == "" {
+			continue
+		}
+		path := resolveCLIPath(op.CLICommand)
+		cmd := findCommandByPath(root, path)
+		require.NotNilf(t, cmd, "operation %q cli_command %q resolves to unknown command path %q",
+			name, op.CLICommand, path)
+
+		tokens := strings.Fields(op.CLICommand)
+		pathLen := len(strings.Fields(path))
+		positionals := 0
+		for i := pathLen; i < len(tokens); i++ {
+			tok := tokens[i]
+			switch {
+			case strings.HasPrefix(tok, "--"):
+				flagName := strings.TrimPrefix(tok, "--")
+				f := lookupFlag(cmd, flagName)
+				assert.NotNilf(t, f,
+					"operation %q cli_command references --%s but command %q exposes no such flag (flag-parity drift)",
+					name, flagName, path)
+				// A non-boolean flag consumes the following token as its value —
+				// either a {{placeholder}} or a literal (e.g. `--status done`).
+				// Boolean flags take no value.
+				if f != nil && f.Value.Type() != "bool" &&
+					i+1 < len(tokens) && !strings.HasPrefix(tokens[i+1], "--") {
+					i++
+				}
+			case strings.HasPrefix(tok, "{{"):
+				positionals++
+			default:
+				// A literal token passed positionally (an enum value supplied
+				// without a flag). Counts toward the positional arity.
+				positionals++
+			}
+		}
+
+		// The positional placeholder count must satisfy the command's Args
+		// validator (e.g. cobra.ExactArgs(N)); a nil Args means arbitrary args.
+		if cmd.Args != nil {
+			assert.NoErrorf(t, cmd.Args(cmd, make([]string, positionals)),
+				"operation %q supplies %d positional placeholder(s), violating command %q Args validator (positional-parity drift)",
+				name, positionals, path)
+		}
+	}
 }
