@@ -90,6 +90,7 @@ operations:
 
   append_comment:
     mcp_tool: "backlogit_append_comment"
+    mcp_only: true
     params:
       task_id: "item_id"
       actor: "actor"
@@ -97,17 +98,20 @@ operations:
 
   log_telemetry:
     mcp_tool: "backlogit_log_telemetry"
+    mcp_only: true
     params:
       event_type: "event_type"
 
   save_memory:
     mcp_tool: "backlogit_save_memory"
+    mcp_only: true
     params:
       key: "key"
       summary: "summary"
 
   create_checkpoint:
     mcp_tool: "backlogit_create_checkpoint"
+    cli_command: "backlogit checkpoint create --state-dump {{state_dump}}"
     params:
       state_dump: "state_dump"
 
@@ -135,11 +139,13 @@ operations:
 
   poll_hook_events:
     mcp_tool: "backlogit_poll_hook_events"
+    mcp_only: true
     params:
       consumer_id: "consumer_id"
 
   ack_hook_events:
     mcp_tool: "backlogit_ack_hook_events"
+    mcp_only: true
     params:
       consumer_id: "consumer_id"
       seq: "seq"
@@ -222,6 +228,7 @@ operations:
 
   add_to_shipment:
     mcp_tool: "backlogit_add_to_shipment"
+    cli_command: "backlogit shipment add {{shipment_id}} {{item_id}}"
     params:
       shipment_id: "shipment_id"
       item_id: "item_id"
@@ -246,6 +253,7 @@ operations:
 
   stash_edit:
     mcp_tool: "backlogit_stash_edit"
+    cli_command: "backlogit stash edit {{stash_id}} --text {{text}}"
     params:
       stash_id: "stash_id"
       text: "text"
@@ -254,16 +262,19 @@ operations:
 
   stash_get:
     mcp_tool: "backlogit_stash_get"
+    cli_command: "backlogit stash get {{stash_id}}"
     params:
       stash_id: "stash_id"
 
   stash_remove:
     mcp_tool: "backlogit_stash_remove"
+    cli_command: "backlogit stash archive {{stash_id}}"
     params:
       stash_id: "stash_id"
 
   stash_archive:
     mcp_tool: "backlogit_stash_archive"
+    cli_command: "backlogit stash archive {{stash_id}}"
     params:
       stash_id: "stash_id"
 
@@ -291,6 +302,7 @@ operations:
 
   deliberate:
     mcp_tool: "backlogit_deliberate"
+    cli_command: "backlogit deliberate {{stash_id}}"
     params:
       stash_id: "stash_id"
       title: "title"
@@ -301,10 +313,12 @@ operations:
       open_questions: "open_questions"
 
   # --- Semantic links ---
+  # No `backlogit link` CLI command exists; these tools are MCP-only. See
+  # docs/reviews/2026-07-03-cli-mcp-parity-matrix.md.
 
   add_link:
     mcp_tool: "backlogit_add_link"
-    cli_command: "backlogit link add {{source_id}} {{target_id}} --type {{link_type}}"
+    mcp_only: true
     params:
       source_id: "source_id"
       target_id: "target_id"
@@ -312,7 +326,7 @@ operations:
 
   remove_link:
     mcp_tool: "backlogit_remove_link"
-    cli_command: "backlogit link remove {{source_id}} {{target_id}} --type {{link_type}}"
+    mcp_only: true
     params:
       source_id: "source_id"
       target_id: "target_id"
@@ -320,7 +334,7 @@ operations:
 
   get_links:
     mcp_tool: "backlogit_get_links"
-    cli_command: "backlogit link list {{id}}"
+    mcp_only: true
     params:
       id: "id"
       link_type: "link_type"
@@ -345,36 +359,66 @@ operations:
 
   get_metadata_catalog:
     mcp_tool: "backlogit_get_metadata_catalog"
+    cli_command: "backlogit metadata catalog"
 
   get_wit_metadata:
     mcp_tool: "backlogit_get_wit_metadata"
+    mcp_only: true
     params:
       type: "type"
 
   list_types:
     mcp_tool: "backlogit_list_types"
+    mcp_only: true
 
   list_templates:
     mcp_tool: "backlogit_list_templates"
+    mcp_only: true
 
   get_version:
     mcp_tool: "backlogit_get_version"
+    cli_command: "backlogit version"
 
   export_command_map:
     mcp_tool: "backlogit_export_command_map"
+    cli_command: "backlogit metadata export-command-map {{path}} --format {{format}}"
     params:
       path: "path"
       format: "format"
 
   merge_sync:
     mcp_tool: "backlogit_merge_sync"
+    mcp_only: true
     params:
       dry_run: "dry_run"
+
+  # --- Documentation lifecycle ---
+
+  docs_lint:
+    mcp_tool: "backlogit_docs_lint"
+    cli_command: "backlogit docs lint --path {{path}}"
+    params:
+      path: "path"
+      profile: "profile"
+
+  docs_migrate:
+    mcp_tool: "backlogit_docs_migrate"
+    cli_command: "backlogit docs migrate --path {{path}}"
+    params:
+      path: "path"
+      apply: "apply"
+
+  docs_scope:
+    mcp_tool: "backlogit_docs_scope"
+    cli_command: "backlogit docs scope"
+    params:
+      format: "format"
 
   # --- Telemetry ---
 
   telemetry_harvest:
     mcp_tool: "backlogit_telemetry_harvest"
+    cli_command: "backlogit telemetry harvest"
     params:
       copilot_path: "copilot_path"
       force: "force"
