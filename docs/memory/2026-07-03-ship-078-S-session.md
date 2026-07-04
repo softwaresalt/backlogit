@@ -64,3 +64,17 @@
 ## Out of scope (NOT touched, per mandate)
 - stash EED25928 / B55985DD (external autoharness .tmpl sources — Principle IV out-of-tree)
 - Environment artifacts NOT staged: .backlogit/hooks_queue.jsonl, .github/agents/*.md, .gitignore, start.ps1, .cursor/
+
+## Final status — PR-ready (session end)
+- **Branch**: `feat/078-cli-mcp-command-parity` · **PR**: #170 (https://github.com/softwaresalt/backlogit/pull/170)
+- **HEAD** at report: after closure-artifact + memory commit (see git log)
+- **Base**: `main` · merge strategy: merge-commit (P-009); PR includes Stage harvest commit d9341ca
+- **CI**: 4/4 green on 0ea9ea2 (test 1.23, test 1.24, CLI Reference Drift, Docline frontmatter gate); statusCheckRollup=SUCCESS
+  - fix-ci cycle 1: `CLI Reference Drift` failed (new commands lacked generated pages) → regenerated docs/cli-reference/ via gen-docs (cef387a). Committed only the 4 real files (2 index + 2 new); ~58 CRLF-noise files restored.
+- **Copilot review**: 6 threads resolved across 2 review-fix cycles:
+  - Cycle 1 (8a7f8d4): docs_lint `--profile`, docs_migrate `--apply --yes`, docs_scope `--format` added; compound-doc ref fixed (docs/compound/go-patterns/). 3 auto-resolved (outdated) + 1 replied/resolved.
+  - Cycle 2 (9dcf510/0ea9ea2): (A) reverted docs_migrate to safe plan-only form — `--apply --yes` was higher blast radius than MCP apply=false default; apply kept as documented gated escalation. (B) deliberation-doc location drift → NOT editable by Ship (P-010); routed to Stage as stash 2827CB5F.
+- **Runtime-verification**: PASS — docs/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md (U3 shipment add, U4 list items normalization, U6 checkpoint create all verified in scratch workspace built from HEAD)
+- **§1.9 pre-merge gate**: Check1 (no pending)=pass, Check3 (0 unresolved Copilot threads)=pass; Check2 (freshness) required a fresh Copilot review on final HEAD — re-requested; see report for final outcome.
+- **Follow-ups stashed**: 2827CB5F (deliberation-record reconciliation, kind=deliberation, for Stage)
+- **HALT**: merge-ready, awaiting explicit operator merge approval (P-014 / Principle VII). DID NOT MERGE.
