@@ -37,4 +37,7 @@ registry routing, stash conventions, CLI commands, and MCP tools.
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
 * [backlogit metadata catalog](backlogit_metadata_catalog.md)	 - Print the unified metadata catalog
 * [backlogit metadata export-command-map](backlogit_metadata_export-command-map.md)	 - Write an agent-readable command map into the workspace
+* [backlogit metadata templates](backlogit_metadata_templates.md)	 - List registered template types and their section definitions
+* [backlogit metadata types](backlogit_metadata_types.md)	 - List all configured work item types
+* [backlogit metadata wit](backlogit_metadata_wit.md)	 - Describe metadata for a single work item type
 

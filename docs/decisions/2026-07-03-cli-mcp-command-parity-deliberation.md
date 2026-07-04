@@ -83,15 +83,16 @@ An agent that follows the fallback map for semantic links today would invoke a c
 
 ## Chosen Direction
 
-**Option B.** Scoped into a covering feature with five tasks:
+**Option B.** Scoped into a covering feature with six tasks:
 
-1. **T1 — Parity audit matrix (docs).** Publish the grounded MCP↔CLI parity matrix (this audit) as a durable reference under `docs/cli-reference/`, including the intentional CLI-only / MCP-only exception list with rationale. Deliverable (1) + the "documented intentional exceptions" half of (2).
+1. **T1 — Parity audit matrix (docs).** Publish the grounded MCP↔CLI parity matrix (this audit) as a durable reference under `docs/reviews/`, including the intentional CLI-only / MCP-only exception list with rationale. Deliverable (1) + the "documented intentional exceptions" half of (2).
 2. **T2 — Correct the registry operation map + add a drift-detection test (config + test).** Fill the 9 stale `cli_command` columns, add the 3 missing `docs_*` ops, and rewrite the 3 over-claiming `link` rows so they no longer point at a non-existent command (mark MCP-only until the CLI lands). Add a reflection/enumeration drift-detection test (per 063-S) that fails when the registry op-map diverges from the real MCP-tool and CLI surfaces. Deliverable (2), and the durable guard that prevents recurrence.
 3. **T3 — `backlogit shipment add` CLI mirroring `add_to_shipment` (code + test).** The highest-value true workflow gap: Stage/Ship shipment assembly currently has no CLI fallback. Deliverable (2) fill.
 4. **T4 — Fold in `7ECBAC7E`: normalize CLI shipment-list items null→`[]` (code + test).** Call the existing `core.NormalizeShipmentItems` in the CLI `shipment list` handler and add a cross-surface guard test asserting `custom_fields.items` is always a JSON array on both CLI and MCP. Deliverable (2) fill.
 5. **T5 — Discoverability + documented CLI-fallback guide (docs).** Ensure `metadata export-command-map` output is accurate against the corrected map, document grouped/consistent help conventions, and write a "when MCP is unavailable, use these CLI equivalents" guide keyed by MCP tool. Deliverables (3) + (4).
+6. **T6 — `backlogit checkpoint create` CLI mirroring `create_checkpoint` (code + test).** Fill the asymmetric checkpoint gap flagged in Class D: `checkpoint list/get/resolve/cleanup` already had CLI fallbacks and only `create` was missing, breaking session-continuity checkpoint writes when MCP is degraded. Added during phase-1 execution as the sixth task (see Reconciliation note).
 
-Deferred to a **phase-2 stash** (documented intentional deferral, not silent drop): `link` CLI command group (add/remove/list), `checkpoint create`, `poll_hook_events`/`ack_hook_events`, `save_memory`, `append_comment`, `get_wit_metadata`/`list_types`/`list_templates`, `merge_sync`. Rationale: each is a net-new command surface warranting its own design + tests; none is on the critical path for the operator's stated motivation once the map is honest and `add_to_shipment` is filled.
+Deferred to a **phase-2 stash** (documented intentional deferral, not silent drop): `link` CLI command group (add/remove/list), `poll_hook_events`/`ack_hook_events`, `save_memory`, `append_comment`, `get_wit_metadata`/`list_types`/`list_templates`, `merge_sync`. Rationale: each is a net-new command surface warranting its own design + tests; none is on the critical path for the operator's stated motivation once the map is honest and `add_to_shipment` is filled.
 
 ## Decisions and Rationale
 
@@ -110,3 +111,13 @@ Deferred to a **phase-2 stash** (documented intentional deferral, not silent dro
 
 - No hardening signals are expected: the work is additive CLI commands, a git-reversible config/registry correction, a consistency-improving normalization fully covered by a guard test, and docs. No security, auth, migration, destructive, or external-integration surface. The impl-plan will record `Requires plan hardening: no` with per-signal justification.
 - The plan-review gate should trigger the **Agent-Native Parity Reviewer** persona (the plan is entirely about MCP-tool/CLI parity and agent fallback workflows).
+
+## Reconciliation (2026-07-03, Stage — stash `2827CB5F`)
+
+Post-ship audit of stash `2827CB5F` found three drifts between this decision record (written pre-execution) and what shipment **078-S** actually delivered. Corrected in place (Stage owns deliberation-record edits per P-010), with the original claims noted here for auditability:
+
+1. **Parity-matrix location.** T1 originally said the matrix would live under `docs/cli-reference/`; it shipped at `docs/reviews/2026-07-03-cli-mcp-parity-matrix.md` (`docs/cli-reference/` is reserved for generated command references guarded by the cli-reference-drift gate). Corrected T1 to `docs/reviews/`.
+2. **Task count 5 → 6.** The scope was originally enumerated as "five tasks" (T1–T5). A sixth task (`checkpoint create` CLI) was added during execution. Corrected the count and added T6.
+3. **`checkpoint create` shipped, not deferred.** The original deferred-to-phase-2 list included `checkpoint create`; it was in fact built and shipped in 078-S as T6. Removed it from the deferred list and recorded it as T6.
+
+These corrections do not alter the Option B decision or its rationale; they align the historical record with delivered reality. Phase-2 work (the remaining deferred surfaces) is tracked under stash `6C6ACE00` → feature `079-F` / shipment `079-S`.

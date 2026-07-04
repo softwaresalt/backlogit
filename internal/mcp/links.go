@@ -66,22 +66,9 @@ func (s *Server) handleGetLinks(ctx context.Context, request mcplib.CallToolRequ
 
 	linkType, _ := request.Params.Arguments["link_type"].(string)
 
-	var (
-		edges []db.LinkEdge
-		err   error
-	)
-	if linkType != "" {
-		edges, err = db.GetLinksByType(ctx, ws.DB, id, linkType)
-	} else {
-		edges, err = db.GetLinks(ctx, ws.DB, id)
-	}
+	edges, err := core.GetLinks(ctx, ws, id, linkType)
 	if err != nil {
 		return InternalError(fmt.Sprintf("get links: %v", err)), nil
-	}
-
-	// Always return an array (never null) so callers can unconditionally range over links.
-	if edges == nil {
-		edges = []db.LinkEdge{}
 	}
 
 	resp := map[string]any{
