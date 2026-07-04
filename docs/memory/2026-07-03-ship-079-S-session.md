@@ -71,3 +71,17 @@ U1‖U2‖U3‖U4‖U5 (independent) → U6 (registry flip + drift flag-parity, 
 ### Next: Step 5 PR lifecycle → runtime-verification → operational-closure → §1.9 gate → **HALT.**
 - Do NOT merge (P-014/Principle VII). Operator authorizes admin bypass at merge time (PR-Review ruleset needs an approving review the sole author-identity can't self-supply, as with 078-S). Merge-commit strategy only (P-009).
 
+## Step 5 PR Lifecycle — outcome
+
+- **PR #172**: https://github.com/softwaresalt/backlogit/pull/172 · base `main` · head `feat/079-cli-mcp-command-parity-phase2`.
+- **Copilot review (round 1, HEAD `9895ced`)**: 1 thread — `core.AppendComment` minted a fresh `events.EventWriter` per call, dropping the in-process append serialization the MCP server got from its shared `s.Events` writer (concurrent `append_comment` could interleave per-item JSONL writes). **Valid finding.**
+- **Fix `6257fab`** `fix(core): thread shared EventWriter through AppendComment`: `AppendComment` now takes an `*events.EventWriter`; MCP passes `s.Events` (restores serialization, mirrors `handleMoveItem` tools.go:580), CLI passes `nil` (one-shot). Replied + resolved the thread.
+- **Copilot review (round 2, HEAD `6257fab`)**: re-requested via REST `requested_reviewers` (gh `--add-reviewer copilot` fails in this env); fresh review `COMMENTED` on `6257fab`, **no new line-level threads**.
+- **CI**: 4/4 green at both `9895ced` and `6257fab` — `test (1.23)`, `test (1.24)`, `CLI Reference Drift`, `Docline frontmatter gate`. No fix-ci cycle needed (U8 regen was idempotent).
+- **§1.9 pre-merge readiness gate: PASS** — Check1 (no pending Copilot review) ✅, Check2 (latest Copilot review covers HEAD `6257fab`) ✅, Check3 (zero unresolved Copilot threads) ✅. `reviewDecision: REVIEW_REQUIRED` = branch-protection ruleset needs an approving review the author-identity can't self-supply (operator admin-bypass at merge, as 078-S).
+- **Runtime verification: PASS** (`docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`) — all 5 CLI families smoke-tested end-to-end against the built binary; happy paths return MCP-isomorphic JSON, error paths validate (invalid link type, unknown artifact type).
+- **Operational closure (pre-merge): READY WITH CONDITIONS** (`docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-closure.md`).
+- **Follow-ups**: none net-new. `merge_sync` (phase-3), `export-command-map` pairing (phase-3), `log_telemetry` (permanent mcp_only) are all pre-documented deferrals in the plan (R7/R9/D1/D5) + U7 parity docs; external `.tmpl` already tracked as stash `EED25928`. No redundant re-stash.
+
+## Status: MERGE-READY — HALTED before merge (P-014). Awaiting operator merge approval + admin bypass.
+
