@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2
-description: 'Compound refresh report for shipment 080-S — reviewed the docs/compound/ entries adjacent to the shipped hygiene scope (workflow SHA-pinning F013, docline frontmatter contract, npm hybrid resolver) and classified every one as keep: none was superseded, invalidated, or duplicated by the 080-S changes, which preserved (did not alter) existing invariants. No new hard-won learning warranted capture — the work was routine hygiene (an additive env-indirection secret-presence guard, a characterization test against an isolated copy, and a docs wording correction). The one mildly-novel environmental gotcha (gofmt -l flags all files under a Windows CRLF working tree; CI on Linux/LF is authoritative) is recorded in the runtime-verification and closure artifacts rather than promoted to a compound learning.'
+description: 'Compound refresh report for shipment 080-S — reviewed the docs/compound/ entries adjacent to the shipped hygiene scope (workflow SHA-pinning F013, docline frontmatter contract, npm hybrid resolver, shipment/stash patterns f015) and classified every one as keep: none was superseded, invalidated, or duplicated by the 080-S changes, which preserved (did not alter) existing invariants. No new hard-won learning warranted capture — the work was routine hygiene (an additive env-indirection secret-presence guard, a characterization test against an isolated copy, and a docs wording correction). The one mildly-novel environmental gotcha (gofmt -l flags all files under a Windows CRLF working tree; CI on Linux/LF is authoritative) is recorded in the runtime-verification and closure artifacts rather than promoted to a compound learning.'
 doc_type: closure
 docline:
     ms.date: 2026-07-04T00:00:00Z
@@ -14,7 +14,7 @@ title: 'Compound refresh — 080-S release pipeline & docs hygiene'
 # Compound Refresh — 080-S release pipeline & docs hygiene
 
 - **Context**: post-merge closure for shipment 080-S (feature 080-F, PR #174, merge `d0ebb4f`)
-- **Scope**: `docs/compound/` entries adjacent to the shipped surfaces (CI workflow, docline docs, npm packaging)
+- **Scope**: `docs/compound/` entries adjacent to the shipped surfaces (CI workflow, docline docs, npm packaging, shipment/stash lifecycle)
 - **Mode**: propose (review existing) — no new capture
 - **Generated**: 2026-07-04
 
