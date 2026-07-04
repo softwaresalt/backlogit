@@ -852,18 +852,8 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 	actor, _ := request.Params.Arguments["actor"].(string)
 	comment, _ := request.Params.Arguments["comment"].(string)
 	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
-	event := events.Event{
-		Actor:     actor,
-		ItemID:    itemID,
-		EventType: "comment",
-		Delta:     map[string]any{"comment": comment},
-		CommitSHA: commitSHA,
-	}
-	if err := s.Events.AppendEvent(ctx, event); err != nil {
+	if err := core.AppendComment(ctx, s.Workspace, itemID, actor, comment, commitSHA); err != nil {
 		return InternalError(fmt.Sprintf("append comment: %v", err)), nil
-	}
-	if err := db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event); err != nil {
-		return InternalError(fmt.Sprintf("index comment log: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
 }

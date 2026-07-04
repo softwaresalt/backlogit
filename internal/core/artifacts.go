@@ -853,3 +853,28 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	}
 	return nil
 }
+
+// GetLinks returns the outgoing semantic links for the given item ID, optionally
+// filtered to a single linkType when it is non-empty. The result is normalized to
+// a non-nil slice so every caller inherits the never-null guarantee (Rule 3):
+// both the CLI `link list` command and the MCP handleGetLinks handler render an
+// empty result as [] rather than null. Errors from the underlying db layer are
+// wrapped with %w so callers can use errors.Is/As at their boundary.
+func GetLinks(ctx context.Context, ws *Workspace, id, linkType string) ([]db.LinkEdge, error) {
+	var (
+		edges []db.LinkEdge
+		err   error
+	)
+	if linkType != "" {
+		edges, err = db.GetLinksByType(ctx, ws.DB, id, linkType)
+	} else {
+		edges, err = db.GetLinks(ctx, ws.DB, id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get links for %s: %w", id, err)
+	}
+	if edges == nil {
+		edges = []db.LinkEdge{}
+	}
+	return edges, nil
+}

@@ -56,6 +56,37 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 	return nil
 }
 
+// AppendComment appends a "comment" event to an item's JSONL log and indexes it
+// into the SQLite item-log table. It is the shared path used by both the CLI
+// `comment add` command and the MCP append_comment handler so the persisted and
+// indexed comment event is byte-identical across surfaces.
+//
+// Timestamp handling is deliberate and behavior-preserving: the event is built
+// with a zero Timestamp. EventWriter.AppendEvent receives the Event by value and
+// stamps time.Now() on its own copy for the JSONL line, while the same
+// zero-Timestamp event value is handed to db.IndexEvent — exactly matching the
+// pre-extraction inline MCP handler. Do NOT set event.Timestamp here; doing so
+// would change the indexed row's timestamp and break parity with the prior
+// behavior. Errors are wrapped with %w so callers can use errors.Is/As.
+func AppendComment(ctx context.Context, ws *Workspace, itemID, actor, comment, commitSHA string) error {
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	ew := events.NewEventWriter(logsDir)
+	event := events.Event{
+		Actor:     actor,
+		ItemID:    itemID,
+		EventType: "comment",
+		Delta:     map[string]any{"comment": comment},
+		CommitSHA: commitSHA,
+	}
+	if err := ew.AppendEvent(ctx, event); err != nil {
+		return fmt.Errorf("append comment: %w", err)
+	}
+	if err := dbpkg.IndexEvent(ctx, ws.DB, logsDir, event); err != nil {
+		return fmt.Errorf("index comment log: %w", err)
+	}
+	return nil
+}
+
 // GetCommitLinks retrieves all commit associations for a given artifact.
 func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLinkInfo, error) {
 	rows, err := db.QueryContext(ctx,
