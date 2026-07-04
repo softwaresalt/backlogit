@@ -336,11 +336,13 @@ func TestRegistryParity_FlagAndPositionalParity(t *testing.T) {
 		tokens := strings.Fields(op.CLICommand)
 		pathLen := len(strings.Fields(path))
 		positionals := 0
+		templateFlags := map[string]bool{}
 		for i := pathLen; i < len(tokens); i++ {
 			tok := tokens[i]
 			switch {
 			case strings.HasPrefix(tok, "--"):
 				flagName := strings.TrimPrefix(tok, "--")
+				templateFlags[flagName] = true
 				f := lookupFlag(cmd, flagName)
 				assert.NotNilf(t, f,
 					"operation %q cli_command references --%s but command %q exposes no such flag (flag-parity drift)",
@@ -360,6 +362,19 @@ func TestRegistryParity_FlagAndPositionalParity(t *testing.T) {
 				positionals++
 			}
 		}
+
+		// Every flag the target command marks required must appear in the
+		// template — otherwise the fallback invocation fails at runtime with
+		// "required flag(s) not set" even though the command path resolves. This
+		// closes the required-flag false-negative in the flag-parity gate.
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			req := f.Annotations[cobra.BashCompOneRequiredFlag]
+			if len(req) == 1 && req[0] == "true" {
+				assert.Truef(t, templateFlags[f.Name],
+					"operation %q cli_command omits required flag --%s of command %q (fallback would fail at runtime)",
+					name, f.Name, path)
+			}
+		})
 
 		// The positional placeholder count must satisfy the command's Args
 		// validator (e.g. cobra.ExactArgs(N)); a nil Args means arbitrary args.
