@@ -8,7 +8,7 @@ docline:
     ms.topic: reference
 schema_version: "1.0"
 source: docs/reviews/2026-07-03-cli-mcp-parity-matrix.md
-title: 'CLI/MCP Command Parity Audit Matrix (078-F, E16F4664 phase-1)'
+title: 'CLI/MCP Command Parity Audit Matrix (phase-1 078-F; phase-2 079-S closes 10 gaps + flag-parity gate)'
 ---
 
 # CLI/MCP Command Parity Audit Matrix
@@ -30,13 +30,15 @@ Each tool is assigned a drift classification:
 * `CLI-only` — a CLI command exists with no corresponding MCP tool (Class E)
 
 The authoritative MCP-to-CLI fallback mapping lives in
-`.autoharness/backlog-registry.yaml`. That registry is guarded by the U2 drift
-test `internal/cli/registry_parity_test.go`, which checks command **existence**:
-it verifies that each registry `cli_command` resolves to a real cobra command (or
-is intentionally `mcp_only`). This matrix goes one level deeper. It verifies
-per-row **flag-level** parity — that the parameters each mapped MCP tool accepts
-line up with real flags or positional arguments on the target command — which the
-drift test does not assert.
+`.autoharness/backlog-registry.yaml`. That registry is guarded by the drift test
+`internal/cli/registry_parity_test.go`. As of phase-2 (079-S U6) the drift test
+checks parity at **two** levels: command **existence** (each registry
+`cli_command` resolves to a real cobra command or is intentionally `mcp_only`)
+**and** command **flag/positional parity** (each literal `--flag` resolves to a
+real flag on the target command and the `{{positional}}` count satisfies the
+command's `Args` validator). This matrix records the resulting parity
+disposition per row; the flag-level boundary it formerly documented as unguarded
+is now enforced in code.
 
 ## The Matrix
 
@@ -91,22 +93,22 @@ corrections landed.
 | `backlogit_docs_scope` | `backlogit docs scope` | `missing-fixed` | MCP and CLI both existed; registry row added in U2 |
 | `backlogit_add_to_shipment` | `backlogit shipment add` | `gap-filled` | True gap; new CLI verb added this phase (U3) |
 | `backlogit_create_checkpoint` | `backlogit checkpoint create` | `gap-filled` | True gap; new CLI verb added this phase (U6) |
-| `backlogit_add_link` | `— (mcp_only)` | `over-claim-fixed` | Registry pointed at non-existent `backlogit link add`; corrected to mcp_only; real CLI deferred to phase-2 |
-| `backlogit_remove_link` | `— (mcp_only)` | `over-claim-fixed` | Registry pointed at non-existent `backlogit link remove`; corrected to mcp_only; real CLI deferred to phase-2 |
-| `backlogit_get_links` | `— (mcp_only)` | `over-claim-fixed` | Registry pointed at non-existent `backlogit link list`; corrected to mcp_only; real CLI deferred to phase-2 |
-| `backlogit_log_telemetry` | `— (mcp_only)` | `intentional-mcp-only-permanent` | Telemetry is written by the MCP server's own instrumentation; no operator-facing CLI verb is meaningful |
-| `backlogit_ack_hook_events` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_poll_hook_events` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_append_comment` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_save_memory` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_get_wit_metadata` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_list_types` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_list_templates` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
-| `backlogit_merge_sync` | `— (mcp_only)` | `deferred-phase-2` | True gap; mcp_only for now; tracked in follow-up stash 6C6ACE00 |
+| `backlogit_add_link` | `backlogit link add` | `gap-filled-phase-2` | Built in 079-S U1 over `core.AddArtifactLink`; flag-parity verified by the U6 drift assertion |
+| `backlogit_remove_link` | `backlogit link remove` | `gap-filled-phase-2` | Built in 079-S U1 over `core.RemoveArtifactLink`; flag-parity verified by the U6 drift assertion |
+| `backlogit_get_links` | `backlogit link list` | `gap-filled-phase-2` | Built in 079-S U1 over extracted `core.GetLinks` (nil→[]); flag-parity verified by the U6 drift assertion |
+| `backlogit_log_telemetry` | `— (mcp_only)` | `intentional-mcp-only-permanent` | Telemetry is written by the MCP server's own instrumentation; the CLI telemetry surface is read/report-only, so no operator-facing write verb is meaningful |
+| `backlogit_ack_hook_events` | `backlogit hooks ack` | `gap-filled-phase-2` | Built in 079-S U2 over `events.AckHookEvents`; flag-parity verified by the U6 drift assertion |
+| `backlogit_poll_hook_events` | `backlogit hooks poll` | `gap-filled-phase-2` | Built in 079-S U2 over `events.PollHookEvents`; flag-parity verified by the U6 drift assertion |
+| `backlogit_append_comment` | `backlogit comment add` | `gap-filled-phase-2` | Built in 079-S U4 over extracted `core.AppendComment`; flag-parity verified by the U6 drift assertion |
+| `backlogit_save_memory` | `backlogit memory save` | `gap-filled-phase-2` | Built in 079-S U3 over `events.SaveMemory`; flag-parity verified by the U6 drift assertion |
+| `backlogit_get_wit_metadata` | `backlogit metadata wit` | `gap-filled-phase-2` | Built in 079-S U5 over `core.DescribeType`; flag-parity verified by the U6 drift assertion |
+| `backlogit_list_types` | `backlogit metadata types` | `gap-filled-phase-2` | Built in 079-S U5 over `core.ListTypes`; flag-parity verified by the U6 drift assertion |
+| `backlogit_list_templates` | `backlogit metadata templates` | `gap-filled-phase-2` | Built in 079-S U5 over `templates.ListTemplates`; flag-parity verified by the U6 drift assertion |
+| `backlogit_merge_sync` | `— (mcp_only)` | `deferred-phase-3` | Write-by-default merge-aware sync; a CLI verb needs Rule-4 safety design before it can be flipped; still `mcp_only` |
 
 Row totals by classification: 30 parity + 9 stale-fixed + 3 missing-fixed +
-2 gap-filled + 3 over-claim-fixed + 1 intentional-mcp-only-permanent +
-8 deferred-phase-2 = 56.
+2 gap-filled (phase-1) + 10 gap-filled-phase-2 + 1 intentional-mcp-only-permanent +
+1 deferred-phase-3 = 56.
 
 ## True Gap Disposition
 
@@ -115,18 +117,18 @@ dispositioned explicitly so none reads as a silent omission.
 
 * `backlogit_add_to_shipment` — gap-filled (U3, phase-1). New `backlogit shipment add` verb attaches an item to a shipment
 * `backlogit_create_checkpoint` — gap-filled (U6, phase-1). New `backlogit checkpoint create` verb writes a continuity checkpoint
-* `backlogit_add_link` — deferred to phase-2 stash 6C6ACE00. Needs a real `backlogit link` command family before a CLI verb can exist
-* `backlogit_remove_link` — deferred to phase-2 stash 6C6ACE00. Belongs to the same unbuilt `backlogit link` family
-* `backlogit_get_links` — deferred to phase-2 stash 6C6ACE00. Belongs to the same unbuilt `backlogit link` family
-* `backlogit_log_telemetry` — intentional MCP-only (permanent). Telemetry is emitted by the MCP server's own instrumentation, so an operator CLI verb carries no meaning
-* `backlogit_ack_hook_events` — deferred to phase-2 stash 6C6ACE00. Hook-event lifecycle is not yet surfaced to the CLI
-* `backlogit_poll_hook_events` — deferred to phase-2 stash 6C6ACE00. Paired with hook-event acknowledgement; deferred together
-* `backlogit_append_comment` — deferred to phase-2 stash 6C6ACE00. Comment traceability CLI verb not yet designed
-* `backlogit_save_memory` — deferred to phase-2 stash 6C6ACE00. Agent-continuity memory CLI verb not yet designed
-* `backlogit_get_wit_metadata` — deferred to phase-2 stash 6C6ACE00. Work-item-type introspection CLI verb not yet designed
-* `backlogit_list_types` — deferred to phase-2 stash 6C6ACE00. Type-catalog CLI verb not yet designed
-* `backlogit_list_templates` — deferred to phase-2 stash 6C6ACE00. Template-catalog CLI verb not yet designed
-* `backlogit_merge_sync` — deferred to phase-2 stash 6C6ACE00. Merge-aware sync CLI verb not yet designed
+* `backlogit_add_link` — gap-filled (079-S U1, phase-2). New `backlogit link add` verb over `core.AddArtifactLink`
+* `backlogit_remove_link` — gap-filled (079-S U1, phase-2). New `backlogit link remove` verb over `core.RemoveArtifactLink`
+* `backlogit_get_links` — gap-filled (079-S U1, phase-2). New `backlogit link list` verb over extracted `core.GetLinks`
+* `backlogit_log_telemetry` — intentional MCP-only (permanent). Telemetry is emitted by the MCP server's own instrumentation and the CLI telemetry surface is read/report-only, so an operator CLI write verb carries no meaning
+* `backlogit_ack_hook_events` — gap-filled (079-S U2, phase-2). New `backlogit hooks ack` verb over `events.AckHookEvents`
+* `backlogit_poll_hook_events` — gap-filled (079-S U2, phase-2). New `backlogit hooks poll` verb over `events.PollHookEvents`
+* `backlogit_append_comment` — gap-filled (079-S U4, phase-2). New `backlogit comment add` verb over extracted `core.AppendComment`
+* `backlogit_save_memory` — gap-filled (079-S U3, phase-2). New `backlogit memory save` verb over `events.SaveMemory`
+* `backlogit_get_wit_metadata` — gap-filled (079-S U5, phase-2). New `backlogit metadata wit` verb over `core.DescribeType`
+* `backlogit_list_types` — gap-filled (079-S U5, phase-2). New `backlogit metadata types` verb over `core.ListTypes`
+* `backlogit_list_templates` — gap-filled (079-S U5, phase-2). New `backlogit metadata templates` verb over `templates.ListTemplates`
+* `backlogit_merge_sync` — deferred to phase-3. Merge-aware sync is write-by-default and needs a Rule-4 safety design before a CLI verb can be exposed
 
 ## CLI-only Commands (Class E, Intentional)
 
@@ -154,11 +156,22 @@ maps its status parameter to the `--status` flag on `backlogit move`. This is
 flag-level parity: the mapped command not only exists but accepts the parameters
 the MCP tool advertises.
 
-The U2 drift test `internal/cli/registry_parity_test.go` guards command
-**existence** only — it confirms each registry `cli_command` resolves to a real
-cobra command or is intentionally `mcp_only`. It does not assert that the flags
-match. This matrix documents that flag-level parity boundary explicitly, which is
-Risk R-1 in the plan: an operator or agent could rely on a mapped command whose
-flag surface has drifted from the MCP tool's parameters without the drift test
-catching it. Until a flag-level assertion is added, this document is the standing
-record of that boundary.
+As of phase-2 (079-S U6), the drift test
+`internal/cli/registry_parity_test.go` guards command parity at **two** levels:
+
+1. **Existence** — each registry `cli_command` resolves to a real cobra command,
+   or the row is intentionally `mcp_only` (mutually exclusive with `cli_command`).
+2. **Flag/positional parity** (`TestRegistryParity_FlagAndPositionalParity`) —
+   each literal `--flag` in a `cli_command` template resolves to a real
+   local/persistent/inherited flag on the target command, and the number of
+   `{{positional}}` placeholders satisfies that command's `Args` validator
+   (bool-flag and literal-flag-value aware).
+
+This closes Risk R-1 from the plan: a fallback row whose flag surface drifts from
+the target command (a typo'd flag or wrong positional count) now fails CI instead
+of silently breaking at runtime. When first introduced, the assertion immediately
+caught a real latent drift — the `stash` row declared `stash add --text {{text}}`
+while `stash add` takes `text` positionally (`--text` exists only on `stash edit`)
+— which was corrected to `stash add {{text}}`. This document is no longer the sole
+record of the flag-level boundary; it is now enforced in code, and this matrix is
+the human-readable companion to that gate.
