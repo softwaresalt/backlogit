@@ -52,16 +52,20 @@ stash follow-up work for later planning.
 * [backlogit adopt](backlogit_adopt.md)	 - Adopt an orphaned item under a new parent feature
 * [backlogit archive](backlogit_archive.md)	 - Archive a completed artifact
 * [backlogit checkpoint](backlogit_checkpoint.md)	 - Manage session state checkpoints
+* [backlogit comment](backlogit_comment.md)	 - Append comments to an artifact's history
 * [backlogit delete](backlogit_delete.md)	 - Delete an artifact
 * [backlogit deliberate](backlogit_deliberate.md)	 - Create a deliberation artifact linked to a stash entry
 * [backlogit dep](backlogit_dep.md)	 - Manage artifact dependencies
 * [backlogit docs](backlogit_docs.md)	 - Lint and migrate documentation frontmatter (docline base schema)
 * [backlogit doctor](backlogit_doctor.md)	 - Check workspace integrity
 * [backlogit get](backlogit_get.md)	 - Retrieve an artifact by ID
+* [backlogit hooks](backlogit_hooks.md)	 - Poll and acknowledge agent hook events
 * [backlogit init](backlogit_init.md)	 - Initialize a new backlogit workspace
+* [backlogit link](backlogit_link.md)	 - Manage directed semantic links between artifacts
 * [backlogit list](backlogit_list.md)	 - List artifacts in the workspace
 * [backlogit manifest](backlogit_manifest.md)	 - Print a JSON-RPC manifest of all backlogit MCP tool definitions
 * [backlogit mcp](backlogit_mcp.md)	 - Start the backlogit MCP stdio server
+* [backlogit memory](backlogit_memory.md)	 - Persist keyed agent session memory
 * [backlogit metadata](backlogit_metadata.md)	 - Discover backlogit metadata for agents and tooling
 * [backlogit migrate](backlogit_migrate.md)	 - Migrate backlog data between supported formats and layouts
 * [backlogit move](backlogit_move.md)	 - Change artifact status
