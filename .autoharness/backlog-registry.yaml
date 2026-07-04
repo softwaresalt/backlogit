@@ -403,7 +403,11 @@ operations:
 
   docs_migrate:
     mcp_tool: "backlogit_docs_migrate"
-    cli_command: "backlogit docs migrate --path {{path}} --apply --yes"
+    # Fallback mirrors the MCP tool's safe default (apply=false / plan-only).
+    # Applying writes is a gated escalation: append --apply --yes with an
+    # explicit --path. Kept out of the default template to preserve low blast
+    # radius (see Copilot review, PR #170).
+    cli_command: "backlogit docs migrate --path {{path}}"
     params:
       path: "path"
       apply: "apply"
