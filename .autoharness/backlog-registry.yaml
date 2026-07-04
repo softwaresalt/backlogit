@@ -396,21 +396,21 @@ operations:
 
   docs_lint:
     mcp_tool: "backlogit_docs_lint"
-    cli_command: "backlogit docs lint --path {{path}}"
+    cli_command: "backlogit docs lint --path {{path}} --profile {{profile}}"
     params:
       path: "path"
       profile: "profile"
 
   docs_migrate:
     mcp_tool: "backlogit_docs_migrate"
-    cli_command: "backlogit docs migrate --path {{path}}"
+    cli_command: "backlogit docs migrate --path {{path}} --apply --yes"
     params:
       path: "path"
       apply: "apply"
 
   docs_scope:
     mcp_tool: "backlogit_docs_scope"
-    cli_command: "backlogit docs scope"
+    cli_command: "backlogit docs scope --format {{format}}"
     params:
       format: "format"
 

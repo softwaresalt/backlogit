@@ -20,7 +20,7 @@ import (
 // custom_fields.items as a JSON array ([]) — never null and never absent — for a
 // shipment whose stored representation carries a non-array items value, matching
 // the MCP list surface. SQLite JSON round-trips treat empty/absent arrays as
-// lossy (see docs/compound/f015-shipment-stash-patterns.md), so a shipment whose
+// lossy (see docs/compound/go-patterns/f015-shipment-stash-patterns.md), so a shipment whose
 // stored custom_fields.items is null reaches the read edge as null. The MCP list
 // handler already normalizes on that edge; the CLI list handler must do the same
 // so both surfaces marshal an identical array shape through
