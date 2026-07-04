@@ -62,7 +62,31 @@ Shipment `080-S` "Release pipeline and documentation hygiene" (feature `080-F`),
 - [x] mark 080-F feature done + chore(backlog) commit (afab513)
 - [x] PR #174 created; CI 4/4 green; Copilot reviewed 16/16 files, 0 comments, 0 threads; §1.9 gate PASS
 - [x] runtime-verification (PASS WITH FOLLOW-UP) + operational-closure (READY WITH CONDITIONS)
-- [ ] merge-ready halt (awaiting operator approval)
+- [x] merge-ready halt (operator approved)
+- [x] MERGE #174 (admin, merge-commit) -> d0ebb4f; feature+closure branches cleaned up
+- [x] shipment ship 080-S -> shipped (merge SHA stamped); reconcile pre/post PROCEED; P-007 clean
+- [x] post-merge closure + compound-refresh (all-keep) + memory finalize
+- [ ] closure PR held at merge-ready (awaiting separate operator P-014 approval)
+
+## Post-merge closure (Step 6)
+
+- Feature merge: PR #174 MERGED 2026-07-04T18:03:49Z, merge commit `d0ebb4f` (true 2-parent
+  merge: af26c71 + e718a81; P-009 merge-commit preserved). Confirmed in origin/main
+  (merge-base --is-ancestor EXIT 0). Admin bypass of REVIEW_REQUIRED ruleset (operator-authorized).
+- Branch cleanup: remote feat/080-release-docs-hygiene deleted by gh --delete-branch; local
+  feature branch deleted (git branch -d, was e718a81). Now on post-merge/080-S.
+- shipment ship 080-S --sha d0ebb4f: status=shipped; archived_ids=[080.001-T,080.002-T,080.003-T,
+  080-F,080-S]; returned_ids=[]. Commit add3aae `chore: archive 080-S backlog artifacts`.
+- Reconcile: pre PROCEED (4 items pre-archived), post PROCEED (all 5 archived; P-007 no deletions).
+- Knowledge graduation: no ARCHITECTURE/AGENTS/design-doc/product-spec changes (pure hygiene).
+  compound-refresh: F013 SHA-pinning / docline-contract / npm-resolver / f015-shipment all KEEP;
+  no supersession; no new capture (gofmt-CRLF gotcha kept in closure docs, not promoted).
+- Source-artifact cleanup: 080-F has no structured source_stash_id/source_deliberation_id;
+  source stashes 9140F65C + B55985DD already retired by Stage; deliberation is a docs/decisions
+  design record (retained). Deferred stashes 34F11E5A / EED25928 / 21E17BFC left untouched.
+- Post-merge artifacts (docline-clean): post-merge-closure.md, compound-refresh.md.
+- Closure PR: opened on post-merge/080-S, Copilot review + §1.9 gate, HELD at merge-ready
+  (needs separate operator P-014 approval per §1.10).
 
 ## PR / CI / review
 
