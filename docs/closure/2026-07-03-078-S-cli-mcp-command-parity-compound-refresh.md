@@ -3,14 +3,9 @@ chunk_strategy: h1-h2
 description: 'Compound refresh report for shipment 078-S — reviewed the CLI/MCP parity compound entries, classified the two existing entries as keep (distinct layers), and captured one new evidence-backed learning covering the honest registry fallback map, drift test, gap-fill discipline, output-shape parity, and fallback blast-radius parity.'
 doc_type: closure
 docline:
-    date: 2026-07-03T00:00:00Z
-    severity: medium
-    tags:
-        - compound-refresh
-        - cli
-        - mcp
-        - parity
-        - closure
+    ms.date: 2026-07-03T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-03T00:00:00Z"
 schema_version: "1.0"
 source: docs/closure/2026-07-03-078-S-cli-mcp-command-parity-compound-refresh.md
 title: 'Compound refresh — 078-S CLI/MCP command parity'
