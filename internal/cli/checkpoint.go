@@ -25,6 +25,7 @@ Checkpoints are written by agent sessions to enable recovery from unexpected
 termination. Use these commands to list, inspect, resolve, and clean up
 checkpoint files.`,
 	}
+	cmd.AddCommand(newCheckpointCreateCmd(cwd))
 	cmd.AddCommand(newCheckpointListCmd(cwd))
 	cmd.AddCommand(newCheckpointGetCmd(cwd))
 	cmd.AddCommand(newCheckpointResolveCmd(cwd))
@@ -34,6 +35,47 @@ checkpoint files.`,
 
 func checkpointDir(cwd string) string {
 	return filepath.Join(cwd, ".backlogit", "checkpoints")
+}
+
+// newCheckpointCreateCmd returns the `backlogit checkpoint create` subcommand.
+// It mirrors the MCP backlogit_create_checkpoint tool: a V1 state dump is
+// validated and written through the shared events.CreateCheckpoint pipeline, and
+// the written path is returned as JSON ({"path": ...}).
+func newCheckpointCreateCmd(cwd *string) *cobra.Command {
+	var stateDump string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a session state checkpoint",
+		Long: `Create a session state checkpoint from a JSON state dump.
+
+The state dump is written to the workspace checkpoints directory. When the dump
+declares schema_version=1, it is validated as a V1 checkpoint and missing
+created_at, updated_at, and status fields are auto-populated. The written path
+is returned as JSON.`,
+		Example: `  backlogit checkpoint create --state-dump '{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build"}'`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := context.Background()
+			slog.Info("checkpoint command invoked", "operation", "checkpoint-create")
+
+			if stateDump == "" {
+				return fmt.Errorf("state-dump is required")
+			}
+
+			dir := checkpointDir(*cwd)
+			path, err := events.CreateCheckpoint(ctx, dir, stateDump)
+			if err != nil {
+				return fmt.Errorf("create checkpoint: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]string{"path": path})
+		},
+	}
+	cmd.Flags().StringVar(&stateDump, "state-dump", "", "JSON checkpoint state dump")
+	_ = cmd.MarkFlagRequired("state-dump")
+	return cmd
 }
 
 func newCheckpointListCmd(cwd *string) *cobra.Command {

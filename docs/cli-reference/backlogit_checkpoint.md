@@ -38,6 +38,7 @@ checkpoint files.
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
 * [backlogit checkpoint cleanup](backlogit_checkpoint_cleanup.md)	 - Archive resolved and stale checkpoints
+* [backlogit checkpoint create](backlogit_checkpoint_create.md)	 - Create a session state checkpoint
 * [backlogit checkpoint get](backlogit_checkpoint_get.md)	 - Get and validate a specific checkpoint
 * [backlogit checkpoint list](backlogit_checkpoint_list.md)	 - List session state checkpoints
 * [backlogit checkpoint resolve](backlogit_checkpoint_resolve.md)	 - Mark a checkpoint as resolved

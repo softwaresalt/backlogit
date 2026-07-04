@@ -28,10 +28,61 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentCreateCmd())
 	cmd.AddCommand(newShipmentGetCmd())
 	cmd.AddCommand(newShipmentListCmd())
+	cmd.AddCommand(newShipmentAddCmd())
 	cmd.AddCommand(newShipmentClaimCmd())
 	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
 	return cmd
+}
+
+// newShipmentAddCmd returns the `backlogit shipment add <shipment-id> <item-id>`
+// subcommand. It is the CLI fallback for the backlogit_add_to_shipment MCP tool:
+// positional args matching the sibling `shipment get <id>` convention, the shared
+// core.AddItemToShipment mutation (idempotent for an item already in this
+// shipment, refused for one assigned to another), and a success JSON isomorphic
+// to the MCP handler result ({shipment_id, item_id, status:"added"}).
+func newShipmentAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <shipment-id> <item-id>",
+		Short: "Add an item to a shipment",
+		Long: `Add a backlog item to a shipment manifest.
+
+This mirrors the backlogit_add_to_shipment MCP tool: it takes positional
+<shipment-id> and <item-id> arguments and associates the item via the shared
+core mutation. It is idempotent when the item already belongs to this shipment;
+adding an item already assigned to another shipment is refused.`,
+		Example: `  backlogit shipment add 001-S 001.001-T`,
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			shipmentID := args[0]
+			itemID := args[1]
+			slog.Info(
+				"shipment command invoked",
+				"operation", "shipment-add",
+				"shipment_id", shipmentID,
+				"item_id", itemID,
+			)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			if err := core.AddItemToShipment(ctx, ws, shipmentID, itemID); err != nil {
+				return fmt.Errorf("add item to shipment: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]string{
+				"shipment_id": shipmentID,
+				"item_id":     itemID,
+				"status":      "added",
+			})
+		},
+	}
 }
 
 // newShipmentCreateCmd returns the `backlogit shipment create` subcommand.
@@ -136,6 +187,19 @@ feature.`,
 			})
 			if err != nil {
 				return fmt.Errorf("list shipments: %w", err)
+			}
+			for _, shipment := range shipments {
+				// Normalize on the read edge so the CLI list surface carries an
+				// identical items array shape to the MCP list surface. SQLite JSON
+				// round-trips treat empty/absent arrays as lossy (a stored shipment
+				// whose items is null reaches here as null), so this guarantees the
+				// never-null invariant. The nil-map guard exists solely to provide an
+				// assignment target; the never-null VALUE guarantee comes entirely
+				// from core.NormalizeShipmentItems (the single source of truth).
+				if shipment.CustomFields == nil {
+					shipment.CustomFields = map[string]any{}
+				}
+				shipment.CustomFields["items"] = core.NormalizeShipmentItems(shipment)
 			}
 
 			effectiveFormat := format.Format(formatOutput)
