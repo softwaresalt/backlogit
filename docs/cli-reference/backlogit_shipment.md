@@ -36,6 +36,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
+* [backlogit shipment add](backlogit_shipment_add.md)	 - Add an item to a shipment
 * [backlogit shipment claim](backlogit_shipment_claim.md)	 - Claim a queued shipment
 * [backlogit shipment create](backlogit_shipment_create.md)	 - Create a shipment
 * [backlogit shipment get](backlogit_shipment_get.md)	 - Get a shipment by ID
