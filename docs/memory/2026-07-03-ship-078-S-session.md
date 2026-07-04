@@ -80,7 +80,7 @@
 - **HALT**: merge-ready, awaiting explicit operator merge approval (P-014 / Principle VII). DID NOT MERGE.
 
 ## Post-merge closure (operator-approved merge) — 2026-07-04
-- **Merge**: PR #170 MERGED at 2026-07-04T01:47:06Z by softwaresalt. Merge commit `e2ab16c0e893d6bcb260162099b0d3f7e87530c2` — TRUE merge commit (parents 219ed96 + 7261e36). Confirmed in origin/main (merge-base --is-ancestor exit 0).
+- **Merge**: PR #170 MERGED at 2026-07-04T01:47:06Z by softwaresalt. Merge commit `e2ab16c0e893d6bcb260162099b0d3f7e87530c2` — TRUE merge commit (parents 219ed96 + 7261e36). Confirmed in origin/main (git merge-base --is-ancestor exit 0).
 - **Admin merge**: repo ruleset "PR-Review" (id 14767379) required 1 approving review (code-owner + last-push). Sole identity softwaresalt is the PR author → cannot self-approve; no human review possible. Operator (owner) authorized admin bypass; ruleset bypass_actors = RepositoryRole(Admin)/pull_request. `gh pr merge 170 --merge --admin --delete-branch` (merge-commit; P-009 preserved).
 - **Re-verified pre-merge on HEAD 7261e36**: §1.9 all 3 checks PASS; CI 4/4 SUCCESS; MERGEABLE.
 - **Shipment ship**: `backlogit shipment ship 078-S --sha e2ab16c…` → status=shipped; 16 archived_ids (15 items + 078-S); commit SHA recorded.
