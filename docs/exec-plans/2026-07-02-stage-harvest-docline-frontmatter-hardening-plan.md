@@ -100,11 +100,13 @@ obligations, and the fix targets the exact surface (`docs/exec-plans/**`) that *
     overwrite and, although the target is git-tracked (revertible), standing guidance should show the
     operator the diff before writing (Principle VII).
   Add a **mandatory verification step**: after writing the plan, run the docline linter **via the
-  same entrypoint CI uses** — `make docs-lint` (i.e. `go run ./cmd/backlogit docs lint`), optionally
-  narrowed with `--path docs/exec-plans/<file>` — and confirm `valid` / `0 violations` before the
-  plan is considered complete; treat any violation as a blocker to fix in place. Using the source
-  entrypoint (not a possibly-stale installed `backlogit` binary) guarantees the self-lint agrees with
-  the CI Docline gate and cannot pass locally while CI fails.
+  same entrypoint CI uses**. The repo-wide `make docs-lint` target runs `go run ./cmd/backlogit
+  docs lint` with no arguments over all authored docs; to check a single file, use the scoped
+  direct form `go run ./cmd/backlogit docs lint --path docs/exec-plans/<file>` (the `--path` flag
+  belongs to `backlogit docs lint`, not to `make docs-lint`). Confirm `valid` / `0 violations`
+  before the plan is considered complete; treat any violation as a blocker to fix in place. Using
+  the source entrypoint (not a possibly-stale installed `backlogit` binary) guarantees the
+  self-lint agrees with the CI Docline gate and cannot pass locally while CI fails.
 - **Execution posture**: documentation change (no test framework); verified behaviorally.
 - **Verification / acceptance**:
   - The skill contains a Plan Frontmatter Contract subsection naming `doc_type: plan`, top-level
@@ -121,8 +123,10 @@ obligations, and the fix targets the exact surface (`docs/exec-plans/**`) that *
 - **Change**: Insert a **"Phase 1.5: Docline frontmatter gate (pre-decomposition)"** between the
   existing Phase 1 (Validate the reviewed plan) and Phase 2 (Parse the plan structure). The gate:
   - runs the docline linter (authoring profile) against the incoming plan **via the same entrypoint
-    CI uses** — `make docs-lint` / `go run ./cmd/backlogit docs lint`, narrowable with
-    `--path <plan_path>` — before any backlog mutation or Stage harvest commit, so the gate cannot
+    CI uses** — the repo-wide `make docs-lint` (`go run ./cmd/backlogit docs lint`, no arguments)
+    or, to scope a single plan, the direct `go run ./cmd/backlogit docs lint --path <plan_path>`
+    (the `--path` flag belongs to `backlogit docs lint`, not `make docs-lint`) — before any backlog
+    mutation or Stage harvest commit, so the gate cannot
     pass on a stale installed binary while CI (source) fails;
   - on any violation, **HALTS** decomposition, reports the violations, and directs the author to fix
     the plan frontmatter (or run `backlogit docs migrate --apply --yes --path <plan_path>`) and

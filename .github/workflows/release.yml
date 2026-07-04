@@ -165,7 +165,21 @@ jobs:
           name: npm-packages
           path: npm/
 
+      - name: Check NPM_TOKEN presence
+        id: preflight
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "has_token=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has_token=false" >> "${GITHUB_OUTPUT}"
+            echo "NPM_TOKEN absent - skipping npm publish (not a failure)."
+          fi
+
       - name: Publish platform packages
+        if: steps.preflight.outputs.has_token == 'true'
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -176,6 +190,7 @@ jobs:
           done
 
       - name: Publish wrapper package
+        if: steps.preflight.outputs.has_token == 'true'
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
