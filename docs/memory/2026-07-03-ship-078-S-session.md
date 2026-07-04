@@ -78,3 +78,17 @@
 - **§1.9 pre-merge gate**: Check1 (no pending)=pass, Check3 (0 unresolved Copilot threads)=pass; Check2 (freshness) required a fresh Copilot review on final HEAD — re-requested; see report for final outcome.
 - **Follow-ups stashed**: 2827CB5F (deliberation-record reconciliation, kind=deliberation, for Stage)
 - **HALT**: merge-ready, awaiting explicit operator merge approval (P-014 / Principle VII). DID NOT MERGE.
+
+## Post-merge closure (operator-approved merge) — 2026-07-04
+- **Merge**: PR #170 MERGED at 2026-07-04T01:47:06Z by softwaresalt. Merge commit `e2ab16c0e893d6bcb260162099b0d3f7e87530c2` — TRUE merge commit (parents 219ed96 + 7261e36). Confirmed in origin/main (merge-base --is-ancestor exit 0).
+- **Admin merge**: repo ruleset "PR-Review" (id 14767379) required 1 approving review (code-owner + last-push). Sole identity softwaresalt is the PR author → cannot self-approve; no human review possible. Operator (owner) authorized admin bypass; ruleset bypass_actors = RepositoryRole(Admin)/pull_request. `gh pr merge 170 --merge --admin --delete-branch` (merge-commit; P-009 preserved).
+- **Re-verified pre-merge on HEAD 7261e36**: §1.9 all 3 checks PASS; CI 4/4 SUCCESS; MERGEABLE.
+- **Shipment ship**: `backlogit shipment ship 078-S --sha e2ab16c…` → status=shipped; 16 archived_ids (15 items + 078-S); commit SHA recorded.
+- **Reconcile**: pre PROCEED (15 pre-archived, 0 orphans) · post PROCEED (15 items + 078-S present, status archived). Reports in .backlogit/reconcile/. P-007: no archive deletions.
+- **Closure branch**: `post-merge/078-cli-mcp-command-parity` (from main@e2ab16c). Archival committed e454cd2.
+- **Knowledge graduation**: NEW compound entry docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md (lint-clean, 4 rules) + compound-refresh report (existing parity entries = keep). Discoverability design doc already on main.
+- **Post-merge closure artifact**: docs/closure/2026-07-03-078-S-cli-mcp-command-parity-post-merge-closure.md (lint-clean).
+- **Source artifacts**: 078-F has no source_stash_id/source_deliberation_id (no-op retirement). Originating stash E16F4664 + folded 7ECBAC7E already retired by Stage. Deliberation record LEFT for Stage (stash 2827CB5F) per operator + P-010.
+- **Compact-context**: assessed (18 files / 82.5 KB; 078 unit = 1 file) → below all thresholds, no compaction.
+- **Branch cleanup**: remote feat/078-cli-mcp-command-parity deleted by --delete-branch; local deleted.
+- **Remaining**: operator P-014 approval of the closure PR before it merges.
