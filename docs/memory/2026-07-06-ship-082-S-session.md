@@ -239,3 +239,20 @@ U1 082.001-T (config/resolver/probe) -> U2 082.002-T (core broker) ->
 ### GUARDRAILS honored: path-scoped git add only (hooks_queue.jsonl excluded); protected stash
 ### items untouched (162F5548, 9822F787, 7C5EADA6, 83B885EE, 7ED9CE1A, 34F11E5A, 21E17BFC,
 ### EED25928, D760E508, 2EF8B7AD); conventional commits + Copilot co-author trailer.
+
+## ============================================================
+## CLOSURE PR OPENED — MERGE-READY HALT (2026-07-06 ~16:06)
+## ============================================================
+- Closure PR: #179 https://github.com/softwaresalt/backlogit/pull/179 (base main <- post-merge/082-S)
+- Commits: 00e4f8b (archival), c4f0c74 (closure docs+graduation), 70de004 (adversarial remediation).
+- Adversarial review PRE-PUSH (mandatory): Reviewer-A GPT-5.4 -> BLOCK, 1 CRITICAL + 4 MAJOR + 1
+  MINOR (all verified vs merged source + remediated). Reviewer-B Gemini failed -> replaced by
+  Claude Opus 4.8 verification -> PROCEED. Trail: docs/closure/...-closure-pr-adversarial-review.md.
+- Copilot review: completed on HEAD 70de004, COMMENTED, informational overview only, 0 inline
+  threads. Nothing to resolve.
+- CI: 4/4 SUCCESS (test 1.23, test 1.24, CLI Reference Drift, Docline frontmatter gate).
+- §1.9 gate: CHECK1 (no pending req) PASS; CHECK2 (review covers HEAD) PASS; CHECK3 (0 unresolved
+  Copilot threads) PASS. mergeable=MERGEABLE. reviewDecision=REVIEW_REQUIRED (human-approval
+  ruleset -> needs operator P-014 + admin bypass, same as feature PR).
+- Feature branch feat/pre-task-completion-gate-broker: DELETED (remote via --delete-branch; local removed).
+- STATE: HALTED at merge-ready. Closure PR NOT merged; awaits its own operator P-014 approval per §1.10.
