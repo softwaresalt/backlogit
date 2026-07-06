@@ -87,6 +87,9 @@ func TestPreTaskCompletionGate_Validation(t *testing.T) {
 		{"force_cli_only false rejected", func(g *PreTaskCompletionGateConfig) { g.ForceCLIOnly = falsePtr() }, "force_cli_only must be true"},
 		{"absolute binary rejected", func(g *PreTaskCompletionGateConfig) { g.AutoharnessBinary = absBinary() }, "must not be an absolute path"},
 		{"traversal binary rejected", func(g *PreTaskCompletionGateConfig) { g.AutoharnessBinary = "../evil/autoharness" }, "must not contain '..'"},
+		{"relative subdir binary rejected", func(g *PreTaskCompletionGateConfig) { g.AutoharnessBinary = "bin/autoharness" }, "must be a bare executable name"},
+		{"dot-slash binary rejected", func(g *PreTaskCompletionGateConfig) { g.AutoharnessBinary = "./autoharness" }, "must be a bare executable name"},
+		{"backslash binary rejected", func(g *PreTaskCompletionGateConfig) { g.AutoharnessBinary = `bin\autoharness` }, "must be a bare executable name"},
 	}
 
 	for _, tt := range tests {

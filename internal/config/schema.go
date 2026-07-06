@@ -232,7 +232,11 @@ func (g PreTaskCompletionGateConfig) Validate() error {
 }
 
 // validateGateBinary constrains the config-controlled executable the broker
-// auto-invokes: reject absolute paths and ".." traversal; prefer a PATH lookup.
+// auto-invokes. hooks.yaml is repo-controlled and auto-loaded, so a path-qualified
+// binary would let os/exec run an arbitrary in-repo file (relative to the workspace)
+// instead of a PATH lookup — a local code-execution vector. Require a bare
+// executable name resolved via PATH: reject absolute paths, ".." traversal, and any
+// remaining path component (relative subdir or Windows volume).
 func validateGateBinary(bin string) error {
 	if bin == "" {
 		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must not be empty")
@@ -243,6 +247,9 @@ func validateGateBinary(bin string) error {
 	cleaned := filepath.ToSlash(filepath.Clean(bin))
 	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
 		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must not contain '..' traversal: %q", bin)
+	}
+	if strings.ContainsAny(bin, `/\`) || filepath.VolumeName(bin) != "" {
+		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must be a bare executable name resolved via PATH, not a path: %q", bin)
 	}
 	return nil
 }

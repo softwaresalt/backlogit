@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"testing"
+	"time"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -17,6 +18,16 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(_ context.Context, args []string, _ string, _ []string) (GateResult, error) {
 	f.gotArgs = args
 	return f.res, f.err
+}
+
+// blockingVersion blocks until the context is cancelled, modeling a wedged or
+// malicious `autoharness version` probe. It returns the context error so the
+// broker's timeout classification can be exercised.
+type blockingVersion struct{}
+
+func (blockingVersion) Version(ctx context.Context) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
 }
 
 func allRefs() map[string]bool {
@@ -132,6 +143,28 @@ func TestBroker_Evaluate(t *testing.T) {
 		_, err := b.Evaluate(context.Background(), Request{ItemID: "x", WorkspaceRoot: ".", GateBase: "no-such-ref"})
 		if !stderrors.Is(err, bkerrors.ErrGateConfig) {
 			t.Fatalf("err = %v, want config error for explicit override", err)
+		}
+	})
+
+	t.Run("version probe is bounded by the timeout (no unbounded hang)", func(t *testing.T) {
+		// Regression: the timeout must cover the version probe (and base
+		// resolution), not just the gate run. The completion path holds the task
+		// lock across Evaluate, so an unbounded probe would pin the lock forever.
+		b := &Broker{Runner: &fakeRunner{}, Git: fakeGit{resolvable: allRefs()}, Version: blockingVersion{}, Enabled: EnabledTrue, TimeoutSeconds: 1}
+		done := make(chan error, 1)
+		go func() {
+			_, err := b.Evaluate(context.Background(), Request{ItemID: "x", WorkspaceRoot: "."})
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			// Returned rather than hanging: the internal deadline cancelled the
+			// probe. Under enabled:true a probe failure is a setup-class refusal.
+			if !stderrors.Is(err, bkerrors.ErrGateSetup) {
+				t.Fatalf("err = %v, want setup after probe timeout", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Evaluate hung: version probe was not bounded by TimeoutSeconds")
 		}
 	})
 }

@@ -67,7 +67,7 @@ func buildGateBroker(root string, cfg config.PreTaskCompletionGateConfig) *gate.
 	return &gate.Broker{
 		Runner:         gate.ExecRunner{Binary: cfg.AutoharnessBinary},
 		Git:            gate.ExecGitRunner{Dir: root, Env: env},
-		Version:        gate.ExecVersionRunner{Binary: cfg.AutoharnessBinary},
+		Version:        gate.ExecVersionRunner{Binary: cfg.AutoharnessBinary, Dir: root, Env: env},
 		Enabled:        gate.EnabledMode(cfg.Enabled),
 		ConfigBaseRef:  cfg.BaseRef,
 		TimeoutSeconds: cfg.TimeoutSeconds,
@@ -194,8 +194,11 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		return ws.handleGateSetupError(ctx, id, oldStatus, evalErr)
 	}
 
-	// Audit a non-default base override before applying the decision.
-	if ev.Base.NonDefault {
+	// Audit an operator base override before applying the decision. Fires for any
+	// non-default resolved base AND whenever the operator explicitly passed
+	// --gate-base (even if it happens to equal the default ref), so a privileged
+	// break-glass never escapes the audit trail.
+	if ev.Base.NonDefault || strings.TrimSpace(opts.GateBase) != "" {
 		if oErr := ws.recordGateBaseOverride(ctx, id, ev, opts); oErr != nil {
 			slog.WarnContext(ctx, "append gate base-override evidence", "item_id", id, "error", oErr)
 		}
@@ -232,7 +235,14 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 	}
 	if opts.Force {
 		if err := ws.appendGateEvidence(ctx, id, EventGateForced, outcome, &opts); err != nil {
-			slog.WarnContext(ctx, "gate forced evidence append failed", "item_id", id, "error", err)
+			// Force is the operator break-glass; its audit record is the whole point
+			// of forcing. Under evidence_required, a failed forced-audit append must
+			// refuse the completion rather than silently persist a forced transition
+			// with no audit trail (parity with the pass-evidence path above).
+			if ws.gateConfig.EvidenceRequiredValue() {
+				return nil, nil, fmt.Errorf("forced-gate evidence append failed, refusing completion of %s: %w", id, err)
+			}
+			slog.WarnContext(ctx, "gate forced evidence append failed (evidence not required)", "item_id", id, "error", err)
 		}
 	}
 

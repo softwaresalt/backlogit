@@ -64,7 +64,21 @@ func (b *Broker) Evaluate(ctx context.Context, req Request) (Evaluation, error) 
 		return ev, nil
 	}
 
-	enforce, err := Probe(ctx, b.Version, b.Enabled)
+	// Bound EVERY child process by the configured timeout — the version probe and
+	// the git base-ref resolution as well as the gate check itself. The completion
+	// path holds the per-task lock across this call and refreshes its heartbeat, so
+	// an unbounded probe or git hang would pin the live lock indefinitely (a
+	// denial of service on the item). Deriving the deadline before the probe caps
+	// that: under auto a wedged probe times out and fails open; under strict it
+	// fails closed.
+	runCtx := ctx
+	if b.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, time.Duration(b.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	enforce, err := Probe(runCtx, b.Version, b.Enabled)
 	if err != nil {
 		// Setup-class refusal under enabled:true.
 		return ev, err
@@ -76,7 +90,7 @@ func (b *Broker) Evaluate(ctx context.Context, req Request) (Evaluation, error) 
 	}
 	ev.Enforced = true
 
-	base, err := ResolveBaseRef(ctx, b.Git, BaseRefInput{ConfigBaseRef: b.ConfigBaseRef, GateBase: req.GateBase})
+	base, err := ResolveBaseRef(runCtx, b.Git, BaseRefInput{ConfigBaseRef: b.ConfigBaseRef, GateBase: req.GateBase})
 	if err != nil {
 		// An explicit operator base override (config base_ref != auto, or a
 		// --gate-base) that cannot be verified is ALWAYS a config-class refusal,
@@ -98,13 +112,6 @@ func (b *Broker) Evaluate(ctx context.Context, req Request) (Evaluation, error) 
 		return ev, nil
 	}
 	ev.Base = base
-
-	runCtx := ctx
-	if b.TimeoutSeconds > 0 {
-		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(ctx, time.Duration(b.TimeoutSeconds)*time.Second)
-		defer cancel()
-	}
 
 	args := BuildArgs(GateCheckRequest{
 		ItemID:        req.ItemID,
