@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // taskStaleLockTTL is the age threshold after which an unremoved per-task .lock
@@ -145,5 +148,89 @@ func lockTaskFile(taskFilePath string) (unlock func() error, err error) {
 			mu.Unlock()
 		})
 		return nil
+	}, nil
+}
+
+// defaultGateLockBoundedWait bounds how long the gated completion path waits to
+// acquire a contended task lock before failing fast with a retryable error.
+const defaultGateLockBoundedWait = 3 * time.Second
+
+// defaultGateLockHeartbeat is the sidecar ModTime refresh interval used while a
+// gate holds the lock. It is strictly less than taskStaleLockTTL so a long gate
+// run (timeout_seconds may exceed the 60s TTL) never lets a concurrent
+// cross-process caller treat the live lock as crash residue and reap it mid-gate.
+const defaultGateLockHeartbeat = 20 * time.Second
+
+// lockTaskFileWithHeartbeat acquires the per-task advisory lock with a bounded
+// wait (retrying on ErrTaskBusy up to boundedWait with backoff, honoring
+// ctx.Done()) and starts a heartbeat that refreshes the lock sidecar's ModTime on
+// the heartbeat interval for the whole hold. On contention past the bounded wait
+// it returns a wrapped ErrGateInProgress (retryable). The returned unlock stops
+// the heartbeat, waits for it to exit, then releases the underlying lock; it is
+// safe to call multiple times and callers MUST defer it.
+func lockTaskFileWithHeartbeat(ctx context.Context, taskFilePath string, boundedWait, heartbeat time.Duration) (func() error, error) {
+	deadline := time.Now().Add(boundedWait)
+	backoff := 20 * time.Millisecond
+
+	var unlock func() error
+	for {
+		var err error
+		unlock, err = lockTaskFile(taskFilePath)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrTaskBusy) {
+			// A genuine IO fault (permission, missing dir) — not contention.
+			return nil, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("task %s: %w", taskFilePath, bkerrors.ErrGateInProgress)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 250*time.Millisecond {
+			backoff *= 2
+		}
+	}
+
+	resolved, err := filepath.Abs(taskFilePath)
+	if err != nil {
+		// Best-effort: fall back to the raw path for the sidecar.
+		resolved = taskFilePath
+	}
+	sidecar := taskLockSidecarPath(filepath.Clean(resolved))
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	if heartbeat > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(heartbeat)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					now := time.Now()
+					if chErr := os.Chtimes(sidecar, now, now); chErr != nil && !os.IsNotExist(chErr) {
+						slog.Warn("gate lock heartbeat failed", "path", sidecar, "error", chErr)
+					}
+				}
+			}
+		}()
+	}
+
+	var once sync.Once
+	return func() error {
+		once.Do(func() {
+			close(stop)
+			wg.Wait()
+		})
+		return unlock()
 	}, nil
 }

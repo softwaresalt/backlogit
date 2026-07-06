@@ -492,11 +492,20 @@ func DefaultHooksConfig() *HooksConfig {
 				"review":  {"done", "accepted", "rejected"},
 				"done":    {"archived"},
 			},
+			PreTaskCompletionGate: defaultPreTaskCompletionGate(),
 		},
 		Notifications: NotificationsConfig{
 			RateLimit: 10,
 		},
 	}
+}
+
+// defaultPreTaskCompletionGate returns the default v1 gate broker config
+// (enabled:auto so a repo without configured autoharness gates still completes).
+func defaultPreTaskCompletionGate() PreTaskCompletionGateConfig {
+	g := PreTaskCompletionGateConfig{}
+	g.Normalize()
+	return g
 }
 
 // defaultHooksYAML marshals the default HooksConfig to YAML bytes.

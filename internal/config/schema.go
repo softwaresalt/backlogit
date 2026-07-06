@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -124,9 +126,125 @@ type HookEventThresholds struct {
 
 // LifecycleHooksConfig controls built-in lifecycle hook behavior.
 type LifecycleHooksConfig struct {
-	ValidateTransition bool                `yaml:"validate_transition"`
-	EmitEvents         bool                `yaml:"emit_events"`
-	Transitions        map[string][]string `yaml:"transitions,omitempty"`
+	ValidateTransition    bool                        `yaml:"validate_transition"`
+	EmitEvents            bool                        `yaml:"emit_events"`
+	Transitions           map[string][]string         `yaml:"transitions,omitempty"`
+	PreTaskCompletionGate PreTaskCompletionGateConfig `yaml:"pre_task_completion_gate,omitempty"`
+}
+
+// PreTaskCompletionGateConfig configures the built-in pre-task-completion gate
+// broker (082-F): backlogit synchronously invokes `autoharness gate check`
+// before writing task/subtask -> a terminal status and shipment -> shipped.
+type PreTaskCompletionGateConfig struct {
+	// Enabled is three-valued: "auto" (enforce when autoharness is resolvable,
+	// else fail open), "true" (strict, fail closed), or "false" (kill switch).
+	Enabled string `yaml:"enabled,omitempty"`
+	// TerminalStatuses are the statuses whose entry triggers the gate. Default ["done"].
+	TerminalStatuses []string `yaml:"terminal_statuses,omitempty"`
+	// AutoharnessBinary is the gate executable. Resolved via PATH by default; an
+	// absolute path or a ".." traversal is rejected at validation.
+	AutoharnessBinary string `yaml:"autoharness_binary,omitempty"`
+	// BaseRef is the default-branch base ref, or "auto" to discover it.
+	BaseRef string `yaml:"base_ref,omitempty"`
+	// TimeoutSeconds bounds the gate run. Must be within [1, 3600]; the completion
+	// path refreshes the task-lock sidecar (heartbeat) so a value above the 60s
+	// lock stale-TTL cannot let a concurrent process reap the live lock mid-gate.
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty"`
+	// ForceCLIOnly is a hard v1 invariant: force is operator-only via the CLI.
+	// Nil defaults to true; an explicit false is rejected.
+	ForceCLIOnly *bool `yaml:"force_cli_only,omitempty"`
+	// EvidenceRequired makes the backlogit gate-evidence append part of the
+	// transition contract. Nil defaults to true.
+	EvidenceRequired *bool `yaml:"evidence_required,omitempty"`
+}
+
+// gateKnownStatuses is the set of valid artifact statuses accepted in
+// terminal_statuses. Kept local to config to avoid a dependency on internal/models.
+var gateKnownStatuses = map[string]bool{
+	"queued": true, "active": true, "blocked": true, "review": true,
+	"done": true, "accepted": true, "rejected": true, "archived": true,
+	"shipped": true, "abandoned": true,
+}
+
+// Normalize fills zero-valued fields with their documented defaults. It is
+// idempotent and safe to call on an absent (zero-value) block.
+func (g *PreTaskCompletionGateConfig) Normalize() {
+	if g.Enabled == "" {
+		g.Enabled = "auto"
+	}
+	if len(g.TerminalStatuses) == 0 {
+		g.TerminalStatuses = []string{"done"}
+	}
+	if g.AutoharnessBinary == "" {
+		g.AutoharnessBinary = "autoharness"
+	}
+	if g.BaseRef == "" {
+		g.BaseRef = "auto"
+	}
+	if g.TimeoutSeconds == 0 {
+		g.TimeoutSeconds = 600
+	}
+	if g.ForceCLIOnly == nil {
+		t := true
+		g.ForceCLIOnly = &t
+	}
+	if g.EvidenceRequired == nil {
+		t := true
+		g.EvidenceRequired = &t
+	}
+}
+
+// ForceCLIOnlyValue returns the effective force_cli_only after normalization.
+func (g PreTaskCompletionGateConfig) ForceCLIOnlyValue() bool {
+	return g.ForceCLIOnly == nil || *g.ForceCLIOnly
+}
+
+// EvidenceRequiredValue returns the effective evidence_required after normalization.
+func (g PreTaskCompletionGateConfig) EvidenceRequiredValue() bool {
+	return g.EvidenceRequired == nil || *g.EvidenceRequired
+}
+
+// Validate enforces the gate config invariants after Normalize.
+func (g PreTaskCompletionGateConfig) Validate() error {
+	switch g.Enabled {
+	case "auto", "true", "false":
+	default:
+		return fmt.Errorf("pre_task_completion_gate.enabled must be one of auto|true|false, got %q", g.Enabled)
+	}
+	if len(g.TerminalStatuses) == 0 {
+		return fmt.Errorf("pre_task_completion_gate.terminal_statuses must not be empty")
+	}
+	for _, s := range g.TerminalStatuses {
+		if !gateKnownStatuses[s] {
+			return fmt.Errorf("pre_task_completion_gate.terminal_statuses has unknown status %q", s)
+		}
+	}
+	if g.TimeoutSeconds < 1 || g.TimeoutSeconds > 3600 {
+		return fmt.Errorf("pre_task_completion_gate.timeout_seconds must be within [1, 3600], got %d", g.TimeoutSeconds)
+	}
+	if g.ForceCLIOnly != nil && !*g.ForceCLIOnly {
+		return fmt.Errorf("pre_task_completion_gate.force_cli_only must be true (CLI-only force is a v1 invariant)")
+	}
+	if err := validateGateBinary(g.AutoharnessBinary); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateGateBinary constrains the config-controlled executable the broker
+// auto-invokes: reject absolute paths and ".." traversal; prefer a PATH lookup.
+func validateGateBinary(bin string) error {
+	if bin == "" {
+		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must not be empty")
+	}
+	if filepath.IsAbs(bin) {
+		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must not be an absolute path: %q", bin)
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(bin))
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return fmt.Errorf("pre_task_completion_gate.autoharness_binary must not contain '..' traversal: %q", bin)
+	}
+	return nil
 }
 
 // NotificationsConfig configures external webhook notification dispatch.
