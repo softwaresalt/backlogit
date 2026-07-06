@@ -460,8 +460,20 @@ func allowedParentTypes(ws *Workspace, artifactType string) map[string]struct{} 
 	return allowed
 }
 
-// UpdateArtifact updates an existing artifact's fields.
+// UpdateArtifact updates an existing artifact's fields. It is preserved for all
+// existing callers and delegates to UpdateArtifactWithGate with no transition
+// options, so the pre-task-completion gate (082-F) engages transparently for
+// task/subtask completions whenever a workspace has a gate broker wired.
 func UpdateArtifact(ctx context.Context, ws *Workspace, id string, updates map[string]any) (*models.Artifact, error) {
+	artifact, _, err := UpdateArtifactWithGate(ctx, ws, id, updates, TransitionOptions{})
+	return artifact, err
+}
+
+// updateArtifactUngated performs the field-apply/validate/persist/hook-fire body
+// of an artifact update WITHOUT the pre-task-completion gate. It is the ungated
+// core used both by non-gated transitions and, under the task lock, by the gated
+// completion path once the gate decision resolves to a durable write.
+func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, updates map[string]any) (*models.Artifact, error) {
 	if _, hasID := updates["id"]; hasID {
 		return nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
 	}

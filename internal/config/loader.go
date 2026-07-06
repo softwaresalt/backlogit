@@ -104,6 +104,12 @@ func LoadHooks(workspacePath string) (*HooksConfig, error) {
 	if err := validate.Struct(&cfg); err != nil {
 		return nil, fmt.Errorf("validate hooks: %w", err)
 	}
+	// Normalize and validate the pre-task-completion gate block (082-F). An absent
+	// block normalizes to the documented defaults (enabled:auto, force_cli_only:true).
+	cfg.Lifecycle.PreTaskCompletionGate.Normalize()
+	if err := cfg.Lifecycle.PreTaskCompletionGate.Validate(); err != nil {
+		return nil, fmt.Errorf("validate hooks: %w", err)
+	}
 	// Reject header values that don't use env var expansion (security guardrail).
 	// Only $VAR or ${VAR} syntax is supported; os.ExpandEnv handles resolution.
 	for i, ep := range cfg.Notifications.Endpoints {

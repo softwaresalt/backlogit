@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core/gate"
 	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
@@ -32,6 +33,21 @@ type Workspace struct {
 	HookRunner *hooks.HookRunner
 	// Hooks holds the parsed hooks.yaml configuration.
 	Hooks *config.HooksConfig
+	// GateBroker is the pre-task-completion gate broker (082-F). It is nil when
+	// the gate is disabled (enabled:false) or when a Workspace is constructed
+	// directly in tests without wiring — a nil broker means the gate is skipped,
+	// preserving pre-gate completion behavior. Gate-specific tests inject a broker
+	// with fake Runner/Git/Version seams.
+	GateBroker *gate.Broker
+	// gateConfig retains the normalized gate config used to build GateBroker so the
+	// completion path can consult terminal_statuses, evidence_required, and
+	// force_cli_only without re-parsing.
+	gateConfig config.PreTaskCompletionGateConfig
+	// gateEvidenceAppend allows the gate evidence appender to be overridden per
+	// workspace in tests (mirroring writeStashEntriesAtomically) so a forced
+	// append failure can exercise the evidence_required rollback contract without
+	// OS-level filesystem tricks. Nil means use the real appendItemEventErr.
+	gateEvidenceAppend func(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) error
 	// webhookNotifier is stored for shutdown draining. Unexported.
 	webhookNotifier interface{ Shutdown(context.Context) error }
 }
@@ -168,6 +184,19 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 	// inside the interface, which would bypass the != nil guard in Close().
 	if webhookNotifier != nil {
 		workspace.webhookNotifier = webhookNotifier
+	}
+
+	// Wire the pre-task-completion gate broker (082-F) unless explicitly disabled.
+	// The broker is skipped entirely when enabled:false (kill switch); under auto
+	// it fails open at run time when autoharness is unresolvable, and under true it
+	// fails closed. A nil broker (bare test workspace) preserves pre-gate behavior.
+	if hooksCfg != nil {
+		gateCfg := hooksCfg.Lifecycle.PreTaskCompletionGate
+		gateCfg.Normalize()
+		workspace.gateConfig = gateCfg
+		if gateCfg.Enabled != "false" {
+			workspace.GateBroker = buildGateBroker(resolvedRoot, gateCfg)
+		}
 	}
 
 	// F-7 migration guard: write any DB-only links to Markdown frontmatter

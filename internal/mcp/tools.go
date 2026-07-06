@@ -547,8 +547,11 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 		}
 	}
 
-	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, map[string]any{"status": status})
+	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, map[string]any{"status": status}, core.TransitionOptions{})
 	if err != nil {
+		if result, handled := gateErrorResult(err, status); handled {
+			return result, nil
+		}
 		return domainError("move item", err), nil
 	}
 
@@ -584,6 +587,9 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 		}
 	}
 
+	if outcome != nil {
+		return gatePassResult(artifact, outcome)
+	}
 	return toolResultJSON(artifact)
 }
 
@@ -747,8 +753,12 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		}
 		return toolResultJSON(artifact)
 	}
-	artifact, err := core.UpdateArtifact(ctx, s.Workspace, id, updates)
+	requestedStatus, _ := updates["status"].(string)
+	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
 	if err != nil {
+		if result, handled := gateErrorResult(err, requestedStatus); handled {
+			return result, nil
+		}
 		return domainError("update artifact", err), nil
 	}
 	// Write section content when provided. UpdateArtifact already wrote the
@@ -759,6 +769,9 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
 		}
+	}
+	if outcome != nil {
+		return gatePassResult(artifact, outcome)
 	}
 	return toolResultJSON(artifact)
 }

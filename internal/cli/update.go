@@ -33,6 +33,10 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		labels        string
 		commit        string
 		size          string
+		gateBase      string
+		forceGates    bool
+		forceReason   string
+		jsonOut       bool
 	)
 
 	cmd := &cobra.Command{
@@ -134,12 +138,27 @@ replacing the rest of the document body.`,
 				return fmt.Errorf("no updates specified")
 			}
 
-			// Apply frontmatter updates if any.
+			// Apply frontmatter updates if any. The gate outcome (when the
+			// transition is gated) is captured and its --json payload deferred
+			// until after any section updates run, so a combined
+			// `--status done --section name=value --json` invocation never
+			// silently drops the section write behind an early return.
+			var gateOutcome *core.GateOutcome
 			if len(updates) > 0 {
-				_, updateErr := core.UpdateArtifact(ctx, ws, id, updates)
-				if updateErr != nil {
-					return updateErr
+				opts := core.TransitionOptions{GateBase: gateBase}
+				if forceGates {
+					if forceReason == "" {
+						return fmt.Errorf("--force-gates requires --force-reason")
+					}
+					opts.Force = true
+					opts.ForceReason = forceReason
+					opts.ForceSource = core.ForceSourceCLI
 				}
+				_, outcome, updateErr := core.UpdateArtifactWithGate(ctx, ws, id, updates, opts)
+				if updateErr != nil {
+					return moveGateError(cmd, id, updateErr, jsonOut)
+				}
+				gateOutcome = outcome
 			}
 
 			// Apply section updates if any.
@@ -219,6 +238,18 @@ replacing the rest of the document body.`,
 				}
 			}
 
+			// Emit the deferred gate --json payload now that any section updates
+			// have been persisted, so the machine-readable gate outcome reflects a
+			// fully-applied mutation rather than preempting it.
+			if jsonOut && gateOutcome != nil {
+				payload, mErr := renderGatePassJSON(id, gateOutcome)
+				if mErr != nil {
+					return mErr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				return nil
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
 			return nil
 		},
@@ -237,6 +268,10 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")
+	cmd.Flags().BoolVar(&forceGates, "force-gates", false, "operator-only: force completion past the gate (requires --force-reason)")
+	cmd.Flags().StringVar(&forceReason, "force-reason", "", "justification recorded in the forced-gate audit event")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the machine-readable gate outcome contract on a gated completion")
 	return cmd
 }
 
