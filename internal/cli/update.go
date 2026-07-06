@@ -33,6 +33,10 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		labels        string
 		commit        string
 		size          string
+		gateBase      string
+		forceGates    bool
+		forceReason   string
+		jsonOut       bool
 	)
 
 	cmd := &cobra.Command{
@@ -136,9 +140,26 @@ replacing the rest of the document body.`,
 
 			// Apply frontmatter updates if any.
 			if len(updates) > 0 {
-				_, updateErr := core.UpdateArtifact(ctx, ws, id, updates)
+				opts := core.TransitionOptions{GateBase: gateBase}
+				if forceGates {
+					if forceReason == "" {
+						return fmt.Errorf("--force-gates requires --force-reason")
+					}
+					opts.Force = true
+					opts.ForceReason = forceReason
+					opts.ForceSource = core.ForceSourceCLI
+				}
+				_, outcome, updateErr := core.UpdateArtifactWithGate(ctx, ws, id, updates, opts)
 				if updateErr != nil {
-					return updateErr
+					return moveGateError(cmd, id, updateErr, jsonOut)
+				}
+				if jsonOut && outcome != nil {
+					payload, mErr := renderGatePassJSON(id, outcome)
+					if mErr != nil {
+						return mErr
+					}
+					fmt.Fprintln(cmd.OutOrStdout(), payload)
+					return nil
 				}
 			}
 
@@ -237,6 +258,10 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")
+	cmd.Flags().BoolVar(&forceGates, "force-gates", false, "operator-only: force completion past the gate (requires --force-reason)")
+	cmd.Flags().StringVar(&forceReason, "force-reason", "", "justification recorded in the forced-gate audit event")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the machine-readable gate outcome contract on a gated completion")
 	return cmd
 }
 
