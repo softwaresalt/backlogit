@@ -197,3 +197,45 @@ U1 082.001-T (config/resolver/probe) -> U2 082.002-T (core broker) ->
 
 ## NEXT: final content commit (closure docs + stash.jsonl + memory) -> re-request Copilot on
 ## final HEAD -> §1.9 gate (await fresh 0-threads) -> PRESENT MERGE-READY + HALT for P-014.
+
+## ============================================================
+## FINAL — FEATURE MERGED + POST-MERGE CLOSURE (2026-07-06 ~15:40)
+## ============================================================
+
+### FEATURE MERGE (operator P-014 approval + authorized admin bypass)
+- `gh pr merge 178 --merge --admin --delete-branch` -> merged.
+- Merge commit: e47e1291c49f906a4b257c60f117a2cd05107db7
+  - 2 parents: 59cdc6d7 (prior main) + a24751b0 (feature HEAD) = TRUE merge commit
+    (NOT squash/rebase; P-009 preserved).
+  - state MERGED, mergedAt 2026-07-06T22:35:11Z; in origin/main
+    (merge-base --is-ancestor exit 0). MERGE_CONFIRMED.
+- Feature branch feat/pre-task-completion-gate-broker: remote DELETED (--delete-branch);
+  stale local branch deleted; local now on post-merge/082-S.
+
+### POST-MERGE CLOSURE (all on branch post-merge/082-S, never main)
+- Backlog: moved 082-F done->archive; `backlogit shipment ship 082-S --sha e47e1291...`
+  -> shipment_status=shipped, 24 archived_ids (082-F + 5T + 17ST + 082-S), 0 returned.
+- shipment-reconcile PRE (expected done): 23/23 pre-archived, 0 orphan/missing/mismatch
+  -> PROCEED (.backlogit/reconcile/082-S-pre-2026-07-06-153830.md).
+- shipment-reconcile POST: 23/23 in archive + shipment file archived, 0 git deletions
+  -> PROCEED (.backlogit/reconcile/082-S-post-2026-07-06-153935.md). P-007 clean.
+- Backlog archival committed: 00e4f8b (chore(db): archive 082-S ...).
+- Knowledge graduation:
+  - Design doc already in docs/design-docs/ (no move).
+  - 3 NEW compound learnings (docline-clean): exec-binary-config-must-be-bare-path-validated
+    (P1 RCE), external-process-timeout-before-probe (DoS), autoharness-gate-broker-
+    integration-contract.
+  - compound-refresh: all 9 existing entries KEEP (net-new feature, no supersession); ADD 3.
+- Post-merge operational-closure artifact: docs/closure/2026-07-06-...-post-merge-closure.md
+  (READY (merged); docline-clean).
+- Source artifact cleanup: 082-F has NO source_stash_id / source_deliberation_id -> nothing
+  to retire. Decision doc retained as permanent record.
+- Follow-ups: no NEW post-merge follow-ups (F1/F4/F5/F7 already stashed pre-merge).
+
+### NEXT: commit closure docs -> push post-merge/082-S -> open closure PR (base main) ->
+### adversarial review pre-push -> Copilot -> resolve all -> CI green -> §1.9 ->
+### PRESENT CLOSURE PR MERGE-READY + HALT for its own operator P-014 (per §1.10). Do NOT merge.
+
+### GUARDRAILS honored: path-scoped git add only (hooks_queue.jsonl excluded); protected stash
+### items untouched (162F5548, 9822F787, 7C5EADA6, 83B885EE, 7ED9CE1A, 34F11E5A, 21E17BFC,
+### EED25928, D760E508, 2EF8B7AD); conventional commits + Copilot co-author trailer.
