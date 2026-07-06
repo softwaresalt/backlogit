@@ -123,3 +123,77 @@ U1 082.001-T (config/resolver/probe) -> U2 082.002-T (core broker) ->
 ## archive, EXCLUDE hooks_queue.jsonl + operator WIP), then standard review, MANDATORY
 ## adversarial review (pre-push), pr-lifecycle (Copilot patient resolve), runtime-
 ## verification (real autoharness 1.4.7), operational-closure, HALT at P-014 merge gate.
+
+## POST-IMPLEMENTATION — adversarial review, PR, CI, runtime verification (this session)
+
+### Adversarial review (pre-push, MANDATORY) — COMPLETE
+- Multi-model "Adversarial Review" agent (Gemini 3.1 Pro / GPT-5.4 / Claude Opus) + independent
+  Security Reviewer (gpt-5.4) on the ~4239-insertion diff.
+- NO all-3-model HIGH-confidence blockers. Locked security invariants all confirmed holding
+  (argv-only exec, no shell string, path-qualified binary rejection, MinimalEnv on gate+git
+  runners, stderr-truncated/full-JSON-preserved, force_cli_only:false rejected, NO MCP force
+  field, logs-only evidence, one-way core->gate boundary).
+- 5 findings remediated pre-push (commit a2a8b7b fix(core,config)):
+  - P1 (0.98): validateGateBinary allowed relative path-qualified names -> local RCE. FIXED
+    (rejects ANY path-qualified value: separators/volume/abs/traversal; bare-PATH only).
+  - P2 (0.95): timeout applied AFTER probe+baseref -> wedged-probe DoS while lock held. FIXED
+    (deadline derived BEFORE probe + base resolution).
+  - P2 (0.9): version probe lacked MinimalEnv/Dir -> env inheritance/secret-exfil. FIXED.
+  - F2 (MED): forced-evidence append only warned -> now refuses under evidence_required (parity).
+  - F3 (MED): base-override audit only on NonDefault -> now audits any explicit --gate-base.
+- DEFERRED LOW/by-design (to stash for Stage): F1 base-ref precedence UX warn (config base_ref
+  before --gate-base is BY DESIGN per locked order), F4 member-evidence ran=false fail-open,
+  F5-shipment DecisionError collapse to GateBlockedError (loses 7/8 class), F7 move.go --json
+  empty payload for *GateError. (7ED9CE1A is existing related stash follow-up.)
+- Report: docs/closure/2026-07-06-pre-task-completion-gate-broker-adversarial-review.md
+
+### PR — #178 https://github.com/softwaresalt/backlogit/pull/178
+- Branch feat/pre-task-completion-gate-broker pushed (8 commits + a2a8b7b remediation).
+- Title: feat: pre-task-completion gate broker (082-F). Base main. Copilot auto-requested.
+
+### CI — GREEN (all 4 checks): CLI Reference Drift, Docline frontmatter gate, test(1.23), test(1.24).
+
+### Runtime verification (REAL autoharness 1.4.7) — COMPLETE
+- Binary present, version 1.4.7 (matches min probe target). gate check --base <ref> --json
+  contract confirmed (exit 0 pass / 1 blocked / 2 config; --no-count + --force flags present).
+- Real-repo composition: no gates in .autoharness/config.yaml -> exit 0 "no validation gates".
+- Scratch e2e PASS (enabled:true fail-closed config): real backlogit.exe invoked real autoharness,
+  base_ref auto->main (no remote), exit 0 -> task active->done, gate_report_hash recorded,
+  pre_task_completion_gate_passed event in item log (ran:true, logs-only NOT frontmatter),
+  structured JSON GateOutcome emitted. move exit 0.
+- Scratch e2e FAIL-CLOSED: missing autoharness_binary under enabled:true -> refused, backlogit
+  exit 7 (setup error), task RETAINED active (no partial completion). Matches locked exit mapping.
+
+### NEXT: patient Copilot resolve loop (poll->fix->reply->resolve until fresh review 0 threads)
+### -> operational-closure -> stash deferred LOW findings -> §1.9 gate -> HALT for P-014 approval.
+
+## COPILOT REVIEW RESOLUTION (cycle 1) — COMPLETE
+- Copilot completed on a2a8b7b with 3 valid comments (all fixed in commit 1f496c1):
+  1. update.go:163 — `--json` early return dropped `--section` writes (silent data loss).
+     FIX: defer gate --json emission until AFTER the section-update block. Verified e2e
+     (section written + gate JSON emitted). 
+  2. gate_exit.go:108 — renderGateBlockedJSON set allowed_next_actions unconditionally;
+     diverged from MCP gateBlockedResult (menu only for outcome==blocked). FIX: gate menu
+     on outcome=="blocked"; requeued/escalated omit it. +2 regression tests.
+  3. runner.go:127 — dead `_ = runtime.GOOS` + unused runtime import. FIX: removed both.
+- Commit 1f496c1 fix(cli,core): resolve Copilot review on gate surface (082-F). Pushed.
+- Replied to all 3 threads (REST in_reply_to) + resolved all 3 (GraphQL resolveReviewThread,
+  isResolved:true). Re-requested Copilot on HEAD 1f496c1 (REST requested_reviewers).
+- Quality after fixes: build/vet clean; cli+gate pkg tests green; full suite 23 pkgs 0 fail;
+  gofmt+golangci-lint clean on touched files.
+
+## CLOSURE ARTIFACTS — COMPLETE (docline lint 0 violations)
+- docs/closure/2026-07-06-...-adversarial-review.md — added docline frontmatter (was raw).
+- docs/closure/2026-07-06-...-runtime-verification.md — NEW. Verdict PASS (real autoharness
+  1.4.7 e2e: fail-open compose, fail-closed exit 7, logs-only evidence, structured JSON,
+  update+section regression).
+- docs/closure/2026-07-06-...-closure.md — NEW. Readiness READY WITH CONDITIONS (operator
+  P-014 approval + P-009 merge-commit + fresh Copilot 0-threads on HEAD).
+
+## DEFERRED FINDINGS STASHED (for Stage): 162F5548 (F1), 9822F787 (F4), 7C5EADA6 (F5),
+## 83B885EE (F7). All low priority. Related existing: 7ED9CE1A.
+
+## CI: 4/4 green at 1f496c1 (test 1.23, test 1.24, CLI Reference Drift, Docline gate).
+
+## NEXT: final content commit (closure docs + stash.jsonl + memory) -> re-request Copilot on
+## final HEAD -> §1.9 gate (await fresh 0-threads) -> PRESENT MERGE-READY + HALT for P-014.
