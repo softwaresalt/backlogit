@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'One durable security rule graduated from 082-S — when a config value names an external binary that the process will exec, validate it as a BARE command name resolved on PATH; reject any path-qualified value (absolute path, relative path, or `..` traversal). A path-qualified binary name in operator-writable config is an arbitrary-code-execution primitive: whoever can write the config chooses which executable runs. Pair bare-name validation with argv-array-only exec (never a shell string) and a MinimalEnv allowlist so PATH resolution itself is not attacker-steerable.'
+description: 'One durable security rule graduated from 082-S — when a config value names an external binary that the process will exec, validate it as a BARE command name resolved on PATH; reject any path-qualified value (absolute path, relative path, or `..` traversal). A path-qualified binary name in operator-writable config is an arbitrary-code-execution primitive: whoever can write the config chooses which executable runs. Pair bare-name validation with argv-array-only exec (never a shell string) and a MinimalEnv allowlist that drops arbitrary injected env vars. Note: MinimalEnv still forwards the ambient PATH/PATHEXT, so resolution follows the deployment-controlled PATH — the guarantee is that untrusted *config* cannot choose the executable path, not that a fully attacker-controlled process environment is neutralized.'
 doc_type: learning
 docline:
     date: 2026-07-06T00:00:00Z
@@ -48,7 +48,7 @@ in a shared/agent workspace, potentially attacker-writable) config string into a
 
 ### Fix
 
-`validateGateBinary` (`internal/config/schema.go`, ~:234) now rejects any
+`validateGateBinary` (`internal/config/schema.go`, ~:240) now rejects any
 value that is path-qualified:
 
 - reject absolute paths (`filepath.IsAbs`),
@@ -77,8 +77,14 @@ Bare-name validation is necessary but not sufficient. It is locked in with:
    pass user/base-ref/path values through a shell, so metacharacter injection is
    structurally impossible.
 2. **MinimalEnv allowlist** — the exec'd process inherits only an allowlisted
-   environment (both Unix and Windows keys), so `PATH` resolution itself is not
-   steerable by inherited env like `PATHEXT` tricks or injected `PATH` prefixes.
+   environment (both Unix and Windows keys), which **drops arbitrary injected env
+   vars** the caller did not allowlist and shrinks the environment attack surface.
+   Honest boundary: `MinimalEnv` still **forwards the ambient `PATH` and
+   `PATHEXT`** (via `os.LookupEnv`), so `PATH` resolution follows the
+   *deployment-controlled* environment. This pairing guarantees "untrusted
+   **config** cannot choose the executable path" — it does **not** neutralize a
+   fully attacker-controlled process environment, where `PATH`/`PATHEXT` remain a
+   resolution vector.
 3. **No untrusted-path interpolation** — base-ref and other inputs are passed as
    discrete argv elements, never concatenated into a path or command string.
 

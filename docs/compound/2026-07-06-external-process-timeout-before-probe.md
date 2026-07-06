@@ -35,7 +35,7 @@ remediated before push.
 The gate broker's flow before completing a task is:
 
 1. Acquire the workspace lock.
-2. **Probe** `autoharness --version` / contract to confirm `>= 1.4.7`.
+2. **Probe** `autoharness version` / contract to confirm `>= 1.4.7`.
 3. Run `autoharness gate check --json ...`.
 4. Map the exit code, record evidence, complete the transition.
 5. Release the lock.
@@ -53,11 +53,27 @@ without its own deadline. That is the more dangerous omission:
 
 ### Fix
 
-Both the version/contract probe (`ExecVersionRunner`) and the gate check
-(`ExecRunner`), plus the git base-ref resolution runner (`ExecGitRunner`), run
-through `exec.CommandContext` with a bounded, configurable deadline
-(`timeout_seconds`, sensible default). On timeout the process is killed and the
-call returns a typed, **retryable** error (fail-fast) rather than blocking.
+The version/contract probe (`ExecVersionRunner`), the gate check (`ExecRunner`),
+and the git base-ref resolution runner (`ExecGitRunner`) all run through
+`exec.CommandContext` with a bounded, configurable deadline (`timeout_seconds`,
+sensible default), so **none can hang unbounded under the lock** — that is the
+load-bearing property.
+
+The *classification* of a deadline kill differs by runner, and the docs must be
+precise about it:
+
+- **Gate check (`ExecRunner`)** maps `context.DeadlineExceeded` to
+  `ErrGateTimeout` — a typed, **retryable** error (fail-fast).
+- **Probe (`ExecVersionRunner`)** returns a plain run error on deadline, which
+  flows through `Probe`/`failProbe`: under `enabled: true` it is classified as a
+  **setup** error (`GateError{Class:"setup"}`, fail-**closed**); under
+  `enabled: auto` it fails **open** (enforce=false). It is *not* surfaced as a
+  retryable timeout.
+- **Base-ref runner (`ExecGitRunner`)** is likewise deadline-bounded but does not
+  emit `ErrGateTimeout`.
+
+The lesson is unchanged: bound the probe so it cannot stall the lock. Just do not
+overstate that every timeout is "retryable" — only the gate-check runner's is.
 
 ### Why "probe first" makes this subtle
 
@@ -74,8 +90,10 @@ For any inline, lock-holding integration with an external process:
 - Put a bounded `context.WithTimeout` on **every** child exec, starting with the
   **first** one (probe/handshake/capability check).
 - Prefer a short probe timeout and a separate (possibly longer) work timeout.
-- On timeout, kill the child and return a **retryable** error so contention and
-  transient hangs don't become permanent stalls.
+- On timeout, kill the child and classify deliberately: a retryable error for the
+  work call so transient hangs don't become permanent stalls, or a fail-closed
+  setup error for a required capability probe (as the gate broker does under
+  `enabled: true`). Either way the child is killed — never left hanging.
 - Never hold a lock across an unbounded wait — bounded-wait with fail-fast retry
   is the pattern (here ~2–5s bounded-wait on lock contention, re-read after lock).
 - Unit-test the timeout path with a runner that never returns, asserting the call

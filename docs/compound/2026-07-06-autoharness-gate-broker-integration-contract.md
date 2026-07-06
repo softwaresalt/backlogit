@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'The durable backlogit <-> autoharness gate-broker integration contract graduated from 082-S. Records the exact seam: min autoharness >= 1.4.7 with a contract probe; `gate check --json` emits repeated_failure {count, threshold, reached, action}; exit trichotomy (0 pass / 1 blocked / 2 config-error) plus binary-not-found and timeout; base-ref = default-branch ref with autoharness applying the three-dot merge-base (do NOT pre-compute); three-valued enabled (auto/true/false); never parse autoharness gate config; requeue/escalate driven by repeated_failure with backlogit as sole executor; injectable runner interface so unit tests mock the gate without a real binary.'
+description: 'The durable backlogit <-> autoharness gate-broker integration contract graduated from 082-S. Records the exact seam: min autoharness >= 1.4.7 with a contract probe; `gate check --json` emits repeated_failure {count, threshold, reached, action}; exit trichotomy (0 pass / 1 blocked / 2 config-error) plus binary-not-found and timeout (gate-check timeout is retryable, probe timeout is setup/fail-open); base-ref = default-branch ref with autoharness applying the three-dot merge-base (do NOT pre-compute); three-valued enabled (auto/true/false); config owns terminal_statuses (default [done]) so pass writes the requested terminal status; shipment member scan requires terminal status + latest passing/forced evidence but does NOT yet enforce ran=false (follow-up F4); never parse autoharness gate config; requeue/escalate driven by repeated_failure with backlogit as sole executor; injectable runner interface so unit tests mock the gate without a real binary.'
 doc_type: learning
 docline:
     date: 2026-07-06T00:00:00Z
@@ -43,8 +43,14 @@ completion service. `internal/core/gate/*` imports only stdlib +
 1. **Task-oriented gate** — a `gate check` scoped to the completing task/subtask.
 2. **Shipment gate** — an **aggregate of member-task evidence** *plus* a
    full-shipment `gate check`. The aggregate scan and the fresh check are both
-   required; a member that never ran the gate (`ran=false`) must not silently
-   pass as fail-open at the shipment level.
+   required. The member scan (`internal/core/shipment_gate.go`) enforces that each
+   gated member is in a terminal release status **and** has a latest
+   passing/forced gate-evidence event (with an optional `head_sha` staleness
+   check). **Known gap (as shipped, follow-up F4 / `9822F787`):** the member scan
+   does **not** currently inspect the evidence `delta.ran` field, so a member whose
+   recorded pass came from a fail-open (`ran=false`) run is accepted at the
+   shipment level. Hardening that to reject `ran=false` is deferred, not yet in
+   force — do not cite it as an active invariant.
 
 ## Version contract
 
@@ -62,7 +68,7 @@ completion service. `internal/core/gate/*` imports only stdlib +
 | exit `1` | gate blocked | `GateBlockedError` → **backlogit exit code 6**; refuse the transition and return the gate report |
 | exit `2` | config error | typed config error; refuse |
 | binary not found | setup error | **fail-closed** when `enabled: true`; fail-open when `enabled: auto` |
-| timeout | retryable | kill child, return retryable error (see the timeout-before-probe lesson) |
+| `gate check` timeout | retryable | kill child; the **gate-check runner** maps `DeadlineExceeded` → `ErrGateTimeout` (retryable). The **version probe** is also timeout-bounded but a probe timeout is classified as setup (fail-closed under `enabled:true`) / fail-open under `auto`, not retryable — see the timeout-before-probe lesson |
 
 Map on the **task path** to backlogit exit codes 6/7/8 via the typed
 `gateExitError`.
@@ -93,7 +99,7 @@ executes the state change, autoharness never mutates backlog state:
 | `reached: true` + action `block` | move task → `queued` |
 | `reached: true` + action `escalate` | move task → `blocked` |
 | below-threshold `block` | refuse; **retain** the re-read `old_status` |
-| pass | move task → `done` |
+| pass | write the **requested terminal status** (default terminal set `["done"]`) |
 
 Do **not** stack a second backlogit-side breaker on top of autoharness's counter —
 one source of truth for the repeated-failure count.
@@ -101,9 +107,12 @@ one source of truth for the repeated-failure count.
 ## Config isolation
 
 **Never parse autoharness's own gate config.** backlogit owns only its
-`lifecycle.pre_task_completion_gate` block (`enabled`, `autoharness_binary`,
-`base_ref`, `timeout_seconds`, `force_cli_only`, `evidence_required`). Autoharness
-owns its thresholds/rules. Crossing that line couples two release cadences.
+`lifecycle.pre_task_completion_gate` block (`enabled`, `terminal_statuses`,
+`autoharness_binary`, `base_ref`, `timeout_seconds`, `force_cli_only`,
+`evidence_required`). `terminal_statuses` (default `["done"]`) is the set of
+statuses whose entry triggers the gate, so the gate is not hard-wired to `done`.
+Autoharness owns its thresholds/rules. Crossing that line couples two release
+cadences.
 
 ## Force (operator-only, audited)
 
