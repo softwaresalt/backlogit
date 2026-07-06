@@ -52,6 +52,16 @@ func appendItemEventErr(ctx context.Context, ws *Workspace, itemID, eventType st
 	return nil
 }
 
+// appendGateEvent dispatches a gate evidence append through the workspace seam
+// (overridable in tests) or the real error-returning appender. Centralizing the
+// dispatch lets evidence_required rollback tests inject a failure at one point.
+func (ws *Workspace) appendGateEvent(ctx context.Context, itemID, eventType string, delta map[string]any) error {
+	if ws.gateEvidenceAppend != nil {
+		return ws.gateEvidenceAppend(ctx, ws, itemID, eventType, delta)
+	}
+	return appendItemEventErr(ctx, ws, itemID, eventType, delta)
+}
+
 // gateReportHash returns a stable short hash of the gate report for evidence
 // cross-referencing (an empty report hashes to "").
 func gateReportHash(report []byte) string {

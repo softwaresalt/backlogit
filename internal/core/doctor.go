@@ -54,6 +54,12 @@ const (
 	// is present but is not a markdown path (e.g. a stray status token). Flagged for
 	// manual review only; never auto-repaired.
 	FindingArchivedFromMalformed DoctorFindingType = "archived_from_malformed"
+
+	// FindingMissingGateEvidence indicates a terminal task/subtask that lacks a
+	// passing/forced pre-task-completion gate evidence event while gates are
+	// configured (082-F ST4.3). Advisory only: it never changes the doctor exit
+	// code. A strict, index-backed variant is the separate follow-up 7ED9CE1A.
+	FindingMissingGateEvidence DoctorFindingType = "missing_gate_evidence"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -117,6 +123,11 @@ type DoctorOptions struct {
 	// records that have no queue restore target. Body-preserving and CLI-only.
 	// Requires CheckArchivedFrom to be true.
 	FixMalformed bool
+	// CheckGateEvidence enables the advisory pre-task-completion gate-evidence
+	// audit (082-F ST4.3): terminal task/subtask artifacts are scanned for a
+	// passing/forced gate evidence event while gates are configured. Advisory only
+	// — findings never change the doctor exit code. Safe to expose on MCP (read-only).
+	CheckGateEvidence bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -381,6 +392,34 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		}
 		if opts.FixMalformed {
 			report.FixActions = append(report.FixActions, clearMalformedArchivedFrom(ws, records)...)
+		}
+	}
+
+	// 082-F ST4.3: advisory pre-task-completion gate-evidence audit. When gates are
+	// configured (not disabled), every terminal task/subtask SHOULD carry a
+	// passing/forced gate evidence event in its item log. Missing evidence is a
+	// WARNING only — it never changes the exit code (advisory mode). A strict,
+	// index-backed check is the separate follow-up (7ED9CE1A).
+	if opts.CheckGateEvidence && ws.gateConfig.Enabled != "false" {
+		for _, info := range artifacts {
+			if info.artifactType != "task" && info.artifactType != "subtask" {
+				continue
+			}
+			if !ws.isGateTerminalStatus(info.status) {
+				continue
+			}
+			evs, evErr := events.ReadAllEvents(ctx, logsDir, info.id)
+			if evErr != nil {
+				slog.WarnContext(ctx, "doctor: gate-evidence audit: read events failed", "id", info.id, "error", evErr)
+				continue
+			}
+			if latestGatePassEvidence(evs) == nil {
+				report.Findings = append(report.Findings, DoctorFinding{
+					Type:        FindingMissingGateEvidence,
+					ArtifactID:  info.id,
+					Description: fmt.Sprintf("terminal %s %q has no passing/forced pre-task-completion gate evidence while gates are configured (advisory; exit code unaffected)", info.artifactType, info.id),
+				})
+			}
 		}
 	}
 

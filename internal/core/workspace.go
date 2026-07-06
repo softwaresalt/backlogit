@@ -43,6 +43,11 @@ type Workspace struct {
 	// completion path can consult terminal_statuses, evidence_required, and
 	// force_cli_only without re-parsing.
 	gateConfig config.PreTaskCompletionGateConfig
+	// gateEvidenceAppend allows the gate evidence appender to be overridden per
+	// workspace in tests (mirroring writeStashEntriesAtomically) so a forced
+	// append failure can exercise the evidence_required rollback contract without
+	// OS-level filesystem tricks. Nil means use the real appendItemEventErr.
+	gateEvidenceAppend func(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) error
 	// webhookNotifier is stored for shutdown draining. Unexported.
 	webhookNotifier interface{ Shutdown(context.Context) error }
 }

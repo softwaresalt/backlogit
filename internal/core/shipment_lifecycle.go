@@ -164,6 +164,14 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)
 	}
 
+	// Two-level shipment gate (082-F ST4.2): validate member-task gate evidence
+	// and run a shipment-level autoharness gate check over the full diff BEFORE
+	// completing the release scope, so an ungated member is never auto-completed.
+	// A refusal leaves shipment state unchanged.
+	if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope); err != nil {
+		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
+	}
+
 	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
 	}

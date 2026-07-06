@@ -405,7 +405,7 @@ func (ws *Workspace) appendGateEvidence(ctx context.Context, id, eventType strin
 			delta["force_reason"] = opts.ForceReason
 		}
 	}
-	return appendItemEventErr(ctx, ws, id, eventType, delta)
+	return ws.appendGateEvent(ctx, id, eventType, delta)
 }
 
 // appendGateErrorEvidence records a best-effort error-class gate event.
@@ -420,7 +420,7 @@ func (ws *Workspace) appendGateErrorEvidence(ctx context.Context, id, class, mes
 	if len(stderrOut) > 0 {
 		delta["stderr"] = truncateStderr(stderrOut)
 	}
-	if err := appendItemEventErr(ctx, ws, id, EventGateError, delta); err != nil {
+	if err := ws.appendGateEvent(ctx, id, EventGateError, delta); err != nil {
 		slog.WarnContext(ctx, "append gate error evidence", "item_id", id, "error", err)
 	}
 }
@@ -437,7 +437,7 @@ func (ws *Workspace) recordGateBaseOverride(ctx context.Context, id string, ev g
 	if opts.ForceReason != "" {
 		delta["reason"] = opts.ForceReason
 	}
-	return appendItemEventErr(ctx, ws, id, EventGateBaseOverride, delta)
+	return ws.appendGateEvent(ctx, id, EventGateBaseOverride, delta)
 }
 
 // headSHA returns the current HEAD commit SHA best-effort (empty on any error).
