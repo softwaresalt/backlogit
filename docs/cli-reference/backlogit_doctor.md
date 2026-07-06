@@ -62,6 +62,7 @@ backlogit doctor [flags]
 ```text
       --check-archived-from   check archive records for self-referential/malformed archived_from fields (default true)
       --check-duplicates      check for duplicate IDs across directories (default true)
+      --check-gate-evidence   advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)
       --check-orphans         check for orphaned child artifacts (default true)
       --fix-archived-from     repair legacy self-referential archived_from records (destructive, CLI-only)
       --fix-malformed         clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)

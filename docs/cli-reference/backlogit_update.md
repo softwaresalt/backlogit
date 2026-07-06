@@ -39,9 +39,13 @@ backlogit update <id> [flags]
       --assigned-to string      assignee
       --commit string           commit SHA
       --description string      new description
+      --force-gates             operator-only: force completion past the gate (requires --force-reason)
+      --force-reason string     justification recorded in the forced-gate audit event
+      --gate-base string        operator-only base ref override for the completion gate (audited)
       --harness-status string   harness status (pending, scaffolded, passing, failing)
   -h, --help                    help for update
       --id string               artifact ID (immutable, always rejected)
+      --json                    emit the machine-readable gate outcome contract on a gated completion
       --labels string           comma-separated labels
       --owner string            owner
       --priority string         new priority

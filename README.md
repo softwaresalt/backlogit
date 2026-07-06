@@ -135,6 +135,7 @@ backlogit mcp
 | Installation | [docs/installation.md](docs/installation.md) |
 | Workflow overview | [docs/workflow.md](docs/workflow.md) |
 | Configuration reference | [docs/configuration.md](docs/configuration.md) |
+| Pre-task-completion gate | [docs/pre-task-completion-gate.md](docs/pre-task-completion-gate.md) |
 | Why backlogit | [docs/rationale.md](docs/rationale.md) |
 | backlogit vs Backlog.md | [docs/backlogit-vs-backlog-md.md](docs/backlogit-vs-backlog-md.md) |
 | Migration guide | [docs/migration-guide.md](docs/migration-guide.md) |
