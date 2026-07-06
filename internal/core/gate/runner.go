@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"runtime"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -124,6 +123,5 @@ func MinimalEnv() []string {
 			seen[key] = struct{}{}
 		}
 	}
-	_ = runtime.GOOS
 	return env
 }

@@ -92,6 +92,37 @@ func TestRenderGateBlockedJSON(t *testing.T) {
 	if len(p.GateReport) == 0 {
 		t.Errorf("expected gate_report to be preserved")
 	}
+	// Parity with the MCP surface: a redirect outcome (requeued/escalated) must
+	// NOT carry the next-action menu, since the item was already moved to a
+	// non-terminal status and move_to_non_terminal is non-actionable.
+	if len(p.AllowedNext) != 0 {
+		t.Errorf("requeued outcome must omit allowed_next_actions, got %v", p.AllowedNext)
+	}
+}
+
+// TestRenderGateBlockedJSONPlainBlockOffersMenu verifies that a plain block
+// (item retained its prior status) carries the next-action menu, matching the
+// MCP gateBlockedResult contract which offers the menu only for outcome=blocked.
+func TestRenderGateBlockedJSONPlainBlockOffersMenu(t *testing.T) {
+	be := &corerrors.GateBlockedError{
+		ItemID:    "001.001-T",
+		OldStatus: "active",
+		NewStatus: "active",
+		Outcome:   "blocked",
+		ExitCode:  1,
+	}
+	out, err := renderGateBlockedJSON(be.ItemID, be)
+	if err != nil {
+		t.Fatalf("renderGateBlockedJSON: %v", err)
+	}
+	var p gateJSONPayload
+	if err := json.Unmarshal([]byte(out), &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	want := []string{"repair_and_retry", "move_to_non_terminal"}
+	if len(p.AllowedNext) != len(want) || p.AllowedNext[0] != want[0] || p.AllowedNext[1] != want[1] {
+		t.Errorf("blocked outcome must offer next-action menu, got %v", p.AllowedNext)
+	}
 }
 
 // TestRenderGatePassJSON verifies the pass payload carries the hash and head SHA.

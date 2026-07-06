@@ -104,7 +104,13 @@ func renderGateBlockedJSON(id string, be *corerrors.GateBlockedError) (string, e
 		BaseRef:      be.BaseRef,
 		HeadRef:      be.HeadRef,
 		Error:        be.Error(),
-		AllowedNext:  []string{"repair_and_retry", "move_to_non_terminal"},
+	}
+	// Parity with the MCP surface (gateBlockedResult): the next-action menu is
+	// offered only for a plain block, where the item retained its terminal-bound
+	// status. For requeued/escalated the broker has already redirected the item to
+	// a non-terminal status, so move_to_non_terminal is non-actionable.
+	if be.Outcome == "blocked" {
+		p.AllowedNext = []string{"repair_and_retry", "move_to_non_terminal"}
 	}
 	if len(be.ReportJSON) > 0 && json.Valid(be.ReportJSON) {
 		p.GateReport = json.RawMessage(be.ReportJSON)

@@ -138,7 +138,12 @@ replacing the rest of the document body.`,
 				return fmt.Errorf("no updates specified")
 			}
 
-			// Apply frontmatter updates if any.
+			// Apply frontmatter updates if any. The gate outcome (when the
+			// transition is gated) is captured and its --json payload deferred
+			// until after any section updates run, so a combined
+			// `--status done --section name=value --json` invocation never
+			// silently drops the section write behind an early return.
+			var gateOutcome *core.GateOutcome
 			if len(updates) > 0 {
 				opts := core.TransitionOptions{GateBase: gateBase}
 				if forceGates {
@@ -153,14 +158,7 @@ replacing the rest of the document body.`,
 				if updateErr != nil {
 					return moveGateError(cmd, id, updateErr, jsonOut)
 				}
-				if jsonOut && outcome != nil {
-					payload, mErr := renderGatePassJSON(id, outcome)
-					if mErr != nil {
-						return mErr
-					}
-					fmt.Fprintln(cmd.OutOrStdout(), payload)
-					return nil
-				}
+				gateOutcome = outcome
 			}
 
 			// Apply section updates if any.
@@ -238,6 +236,18 @@ replacing the rest of the document body.`,
 				if upsertErr := db.UpsertItem(ctx, ws.DB, sectionArtifact); upsertErr != nil {
 					return fmt.Errorf("sync index after section write: %w", upsertErr)
 				}
+			}
+
+			// Emit the deferred gate --json payload now that any section updates
+			// have been persisted, so the machine-readable gate outcome reflects a
+			// fully-applied mutation rather than preempting it.
+			if jsonOut && gateOutcome != nil {
+				payload, mErr := renderGatePassJSON(id, gateOutcome)
+				if mErr != nil {
+					return mErr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				return nil
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
