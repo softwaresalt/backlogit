@@ -18,9 +18,11 @@ if (Test-Path $global_agents_src) {
     }
 }
 
-Get-Content .env.local | ForEach-Object {
-  if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.+?)\s*$') {
-    Set-Item -Path "env:$($matches[1])" -Value $matches[2]
+if (Test-Path .env.local) {
+  Get-Content .env.local | ForEach-Object {
+    if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.+?)\s*$') {
+      Set-Item -Path "env:$($matches[1])" -Value $matches[2]
+    }
   }
 }
 
