@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	stderrors "errors"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -194,6 +195,15 @@ func TestShipmentGate_EmptyShipmentHeadInRepo_Refused(t *testing.T) {
 // preserves the legacy skip and ships (no-repo test harness + non-autoharness
 // environments must not regress).
 func TestShipmentGate_EmptyShipmentHeadNoRepo_Skips(t *testing.T) {
+	// This test exercises the git-PRESENT no-repo path: inGitWorktreeBounded must
+	// run `git rev-parse` and return (false, nil) for the legacy skip. With git
+	// absent from PATH the probe fails closed (refuse) by design, so the ship
+	// expectation below would not hold — skip, mirroring the other git-dependent
+	// tests in this package (initGitRepoWithCommits / initGitRepoNoCommits / the
+	// broken-repo cases in TestInGitWorktreeBounded).
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available on PATH")
+	}
 	ws := newGateTestWorkspace(t) // temp dir, NOT a git repo
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
 	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
