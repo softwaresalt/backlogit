@@ -148,12 +148,13 @@ func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
 //	runCtx.Err() != nil (checked FIRST)                 -> (false, ctxErr) [fail closed]
 //	exit 0, stdout "true"                                -> (true, nil)     [real worktree]
 //	exit 0, stdout != "true" (bare repo / .git)          -> (false, nil)    [not-a-worktree skip]
-//	exit != 0, a `.git` entry EXISTS at RootPath          -> (false, err)    [fail closed;
-//	           (present-but-broken: empty/corrupt .git                        message-independent]
-//	           dir, or broken gitfile pointer)
-//	exit 128, NO `.git` at RootPath, stderr ~ "not a git -> (false, nil)    [genuine no-repo skip]
-//	           repository (or any of the parent directories)"
-//	exit 128, NO `.git`, any OTHER stderr                 -> (false, err)    [fail closed]
+//	exit != 0, `.git` at RootPath present OR its         -> (false, err)    [fail closed;
+//	           presence indeterminate (stat != IsNotExist:                    message-independent]
+//	           present-but-broken, or permission/IO)
+//	exit 128, `.git` DEFINITIVELY absent (IsNotExist),   -> (false, nil)    [genuine no-repo skip]
+//	           stderr ~ "not a git repository (or any of
+//	           the parent directories)"
+//	exit 128, `.git` absent, any OTHER stderr             -> (false, err)    [fail closed]
 //	git missing / other non-ExitError / other exit        -> (false, err)    [fail closed]
 //
 // The `.git`-presence stat is the PRIMARY broken-repo discriminator (defends
@@ -208,17 +209,21 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 		// closed — regardless of git's diagnostic wording. This defends against
 		// message/locale/git-version drift: a genuine "outside any repository" has
 		// NO `.git` entry here (an ancestor repo would have made git return "true"
-		// at exit 0, never reaching this branch), so os.Stat succeeding is proof of
-		// a present-but-unresolved repo.
-		if _, statErr := os.Stat(filepath.Join(ws.RootPath, ".git")); statErr == nil {
+		// at exit 0, never reaching this branch). ONLY a definitive os.IsNotExist
+		// (the `.git` entry is genuinely absent) may proceed to the no-repo marker
+		// check; a successful stat (present) OR any other stat error (permission /
+		// IO — presence indeterminate) fails closed, because for an ENFORCEMENT
+		// discriminator "cannot rule out a present-but-broken repo" is fail-closed.
+		if _, statErr := os.Stat(filepath.Join(ws.RootPath, ".git")); !os.IsNotExist(statErr) {
 			return false, fmt.Errorf(
-				"git rev-parse --is-inside-work-tree exit %d with present-but-unresolved .git at %s: %s: %w",
-				ee.ExitCode(), ws.RootPath, bytes.TrimSpace(stderr.Bytes()), runErr)
+				"git rev-parse --is-inside-work-tree exit %d; .git at %s present-but-unresolved or presence indeterminate (stat: %v): %s: %w",
+				ee.ExitCode(), ws.RootPath, statErr, bytes.TrimSpace(stderr.Bytes()), runErr)
 		}
-		// No `.git` at RootPath: ONLY git's stable "outside any repository" marker —
-		// the parenthetical "(or any of the parent directories)" — is a genuine
-		// no-repo skip. LC_ALL=C above guarantees this English form. Any OTHER
-		// exit-128 stderr is an unexpected fatal and fails closed.
+		// `.git` is definitively ABSENT at RootPath: ONLY git's stable "outside any
+		// repository" marker — the parenthetical "(or any of the parent
+		// directories)" — is a genuine no-repo skip. LC_ALL=C above guarantees this
+		// English form. Any OTHER exit-128 stderr is an unexpected fatal and fails
+		// closed.
 		if ee.ExitCode() == 128 &&
 			bytes.Contains(bytes.ToLower(stderr.Bytes()),
 				[]byte("not a git repository (or any of the parent directories)")) {
