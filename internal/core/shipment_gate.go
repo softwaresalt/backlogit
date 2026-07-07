@@ -61,8 +61,24 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	}
 
 	// (2) shipment-diff decision. Redirects have no meaning at the shipment level,
-	// so every non-proceed decision collapses to a blocked refusal that leaves
-	// shipment state unchanged.
+	// so every non-proceed, non-error decision collapses to a blocked refusal that
+	// leaves shipment state unchanged.
+	//
+	// F5 (083.003-T): a setup/config/timeout-class DecisionError must preserve its
+	// exit 7/8 class fidelity rather than collapsing to a GateBlockedError (exit 6).
+	// This mirrors the task-level errorGate (gate_transition.go) and the broker
+	// Evaluate-error branch above. A shipment-level timeout reaches here as
+	// Kind==DecisionError with a nil Evaluate error, so this is the correct seam.
+	if ev.Decision.Kind == gate.DecisionError {
+		class := string(ev.Decision.ErrorClass)
+		if class == "" {
+			class = "config"
+		}
+		ws.appendGateErrorEvidence(ctx, shipmentID, class, "", ev.Decision.ReportJSON, ev.Decision.Stderr)
+		ge := gateErrorFromClass(class, shipmentID, ev.Decision.ReportJSON, ev.Decision.Stderr)
+		ge.Message = fmt.Sprintf("shipment %s gate check %s error", shipmentID, class)
+		return ge
+	}
 	if ev.Decision.Kind != gate.DecisionProceed {
 		be := &blerrors.GateBlockedError{
 			ItemID:       shipmentID,

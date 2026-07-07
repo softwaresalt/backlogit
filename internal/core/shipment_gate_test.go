@@ -21,6 +21,7 @@ import (
 type taskAwareRunner struct {
 	taskRes     gate.GateResult
 	shipmentRes gate.GateResult
+	shipmentErr error
 	lastCmd     []string
 }
 
@@ -31,7 +32,7 @@ func (r *taskAwareRunner) Run(_ context.Context, args []string, _ string, _ []st
 			return r.taskRes, nil
 		}
 	}
-	return r.shipmentRes, nil
+	return r.shipmentRes, r.shipmentErr
 }
 
 // newGatedFeatureTask creates a feature+task, wraps them in a claimed shipment,
@@ -250,4 +251,88 @@ func TestValidateMemberGateEvidence_ForcedNoRunAccepted(t *testing.T) {
 
 	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{id}, ""),
 		"a forced break-glass event must satisfy member evidence regardless of ran")
+}
+
+// TestShipmentGate_DecisionErrorConfig_TypedGateError pins F5 (083.003-T): a
+// shipment-level DecisionError{config} (autoharness exit 2) preserves exit-7
+// class fidelity — it returns a typed *GateError (config class), NOT a
+// *GateBlockedError that would collapse to exit 6.
+func TestShipmentGate_DecisionErrorConfig_TypedGateError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentRes: gate.GateResult{ExitCode: 2, Stdout: []byte(`{}`), Stderr: []byte("bad config")},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err, "a shipment DecisionError{config} must refuse the ship")
+
+	var ge *bkerrors.GateError
+	require.True(t, stderrors.As(err, &ge), "want *GateError, got %T", err)
+	assert.Equal(t, "config", ge.Class)
+	assert.False(t, ge.Retryable(), "config class is non-retryable (exit 7)")
+
+	var blocked *bkerrors.GateBlockedError
+	assert.False(t, stderrors.As(err, &blocked),
+		"a DecisionError must NOT collapse to *GateBlockedError (exit 6)")
+
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	assert.Equal(t, models.StatusActive, sh.Status, "shipment state unchanged on a config error")
+}
+
+// TestShipmentGate_DecisionErrorTimeout_RetryableGateError pins F5: a
+// shipment-level DecisionError{timeout} returns a retryable *GateError
+// (exit-8 class), not a *GateBlockedError.
+func TestShipmentGate_DecisionErrorTimeout_RetryableGateError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentErr: bkerrors.ErrGateTimeout,
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err)
+
+	var ge *bkerrors.GateError
+	require.True(t, stderrors.As(err, &ge), "want *GateError, got %T", err)
+	assert.Equal(t, "timeout", ge.Class)
+	assert.True(t, ge.Retryable(), "timeout class is retryable (exit 8)")
+}
+
+// TestShipmentGate_ExitOneBlock_StillBlockedError confirms F5 does not regress
+// the plain block path: a genuine below-threshold exit-1 block still returns a
+// *GateBlockedError (exit 6).
+func TestShipmentGate_ExitOneBlock_StillBlockedError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	report := `{"repeated_failure":{"count":1,"threshold":3,"reached":false,"action":"block"}}`
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentRes: gate.GateResult{ExitCode: 1, Stdout: []byte(report)},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err)
+	var blocked *bkerrors.GateBlockedError
+	require.True(t, stderrors.As(err, &blocked), "an exit-1 block must remain *GateBlockedError")
+	var ge *bkerrors.GateError
+	assert.False(t, stderrors.As(err, &ge), "a plain block must not be a *GateError")
 }
