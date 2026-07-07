@@ -138,32 +138,73 @@ func TestShipmentGate_FailOpenAuto_ShipsWithoutEvidence(t *testing.T) {
 	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
 }
 
-// TestValidateMemberGateEvidence_StaleRefused exercises the staleness dimension
-// directly: a terminal member whose latest evidence head SHA predates the
-// shipment head is refused.
+// TestValidateMemberGateEvidence_StaleRefused exercises the ancestor-aware
+// staleness dimension directly against a real git repo. A member whose recorded
+// evidence head is an ANCESTOR of the shipment head is accepted (the post-merge
+// false-staleness case strict equality wrongly rejected); an equal head is
+// accepted; an empty head is bypassed unchanged; and a genuinely divergent head,
+// a malformed head_sha, and an unverifiable (absent-object) lineage are each
+// refused with a fail-closed, branch-specific message.
 func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	ws := newGateTestWorkspace(t)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
 	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
 	ctx := context.Background()
 
-	id := newActiveTask(t, ws)
-	// Complete ungated to done, then hand-write a passing evidence event carrying
-	// an OLD head SHA so the staleness comparison has something to reject.
-	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
-	require.NoError(t, err)
-	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
-		"outcome": "passed", "ran": true, "head_sha": "oldsha0000",
-	}))
+	// base (A) is an ancestor of head (B); divergent (D) is a real sibling of A
+	// that is NOT an ancestor of B.
+	base, head, divergent := initGitRepoWithCommits(t, ws.RootPath)
 
-	// Same head -> accepted.
-	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{id}, "oldsha0000"))
-	// Newer shipment head -> stale evidence refused.
-	err = validateMemberGateEvidence(ctx, ws, []string{id}, "newsha1111")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "stale")
+	// mkMember creates a terminal (done) gated member carrying a single passing
+	// evidence event with the given recorded head_sha (omitted when empty).
+	mkMember := func(headSHA string) string {
+		t.Helper()
+		id := newActiveTask(t, ws)
+		_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+		require.NoError(t, err)
+		delta := map[string]any{"outcome": "passed", "ran": true}
+		if headSHA != "" {
+			delta["head_sha"] = headSHA
+		}
+		require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, delta))
+		return id
+	}
+
 	var blocked *bkerrors.GateBlockedError
-	require.True(t, stderrors.As(err, &blocked))
+
+	// R1 — ancestor accepted (the false-staleness case strict equality rejected).
+	ancestorMember := mkMember(base)
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{ancestorMember}, head),
+		"a member head that is an ancestor of the shipment head must be accepted")
+
+	// R3 — exact equality still accepted (fast-path, no repo access needed).
+	equalMember := mkMember(head)
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{equalMember}, head))
+
+	// R7 — empty member head unchanged (B85DAEE8 bypass preserved).
+	emptyMember := mkMember("")
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{emptyMember}, head))
+
+	// R2 — genuinely divergent (non-ancestor) head refused, specific message.
+	divergentMember := mkMember(divergent)
+	derr := validateMemberGateEvidence(ctx, ws, []string{divergentMember}, head)
+	require.Error(t, derr)
+	assert.Contains(t, derr.Error(), "divergent")
+	require.True(t, stderrors.As(derr, &blocked), "divergent refusal must be a *GateBlockedError")
+
+	// R6 — malformed recorded head_sha refused before any git exec (fail closed).
+	malformedMember := mkMember("oldsha0000")
+	merr := validateMemberGateEvidence(ctx, ws, []string{malformedMember}, head)
+	require.Error(t, merr)
+	assert.Contains(t, merr.Error(), "malformed")
+	require.True(t, stderrors.As(merr, &blocked), "malformed refusal must be a *GateBlockedError")
+
+	// R4 — valid-shape but absent object: unverifiable lineage refused (fail closed).
+	absentMember := mkMember("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	aerr := validateMemberGateEvidence(ctx, ws, []string{absentMember}, head)
+	require.Error(t, aerr)
+	assert.Contains(t, aerr.Error(), "lineage")
+	require.True(t, stderrors.As(aerr, &blocked), "lineage-error refusal must be a *GateBlockedError")
 }
 
 // TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed

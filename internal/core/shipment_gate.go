@@ -203,9 +203,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 
 // validateMemberGateEvidence verifies every task/subtask member in the release
 // scope is terminal AND carries passing (or forced) gate evidence. When
-// shipmentHead is non-empty, the member's latest evidence must match that head
-// SHA — evidence recorded at a prior head is rejected as stale. Non-gated member
-// types (feature/other) are skipped.
+// shipmentHead is non-empty, the member's recorded evidence head must be an
+// ANCESTOR OF (or equal to) that shipment head — i.e. the gated commit is
+// contained in the shipment history (verified with git merge-base
+// --is-ancestor). This replaces the prior strict head_sha equality, which falsely
+// rejected valid post-merge evidence (a member's build commit is an ancestor of,
+// not equal to, the shipment's merge commit). A genuinely divergent (non-ancestor)
+// head, a malformed head_sha, or an unverifiable lineage (git error/timeout/cancel)
+// is refused (fail closed). An empty member head is bypassed unchanged (B85DAEE8
+// scope). Non-gated member types (feature/other) are skipped.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
 	for _, id := range releaseScope {
@@ -232,7 +238,33 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		}
 		if shipmentHead != "" {
 			if h, _ := latest.Delta["head_sha"].(string); h != "" && h != shipmentHead {
-				return shipmentMemberEvidenceError(id, "gate evidence is stale (recorded at a prior head)")
+				// h != "" preserves the empty-member-head bypass (B85DAEE8, out of
+				// scope). h == shipmentHead is the equality fast-path: an equal head
+				// never enters this block, so a single-commit shipment needs no repo
+				// access and no subprocess.
+				if !isGitObjectName(h) {
+					// The recorded head comes from tamperable on-disk evidence JSONL;
+					// a value that is not a git object name is never handed to git.
+					slog.WarnContext(ctx, "member evidence head_sha is malformed",
+						"member", id, "member_head", h, "shipment_head", shipmentHead)
+					return shipmentMemberEvidenceError(id,
+						"gate evidence head_sha is malformed (not a git object name)")
+				}
+				included, aerr := ws.isAncestor(ctx, h, shipmentHead)
+				if aerr != nil {
+					// A security guard must never silently pass on an unverifiable
+					// lineage (git error / timeout / cancel): fail closed.
+					slog.WarnContext(ctx, "member evidence lineage check failed",
+						"member", id, "member_head", h, "shipment_head", shipmentHead, "error", aerr)
+					return shipmentMemberEvidenceError(id,
+						fmt.Sprintf("cannot verify gate evidence lineage: %v", aerr))
+				}
+				if !included {
+					// A real, reachable, but non-ancestor head: the gated work is not
+					// contained in the shipment history — genuinely stale/divergent.
+					return shipmentMemberEvidenceError(id,
+						"gate evidence is stale (recorded at a divergent head)")
+				}
 			}
 		}
 	}
