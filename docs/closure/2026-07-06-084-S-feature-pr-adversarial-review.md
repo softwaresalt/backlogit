@@ -1,3 +1,16 @@
+---
+chunk_strategy: h1-h2-h3
+description: 'Pre-push multi-model adversarial review for shipment 084-S (ancestor-aware shipment-gate member-evidence staleness) feature PR #182. Three independent reviewers (gpt-5.4, claude-sonnet-4.6, claude-opus-4.8) reviewed the strict-equality to ancestor-aware staleness change in internal/core/shipment_gate.go. Zero gate-blocking P0/P1 findings; the non-weakening property (member gated commit reachable in shipment lineage; final-tree integrity delegated to the unchanged aggregate diff check #2) and fail-closed discipline (git/exec/timeout/cancel/malformed/head-drift all refuse) were confirmed by all three reviewers. Advisory P2/P3 findings recorded with dispositions; ADV-7 (guaranteed-true ev.Enforced invariant) remediated pre-push comment-only; ADV-2/ADV-3/ADV-5 stashed as follow-ups (not regressions from the strict-equality baseline). Post-remediation gates green. GATE PASS.'
+doc_type: closure
+docline:
+    ms.date: 2026-07-06T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-06T00:00:00Z"
+schema_version: "1.0"
+source: docs/closure/2026-07-06-084-S-feature-pr-adversarial-review.md
+title: 084-S Ancestor-Aware Shipment-Gate Staleness — Feature PR Pre-Push Adversarial Review
+---
+
 # 084-S Feature PR — Adversarial Review (pre-push)
 
 **Shipment:** 084-S — Ancestor-aware shipment-gate member-evidence staleness
