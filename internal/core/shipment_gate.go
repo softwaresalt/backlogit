@@ -1,10 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"regexp"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -12,6 +16,83 @@ import (
 	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+// ancestryCheckTimeout bounds each git lineage/head-resolution subprocess when
+// the gate broker does not supply an explicit timeout. The shipment ship path is
+// unbounded and holds the workspace lock across completion, so an unbounded git
+// child would pin the lock indefinitely (a denial of service). Every helper that
+// spawns git here derives its OWN deadline from this default (or
+// GateBroker.TimeoutSeconds when configured) — it never relies on the caller
+// imposing a deadline.
+const ancestryCheckTimeout = 5 * time.Second
+
+// gitObjectNameRe matches exactly the full-length object names git rev-parse can
+// produce: a 40-hex SHA-1 or a 64-hex SHA-256. Abbreviations, refs, and any value
+// containing a leading dash or non-hex byte are rejected, so a tampered on-disk
+// head_sha can never be handed to git as an option or an ambiguous ref.
+var gitObjectNameRe = regexp.MustCompile(`^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
+
+// isGitObjectName reports whether s is a full-length git object name (SHA-1 or
+// SHA-256). It is the input-validation guard applied to the untrusted recorded
+// member head_sha before it is passed to git (argument-injection defense: "data
+// must not choose the args").
+func isGitObjectName(s string) bool {
+	return gitObjectNameRe.MatchString(s)
+}
+
+// isAncestor reports whether ancestor is an ancestor of (or equal to) descendant
+// by running `git merge-base --is-ancestor ancestor descendant` under a mandatory
+// self-derived deadline. It is a security guard on the shipment ship path, so it
+// FAILS CLOSED: any timeout, cancellation, exec failure, or non-{0,1} exit code
+// returns a non-nil error (never a silent pass). Exit-code semantics:
+//
+//	0 -> ancestor or equal          -> (true, nil)
+//	1 -> definitively not-ancestor  -> (false, nil)
+//	other / exec error / timeout    -> (false, error)  [fail closed]
+//
+// argv-array exec + gate.MinimalEnv() preserve the workspace exec trust boundary
+// (no shell, allowlisted env). Both operands are expected to already satisfy
+// isGitObjectName / trusted-provenance at the call site.
+func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	d := ancestryCheckTimeout
+	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
+		d = time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second
+	}
+	runCtx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(runCtx, "git", "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd.Dir = ws.RootPath
+	cmd.Env = gate.MinimalEnv()
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	if runErr == nil {
+		return true, nil // exit 0: ancestor or equal.
+	}
+
+	// A timeout OR cancellation MUST be detected before any exit code is read: a
+	// context-killed git reports a platform-dependent exit code (e.g. 1 on
+	// Windows, -1 on POSIX) that must never be misread as the exit-1
+	// "not-an-ancestor" signal. Both DeadlineExceeded and Canceled fail closed.
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		return false, fmt.Errorf("ancestor check aborted (%v): %w", ctxErr, ctxErr)
+	}
+
+	var ee *exec.ExitError
+	if stderrors.As(runErr, &ee) {
+		if ee.ExitCode() == 1 {
+			return false, nil // definitively not an ancestor.
+		}
+		// Exit 128 (bad object / shallow boundary) and any other non-{0,1} code
+		// are unverifiable lineage -> fail closed, preserving git's diagnostic.
+		return false, fmt.Errorf("git merge-base --is-ancestor exit %d: %s: %w",
+			ee.ExitCode(), bytes.TrimSpace(stderr.Bytes()), runErr)
+	}
+	// git binary missing or any other non-ExitError failure -> fail closed.
+	return false, fmt.Errorf("run git merge-base --is-ancestor: %w", runErr)
+}
 
 // gateShipmentCompletion enforces the shipment-level two-level gate before a
 // shipment is marked shipped (082-F ST4.2). It runs only when a gate broker is
