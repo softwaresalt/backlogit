@@ -94,6 +94,69 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	return false, fmt.Errorf("run git merge-base --is-ancestor: %w", runErr)
 }
 
+// headSHABounded resolves the current HEAD SHA under a mandatory self-derived
+// deadline (same source/fallback as isAncestor). The shipment ship path is
+// unbounded, so a hung `git rev-parse` must not stall completion under the
+// workspace lock. It distinguishes a bounded-read failure from a legacy
+// resolution failure so the NEW timeout path fails closed without widening the
+// pre-existing (FLAGGED) non-context empty-head skip:
+//
+//	("", ctxErr) -> the bounded read timed out or was cancelled: the caller MUST
+//	                fail closed (never a silent staleness skip).
+//	(sha, nil)   -> a real HEAD SHA.
+//	("", nil)    -> a LEGACY non-context resolution failure (e.g. non-repo test
+//	                harness): the pre-existing skip is preserved so no-repo tests
+//	                do not regress.
+func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
+	d := ancestryCheckTimeout
+	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
+		d = time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second
+	}
+	bctx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+	h := ws.headSHA(bctx)
+	if h == "" && bctx.Err() != nil {
+		// Timeout/cancel: a bounded-read failure the caller fails closed on.
+		return "", bctx.Err()
+	}
+	// A real SHA, or a legacy "" from a non-context resolution error (legacy skip).
+	return h, nil
+}
+
+// headResolveError builds a fail-closed refusal for a bounded HEAD resolution that
+// timed out or was cancelled. A shipment head that cannot be read under the
+// deadline must block completion rather than silently skip the staleness guard.
+func headResolveError(shipmentID string, cause error) error {
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
+}
+
+// headDriftError reports whether HEAD advanced across the gate evaluation window.
+// It returns nil when pre == post (no drift, including the both-empty no-repo
+// case) and a typed *GateBlockedError naming both observed heads otherwise, so
+// any HEAD movement between the single pre-resolution and the last read before
+// success fails closed under enforcement.
+func headDriftError(shipmentID, pre, post string) error {
+	if pre == post {
+		return nil
+	}
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: shipment head drifted during gate evaluation (%s -> %s): %w",
+		shipmentID, pre, post, be)
+}
+
 // gateShipmentCompletion enforces the shipment-level two-level gate before a
 // shipment is marked shipped (082-F ST4.2). It runs only when a gate broker is
 // wired AND gates are enforceable; under enabled:false or a fail-open (auto with
@@ -116,6 +179,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return nil // gate disabled (enabled:false) or unwired.
 	}
 
+	// Resolve the shipment head ONCE, bounded, before Evaluate so the member
+	// lineage check (#1) and the aggregate full-diff check (#2) are bracketed to a
+	// single observed head. headErr is a bounded-read (timeout/cancel) failure that
+	// must fail closed under enforcement; a legacy non-context "" preserves the
+	// pre-existing no-repo skip (see headSHABounded). It is checked only after the
+	// fail-open early return below, so a non-enforcing environment is never blocked
+	// by a head-resolution timeout.
+	shipmentHead, headErr := ws.headSHABounded(ctx)
+
 	// Shipment-level aggregate gate check over the full diff. NoCount: this
 	// aggregate invocation is advisory to autoharness's per-task failure counter
 	// (the per-task completion path is authoritative; we never stack a second
@@ -137,8 +209,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return nil
 	}
 
-	// (1) member-evidence validation (cheap log scan, no state change).
-	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, ws.headSHA(ctx)); merr != nil {
+	// Enforced: a bounded-read failure on the single pre-resolution (timeout or
+	// cancel) MUST fail closed — never silently skip the staleness guard.
+	if headErr != nil {
+		return headResolveError(shipmentID, headErr)
+	}
+
+	// (1) member-evidence validation (cheap log scan, no state change), against the
+	// single pre-resolved shipment head.
+	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, shipmentHead); merr != nil {
 		return merr
 	}
 
@@ -186,6 +265,24 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 			slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence", "shipment", shipmentID, "error", aerr)
 		}
 		return fmt.Errorf("shipment %s blocked by shipment-level gate check: %w", shipmentID, be)
+	}
+
+	// Stable-head assertion — the LAST read before the success path. Re-resolving
+	// here (after the block/error branches, before the passing-evidence append)
+	// brackets the ENTIRE evaluation window: Evaluate (#2) plus the member scan
+	// (#1). Any HEAD advance across that window, or a bounded-read timeout/cancel,
+	// fails closed under enforcement, so ancestor-aware can never admit a member
+	// whose old head became an ancestor of an advanced HEAD. When shipmentHead is a
+	// legacy "" (no-repo), the guard is inert and existing no-repo tests are
+	// unaffected.
+	if ev.Enforced && shipmentHead != "" {
+		postHead, postErr := ws.headSHABounded(ctx)
+		if postErr != nil {
+			return headResolveError(shipmentID, postErr)
+		}
+		if derr := headDriftError(shipmentID, shipmentHead, postHead); derr != nil {
+			return derr
+		}
 	}
 
 	// Both checks passed: record shipment-level passing evidence.
