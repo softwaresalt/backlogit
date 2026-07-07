@@ -18,6 +18,14 @@ if (Test-Path $global_agents_src) {
     }
 }
 
+if (Test-Path .env.local) {
+  Get-Content .env.local | ForEach-Object {
+    if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.+?)\s*$') {
+      Set-Item -Path "env:$($matches[1])" -Value $matches[2]
+    }
+  }
+}
+
 $env:COPILOT_HOME = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { ".\.copilot" }
 $env:ENGRAM_DATA_DIR = ".\.engram"   # Uncomment when the agent-engram capability pack is active
 $env:GITHUB_TOKEN = (gh auth token)

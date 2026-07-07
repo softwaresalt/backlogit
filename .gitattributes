@@ -1,0 +1,5 @@
+# Normalize line endings: store text files as LF in the repository and
+# convert to the platform's native endings on checkout. This makes line-ending
+# handling deterministic and repo-controlled rather than dependent on each
+# contributor's core.autocrlf setting, preventing spurious CRLF/LF churn.
+* text=auto
