@@ -67,9 +67,12 @@ remediation + re-review PASS), `docs/closure/2026-07-07-085-S-feature-pr-runtime
   `.git` pointer F1, empty/corrupt `.git` dir N1) also fails closed.
 - **Legitimate-empty preserved (SEC-2 CONFIRMED, no completion breakage):** a
   genuine no-repo empty shipment head still ships, a no-repo empty member head
-  stays skipped, and non-enforcement / bare-repo / inside-`.git` / forced
-  break-glass paths are unchanged. Discriminator is `inGitWorktreeBounded`, not
-  `ev.Enforced`.
+  stays skipped, and non-enforcement / bare-repo / inside-`.git` paths are
+  unchanged. A forced/break-glass member that still records a real head is honored
+  via the ancestor-aware path; the empty-head refusal is **uniform** — a real work
+  tree under enforcement with no recorded head fails closed regardless of a forced
+  flag (it cannot prove lineage; F5 intended-by-design). Discriminator is
+  `inGitWorktreeBounded`, not `ev.Enforced`.
 - **Fail-closed discipline:** probe timeout, cancellation, exec failure, corrupt
   repo, or missing git → non-nil error → refuse. `runCtx.Err()` is checked FIRST
   (a context-killed git reporting a platform exit code is never misread). The

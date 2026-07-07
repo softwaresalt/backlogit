@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Post-merge operational closure for shipment 085-S (shipment-gate empty-head fail-closed hardening). Certifies that feature PR #185 merged as a two-parent merge commit 7c129b0, that the shipment ship gate (ancestor-aware, 084-S graduated) accepted the legitimate closure while the newly shipped empty-head fail-closed logic did NOT block it, that all 6 artifacts (085-F, 085.001-T, 085.001.001/002/003-ST, 085-S) archived with the merge SHA recorded, and that pre/post reconciliation passed with zero orphans and zero archive deletions. Records the bootstrapping proof (085-S shipped with a binary rebuilt from merged main), monitoring signals, rollback plan, source-artifact cleanup, and graduated compound learning. Post-merge closure performed on branch post-merge/085-S and merged AUTONOMOUSLY under standing AFK operator authorization (merge-commit, P-009).'
+description: 'Post-merge operational closure for shipment 085-S (shipment-gate empty-head fail-closed hardening). Certifies that feature PR #185 merged as a two-parent merge commit 7c129b0, that the shipment ship gate (ancestor-aware, 084-S graduated) accepted the legitimate closure while the newly shipped empty-head fail-closed logic did NOT block it, that all 6 artifacts (085-F, 085.001-T, 085.001.001/002/003-ST, 085-S) archived with the merge SHA recorded, and that pre/post reconciliation passed with zero orphans and zero archive deletions. Records the bootstrapping proof (085-S shipped with a binary rebuilt from merged main), monitoring signals, rollback plan, source-artifact cleanup, and graduated compound learning. Post-merge closure performed on branch post-merge/085-S and, once its own closure-PR gates pass, merged AUTONOMOUSLY under standing AFK operator authorization (merge-commit, P-009).'
 doc_type: closure
 docline:
     ms.date: 2026-07-07T00:00:00Z
@@ -44,9 +44,11 @@ Closure ran with `backlogit.exe` rebuilt from merged `main` (build exit 0, versi
   ancestor-aware admission continues to hold for a real post-merge shipment.
 - **Non-regression of the shipped fix (load-bearing):** the newly shipped
   empty-head fail-closed logic did **not** block this legitimate closure — the
-  shipment head resolves to `7c129b0` and every member has a valid non-empty head,
-  so neither the empty-shipment-head nor the empty-member-head fail-closed branch
-  fired. The fix refuses *unprovable* lineage, not *provable* lineage.
+  shipment head resolves to `7c129b0` and every **validated task/subtask** member
+  carries a non-empty head that is an ancestor of the merge commit (the feature
+  artifact `085-F` is exempt from lineage validation by artifact type), so neither
+  the empty-shipment-head nor the empty-member-head fail-closed branch fired. The
+  fix refuses *unprovable* lineage, not *provable* lineage.
 - Post-archive reconciliation (mode:post): `085-S.md` archived with
   `archived_status: shipped`, `commit: 7c129b0…`, `status: archived`; each member
   archived with `commit: 7c129b0…`. Zero archive working-tree deletions (P-007
@@ -60,8 +62,9 @@ Closure ran with `backlogit.exe` rebuilt from merged `main` (build exit 0, versi
 
 Like 084-S before it, 085-S's closure is a self-consistency proof of the shipped
 change: the shipment closed with a binary built from merged `main` that now contains
-the empty-head fail-closed logic. Because 085-S's own members carry provable
-(non-empty, ancestor) lineage, the new fail-closed branches stay dormant and the
+the empty-head fail-closed logic. Because 085-S's own **validated task/subtask**
+members carry provable (non-empty, ancestor) lineage — the feature artifact `085-F` is
+type-exempt from lineage validation — the new fail-closed branches stay dormant and the
 ancestor-aware path admits the closure — demonstrating end-to-end that the hardening
 closes the fail-*open* holes without introducing a fail-*shut* regression on
 legitimate shipments.
@@ -114,5 +117,6 @@ legitimate shipments.
 
 Post-merge closure work (this artifact, the compound docs, the backlog archival,
 compact-context, final memory) is committed on `post-merge/085-S` and shipped via a
-dedicated closure PR, adversarially reviewed and Copilot-resolved to zero, then merged
-AUTONOMOUSLY under standing AFK operator authorization (merge-commit, P-009).
+dedicated closure PR (#186), adversarially reviewed and Copilot-resolved to zero, then
+— once its own gates pass — merged AUTONOMOUSLY under standing AFK operator
+authorization (merge-commit, P-009).

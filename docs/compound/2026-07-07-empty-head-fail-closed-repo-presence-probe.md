@@ -61,11 +61,12 @@ bounded deadline `boundedHelperTimeout()`), and resolves a **four-way** result:
 runCtx.Err() != nil (checked FIRST) -> fail closed (timeout/cancel misreported as exit code)
 exit 0, stdout "true"               -> in a work tree      -> (true,  nil)
 exit 0, other stdout                -> bare repo / .git    -> (false, nil)  preserve skip
-exit != 0                           -> os.Stat(RootPath/.git):
+run error IS *exec.ExitError        -> os.Stat(RootPath/.git):
     !os.IsNotExist(statErr)         ->   .git present OR indeterminate (perm/IO) -> FAIL CLOSED
     os.IsNotExist(statErr)          ->   definitively absent -> marker check:
         exit 128 + stderr has "not a git repository (or any of the parent directories)" -> (false,nil) skip
         else                        ->   FAIL CLOSED (unverifiable)
+run error NOT ExitError (git missing / spawn failure) -> FAIL CLOSED (no os.Stat reached)
 ```
 
 Then: under a real work tree (`true`), an empty shipment head or empty member head_sha
@@ -110,6 +111,9 @@ Then: under a real work tree (`true`), an empty shipment head or empty member he
 - **Bootstrapping proof.** 085-S closed its own shipment with a binary built from merged
   `main`: its members carry provable (non-empty, ancestor) lineage, so the new
   fail-closed branches stayed dormant and the ancestor-aware path admitted the closure.
+  (The feature artifact `085-F` is exempt from lineage validation by artifact type —
+  only `task`/`subtask` members are lineage-checked — so its absent gate head_sha is
+  irrelevant to the guard.)
   End-to-end proof the hardening closes the fail-open holes without a fail-shut
   regression.
 
