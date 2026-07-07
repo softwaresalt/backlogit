@@ -141,14 +141,28 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 	return nil
 }
 
-// latestGatePassEvidence returns the most recent passing or forced gate evidence
-// event, or nil when none is present.
+// latestGatePassEvidence returns the most recent gate evidence event that
+// satisfies the composed member-evidence predicate (082-F F4 hardening,
+// 083.002-T): an EventGateForced (unconditional audited break-glass) OR an
+// EventGatePassed whose delta records ran==true. A fail-open EventGatePassed
+// no-run (ran missing/false) is NOT valid evidence and is skipped, so an earlier
+// forced/ran==true event is promoted to the returned latest (the head_sha
+// staleness check then runs against that event — intended per Decision 2).
+// Returns nil when no qualifying event is present.
 func latestGatePassEvidence(evs []events.Event) *events.Event {
 	var latest *events.Event
 	for i := range evs {
-		if evs[i].EventType == EventGatePassed || evs[i].EventType == EventGateForced {
+		switch evs[i].EventType {
+		case EventGateForced:
 			e := evs[i]
 			latest = &e
+		case EventGatePassed:
+			// Comma-ok read: a missing or non-bool "ran" yields false, correctly
+			// treated as not-ran (mirrors the head_sha idiom above).
+			if ran, _ := evs[i].Delta["ran"].(bool); ran {
+				e := evs[i]
+				latest = &e
+			}
 		}
 	}
 	return latest
