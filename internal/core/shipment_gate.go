@@ -1,10 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"regexp"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -12,6 +16,155 @@ import (
 	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+// ancestryCheckTimeout is the HARD CAP on each git lineage/head-resolution
+// subprocess. The shipment ship path is unbounded and holds the workspace lock
+// across completion, so an unbounded (or long-running) git child would pin the
+// lock (a denial of service). git merge-base/rev-parse are near-instant LOCAL
+// reads, so 5s is generous. GateBroker.TimeoutSeconds is sized for build/test
+// gate COMMANDS (default 600s) and must never be adopted verbatim for these
+// metadata reads; boundedHelperTimeout caps at this value while still honoring a
+// smaller configured gate timeout. Every helper that spawns git here derives its
+// OWN deadline — it never relies on the caller imposing one.
+const ancestryCheckTimeout = 5 * time.Second
+
+// gitObjectNameRe matches exactly the full-length object names git rev-parse can
+// produce: a 40-hex SHA-1 or a 64-hex SHA-256. Abbreviations, refs, and any value
+// containing a leading dash or non-hex byte are rejected, so a tampered on-disk
+// head_sha can never be handed to git as an option or an ambiguous ref.
+var gitObjectNameRe = regexp.MustCompile(`^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
+
+// isGitObjectName reports whether s is a full-length git object name (SHA-1 or
+// SHA-256). It is the input-validation guard applied to the untrusted recorded
+// member head_sha before it is passed to git (argument-injection defense: "data
+// must not choose the args").
+func isGitObjectName(s string) bool {
+	return gitObjectNameRe.MatchString(s)
+}
+
+// boundedHelperTimeout returns the deadline for the fast git metadata helpers
+// (isAncestor, headSHABounded). ancestryCheckTimeout is a hard cap: a configured
+// GateBroker.TimeoutSeconds (sized for build/test gate commands, 600s by default)
+// must not let one of these near-instant local reads hold the workspace lock for
+// minutes. A smaller configured gate timeout is still honored.
+func (ws *Workspace) boundedHelperTimeout() time.Duration {
+	d := ancestryCheckTimeout
+	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
+		if configured := time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second; configured < d {
+			d = configured
+		}
+	}
+	return d
+}
+
+// isAncestor reports whether ancestor is an ancestor of (or equal to) descendant
+// by running `git merge-base --is-ancestor ancestor descendant` under a mandatory
+// self-derived deadline. It is a security guard on the shipment ship path, so it
+// FAILS CLOSED: any timeout, cancellation, exec failure, or non-{0,1} exit code
+// returns a non-nil error (never a silent pass). Exit-code semantics:
+//
+//	0 -> ancestor or equal          -> (true, nil)
+//	1 -> definitively not-ancestor  -> (false, nil)
+//	other / exec error / timeout    -> (false, error)  [fail closed]
+//
+// argv-array exec + gate.MinimalEnv() preserve the workspace exec trust boundary
+// (no shell, allowlisted env). Both operands are expected to already satisfy
+// isGitObjectName / trusted-provenance at the call site.
+func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
+	defer cancel()
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(runCtx, "git", "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd.Dir = ws.RootPath
+	cmd.Env = gate.MinimalEnv()
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	if runErr == nil {
+		return true, nil // exit 0: ancestor or equal.
+	}
+
+	// A timeout OR cancellation MUST be detected before any exit code is read: a
+	// context-killed git reports a platform-dependent exit code (e.g. 1 on
+	// Windows, -1 on POSIX) that must never be misread as the exit-1
+	// "not-an-ancestor" signal. Both DeadlineExceeded and Canceled fail closed.
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		return false, fmt.Errorf("ancestor check aborted: %w", ctxErr)
+	}
+
+	var ee *exec.ExitError
+	if stderrors.As(runErr, &ee) {
+		if ee.ExitCode() == 1 {
+			return false, nil // definitively not an ancestor.
+		}
+		// Exit 128 (bad object / shallow boundary) and any other non-{0,1} code
+		// are unverifiable lineage -> fail closed, preserving git's diagnostic.
+		return false, fmt.Errorf("git merge-base --is-ancestor exit %d: %s: %w",
+			ee.ExitCode(), bytes.TrimSpace(stderr.Bytes()), runErr)
+	}
+	// git binary missing or any other non-ExitError failure -> fail closed.
+	return false, fmt.Errorf("run git merge-base --is-ancestor: %w", runErr)
+}
+
+// headSHABounded resolves the current HEAD SHA under a mandatory self-derived
+// deadline (same source/fallback as isAncestor). The shipment ship path is
+// unbounded, so a hung `git rev-parse` must not stall completion under the
+// workspace lock. It distinguishes a bounded-read failure from a legacy
+// resolution failure so the NEW timeout path fails closed without widening the
+// pre-existing (FLAGGED) non-context empty-head skip:
+//
+//	("", ctxErr) -> the bounded read timed out or was cancelled: the caller MUST
+//	                fail closed (never a silent staleness skip).
+//	(sha, nil)   -> a real HEAD SHA.
+//	("", nil)    -> a LEGACY non-context resolution failure (e.g. non-repo test
+//	                harness): the pre-existing skip is preserved so no-repo tests
+//	                do not regress.
+func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
+	bctx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
+	defer cancel()
+	h := ws.headSHA(bctx)
+	if h == "" && bctx.Err() != nil {
+		// Timeout/cancel: a bounded-read failure the caller fails closed on.
+		return "", bctx.Err()
+	}
+	// A real SHA, or a legacy "" from a non-context resolution error (legacy skip).
+	return h, nil
+}
+
+// headResolveError builds a fail-closed refusal for a bounded HEAD resolution that
+// timed out or was cancelled. A shipment head that cannot be read under the
+// deadline must block completion rather than silently skip the staleness guard.
+func headResolveError(shipmentID string, cause error) error {
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
+}
+
+// headDriftError reports whether HEAD advanced across the gate evaluation window.
+// It returns nil when pre == post (no drift, including the both-empty no-repo
+// case) and a typed *GateBlockedError naming both observed heads otherwise, so
+// any HEAD movement between the single pre-resolution and the last read before
+// success fails closed under enforcement.
+func headDriftError(shipmentID, pre, post string) error {
+	if pre == post {
+		return nil
+	}
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: shipment head drifted during gate evaluation (%s -> %s): %w",
+		shipmentID, pre, post, be)
+}
 
 // gateShipmentCompletion enforces the shipment-level two-level gate before a
 // shipment is marked shipped (082-F ST4.2). It runs only when a gate broker is
@@ -35,6 +188,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return nil // gate disabled (enabled:false) or unwired.
 	}
 
+	// Resolve the shipment head ONCE, bounded, before Evaluate so the member
+	// lineage check (#1) and the aggregate full-diff check (#2) are bracketed to a
+	// single observed head. headErr is a bounded-read (timeout/cancel) failure that
+	// must fail closed under enforcement; a legacy non-context "" preserves the
+	// pre-existing no-repo skip (see headSHABounded). It is checked only after the
+	// fail-open early return below, so a non-enforcing environment is never blocked
+	// by a head-resolution timeout.
+	shipmentHead, headErr := ws.headSHABounded(ctx)
+
 	// Shipment-level aggregate gate check over the full diff. NoCount: this
 	// aggregate invocation is advisory to autoharness's per-task failure counter
 	// (the per-task completion path is authoritative; we never stack a second
@@ -56,8 +218,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return nil
 	}
 
-	// (1) member-evidence validation (cheap log scan, no state change).
-	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, ws.headSHA(ctx)); merr != nil {
+	// Enforced: a bounded-read failure on the single pre-resolution (timeout or
+	// cancel) MUST fail closed — never silently skip the staleness guard.
+	if headErr != nil {
+		return headResolveError(shipmentID, headErr)
+	}
+
+	// (1) member-evidence validation (cheap log scan, no state change), against the
+	// single pre-resolved shipment head.
+	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, shipmentHead); merr != nil {
 		return merr
 	}
 
@@ -107,6 +276,30 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return fmt.Errorf("shipment %s blocked by shipment-level gate check: %w", shipmentID, be)
 	}
 
+	// Stable-head assertion — the LAST read before the success path. Re-resolving
+	// here (after the block/error branches, before the passing-evidence append)
+	// brackets the ENTIRE evaluation window: Evaluate (#2) plus the member scan
+	// (#1). Any HEAD advance across that window, or a bounded-read timeout/cancel,
+	// fails closed under enforcement, so ancestor-aware can never admit a member
+	// whose old head became an ancestor of an advanced HEAD. When shipmentHead is a
+	// legacy "" (no-repo), the guard is inert and existing no-repo tests are
+	// unaffected.
+	//
+	// ev.Enforced is already guaranteed true here (the !ev.Enforced fail-open early
+	// return above forecloses the false case); it is retained as an explicit
+	// invariant marker so this stable-head assertion reads as unconditionally
+	// scoped to the enforced path. shipmentHead != "" is the load-bearing guard
+	// (no-repo legacy skip).
+	if ev.Enforced && shipmentHead != "" {
+		postHead, postErr := ws.headSHABounded(ctx)
+		if postErr != nil {
+			return headResolveError(shipmentID, postErr)
+		}
+		if derr := headDriftError(shipmentID, shipmentHead, postHead); derr != nil {
+			return derr
+		}
+	}
+
 	// Both checks passed: record shipment-level passing evidence.
 	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, map[string]any{
 		"level":    "shipment",
@@ -122,9 +315,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 
 // validateMemberGateEvidence verifies every task/subtask member in the release
 // scope is terminal AND carries passing (or forced) gate evidence. When
-// shipmentHead is non-empty, the member's latest evidence must match that head
-// SHA — evidence recorded at a prior head is rejected as stale. Non-gated member
-// types (feature/other) are skipped.
+// shipmentHead is non-empty, the member's recorded evidence head must be an
+// ANCESTOR OF (or equal to) that shipment head — i.e. the gated commit is
+// contained in the shipment history (verified with git merge-base
+// --is-ancestor). This replaces the prior strict head_sha equality, which falsely
+// rejected valid post-merge evidence (a member's build commit is an ancestor of,
+// not equal to, the shipment's merge commit). A genuinely divergent (non-ancestor)
+// head, a malformed head_sha, or an unverifiable lineage (git error/timeout/cancel)
+// is refused (fail closed). An empty member head is bypassed unchanged (B85DAEE8
+// scope). Non-gated member types (feature/other) are skipped.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
 	for _, id := range releaseScope {
@@ -151,7 +350,33 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		}
 		if shipmentHead != "" {
 			if h, _ := latest.Delta["head_sha"].(string); h != "" && h != shipmentHead {
-				return shipmentMemberEvidenceError(id, "gate evidence is stale (recorded at a prior head)")
+				// h != "" preserves the empty-member-head bypass (B85DAEE8, out of
+				// scope). h == shipmentHead is the equality fast-path: an equal head
+				// never enters this block, so a single-commit shipment needs no repo
+				// access and no subprocess.
+				if !isGitObjectName(h) {
+					// The recorded head comes from tamperable on-disk evidence JSONL;
+					// a value that is not a git object name is never handed to git.
+					slog.WarnContext(ctx, "member evidence head_sha is malformed",
+						"member", id, "member_head", h, "shipment_head", shipmentHead)
+					return shipmentMemberEvidenceError(id,
+						"gate evidence head_sha is malformed (not a git object name)")
+				}
+				included, aerr := ws.isAncestor(ctx, h, shipmentHead)
+				if aerr != nil {
+					// A security guard must never silently pass on an unverifiable
+					// lineage (git error / timeout / cancel): fail closed.
+					slog.WarnContext(ctx, "member evidence lineage check failed",
+						"member", id, "member_head", h, "shipment_head", shipmentHead, "error", aerr)
+					return shipmentMemberEvidenceError(id,
+						fmt.Sprintf("cannot verify gate evidence lineage: %v", aerr))
+				}
+				if !included {
+					// A real, reachable, but non-ancestor head: the gated work is not
+					// contained in the shipment history — genuinely stale/divergent.
+					return shipmentMemberEvidenceError(id,
+						"gate evidence is stale (recorded at a divergent head)")
+				}
 			}
 		}
 	}
