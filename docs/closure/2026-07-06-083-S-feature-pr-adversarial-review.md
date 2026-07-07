@@ -1,3 +1,16 @@
+---
+chunk_strategy: h1-h2-h3
+description: 'Pre-push multi-model adversarial review for shipment 083-S (gate-broker phase-2 hardening) feature PR #180. Three independent reviewers (claude-opus-4.8, gpt-5.4, gemini-3.1-pro) reviewed 20 files / 1269 insertions across F1/F4/F5/F7 + Q3 indexed gate-evidence read-model. Two HIGH-confidence P1 gate-blockers found and remediated before push: (1) doctor --check-gate-evidence trusted a stale projection missing row over authoritative append-only logs — fixed via LoadPassingGateEvidence positive-index (now uses idx_gate_evidence_status) plus log-scan re-verification for non-positive/absent items; (2) F5 exit-code fix did not reach the shipment ship CLI (collapsed to exit 1) — fixed via shipmentShipGateError mapping to 6/7/8. Two robustness findings also fixed (unused index now used; partial-projection commit now aborts tx). Findings recorded by confidence tier with dispositions; Q3.2 positive-index layering deviation verified safe. Post-remediation gates green. GATE PASS.'
+doc_type: closure
+docline:
+    ms.date: 2026-07-06T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-06T00:00:00Z"
+schema_version: "1.0"
+source: docs/closure/2026-07-06-083-S-feature-pr-adversarial-review.md
+title: 083-S Gate-Broker Phase-2 Hardening — Feature PR Pre-Push Adversarial Review
+---
+
 # Adversarial Review — 083-S Feature PR (pre-push)
 
 **Date:** 2026-07-06
