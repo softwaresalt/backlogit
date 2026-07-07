@@ -275,6 +275,12 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	// whose old head became an ancestor of an advanced HEAD. When shipmentHead is a
 	// legacy "" (no-repo), the guard is inert and existing no-repo tests are
 	// unaffected.
+	//
+	// ev.Enforced is already guaranteed true here (the !ev.Enforced fail-open early
+	// return above forecloses the false case); it is retained as an explicit
+	// invariant marker so this stable-head assertion reads as unconditionally
+	// scoped to the enforced path. shipmentHead != "" is the load-bearing guard
+	// (no-repo legacy skip).
 	if ev.Enforced && shipmentHead != "" {
 		postHead, postErr := ws.headSHABounded(ctx)
 		if postErr != nil {
