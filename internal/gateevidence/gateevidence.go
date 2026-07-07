@@ -79,30 +79,34 @@ func IsGateEvent(eventType string) bool {
 // ran==false (StatusForcedNoRun) from a forced real run (StatusForced) for the
 // audit-visible projection; this does not change which event is selected.
 func Latest(evs []events.Event) Evidence {
-	var selected *events.Event
+	selectedIdx := -1
 	forcedNoRun := false
 	for i := range evs {
 		switch evs[i].EventType {
 		case EventGateForced:
 			// Unconditional break-glass: valid regardless of ran. Record whether it
 			// was a no-run force for the audit-visible status token.
-			e := evs[i]
-			selected = &e
+			selectedIdx = i
 			ran, _ := evs[i].Delta["ran"].(bool)
 			forcedNoRun = !ran
 		case EventGatePassed:
 			// Comma-ok read: a missing or non-bool "ran" yields false, correctly
 			// treated as not-ran and skipped (fail-open rejection).
 			if ran, _ := evs[i].Delta["ran"].(bool); ran {
-				e := evs[i]
-				selected = &e
+				selectedIdx = i
 				forcedNoRun = false
 			}
 		}
 	}
-	if selected == nil {
+	if selectedIdx == -1 {
 		return Evidence{Status: StatusMissing}
 	}
+	// Point into the caller's slice rather than address-of a loop-local copy so a
+	// long rehydration/member-evidence scan does not heap-allocate a snapshot per
+	// qualifying event. Callers only read through this pointer (nil-check +
+	// head_sha staleness read) and never mutate evs, so the selected element is
+	// stable for the lifetime of the returned Evidence.
+	selected := &evs[selectedIdx]
 	status := StatusPassed
 	if selected.EventType == EventGateForced {
 		if forcedNoRun {

@@ -425,7 +425,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if !ws.isGateTerminalStatus(info.status) {
 				continue
 			}
-			missing, evErr := gateEvidenceMissing(ctx, ws, logsDir, info.id, passing)
+			missing, evErr := gateEvidenceMissing(ctx, logsDir, info.id, passing)
 			if evErr != nil {
 				slog.WarnContext(ctx, "doctor: gate-evidence audit: read events failed", "id", info.id, "error", evErr)
 				continue
@@ -452,7 +452,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 // authoritative per-item log-scan so the item logs remain the single source of
 // truth and a stale/absent projection never produces a false positive or false
 // negative.
-func gateEvidenceMissing(ctx context.Context, ws *Workspace, logsDir, id string, passing map[string]string) (bool, error) {
+func gateEvidenceMissing(ctx context.Context, logsDir, id string, passing map[string]string) (bool, error) {
 	if _, ok := passing[id]; ok {
 		return false, nil
 	}
