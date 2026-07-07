@@ -20,7 +20,6 @@ import (
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
-	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -402,19 +401,21 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	// passing/forced gate evidence event in its item log. Missing evidence is a
 	// WARNING only — it never changes the exit code (advisory mode).
 	//
-	// Q3.3 (083.005.004-ST): the audit now prefers the derived gate_evidence
-	// projection (index-backed) over scanning each item's logs. When an item is
-	// absent from the projection (never gated, or gated since the last sync — the
-	// live completion path indexes events incrementally but does not touch this
-	// disposable projection), it falls back to the authoritative log-scan rather
-	// than no-op, so a stale/absent projection never silently stops auditing.
+	// Q3.3 (083.005.004-ST): the audit prefers the derived gate_evidence
+	// projection's POSITIVE index (passed/forced/forced_no_run) over scanning
+	// each item's logs. Item logs are append-only, so a positive projection row
+	// is always safe to trust. Any item ABSENT from the positive index — never
+	// gated, gated since the last sync, or projected "missing" (which can be
+	// stale in the pass direction) — falls back to the authoritative log-scan so
+	// the logs remain the single source of truth and a stale/absent projection
+	// never yields a false positive or false negative.
 	if opts.CheckGateEvidence && ws.gateConfig.Enabled != "false" {
-		var projection map[string]string
+		var passing map[string]string
 		if ws.DB != nil {
-			if p, perr := bldb.LoadGateEvidence(ctx, ws.DB); perr != nil {
+			if p, perr := bldb.LoadPassingGateEvidence(ctx, ws.DB); perr != nil {
 				slog.WarnContext(ctx, "doctor: gate-evidence audit: projection load failed, falling back to log-scan", "error", perr)
 			} else {
-				projection = p
+				passing = p
 			}
 		}
 		for _, info := range artifacts {
@@ -424,7 +425,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if !ws.isGateTerminalStatus(info.status) {
 				continue
 			}
-			missing, evErr := gateEvidenceMissing(ctx, ws, logsDir, info.id, projection)
+			missing, evErr := gateEvidenceMissing(ctx, ws, logsDir, info.id, passing)
 			if evErr != nil {
 				slog.WarnContext(ctx, "doctor: gate-evidence audit: read events failed", "id", info.id, "error", evErr)
 				continue
@@ -443,20 +444,17 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 }
 
 // gateEvidenceMissing reports whether a terminal gated member lacks valid gate
-// evidence (Q3.3). It consults the derived gate_evidence projection first: a
-// passed/forced/forced_no_run row means valid evidence, a missing row means the
-// item was gated without a valid pass. When the item is absent from the
-// projection (never gated, or gated since the last sync), it falls back to the
-// authoritative per-item log-scan so a stale/absent projection never produces a
-// false negative.
-func gateEvidenceMissing(ctx context.Context, ws *Workspace, logsDir, id string, projection map[string]string) (bool, error) {
-	if status, ok := projection[id]; ok {
-		switch status {
-		case gateevidence.StatusPassed, gateevidence.StatusForced, gateevidence.StatusForcedNoRun:
-			return false, nil
-		default: // StatusMissing or any unexpected token: treat as no valid evidence.
-			return true, nil
-		}
+// evidence (Q3.3). It consults the derived gate_evidence projection's POSITIVE
+// index first: an item present in `passing` carries a passed/forced/forced_no_run
+// pass, which is safe to trust because item logs are append-only. Any item ABSENT
+// from the positive index — never gated, gated since the last sync, or projected
+// as "missing" (which can be stale in the pass direction) — falls back to the
+// authoritative per-item log-scan so the item logs remain the single source of
+// truth and a stale/absent projection never produces a false positive or false
+// negative.
+func gateEvidenceMissing(ctx context.Context, ws *Workspace, logsDir, id string, passing map[string]string) (bool, error) {
+	if _, ok := passing[id]; ok {
+		return false, nil
 	}
 	evs, err := events.ReadAllEvents(ctx, logsDir, id)
 	if err != nil {

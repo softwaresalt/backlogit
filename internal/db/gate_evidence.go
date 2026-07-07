@@ -6,18 +6,28 @@ import (
 	"fmt"
 )
 
-// LoadGateEvidence loads the entire derived gate_evidence projection as a map of
-// item_id -> gate_status token (Q3.2/Q3.3). It backs the advisory doctor
-// gate-evidence audit, which prefers this index over scanning each item's logs.
+// LoadPassingGateEvidence loads the item_ids that carry POSITIVE derived
+// gate-evidence — a passed, forced, or forced_no_run row — from the disposable
+// gate_evidence projection (Q3.2/Q3.3), keyed to their status token. It backs
+// the advisory doctor gate-evidence audit's fast path.
 //
-// An item absent from the returned map is not indexed — either it never went
-// through the gate, or it was gated since the last `sync` (the live completion
-// path indexes events incrementally but does not touch this disposable
-// projection). Callers MUST treat absence as "unknown" and fall back to the
-// authoritative per-item log-scan rather than assuming the item lacks evidence,
-// so a stale or absent projection never produces a false negative.
-func LoadGateEvidence(ctx context.Context, database *sql.DB) (map[string]string, error) {
-	rows, err := database.QueryContext(ctx, `SELECT item_id, gate_status FROM gate_evidence`)
+// Only positive-evidence rows are returned, and this is deliberate. Item logs
+// are append-only, so a pass recorded at the last `sync` is still present in the
+// logs; that makes a positive projection row safe to trust WITHOUT re-reading
+// logs. A "missing" projection row, by contrast, can be STALE in the pass
+// direction — the live completion path appends a pass to the item log but does
+// not touch this disposable projection between syncs — so missing/absent items
+// are intentionally excluded here and MUST be re-verified by the caller against
+// the authoritative per-item log-scan. This keeps the item logs the single
+// source of truth while still fast-pathing the common evidenced-terminal case.
+//
+// The gate_status IN (...) predicate is served by idx_gate_evidence_status. The
+// literal status tokens are asserted to match the gateevidence.Status* constants
+// by TestLoadPassingGateEvidence_StatusTokensMatchConstants (drift guard).
+func LoadPassingGateEvidence(ctx context.Context, database *sql.DB) (map[string]string, error) {
+	const query = `SELECT item_id, gate_status FROM gate_evidence
+WHERE gate_status IN ('passed', 'forced', 'forced_no_run')`
+	rows, err := database.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query gate_evidence: %w", err)
 	}

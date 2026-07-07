@@ -22,40 +22,65 @@ func insertGateEvidenceRow(t *testing.T, ws *Workspace, itemID, status string) {
 	require.NoError(t, err)
 }
 
-// TestDoctorGateEvidence_IndexedProjection_Consulted pins Q3.3 (083.005.004-ST):
-// the advisory --check-gate-evidence audit reads the derived gate_evidence
-// projection when a row exists (indexed path), rather than scanning each item's
-// logs. Two divergence cases prove the projection is the source consulted:
-//   - a "passed" row SUPPRESSES the warning even though the item's logs carry no
-//     evidence;
-//   - a "missing" row WARNS even though the item's logs carry passing evidence.
-func TestDoctorGateEvidence_IndexedProjection_Consulted(t *testing.T) {
+// TestDoctorGateEvidence_PositiveIndexConsulted pins the Q3.3 (083.005.004-ST)
+// fast path: the advisory --check-gate-evidence audit trusts a POSITIVE
+// gate_evidence projection row (passed/forced/forced_no_run) without re-scanning
+// the item's logs. Item logs are append-only, so a positive row can never be
+// stale-wrong, which makes the fast path safe.
+func TestDoctorGateEvidence_PositiveIndexConsulted(t *testing.T) {
 	ws := newGateTestWorkspace(t)
 	ctx := context.Background()
 
-	// Item A: logs LACK evidence (ungated completion) but the projection says
-	// passed -> the indexed path must suppress the warning.
+	// Item logs LACK evidence (ungated completion) but the projection says
+	// passed -> the positive index must suppress the warning that a raw log-scan
+	// would otherwise raise, proving the projection is the source consulted.
 	idPassedRow := newActiveTask(t, ws)
 	_, err := updateArtifactUngated(ctx, ws, idPassedRow, map[string]any{"status": "done"})
 	require.NoError(t, err)
 	insertGateEvidenceRow(t, ws, idPassedRow, gateevidence.StatusPassed)
 
-	// Item B: logs HAVE passing evidence (real gate pass) but the projection says
-	// missing -> the indexed path must warn, overriding the log-scan.
-	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
-	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
-	idMissingRow := newActiveTask(t, ws)
-	_, _, err = UpdateArtifactWithGate(ctx, ws, idMissingRow, map[string]any{"status": "done"}, TransitionOptions{})
-	require.NoError(t, err)
-	insertGateEvidenceRow(t, ws, idMissingRow, gateevidence.StatusMissing)
-
 	report, err := Doctor(ctx, ws, &DoctorOptions{CheckGateEvidence: true})
 	require.NoError(t, err, "advisory mode never returns an error (exit code unaffected)")
 
 	assert.False(t, hasGateEvidenceFinding(report, idPassedRow),
-		"a 'passed' projection row must suppress the warning (indexed path consulted, not the log-scan)")
-	assert.True(t, hasGateEvidenceFinding(report, idMissingRow),
-		"a 'missing' projection row must warn even though the logs carry evidence (indexed path consulted)")
+		"a 'passed' projection row must suppress the warning (positive index consulted, not the log-scan)")
+}
+
+// TestDoctorGateEvidence_StaleMissingRowLogsWin pins the Q3.3 correctness
+// contract that item logs remain the single source of truth: a "missing"
+// projection row is NEVER trusted to override the logs, because it can be stale
+// in the pass direction (the live completion path appends a pass to the log but
+// does not touch this disposable projection between syncs). The audit therefore
+// re-verifies against the authoritative log-scan for any non-positive row.
+func TestDoctorGateEvidence_StaleMissingRowLogsWin(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	ctx := context.Background()
+
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+
+	// Item B: logs HAVE passing evidence (real gate pass) but a STALE projection
+	// row still says missing -> the audit must NOT warn, because the log-scan
+	// (source of truth) confirms the pass.
+	idStaleMissing := newActiveTask(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, idStaleMissing, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+	insertGateEvidenceRow(t, ws, idStaleMissing, gateevidence.StatusMissing)
+
+	// Item C: logs LACK evidence and the projection also says missing -> the
+	// log-scan confirms the gap, so the audit must warn.
+	idTrulyMissing := newActiveTask(t, ws)
+	_, err = updateArtifactUngated(ctx, ws, idTrulyMissing, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	insertGateEvidenceRow(t, ws, idTrulyMissing, gateevidence.StatusMissing)
+
+	report, err := Doctor(ctx, ws, &DoctorOptions{CheckGateEvidence: true})
+	require.NoError(t, err)
+
+	assert.False(t, hasGateEvidenceFinding(report, idStaleMissing),
+		"a stale 'missing' row must NOT override passing logs (logs are the source of truth)")
+	assert.True(t, hasGateEvidenceFinding(report, idTrulyMissing),
+		"a 'missing' row confirmed by the log-scan must warn")
 }
 
 // TestDoctorGateEvidence_AbsentRow_FallsBackToLogScan pins the Q3.3 correctness

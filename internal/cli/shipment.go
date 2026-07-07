@@ -302,6 +302,12 @@ func newShipmentShipCmd() *cobra.Command {
 				Author:  author,
 			})
 			if err != nil {
+				// F5 (083.003-T): a shipment-completion gate refusal must preserve
+				// its versioned exit code (6 blocked / 7 config-setup / 8 retryable)
+				// rather than collapsing to the generic 1. Mirror moveGateError.
+				if ee := shipmentShipGateError(cmd, err); ee != nil {
+					return ee
+				}
 				return fmt.Errorf("ship shipment: %w", err)
 			}
 
@@ -314,6 +320,22 @@ func newShipmentShipCmd() *cobra.Command {
 	cmd.Flags().StringVar(&message, "message", "", "merge commit message to record on released artifacts")
 	cmd.Flags().StringVar(&author, "author", "", "merge commit author to record on released artifacts")
 	return cmd
+}
+
+// shipmentShipGateError maps a shipment-completion gate refusal to an *ExitError
+// carrying the versioned gate exit code (6 blocked / 7 config-setup / 8 retryable)
+// so `backlogit shipment ship` preserves DecisionError exit-code fidelity (F5,
+// 083.003-T), mirroring moveGateError. It returns nil for a non-gate error so the
+// caller wraps it as a generic failure (exit 1). On a gate error it silences
+// cobra's default error print and emits the one-line reason to stderr.
+func shipmentShipGateError(cmd *cobra.Command, err error) *ExitError {
+	ee := gateExitError(err)
+	if ee == nil {
+		return nil
+	}
+	cmd.SilenceErrors = true
+	fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+	return ee
 }
 
 // newShipmentReturnBlockedCmd returns the `backlogit shipment return-blocked` subcommand.

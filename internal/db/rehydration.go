@@ -490,7 +490,10 @@ func rehydrateGateEvidence(ctx context.Context, workspacePath string, database *
 				`INSERT OR REPLACE INTO gate_evidence (item_id, gate_status, evidence_sha, head_sha) VALUES (?, ?, ?, ?)`,
 				r.itemID, r.ev.Status, r.ev.EvidenceSHA, r.ev.HeadSHA,
 			); err != nil {
-				slog.Warn("gate-evidence: failed to upsert projection row", "item_id", r.itemID, "error", err)
+				// Fail the whole rebuild: the deferred Rollback aborts the
+				// transaction so the projection is never left partially written.
+				// The disposable read-model is rebuilt in full on the next sync.
+				return fmt.Errorf("upsert gate_evidence row for %s: %w", r.itemID, err)
 			}
 		}
 		if err := tx.Commit(); err != nil {
