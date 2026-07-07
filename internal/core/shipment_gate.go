@@ -17,13 +17,15 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
-// ancestryCheckTimeout bounds each git lineage/head-resolution subprocess when
-// the gate broker does not supply an explicit timeout. The shipment ship path is
-// unbounded and holds the workspace lock across completion, so an unbounded git
-// child would pin the lock indefinitely (a denial of service). Every helper that
-// spawns git here derives its OWN deadline from this default (or
-// GateBroker.TimeoutSeconds when configured) — it never relies on the caller
-// imposing a deadline.
+// ancestryCheckTimeout is the HARD CAP on each git lineage/head-resolution
+// subprocess. The shipment ship path is unbounded and holds the workspace lock
+// across completion, so an unbounded (or long-running) git child would pin the
+// lock (a denial of service). git merge-base/rev-parse are near-instant LOCAL
+// reads, so 5s is generous. GateBroker.TimeoutSeconds is sized for build/test
+// gate COMMANDS (default 600s) and must never be adopted verbatim for these
+// metadata reads; boundedHelperTimeout caps at this value while still honoring a
+// smaller configured gate timeout. Every helper that spawns git here derives its
+// OWN deadline — it never relies on the caller imposing one.
 const ancestryCheckTimeout = 5 * time.Second
 
 // gitObjectNameRe matches exactly the full-length object names git rev-parse can
@@ -40,6 +42,21 @@ func isGitObjectName(s string) bool {
 	return gitObjectNameRe.MatchString(s)
 }
 
+// boundedHelperTimeout returns the deadline for the fast git metadata helpers
+// (isAncestor, headSHABounded). ancestryCheckTimeout is a hard cap: a configured
+// GateBroker.TimeoutSeconds (sized for build/test gate commands, 600s by default)
+// must not let one of these near-instant local reads hold the workspace lock for
+// minutes. A smaller configured gate timeout is still honored.
+func (ws *Workspace) boundedHelperTimeout() time.Duration {
+	d := ancestryCheckTimeout
+	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
+		if configured := time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second; configured < d {
+			d = configured
+		}
+	}
+	return d
+}
+
 // isAncestor reports whether ancestor is an ancestor of (or equal to) descendant
 // by running `git merge-base --is-ancestor ancestor descendant` under a mandatory
 // self-derived deadline. It is a security guard on the shipment ship path, so it
@@ -54,11 +71,7 @@ func isGitObjectName(s string) bool {
 // (no shell, allowlisted env). Both operands are expected to already satisfy
 // isGitObjectName / trusted-provenance at the call site.
 func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
-	d := ancestryCheckTimeout
-	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
-		d = time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second
-	}
-	runCtx, cancel := context.WithTimeout(ctx, d)
+	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
 	defer cancel()
 
 	var stderr bytes.Buffer
@@ -77,7 +90,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	// Windows, -1 on POSIX) that must never be misread as the exit-1
 	// "not-an-ancestor" signal. Both DeadlineExceeded and Canceled fail closed.
 	if ctxErr := runCtx.Err(); ctxErr != nil {
-		return false, fmt.Errorf("ancestor check aborted (%v): %w", ctxErr, ctxErr)
+		return false, fmt.Errorf("ancestor check aborted: %w", ctxErr)
 	}
 
 	var ee *exec.ExitError
@@ -108,11 +121,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 //	                harness): the pre-existing skip is preserved so no-repo tests
 //	                do not regress.
 func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
-	d := ancestryCheckTimeout
-	if ws.GateBroker != nil && ws.GateBroker.TimeoutSeconds > 0 {
-		d = time.Duration(ws.GateBroker.TimeoutSeconds) * time.Second
-	}
-	bctx, cancel := context.WithTimeout(ctx, d)
+	bctx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
 	defer cancel()
 	h := ws.headSHA(bctx)
 	if h == "" && bctx.Err() != nil {
