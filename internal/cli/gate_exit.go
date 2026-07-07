@@ -125,6 +125,25 @@ func renderGateBlockedJSON(id string, be *corerrors.GateBlockedError) (string, e
 	return string(data), nil
 }
 
+// renderGateErrorJSON marshals the machine payload for a setup/config/timeout
+// error refusal from the typed *GateError (083.004-T / F7). Mirrors
+// renderGateBlockedJSON but carries outcome:"error". Retryable is tagged
+// omitempty so a config/setup-class error (Retryable()==false) omits the key
+// entirely, matching the *GateBlockedError payload shape.
+func renderGateErrorJSON(id string, ge *corerrors.GateError) (string, error) {
+	p := gateJSONPayload{
+		ID:        id,
+		Outcome:   "error",
+		Error:     ge.Error(),
+		Retryable: ge.Retryable(),
+	}
+	data, err := json.Marshal(p)
+	if err != nil {
+		return "", fmt.Errorf("marshal gate error: %w", err)
+	}
+	return string(data), nil
+}
+
 // gateHumanMessage renders the human-facing one-line summary for a gated outcome,
 // reporting the ACTUAL retained/post-transition status (never a hard-coded
 // literal) since a block can occur from active OR review and redirects change it.

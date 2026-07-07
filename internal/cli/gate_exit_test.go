@@ -151,6 +151,64 @@ func TestRenderGatePassJSON(t *testing.T) {
 	}
 }
 
+// TestRenderGateErrorJSON_ConfigOmitsRetryable pins F7 (083.004-T): a
+// config-class *GateError under --json emits outcome:"error", a populated error,
+// and — because Retryable is tagged omitempty and Retryable()==false — OMITS the
+// retryable key entirely (parsed value false).
+func TestRenderGateErrorJSON_ConfigOmitsRetryable(t *testing.T) {
+	ge := &corerrors.GateError{Class: "config", ItemID: "001.001-T", Message: "bad gate config", Err: corerrors.ErrGateConfig}
+	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	if err != nil {
+		t.Fatalf("renderGateErrorJSON: %v", err)
+	}
+	var p gateJSONPayload
+	if err := json.Unmarshal([]byte(out), &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.ID != "001.001-T" || p.Outcome != "error" {
+		t.Errorf("payload id/outcome mismatch: %+v", p)
+	}
+	if p.Error == "" {
+		t.Errorf("expected error to be populated, got empty")
+	}
+	if p.Retryable {
+		t.Errorf("config class must parse retryable=false, got true")
+	}
+	// Key-absence semantics: omitempty drops retryable for a non-retryable class.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	if _, present := raw["retryable"]; present {
+		t.Errorf("config class must OMIT the retryable key (omitempty), got present")
+	}
+}
+
+// TestRenderGateErrorJSON_TimeoutPresent pins F7: a timeout-class *GateError
+// emits retryable:true (present), so an agent can distinguish exit-8 retryable
+// from exit-7 config errors.
+func TestRenderGateErrorJSON_TimeoutPresent(t *testing.T) {
+	ge := &corerrors.GateError{Class: "timeout", ItemID: "001.001-T", Message: "gate timed out", Err: corerrors.ErrGateTimeout}
+	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	if err != nil {
+		t.Fatalf("renderGateErrorJSON: %v", err)
+	}
+	var p gateJSONPayload
+	if err := json.Unmarshal([]byte(out), &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.Outcome != "error" || !p.Retryable {
+		t.Errorf("timeout class must emit outcome:error retryable:true, got %+v", p)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	if _, present := raw["retryable"]; !present {
+		t.Errorf("timeout class must include the retryable key")
+	}
+}
+
 // TestGateHumanMessage verifies the human summary reports the actual
 // retained/post-transition status rather than a hard-coded literal.
 func TestGateHumanMessage(t *testing.T) {
