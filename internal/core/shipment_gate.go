@@ -451,9 +451,19 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 // --is-ancestor). This replaces the prior strict head_sha equality, which falsely
 // rejected valid post-merge evidence (a member's build commit is an ancestor of,
 // not equal to, the shipment's merge commit). A genuinely divergent (non-ancestor)
-// head, a malformed head_sha, or an unverifiable lineage (git error/timeout/cancel)
-// is refused (fail closed). An empty member head is bypassed unchanged (B85DAEE8
-// scope). Non-gated member types (feature/other) are skipped.
+// head, a malformed head_sha, an unverifiable lineage (git error/timeout/cancel),
+// or — as of 085-F (B85DAEE8) — an EMPTY member head is refused (fail closed).
+// Non-gated member types (feature/other) are skipped.
+//
+// Empty-member-head fail-closed invariant (085-F): the empty-head refusal executes
+// ONLY inside the `shipmentHead != ""` block. A non-empty shipmentHead is produced
+// solely by headSHABounded resolving a real HEAD, which itself proves a real work
+// tree with a committed HEAD — so the empty-member-head refusal can never fire in a
+// no-repo / unresolved-head context (there shipmentHead == "" and this block is
+// skipped entirely). inGitWorktreeBounded is the discriminator on the *empty*
+// shipmentHead branch in gateShipmentCompletion, NOT a precondition of this
+// function. A future caller that passes a non-empty shipmentHead NOT obtained from
+// a resolved HEAD would break this invariant.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
 	for _, id := range releaseScope {
@@ -479,11 +489,37 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 		}
 		if shipmentHead != "" {
-			if h, _ := latest.Delta["head_sha"].(string); h != "" && h != shipmentHead {
-				// h != "" preserves the empty-member-head bypass (B85DAEE8, out of
-				// scope). h == shipmentHead is the equality fast-path: an equal head
-				// never enters this block, so a single-commit shipment needs no repo
-				// access and no subprocess.
+			h, _ := latest.Delta["head_sha"].(string)
+			if h == "" {
+				// B85DAEE8: an EMPTY member head under enforcement FAILS CLOSED. A
+				// non-empty shipmentHead proves headSHABounded resolved a real HEAD
+				// (a real work tree), so a member with no recorded head_sha cannot
+				// prove its gated commit is contained in the shipment history —
+				// shipping it would be an unverifiable-lineage bypass. Emit an
+				// EventGateBlocked evidence event AND a slog.WarnContext so the
+				// empty-member-head over-refusal monitoring signal is real (not a
+				// silent refusal), mirroring the ST2 shipment-level emission
+				// (Constitution Principle V).
+				slog.WarnContext(ctx, "member evidence has no recorded head_sha",
+					"member", id, "shipment_head", shipmentHead)
+				if aerr := ws.appendGateEvent(ctx, id, EventGateBlocked, map[string]any{
+					"level":   "member",
+					"outcome": "blocked",
+					"reason":  "empty-member-head",
+					"member":  id,
+				}); aerr != nil {
+					// Best-effort audit on a refusal path: the ship is already
+					// blocked, so a failed append must not mask the refusal below.
+					slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence",
+						"member", id, "error", aerr)
+				}
+				return shipmentMemberEvidenceError(id,
+					"gate evidence has no recorded head_sha (cannot verify lineage under enforcement)")
+			}
+			if h != shipmentHead {
+				// h == shipmentHead is the equality fast-path: an equal head never
+				// enters this block, so a single-commit shipment needs no repo access
+				// and no subprocess.
 				if !isGitObjectName(h) {
 					// The recorded head comes from tamperable on-disk evidence JSONL;
 					// a value that is not a git object name is never handed to git.

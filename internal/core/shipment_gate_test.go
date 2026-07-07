@@ -213,8 +213,8 @@ func TestShipmentGate_EmptyShipmentHeadNoRepo_Skips(t *testing.T) {
 // staleness dimension directly against a real git repo. A member whose recorded
 // evidence head is an ANCESTOR of the shipment head is accepted (the post-merge
 // false-staleness case strict equality wrongly rejected); an equal head is
-// accepted; an empty head is bypassed unchanged; and a genuinely divergent head,
-// a malformed head_sha, and an unverifiable (absent-object) lineage are each
+// accepted; an empty head now FAILS CLOSED (B85DAEE8); and a genuinely divergent
+// head, a malformed head_sha, and an unverifiable (absent-object) lineage are each
 // refused with a fail-closed, branch-specific message.
 func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	ws := newGateTestWorkspace(t)
@@ -252,9 +252,20 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	equalMember := mkMember(head)
 	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{equalMember}, head))
 
-	// R7 — empty member head unchanged (B85DAEE8 bypass preserved).
+	// R7 (flipped, B85DAEE8) — an empty member head now FAILS CLOSED under
+	// enforcement. A non-empty shipmentHead proves headSHABounded resolved a real
+	// HEAD (real work tree), so a member with no recorded head_sha cannot prove its
+	// gated commit is contained in the shipment history. The refusal is a typed
+	// *GateBlockedError AND records an EventGateBlocked monitoring signal.
 	emptyMember := mkMember("")
-	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{emptyMember}, head))
+	r7err := validateMemberGateEvidence(ctx, ws, []string{emptyMember}, head)
+	require.Error(t, r7err, "an empty member head must fail closed under enforcement in a real repo")
+	assert.Contains(t, r7err.Error(), "no recorded head_sha")
+	require.True(t, stderrors.As(r7err, &blocked), "empty-member-head refusal must be a *GateBlockedError")
+	r7evs, r7rerr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), emptyMember)
+	require.NoError(t, r7rerr)
+	assert.True(t, hasBlockedReason(r7evs, "empty-member-head"),
+		"an EventGateBlocked with reason=empty-member-head must be recorded")
 
 	// R2 — genuinely divergent (non-ancestor) head refused, specific message.
 	divergentMember := mkMember(divergent)
@@ -276,6 +287,31 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	require.Error(t, aerr)
 	assert.Contains(t, aerr.Error(), "lineage")
 	require.True(t, stderrors.As(aerr, &blocked), "lineage-error refusal must be a *GateBlockedError")
+}
+
+// TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped is the regression
+// peer to the R7 flip: when the shipment head is empty (no-repo — the member scan
+// runs only inside `if shipmentHead != ""`), an empty member head stays SKIPPED so
+// no-repo test harnesses and non-autoharness environments do not regress. The
+// empty-member-head fail-closed fires only when a non-empty shipmentHead proves a
+// real resolved HEAD.
+func TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped(t *testing.T) {
+	ws := newGateTestWorkspace(t) // temp dir, NOT a git repo
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome": "passed", "ran": true, // no head_sha recorded (no-repo).
+	}))
+
+	// shipmentHead == "" -> the member scan block is not entered; empty member head
+	// skip preserved.
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{id}, ""),
+		"an empty member head under an empty (no-repo) shipment head must stay skipped")
 }
 
 // TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed
