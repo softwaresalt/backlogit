@@ -31,11 +31,15 @@ jobs:
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
+          # 'every' requires ALL patterns to match per file, so the '!' negations
+          # actually exclude docs/markdown/backlog. Under the default 'some', the
+          # leading '**' alone would mark every file as matched and the negations
+          # would never take effect (see dorny/paths-filter README).
+          predicate-quantifier: 'every'
           filters: |
-            # Fail-safe denylist: any change EXCEPT pure docs/markdown/backlog
-            # state runs the heavy Go jobs, so a code/config change can never
-            # silently skip the security-sensitive lint/vet/test gate. picomatch
-            # dot:true matches dotfiles, so .github/** config still triggers it.
+            # Denylist: match any changed file that is NOT pure docs/markdown/
+            # backlog state, so a code/config change can never silently skip the
+            # security-sensitive lint/vet/test gate (evaluated with 'every' above).
             code:
               - '**'
               - '!**/*.md'
