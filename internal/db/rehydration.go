@@ -502,7 +502,7 @@ func parseItemLogFile(path, itemID string) ([]events.Event, error) {
 		event, ok, perr := events.ParseEventLine(line, itemID)
 		if perr != nil {
 			slog.Warn("skipping malformed event log line",
-				"item", itemID, "path", path, "line", i+1, "error", perr)
+				"item_id", itemID, "path", path, "line", i+1, "error", perr)
 			continue
 		}
 		if !ok {

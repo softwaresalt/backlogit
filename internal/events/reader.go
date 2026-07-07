@@ -43,7 +43,7 @@ func ReadAllEvents(_ context.Context, logsDir string, itemID string) ([]Event, e
 		e, ok, perr := ParseEventLine(scanner.Text(), itemID)
 		if perr != nil {
 			slog.Warn("skipping malformed event log line",
-				"item", itemID, "path", path, "line", lineNum, "error", perr)
+				"item_id", itemID, "path", path, "line", lineNum, "error", perr)
 			continue
 		}
 		if !ok {
