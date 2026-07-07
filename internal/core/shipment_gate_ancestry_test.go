@@ -122,6 +122,23 @@ func TestInGitWorktreeBounded(t *testing.T) {
 	inRepo, err = wsRepo.inGitWorktreeBounded(expired)
 	require.Error(t, err, "an expired bounded probe must fail closed (non-nil error)")
 	assert.False(t, inRepo, "a failed probe must not report inside-work-tree=true")
+
+	// (d) present-but-broken .git pointer (a gitfile referencing a MISSING gitdir):
+	// git emits `fatal: not a git repository: (NULL)` on exit 128 — NOT the
+	// genuine-no-repo "(or any of the parent directories)" marker — so it is a
+	// present-but-broken repo that MUST FAIL CLOSED (non-nil err), never be misread
+	// as a no-repo skip. This pins the F1 fail-open hole closed: a loose
+	// "not a git repository" substring match wrongly skipped this case, letting an
+	// unprovable-lineage shipment ship.
+	if _, gerr := exec.LookPath("git"); gerr == nil {
+		wsBroken := newGateTestWorkspace(t)
+		gitfile := filepath.Join(wsBroken.RootPath, ".git")
+		missingGitdir := filepath.Join(wsBroken.RootPath, "nonexistent-gitdir")
+		require.NoError(t, os.WriteFile(gitfile, []byte("gitdir: "+missingGitdir), 0o644))
+		inRepo, err = wsBroken.inGitWorktreeBounded(ctx)
+		require.Error(t, err, "a present-but-broken .git pointer must fail closed, not be misread as a no-repo skip")
+		assert.False(t, inRepo, "a broken-repo probe must not report inside-work-tree=true")
+	}
 }
 
 // TestIsAncestor exercises the git ancestor-lineage helper against a real repo:

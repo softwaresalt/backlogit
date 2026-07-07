@@ -143,18 +143,23 @@ func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
 // path it FAILS CLOSED: any timeout, cancellation, exec failure, corrupt-repo
 // exit, or missing git returns a non-nil error. Exit semantics:
 //
-//	runCtx.Err() != nil (checked FIRST)          -> (false, ctxErr)  [fail closed]
-//	exit 0, stdout "true"                         -> (true, nil)      [real worktree]
-//	exit 0, stdout != "true" (bare repo / .git)   -> (false, nil)     [not-a-worktree skip]
-//	exit 128, stderr ~ "not a git repository"     -> (false, nil)     [no-repo legacy skip]
-//	exit 128, any other stderr (corrupt repo)     -> (false, err)     [fail closed]
-//	git missing / other non-ExitError / other exit-> (false, err)     [fail closed]
+//	runCtx.Err() != nil (checked FIRST)                 -> (false, ctxErr) [fail closed]
+//	exit 0, stdout "true"                                -> (true, nil)     [real worktree]
+//	exit 0, stdout != "true" (bare repo / .git)          -> (false, nil)    [not-a-worktree skip]
+//	exit 128, stderr ~ "not a git repository (or any of  -> (false, nil)    [genuine no-repo skip]
+//	           the parent directories)"
+//	exit 128, any OTHER stderr — incl. a present-but-     -> (false, err)    [fail closed]
+//	           broken .git pointer ("not a git
+//	           repository: (NULL)"), corrupt objects, etc.
+//	git missing / other non-ExitError / other exit        -> (false, err)    [fail closed]
 //
 // `--is-inside-work-tree` is chosen over `--git-dir`: the latter returns exit 0
 // inside a bare repo and inside a `.git` dir, so it cannot distinguish "can
 // resolve a work-tree HEAD" from "is under some git dir". argv-array exec +
 // gate.MinimalEnv() + cmd.Dir = ws.RootPath preserve the workspace exec trust
-// boundary (no shell, allowlisted env). Parsing uses bytes (no strings import).
+// boundary (no shell, allowlisted env). The probe forces LC_ALL=C / LANG=C so the
+// no-repo discriminator below matches git's stable ENGLISH diagnostic regardless
+// of any inherited host locale. Parsing uses bytes (no strings import).
 func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
 	defer cancel()
@@ -162,7 +167,12 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(runCtx, "git", "rev-parse", "--is-inside-work-tree")
 	cmd.Dir = ws.RootPath
-	cmd.Env = gate.MinimalEnv()
+	// Force the C locale so git's diagnostics are the stable English form the
+	// no-repo discriminator matches. MinimalEnv passes through any host LANG/LC_ALL,
+	// so strip those and pin LC_ALL=C last (duplicate env keys are not reliably
+	// last-wins across platforms, so the inherited value must be removed, not just
+	// shadowed). A localized "not a git repository" would otherwise be misread.
+	cmd.Env = withCLocale(gate.MinimalEnv())
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -185,19 +195,45 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 
 	var ee *exec.ExitError
 	if stderrors.As(runErr, &ee) {
-		// Exit 128 is git's generic fatal code. Only a "not a git repository"
-		// diagnostic is a genuine no-repo skip; any OTHER 128 (corrupt .git, bad
-		// HEAD, unreadable objects, permissions) is a present-but-broken repo and
-		// MUST fail closed rather than be mistaken for a no-repo skip.
+		// Exit 128 is git's generic fatal code. ONLY the genuine "outside any
+		// repository" diagnostic — which git marks with the stable parenthetical
+		// "(or any of the parent directories)" — is a no-repo skip. Any OTHER 128
+		// is a present-but-broken repo and MUST fail closed. In particular a broken
+		// .git pointer (gitfile referencing a missing gitdir) emits
+		// "fatal: not a git repository: (NULL)" WITHOUT that parenthetical: a loose
+		// "not a git repository" substring match would wrongly skip it, re-opening
+		// the empty-head fail-open hole this guard exists to close.
 		if ee.ExitCode() == 128 &&
-			bytes.Contains(bytes.ToLower(stderr.Bytes()), []byte("not a git repository")) {
-			return false, nil // legacy no-repo skip preserved.
+			bytes.Contains(bytes.ToLower(stderr.Bytes()),
+				[]byte("not a git repository (or any of the parent directories)")) {
+			return false, nil // genuine no-repo skip preserved.
 		}
 		return false, fmt.Errorf("git rev-parse --is-inside-work-tree exit %d: %s: %w",
 			ee.ExitCode(), bytes.TrimSpace(stderr.Bytes()), runErr)
 	}
 	// git binary missing or any other non-ExitError failure -> fail closed.
 	return false, fmt.Errorf("run git rev-parse --is-inside-work-tree: %w", runErr)
+}
+
+// withCLocale returns env with any inherited LC_ALL / LANG entries removed and
+// LC_ALL=C / LANG=C appended, so a git child emits deterministic English
+// diagnostics for stderr-substring discrimination. It never mutates the input.
+func withCLocale(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	for _, kv := range env {
+		if hasEnvKey(kv, "LC_ALL") || hasEnvKey(kv, "LANG") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "LC_ALL=C", "LANG=C")
+}
+
+// hasEnvKey reports whether a "KEY=VALUE" entry has the given key (exact,
+// case-sensitive — env var names are case-sensitive on the POSIX targets that
+// localize git output; Windows git honors LC_ALL/LANG in this same casing).
+func hasEnvKey(kv, key string) bool {
+	return len(kv) > len(key) && kv[len(key)] == '=' && kv[:len(key)] == key
 }
 
 // headResolveError builds a fail-closed refusal for a bounded HEAD resolution that
