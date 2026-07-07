@@ -23,12 +23,14 @@ func (f fakeGit) Verify(_ context.Context, ref string) (bool, error) {
 
 func TestResolveBaseRef(t *testing.T) {
 	tests := []struct {
-		name       string
-		in         BaseRefInput
-		resolvable map[string]bool
-		wantRef    string
-		wantNonDef bool
-		wantErr    bool
+		name         string
+		in           BaseRefInput
+		resolvable   map[string]bool
+		wantRef      string
+		wantNonDef   bool
+		wantSource   string
+		wantShadowed bool
+		wantErr      bool
 	}{
 		{
 			name:       "auto picks origin/HEAD first",
@@ -51,6 +53,7 @@ func TestResolveBaseRef(t *testing.T) {
 			resolvable: map[string]bool{"HEAD": true, "release/1.x": true, "origin/HEAD": true},
 			wantRef:    "release/1.x",
 			wantNonDef: true,
+			wantSource: "config",
 		},
 		{
 			name:       "explicit base equal to default is not non-default",
@@ -58,6 +61,7 @@ func TestResolveBaseRef(t *testing.T) {
 			resolvable: map[string]bool{"HEAD": true, "origin/HEAD": true},
 			wantRef:    "origin/HEAD",
 			wantNonDef: false,
+			wantSource: "config",
 		},
 		{
 			name:       "gate_base override used when config is auto",
@@ -65,6 +69,48 @@ func TestResolveBaseRef(t *testing.T) {
 			resolvable: map[string]bool{"HEAD": true, "feature-base": true, "origin/HEAD": true},
 			wantRef:    "feature-base",
 			wantNonDef: true,
+			wantSource: "gate_base",
+		},
+		{
+			// F1 (083.001-T): both a non-auto config base_ref AND an operator
+			// --gate-base are supplied. Config-first precedence is preserved (the
+			// config base wins) and the override is flagged shadowed for an
+			// advisory warning — resolved Ref/Source are byte-for-byte unchanged
+			// from the config-only case above.
+			name:         "config base_ref shadows gate_base override",
+			in:           BaseRefInput{ConfigBaseRef: "release/1.x", GateBase: "feature-base"},
+			resolvable:   map[string]bool{"HEAD": true, "release/1.x": true, "feature-base": true, "origin/HEAD": true},
+			wantRef:      "release/1.x",
+			wantNonDef:   true,
+			wantSource:   "config",
+			wantShadowed: true,
+		},
+		{
+			name:         "config-only supplies no shadow signal",
+			in:           BaseRefInput{ConfigBaseRef: "release/1.x"},
+			resolvable:   map[string]bool{"HEAD": true, "release/1.x": true, "origin/HEAD": true},
+			wantRef:      "release/1.x",
+			wantNonDef:   true,
+			wantSource:   "config",
+			wantShadowed: false,
+		},
+		{
+			name:         "gate_base-only supplies no shadow signal",
+			in:           BaseRefInput{GateBase: "feature-base"},
+			resolvable:   map[string]bool{"HEAD": true, "feature-base": true, "origin/HEAD": true},
+			wantRef:      "feature-base",
+			wantNonDef:   true,
+			wantSource:   "gate_base",
+			wantShadowed: false,
+		},
+		{
+			name:         "config auto plus gate_base is not shadowed",
+			in:           BaseRefInput{ConfigBaseRef: "auto", GateBase: "feature-base"},
+			resolvable:   map[string]bool{"HEAD": true, "feature-base": true, "origin/HEAD": true},
+			wantRef:      "feature-base",
+			wantNonDef:   true,
+			wantSource:   "gate_base",
+			wantShadowed: false,
 		},
 		{
 			name:       "invalid explicit base_ref -> config error",
@@ -110,6 +156,12 @@ func TestResolveBaseRef(t *testing.T) {
 			}
 			if got.NonDefault != tt.wantNonDef {
 				t.Fatalf("nonDefault = %v, want %v", got.NonDefault, tt.wantNonDef)
+			}
+			if tt.wantSource != "" && got.Source != tt.wantSource {
+				t.Fatalf("source = %q, want %q", got.Source, tt.wantSource)
+			}
+			if got.OverrideShadowed != tt.wantShadowed {
+				t.Fatalf("overrideShadowed = %v, want %v", got.OverrideShadowed, tt.wantShadowed)
 			}
 		})
 	}

@@ -194,6 +194,15 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		return ws.handleGateSetupError(ctx, id, oldStatus, evalErr)
 	}
 
+	// F1 (083.001-T): advisory only. When a pinned config base_ref shadows an
+	// operator --gate-base, the config base wins (config-first precedence is
+	// unchanged) but the operator's override is silently ignored — surface a
+	// warning so the shadowing is visible. No behavior/precedence change.
+	if ev.Base.OverrideShadowed {
+		slog.WarnContext(ctx, "gate base override shadowed: --gate-base is ignored because config base_ref is pinned (config-first precedence)",
+			"item_id", id, "resolved_base", ev.Base.Ref, "gate_base", strings.TrimSpace(opts.GateBase))
+	}
+
 	// Audit an operator base override before applying the decision. Fires for any
 	// non-default resolved base AND whenever the operator explicitly passed
 	// --gate-base (even if it happens to equal the default ref), so a privileged
