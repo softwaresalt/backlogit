@@ -108,3 +108,7 @@ For any inline, lock-holding integration with an external process:
   the RCE sibling lesson on the same exec seam.
 - `docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md` — the
   full backlogit↔autoharness contract the probe defends.
+- `docs/compound/2026-07-06-bounded-helper-timeout-hard-cap.md` — the 084-S follow-on
+  refinement: once you HAVE bounded the call, verify the bound fits the workload — a
+  command-sized 600s timeout adopted for a near-instant git metadata read on the
+  same lock-holding path is still a DoS.
