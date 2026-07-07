@@ -1,8 +1,8 @@
-# Ship session — 084-S ancestor-aware shipment-gate staleness — COMPLETE (post-merge closure done)
+# Ship session — 084-S ancestor-aware shipment-gate staleness — closure PR #183 pending autonomous merge
 
-**Status:** COMPLETE. Feature PR #182 merged under operator P-014 approval; shipment
-084-S shipped + archived; knowledge graduated; post-merge closure PR merged
-autonomously per operator directive. This is the consolidated final record for the
+**Status:** Feature delivery COMPLETE; post-merge closure work COMPLETE. Feature PR #182 merged under operator P-014 approval; shipment
+084-S shipped + archived; knowledge graduated; post-merge closure PR #183 opened and
+authorized for autonomous merge per operator directive. This is the consolidated final record for the
 084-S ship session and **supersedes** the interim
 `2026-07-06-084-S-ship-merge-ready-halt-checkpoint.md` (archived to `docs/archive/`).
 
@@ -45,9 +45,9 @@ backstops residual post-gate edits.
 
 ## Closure PR
 
-- See closure PR (base `main`, `post-merge/084-S`) — merged autonomously per operator
+- Closure PR #183 (base `main`, `post-merge/084-S`) — authorized for autonomous merge per operator
   directive (docs/administrative; feature merge was the operator-gated decision).
-  Details appended to the post-merge closure doc.
+  Details in the post-merge closure doc.
 
 ## Guardrails honored
 
