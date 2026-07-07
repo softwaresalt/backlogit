@@ -7,6 +7,27 @@ import (
 	"github.com/softwaresalt/backlogit/internal/gateevidence"
 )
 
+// TestIsGateEvent pins the gate-family classifier used by the Q3 projection to
+// index only items that went through the gate.
+func TestIsGateEvent(t *testing.T) {
+	gate := []string{
+		gateevidence.EventGatePassed, gateevidence.EventGateBlocked,
+		gateevidence.EventGateForced, gateevidence.EventGateRequeued,
+		gateevidence.EventGateEscalated, gateevidence.EventGateBaseOverride,
+		gateevidence.EventGateError,
+	}
+	for _, et := range gate {
+		if !gateevidence.IsGateEvent(et) {
+			t.Errorf("IsGateEvent(%q) = false, want true", et)
+		}
+	}
+	for _, et := range []string{"status_changed", "comment", "", "gate", "pre_task_completion_gate_"} {
+		if gateevidence.IsGateEvent(et) {
+			t.Errorf("IsGateEvent(%q) = true, want false", et)
+		}
+	}
+}
+
 func ev(t string, ran bool, hash, head string) events.Event {
 	d := map[string]any{"ran": ran}
 	if hash != "" {

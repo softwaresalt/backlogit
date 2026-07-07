@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 	"github.com/softwaresalt/backlogit/internal/stash"
 )
@@ -260,6 +261,13 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 		return count, err
 	}
 
+	// Q3.2 (083.005.003-ST): rebuild the derived gate_evidence projection from the
+	// item logs after they are indexed. Disposable read-model; logs stay source of
+	// truth. Runs after rehydrateItemLogs so the projection reflects the same logs.
+	if err := rehydrateGateEvidence(ctx, workspacePath, db); err != nil {
+		return count, err
+	}
+
 	return count, nil
 }
 
@@ -411,6 +419,82 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit log rehydration: %w", err)
+		}
+		return nil
+	})
+}
+
+// rehydrateGateEvidence rebuilds the derived gate_evidence projection (Q3.2 /
+// 083.005.003-ST) from the per-item JSONL event logs. For every item whose log
+// contains at least one gate-family event, it computes the shared Q3.0 predicate
+// (gateevidence.Latest) and writes one row: gate_status token plus the evidence
+// and head SHAs — nothing else (no report JSON/stderr/force_reason). Items that
+// never went through the gate are not indexed. The table is cleared and fully
+// repopulated each call so it inherits Rehydrate's idempotency; the item log
+// JSONL is never mutated.
+func rehydrateGateEvidence(ctx context.Context, workspacePath string, database *sql.DB) error {
+	logsDir := filepath.Join(workspacePath, "logs")
+
+	type projectedRow struct {
+		itemID string
+		ev     gateevidence.Evidence
+	}
+	var rows []projectedRow
+
+	if _, statErr := os.Stat(logsDir); statErr == nil {
+		if walkErr := filepath.WalkDir(logsDir, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				slog.Debug("gate-evidence walk error, skipping", "path", path, "error", walkErr)
+				return nil
+			}
+			if d.IsDir() || filepath.Ext(path) != ".jsonl" {
+				return nil
+			}
+			itemID := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			evs, err := parseItemLogFile(path, itemID)
+			if err != nil {
+				slog.Warn("gate-evidence: failed to parse item log", "path", path, "error", err)
+				return nil
+			}
+			gated := false
+			for i := range evs {
+				if gateevidence.IsGateEvent(evs[i].EventType) {
+					gated = true
+					break
+				}
+			}
+			if !gated {
+				return nil
+			}
+			rows = append(rows, projectedRow{itemID: itemID, ev: gateevidence.Latest(evs)})
+			return nil
+		}); walkErr != nil {
+			return walkErr
+		}
+	}
+
+	// Clear-and-rebuild in a single transaction so the projection is a pure
+	// function of the current logs (fully disposable read-model).
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin gate-evidence rehydration transaction: %w", err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		if _, err := tx.ExecContext(ctx, `DELETE FROM gate_evidence`); err != nil {
+			return fmt.Errorf("clear gate_evidence: %w", err)
+		}
+		for _, r := range rows {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR REPLACE INTO gate_evidence (item_id, gate_status, evidence_sha, head_sha) VALUES (?, ?, ?, ?)`,
+				r.itemID, r.ev.Status, r.ev.EvidenceSHA, r.ev.HeadSHA,
+			); err != nil {
+				slog.Warn("gate-evidence: failed to upsert projection row", "item_id", r.itemID, "error", err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit gate-evidence rehydration: %w", err)
 		}
 		return nil
 	})

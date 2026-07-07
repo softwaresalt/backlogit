@@ -51,6 +51,21 @@ type Evidence struct {
 	Event *events.Event
 }
 
+// IsGateEvent reports whether an event type is one of the gate-evidence event
+// types — i.e. whether the item went through the pre-task-completion gate at all.
+// The Q3 projection uses this to index only gated items (an item with no gate
+// event is not written to the read-model; the advisory doctor's log-scan fallback
+// covers it), keeping the projection scoped to gate-audited items.
+func IsGateEvent(eventType string) bool {
+	switch eventType {
+	case EventGatePassed, EventGateBlocked, EventGateForced, EventGateRequeued,
+		EventGateEscalated, EventGateBaseOverride, EventGateError:
+		return true
+	default:
+		return false
+	}
+}
+
 // Latest returns the derived Evidence for an item's event stream, encoding the
 // finalized F4 composed member-evidence predicate (082-F F4 hardening, 083.002-T):
 // the most recent event that is EventGateForced (unconditional audited
