@@ -18,7 +18,9 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -398,9 +400,23 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	// 082-F ST4.3: advisory pre-task-completion gate-evidence audit. When gates are
 	// configured (not disabled), every terminal task/subtask SHOULD carry a
 	// passing/forced gate evidence event in its item log. Missing evidence is a
-	// WARNING only — it never changes the exit code (advisory mode). A strict,
-	// index-backed check is the separate follow-up (7ED9CE1A).
+	// WARNING only — it never changes the exit code (advisory mode).
+	//
+	// Q3.3 (083.005.004-ST): the audit now prefers the derived gate_evidence
+	// projection (index-backed) over scanning each item's logs. When an item is
+	// absent from the projection (never gated, or gated since the last sync — the
+	// live completion path indexes events incrementally but does not touch this
+	// disposable projection), it falls back to the authoritative log-scan rather
+	// than no-op, so a stale/absent projection never silently stops auditing.
 	if opts.CheckGateEvidence && ws.gateConfig.Enabled != "false" {
+		var projection map[string]string
+		if ws.DB != nil {
+			if p, perr := bldb.LoadGateEvidence(ctx, ws.DB); perr != nil {
+				slog.WarnContext(ctx, "doctor: gate-evidence audit: projection load failed, falling back to log-scan", "error", perr)
+			} else {
+				projection = p
+			}
+		}
 		for _, info := range artifacts {
 			if info.artifactType != "task" && info.artifactType != "subtask" {
 				continue
@@ -408,12 +424,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if !ws.isGateTerminalStatus(info.status) {
 				continue
 			}
-			evs, evErr := events.ReadAllEvents(ctx, logsDir, info.id)
+			missing, evErr := gateEvidenceMissing(ctx, ws, logsDir, info.id, projection)
 			if evErr != nil {
 				slog.WarnContext(ctx, "doctor: gate-evidence audit: read events failed", "id", info.id, "error", evErr)
 				continue
 			}
-			if latestGatePassEvidence(evs) == nil {
+			if missing {
 				report.Findings = append(report.Findings, DoctorFinding{
 					Type:        FindingMissingGateEvidence,
 					ArtifactID:  info.id,
@@ -424,6 +440,29 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	return report, nil
+}
+
+// gateEvidenceMissing reports whether a terminal gated member lacks valid gate
+// evidence (Q3.3). It consults the derived gate_evidence projection first: a
+// passed/forced/forced_no_run row means valid evidence, a missing row means the
+// item was gated without a valid pass. When the item is absent from the
+// projection (never gated, or gated since the last sync), it falls back to the
+// authoritative per-item log-scan so a stale/absent projection never produces a
+// false negative.
+func gateEvidenceMissing(ctx context.Context, ws *Workspace, logsDir, id string, projection map[string]string) (bool, error) {
+	if status, ok := projection[id]; ok {
+		switch status {
+		case gateevidence.StatusPassed, gateevidence.StatusForced, gateevidence.StatusForcedNoRun:
+			return false, nil
+		default: // StatusMissing or any unexpected token: treat as no valid evidence.
+			return true, nil
+		}
+	}
+	evs, err := events.ReadAllEvents(ctx, logsDir, id)
+	if err != nil {
+		return false, err
+	}
+	return latestGatePassEvidence(evs) == nil, nil
 }
 
 // archivedFromKind classifies an archive record's archived_from value for the
