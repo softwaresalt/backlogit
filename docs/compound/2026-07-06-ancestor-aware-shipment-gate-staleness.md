@@ -122,6 +122,12 @@ member heads (`be1bf1e`…`c93080d`) are all ancestors of the shipment head, so
 
 ## Related
 
+- `docs/compound/2026-07-07-empty-head-fail-closed-repo-presence-probe.md` — the 085-S
+  follow-on that closes the empty-head seams this fix explicitly deferred (the
+  empty-member-head bypass and the empty-shipment-head fail-open). Uses a bounded
+  repo-presence probe (`git rev-parse --is-inside-work-tree`) as the enforcement
+  discriminator, reusing this doc's fail-closed exit-code + `runCtx.Err()`-first
+  discipline.
 - `docs/compound/2026-07-06-bounded-helper-timeout-hard-cap.md` — the companion DoS
   lesson: even a *bounded* lineage/head helper must impose its own hard timeout cap.
 - `docs/compound/2026-07-06-external-process-timeout-before-probe.md` — bound the

@@ -24,8 +24,13 @@ created_at: 2026-07-07
 - [x] **ST3 (085.001.003-ST)** — empty member-head fail-closed in `validateMemberGateEvidence` + flip R7 + no-repo skip regression test (RED → GREEN). Commit **bf80557**.
 - [x] Quality-gate quartet GREEN: `go vet ./...` clean, `golangci-lint run ./internal/core/...` clean, `gofmt` structurally clean (CRLF false-positives only), full `go test ./...` all packages OK.
 - [x] Batched backlog completion: 085-F + 085.001-T + all 3 subtasks moved done→archived; 085-S stays active. Commit **b00a5e6** (`chore(backlog): mark 085-F units done and relocate to archive`), path-scoped (operator WIP excluded).
-- [ ] Standard + adversarial review → docs/closure/; feature PR; Copilot resolve-all; CI green; MERGE.
-- [ ] Post-merge closure (ship_shipment, compound-refresh, closure PR), merge.
+- [x] **Standard + adversarial review** → 3-model (gemini-3.1-pro / gpt-5.4 / claude-opus-4.8). First pass **BLOCK on F1** (broken `.git` pointer misclassified as no-repo → fail-open reopened); fixed (586993f, tighten marker + `LC_ALL=C`). **RE-REVIEW PASS** — F1 closed 3/3, SEC-1 (fail-open-closed) + SEC-2 (legitimate-empty-preserved) CONFIRMED. N1 (empty-`.git`-dir) + N2 (unanchored match) also fixed (203a4b1, message-independent `os.Stat` guard). Findings: `docs/closure/2026-07-07-085-S-adversarial-review.md`.
+- [x] Runtime-verification + operational-closure artifacts (73f5c70).
+- [x] **Feature PR #185** created; P-009 verified (merge_commit only). CI Docline frontmatter fix (e7c735f). All 4 CI checks PASS.
+- [x] **Copilot 2 rounds resolved to zero:** R1 os.Stat indeterminate-error fail-closed (1e3b31d); R2 no-repo test git-guard (1e01843). Each replied (REST in_reply_to) + resolved (GraphQL). Fresh review on 1e01843 → "no new comments", 0 unresolved threads.
+- [x] **Feature PR #185 MERGED autonomously** (admin bypass, merge-commit, delete-branch). Merge commit **7c129b0** (2-parent: ae00054 + 1e01843), ancestor of origin/main. Merge Confirmation Gate PASS.
+- [x] **Post-merge closure** on `post-merge/085-S`: rebuilt backlogit.exe from merged main; pre-reconcile (all 5 done, 0 orphans); `shipment ship 085-S --sha 7c129b0` → exit 0, **6 artifacts archived**, status `shipped`; P-007 archive integrity clean; post-reconcile PASS. Backlog archival commit **6657972**. compound-refresh (new doc + 084-S cross-ref); post-merge operational-closure doc; feature-doc §2/§7 finalized.
+- [ ] Closure PR: adversarial review → Copilot resolve-all → CI green → autonomous merge. Final `backlogit sync`; confirm 085-S archived.
 
 ## Branch commits (base a95e37e / main)
 
@@ -33,8 +38,14 @@ created_at: 2026-07-07
 - 9eb5a2f feat(core): ST2 empty shipment head fail-closed
 - bf80557 feat(core): ST3 empty member head fail-closed + flip R7
 - b00a5e6 chore(backlog): mark 085-F units done and relocate to archive
+- 586993f fix(core): F1 broken-`.git`-pointer fail-closed (tighten marker + LC_ALL=C)
+- 203a4b1 fix(core): N1/N2 message-independent os.Stat broken-repo guard
+- 73f5c70 docs(closure): runtime-verification + operational-closure + memory
+- e7c735f docs(closure): add docline frontmatter to adversarial-review (CI fix)
+- 1e3b31d fix(core): fail closed on indeterminate .git stat (Copilot R1)
+- 1e01843 test(core): guard no-repo empty-shipment-head ship test vs absent git (Copilot R2)
 
-Changed files (main..HEAD): shipment_gate.go + 3 test files; 5 archive additions; 085-S.md rollup. No operator WIP / CRLF noise.
+**Feature PR #185 merged → merge commit 7c129b0 (2-parent). Post-merge branch `post-merge/085-S`: 6657972 (backlog archival) + closure docs.**
 
 ## Key decisions / facts
 
@@ -45,4 +56,4 @@ Changed files (main..HEAD): shipment_gate.go + 3 test files; 5 archive additions
 
 ## Next step
 
-Adversarial review (multi-model, security focus) → docs/closure/. Then rebuild backlogit.exe from branch, runtime-verification, operational-closure, feature PR + Copilot + autonomous merge.
+Closure PR from `post-merge/085-S`: standard + adversarial review (multi-model, security focus, confirm non-weakening + legitimate-empty-preserved on the closure scope), Copilot resolve-all, CI green, §1.9 → autonomous merge (merge-commit, admin bypass). Then final `.\backlogit.exe sync`; confirm 085-S `archived`/`shipped`. Report both PR #s + 2-parent merge SHAs.

@@ -17,7 +17,7 @@ title: 085-S Shipment-Gate Empty-Head Fail-Closed Hardening — Feature PR Opera
 **Shipment:** 085-S — Shipment-gate empty-head fail-closed hardening
 **Feature:** 085-F (+ task 085.001-T + 3 subtasks — 5 items)
 **Branch:** `feat/085-shipment-gate-empty-head-fail-closed`
-**PR:** #<pending> → base `main`
+**PR:** #185 → base `main` — **MERGED** 2026-07-07T15:35:07Z, merge commit `7c129b0407db9beb943bc737df4bc3b287286b77` (2-parent: `ae00054` + `1e01843`)
 **Gate:** §1.9 pre-merge release-readiness — **AUTONOMOUS merge under standing AFK operator authorization** (merge-commit, P-009)
 
 ## 1. Scope shipped
@@ -51,8 +51,8 @@ Strict TDD (red → green) per unit.
 | `golangci-lint run ./internal/core/...` | ✅ PASS (exit 0) |
 | `gofmt` (structural, LF-normalized) | ✅ clean |
 | Pre-push adversarial review (3-model) | ✅ PASS on RE-REVIEW — first pass BLOCKED on F1, fixed; 0 gate-blocking (HIGH P0/P1); SEC-1 + SEC-2 CONFIRMED |
-| CI checks | ⏳ verified at PR gate (§7) |
-| Copilot review | ⏳ resolved to zero at PR gate (§7) |
+| CI checks | ✅ PASS — all 4: test (1.23), test (1.24), Docline frontmatter gate, CLI Reference Drift |
+| Copilot review | ✅ 0 unresolved — 2 fix rounds (os.Stat indeterminate-error fail-closed 1e3b31d; no-repo test git-guard 1e01843), each replied + resolved; fresh review on 1e01843 generated no new comments |
 | Runtime verification | ✅ PASS — real `ShipShipment`/gate + real git; full behavioral matrix |
 
 Artifacts: `docs/closure/2026-07-07-085-S-adversarial-review.md` (incl. F1 + N1/N2
@@ -67,9 +67,12 @@ remediation + re-review PASS), `docs/closure/2026-07-07-085-S-feature-pr-runtime
   `.git` pointer F1, empty/corrupt `.git` dir N1) also fails closed.
 - **Legitimate-empty preserved (SEC-2 CONFIRMED, no completion breakage):** a
   genuine no-repo empty shipment head still ships, a no-repo empty member head
-  stays skipped, and non-enforcement / bare-repo / inside-`.git` / forced
-  break-glass paths are unchanged. Discriminator is `inGitWorktreeBounded`, not
-  `ev.Enforced`.
+  stays skipped, and non-enforcement / bare-repo / inside-`.git` paths are
+  unchanged. A forced/break-glass member that still records a real head is honored
+  via the ancestor-aware path; the empty-head refusal is **uniform** — a real work
+  tree under enforcement with no recorded head fails closed regardless of a forced
+  flag (it cannot prove lineage; F5 intended-by-design). Discriminator is
+  `inGitWorktreeBounded`, not `ev.Enforced`.
 - **Fail-closed discipline:** probe timeout, cancellation, exec failure, corrupt
   repo, or missing git → non-nil error → refuse. `runCtx.Err()` is checked FIRST
   (a context-killed git reporting a platform exit code is never misread). The
@@ -117,6 +120,9 @@ remediation + re-review PASS), `docs/closure/2026-07-07-085-S-feature-pr-runtime
 
 **AUTONOMOUS merge under standing AFK operator authorization.** The operator is AFK
 with full standing authority to open and merge this security-hardening PR. Merge
-executed via admin bypass with **merge-commit** strategy (P-009), verifying a
-two-parent merge commit. CI green and Copilot 0-unresolved were confirmed before
-merge (§2 rows updated at the merge gate).
+executed via admin bypass (`gh pr merge 185 --merge --admin --delete-branch`) with
+**merge-commit** strategy (P-009). **Merge confirmed:** PR #185 state MERGED, merge
+commit `7c129b0407db9beb943bc737df4bc3b287286b77` is a two-parent merge
+(`ae00054` main + `1e01843` branch head) and is an ancestor of `origin/main`. CI
+green (4/4) and Copilot 0-unresolved were confirmed before merge. Feature branch
+deleted on merge.
