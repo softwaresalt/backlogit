@@ -16,7 +16,33 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - 'scripts/**'
+              - '.github/workflows/**'
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
