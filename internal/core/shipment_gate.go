@@ -9,6 +9,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -159,29 +160,13 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 
 // latestGatePassEvidence returns the most recent gate evidence event that
 // satisfies the composed member-evidence predicate (082-F F4 hardening,
-// 083.002-T): an EventGateForced (unconditional audited break-glass) OR an
-// EventGatePassed whose delta records ran==true. A fail-open EventGatePassed
-// no-run (ran missing/false) is NOT valid evidence and is skipped, so an earlier
-// forced/ran==true event is promoted to the returned latest (the head_sha
-// staleness check then runs against that event — intended per Decision 2).
-// Returns nil when no qualifying event is present.
+// 083.002-T). As of Q3.0 (083.005.001-ST) the predicate is owned by the shared
+// internal/gateevidence leaf so core and db derive evidence identically across
+// the one-way core->db boundary; this wrapper delegates and returns the selected
+// event (nil when no qualifying event is present) to preserve the existing
+// caller contract (nil-check + head_sha staleness read).
 func latestGatePassEvidence(evs []events.Event) *events.Event {
-	var latest *events.Event
-	for i := range evs {
-		switch evs[i].EventType {
-		case EventGateForced:
-			e := evs[i]
-			latest = &e
-		case EventGatePassed:
-			// Comma-ok read: a missing or non-bool "ran" yields false, correctly
-			// treated as not-ran (mirrors the head_sha idiom above).
-			if ran, _ := evs[i].Delta["ran"].(bool); ran {
-				e := evs[i]
-				latest = &e
-			}
-		}
-	}
-	return latest
+	return gateevidence.Latest(evs).Event
 }
 
 // shipmentMemberEvidenceError builds a typed blocked refusal for a member that
