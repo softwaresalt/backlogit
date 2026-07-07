@@ -2,12 +2,13 @@
 bin/
 logs/
 .vscode/
-.engram/
 .copilot/
+.mcp.json
+
+# Local environment files (secrets) — never commit. Only .env.example may be tracked.
 .env
 .env.*
 !.env.example
-.mcp.json
 
 # Plugin .mcp.json is intentionally tracked (distinct from local dev config)
 !plugin/.mcp.json
@@ -48,3 +49,14 @@ prompt.md
 
 # Machine-local telemetry harvest checkpoint (changes per machine/run)
 .backlogit/.telemetry-checkpoint.json
+
+# Engram runtime data (keep templates/, registry.yaml, .version)
+.engram/
+!.engram/.version
+!.engram/.workspace-id
+!.engram/config.toml
+!.engram/registry.yaml
+
+# graphtor-docs — managed by graphtor-docs install
+.graphtor/
+diff.txt
