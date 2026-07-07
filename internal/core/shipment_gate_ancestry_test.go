@@ -139,6 +139,19 @@ func TestInGitWorktreeBounded(t *testing.T) {
 		require.Error(t, err, "a present-but-broken .git pointer must fail closed, not be misread as a no-repo skip")
 		assert.False(t, inRepo, "a broken-repo probe must not report inside-work-tree=true")
 	}
+
+	// (e) present-but-EMPTY `.git` directory: git emits the genuine-no-repo marker
+	// `not a git repository (or any of the parent directories)` (message collides
+	// with a real no-repo), yet a `.git` entry IS present -> a present-but-broken
+	// repo that MUST FAIL CLOSED via the message-INDEPENDENT os.Stat guard (N1).
+	// This is the case a wording-only discriminator would wrongly skip.
+	if _, gerr := exec.LookPath("git"); gerr == nil {
+		wsEmpty := newGateTestWorkspace(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(wsEmpty.RootPath, ".git"), 0o755))
+		inRepo, err = wsEmpty.inGitWorktreeBounded(ctx)
+		require.Error(t, err, "a present-but-empty .git dir must fail closed (message-independent), not be misread as no-repo")
+		assert.False(t, inRepo, "a broken-repo (empty .git) probe must not report inside-work-tree=true")
+	}
 }
 
 // TestIsAncestor exercises the git ancestor-lineage helper against a real repo:

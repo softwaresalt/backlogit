@@ -6,7 +6,9 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -146,13 +148,17 @@ func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
 //	runCtx.Err() != nil (checked FIRST)                 -> (false, ctxErr) [fail closed]
 //	exit 0, stdout "true"                                -> (true, nil)     [real worktree]
 //	exit 0, stdout != "true" (bare repo / .git)          -> (false, nil)    [not-a-worktree skip]
-//	exit 128, stderr ~ "not a git repository (or any of  -> (false, nil)    [genuine no-repo skip]
-//	           the parent directories)"
-//	exit 128, any OTHER stderr — incl. a present-but-     -> (false, err)    [fail closed]
-//	           broken .git pointer ("not a git
-//	           repository: (NULL)"), corrupt objects, etc.
+//	exit != 0, a `.git` entry EXISTS at RootPath          -> (false, err)    [fail closed;
+//	           (present-but-broken: empty/corrupt .git                        message-independent]
+//	           dir, or broken gitfile pointer)
+//	exit 128, NO `.git` at RootPath, stderr ~ "not a git -> (false, nil)    [genuine no-repo skip]
+//	           repository (or any of the parent directories)"
+//	exit 128, NO `.git`, any OTHER stderr                 -> (false, err)    [fail closed]
 //	git missing / other non-ExitError / other exit        -> (false, err)    [fail closed]
 //
+// The `.git`-presence stat is the PRIMARY broken-repo discriminator (defends
+// against git message/locale/version drift); the stderr marker only distinguishes
+// a genuine "outside any repository" (no `.git` present) from other fatals.
 // `--is-inside-work-tree` is chosen over `--git-dir`: the latter returns exit 0
 // inside a bare repo and inside a `.git` dir, so it cannot distinguish "can
 // resolve a work-tree HEAD" from "is under some git dir". argv-array exec +
@@ -195,14 +201,24 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 
 	var ee *exec.ExitError
 	if stderrors.As(runErr, &ee) {
-		// Exit 128 is git's generic fatal code. ONLY the genuine "outside any
-		// repository" diagnostic — which git marks with the stable parenthetical
-		// "(or any of the parent directories)" — is a no-repo skip. Any OTHER 128
-		// is a present-but-broken repo and MUST fail closed. In particular a broken
-		// .git pointer (gitfile referencing a missing gitdir) emits
-		// "fatal: not a git repository: (NULL)" WITHOUT that parenthetical: a loose
-		// "not a git repository" substring match would wrongly skip it, re-opening
-		// the empty-head fail-open hole this guard exists to close.
+		// Message-INDEPENDENT broken-repo guard (primary discriminator): reaching
+		// this branch means git did NOT resolve a work tree. If a `.git` entry
+		// nonetheless exists at RootPath, it is a present-but-broken repo (an
+		// empty/corrupt `.git` dir, or a broken gitfile pointer) and MUST fail
+		// closed — regardless of git's diagnostic wording. This defends against
+		// message/locale/git-version drift: a genuine "outside any repository" has
+		// NO `.git` entry here (an ancestor repo would have made git return "true"
+		// at exit 0, never reaching this branch), so os.Stat succeeding is proof of
+		// a present-but-unresolved repo.
+		if _, statErr := os.Stat(filepath.Join(ws.RootPath, ".git")); statErr == nil {
+			return false, fmt.Errorf(
+				"git rev-parse --is-inside-work-tree exit %d with present-but-unresolved .git at %s: %s: %w",
+				ee.ExitCode(), ws.RootPath, bytes.TrimSpace(stderr.Bytes()), runErr)
+		}
+		// No `.git` at RootPath: ONLY git's stable "outside any repository" marker —
+		// the parenthetical "(or any of the parent directories)" — is a genuine
+		// no-repo skip. LC_ALL=C above guarantees this English form. Any OTHER
+		// exit-128 stderr is an unexpected fatal and fails closed.
 		if ee.ExitCode() == 128 &&
 			bytes.Contains(bytes.ToLower(stderr.Bytes()),
 				[]byte("not a git repository (or any of the parent directories)")) {
