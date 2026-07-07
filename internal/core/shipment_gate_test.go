@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	stderrors "errors"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -138,12 +139,92 @@ func TestShipmentGate_FailOpenAuto_ShipsWithoutEvidence(t *testing.T) {
 	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
 }
 
+// hasBlockedReason reports whether the events contain an EventGateBlocked whose
+// delta carries the given "reason" — the monitoring signal the empty-head
+// fail-closed branches must emit (Constitution Principle V).
+func hasBlockedReason(evs []events.Event, reason string) bool {
+	for _, e := range evs {
+		if e.EventType != EventGateBlocked {
+			continue
+		}
+		if r, _ := e.Delta["reason"].(string); r == reason {
+			return true
+		}
+	}
+	return false
+}
+
+// TestShipmentGate_EmptyShipmentHeadInRepo_Refused pins 1AEA2B0E: under
+// enforcement, an empty shipment head resolved INSIDE a real work tree (an unborn
+// branch: --is-inside-work-tree=true, rev-parse HEAD empty) must FAIL CLOSED with
+// the dedicated in-repo message, leave shipment state unchanged, and record an
+// EventGateBlocked monitoring signal.
+func TestShipmentGate_EmptyShipmentHeadInRepo_Refused(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	// Make ws.RootPath a real work tree with an UNBORN HEAD (git init, no commit).
+	initGitRepoNoCommits(t, ws.RootPath)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err, "an empty shipment head in a real work tree must fail closed under enforcement")
+	assert.Contains(t, err.Error(), "cannot resolve shipment head in repository")
+	var blocked *bkerrors.GateBlockedError
+	require.True(t, stderrors.As(err, &blocked), "want *GateBlockedError, got %T", err)
+
+	// Shipment state unchanged on refusal.
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	assert.Equal(t, models.StatusActive, sh.Status, "shipment state must be unchanged on refusal")
+
+	// The refusal recorded an EventGateBlocked monitoring signal (Principle V).
+	evs, rerr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), shipmentID)
+	require.NoError(t, rerr)
+	assert.True(t, hasBlockedReason(evs, "empty-shipment-head"),
+		"an EventGateBlocked with reason=empty-shipment-head must be recorded")
+}
+
+// TestShipmentGate_EmptyShipmentHeadNoRepo_Skips is the regression peer to the
+// in-repo refusal: a GENUINE no-repo empty shipment head under enforcement
+// preserves the legacy skip and ships (no-repo test harness + non-autoharness
+// environments must not regress).
+func TestShipmentGate_EmptyShipmentHeadNoRepo_Skips(t *testing.T) {
+	// This test exercises the git-PRESENT no-repo path: inGitWorktreeBounded must
+	// run `git rev-parse` and return (false, nil) for the legacy skip. With git
+	// absent from PATH the probe fails closed (refuse) by design, so the ship
+	// expectation below would not hold — skip, mirroring the other git-dependent
+	// tests in this package (initGitRepoWithCommits / initGitRepoNoCommits / the
+	// broken-repo cases in TestInGitWorktreeBounded).
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available on PATH")
+	}
+	ws := newGateTestWorkspace(t) // temp dir, NOT a git repo
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	result, err := ShipShipment(ctx, ws, shipmentID, nil)
+	require.NoError(t, err, "a genuine no-repo empty shipment head must preserve the legacy skip and ship")
+	require.NotNil(t, result)
+	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
+}
+
 // TestValidateMemberGateEvidence_StaleRefused exercises the ancestor-aware
 // staleness dimension directly against a real git repo. A member whose recorded
 // evidence head is an ANCESTOR of the shipment head is accepted (the post-merge
 // false-staleness case strict equality wrongly rejected); an equal head is
-// accepted; an empty head is bypassed unchanged; and a genuinely divergent head,
-// a malformed head_sha, and an unverifiable (absent-object) lineage are each
+// accepted; an empty head now FAILS CLOSED (B85DAEE8); and a genuinely divergent
+// head, a malformed head_sha, and an unverifiable (absent-object) lineage are each
 // refused with a fail-closed, branch-specific message.
 func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	ws := newGateTestWorkspace(t)
@@ -181,9 +262,20 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	equalMember := mkMember(head)
 	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{equalMember}, head))
 
-	// R7 — empty member head unchanged (B85DAEE8 bypass preserved).
+	// R7 (flipped, B85DAEE8) — an empty member head now FAILS CLOSED under
+	// enforcement. A non-empty shipmentHead proves headSHABounded resolved a real
+	// HEAD (real work tree), so a member with no recorded head_sha cannot prove its
+	// gated commit is contained in the shipment history. The refusal is a typed
+	// *GateBlockedError AND records an EventGateBlocked monitoring signal.
 	emptyMember := mkMember("")
-	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{emptyMember}, head))
+	r7err := validateMemberGateEvidence(ctx, ws, []string{emptyMember}, head)
+	require.Error(t, r7err, "an empty member head must fail closed under enforcement in a real repo")
+	assert.Contains(t, r7err.Error(), "no recorded head_sha")
+	require.True(t, stderrors.As(r7err, &blocked), "empty-member-head refusal must be a *GateBlockedError")
+	r7evs, r7rerr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), emptyMember)
+	require.NoError(t, r7rerr)
+	assert.True(t, hasBlockedReason(r7evs, "empty-member-head"),
+		"an EventGateBlocked with reason=empty-member-head must be recorded")
 
 	// R2 — genuinely divergent (non-ancestor) head refused, specific message.
 	divergentMember := mkMember(divergent)
@@ -205,6 +297,31 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	require.Error(t, aerr)
 	assert.Contains(t, aerr.Error(), "lineage")
 	require.True(t, stderrors.As(aerr, &blocked), "lineage-error refusal must be a *GateBlockedError")
+}
+
+// TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped is the regression
+// peer to the R7 flip: when the shipment head is empty (no-repo — the member scan
+// runs only inside `if shipmentHead != ""`), an empty member head stays SKIPPED so
+// no-repo test harnesses and non-autoharness environments do not regress. The
+// empty-member-head fail-closed fires only when a non-empty shipmentHead proves a
+// real resolved HEAD.
+func TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped(t *testing.T) {
+	ws := newGateTestWorkspace(t) // temp dir, NOT a git repo
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome": "passed", "ran": true, // no head_sha recorded (no-repo).
+	}))
+
+	// shipmentHead == "" -> the member scan block is not entered; empty member head
+	// skip preserved.
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{id}, ""),
+		"an empty member head under an empty (no-repo) shipment head must stay skipped")
 }
 
 // TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed

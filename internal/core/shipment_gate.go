@@ -6,7 +6,9 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -132,6 +134,129 @@ func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
 	return h, nil
 }
 
+// inGitWorktreeBounded reports whether ws.RootPath resolves inside a real git
+// work tree, under a mandatory self-derived deadline (same source/cap as
+// isAncestor / headSHABounded). It is the repo-presence discriminator on the
+// enforced shipment-gate empty-head path: ev.Enforced does NOT track work-tree
+// presence (the test broker fakes the git probe), so an empty shipment/member
+// head under enforcement must be distinguished between a real worktree (fail
+// closed — lineage cannot be proven) and a genuine no-repo / non-autoharness
+// environment (preserve the legacy skip). Being a security guard on the ship
+// path it FAILS CLOSED: any timeout, cancellation, exec failure, corrupt-repo
+// exit, or missing git returns a non-nil error. Exit semantics:
+//
+//	runCtx.Err() != nil (checked FIRST)                 -> (false, ctxErr) [fail closed]
+//	exit 0, stdout "true"                                -> (true, nil)     [real worktree]
+//	exit 0, stdout != "true" (bare repo / .git)          -> (false, nil)    [not-a-worktree skip]
+//	exit != 0, `.git` at RootPath present OR its         -> (false, err)    [fail closed;
+//	           presence indeterminate (stat != IsNotExist:                    message-independent]
+//	           present-but-broken, or permission/IO)
+//	exit 128, `.git` DEFINITIVELY absent (IsNotExist),   -> (false, nil)    [genuine no-repo skip]
+//	           stderr ~ "not a git repository (or any of
+//	           the parent directories)"
+//	exit 128, `.git` absent, any OTHER stderr             -> (false, err)    [fail closed]
+//	git missing / other non-ExitError / other exit        -> (false, err)    [fail closed]
+//
+// The `.git`-presence stat is the PRIMARY broken-repo discriminator (defends
+// against git message/locale/version drift); the stderr marker only distinguishes
+// a genuine "outside any repository" (no `.git` present) from other fatals.
+// `--is-inside-work-tree` is chosen over `--git-dir`: the latter returns exit 0
+// inside a bare repo and inside a `.git` dir, so it cannot distinguish "can
+// resolve a work-tree HEAD" from "is under some git dir". argv-array exec +
+// gate.MinimalEnv() + cmd.Dir = ws.RootPath preserve the workspace exec trust
+// boundary (no shell, allowlisted env). The probe forces LC_ALL=C / LANG=C so the
+// no-repo discriminator below matches git's stable ENGLISH diagnostic regardless
+// of any inherited host locale. Parsing uses bytes (no strings import).
+func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
+	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(runCtx, "git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = ws.RootPath
+	// Force the C locale so git's diagnostics are the stable English form the
+	// no-repo discriminator matches. MinimalEnv passes through any host LANG/LC_ALL,
+	// so strip those and pin LC_ALL=C last (duplicate env keys are not reliably
+	// last-wins across platforms, so the inherited value must be removed, not just
+	// shadowed). A localized "not a git repository" would otherwise be misread.
+	cmd.Env = withCLocale(gate.MinimalEnv())
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	if runErr == nil {
+		// exit 0: `true` means a real work tree; anything else (bare repo /
+		// inside `.git`) is a not-a-worktree skip, not a real ship scenario.
+		if bytes.Equal(bytes.TrimSpace(stdout.Bytes()), []byte("true")) {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// A timeout OR cancellation MUST be detected before any exit code is read: a
+	// context-killed git reports a platform-dependent exit code (e.g. 1 on
+	// Windows) that must never be misread as a clean signal. Fail closed.
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		return false, fmt.Errorf("repo-presence probe aborted: %w", ctxErr)
+	}
+
+	var ee *exec.ExitError
+	if stderrors.As(runErr, &ee) {
+		// Message-INDEPENDENT broken-repo guard (primary discriminator): reaching
+		// this branch means git did NOT resolve a work tree. If a `.git` entry
+		// nonetheless exists at RootPath, it is a present-but-broken repo (an
+		// empty/corrupt `.git` dir, or a broken gitfile pointer) and MUST fail
+		// closed — regardless of git's diagnostic wording. This defends against
+		// message/locale/git-version drift: a genuine "outside any repository" has
+		// NO `.git` entry here (an ancestor repo would have made git return "true"
+		// at exit 0, never reaching this branch). ONLY a definitive os.IsNotExist
+		// (the `.git` entry is genuinely absent) may proceed to the no-repo marker
+		// check; a successful stat (present) OR any other stat error (permission /
+		// IO — presence indeterminate) fails closed, because for an ENFORCEMENT
+		// discriminator "cannot rule out a present-but-broken repo" is fail-closed.
+		if _, statErr := os.Stat(filepath.Join(ws.RootPath, ".git")); !os.IsNotExist(statErr) {
+			return false, fmt.Errorf(
+				"git rev-parse --is-inside-work-tree exit %d; .git at %s present-but-unresolved or presence indeterminate (stat: %v): %s: %w",
+				ee.ExitCode(), ws.RootPath, statErr, bytes.TrimSpace(stderr.Bytes()), runErr)
+		}
+		// `.git` is definitively ABSENT at RootPath: ONLY git's stable "outside any
+		// repository" marker — the parenthetical "(or any of the parent
+		// directories)" — is a genuine no-repo skip. LC_ALL=C above guarantees this
+		// English form. Any OTHER exit-128 stderr is an unexpected fatal and fails
+		// closed.
+		if ee.ExitCode() == 128 &&
+			bytes.Contains(bytes.ToLower(stderr.Bytes()),
+				[]byte("not a git repository (or any of the parent directories)")) {
+			return false, nil // genuine no-repo skip preserved.
+		}
+		return false, fmt.Errorf("git rev-parse --is-inside-work-tree exit %d: %s: %w",
+			ee.ExitCode(), bytes.TrimSpace(stderr.Bytes()), runErr)
+	}
+	// git binary missing or any other non-ExitError failure -> fail closed.
+	return false, fmt.Errorf("run git rev-parse --is-inside-work-tree: %w", runErr)
+}
+
+// withCLocale returns env with any inherited LC_ALL / LANG entries removed and
+// LC_ALL=C / LANG=C appended, so a git child emits deterministic English
+// diagnostics for stderr-substring discrimination. It never mutates the input.
+func withCLocale(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	for _, kv := range env {
+		if hasEnvKey(kv, "LC_ALL") || hasEnvKey(kv, "LANG") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "LC_ALL=C", "LANG=C")
+}
+
+// hasEnvKey reports whether a "KEY=VALUE" entry has the given key (exact,
+// case-sensitive — env var names are case-sensitive on the POSIX targets that
+// localize git output; Windows git honors LC_ALL/LANG in this same casing).
+func hasEnvKey(kv, key string) bool {
+	return len(kv) > len(key) && kv[len(key)] == '=' && kv[:len(key)] == key
+}
+
 // headResolveError builds a fail-closed refusal for a bounded HEAD resolution that
 // timed out or was cancelled. A shipment head that cannot be read under the
 // deadline must block completion rather than silently skip the staleness guard.
@@ -144,6 +269,26 @@ func headResolveError(shipmentID string, cause error) error {
 		StateChanged: false,
 	}
 	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
+}
+
+// shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED
+// shipment whose HEAD resolves to empty INSIDE a real git work tree (1AEA2B0E).
+// This is distinct from headResolveError (a bounded-read timeout/cancel): here the
+// repo is present but HEAD is unresolvable for a non-context reason (an unborn
+// branch, or a transient `git rev-parse HEAD` failure), so member lineage cannot be
+// proven against a resolved shipment head and the ship must FAIL CLOSED rather than
+// silently skip the member-lineage/drift guard. A dedicated constructor (Decision 3)
+// gives operators a message assertably distinct from the timeout path, without
+// shoe-horning a synthetic cause into headResolveError's `%v: %w` shape.
+func shipmentHeadUnresolvedInRepoError(shipmentID string) error {
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: cannot resolve shipment head in repository: %w", shipmentID, be)
 }
 
 // headDriftError reports whether HEAD advanced across the gate evaluation window.
@@ -222,6 +367,48 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	// cancel) MUST fail closed — never silently skip the staleness guard.
 	if headErr != nil {
 		return headResolveError(shipmentID, headErr)
+	}
+
+	// 1AEA2B0E: an EMPTY shipment head under enforcement is a LEGACY non-context
+	// resolution failure (headSHABounded returned "" with headErr == nil, e.g. an
+	// unborn branch or a transient `git rev-parse HEAD` failure). ev.Enforced does
+	// NOT track work-tree presence — the test broker fakes the git probe, so
+	// Enforced can be true in a no-repo temp dir — so a bounded repo-presence probe
+	// is the discriminator:
+	//   - real work tree  -> member lineage cannot be proven against a resolved head
+	//                        -> FAIL CLOSED (closes the pre-existing fail-open hole).
+	//   - probe error      -> cannot even determine repo presence under the deadline
+	//                        -> FAIL CLOSED (consistent with isAncestor).
+	//   - genuine no-repo  -> preserve the LEGACY skip (member scan + drift guard
+	//                        remain inert). Production strict + genuinely-no-repo
+	//                        already fails closed upstream at Evaluate/ResolveBaseRef,
+	//                        so this skip only preserves the test harness + the
+	//                        non-autoharness edge (see plan Enforcement-mode note).
+	// Both fail-closed sub-cases emit an EventGateBlocked evidence event AND a
+	// slog.WarnContext so the empty-shipment-head over-refusal monitoring signal is
+	// real rather than a silent refusal (Constitution Principle V).
+	if shipmentHead == "" {
+		inRepo, probeErr := ws.inGitWorktreeBounded(ctx)
+		if probeErr != nil || inRepo {
+			slog.WarnContext(ctx, "shipment gate: empty shipment head under enforcement",
+				"shipment", shipmentID, "in_repo", inRepo, "probe_error", probeErr)
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":   "shipment",
+				"outcome": "blocked",
+				"reason":  "empty-shipment-head",
+			}); aerr != nil {
+				// Best-effort audit on a refusal path: the ship is already blocked,
+				// so a failed evidence append must not mask the refusal below.
+				slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence",
+					"shipment", shipmentID, "error", aerr)
+			}
+			if probeErr != nil {
+				return headResolveError(shipmentID,
+					fmt.Errorf("cannot determine repository presence: %w", probeErr))
+			}
+			return shipmentHeadUnresolvedInRepoError(shipmentID)
+		}
+		// !inRepo && probeErr == nil: genuine no-repo -> legacy skip preserved.
 	}
 
 	// (1) member-evidence validation (cheap log scan, no state change), against the
@@ -321,9 +508,19 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 // --is-ancestor). This replaces the prior strict head_sha equality, which falsely
 // rejected valid post-merge evidence (a member's build commit is an ancestor of,
 // not equal to, the shipment's merge commit). A genuinely divergent (non-ancestor)
-// head, a malformed head_sha, or an unverifiable lineage (git error/timeout/cancel)
-// is refused (fail closed). An empty member head is bypassed unchanged (B85DAEE8
-// scope). Non-gated member types (feature/other) are skipped.
+// head, a malformed head_sha, an unverifiable lineage (git error/timeout/cancel),
+// or — as of 085-F (B85DAEE8) — an EMPTY member head is refused (fail closed).
+// Non-gated member types (feature/other) are skipped.
+//
+// Empty-member-head fail-closed invariant (085-F): the empty-head refusal executes
+// ONLY inside the `shipmentHead != ""` block. A non-empty shipmentHead is produced
+// solely by headSHABounded resolving a real HEAD, which itself proves a real work
+// tree with a committed HEAD — so the empty-member-head refusal can never fire in a
+// no-repo / unresolved-head context (there shipmentHead == "" and this block is
+// skipped entirely). inGitWorktreeBounded is the discriminator on the *empty*
+// shipmentHead branch in gateShipmentCompletion, NOT a precondition of this
+// function. A future caller that passes a non-empty shipmentHead NOT obtained from
+// a resolved HEAD would break this invariant.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
 	for _, id := range releaseScope {
@@ -349,11 +546,37 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 		}
 		if shipmentHead != "" {
-			if h, _ := latest.Delta["head_sha"].(string); h != "" && h != shipmentHead {
-				// h != "" preserves the empty-member-head bypass (B85DAEE8, out of
-				// scope). h == shipmentHead is the equality fast-path: an equal head
-				// never enters this block, so a single-commit shipment needs no repo
-				// access and no subprocess.
+			h, _ := latest.Delta["head_sha"].(string)
+			if h == "" {
+				// B85DAEE8: an EMPTY member head under enforcement FAILS CLOSED. A
+				// non-empty shipmentHead proves headSHABounded resolved a real HEAD
+				// (a real work tree), so a member with no recorded head_sha cannot
+				// prove its gated commit is contained in the shipment history —
+				// shipping it would be an unverifiable-lineage bypass. Emit an
+				// EventGateBlocked evidence event AND a slog.WarnContext so the
+				// empty-member-head over-refusal monitoring signal is real (not a
+				// silent refusal), mirroring the ST2 shipment-level emission
+				// (Constitution Principle V).
+				slog.WarnContext(ctx, "member evidence has no recorded head_sha",
+					"member", id, "shipment_head", shipmentHead)
+				if aerr := ws.appendGateEvent(ctx, id, EventGateBlocked, map[string]any{
+					"level":   "member",
+					"outcome": "blocked",
+					"reason":  "empty-member-head",
+					"member":  id,
+				}); aerr != nil {
+					// Best-effort audit on a refusal path: the ship is already
+					// blocked, so a failed append must not mask the refusal below.
+					slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence",
+						"member", id, "error", aerr)
+				}
+				return shipmentMemberEvidenceError(id,
+					"gate evidence has no recorded head_sha (cannot verify lineage under enforcement)")
+			}
+			if h != shipmentHead {
+				// h == shipmentHead is the equality fast-path: an equal head never
+				// enters this block, so a single-commit shipment needs no repo access
+				// and no subprocess.
 				if !isGitObjectName(h) {
 					// The recorded head comes from tamperable on-disk evidence JSONL;
 					// a value that is not a git object name is never handed to git.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,83 @@ func initGitRepoWithCommits(t *testing.T, dir string) (base, head, divergent str
 
 	run("checkout", "main")
 	return base, head, divergent
+}
+
+// initGitRepoNoCommits initializes a real git repo in dir with NO commit (an
+// unborn branch): `git rev-parse --is-inside-work-tree` reports `true` (a real
+// work tree) while `git rev-parse HEAD` fails (no commit yet), so it is the
+// load-bearing fixture for the empty-shipment-head-in-a-real-worktree case
+// (1AEA2B0E). The test is skipped when git is not on PATH (mirrors
+// initGitRepoWithCommits).
+func initGitRepoNoCommits(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available on PATH")
+	}
+	cmd := exec.Command("git", "-c", "init.defaultBranch=main", "init")
+	cmd.Dir = dir
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "git init: %s", out)
+}
+
+// TestInGitWorktreeBounded exercises the bounded repo-presence discriminator: a
+// real work tree reports true; a no-repo temp dir reports (false, nil) so the
+// legacy skip is preserved; and an already-expired bounded context fails CLOSED
+// with a non-nil ctx error (never a silent false-negative that would re-open the
+// empty-head hole).
+func TestInGitWorktreeBounded(t *testing.T) {
+	ctx := context.Background()
+
+	// (a) real work tree -> (true, nil).
+	wsRepo := newGateTestWorkspace(t)
+	initGitRepoWithCommits(t, wsRepo.RootPath)
+	inRepo, err := wsRepo.inGitWorktreeBounded(ctx)
+	require.NoError(t, err, "a real work tree must probe cleanly")
+	assert.True(t, inRepo, "a real work tree must report inside-work-tree=true")
+
+	// (b) no-repo temp dir -> (false, nil): legacy skip preserved.
+	wsNoRepo := newGateTestWorkspace(t)
+	inRepo, err = wsNoRepo.inGitWorktreeBounded(ctx)
+	require.NoError(t, err, "a genuine no-repo dir must be a silent skip, not an error")
+	assert.False(t, inRepo, "a no-repo dir must report inside-work-tree=false")
+
+	// (c) already-expired bounded context -> fail closed with a non-nil ctx error.
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer cancel()
+	inRepo, err = wsRepo.inGitWorktreeBounded(expired)
+	require.Error(t, err, "an expired bounded probe must fail closed (non-nil error)")
+	assert.False(t, inRepo, "a failed probe must not report inside-work-tree=true")
+
+	// (d) present-but-broken .git pointer (a gitfile referencing a MISSING gitdir):
+	// git emits `fatal: not a git repository: (NULL)` on exit 128 — NOT the
+	// genuine-no-repo "(or any of the parent directories)" marker — so it is a
+	// present-but-broken repo that MUST FAIL CLOSED (non-nil err), never be misread
+	// as a no-repo skip. This pins the F1 fail-open hole closed: a loose
+	// "not a git repository" substring match wrongly skipped this case, letting an
+	// unprovable-lineage shipment ship.
+	if _, gerr := exec.LookPath("git"); gerr == nil {
+		wsBroken := newGateTestWorkspace(t)
+		gitfile := filepath.Join(wsBroken.RootPath, ".git")
+		missingGitdir := filepath.Join(wsBroken.RootPath, "nonexistent-gitdir")
+		require.NoError(t, os.WriteFile(gitfile, []byte("gitdir: "+missingGitdir), 0o644))
+		inRepo, err = wsBroken.inGitWorktreeBounded(ctx)
+		require.Error(t, err, "a present-but-broken .git pointer must fail closed, not be misread as a no-repo skip")
+		assert.False(t, inRepo, "a broken-repo probe must not report inside-work-tree=true")
+	}
+
+	// (e) present-but-EMPTY `.git` directory: git emits the genuine-no-repo marker
+	// `not a git repository (or any of the parent directories)` (message collides
+	// with a real no-repo), yet a `.git` entry IS present -> a present-but-broken
+	// repo that MUST FAIL CLOSED via the message-INDEPENDENT os.Stat guard (N1).
+	// This is the case a wording-only discriminator would wrongly skip.
+	if _, gerr := exec.LookPath("git"); gerr == nil {
+		wsEmpty := newGateTestWorkspace(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(wsEmpty.RootPath, ".git"), 0o755))
+		inRepo, err = wsEmpty.inGitWorktreeBounded(ctx)
+		require.Error(t, err, "a present-but-empty .git dir must fail closed (message-independent), not be misread as no-repo")
+		assert.False(t, inRepo, "a broken-repo (empty .git) probe must not report inside-work-tree=true")
+	}
 }
 
 // TestIsAncestor exercises the git ancestor-lineage helper against a real repo:
