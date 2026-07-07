@@ -103,6 +103,23 @@ old strict-equality binary would have refused. If a self-closing security fix ca
 close its own shipment only with the new binary, that is the strongest possible
 end-to-end proof the fix is real and complete.
 
+## Validated against the original exposure case — 083-S re-closure
+
+083-S (gate-broker phase-2 hardening; feature PR #180, merge
+`ac41bb1d2611fadd0fae6ccc49b3a8233468622d`) was the **first shipment in the wild to
+expose** this false-staleness bug: it built after member `head_sha` recording became
+active and closed post-merge, so strict equality refused its own members (exit 6). At
+that time closure was correctly HALTED rather than forced (see
+`docs/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`), and the ancestor-aware
+fix was stashed (`885A7F65`) and graduated through 084-S. After 084-F landed on `main`,
+083-S was **re-closed with the new binary** — `shipment ship 083-S --sha ac41bb1…`
+passed the completion gate (exit 0, **11 items archived**, `returned_ids: []`) where the
+strict-equality binary had refused it. This is the independent confirmation (a second
+shipment, not the fix's own) that the ancestor-aware admission is real and correct: the
+member heads (`be1bf1e`…`c93080d`) are all ancestors of the shipment head, so
+`--is-ancestor` returns exit 0 and the gate accepts. Closure record:
+`docs/closure/2026-07-07-083-S-post-merge-closure-RESOLVED.md`.
+
 ## Related
 
 - `docs/compound/2026-07-06-bounded-helper-timeout-hard-cap.md` — the companion DoS
