@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,53 @@ func initGitRepoWithCommits(t *testing.T, dir string) (base, head, divergent str
 
 	run("checkout", "main")
 	return base, head, divergent
+}
+
+// initGitRepoNoCommits initializes a real git repo in dir with NO commit (an
+// unborn branch): `git rev-parse --is-inside-work-tree` reports `true` (a real
+// work tree) while `git rev-parse HEAD` fails (no commit yet), so it is the
+// load-bearing fixture for the empty-shipment-head-in-a-real-worktree case
+// (1AEA2B0E). The test is skipped when git is not on PATH (mirrors
+// initGitRepoWithCommits).
+func initGitRepoNoCommits(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available on PATH")
+	}
+	cmd := exec.Command("git", "-c", "init.defaultBranch=main", "init")
+	cmd.Dir = dir
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "git init: %s", out)
+}
+
+// TestInGitWorktreeBounded exercises the bounded repo-presence discriminator: a
+// real work tree reports true; a no-repo temp dir reports (false, nil) so the
+// legacy skip is preserved; and an already-expired bounded context fails CLOSED
+// with a non-nil ctx error (never a silent false-negative that would re-open the
+// empty-head hole).
+func TestInGitWorktreeBounded(t *testing.T) {
+	ctx := context.Background()
+
+	// (a) real work tree -> (true, nil).
+	wsRepo := newGateTestWorkspace(t)
+	initGitRepoWithCommits(t, wsRepo.RootPath)
+	inRepo, err := wsRepo.inGitWorktreeBounded(ctx)
+	require.NoError(t, err, "a real work tree must probe cleanly")
+	assert.True(t, inRepo, "a real work tree must report inside-work-tree=true")
+
+	// (b) no-repo temp dir -> (false, nil): legacy skip preserved.
+	wsNoRepo := newGateTestWorkspace(t)
+	inRepo, err = wsNoRepo.inGitWorktreeBounded(ctx)
+	require.NoError(t, err, "a genuine no-repo dir must be a silent skip, not an error")
+	assert.False(t, inRepo, "a no-repo dir must report inside-work-tree=false")
+
+	// (c) already-expired bounded context -> fail closed with a non-nil ctx error.
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer cancel()
+	inRepo, err = wsRepo.inGitWorktreeBounded(expired)
+	require.Error(t, err, "an expired bounded probe must fail closed (non-nil error)")
+	assert.False(t, inRepo, "a failed probe must not report inside-work-tree=true")
 }
 
 // TestIsAncestor exercises the git ancestor-lineage helper against a real repo:

@@ -132,6 +132,74 @@ func (ws *Workspace) headSHABounded(ctx context.Context) (string, error) {
 	return h, nil
 }
 
+// inGitWorktreeBounded reports whether ws.RootPath resolves inside a real git
+// work tree, under a mandatory self-derived deadline (same source/cap as
+// isAncestor / headSHABounded). It is the repo-presence discriminator on the
+// enforced shipment-gate empty-head path: ev.Enforced does NOT track work-tree
+// presence (the test broker fakes the git probe), so an empty shipment/member
+// head under enforcement must be distinguished between a real worktree (fail
+// closed — lineage cannot be proven) and a genuine no-repo / non-autoharness
+// environment (preserve the legacy skip). Being a security guard on the ship
+// path it FAILS CLOSED: any timeout, cancellation, exec failure, corrupt-repo
+// exit, or missing git returns a non-nil error. Exit semantics:
+//
+//	runCtx.Err() != nil (checked FIRST)          -> (false, ctxErr)  [fail closed]
+//	exit 0, stdout "true"                         -> (true, nil)      [real worktree]
+//	exit 0, stdout != "true" (bare repo / .git)   -> (false, nil)     [not-a-worktree skip]
+//	exit 128, stderr ~ "not a git repository"     -> (false, nil)     [no-repo legacy skip]
+//	exit 128, any other stderr (corrupt repo)     -> (false, err)     [fail closed]
+//	git missing / other non-ExitError / other exit-> (false, err)     [fail closed]
+//
+// `--is-inside-work-tree` is chosen over `--git-dir`: the latter returns exit 0
+// inside a bare repo and inside a `.git` dir, so it cannot distinguish "can
+// resolve a work-tree HEAD" from "is under some git dir". argv-array exec +
+// gate.MinimalEnv() + cmd.Dir = ws.RootPath preserve the workspace exec trust
+// boundary (no shell, allowlisted env). Parsing uses bytes (no strings import).
+func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
+	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(runCtx, "git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = ws.RootPath
+	cmd.Env = gate.MinimalEnv()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	if runErr == nil {
+		// exit 0: `true` means a real work tree; anything else (bare repo /
+		// inside `.git`) is a not-a-worktree skip, not a real ship scenario.
+		if bytes.Equal(bytes.TrimSpace(stdout.Bytes()), []byte("true")) {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// A timeout OR cancellation MUST be detected before any exit code is read: a
+	// context-killed git reports a platform-dependent exit code (e.g. 1 on
+	// Windows) that must never be misread as a clean signal. Fail closed.
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		return false, fmt.Errorf("repo-presence probe aborted: %w", ctxErr)
+	}
+
+	var ee *exec.ExitError
+	if stderrors.As(runErr, &ee) {
+		// Exit 128 is git's generic fatal code. Only a "not a git repository"
+		// diagnostic is a genuine no-repo skip; any OTHER 128 (corrupt .git, bad
+		// HEAD, unreadable objects, permissions) is a present-but-broken repo and
+		// MUST fail closed rather than be mistaken for a no-repo skip.
+		if ee.ExitCode() == 128 &&
+			bytes.Contains(bytes.ToLower(stderr.Bytes()), []byte("not a git repository")) {
+			return false, nil // legacy no-repo skip preserved.
+		}
+		return false, fmt.Errorf("git rev-parse --is-inside-work-tree exit %d: %s: %w",
+			ee.ExitCode(), bytes.TrimSpace(stderr.Bytes()), runErr)
+	}
+	// git binary missing or any other non-ExitError failure -> fail closed.
+	return false, fmt.Errorf("run git rev-parse --is-inside-work-tree: %w", runErr)
+}
+
 // headResolveError builds a fail-closed refusal for a bounded HEAD resolution that
 // timed out or was cancelled. A shipment head that cannot be read under the
 // deadline must block completion rather than silently skip the staleness guard.
