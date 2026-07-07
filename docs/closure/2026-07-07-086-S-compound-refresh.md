@@ -39,8 +39,12 @@ title: 086-S Malformed-JSONL-Line Convergence — Compound Refresh (Propose)
   per-record parse error** where (a) the alternative is worse (old
   `parseItemLogFile` dropped ALL of the item's events), (b) the skip is made
   observable via `slog.Warn`, and (c) transient/structural failures
-  (`os.ReadFile`/`os.Open`, `scanner.Err()`, `bufio.ErrTooLong`) still propagate.
-  The new learning cites this entry rather than superseding it.
+  (`os.ReadFile`/`os.Open`, `scanner.Err()`, `bufio.ErrTooLong`) are surfaced by
+  the parser as **returned errors** rather than silent per-line skips (the caller
+  then decides what to do: `internal/core/shipment_gate.go` propagates the
+  `ReadAllEvents` error, while the pre-existing rehydration walk callback logs and
+  skips the item — out of 086-S scope). The new learning cites this entry rather
+  than superseding it.
 
 ### 2. `runtime-errors/bufio-scanner-incomplete-fix-missed-db-package-2026-04-25.md`
 
@@ -60,7 +64,8 @@ A `compound` entry (best-practices) captured alongside this refresh:
 `docs/compound/best-practices/shared-parser-convergence-observable-skip-2026-07-07.md`
 — "Converge divergent per-record parsers onto one shared helper; skip-with-warning
 is the correct policy for deterministic per-record parse errors when the skip is
-observable and transient/structural failures still propagate."
+observable and structural/transient failures are surfaced by the parser as
+returned errors rather than silent per-line skips."
 
 ## Files updated / consolidated / replaced / archived
 

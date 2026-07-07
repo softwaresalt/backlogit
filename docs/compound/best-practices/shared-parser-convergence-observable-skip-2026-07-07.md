@@ -88,11 +88,20 @@ the item's good events.
   *visible*. Emit a structured `slog.Warn` with enough context (item, path,
   1-based line, reason) to locate the offending record. A silent `continue` is
   data loss you will not notice until an audit.
-- **Skip only deterministic per-record errors; propagate everything else.**
-  `json.Unmarshal` on one line is deterministic — retrying won't help, so skip.
-  But `os.ReadFile`/`os.Open` failures and `scanner.Err()` (I/O, `bufio.ErrTooLong`)
-  are transient/structural — they MUST still propagate so a retryable failure is
-  never masked as a permanent skip.
+- **Skip only deterministic per-record errors; surface everything else as a
+  returned error.** `json.Unmarshal` on one line is deterministic — retrying
+  won't help, so skip it (with a warning). But `os.ReadFile`/`os.Open` failures
+  and `scanner.Err()` (I/O, `bufio.ErrTooLong`) are transient/structural: the
+  parser MUST surface them as a **returned error**, never silently convert them
+  into a per-line skip. That is the guarantee this convergence provides — a
+  *parser-level* one ("no structural failure is masked as a silent per-line
+  skip"), not a blanket "every I/O failure aborts the whole rebuild." What the
+  *caller* does with that error is a separate, out-of-scope decision and it
+  differs by call site: `internal/core/shipment_gate.go` propagates a
+  `ReadAllEvents` error, whereas the pre-existing rehydration walk callback in
+  `internal/db/rehydration.go` logs `failed to parse item log` and skips that one
+  item (acceptable because the SQLite index is an ephemeral, re-syncable cache).
+  Document that boundary precisely rather than overstating propagation.
 - **Test-first for the convergence.** A red test that feeds the same malformed
   line to both parsers and asserts identical behavior (skip + warn), plus a
   whitespace-only convergence-lock and an observability assertion on the warn,
