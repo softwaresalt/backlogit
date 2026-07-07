@@ -40,6 +40,19 @@ func TestHeadResolveError(t *testing.T) {
 	assert.Contains(t, err.Error(), "084-S")
 }
 
+// TestShipmentHeadUnresolvedInRepoError pins the dedicated 1AEA2B0E refusal: an
+// empty shipment head inside a real work tree becomes a typed *GateBlockedError
+// with an operator-assertable message distinct from the bounded-read timeout
+// (headResolveError) path.
+func TestShipmentHeadUnresolvedInRepoError(t *testing.T) {
+	err := shipmentHeadUnresolvedInRepoError("085-S")
+	require.Error(t, err)
+	var blocked *bkerrors.GateBlockedError
+	require.True(t, stderrors.As(err, &blocked), "in-repo unresolved-head refusal must be a *GateBlockedError")
+	assert.Contains(t, err.Error(), "085-S")
+	assert.Contains(t, err.Error(), "cannot resolve shipment head in repository")
+}
+
 // TestHeadSHABounded pins the bounded-read distinction that keeps the new timeout
 // path fail-closed while preserving the legacy non-context empty skip:
 //   - an already-expired parent context -> ("", ctxErr): a bounded-read failure

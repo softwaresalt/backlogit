@@ -214,6 +214,26 @@ func headResolveError(shipmentID string, cause error) error {
 	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
 }
 
+// shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED
+// shipment whose HEAD resolves to empty INSIDE a real git work tree (1AEA2B0E).
+// This is distinct from headResolveError (a bounded-read timeout/cancel): here the
+// repo is present but HEAD is unresolvable for a non-context reason (an unborn
+// branch, or a transient `git rev-parse HEAD` failure), so member lineage cannot be
+// proven against a resolved shipment head and the ship must FAIL CLOSED rather than
+// silently skip the member-lineage/drift guard. A dedicated constructor (Decision 3)
+// gives operators a message assertably distinct from the timeout path, without
+// shoe-horning a synthetic cause into headResolveError's `%v: %w` shape.
+func shipmentHeadUnresolvedInRepoError(shipmentID string) error {
+	be := &blerrors.GateBlockedError{
+		ItemID:       shipmentID,
+		Outcome:      "blocked",
+		OldStatus:    string(models.StatusActive),
+		NewStatus:    string(models.StatusActive),
+		StateChanged: false,
+	}
+	return fmt.Errorf("shipment %s refused: cannot resolve shipment head in repository: %w", shipmentID, be)
+}
+
 // headDriftError reports whether HEAD advanced across the gate evaluation window.
 // It returns nil when pre == post (no drift, including the both-empty no-repo
 // case) and a typed *GateBlockedError naming both observed heads otherwise, so
@@ -290,6 +310,48 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	// cancel) MUST fail closed — never silently skip the staleness guard.
 	if headErr != nil {
 		return headResolveError(shipmentID, headErr)
+	}
+
+	// 1AEA2B0E: an EMPTY shipment head under enforcement is a LEGACY non-context
+	// resolution failure (headSHABounded returned "" with headErr == nil, e.g. an
+	// unborn branch or a transient `git rev-parse HEAD` failure). ev.Enforced does
+	// NOT track work-tree presence — the test broker fakes the git probe, so
+	// Enforced can be true in a no-repo temp dir — so a bounded repo-presence probe
+	// is the discriminator:
+	//   - real work tree  -> member lineage cannot be proven against a resolved head
+	//                        -> FAIL CLOSED (closes the pre-existing fail-open hole).
+	//   - probe error      -> cannot even determine repo presence under the deadline
+	//                        -> FAIL CLOSED (consistent with isAncestor).
+	//   - genuine no-repo  -> preserve the LEGACY skip (member scan + drift guard
+	//                        remain inert). Production strict + genuinely-no-repo
+	//                        already fails closed upstream at Evaluate/ResolveBaseRef,
+	//                        so this skip only preserves the test harness + the
+	//                        non-autoharness edge (see plan Enforcement-mode note).
+	// Both fail-closed sub-cases emit an EventGateBlocked evidence event AND a
+	// slog.WarnContext so the empty-shipment-head over-refusal monitoring signal is
+	// real rather than a silent refusal (Constitution Principle V).
+	if shipmentHead == "" {
+		inRepo, probeErr := ws.inGitWorktreeBounded(ctx)
+		if probeErr != nil || inRepo {
+			slog.WarnContext(ctx, "shipment gate: empty shipment head under enforcement",
+				"shipment", shipmentID, "in_repo", inRepo, "probe_error", probeErr)
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":   "shipment",
+				"outcome": "blocked",
+				"reason":  "empty-shipment-head",
+			}); aerr != nil {
+				// Best-effort audit on a refusal path: the ship is already blocked,
+				// so a failed evidence append must not mask the refusal below.
+				slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence",
+					"shipment", shipmentID, "error", aerr)
+			}
+			if probeErr != nil {
+				return headResolveError(shipmentID,
+					fmt.Errorf("cannot determine repository presence: %w", probeErr))
+			}
+			return shipmentHeadUnresolvedInRepoError(shipmentID)
+		}
+		// !inRepo && probeErr == nil: genuine no-repo -> legacy skip preserved.
 	}
 
 	// (1) member-evidence validation (cheap log scan, no state change), against the
