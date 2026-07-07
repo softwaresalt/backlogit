@@ -16,7 +16,39 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          # 'every' requires ALL patterns to match per file, so the '!' negations
+          # actually exclude docs/markdown/backlog. Under the default 'some', the
+          # leading '**' alone would mark every file as matched and the negations
+          # would never take effect (see dorny/paths-filter README).
+          predicate-quantifier: 'every'
+          filters: |
+            # Denylist: match any changed file that is NOT pure docs/markdown/
+            # backlog state, so a code/config change can never silently skip the
+            # security-sensitive lint/vet/test gate (evaluated with 'every' above).
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.backlogit/**'
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
