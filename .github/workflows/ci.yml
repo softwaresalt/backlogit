@@ -32,13 +32,15 @@ jobs:
         id: filter
         with:
           filters: |
+            # Fail-safe denylist: any change EXCEPT pure docs/markdown/backlog
+            # state runs the heavy Go jobs, so a code/config change can never
+            # silently skip the security-sensitive lint/vet/test gate. picomatch
+            # dot:true matches dotfiles, so .github/** config still triggers it.
             code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-              - 'Makefile'
-              - 'scripts/**'
-              - '.github/workflows/**'
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.backlogit/**'
 
   test:
     needs: changes

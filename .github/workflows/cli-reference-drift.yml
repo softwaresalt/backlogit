@@ -36,6 +36,8 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - 'go.work'
+              - 'go.work.sum'
               - 'cmd/gen-docs/**'
               - 'docs/cli-reference/**'
               - '.github/workflows/cli-reference-drift.yml'
