@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -499,17 +498,15 @@ func parseItemLogFile(path, itemID string) ([]events.Event, error) {
 	}
 	lines := strings.Split(string(data), "\n")
 	result := make([]events.Event, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for i, line := range lines {
+		event, ok, perr := events.ParseEventLine(line, itemID)
+		if perr != nil {
+			slog.Warn("skipping malformed event log line",
+				"item", itemID, "path", path, "line", i+1, "error", perr)
 			continue
 		}
-		var event events.Event
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			return nil, fmt.Errorf("parse item log line: %w", err)
-		}
-		if event.ItemID == "" {
-			event.ItemID = itemID
+		if !ok {
+			continue
 		}
 		result = append(result, event)
 	}
