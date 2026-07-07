@@ -9,6 +9,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -61,8 +62,24 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	}
 
 	// (2) shipment-diff decision. Redirects have no meaning at the shipment level,
-	// so every non-proceed decision collapses to a blocked refusal that leaves
-	// shipment state unchanged.
+	// so every non-proceed, non-error decision collapses to a blocked refusal that
+	// leaves shipment state unchanged.
+	//
+	// F5 (083.003-T): a setup/config/timeout-class DecisionError must preserve its
+	// exit 7/8 class fidelity rather than collapsing to a GateBlockedError (exit 6).
+	// This mirrors the task-level errorGate (gate_transition.go) and the broker
+	// Evaluate-error branch above. A shipment-level timeout reaches here as
+	// Kind==DecisionError with a nil Evaluate error, so this is the correct seam.
+	if ev.Decision.Kind == gate.DecisionError {
+		class := string(ev.Decision.ErrorClass)
+		if class == "" {
+			class = "config"
+		}
+		ws.appendGateErrorEvidence(ctx, shipmentID, class, "", ev.Decision.ReportJSON, ev.Decision.Stderr)
+		ge := gateErrorFromClass(class, shipmentID, ev.Decision.ReportJSON, ev.Decision.Stderr)
+		ge.Message = fmt.Sprintf("shipment %s gate check %s error", shipmentID, class)
+		return ge
+	}
 	if ev.Decision.Kind != gate.DecisionProceed {
 		be := &blerrors.GateBlockedError{
 			ItemID:       shipmentID,
@@ -141,17 +158,15 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 	return nil
 }
 
-// latestGatePassEvidence returns the most recent passing or forced gate evidence
-// event, or nil when none is present.
+// latestGatePassEvidence returns the most recent gate evidence event that
+// satisfies the composed member-evidence predicate (082-F F4 hardening,
+// 083.002-T). As of Q3.0 (083.005.001-ST) the predicate is owned by the shared
+// internal/gateevidence leaf so core and db derive evidence identically across
+// the one-way core->db boundary; this wrapper delegates and returns the selected
+// event (nil when no qualifying event is present) to preserve the existing
+// caller contract (nil-check + head_sha staleness read).
 func latestGatePassEvidence(evs []events.Event) *events.Event {
-	var latest *events.Event
-	for i := range evs {
-		if evs[i].EventType == EventGatePassed || evs[i].EventType == EventGateForced {
-			e := evs[i]
-			latest = &e
-		}
-	}
-	return latest
+	return gateevidence.Latest(evs).Event
 }
 
 // shipmentMemberEvidenceError builds a typed blocked refusal for a member that

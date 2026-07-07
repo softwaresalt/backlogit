@@ -348,6 +348,18 @@ func EnsureSchema(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_item_log_entries_item ON item_log_entries(item_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_item_log_entries_path ON item_log_entries(log_path)`,
 		`CREATE INDEX IF NOT EXISTS idx_item_log_entries_timestamp ON item_log_entries(timestamp)`,
+		// gate_evidence is a derived, advisory-only projection (Q3.1 / 083.005.002-ST):
+		// disposable read-model rebuilt from item_log_entries on every `backlogit sync`.
+		// The per-item JSONL event logs remain the source of truth; this table stores
+		// ONLY the derived status token + SHAs (never report JSON / stderr / force_reason).
+		// The gate_status discriminator index backs the advisory doctor query (Q3.3).
+		`CREATE TABLE IF NOT EXISTS gate_evidence (
+			item_id      TEXT PRIMARY KEY,
+			gate_status  TEXT,
+			evidence_sha TEXT,
+			head_sha     TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_gate_evidence_status ON gate_evidence(gate_status)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS item_log_entries_fts USING fts5(
 			item_id UNINDEXED,
 			actor,

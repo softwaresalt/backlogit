@@ -10,19 +10,25 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 )
 
 // Gate evidence event types (082-F, ST4.1). Logs-only: appended to per-item JSONL
 // event logs, never to frontmatter (Q3 decision), so completion writes do not
 // churn frontmatter or create merge conflicts (constitution IX).
+//
+// As of Q3.0 (083.005.001-ST) the canonical definitions live in the shared
+// internal/gateevidence leaf so both core and db reference one source across the
+// one-way core->db boundary; these core identifiers alias the leaf to avoid
+// churning the many in-package references.
 const (
-	EventGatePassed       = "pre_task_completion_gate_passed"
-	EventGateBlocked      = "pre_task_completion_gate_blocked"
-	EventGateForced       = "pre_task_completion_gate_forced"
-	EventGateRequeued     = "pre_task_completion_gate_requeued"
-	EventGateEscalated    = "pre_task_completion_gate_escalated"
-	EventGateBaseOverride = "pre_task_completion_gate_base_override"
-	EventGateError        = "pre_task_completion_gate_error"
+	EventGatePassed       = gateevidence.EventGatePassed
+	EventGateBlocked      = gateevidence.EventGateBlocked
+	EventGateForced       = gateevidence.EventGateForced
+	EventGateRequeued     = gateevidence.EventGateRequeued
+	EventGateEscalated    = gateevidence.EventGateEscalated
+	EventGateBaseOverride = gateevidence.EventGateBaseOverride
+	EventGateError        = gateevidence.EventGateError
 )
 
 // appendItemEventErr appends an item event and RETURNS the append error, unlike

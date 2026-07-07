@@ -37,6 +37,13 @@ type ResolvedBase struct {
 	NonDefault bool
 	// Source records where the base came from ("config" | "gate_base" | "auto").
 	Source string
+	// OverrideShadowed is true iff a non-auto config base_ref AND a non-empty
+	// operator --gate-base were BOTH supplied (083.001-T / F1). Config-first
+	// precedence is preserved (the config base wins), so the operator's
+	// --gate-base is silently shadowed — the core layer emits an advisory
+	// warning. Advisory only: this signal never changes precedence or the
+	// resolved Ref.
+	OverrideShadowed bool
 }
 
 // defaultCandidates is the auto-discovery precedence for the default-branch ref.
@@ -57,7 +64,16 @@ func ResolveBaseRef(ctx context.Context, git GitRunner, in BaseRefInput) (Resolv
 	defaultRef := discoverDefault(ctx, git)
 
 	if base := strings.TrimSpace(in.ConfigBaseRef); base != "" && base != "auto" {
-		return resolveExplicit(ctx, git, base, "config", defaultRef)
+		rb, err := resolveExplicit(ctx, git, base, "config", defaultRef)
+		if err != nil {
+			return rb, err
+		}
+		// F1 (083.001-T): config base_ref wins (config-first precedence). If the
+		// operator ALSO supplied --gate-base, that override is silently shadowed;
+		// flag it so the core layer can emit an advisory warning. Advisory only —
+		// the resolved Ref/Source are unchanged from the config-only path.
+		rb.OverrideShadowed = strings.TrimSpace(in.GateBase) != ""
+		return rb, nil
 	}
 	if base := strings.TrimSpace(in.GateBase); base != "" {
 		return resolveExplicit(ctx, git, base, "gate_base", defaultRef)

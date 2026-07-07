@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/models"
 	"github.com/softwaresalt/backlogit/internal/stash"
 )
@@ -256,7 +257,15 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 	}
 	count += stashCount
 
-	if err := rehydrateItemLogs(ctx, workspacePath, db); err != nil {
+	itemEvents, err := rehydrateItemLogs(ctx, workspacePath, db)
+	if err != nil {
+		return count, err
+	}
+
+	// Q3.2 (083.005.003-ST): rebuild the derived gate_evidence projection from the
+	// same per-item events rehydrateItemLogs already parsed — no second log walk.
+	// Disposable read-model; logs stay source of truth.
+	if err := rehydrateGateEvidence(ctx, db, itemEvents); err != nil {
 		return count, err
 	}
 
@@ -353,21 +362,24 @@ func leadingDigits(value string) string {
 	return digits.String()
 }
 
-func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.DB) error {
+func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.DB) (map[string][]events.Event, error) {
 	logsDir := filepath.Join(workspacePath, "logs")
 	if _, err := os.Stat(logsDir); os.IsNotExist(err) {
-		return nil
+		return nil, nil
 	}
 
 	// Collect all log events first, then index them in a single transaction.
 	// Without batching, each IndexEvent call auto-commits with a disk sync,
 	// causing O(n) fsyncs that make rehydration extremely slow on workspaces
-	// with hundreds of log entries.
+	// with hundreds of log entries. The per-item event map is returned so the
+	// caller can rebuild derived projections (e.g. gate_evidence) from these
+	// already-parsed events instead of walking and re-parsing every log file.
 	type logEvent struct {
 		event events.Event
 		path  string
 	}
 	var allEvents []logEvent
+	perItem := make(map[string][]events.Event)
 
 	if walkErr := filepath.WalkDir(logsDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -384,19 +396,20 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 			slog.Warn("failed to parse item log", "path", path, "error", err)
 			return nil
 		}
+		perItem[itemID] = append(perItem[itemID], eventsForItem...)
 		for _, event := range eventsForItem {
 			allEvents = append(allEvents, logEvent{event: event, path: path})
 		}
 		return nil
 	}); walkErr != nil {
-		return walkErr
+		return nil, walkErr
 	}
 
 	if len(allEvents) == 0 {
-		return nil
+		return perItem, nil
 	}
 
-	return RetryWrite(ctx, func() error {
+	if err := RetryWrite(ctx, func() error {
 		tx, err := database.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("begin log rehydration transaction: %w", err)
@@ -411,6 +424,69 @@ func rehydrateItemLogs(ctx context.Context, workspacePath string, database *sql.
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit log rehydration: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return perItem, nil
+}
+
+// rehydrateGateEvidence rebuilds the derived gate_evidence projection (Q3.2 /
+// 083.005.003-ST) from the per-item event map already parsed by
+// rehydrateItemLogs — it does not re-walk or re-parse the JSONL logs. For every
+// item whose log contains at least one gate-family event, it computes the shared
+// Q3.0 predicate (gateevidence.Latest) and writes one row: gate_status token plus
+// the evidence and head SHAs — nothing else (no report JSON/stderr/force_reason).
+// Items that never went through the gate are not indexed. The table is cleared
+// and fully repopulated each call so it inherits Rehydrate's idempotency; the
+// item log JSONL is never mutated.
+func rehydrateGateEvidence(ctx context.Context, database *sql.DB, itemEvents map[string][]events.Event) error {
+	type projectedRow struct {
+		itemID string
+		ev     gateevidence.Evidence
+	}
+	var rows []projectedRow
+
+	for itemID, evs := range itemEvents {
+		gated := false
+		for i := range evs {
+			if gateevidence.IsGateEvent(evs[i].EventType) {
+				gated = true
+				break
+			}
+		}
+		if !gated {
+			continue
+		}
+		rows = append(rows, projectedRow{itemID: itemID, ev: gateevidence.Latest(evs)})
+	}
+
+	// Clear-and-rebuild in a single transaction so the projection is a pure
+	// function of the current logs (fully disposable read-model).
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin gate-evidence rehydration transaction: %w", err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		if _, err := tx.ExecContext(ctx, `DELETE FROM gate_evidence`); err != nil {
+			return fmt.Errorf("clear gate_evidence: %w", err)
+		}
+		for _, r := range rows {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR REPLACE INTO gate_evidence (item_id, gate_status, evidence_sha, head_sha) VALUES (?, ?, ?, ?)`,
+				r.itemID, r.ev.Status, r.ev.EvidenceSHA, r.ev.HeadSHA,
+			); err != nil {
+				// Fail the whole rebuild: the deferred Rollback aborts the
+				// transaction so the projection is never left partially written.
+				// The disposable read-model is rebuilt in full on the next sync.
+				return fmt.Errorf("upsert gate_evidence row for %s: %w", r.itemID, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit gate-evidence rehydration: %w", err)
 		}
 		return nil
 	})

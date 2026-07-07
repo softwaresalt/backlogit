@@ -109,9 +109,15 @@ func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error
 	}
 	cmd.SilenceErrors = true
 	var be *corerrors.GateBlockedError
+	var ge *corerrors.GateError
 	if jsonOut {
-		if errors.As(err, &be) {
+		switch {
+		case errors.As(err, &be):
 			if payload, mErr := renderGateBlockedJSON(id, be); mErr == nil {
+				fmt.Fprintln(cmd.OutOrStdout(), payload)
+			}
+		case errors.As(err, &ge):
+			if payload, mErr := renderGateErrorJSON(id, ge); mErr == nil {
 				fmt.Fprintln(cmd.OutOrStdout(), payload)
 			}
 		}

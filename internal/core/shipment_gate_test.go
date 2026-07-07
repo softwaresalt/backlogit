@@ -10,6 +10,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -20,6 +21,7 @@ import (
 type taskAwareRunner struct {
 	taskRes     gate.GateResult
 	shipmentRes gate.GateResult
+	shipmentErr error
 	lastCmd     []string
 }
 
@@ -30,7 +32,7 @@ func (r *taskAwareRunner) Run(_ context.Context, args []string, _ string, _ []st
 			return r.taskRes, nil
 		}
 	}
-	return r.shipmentRes, nil
+	return r.shipmentRes, r.shipmentErr
 }
 
 // newGatedFeatureTask creates a feature+task, wraps them in a claimed shipment,
@@ -151,7 +153,7 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
 	require.NoError(t, err)
 	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
-		"outcome": "passed", "head_sha": "oldsha0000",
+		"outcome": "passed", "ran": true, "head_sha": "oldsha0000",
 	}))
 
 	// Same head -> accepted.
@@ -162,4 +164,175 @@ func TestValidateMemberGateEvidence_StaleRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "stale")
 	var blocked *bkerrors.GateBlockedError
 	require.True(t, stderrors.As(err, &blocked))
+}
+
+// TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed
+// member-evidence predicate: a member gate-pass event counts as valid evidence
+// only when it is an EventGateForced (unconditional break-glass) OR an
+// EventGatePassed with ran==true. A fail-open EventGatePassed{ran:false} no-run
+// must NOT be selected as the latest passing evidence.
+func TestLatestGatePassEvidence_ComposedPredicate(t *testing.T) {
+	passedRan := events.Event{EventType: EventGatePassed, Delta: map[string]any{"ran": true, "head_sha": "p1"}}
+	passedNoRun := events.Event{EventType: EventGatePassed, Delta: map[string]any{"ran": false, "head_sha": "pn"}}
+	passedMissingRan := events.Event{EventType: EventGatePassed, Delta: map[string]any{"head_sha": "pm"}}
+	forcedRan := events.Event{EventType: EventGateForced, Delta: map[string]any{"ran": true, "head_sha": "f1"}}
+	forcedNoRun := events.Event{EventType: EventGateForced, Delta: map[string]any{"ran": false, "head_sha": "fn"}}
+	blocked := events.Event{EventType: EventGateBlocked, Delta: map[string]any{"ran": true}}
+
+	tests := []struct {
+		name     string
+		evs      []events.Event
+		wantNil  bool
+		wantHead string // head_sha of the expected latest event when non-nil
+	}{
+		{name: "passed_ran_true", evs: []events.Event{passedRan}, wantHead: "p1"},
+		{name: "passed_ran_false_rejected", evs: []events.Event{passedNoRun}, wantNil: true},
+		{name: "passed_missing_ran_rejected", evs: []events.Event{passedMissingRan}, wantNil: true},
+		{name: "forced_ran_false_still_valid", evs: []events.Event{forcedNoRun}, wantHead: "fn"},
+		{name: "forced_ran_true_valid", evs: []events.Event{forcedRan}, wantHead: "f1"},
+		{name: "interleaved_forced_then_passed_norun", evs: []events.Event{forcedNoRun, passedNoRun}, wantHead: "fn"},
+		{name: "passed_ran_true_then_passed_norun_keeps_ran", evs: []events.Event{passedRan, passedNoRun}, wantHead: "p1"},
+		{name: "only_blocked_missing", evs: []events.Event{blocked}, wantNil: true},
+		{name: "empty_missing", evs: nil, wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := latestGatePassEvidence(tt.evs)
+			if tt.wantNil {
+				assert.Nil(t, got, "ran=false EventGatePassed / non-pass events must not count as evidence")
+				return
+			}
+			require.NotNil(t, got)
+			h, _ := got.Delta["head_sha"].(string)
+			assert.Equal(t, tt.wantHead, h)
+		})
+	}
+}
+
+// TestValidateMemberGateEvidence_FailOpenNoRunRejected exercises the F4 predicate
+// through the shipment member scan: a terminal member whose only pass evidence is
+// a fail-open EventGatePassed{ran:false} is refused as missing evidence.
+func TestValidateMemberGateEvidence_FailOpenNoRunRejected(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	// A fail-open no-run: EventGatePassed with ran=false must be treated as missing.
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome": "passed", "ran": false,
+	}))
+
+	err = validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, err, "a ran=false EventGatePassed no-run must be treated as missing gate evidence")
+	assert.Contains(t, err.Error(), "missing")
+	var blocked *bkerrors.GateBlockedError
+	require.True(t, stderrors.As(err, &blocked))
+}
+
+// TestValidateMemberGateEvidence_ForcedNoRunAccepted confirms the audited
+// break-glass force is unconditional: an EventGateForced counts even with ran=false.
+func TestValidateMemberGateEvidence_ForcedNoRunAccepted(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGateForced, map[string]any{
+		"outcome": "passed", "ran": false, "forced": true,
+	}))
+
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{id}, ""),
+		"a forced break-glass event must satisfy member evidence regardless of ran")
+}
+
+// TestShipmentGate_DecisionErrorConfig_TypedGateError pins F5 (083.003-T): a
+// shipment-level DecisionError{config} (autoharness exit 2) preserves exit-7
+// class fidelity — it returns a typed *GateError (config class), NOT a
+// *GateBlockedError that would collapse to exit 6.
+func TestShipmentGate_DecisionErrorConfig_TypedGateError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentRes: gate.GateResult{ExitCode: 2, Stdout: []byte(`{}`), Stderr: []byte("bad config")},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err, "a shipment DecisionError{config} must refuse the ship")
+
+	var ge *bkerrors.GateError
+	require.True(t, stderrors.As(err, &ge), "want *GateError, got %T", err)
+	assert.Equal(t, "config", ge.Class)
+	assert.False(t, ge.Retryable(), "config class is non-retryable (exit 7)")
+
+	var blocked *bkerrors.GateBlockedError
+	assert.False(t, stderrors.As(err, &blocked),
+		"a DecisionError must NOT collapse to *GateBlockedError (exit 6)")
+
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	assert.Equal(t, models.StatusActive, sh.Status, "shipment state unchanged on a config error")
+}
+
+// TestShipmentGate_DecisionErrorTimeout_RetryableGateError pins F5: a
+// shipment-level DecisionError{timeout} returns a retryable *GateError
+// (exit-8 class), not a *GateBlockedError.
+func TestShipmentGate_DecisionErrorTimeout_RetryableGateError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentErr: bkerrors.ErrGateTimeout,
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err)
+
+	var ge *bkerrors.GateError
+	require.True(t, stderrors.As(err, &ge), "want *GateError, got %T", err)
+	assert.Equal(t, "timeout", ge.Class)
+	assert.True(t, ge.Retryable(), "timeout class is retryable (exit 8)")
+}
+
+// TestShipmentGate_ExitOneBlock_StillBlockedError confirms F5 does not regress
+// the plain block path: a genuine below-threshold exit-1 block still returns a
+// *GateBlockedError (exit 6).
+func TestShipmentGate_ExitOneBlock_StillBlockedError(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	report := `{"repeated_failure":{"count":1,"threshold":3,"reached":false,"action":"block"}}`
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+		shipmentRes: gate.GateResult{ExitCode: 1, Stdout: []byte(report)},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err)
+	var blocked *bkerrors.GateBlockedError
+	require.True(t, stderrors.As(err, &blocked), "an exit-1 block must remain *GateBlockedError")
+	var ge *bkerrors.GateError
+	assert.False(t, stderrors.As(err, &ge), "a plain block must not be a *GateError")
 }

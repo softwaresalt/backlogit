@@ -270,7 +270,7 @@ func MergeSync(
 
 	// Step 7: Refresh item logs when any logs/*.jsonl appears in the diff.
 	if diffContainsKind(diff, FileKindLog) {
-		if logErr := rehydrateItemLogs(ctx, workspacePath, database); logErr != nil {
+		if _, logErr := rehydrateItemLogs(ctx, workspacePath, database); logErr != nil {
 			log.Warn("log refresh failed after merge sync", "error", logErr)
 		} else {
 			result.LogsRefreshed = true
