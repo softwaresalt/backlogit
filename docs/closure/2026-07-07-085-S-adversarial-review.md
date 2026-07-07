@@ -1,6 +1,13 @@
 ---
+chunk_strategy: h1-h2-h3
+description: '085-S adversarial multi-model security review (report-only) for the shipment-gate empty-head fail-closed hardening. Three reviewers (gemini-3.1-pro, gpt-5.4, claude-opus-4.8) independently assess whether the change closes the empty-shipment-head (1AEA2B0E) and empty-member-head (B85DAEE8) fail-open holes under enforcement+real-repo, and whether it preserves legitimate empty-head cases. First pass BLOCKED on F1 (present-but-broken .git pointer misclassified as no-repo); after the 586993f fix the RE-REVIEW returned PASS with F1 closed and SEC-1/SEC-2 confirmed; two non-blocking residuals (N1 empty-.git-dir, N2 unanchored match) were remediated in 203a4b1. Includes empirical git-toolchain reproduction, consensus severity/confidence table, and remediation dispositions.'
 doc_type: closure
+docline:
+    ms.date: 2026-07-07T00:00:00Z
+    ms.topic: reference
+ingested_at: "2026-07-07T00:00:00Z"
 schema_version: "1.0"
+source: docs/closure/2026-07-07-085-S-adversarial-review.md
 title: "085-S Adversarial Multi-Model Security Review — Shipment-gate empty-head fail-closed"
 date: 2026-07-07
 shipment: "085-S"
