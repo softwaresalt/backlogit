@@ -12,7 +12,7 @@ import (
 
 func TestNewRootCommand_VersionIsSet(t *testing.T) {
 	cmd := NewRootCommand()
-	assert.Equal(t, version.Version, cmd.Version, "root command version should match version package")
+	assert.Equal(t, version.Resolve(), cmd.Version, "root command version should match the resolved version")
 }
 
 func TestNewRootCommand_VersionFlag(t *testing.T) {
@@ -22,5 +22,5 @@ func TestNewRootCommand_VersionFlag(t *testing.T) {
 	cmd.SetArgs([]string{"--version"})
 	err := cmd.Execute()
 	require.NoError(t, err)
-	assert.Contains(t, buf.String(), version.Version, "--version output should contain the version string")
+	assert.Contains(t, buf.String(), version.Resolve(), "--version output should contain the resolved version string")
 }

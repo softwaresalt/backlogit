@@ -121,7 +121,7 @@ func newRootCommandImpl(jctx *jsonrpcInterceptor) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:     "backlogit",
-		Version: version.Version,
+		Version: version.Resolve(),
 		Short:   "Backlogit — AI-native agile workspace",
 		Long: `backlogit manages a project-local work item workspace under .backlogit.
 
