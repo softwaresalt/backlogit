@@ -86,6 +86,29 @@ Routing rules:
 - Only `safe_auto` findings enter the autofix queue
 - `requires_verification: true` means a fix needs tests or re-review
 
+## Local Review Readiness
+
+The review produces a readiness outcome that Ship and pr-lifecycle consume before
+PR presentation (P-014):
+
+| Outcome | Meaning | Gate |
+|---|---|---|
+| `READY` | Zero unresolved P0/P1 findings and no required follow-up items | PR may be prepared |
+| `READY_WITH_FOLLOWUPS` | Zero unresolved P0/P1 findings, but one or more P2/P3 findings need explicit follow-up tracking or residual-risk notes | PR may be prepared only with follow-up handling recorded |
+| `BLOCKED` | One or more unresolved P0/P1 findings remain | Do not create or present a PR |
+
+The readiness summary must include:
+
+* reviewed HEAD SHA or equivalent diff identity
+* counts for P0, P1, P2, and P3 findings
+* follow-up item IDs or residual-risk notes when outcome is `READY_WITH_FOLLOWUPS`
+* whether runtime verification follow-up is required
+
+When `DARK_MODE_ACTIVE` is present under P-017, this local review record is the
+authoritative merge-readiness signal: unresolved P0/P1 findings always produce
+`BLOCKED`; hosted Copilot/GitHub review cannot replace it; and the reviewed HEAD
+SHA must be current when the PR readiness block is written.
+
 ## Reviewer Personas
 
 ### Always-On (every review)
@@ -107,6 +130,8 @@ Use a different model from the caller when available to force genuine diversity 
 | **Scope Boundary Auditor** | Changes spanning multiple domains or exceeding expected scope | Different from caller |
 | **Agent-Native Parity Reviewer** | MCP SDKs, tool handlers, agent-exposed actions, or user/agent parity-critical flows | Different from caller |
 | **Security Reviewer** | Auth middleware, public endpoints, input handling, permission checks, secret management | Different from caller |
+| **Template Integrity Reviewer** | `.tmpl` files, Markdown workflow assets, generated artifact references, or policy/instruction surfaces | Different from caller |
+| **Schema-CLI-Docs Coupling Reviewer** | Cross-domain diffs spanning schemas, CLI verification logic, install/tune skills, and operator docs | Different from caller |
 
 ## Workflow
 
@@ -127,6 +152,8 @@ Use a different model from the caller when available to force genuine diversity 
 - Secret or credential exposure in committed files
 - Unvalidated MCP tool inputs
 - Race conditions in concurrent file access`
+   * Select **Template Integrity Reviewer** (`template-integrity-reviewer.agent.md`) when the diff touches template files, Markdown harness artifacts, review/policy/instruction assets, or generated-artifact reference tables
+   * Select **Schema-CLI-Docs Coupling Reviewer** (`schema-cli-docs-coupling-reviewer.agent.md`) when the diff spans schema files, `src/` verification logic, install/tune skills, or operator-facing documentation in the same change set
 3. Broadcast the routing decision with persona count
 
 ### Step 3: Spawn Persona Subagents

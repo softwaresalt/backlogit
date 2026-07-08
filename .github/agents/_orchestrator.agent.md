@@ -24,7 +24,9 @@ The operator can invoke the orchestrator with these commands:
 
 | Command | Pipeline Scope | Description |
 |---|---|---|
-| `run pipeline` / `process stash` | Full cycle (Steps 0–3) | Triage stash, group related entries, stage a shipment, hand off to Ship, iterate |
+| `run pipeline` / `process stash` / `/feature-flow` | Full cycle (Steps 0–3) | Triage stash, group related entries, stage a shipment, hand off to Ship, iterate (sequential single-PR-at-a-time default) |
+| `/feature-flow-parallel` | Full cycle, pipelined | Sequential lifecycle with P-016-compliant planning overlap; degrades to sequential when overlap would create parallel implementation branches/worktrees |
+| `Run pipeline in dark mode` / `/feature-flow-dark` | Full cycle, bounded autonomy | Activate P-017 dark factory mode for a declared bounded scope; see Dark Factory Mode |
 | `stage next` | Steps 0–1 only | Triage stash and produce a queued shipment; do not invoke Ship |
 | `ship next` / `ship {id}` | Step 2 only | Execute the next queued shipment (or a specific one); do not triage stash |
 | `define groupable shipments and stage` | Steps 0–1 with grouping analysis | Review stash and queue, propose thematic groupings, stage the first group |
@@ -112,7 +114,53 @@ Route Stage and Ship to operate on different batches concurrently:
 * Stage must not modify the active Ship shipment manifest
 * Stage's planned shipment must be in `queued` — not `active`
 * Both agents must be on different branches
-* If Ship's active shipment is in CI remediation or awaiting merge: Stage may proceed with planning
+* No parallel **implementation** branch or worktree may exist (P-016). The only exception is an explicit, time-boxed Stage spike/research worktree with no implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution.
+* If Ship's active shipment is in CI remediation, awaiting merge, or awaiting required post-merge release closure: Stage may proceed with planning, but the Orchestrator must not route a second shipment to Ship until closure is complete
+
+### Dark Factory Mode (P-017, operator-initiated)
+
+Dark factory mode is a bounded, auditable mode in which the operator
+pre-authorizes autonomous Stage → Ship execution and PR merge approval for a
+**declared scope**. It is activated only through the Orchestrator and is never
+inferred from vague autonomy language.
+
+**Trigger**: the canonical phrase `Run pipeline in dark mode` (alias
+`Run pipeline in dark factory mode`), or the `/feature-flow-dark` prompt.
+Ambiguous autonomy language (`run everything`, `go autonomous`, `go fast`) MUST
+NOT activate dark mode — proceed in the normal pipeline or ask for clarification.
+
+**Activation contract**: On activation, record `DARK_MODE_ACTIVE` and surface
+(1) the bounded scope (stash IDs, feature ID, shipment ID, or explicit backlog
+selection); (2) whether PR merge approval is pre-authorized
+(`merge_approval_pre_authorized`); (3) whether admin fallback for
+branch-protection review is pre-authorized (`admin_fallback_pre_authorized`);
+(4) required stop conditions; (5) operator-visibility and degraded-visibility
+behavior. Dark-mode closure summaries MUST list decisions, gates, reviewed HEADs,
+merge/fallback status, closure status, and follow-up items before
+`DARK_MODE_COMPLETE`.
+
+**Preserved safety** (dark mode is NOT a waiver): P-001 single-release-unit
+completion, P-009 merge-commit-only, P-014 Copilot review merge gate, P-016
+no-parallel-branch/worktree, Stage/Ship role boundaries, local review readiness,
+and required post-merge closure all remain in force. Local review readiness is
+authoritative; do not merge with unresolved P0/P1 local findings.
+`READY_WITH_FOLLOWUPS` is allowed only with follow-up item IDs or explicit
+residual-risk notes.
+
+**Visibility events**: emit `DARK_MODE_START`, `DARK_MODE_SCOPE`,
+`BRAINSTORM_HANDOFF_READY` (when a brainstorm/requirements artifact is part of
+the handoff), `LOCAL_REVIEW_READY`, `DARK_MODE_MERGE_AUTHORIZED`,
+`ADMIN_FALLBACK_ATTEMPTED`, `DARK_MODE_HALTED`, and `DARK_MODE_COMPLETE`, each
+with scope item, gate/decision state, outcome, and next action.
+
+**Stop conditions**: halt on scope expansion or ambiguity, missing current-HEAD
+local readiness, unresolved P0/P1 findings, failed/pending/missing required CI
+checks, P-016 topology violations, destructive actions outside the contract,
+secrets-exposure risk, unavailable required tools with no fallback, ambiguous
+branch-protection/admin state, or any P-005 policy violation.
+
+See policy **P-017 (Dark Factory Autonomy Contract)** in
+`.github/policies/workflow-policies.md` for the authoritative contract.
 
 ## Required Steps
 
