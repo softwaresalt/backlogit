@@ -337,26 +337,179 @@ Every agent definition (installed `.agent.md` or `.agent.md.tmpl`) must declare 
 
 ---
 
-## P-014: Copilot Review Merge Gate
+## P-014: Local Review Readiness Merge Gate
 
 | Field      | Value                                         |
 |------------|-----------------------------------------------|
 | Policy ID  | P-014                                         |
 | Applies To | `ship`, `pr-lifecycle` skill                  |
-| Gate Point | Pre-merge (Step 5 of pr-lifecycle, Step 4 of ship); applies to ALL PRs including post-merge closure PRs |
+| Gate Point | Pre-PR presentation (Ship Step 4 / Step 5) and pre-merge readiness presentation for ALL PRs including post-merge closure PRs |
 
-**Statement**: No pull request — feature, chore, or post-merge closure — may be merged until both conditions are met and verified in order:
+**Statement**: No pull request — feature, chore, or post-merge closure — may be presented as merge-ready or merged until both conditions are met and verified in order:
 
-1. The §1.9 Pre-Merge Review Readiness gate in `.github/instructions/github-pr-automation.instructions.md` has passed with zero unresolved Copilot review threads and a fresh Copilot review covering the current HEAD.
-2. The operator has given an explicit merge approval signal. Green CI and a passing §1.9 gate are necessary but not sufficient — they do not constitute merge authorization.
+1. The local review readiness contract has passed for the current HEAD: the latest local review result records `READY` or `READY_WITH_FOLLOWUPS`, covers the current HEAD SHA, and leaves no unresolved P0/P1 findings.
+2. The operator has given an explicit merge approval signal after the local readiness gate passed. Green CI and a passing readiness gate are necessary but not sufficient — they do not constitute merge authorization.
 
-Neither condition may be waived by the agent. Green CI alone is not approval. Operator approval without a passing §1.9 gate is not authorization.
+Optional Copilot or other GitHub-hosted review may run in advisory shadow mode during migration, but those remote reviews are not a required dependency for this policy unless the operator explicitly elevates them for the current PR.
 
-**Precondition**: `github-pr-automation.instructions.md` is installed at `.github/instructions/github-pr-automation.instructions.md`.
+Neither condition may be waived by the agent. Green CI alone is not approval. Operator approval without a passing local readiness gate is not authorization.
 
-**Postcondition**: The merge commit records: (a) Copilot review SHA that passed §1.9 Check 2, (b) that zero unresolved Copilot threads were present at gate time, and (c) that operator approval was received after the gate passed.
+**Precondition**: `github-pr-automation.instructions.md` is installed at `.github/instructions/github-pr-automation.instructions.md`, and the local review summary records: reviewed HEAD SHA, readiness outcome, blocking finding count, and any required follow-up item IDs or residual-risk notes.
 
-**Violation Action**: Halt. Record a P-014 violation (via P-005 telemetry) naming the failed condition (§1.9 check number, or absent operator approval). Do not proceed with merge. Surface the violation in the PR description and session broadcast.
+**Postcondition**: The PR readiness summary or merge record includes: (a) the reviewed HEAD SHA that passed the local readiness gate, (b) readiness outcome `READY` or `READY_WITH_FOLLOWUPS`, (c) zero unresolved P0/P1 findings at gate time, (d) explicit follow-up handling for any residual P2/P3 findings, and (e) operator approval received after the gate passed.
+
+**Violation Action**: Halt. Record a P-014 violation (via P-005 telemetry) naming the failed condition (missing current-HEAD review coverage, blocking findings still open, follow-up handling missing, or absent operator approval). Do not proceed with PR presentation or merge. Surface the violation in the PR description and session broadcast.
+
+---
+
+## P-015: Single-Artifact Shipment Closure (No Cascade Ship)
+
+| Field      | Value                                             |
+|------------|---------------------------------------------------|
+| Policy ID  | P-015                                             |
+| Applies To | `ship`, `shipment-reconcile` skill                |
+| Gate Point | Ship Step 6 post-merge closure (shipment close)   |
+
+**Applies when**: `feature_shipments` is true and shipments may cover a partial subset of a covering feature's tasks (partial-feature shipments).
+
+**Statement**: The ship agent MUST close a shipment by archiving **only** the shipment manifest's explicit item IDs, one artifact at a time, via the `shipment-reconcile` safe-close procedure, and finally the shipment record itself as its own single artifact. It MUST NOT call the cascade `backlogit_ship_shipment` for closure. The cascade op treats a shipment as a proxy for its covering feature and archives the parent feature and any unshipped sibling tasks — corrupting the backlog whenever the shipment is a partial-feature shipment that intentionally excludes them.
+
+**Precondition**: The shipment manifest (`items`) has been read, and the **protected set** — the covering feature plus every unshipped sibling task that is not in the manifest — has been computed from **expected IDs** (partial-feature detection scanning both queue and archive). A clean git baseline for `.backlogit/` has been captured, and a **baseline integrity gate** has confirmed every protected-set member is present in `.backlogit/queue/` before any manifest item is archived. A protected-set member already archived or missing at baseline is treated as a pre-existing cascade and halts closure.
+
+**Required Check (verify-after-each invariant)**: After archiving each single manifest item (move to `done`, then archive that one artifact), confirm every protected-set member still exists in `.backlogit/queue/` — not moved to `.backlogit/archive/`, not deleted from the working tree. Manifest items legitimately archived before this run (`pre-archived`) are excluded from the item loop to avoid false positives; this exemption applies to **manifest items only** — the protected set has **no** pre-archived exemption, so any protected-set member found archived or missing is a cascade.
+
+**Postcondition**: Every shipment manifest item **and** the shipment record are archived in `.backlogit/archive/`, the entire protected set remains present in `.backlogit/queue/`, and the cascade `backlogit_ship_shipment` was never called.
+
+**Violation Action (git-revert-on-cascade)**:
+
+1. If any non-manifest artifact (the parent feature or a sibling task) was archived or deleted, run `git restore -- .backlogit/queue/ .backlogit/archive/` (or `git revert <commit>` if the cascade was already committed) to recover the protected artifact.
+2. Re-verify that the full protected set is intact.
+3. Halt with `HALT — cascade detected, revert required`. Broadcast a P-005 violation event naming the cascaded artifact IDs. Do NOT commit a corrupt backlog and do NOT auto-prune the manifest.
+
+**Relationship to P-007**: P-015 complements **P-007** (backlogit archive integrity after shipment). P-007 restores archive files silently deleted from the working tree by the archival step; P-015 prevents the distinct parent-cascade failure where the covering feature and unshipped siblings — artifacts outside the manifest — are archived at all. Both are enforced at Ship Step 6 closure.
+
+---
+
+## P-016: No Parallel Branch/Worktree Execution
+
+| Field      | Value                                             |
+|------------|---------------------------------------------------|
+| Policy ID  | P-016                                             |
+| Applies To | All agents and skills that create, select, or mutate branches/worktrees |
+| Gate Point | Session start, before shipment claim, before branch creation, before worktree creation/use, and before Orchestrator pipelining |
+
+**Statement**: Agents MUST NOT work across parallel implementation branches or worktrees. At any point where an agent will mutate the workspace for implementation, backlog execution, PR preparation, or closure, there must be exactly one agent-owned implementation branch/worktree in use. A local branch plus one or more parallel implementation worktrees is prohibited because remote operators cannot reliably track which branch owns which changes or which state is visible in the active workspace.
+
+**Allowed exception (Stage spike/research only)**: Stage MAY create or use a separate worktree only for an explicit, time-boxed spike or research investigation during staging. That worktree MUST NOT be used for implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution. Stage MUST record the spike/research context and clean up the worktree or hand off findings before Ship execution begins.
+
+**Precondition**: Before any agent claims a shipment, creates a branch, creates/uses a worktree, or mutates the workspace, the agent has checked current branch/worktree state and determined that no prohibited parallel implementation worktree exists.
+
+**Required checks**:
+
+1. Inspect the active branch and worktree.
+2. Inspect attached worktrees (for example, `git worktree list --porcelain`).
+3. Classify any additional worktree as one of:
+   - current worktree;
+   - explicit Stage spike/research worktree with no implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution;
+   - prohibited/ambiguous.
+4. Fail closed on any prohibited or ambiguous extra worktree.
+
+**Relationship to P-001**: P-001 limits top-level release-unit completion. P-016 limits the branch/worktree topology used to execute that work. Even when only one release unit is active, agents may not split execution across parallel implementation worktrees.
+
+**Relationship to P-010**: P-010 defines Stage/Ship/Orchestrator role boundaries. P-016 prevents a role-boundary workaround where separate worktrees make it appear that multiple agents can execute incompatible roles in parallel.
+
+**Relationship to P-011**: P-011 is Ship's branch-before-mutation gate. P-016 extends that gate to all branch/worktree selection and requires Ship to reject prohibited extra worktrees before claiming or mutating.
+
+**Violation Action**: Record a P-016 violation through P-005 telemetry and halt. Do not claim shipments, create branches, mutate files, or proceed with PR/closure work until the operator resolves the branch/worktree topology.
+
+---
+
+## P-017: Dark Factory Autonomy Contract
+
+| Field      | Value                                             |
+|------------|---------------------------------------------------|
+| Policy ID  | P-017                                             |
+| Applies To | Orchestrator, Stage, Ship, pr-lifecycle, review, fix-ci, operational-closure |
+| Gate Point | Dark-mode activation, local review readiness, PR merge, admin fallback, and post-merge closure |
+
+**Statement**: Dark factory mode is an explicit, bounded, auditable operating mode in which the operator pre-authorizes autonomous Stage → Ship execution and PR merge approval for a declared scope. It is not a waiver of safety policies. Dark mode MUST preserve P-001, P-009, P-014, P-016, role boundaries, local review readiness, and required closure.
+
+**Trigger phrases**:
+
+* Canonical: `Run pipeline in dark mode`
+* Explicit alias: `Run pipeline in dark factory mode`
+
+Do not infer dark factory mode from vague autonomy language such as `run everything`, `go autonomous`, `handle it all`, or `go fast`. If the trigger is ambiguous, proceed in the normal non-dark pipeline or ask for clarification.
+
+**Activation contract**: On activation, Orchestrator MUST record `DARK_MODE_ACTIVE`
+and surface:
+
+1. the bounded scope (stash IDs, feature ID, shipment ID, or explicit backlog selection);
+2. whether PR merge approval is pre-authorized for that scope;
+3. whether admin fallback is pre-authorized for branch-protection review requirements;
+4. required stop conditions;
+5. operator-visibility mode and degraded-visibility behavior.
+
+**Scope rule**: Dark mode applies only to the declared scope. It MUST NOT silently expand to unrelated stash entries, queued tasks, or shipments. Each release unit remains subject to P-001: one Ship release unit through merge and required closure before another Ship release unit begins.
+
+**Brainstorm/research handoff**: For new features or epics, dark mode SHOULD be preceded by a research and brainstorm intake that captures hard questions, decisions, stable requirement IDs, scope boundaries, success criteria, assumptions, and deferred planning questions. The brainstorm output feeds deliberate / impl-plan / plan-review / harvest before dark-mode execution.
+
+**Local review authority**: Local review readiness is authoritative. Dark mode MAY reduce reliance on hosted shadow reviews, but it MUST NOT merge with unresolved P0/P1 local findings. `READY_WITH_FOLLOWUPS` is allowed only when follow-up item IDs or explicit residual-risk notes are present.
+
+**Hosted review posture**: GitHub Copilot or other hosted review remains advisory by default. Shadow-review timeout, unavailability, or absence does not block dark mode unless the operator explicitly elevates hosted review for the current scope.
+
+**Merge approval and admin fallback**:
+
+1. Dark mode may satisfy the operator approval signal only for the declared bounded scope and only after current-HEAD local readiness passes.
+2. Required CI/checks MUST be green or explicitly non-applicable before dark-mode merge authorization applies.
+3. Normal merge MUST be attempted before admin fallback.
+4. Admin fallback MAY be used only when explicitly pre-authorized by the dark-mode activation contract.
+5. Admin fallback cannot bypass current-HEAD local readiness, required CI/check success or explicit non-applicability, P-009 merge-commit-only, P-014 readiness evidence, P-016 worktree topology, secrets safety, or declared scope.
+6. Every merge attempt and admin fallback attempt MUST be recorded as operator-visible audit evidence.
+
+**Required stop conditions**:
+
+* scope expansion or ambiguous scope;
+* missing current-HEAD local review readiness;
+* unresolved P0/P1 findings;
+* required CI/checks that are failed, pending, missing, not yet run, or not explicitly marked non-applicable;
+* P-016 branch/worktree topology violation;
+* destructive action requiring approval outside the dark-mode contract;
+* secrets exposure risk;
+* unavailable required tools with no fallback;
+* branch-protection/admin state not covered by the activation contract;
+* any policy violation that P-005 requires surfacing and halting.
+
+**Required telemetry / visibility events**:
+
+* `DARK_MODE_START`
+* `DARK_MODE_SCOPE`
+* `BRAINSTORM_HANDOFF_READY`
+* `LOCAL_REVIEW_READY`
+* `DARK_MODE_MERGE_AUTHORIZED`
+* `ADMIN_FALLBACK_ATTEMPTED`
+* `DARK_MODE_HALTED`
+* `DARK_MODE_COMPLETE`
+
+Each event MUST include the affected scope item, gate or decision state, outcome,
+and next action. When `agent-intercom` is installed, these events should be
+broadcast with enough context for a remote operator to understand the current
+scope and risk without reading the full chat transcript. When intercom is
+unavailable, the same event evidence must be recorded in the session/PR summary.
+Approval-dependent destructive actions, admin fallback, scope expansion,
+secrets-risk work, and ambiguous branch-protection states must halt.
+
+Dark-mode closure summaries MUST list decisions, gates, reviewed HEADs,
+merge/fallback status, admin fallback result if any, closure status, and
+follow-up items before `DARK_MODE_COMPLETE` is emitted.
+
+**Relationship to P-001**: Dark mode does not permit parallel release-unit shipping. It automates the pipeline for a bounded scope; it does not widen the number of active Ship release units.
+
+**Relationship to P-014**: Dark mode can supply the explicit operator approval signal only after the current-HEAD local readiness gate passes.
+
+**Relationship to P-016**: Dark mode does not permit parallel implementation branches or worktrees. Stage spike/research worktrees remain the only exception and only under P-016's limits.
+
+**Violation Action**: Record a P-017 violation through P-005 telemetry and halt dark-mode execution. Leave the active task/shipment in its current backlog state unless a separate safe-close or rollback policy explicitly applies.
 
 ---
 
@@ -374,3 +527,7 @@ Neither condition may be waived by the agent. Green CI alone is not approval. Op
 | 1.7.0   | 2026-05-18     | Added P-012      | Tool availability and declared degradation |
 | 1.8.0   | 2026-05-18     | Added P-013      | Agent tier hierarchy and escalation |
 | 1.9.0   | 2026-05-18     | Added P-014      | Copilot Review Merge Gate — elevates §1.9 instruction to first-class policy with P-005 telemetry |
+| 1.10.0  | 2026-07-08     | Added P-015      | Single-artifact shipment closure — prohibits cascade shipment-ship, requires verify-after-each invariant + git-revert-on-cascade |
+| 1.11.0  | 2026-07-08     | Added P-016      | No parallel branch/worktree execution, with only explicit Stage spike/research worktrees exempt |
+| 1.12.0  | 2026-07-08     | Added P-017      | Dark factory autonomy contract — bounded autonomous execution, local-review authority, and audited merge approval |
+| 1.13.0  | 2026-07-08     | Migrated P-014   | Copilot Review Merge Gate → Local Review Readiness Merge Gate (local review authoritative; Copilot advisory shadow) |

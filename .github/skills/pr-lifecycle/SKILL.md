@@ -129,6 +129,33 @@ When fixes were pushed (from either review or CI remediation):
    `main` or any other branch. The calling agent (Ship)
    depends on the branch context being preserved for post-merge work.
 
+#### Step 5d: Merge Execution and Admin Fallback State Machine
+
+1. Classify the pre-merge normal path. If a merge commit can proceed, record
+   `NORMAL_MERGE_READY` before executing the merge command.
+2. Attempt the normal merge path first using merge-commit strategy.
+3. If normal merge succeeds, record a distinct `MERGE_SUCCEEDED` result with the
+   merge SHA and finish.
+4. If normal merge is rejected, classify the blocking state before taking any
+   fallback action:
+   * `REVIEW_REQUIRED_BLOCK`
+   * `CONVERSATION_RESOLUTION_BLOCK`
+   * `CHECKS_BLOCK`
+   * `MERGE_STRATEGY_BLOCK`
+   * `MISSING_ADMIN_RIGHTS`
+   * `UNKNOWN_MERGE_BLOCK`
+5. In dark mode, admin fallback may be attempted only for branch-protection
+   review/conversation blocks explicitly covered by `admin_fallback_pre_authorized`.
+   Before fallback, run an immediate `headRefOid` re-query/comparison and
+   re-confirm required checks, P-009 merge-commit strategy, P-016 topology, and
+   scope match.
+6. Never use admin fallback for failed/pending/missing required checks, stale
+   local review readiness, unresolved local P0/P1 findings, squash/rebase-only
+   merge strategy, secrets-safety risk, scope mismatch, or unknown merge blocks.
+7. Record every normal merge and admin fallback attempt in the PR summary or
+   merge evidence with state, reason, command/API used, and result. If fallback
+   fails because credentials lack bypass rights, halt with `MISSING_ADMIN_RIGHTS`.
+
 ### Step 6: Post-merge cleanup
 
 After a user-approved merge:

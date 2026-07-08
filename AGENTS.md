@@ -277,10 +277,11 @@ gofmt -l .
 1. **Harness before code**: Every feature or chore MUST have a compiling but failing
    test harness before implementation begins.
 2. **Backlog-driven planning**: All task tracking uses the configured backlog workspace and registry-backed operations; do not invent parallel task stores.
-3. **Branch per release unit**: Each feature or chore on a dedicated branch.
-4. **Commit discipline**: Conventional commits format (`feat:`, `fix:`, `docs:`, `test:`).
-5. **No dead code**: Placeholder modules replaced or removed before completion.
-6. **Closure before forgetfulness**: Runtime verification and operational closure happen before work is considered fully absorbed.
+3. **Single active implementation branch/worktree**: Each feature or chore uses one dedicated implementation branch in one active worktree (P-016). Do not split implementation, backlog execution, PR preparation, or closure across parallel branches/worktrees. Only explicit Stage-owned spike/research worktrees are exempt, and they cannot perform implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution.
+4. **Dark factory mode (P-017)**: Activate only through the exact trigger `Run pipeline in dark mode`, `Run pipeline in dark factory mode`, or the `/feature-flow-dark` prompt shim. Dark mode must record `DARK_MODE_ACTIVE`, stay bounded to the declared scope, preserve P-001 / P-009 / P-014 / P-016, keep local review readiness authoritative, emit required visibility events, and complete post-merge closure before the scope is considered complete.
+5. **Commit discipline**: Conventional commits format (`feat:`, `fix:`, `docs:`, `test:`).
+6. **No dead code**: Placeholder modules replaced or removed before completion.
+7. **Closure before forgetfulness**: Runtime verification and operational closure happen before work is considered fully absorbed.
 
 ### Task Granularity (NON-NEGOTIABLE)
 

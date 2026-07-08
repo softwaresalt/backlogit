@@ -92,6 +92,22 @@ When the closure process reveals durable knowledge:
 * Update documentation if the release process or architecture knowledge changed
 * Add tuning proposals if the harness lacked a needed safety mode, verification pattern, or reviewer
 
+### Step 5: Source Artifact Cleanup (backlogit)
+
+When the `backlogit` capability pack is installed, record a **Source artifact cleanup**
+section in the closure artifact so retirement of the source artifacts that fed the
+shipped scope stays traceable instead of heuristically searching for "stale" items:
+
+* For each shipped top-level item (feature or chore) in scope, read
+  `custom_fields.source_stash_id`. If present, retire the source stash entry via
+  `backlogit_stash_remove` (skip and log if it is already removed).
+* For each shipped top-level item in scope, read `custom_fields.source_deliberation_id`.
+  If present and the deliberation artifact exists and is not already archived, archive
+  it via `backlogit_archive_item` (skip and log if already archived or not found).
+* After processing the full shipped scope, record the archived and skipped source
+  artifact IDs in the closure artifact's `Source artifact cleanup` section so the
+  closure report remains the traceable system of record.
+
 ## Why This Skill Exists
 
 Operational closure is the compositional bridge from code production to safe absorption. It makes runtime verification actionable, keeps PRs honest about monitoring expectations, and turns release outcomes into future harness improvements.

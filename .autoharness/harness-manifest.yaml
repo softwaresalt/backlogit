@@ -1,8 +1,8 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-05-17T23:40:00Z"
-autoharness_version: "1.4.4"
-autoharness_home: "D:\\Source\\GitHub\\autoharness"
+tuned_at: "2026-07-08T15:59:04Z"
+autoharness_version: "1.4.11"
+autoharness_home: "C:\\Python\\Python312\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
 config_hash: "updated"
 install_preset: full
@@ -116,7 +116,7 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "16ec16aa0261d01d6f1ce21ae1c7f1e00108e3650cc3a2eedbad928031b0225a"
+    checksum: "d71a3eab374432bd95654ea0604e6558f972feed8291c95775bd8b498eccccbf"
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -128,7 +128,7 @@ artifacts:
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "3687a4844bb209762907c1110f7088607c776775debbc225f6209ff81d216f51"
+    checksum: "44198df85c982783b39430b8a0f087cbfcd3521e896d7329bcdf9bd49dcd902c"
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
@@ -148,7 +148,7 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "fc772410679c1c9873c4bb127988d030d88820cda63b65440b139187ae8d50d0"
+    checksum: "ca1c2d1d55ed337dbec50460cd5e5a01d773668a69249fa3cf6844e961a44e4b"
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
@@ -180,7 +180,7 @@ artifacts:
   - path: ".github/instructions/agent-intercom.instructions.md"
     primitive: 6
     template: "templates/instructions/agent-intercom.instructions.md.tmpl"
-    checksum: "e7174c194fbea20661bc51f37f11aad9e95b3c68d73aa2d64e6048c8ee742133"
+    checksum: "047607b2b107a603d92f7cc6c6a22887ed73e4182505d032b2bab867d185f2b3"
   - path: ".github/instructions/agent-engram.instructions.md"
     primitive: 6
     template: "templates/instructions/agent-engram.instructions.md.tmpl"
@@ -204,7 +204,7 @@ artifacts:
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
-    checksum: "8ecd4c49c4589b8ada7f59ef45795ef31ce41f8ace65cb7fe1d34bcbd17a2c92"
+    checksum: "12e1127ae3b812143666d49ec1cc45f8d213bfbbd5df4b9b49e699d13d0ae0a7"
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
@@ -216,7 +216,7 @@ artifacts:
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "3541f960a18757ff2d9a0dfe78373d4de74aa5f014dd0a93dd2e5df88dbdb633"
+    checksum: "d1074dd727a050731ee6db56304a5d8d60305a162b98201cd503c7a5eb7b3e03"
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
@@ -256,7 +256,7 @@ artifacts:
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "643e4ce8568ea6ca522f85b982454b28e4207f08231a3b6c47f2bd48ede85220"
+    checksum: "69c297ffe39330be8991840af0a53ec9d077b6bf338feee405ac455fcf53e3dd"
   - path: ".github/instructions/continuous-learning.instructions.md"
     primitive: 1
     template: "templates/instructions/continuous-learning.instructions.md.tmpl"
@@ -277,6 +277,14 @@ artifacts:
     primitive: 7
     template: "templates/agents/review/security-reviewer.agent.md.tmpl"
     checksum: "5b6f2326f4264ba7e2fada46c8dc0d7dbeb74502d7440a2bf0da81a148588dfd"
+  - path: ".github/agents/review/template-integrity-reviewer.agent.md"
+    primitive: 7
+    template: "templates/agents/review/template-integrity-reviewer.agent.md.tmpl"
+    checksum: "7185f00d6975fdb726f68a6a4d1e35c6ccac343bbbd13e70e3823a2c1879f80f"
+  - path: ".github/agents/review/schema-cli-docs-coupling-reviewer.agent.md"
+    primitive: 7
+    template: "templates/agents/review/schema-cli-docs-coupling-reviewer.agent.md.tmpl"
+    checksum: "003a87eee29bbf38070e3622ecee26250a92f1f02e3b2257aeba266f4b95ea93"
   - path: ".github/skills/harness-doctor/SKILL.md"
     primitive: 9
     template: "templates/skills/harness-doctor/SKILL.md.tmpl"
@@ -301,6 +309,18 @@ artifacts:
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
     checksum: "d9cdc97d07fde6f09a0b3bfaac6252f46ca2c7ebca42503ceb4c0a99835be78e"
+  - path: ".github/prompts/feature-flow.prompt.md"
+    primitive: 4
+    template: "templates/prompts/feature-flow.prompt.md.tmpl"
+    checksum: "63495503b706477da14fc49555e25c04b1224859704771fc27d7e08bba597380"
+  - path: ".github/prompts/feature-flow-parallel.prompt.md"
+    primitive: 4
+    template: "templates/prompts/feature-flow-parallel.prompt.md.tmpl"
+    checksum: "a70969a86d95320d6dabe46fa4a40fac989997ce57b0eff8913c1f9a598cf193"
+  - path: ".github/prompts/feature-flow-dark.prompt.md"
+    primitive: 4
+    template: "templates/prompts/feature-flow-dark.prompt.md.tmpl"
+    checksum: "2d62ce667f92a5c8a453a1e93ad68bf49681d4404b3ed980c30a840c3344186f"
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"

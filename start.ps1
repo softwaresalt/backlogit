@@ -1,21 +1,17 @@
-$autoharness_home = (autoharness home)
-$global_agents_src = "$autoharness_home\.github\agents"
-$local_agents = ".github\agents"
-
-# This keeps generated copies out of the tracked .github/agents directory.
-if (Test-Path $global_agents_src) {
-    Get-ChildItem "$global_agents_src\*.agent.md" | ForEach-Object {
-        $dest = Join-Path $local_agents $_.Name
-        $sourceFile = $_
-        $shouldCopy = -not (Test-Path $dest)
-
-        if (-not $shouldCopy) {
-            $destFile = Get-Item $dest
-            $shouldCopy = $sourceFile.LastWriteTimeUtc -gt $destFile.LastWriteTimeUtc
+# Load globally-installed Copilot CLI plugins (their agents + skills) into this
+# workspace WITHOUT copying files (copies go stale when the global install
+# updates) and WITHOUT moving COPILOT_HOME. Plugin agents are namespaced
+# "<plugin>:<agent>", so they never collide with this workspace's .github/agents/
+# entries. Discover every installed plugin (a directory holding a plugin.json)
+# under the user's real Copilot home and pass each as a --plugin-dir argument.
+$pluginArgs = @()
+$globalPluginHome = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.copilot\installed-plugins'
+if (Test-Path $globalPluginHome) {
+    Get-ChildItem $globalPluginHome -Recurse -Depth 2 -Filter 'plugin.json' -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $pluginArgs += '--plugin-dir'
+            $pluginArgs += $_.DirectoryName
         }
-
-        if ($shouldCopy) { Copy-Item $sourceFile.FullName $dest }
-    }
 }
 
 if (Test-Path .env.local) {
@@ -49,7 +45,7 @@ if ($backlogitCmd -and (Test-Path ".\.backlogit")) {
     }
 }
 
-& $copilotExe @args
+& $copilotExe @pluginArgs @args
 
 # ── Claude Code ─────────────────────────────────────────────────────────────
 # Uncomment to run Claude Code with workspace-local state directories.

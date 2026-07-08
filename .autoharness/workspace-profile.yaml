@@ -402,3 +402,29 @@ drift_report:
       expected_path: ".github/agents/review/technology-reviewer.agent.md"
       note: "Generic technology reviewer; workspace has Go-specific go-quality-reviewer.agent.md and mcp-protocol-reviewer.agent.md"
   recommendations: []
+
+# Runtime validation contract (added by Auto-Tune 1.4.11 adoption).
+# No web/API/background runtime surfaces are declared for this CLI/MCP tool, so
+# surfaces are empty and runtime validation is not release-blocking; the Go test
+# suite and gate broker cover correctness. Downstream Ship / runtime-verification /
+# operational-closure consume validator_manifest, validation_expectations, and
+# releasability.
+runtime_validation:
+  validator_manifest:
+    surfaces: []
+  validation_expectations:
+    required: false
+    surfaces_expected: []
+    minimum_verdict: "PASS"
+    preserve_invariants: []
+    release_blockers: []
+  releasability:
+    required: true
+    status_when_satisfied: "READY"
+    required_evidence:
+      - kind: "monitoring-plan"
+        required: false
+      - kind: "rollback-procedure"
+        required: false
+      - kind: "owner"
+        required: false

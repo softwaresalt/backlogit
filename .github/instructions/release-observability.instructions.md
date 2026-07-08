@@ -56,6 +56,19 @@ After deployment or merge of runtime-affecting work:
 * rollback procedure MUST be documented before merge, not improvised after
   a failure
 
+## Releasability Evidence Contract
+
+Monitoring plans, pre-deploy audits, observation windows, and rollback triggers
+are releasability evidence — not free-form side notes. When this pack is active:
+
+* translate monitoring and rollback requirements into explicit releasability
+  evidence entries that operational-closure can mark `READY`,
+  `READY_WITH_CONDITIONS`, or `BLOCKED`
+* keep validator evidence visible so operators can see which pre-merge runtime
+  checks already passed before relying on post-deploy observation
+* if monitoring or rollback data is incomplete, record the missing evidence
+  explicitly rather than weakening the readiness decision
+
 ## Closure Integration
 
 Release-observability artifacts feed INTO operational closure. The
