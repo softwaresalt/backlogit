@@ -36,7 +36,7 @@ func newVersionCommand() *cobra.Command {
 				return fmt.Errorf("unsupported format %q: version supports: json", format)
 			}
 			info := versionInfo{
-				Version:   version.Version,
+				Version:   version.Resolve(),
 				Commit:    version.Commit,
 				BuildDate: version.BuildDate,
 				GoVersion: runtime.Version(),

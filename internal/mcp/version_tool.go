@@ -15,7 +15,7 @@ import (
 // The tool must function without a workspace (safe for pre-init calls).
 func (s *Server) handleGetVersion(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	data := map[string]string{
-		"version":    version.Version,
+		"version":    version.Resolve(),
 		"commit":     version.Commit,
 		"build_date": version.BuildDate,
 		"go_version": runtime.Version(),

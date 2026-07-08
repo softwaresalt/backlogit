@@ -74,7 +74,7 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	}
 	s.mcp = mcpserver.NewMCPServer(
 		"backlogit",
-		version.Version,
+		version.Resolve(),
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(false, true),
 		mcpserver.WithRecovery(),
