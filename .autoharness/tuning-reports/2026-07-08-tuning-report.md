@@ -266,7 +266,9 @@ the verifier's signal miner in this pass.)
 Every modified generated artifact was backed up first. Pre-existing
 heavily-customized content was preserved — dark-factory content was added as new
 sections, not by re-rendering whole files. The 10 pre-existing capability gaps
-(P1 section) remain untouched pending operator decision.
+were left for review at the close of this feature-flow pass and were
+**subsequently adopted** in the gap-closure pass — see
+**Gap Closure — 10 Pre-existing Gaps Resolved** near the top of this report.
 
 ## Branch Safety (NON-NEGOTIABLE)
 
@@ -278,8 +280,8 @@ be committed or pushed to the default branch.
 1. Create a feature branch, e.g. `chore/autoharness-tune-2026-07-08`.
 2. Review this report and the applied manifest/drift-ignore changes on that
    branch.
-3. Decide on the P1 capability-gap adoptions (weave by hand to preserve local
-   edits).
+3. The P1 capability-gap adoptions were completed in this session (see Gap
+   Closure) — no further decision needed.
 4. Open a pull request.
 
 The repo already has unrelated uncommitted changes on `main` (agent-file renames
@@ -287,5 +289,5 @@ and `start.ps1`); those were left untouched.
 
 ## Next Tuning
 
-Recommended after the next major release or ~monthly. Re-run once the P1
-capability gaps are adopted so the targeted-check pass rate returns to 43/43.
+Recommended after the next major release or ~monthly. All P1 capability gaps
+were adopted this session; `verify-workspace` targeted checks are at 51/51.
