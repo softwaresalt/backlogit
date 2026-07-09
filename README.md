@@ -46,7 +46,7 @@ A JSONL event model records state transitions, comments, and telemetry in append
 
 ## Plugin Installation
 
-### Which installation path?
+### Which installation path
 
 Choose one path before you run an install command:
 
@@ -86,9 +86,9 @@ See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options a
 
 ### Path B - Use backlogit through Autoharness
 
-If your repo uses Autoharness, run the Autoharness install or tune flow before
-following backlogit install commands. That flow writes the tailored harness into
-`.github/`, including repo-local agents, instructions, and skills. See
+If your repo uses Autoharness, use the Autoharness install or tune flow instead
+of the standalone plugin commands above. That flow writes the tailored harness
+into `.github/`, including repo-local agents, instructions, and skills. See
 [docs/installation.md](docs/installation.md#which-installation-path) and
 [docs/plugin-guide.md](docs/plugin-guide.md#skill-locations-and-drift) for the
 standalone-versus-Autoharness split.

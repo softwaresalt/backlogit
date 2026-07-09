@@ -18,7 +18,7 @@ source: docs/installation.md
 title: Installation
 ---
 
-## Which installation path?
+## Which installation path
 
 Choose the path that matches how you want backlogit to enter the workspace:
 
