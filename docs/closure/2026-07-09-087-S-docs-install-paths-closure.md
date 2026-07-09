@@ -39,6 +39,11 @@ still call through `backlogit` and `backlogit mcp`.
 * PR #195 CI passed; code-only checks were skipped as expected for docs-only work
 * Copilot review raised 13 comments; 12 were fixed, 1 line-ending cleanup was
   declined with rationale, and all threads were replied to and resolved
+* Post-ship reconciliation passed:
+  `.backlogit/reconcile/087-S-post-20260709-154630.md` reports all manifest
+  items and the shipment present in archive with zero archive deletions
+* Pre-mode reconciliation evidence was not captured before `backlogit shipment
+  ship 087-S`; the post-mode report is the durable archive-presence proof
 
 ## Merge and release record
 
