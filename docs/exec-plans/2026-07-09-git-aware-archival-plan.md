@@ -39,6 +39,7 @@ selected `git mv` itself fails.
 |---|---|
 | Detect git repository and per-file tracked state | Add a small helper around bounded `exec.CommandContext` calls to `git rev-parse --show-toplevel` and `git ls-files --error-unmatch -- <path>` with Windows-safe paths and a minimal environment |
 | Tracked artifact in git repo uses `git mv` for archive | Replace the final tracked-file move step in `ArchiveItem` with `git mv` after archive frontmatter is prepared, preserving existing destination collision checks and treating `currentPath == archivePath` as an in-place frontmatter update, not `git mv path path` |
+| Same-item occupied archive destination remains recoverable | Preserve the existing half-copied archive recovery contract: distinct destination occupants fail before Git runs, while a same logical item already at the archive path is reconciled without invoking `git mv` against an existing destination or clobbering index state |
 | Non-git, untracked, or missing git keeps current behavior | Make the helper return an explicit filesystem-move strategy for these non-error states |
 | Restore is symmetric | Reuse the same strategy for `UnarchiveItem` so tracked archive files move back through `git mv` |
 | Fail closed on unexpected `git mv` errors | Return contextual errors instead of silently falling back after a selected `git mv` strategy fails; DB-failure rollback must restore both worktree files and Git index state |
@@ -62,9 +63,11 @@ selected `git mv` itself fails.
   and before DB synchronization; keep pre-archived same-path records on the
   existing in-place update path
 * Files: `internal/core/archive.go`, archive tests
-* Tests: integration-style temp git repo test that commits the archived result
-  before asserting `git log --follow` can see pre-archive history; regression
-  tests for non-git filesystem moves and tracked same-path re-archival
+* Tests: integration-style temp git repo test that first asserts the staged
+  index state created by `git mv` and the intended unstaged frontmatter edit,
+  then commits the archived result before using `git log --follow` only to
+  verify history continuity; regression tests for non-git filesystem moves,
+  tracked same-path re-archival, and same-item occupied-destination recovery
 * Posture: test-first with characterization of current fallback behavior
 
 ### T3 - Git-aware restore path
@@ -80,11 +83,13 @@ selected `git mv` itself fails.
 ### T4 - Error and staging semantics documentation
 
 * Changes: document selected strategy, expected staged rename behavior, and
-  fail-closed `git mv` error handling in comments or package-level test names
+  fail-closed `git mv` error handling; extend archive and unarchive DB-failure
+  rollback so selected `git mv` moves do not leave stale worktree or index state
 * Files: `internal/core/archive.go`, archive tests
 * Tests: force a selected `git mv` failure and assert the error includes move
-  context without falling back to filesystem rename; force a DB sync failure
-  after `git mv` and assert both worktree and index return to the pre-call state
+  context without falling back to filesystem rename; force archive and unarchive
+  DB sync failures after `git mv` and assert both worktree and index return to
+  the pre-call state
 * Posture: test-first
 
 ## Dependency Graph
@@ -103,6 +108,10 @@ selected `git mv` itself fails.
   states, not hard errors, to preserve current behavior outside tracked repos.
 * Treat `git mv` failure after strategy selection as fatal. Falling back after
   Git accepted eligibility would risk losing the history-preservation guarantee.
+* Do not ask `git mv` to move over an existing destination. Existing distinct
+  occupancy checks must run before Git. Existing same-item occupancy should
+  keep the current recovery semantics by updating/reconciling the archive file
+  through the in-place or filesystem-safe path without introducing clobbering.
 * Keep `git mv` staged behavior. `git mv` intentionally updates the index with
   a delete/add pair; Git history continuity is then inferred after the archive
   or restore result is committed. Commit discipline stays with the surrounding
