@@ -10,7 +10,7 @@ docline:
         - agile
         - ai agents
         - task management
-    ms.date: 2026-04-14T00:00:00Z
+    ms.date: 2026-07-09T00:00:00Z
     ms.topic: overview
 ingested_at: "2026-06-26T02:34:51Z"
 schema_version: "1.0"
@@ -46,7 +46,32 @@ A JSONL event model records state transitions, comments, and telemetry in append
 
 ## Plugin Installation
 
-Install backlogit as a Copilot CLI plugin to get the Stage and Ship agents, 19 universal workflow skills, and the MCP server in one step:
+### Which installation path
+
+Choose one path before you run an install command:
+
+* Path A - Standalone backlogit: choose this when you want to use backlogit as
+  a self-contained Copilot CLI product. The standalone plugin installs the
+  Stage and Ship agents, 19 universal workflow skills, and the backlogit MCP
+  server in one bundle.
+* Path B - Autoharness-composed harness: choose this when backlogit is part of
+  an Autoharness-generated agent harness. Autoharness composes the
+  workspace-specific constitution, policies, instructions, agents, and skills
+  from templates and writes them into the repository's `.github/` directory
+  through its install or tune flow. This replaces the standalone plugin's
+  agent and skill bundle, not the backlogit runtime. Make sure the
+  `backlogit` binary is available when the generated harness calls
+  `backlogit` or `backlogit mcp`, but do not also install the standalone
+  plugin for that same repo harness.
+
+The two paths share backlogit concepts, but they install different surfaces.
+The standalone bundle is declared in [`plugin/plugin.json`](plugin/plugin.json).
+This repository also contains `.autoharness/` and generated `.github/`
+materials, which are the Autoharness path.
+
+### Path A - Install standalone backlogit
+
+Install backlogit as a Copilot CLI plugin:
 
 ```bash
 copilot plugin install softwaresalt/backlogit
@@ -62,9 +87,23 @@ go install github.com/softwaresalt/backlogit/cmd/backlogit@latest  # native bina
 
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
+### Path B - Use backlogit through Autoharness
+
+If your repo uses Autoharness, use the Autoharness install or tune flow instead
+of the standalone plugin commands above. That flow writes the tailored harness
+into `.github/`, including repo-local agents, instructions, and skills. See
+[docs/installation.md](docs/installation.md#which-installation-path) and
+[docs/plugin-guide.md](docs/plugin-guide.md#skill-locations-and-drift) for the
+standalone-versus-Autoharness split, including when to install only the
+backlogit binary/runtime.
+
 ---
 
 ## Quick Start
+
+Start here after you choose the installation path above. Path A users can run
+the standalone backlogit commands directly. Path B users should run these
+commands only after Autoharness has installed or tuned the repo-local harness.
 
 **Install from source:**
 
