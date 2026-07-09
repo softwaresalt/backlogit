@@ -10,13 +10,34 @@ docline:
         - binary download
         - go install
         - PATH
-    ms.date: 2026-04-21T00:00:00Z
+    ms.date: 2026-07-09T00:00:00Z
     ms.topic: how-to
 ingested_at: "2026-06-26T02:34:29Z"
 schema_version: "1.0"
 source: docs/installation.md
 title: Installation
 ---
+
+## Which installation path?
+
+Choose the path that matches how you want backlogit to enter the workspace:
+
+| Path | Choose when | Install surface |
+|---|---|---|
+| Path A - Standalone backlogit | You want to use backlogit directly as a CLI, MCP server, or Copilot CLI plugin | The backlogit binary plus, when using the plugin, the Stage and Ship agents, 19 bundled skills, and the backlogit MCP server |
+| Path B - Autoharness-composed harness | Backlogit is being adopted as part of an Autoharness-generated agent harness | Autoharness composes templates and writes tailored constitution, policies, instructions, agents, and skills into `.github/` |
+
+This page covers the standalone binary install methods for Path A. If you want
+the Copilot CLI plugin bundle, start with the
+[plugin guide](plugin-guide.md#choose-plugin-or-autoharness). If your workspace
+already has an Autoharness-generated `.github/` harness, use the Autoharness
+install or tune flow instead of installing the standalone plugin into the same
+repo.
+
+> [!IMPORTANT]
+> Avoid double-installing. The standalone plugin contributes its own frozen
+> agents and skills from `plugin/`, while Autoharness writes repo-local harness
+> files into `.github/`.
 
 ## Method 1: One-line install
 
