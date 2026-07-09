@@ -58,8 +58,11 @@ Choose one path before you run an install command:
   an Autoharness-generated agent harness. Autoharness composes the
   workspace-specific constitution, policies, instructions, agents, and skills
   from templates and writes them into the repository's `.github/` directory
-  through its install or tune flow. Do not also install the standalone plugin
-  for that same repo harness.
+  through its install or tune flow. This replaces the standalone plugin's
+  agent and skill bundle, not the backlogit runtime. Make sure the
+  `backlogit` binary is available when the generated harness calls
+  `backlogit` or `backlogit mcp`, but do not also install the standalone
+  plugin for that same repo harness.
 
 The two paths share backlogit concepts, but they install different surfaces.
 The standalone bundle is declared in [`plugin/plugin.json`](plugin/plugin.json).
@@ -91,7 +94,8 @@ of the standalone plugin commands above. That flow writes the tailored harness
 into `.github/`, including repo-local agents, instructions, and skills. See
 [docs/installation.md](docs/installation.md#which-installation-path) and
 [docs/plugin-guide.md](docs/plugin-guide.md#skill-locations-and-drift) for the
-standalone-versus-Autoharness split.
+standalone-versus-Autoharness split, including when to install only the
+backlogit binary/runtime.
 
 ---
 

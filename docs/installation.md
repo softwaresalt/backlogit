@@ -25,19 +25,22 @@ Choose the path that matches how you want backlogit to enter the workspace:
 | Path | Choose when | Install surface |
 |---|---|---|
 | Path A - Standalone backlogit | You want to use backlogit directly as a CLI, MCP server, or Copilot CLI plugin | The backlogit binary plus, when using the plugin, the Stage and Ship agents, 19 bundled skills, and the backlogit MCP server |
-| Path B - Autoharness-composed harness | Backlogit is being adopted as part of an Autoharness-generated agent harness | Autoharness composes templates and writes tailored constitution, policies, instructions, agents, and skills into `.github/` |
+| Path B - Autoharness-composed harness | Backlogit is being adopted as part of an Autoharness-generated agent harness | The backlogit binary/runtime from this page, plus Autoharness-composed constitution, policies, instructions, agents, and skills in `.github/` |
 
-This page covers the standalone binary install methods for Path A. If you want
-the Copilot CLI plugin bundle, start with the
+This page covers the backlogit binary/runtime install methods. They apply to
+Path A users who want the CLI directly and to Path B users whose generated
+harness invokes `backlogit` or `backlogit mcp`. If you want the standalone
+Copilot CLI plugin bundle for Path A, start with the
 [plugin guide](plugin-guide.md#choose-plugin-or-autoharness). If your workspace
 already has an Autoharness-generated `.github/` harness, use the Autoharness
-install or tune flow instead of installing the standalone plugin into the same
-repo.
+install or tune flow for the harness files and install only the runtime with
+one of the methods below.
 
 > [!IMPORTANT]
 > Avoid double-installing. The standalone plugin contributes its own frozen
 > agents and skills from `plugin/`, while Autoharness writes repo-local harness
-> files into `.github/`.
+> files into `.github/`. Path B still needs a reachable backlogit runtime; it
+> should not use the standalone plugin as the source of its repo-local harness.
 
 ## Method 1: One-line install
 
