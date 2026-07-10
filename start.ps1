@@ -64,12 +64,6 @@ if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
 
 $env:COPILOT_HOME = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $PSScriptRoot ".copilot" }
 $env:ENGRAM_DATA_DIR = if ($env:ENGRAM_DATA_DIR) { $env:ENGRAM_DATA_DIR } else { Join-Path $PSScriptRoot ".engram" }
-
-# Anchor all workspace operations (backlogit, engram, Copilot) to the script's
-# repo directory so the state dirs above stay consistent with the workspace the
-# launched commands resolve — regardless of the caller's current directory.
-# Set-Location in script scope does not leak to the caller's shell.
-Set-Location -LiteralPath $PSScriptRoot
 if (-not $env:GITHUB_TOKEN) {
     $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
     if ($ghCmd) {
@@ -96,6 +90,12 @@ if (-not $copilotExe) {
     throw "Unable to locate Copilot CLI. Set COPILOT_EXE_PATH (or COPILOT_EXE for backward compatibility) or add 'copilot' to PATH."
 }
 
+# Anchor workspace operations (backlogit, engram, Copilot) to the repo dir for the
+# duration of the launched commands, then restore the caller's location. The current
+# location is runspace state (not script-scoped), so Push/Pop in a finally keeps the
+# caller's PowerShell session location unchanged even on failure.
+Push-Location -LiteralPath $PSScriptRoot
+try {
 $backlogitCmd = Get-Command backlogit -ErrorAction SilentlyContinue
 if ($backlogitCmd) {
     try {
@@ -144,3 +144,7 @@ if ($engramCmd) {
 $copilotArguments = @($args)
 
 & $copilotExe @copilotArguments
+}
+finally {
+    Pop-Location
+}
