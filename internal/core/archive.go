@@ -3,15 +3,17 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -51,6 +53,22 @@ type archiveConfig struct {
 	commitSHA string
 	topLevel  *bool // nil means default true
 	cascade   bool  // when true, archive children recursively before the parent
+}
+
+type artifactMoveKind int
+
+const (
+	artifactMoveFilesystem artifactMoveKind = iota
+	artifactMoveGit
+)
+
+var artifactGitCommandTimeout = 5 * time.Second
+
+type artifactMovePlan struct {
+	kind         artifactMoveKind
+	workTreeRoot string
+	sourceRel    string
+	destRel      string
 }
 
 // WithCommitSHA attaches a git commit SHA to the archive event for traceability.
@@ -136,6 +154,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// when the occupant is a different item (distinct id or title). Same-path
 	// in-place archival (currentPath == archivePath) is never a collision.
 	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
+	archiveDestinationOccupied := false
 	if filepath.Clean(archivePath) != filepath.Clean(currentPath) {
 		if _, statErr := os.Stat(archivePath); statErr == nil {
 			occupant, _, occErr := parseFile(archivePath)
@@ -155,6 +174,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 				return nil, fmt.Errorf("archive %q: destination %q is occupied by a distinct item: %w",
 					itemID, workspaceRelativePath(ws.RootPath, archivePath), blerrors.ErrArchiveDestinationOccupied)
 			}
+			archiveDestinationOccupied = true
 		} else if !os.IsNotExist(statErr) {
 			// A non-not-exist stat error (permission/IO) means we cannot safely
 			// determine whether the destination is occupied. Fail loud with context
@@ -196,48 +216,55 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
 
-	// Atomic write: write to a temp file then rename.
-	tmpPath := archivePath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(newContent), 0o644); err != nil {
-		return nil, fmt.Errorf("write archive file: %w", err)
+	samePath := filepath.Clean(currentPath) == filepath.Clean(archivePath)
+	movePlan, err := planArtifactMove(ctx, ws.RootPath, currentPath, archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("plan archive move: %w", err)
 	}
-	if err := os.Rename(tmpPath, archivePath); err != nil {
-		// On Windows os.Rename can fail when the destination already exists (e.g. a
-		// pre-archived item whose archivePath == currentPath). Remove the stale
-		// destination and retry; the new content is preserved in tmpPath until the
-		// rename commits. See internal/telemetry/checkpoint.go:119-128.
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(archivePath)
-			err = os.Rename(tmpPath, archivePath)
+	useGitMove := !samePath && !archiveDestinationOccupied && movePlan.kind == artifactMoveGit
+	if useGitMove {
+		// git mv intentionally stages the delete/add rename pair. The frontmatter
+		// rewrite below is left as a normal worktree modification so surrounding
+		// backlog commits can stage it with the rest of the mutation.
+		if err := performArtifactMove(ctx, movePlan, "archive"); err != nil {
+			return nil, err
 		}
-		if err != nil {
-			_ = os.Remove(tmpPath)
-			return nil, fmt.Errorf("rename archive file: %w", err)
+		if err := replaceFile(archivePath, []byte(newContent)); err != nil {
+			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), archivePath, raw, "archive content write")
+			return nil, fmt.Errorf("write archive file: %w", err)
 		}
-	}
-	// Only remove the source file when it differs from the archive destination.
-	// When the registry routes a terminal status (e.g. "done") to the archive
-	// directory, the item may already reside there before ArchiveItem is called.
-	// Removing currentPath in that case would delete the file we just wrote.
-	if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
-		if err := os.Remove(currentPath); err != nil {
-			_ = os.Remove(archivePath)
-			return nil, fmt.Errorf("remove original: %w", err)
+	} else {
+		if err := replaceFile(archivePath, []byte(newContent)); err != nil {
+			return nil, fmt.Errorf("write archive file: %w", err)
+		}
+		// Only remove the source file when it differs from the archive destination.
+		// When the registry routes a terminal status (e.g. "done") to the archive
+		// directory, the item may already reside there before ArchiveItem is called.
+		// Removing currentPath in that case would delete the file we just wrote.
+		if !samePath {
+			if err := os.Remove(currentPath); err != nil {
+				_ = os.Remove(archivePath)
+				return nil, fmt.Errorf("remove original: %w", err)
+			}
 		}
 	}
 
 	// Update DB status to archived. On failure, restore the file to its
 	// original path so filesystem and DB index remain consistent.
 	if _, dbErr := database.ExecContext(ctx, "UPDATE items SET status = ? WHERE id = ?", string(models.StatusArchived), itemID); dbErr != nil {
-		// Always restore original content to currentPath regardless of whether
-		// paths differ: the file may have been overwritten with archive frontmatter
-		// even when currentPath == archivePath (already-archived items).
-		if restoreErr := os.WriteFile(currentPath, raw, 0o644); restoreErr != nil {
-			slog.Error("archive: failed to restore file after DB error",
-				"archive_path", archivePath, "original_path", currentPath, "error", restoreErr)
-		} else if filepath.Clean(currentPath) != filepath.Clean(archivePath) {
-			// Remove the stale archive copy only when it is a distinct file.
-			_ = os.Remove(archivePath)
+		if useGitMove {
+			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), archivePath, raw, "archive DB rollback")
+		} else {
+			// Always restore original content to currentPath regardless of whether
+			// paths differ: the file may have been overwritten with archive frontmatter
+			// even when currentPath == archivePath (already-archived items).
+			if restoreErr := os.WriteFile(currentPath, raw, 0o644); restoreErr != nil {
+				slog.Error("archive: failed to restore file after DB error",
+					"archive_path", archivePath, "original_path", currentPath, "error", restoreErr)
+			} else if !samePath {
+				// Remove the stale archive copy only when it is a distinct file.
+				_ = os.Remove(archivePath)
+			}
 		}
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
@@ -360,6 +387,274 @@ func isAlreadyArchived(ctx context.Context, database *sql.DB, itemID string) boo
 	return item.Status == models.StatusArchived
 }
 
+func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath string) (artifactMovePlan, error) {
+	plan := artifactMovePlan{kind: artifactMoveFilesystem}
+	if filepath.Clean(sourcePath) == filepath.Clean(destPath) {
+		return plan, nil
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return plan, nil
+	}
+	topLevel, err := runGitCommand(ctx, gitPath, workspaceRoot, "rev-parse", "--show-toplevel")
+	if err != nil {
+		if isGitNoWorkTreeError(err, workspaceRoot) {
+			return plan, nil
+		}
+		return plan, fmt.Errorf("detect git worktree: %w", err)
+	}
+	workTreeRoot := filepath.Clean(filepath.FromSlash(strings.TrimSpace(string(topLevel))))
+	if workTreeRoot == "" {
+		return plan, nil
+	}
+	sourceRel, ok := gitRelativePath(workTreeRoot, sourcePath)
+	if !ok {
+		return plan, nil
+	}
+	destRel, ok := gitRelativePath(workTreeRoot, destPath)
+	if !ok {
+		return plan, nil
+	}
+	if _, err := runGitCommand(ctx, gitPath, workTreeRoot, "ls-files", "--error-unmatch", "--", sourceRel); err != nil {
+		if isGitUntrackedPathError(err) {
+			return plan, nil
+		}
+		return plan, fmt.Errorf("detect tracked artifact: %w", err)
+	}
+	plan.kind = artifactMoveGit
+	plan.workTreeRoot = workTreeRoot
+	plan.sourceRel = sourceRel
+	plan.destRel = destRel
+	return plan, nil
+}
+
+func performArtifactMove(ctx context.Context, plan artifactMovePlan, operation string) error {
+	if plan.kind != artifactMoveGit {
+		return nil
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return fmt.Errorf("%s git mv: %w", operation, err)
+	}
+	if _, err := runGitCommand(ctx, gitPath, plan.workTreeRoot, "mv", plan.sourceRel, plan.destRel); err != nil {
+		return fmt.Errorf("%s git mv %q to %q: %w", operation, plan.sourceRel, plan.destRel, err)
+	}
+	return nil
+}
+
+func reverseArtifactMovePlan(plan artifactMovePlan) artifactMovePlan {
+	return artifactMovePlan{
+		kind:         plan.kind,
+		workTreeRoot: plan.workTreeRoot,
+		sourceRel:    plan.destRel,
+		destRel:      plan.sourceRel,
+	}
+}
+
+func rollbackGitArtifactMove(rollbackPlan artifactMovePlan, currentPath string, originalContent []byte, operation string) {
+	rollbackGitArtifactMoveWithReplace(rollbackPlan, currentPath, originalContent, operation, replaceFile)
+}
+
+func rollbackGitArtifactMoveWithReplace(rollbackPlan artifactMovePlan, currentPath string, originalContent []byte, operation string, replace func(string, []byte) error) {
+	if restoreErr := replace(currentPath, originalContent); restoreErr != nil {
+		slog.Error("archive git rollback: failed to restore file content",
+			"operation", operation, "path", currentPath, "error", restoreErr)
+	}
+	rollbackCtx, cancel := context.WithTimeout(context.Background(), artifactGitCommandTimeout)
+	defer cancel()
+	if moveErr := performArtifactMove(rollbackCtx, rollbackPlan, operation); moveErr != nil {
+		slog.Error("archive git rollback: failed to reverse git move",
+			"operation", operation, "path", currentPath, "error", moveErr)
+	}
+}
+
+func restoreArchiveAfterUnarchiveFailure(archivePath, originalPath string, raw []byte, samePath bool) error {
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o755); err != nil {
+		return fmt.Errorf("create archive dir: %w", err)
+	}
+	if err := replaceFile(archivePath, raw); err != nil {
+		return fmt.Errorf("restore archive file: %w", err)
+	}
+	if !samePath {
+		if err := os.Remove(originalPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove restored file: %w", err)
+		}
+	}
+	return nil
+}
+
+func replaceFile(targetPath string, content []byte) error {
+	if err := atomicfile.WriteFileAtomic(targetPath, content); err != nil {
+		return fmt.Errorf("replace file %q: %w", targetPath, err)
+	}
+	return nil
+}
+
+func runGitCommand(ctx context.Context, gitPath, workTreeRoot string, args ...string) ([]byte, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, artifactGitCommandTimeout)
+	defer cancel()
+	cmdArgs := append([]string{"-C", workTreeRoot}, args...)
+	cmd := exec.CommandContext(cmdCtx, gitPath, cmdArgs...)
+	cmd.Env = gitCommandEnv()
+	output, err := cmd.CombinedOutput()
+	if cmdCtx.Err() != nil {
+		return output, cmdCtx.Err()
+	}
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			return output, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, detail)
+		}
+		return output, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return output, nil
+}
+
+func isGitNoWorkTreeError(err error, workspaceRoot string) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	if gitEntryPresentAtOrAbove(workspaceRoot) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not a git repository") ||
+		strings.Contains(msg, "not a gitdir") ||
+		strings.Contains(msg, "outside repository")
+}
+
+func gitEntryPresentAtOrAbove(start string) bool {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return true
+	}
+	for {
+		if _, statErr := os.Lstat(filepath.Join(dir, ".git")); statErr == nil || !os.IsNotExist(statErr) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+func isGitUntrackedPathError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "did not match any file") ||
+		strings.Contains(msg, "pathspec") && strings.Contains(msg, "known to git")
+}
+
+func gitCommandEnv() []string {
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if isGitOverrideEnv(key) || isGitLocaleEnv(key) || isGitPromptEnv(key) {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, "GIT_TERMINAL_PROMPT=0")
+	env = append(env, "LC_ALL=C", "LANG=C")
+	return env
+}
+
+func isGitLocaleEnv(key string) bool {
+	switch key {
+	case "LC_ALL", "LANG":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGitPromptEnv(key string) bool {
+	return key == "GIT_TERMINAL_PROMPT"
+}
+
+func isGitOverrideEnv(key string) bool {
+	upperKey := strings.ToUpper(key)
+	if strings.HasPrefix(upperKey, "GIT_CONFIG_") {
+		return true
+	}
+	switch upperKey {
+	case "GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_INDEX_FILE",
+		"GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_NAMESPACE",
+		"GIT_CONFIG",
+		"GIT_CONFIG_GLOBAL",
+		"GIT_CONFIG_SYSTEM",
+		"GIT_CEILING_DIRECTORIES",
+		"GIT_PREFIX",
+		"GIT_SUPER_PREFIX":
+		return true
+	default:
+		return false
+	}
+}
+
+func gitRelativePath(workTreeRoot, targetPath string) (string, bool) {
+	absRoot, ok := canonicalExistingPath(workTreeRoot)
+	if !ok {
+		return "", false
+	}
+	absTarget := canonicalTargetPath(targetPath)
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return "", false
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", false
+	}
+	return rel, true
+}
+
+func canonicalExistingPath(targetPath string) (string, bool) {
+	absPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", false
+	}
+	if evalPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		return filepath.Clean(evalPath), true
+	}
+	if _, statErr := os.Stat(absPath); statErr != nil {
+		return "", false
+	}
+	return filepath.Clean(absPath), true
+}
+
+func canonicalTargetPath(targetPath string) string {
+	if existing, ok := canonicalExistingPath(targetPath); ok {
+		return existing
+	}
+	parent, ok := canonicalExistingPath(filepath.Dir(targetPath))
+	if !ok {
+		absPath, err := filepath.Abs(targetPath)
+		if err != nil {
+			return filepath.Clean(targetPath)
+		}
+		return filepath.Clean(absPath)
+	}
+	return filepath.Join(parent, filepath.Base(targetPath))
+}
+
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
 	backlogDir := WorkspaceStorageRoot(ws.RootPath)
@@ -422,11 +717,6 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		return fmt.Errorf("create restore dir: %w", err)
 	}
 
-	// Atomic write: write to a temp file then rename.
-	tmpPath := originalPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(restored), 0o644); err != nil {
-		return fmt.Errorf("write restored file: %w", err)
-	}
 	// After read-time self-heal the restore target is the canonical queue path,
 	// which should not already exist. Guard against clobbering a live record: a
 	// distinct pre-existing destination would be silently overwritten by os.Rename
@@ -435,39 +725,50 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	samePath := filepath.Clean(archivePath) == filepath.Clean(originalPath)
 	if !samePath {
 		if _, statErr := os.Lstat(originalPath); statErr == nil {
-			_ = os.Remove(tmpPath)
 			return fmt.Errorf("restore target %q already exists: refusing to overwrite", originalPath)
 		} else if !os.IsNotExist(statErr) {
-			_ = os.Remove(tmpPath)
 			return fmt.Errorf("stat restore target %q: %w", originalPath, statErr)
 		}
 	}
-	if err := os.Rename(tmpPath, originalPath); err != nil {
-		// In-place update (originalPath == archivePath): on Windows os.Rename can
-		// fail when the destination exists. Remove the stale destination and retry;
-		// the new content is preserved in tmpPath until the rename commits.
-		if samePath && runtime.GOOS == "windows" {
-			_ = os.Remove(originalPath)
-			err = os.Rename(tmpPath, originalPath)
-		}
-		if err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("rename restored file: %w", err)
-		}
+	movePlan, err := planArtifactMove(ctx, ws.RootPath, archivePath, originalPath)
+	if err != nil {
+		return fmt.Errorf("plan restore move: %w", err)
 	}
-	// Only remove the archive file when it differs from the restored path.
-	// When archived_from stored an archive-dir path (because the file was already
-	// there before ArchiveItem ran), originalPath == archivePath and the rename
-	// above updated the file in place — removing it here would undo that write.
-	if !samePath {
-		if err := os.Remove(archivePath); err != nil {
-			return fmt.Errorf("remove archive file: %w", err)
+	useGitMove := !samePath && movePlan.kind == artifactMoveGit
+	if useGitMove {
+		// git mv stages the archive->queue rename; the restored frontmatter update
+		// remains unstaged for the caller's normal commit flow.
+		if err := performArtifactMove(ctx, movePlan, "restore"); err != nil {
+			return err
+		}
+		if err := replaceFile(originalPath, []byte(restored)); err != nil {
+			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
+			return fmt.Errorf("write restored file: %w", err)
+		}
+	} else {
+		if err := replaceFile(originalPath, []byte(restored)); err != nil {
+			return fmt.Errorf("write restored file: %w", err)
+		}
+		// Only remove the archive file when it differs from the restored path.
+		// When archived_from stored an archive-dir path (because the file was already
+		// there before ArchiveItem ran), originalPath == archivePath and the rename
+		// above updated the file in place — removing it here would undo that write.
+		if !samePath {
+			if err := os.Remove(archivePath); err != nil {
+				return fmt.Errorf("remove archive file: %w", err)
+			}
 		}
 	}
 
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
 	if err == nil {
 		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
+			if useGitMove {
+				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore DB rollback")
+			} else if rollbackErr := restoreArchiveAfterUnarchiveFailure(archivePath, originalPath, raw, samePath); rollbackErr != nil {
+				slog.Error("unarchive: failed to restore archive file after DB error",
+					"archive_path", archivePath, "restore_path", originalPath, "error", rollbackErr)
+			}
 			return fmt.Errorf("sync unarchive state: %w", upsertErr)
 		}
 	}
