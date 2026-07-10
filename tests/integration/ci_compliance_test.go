@@ -63,6 +63,7 @@ type ciJob struct {
 	Name     string            `yaml:"name"`
 	Needs    any               `yaml:"needs"`
 	If       string            `yaml:"if"`
+	Uses     string            `yaml:"uses"`
 	RunsOn   string            `yaml:"runs-on"`
 	Outputs  map[string]string `yaml:"outputs"`
 	Strategy ciStrategy        `yaml:"strategy"`
@@ -198,6 +199,14 @@ func assertNoTriggerPathFiltering(t *testing.T, path string) {
 	assert.False(t, pathKey.MatchString(onBlock), "required workflows must not use trigger-level paths filters")
 }
 
+func assertNoTriggerEvent(t *testing.T, path, event string) {
+	t.Helper()
+	onBlock := extractTopLevelBlock(readFileString(t, path), "on")
+	require.NotEmpty(t, onBlock, "workflow should have a parseable on: block")
+	eventKey := regexp.MustCompile(`(?m)^\s+` + regexp.QuoteMeta(event) + `:\s*(?:$|\{)`)
+	assert.Falsef(t, eventKey.MatchString(onBlock), "workflow must not define on.%s", event)
+}
+
 func assertContainsAll(t *testing.T, content string, fragments ...string) {
 	t.Helper()
 	for _, fragment := range fragments {
@@ -296,6 +305,17 @@ func TestAllActionsUseSHAPins(t *testing.T) {
 			wf := readCIWorkflow(t, wfPath)
 
 			for jobName, job := range wf.Jobs {
+				if job.Uses != "" && !strings.HasPrefix(job.Uses, "./") {
+					atIdx := strings.LastIndex(job.Uses, "@")
+					require.NotEqual(t, -1, atIdx,
+						"job %s reusable workflow %q missing @ separator", jobName, job.Uses)
+
+					ref := strings.TrimSpace(job.Uses[atIdx+1:])
+					assert.Truef(t, shaPattern.MatchString(ref),
+						"job %s reusable workflow %s should use a 40-char SHA pin (got %q)",
+						jobName, job.Uses, ref)
+				}
+
 				for i, step := range job.Steps {
 					if step.Uses == "" || strings.HasPrefix(step.Uses, "./") {
 						continue
@@ -411,6 +431,7 @@ func TestCITriggerModelAvoidsPushDoubleRun(t *testing.T) {
 	assert.Contains(t, wf.On.PullRequest.Branches, "main", "CI must report required contexts on PRs")
 	assert.Empty(t, wf.On.Push.Branches, "CI must not run the same validation again on push to main")
 	assert.Empty(t, wf.On.Push.Tags, "CI push trigger must remain absent")
+	assertNoTriggerEvent(t, ciPath, "push")
 	assertNoTriggerPathFiltering(t, ciPath)
 
 	_, err := os.Stat(driftPath)
