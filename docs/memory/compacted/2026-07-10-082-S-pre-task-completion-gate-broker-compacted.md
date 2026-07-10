@@ -28,7 +28,7 @@ Shipment `082-S` delivered the pre-task-completion gate broker that composes bac
 
 ## Files, review, and verification
 
-* `internal/gate`, `internal/core`, `internal/cli`, and `internal/mcp` gained gate decision/running, transition, evidence, exit-code, doctor, and structured MCP result behavior.
+* `internal/core/gate`, `internal/core`, `internal/cli`, and `internal/mcp` gained gate decision/running, transition, evidence, exit-code, doctor, and structured MCP result behavior.
 * Pre-push adversarial review found and Ship fixed path-qualified binary local-RCE, timeout-before-probe, MinimalEnv, evidence-required parity, and base-override audit gaps.
 * Copilot fixed `update --json` dropping `--section`, allowed-actions divergence, and dead runtime import.
 * Real autoharness 1.4.7 runtime verification covered pass, fail-open, fail-closed setup exit 7, logs-only evidence, structured JSON, and update-section regression.

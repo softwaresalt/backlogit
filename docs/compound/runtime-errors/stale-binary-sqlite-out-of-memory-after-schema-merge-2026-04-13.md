@@ -42,30 +42,39 @@ A second 2026-07-10 instance surfaced during 088-S git-aware archival: `internal
 
 ## Solution
 
-First verify the binary you are about to use:
-
-```powershell
-.\backlogit-dev.exe --version
-C:\Tools\backlogit.exe --version
-```
-
-Prefer a freshly built binary when validating or relying on behavior that just merged:
+First verify the in-tree binary you are about to use. This is the
+agent-safe workflow because all writes stay inside the checkout:
 
 ```powershell
 Set-Location <repo-root>
-go build -o backlogit-fresh.exe ./cmd/backlogit
-.\backlogit-fresh.exe sync
-.\backlogit-fresh.exe shipment ship 031-S --sha <sha>
-
-# Then install permanently
-go install ./cmd/backlogit
+go build -o .\backlogit-dev.exe ./cmd/backlogit
+.\backlogit-dev.exe --version
 ```
 
-Or re-run `go install ./cmd/backlogit` from the repo root to overwrite the installed binary with the latest code.
+Then use that freshly built binary when validating or relying on behavior that
+just merged:
+
+```powershell
+Set-Location <repo-root>
+.\backlogit-dev.exe sync
+.\backlogit-dev.exe shipment ship 031-S --sha <sha>
+```
+
+`go install ./cmd/backlogit`, updating `GOBIN`, or reinstalling
+`C:\Tools\backlogit.exe` are **human/operator-only** steps. They write outside
+the checkout and are not valid agent actions under CLI workspace containment.
+Operators may still use them to refresh a global install after reviewing the
+in-tree validation result.
 
 ## Prevention
 
-After merging any PR that touches CLI-dispatched behavior, `internal/core/`, `internal/db/`, archive/restore logic, migrations, or workflow-critical commands, rebuild or reinstall before invoking the CLI. The repository build artifact, a PATH install, and an npm-wrapper cached binary can all drift independently. Always check `backlogit --version` or build a named fresh binary such as `.\backlogit-dev.exe` when validating current `main`.
+After merging any PR that touches CLI-dispatched behavior, `internal/core/`,
+`internal/db/`, archive/restore logic, migrations, or workflow-critical commands,
+rebuild the in-tree agent binary before invoking the CLI. The repository build
+artifact, a PATH install, and an npm-wrapper cached binary can all drift
+independently. Agents should validate current `main` with a named in-tree binary
+such as `.\backlogit-dev.exe`; operators can separately refresh installed
+binaries outside the checkout.
 
 ## Context
 

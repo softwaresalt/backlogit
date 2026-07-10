@@ -1,17 +1,17 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Use git-aware moves for tracked backlog artifacts so archive and restore operations preserve Git rename staging (and, under Git's similarity heuristic, follow-history) while keeping filesystem fallbacks for untracked and non-git workspaces. Note the single-commit caveat for short/heavily-rewritten artifacts.
+description: Use git-aware moves for tracked backlog artifacts so archive and restore operations stage rename intent, avoid commit-a omission of new archive files, and support index-aware rollback.
 doc_type: learning
 docline:
     category: best-practices
     component: archive-lifecycle
     date: 2026-07-10T00:00:00Z
     file_path: internal/core/archive.go
-    message: Tracked backlog artifacts archived with plain filesystem moves lose Git rename staging and make follow-history harder to audit.
+    message: Tracked backlog artifacts archived with plain filesystem moves lose staged rename intent and can leave the new archive file untracked if committed carelessly.
     problem_type: workflow_issue
     resolution_type: code_fix
     resolved: true
-    root_cause: archive and restore code treated Git-tracked Markdown artifacts like ordinary files instead of preserving VCS rename semantics.
+    root_cause: archive and restore code treated Git-tracked Markdown artifacts like ordinary files instead of staging VCS rename intent.
     severity: medium
     tags:
         - archive-safety
@@ -25,18 +25,23 @@ docline:
 ingested_at: "2026-07-10T00:00:00Z"
 schema_version: "1.0"
 source: docs/compound/best-practices/git-aware-backlog-artifact-archival-preserves-follow-history-2026-07-10.md
-title: Git-aware backlog artifact archival preserves follow-history for tracked work items
+title: Git-aware backlog artifact archival stages tracked renames safely
 ---
 
-# Git-aware backlog artifact archival preserves follow-history
+# Git-aware backlog artifact archival stages tracked renames safely
 
 ## Problem
 
 Backlog work items are Markdown files that move between queue and archive paths.
 Before `088-S`, archive and restore paths used filesystem writes and removals
 even when an artifact was already tracked by Git. The content was preserved, but
-the working tree did not show an intentional rename, which made follow-history
-queries and operator review less reliable for long-lived backlog artifacts.
+the Git index did not show an intentional rename, which made operator review and
+rollback less reliable.
+
+The larger footgun is commit discipline: a filesystem move creates a deleted
+source and a new archive file. A careless `git commit -a` can stage the deletion
+and modified tracked files while omitting the new untracked archive file. That is
+where history and traceability are genuinely lost.
 
 ## Root Cause
 
@@ -61,35 +66,45 @@ Git.
 6. Fail closed for unexpected Git probe errors and roll back both content and
    staged Git moves if the content rewrite or DB update fails.
 
+The guaranteed benefits are staged rename state, protection from the untracked
+new-file loss footgun, and index-aware rollback. Git is not required solely for
+history retention: once both paths are committed, an equivalent filesystem move
+can also be followed by Git when content similarity is sufficient.
+
 Tests in `internal/core/archive_git_test.go` cover tracked archive/restore
-rename staging, `git log --follow` preservation, untracked fallbacks, nested
-worktrees, fail-closed probe errors, timeout handling, and rollback.
+rename staging, `git log --follow` regression evidence, untracked fallbacks,
+nested worktrees, fail-closed probe errors, timeout handling, and rollback.
 
 ## Guarantee scope and caveat
 
-`git mv` guarantees the **rename is staged** — the delete/add pair is staged
-atomically and the working tree shows an intentional rename. It does **not** by
-itself guarantee `git log --follow` history: Git stores no rename metadata, so
-`--follow` relies on a content-**similarity heuristic** computed at diff time. For
-short or heavily-rewritten artifacts, staging the move together with a large
-frontmatter/content rewrite in a **single commit** can push similarity below Git's
-rename threshold and break follow-history.
+`git mv` guarantees the **rename is staged**: the delete/add pair is staged
+atomically and the index shows intentional rename state. It also lets rollback
+reverse the staged move through Git if a later content rewrite or DB update
+fails.
 
-To guarantee follow-history for such artifacts, keep the rename and the content
-rewrite in **separate commits**: commit the pure move first (high similarity → the
-rename is detected), then commit the frontmatter/content rewrite. The short-artifact
-case in `archive_git_test.go` depends on exactly this ordering. Stated precisely:
-git-aware archival guarantees **rename staging**; follow-history is preserved when
-the rename is committed with sufficient similarity (use the two-commit pattern for
-short or heavily-edited artifacts).
+`git mv` does **not** by itself guarantee `git log --follow` history. Git stores
+no rename metadata, so `--follow` relies on a content-similarity heuristic
+computed at diff time. An equivalent filesystem move can be followed too once
+both paths are committed and similarity is sufficient. For short or
+heavily-rewritten artifacts, committing the move together with a large
+frontmatter/content rewrite can push similarity below Git's rename threshold and
+break `--follow`.
+
+Use the `--follow` tests as regression evidence that the implementation can
+produce a committed shape Git follows, not as proof that `git mv` uniquely
+retains history. For short or heavily-edited artifacts, keep the rename and the
+content rewrite in **separate commits**: commit the pure move first, then commit
+the frontmatter/content rewrite. The short-artifact case in
+`archive_git_test.go` depends on exactly this ordering.
 
 ## Prevention
 
 When a code path relocates repository-managed Markdown artifacts, do not treat it
-as a plain file move by default. First decide whether preserving Git rename
-semantics matters for review, history, or traceability. If it does, use Git-aware
-move planning for tracked files and keep explicit filesystem fallbacks for
-contexts where Git is unavailable or the artifact is not tracked.
+as a plain file move by default. First decide whether staged rename intent,
+commit-a safety, and index-aware rollback matter for review or traceability. If
+they do, use Git-aware move planning for tracked files and keep explicit
+filesystem fallbacks for contexts where Git is unavailable or the artifact is not
+tracked.
 
 ## Evidence
 

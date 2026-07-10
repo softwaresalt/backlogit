@@ -25,7 +25,7 @@ archive implementation/tests, and the existing compound library.
 
 | Entry | Classification | Evidence | Action |
 |---|---|---|---|
-| `docs/compound/runtime-errors/stale-binary-sqlite-out-of-memory-after-schema-merge-2026-04-13.md` | update | `088-S` exposed the same root pattern: stale installed v1.4.1 `C:\Tools\backlogit.exe` hid current v1.4.2 git-aware archival behavior. | Broadened from SQLite-only symptom to stale-binary trap and added 088-S evidence. |
+| `docs/compound/runtime-errors/stale-binary-sqlite-out-of-memory-after-schema-merge-2026-04-13.md` | update | `088-S` exposed the same root pattern: stale installed v1.4.1 `C:\Tools\backlogit.exe` hid current v1.4.2 git-aware archival behavior. | Broadened from SQLite-only symptom to stale-binary trap, added 088-S evidence, and clarified that agents should use an in-tree build while `go install` or `C:\Tools` reinstall is operator-only. |
 | `docs/compound/github-actions/dorny-paths-filter-every-quantifier-semantics-2026-07-04.md` | update | `.github/workflows/ci.yml` now ships the anchor-plus-negations `every` pattern and job-level gating. | Updated the previously deferred learning to cite 089-S shipped behavior and the current filter shape. |
 | `docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md` | update | `089-S` consolidated `CLI Reference Drift` into `.github/workflows/ci.yml`. | Updated workflow location and current generator command while preserving the core generated-docs guidance. |
 | `docs/compound/github-actions/F013-workflow-sha-pinning.md` | update | 089-S reduced CI to one Go 1.24 `test` context and kept SHA-pin requirements. | Updated the Go-version guidance and added a 2026-07-10 refresh note for PR-only CI and required contexts. |
@@ -37,8 +37,11 @@ archive implementation/tests, and the existing compound library.
 Created
 `docs/compound/best-practices/git-aware-backlog-artifact-archival-preserves-follow-history-2026-07-10.md`
 for the durable 088-S pattern: tracked repository artifacts should use
-Git-aware move planning to preserve rename staging and follow-history, while
-retaining explicit fallbacks for untracked and non-git contexts.
+Git-aware move planning to stage rename intent, avoid the untracked-new-file
+loss footgun, and support index-aware rollback. `git log --follow` coverage is
+regression evidence under Git's similarity heuristic, not a git-mv-exclusive
+guarantee. The learning keeps the two-commit caveat for short or heavily-edited
+artifacts.
 
 ## Stale, superseded, or consolidated entries
 
