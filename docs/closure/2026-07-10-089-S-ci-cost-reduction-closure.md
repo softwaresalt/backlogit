@@ -43,7 +43,6 @@ tag provenance before packaging.
 * `gofmt -l .` was also run and returned pre-existing repository-wide formatting
   output across unchanged Go files. This is recorded as a release condition below
   instead of widening this CI-config shipment into a repository-wide formatting PR.
-  `gofmt -l tests\integration\ci_compliance_test.go` returned empty output.
 * PR #201 CI passed on the final head `8b2a94177cd35bcedc139fa127f7aff020c759e8`:
   * `Detect code changes`
   * `test`
