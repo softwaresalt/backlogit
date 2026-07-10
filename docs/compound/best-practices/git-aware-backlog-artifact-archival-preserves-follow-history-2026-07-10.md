@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Use git-aware moves for tracked backlog artifacts so archive and restore operations preserve Git rename staging and follow-history while keeping filesystem fallbacks for untracked and non-git workspaces.
+description: Use git-aware moves for tracked backlog artifacts so archive and restore operations preserve Git rename staging (and, under Git's similarity heuristic, follow-history) while keeping filesystem fallbacks for untracked and non-git workspaces. Note the single-commit caveat for short/heavily-rewritten artifacts.
 doc_type: learning
 docline:
     category: best-practices
@@ -64,6 +64,24 @@ Git.
 Tests in `internal/core/archive_git_test.go` cover tracked archive/restore
 rename staging, `git log --follow` preservation, untracked fallbacks, nested
 worktrees, fail-closed probe errors, timeout handling, and rollback.
+
+## Guarantee scope and caveat
+
+`git mv` guarantees the **rename is staged** — the delete/add pair is staged
+atomically and the working tree shows an intentional rename. It does **not** by
+itself guarantee `git log --follow` history: Git stores no rename metadata, so
+`--follow` relies on a content-**similarity heuristic** computed at diff time. For
+short or heavily-rewritten artifacts, staging the move together with a large
+frontmatter/content rewrite in a **single commit** can push similarity below Git's
+rename threshold and break follow-history.
+
+To guarantee follow-history for such artifacts, keep the rename and the content
+rewrite in **separate commits**: commit the pure move first (high similarity → the
+rename is detected), then commit the frontmatter/content rewrite. The short-artifact
+case in `archive_git_test.go` depends on exactly this ordering. Stated precisely:
+git-aware archival guarantees **rename staging**; follow-history is preserved when
+the rename is committed with sufficient similarity (use the two-commit pattern for
+short or heavily-edited artifacts).
 
 ## Prevention
 
