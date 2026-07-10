@@ -72,7 +72,7 @@ write path.
 ## Evidence
 
 - Whole-suite gates from the build session (memory checkpoint
-  `docs/memory/2026-07-02-075-S-task3-mcp-checkpoint.md`): `go test ./...` PASS,
+  `docs/archive/memory/2026-07-02-075-S-task3-mcp-checkpoint.md`): `go test ./...` PASS,
   `go vet ./...` PASS, `golangci-lint run` PASS (exit 0), changed files gofmt-clean.
 - Shipped unit tests assert the same invariants exercised here:
   `internal/cli` (`COVERING FEATURE` column; top-level `covering_feature`; zero-feature

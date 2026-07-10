@@ -154,7 +154,7 @@ diagnostic text. This introduces no new durable, reusable engineering lesson.
 Assessed (`target: all`); **no compaction executed this cycle**. `docs/memory/`
 top-level volume remains far below the compaction triggers (40 files / 500 KB /
 10 checkpoints per group). The 074-S memory checkpoint
-(`docs/memory/2026-07-02-ship-074-S-scope-io-classification.md`) is the newest per-unit
+(`docs/archive/memory/2026-07-02-ship-074-S-scope-io-classification.md`) is the newest per-unit
 record and is preserved; prior shipped units are already covered by their own closures
 and the existing `docs/memory/compacted/` batch. Archive-only and newest-preserved
 constraints honored (nothing deleted or moved).

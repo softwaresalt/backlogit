@@ -136,5 +136,5 @@ Verbose originals archived under `docs/archive/memory/`:
 * `docs/archive/memory/2026-06-30-stage-deterministic-gates-slice.md`
 * `docs/archive/memory/2026-06-30-ship-071-S-checkpoint.md`
 
-Preserved (not compacted): `docs/memory/2026-07-01-stage-072-S-doctor-nil-headerdef.md`,
-`docs/memory/2026-07-01-ship-072-S-checkpoint.md` (current unit 072-S, newest).
+Preserved (not compacted): `docs/archive/memory/2026-07-01-stage-072-S-doctor-nil-headerdef.md`,
+`docs/archive/memory/2026-07-01-ship-072-S-checkpoint.md` (current unit 072-S, newest).
