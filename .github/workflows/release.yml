@@ -20,6 +20,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Verify tag commit is on protected main
+        shell: bash
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::Release tags must point at a commit reachable from protected main."
+            exit 1
+          fi
       - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version: "1.24"
@@ -27,7 +36,7 @@ jobs:
         run: go mod download
       - name: Test
         # Race and coverage run in protected PR CI on the Go 1.24 support target.
-        # Release tags keep a lightweight provenance guard before packaging.
+        # Release tags also verify protected-main provenance before packaging.
         run: go test ./...
 
   changelog:

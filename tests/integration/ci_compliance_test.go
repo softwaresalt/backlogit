@@ -461,9 +461,11 @@ func TestCIChangeDetectorFailSafeOutputs(t *testing.T) {
 	classifyFilters := requireYAMLString(t, classify.With["filters"], "classify filters")
 	assertContainsAll(t, classifyFilters,
 		"code:", "- '**'", "- '!**/*.md'", "- '!docs/**'", "- '!.backlogit/**'",
-		"docline_required:", "- '!internal/core/**'", "- '!internal/db/**'", "- '!internal/mcp/**'",
+		"docline_required:", "- '!internal/db/**'", "- '!internal/mcp/**'",
 		"- '!internal/models/**'", "- '!internal/telemetry/**'", "- '!internal/version/**'", "- '!tests/**'",
+		"- '!.backlogit/**'",
 	)
+	assert.NotContains(t, classifyFilters, "!internal/core/**", "core changes can affect docline SafeResolve behavior")
 	assert.NotContains(t, classifyFilters, "!internal/docline/**", "docline implementation changes must run docline lint")
 	assert.NotContains(t, classifyFilters, "!internal/mdfront/**", "frontmatter codec changes must run docline lint")
 	assert.NotContains(t, classifyFilters, "!internal/cli/docs.go", "docs command changes must run docline lint")
@@ -500,13 +502,13 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 
 	drift := wf.Jobs["cli-reference-drift"]
 	assert.Equal(t,
-		"needs.changes.outputs.code == 'false' && needs.changes.outputs.cli_reference == 'false'",
+		"needs.changes.outputs.cli_reference == 'false'",
 		findStep(t, drift, "Skip CLI reference drift for irrelevant changes").If)
 	for _, stepName := range []string{"Checkout", "Setup Go for CLI reference", "Generate CLI reference", "Check for drift"} {
 		step := findStep(t, drift, stepName)
 		assert.Equal(t,
-			"needs.changes.outputs.code != 'false' || needs.changes.outputs.cli_reference == 'true'",
-			step.If, "%s should run for code, CLI docs, unknown, or detector failure", stepName)
+			"needs.changes.outputs.cli_reference != 'false'",
+			step.If, "%s should run for CLI-relevant changes or detector failure", stepName)
 	}
 }
 
@@ -519,6 +521,9 @@ func TestReleaseWorkflowDropsRaceMatrix(t *testing.T) {
 	require.True(t, ok, "release.yml should keep a lightweight test job")
 
 	assert.Empty(t, testJob.Strategy.Matrix, "release quality gate should not fan out a Go-version matrix")
+	provenance := findStep(t, testJob, "Verify tag commit is on protected main")
+	assert.Contains(t, provenance.Run, "git merge-base --is-ancestor")
+	assert.Contains(t, provenance.Run, "origin/main")
 	for _, step := range testJob.Steps {
 		assert.NotContains(t, step.Run, "-race", "release quality gate should not duplicate race testing")
 		assert.NotContains(t, step.Run, "coverprofile", "release quality gate should not duplicate coverage generation")
