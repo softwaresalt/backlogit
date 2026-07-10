@@ -116,6 +116,9 @@ if ($engramCmd) {
         Write-Warning "engram direct pre-warm failed; retrying via daemon sync: $_"
         try {
             & $engramCmd.Source --format text bind
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "engram bind exited with code $LASTEXITCODE; workspace may not be bound before the fallback sync."
+            }
             Invoke-EngramCommandWithProgress `
                 -Executable $engramCmd.Source `
                 -Subcommand "sync" `
@@ -128,10 +131,10 @@ if ($engramCmd) {
     }
 }
 
-$copilotArguments = @()
-if (-not ($args -contains "--remote")) {
-    $copilotArguments += "--remote"
-}
-$copilotArguments += $args
+# Forward caller arguments as-is. --remote (Copilot remote control, which streams
+# session output to GitHub and permits steering from authenticated remote devices)
+# is opt-in: it is forwarded only when the caller explicitly supplies it, and is
+# never force-enabled by the launcher.
+$copilotArguments = @($args)
 
 & $copilotExe @copilotArguments
