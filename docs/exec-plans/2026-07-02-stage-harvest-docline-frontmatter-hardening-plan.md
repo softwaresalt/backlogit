@@ -19,7 +19,7 @@ title: 'Harden Stage harvest: born-compliant plan frontmatter + pre-harvest docl
   top-level `title` + `source`, failing the "Docline frontmatter gate" CI check (3 violations) and
   blocking the PR until an operator-approved P-010 override let Ship fix the frontmatter. Captured
   by the Orchestrator process note 2026-07-02. See memory checkpoint
-  `docs/memory/2026-07-02-075-S-HALT-inherited-stage-commit.md`.
+  `docs/archive/memory/2026-07-02-075-S-HALT-inherited-stage-commit.md`.
 - Prior art / compound learning (canonical prior, HIGH-confidence match):
   `docs/compound/2026-06-26-docline-frontmatter-contract.md` — the four-part sustainable-contract
   pattern. Two parts map directly onto this chore: **(3) born-compliant generation** ("teach the

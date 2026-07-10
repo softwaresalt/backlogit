@@ -7,7 +7,7 @@ docline:
     ms.topic: reference
 ingested_at: "2026-07-06T00:00:00Z"
 schema_version: "1.0"
-source: docs/memory/2026-07-06-stage-gate-broker-phase2-session.md
+source: docs/archive/memory/2026-07-06-stage-gate-broker-phase2-session.md
 title: 'Stage session — gate-broker phase-2 hardening'
 ---
 

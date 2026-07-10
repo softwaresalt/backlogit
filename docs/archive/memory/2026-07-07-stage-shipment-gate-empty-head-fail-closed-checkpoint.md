@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 doc_type: memory
 schema_version: "1.0"
-source: docs/memory/2026-07-07-stage-shipment-gate-empty-head-fail-closed-checkpoint.md
+source: docs/archive/memory/2026-07-07-stage-shipment-gate-empty-head-fail-closed-checkpoint.md
 title: 'Stage session memory — shipment-gate empty-head fail-closed hardening (COMPLETE)'
 description: 'Final Stage session memory: deliberation + impl-plan + plan-harden + plan-review PASS (2 attempts) + harvest (085-F) + queued shipment 085-S for the B85DAEE8 + 1AEA2B0E bundle.'
 ---

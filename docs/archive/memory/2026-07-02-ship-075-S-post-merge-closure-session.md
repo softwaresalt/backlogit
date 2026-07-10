@@ -9,7 +9,7 @@
 
 ## What this session did (resume from HALT)
 
-Resumed from the prior HALT (`docs/memory/2026-07-02-075-S-HALT-inherited-stage-commit.md`).
+Resumed from the prior HALT (`docs/archive/memory/2026-07-02-075-S-HALT-inherited-stage-commit.md`).
 The inherited-Stage-commit blocker (`f316dfd` scope + Docline plan-frontmatter CI failure)
 was resolved by the operator (P-010 frontmatter fix; CI 4/4 green) and explicit **P-014**
 merge approval was granted.

@@ -36,7 +36,7 @@
 
 - Deliberation: `docs/decisions/2026-07-03-cli-mcp-command-parity-deliberation.md` (Option B) + native `050-DL` (linked to E16F4664). Lints clean.
 - Plan: `docs/exec-plans/2026-07-03-cli-mcp-command-parity-plan.md` — **plan-review PASS (attempt 2)**. Lints clean (0 violations). `Requires plan hardening: no` (P-006 gate: plan-harden correctly skipped).
-- Triage checkpoint: `docs/memory/2026-07-03-stage-E16F4664-cli-mcp-parity-triage.md`.
+- Triage checkpoint: `docs/archive/memory/2026-07-03-stage-E16F4664-cli-mcp-parity-triage.md`.
 
 ## Plan-review history
 

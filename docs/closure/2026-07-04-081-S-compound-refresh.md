@@ -19,7 +19,7 @@ title: 081-S compound-refresh — dorny/paths-filter every-quantifier capture
 ## Phase 1 — Evidence
 
 - Shipped scope: docs-only, archive-only. Touched **no** `.github/workflows/**`, no Go code, no CLI/schema. → No existing compound entry drifts as a result of 081-S itself.
-- Candidate learning source: `docs/memory/2026-07-04-stage-ci-gating-closure-compaction-session.md` (rounds 1–4 finding trail) + `docs/exec-plans/2026-07-04-ci-cost-gating-plan.md` (round-4 corrected design). Source-verified against dorny/paths-filter `README.md` + `src/filter.ts`.
+- Candidate learning source: `docs/archive/memory/2026-07-04-stage-ci-gating-closure-compaction-session.md` (rounds 1–4 finding trail) + `docs/exec-plans/2026-07-04-ci-cost-gating-plan.md` (round-4 corrected design). Source-verified against dorny/paths-filter `README.md` + `src/filter.ts`.
 
 ## Phase 2 — Classification
 

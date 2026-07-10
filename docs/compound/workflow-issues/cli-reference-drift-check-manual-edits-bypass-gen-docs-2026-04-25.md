@@ -32,12 +32,15 @@ title: CLI Reference Drift Check fails when docs/cli-reference/ files are edited
 
 ## Problem
 
-The backlogit CI runs a **CLI Reference Drift Check** that regenerates all CLI
-reference docs via `make docs` (`go run ./cmd/gen-docs docs/cli-reference`) and
-then asserts `git diff --exit-code docs/cli-reference/` is clean. Any content
-that was added directly to a `docs/cli-reference/*.md` file without a
-corresponding source in the Go command definition is overwritten by the
-generator and the diff check fails.
+The backlogit CI runs an always-reporting **CLI Reference Drift** job that regenerates all CLI
+reference docs via `go run ./cmd/gen-docs docs/cli-reference` and then asserts
+`git diff --exit-code docs/cli-reference/` is clean. Since 089-S, this job lives
+inside `.github/workflows/ci.yml` instead of a standalone workflow. It reports on
+every PR but is **not** a required branch-protection context — per the 089-S closure
+the required contexts are `Detect code changes`, `test`, and `Docline frontmatter gate`.
+The contract is unchanged: any content added directly to `docs/cli-reference/*.md`
+without a corresponding source in the Go command definition is overwritten by
+the generator and the drift job fails.
 
 In practice: sections (`### Behavior`, `### Checkpoint`) were manually added to
 `docs/cli-reference/backlogit_telemetry_harvest.md` as part of documentation
@@ -121,10 +124,13 @@ is clean.
   artifacts. Treat them as read-only.
 - **Add content via the `Long:` field** in the corresponding Cobra command
   struct.
-- **Always run `make docs` locally** after editing any CLI command definition
+- **Always run the generator locally** after editing any CLI command definition
   and commit the regenerated files in the same commit as the Go change.
-- **Pre-commit check**: run `make docs && git diff --exit-code docs/cli-reference/`
-  before pushing any branch that touches `internal/cli/`.
+- **Pre-commit check**: run `go run ./cmd/gen-docs docs/cli-reference && git diff --exit-code docs/cli-reference/`
+  before pushing any branch that touches CLI command definitions or generated docs.
+- **Workflow location**: as of 089-S, check `.github/workflows/ci.yml` for the
+  required `CLI Reference Drift` job; do not look for a separate
+  `cli-reference-drift.yml` workflow.
 
 ## Related Solutions
 
