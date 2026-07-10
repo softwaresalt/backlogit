@@ -80,6 +80,30 @@ func TestPlanArtifactMove_StrategyDetection(t *testing.T) {
 		assert.Equal(t, filepath.ToSlash(mustRel(t, root, destPath)), plan.destRel)
 	})
 
+	t.Run("workspace below git root uses repository relative paths", func(t *testing.T) {
+		root := t.TempDir()
+		workspaceRoot := filepath.Join(root, "nested")
+		sourcePath := filepath.Join(workspaceRoot, ".backlogit", "queue", "001-T.md")
+		destPath := filepath.Join(workspaceRoot, ".backlogit", "archive", "001-T.md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(sourcePath), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Dir(destPath), 0o755))
+		require.NoError(t, os.WriteFile(sourcePath, []byte("body\n"), 0o644))
+		initGitRepo(t, root)
+		sourceRel := filepath.ToSlash(mustRel(t, root, sourcePath))
+		runGit(t, root, "add", sourceRel)
+		runGit(t, root, "commit", "-m", "track nested source")
+
+		plan, err := planArtifactMove(ctx, workspaceRoot, sourcePath, destPath)
+
+		require.NoError(t, err)
+		assert.Equal(t, artifactMoveGit, plan.kind)
+		wantRoot, ok := canonicalExistingPath(root)
+		require.True(t, ok)
+		assert.Equal(t, wantRoot, plan.workTreeRoot)
+		assert.Equal(t, sourceRel, plan.sourceRel)
+		assert.Equal(t, filepath.ToSlash(mustRel(t, root, destPath)), plan.destRel)
+	})
+
 	t.Run("unexpected git worktree probe error fails closed", func(t *testing.T) {
 		fakeDir := writeFakeGit(t, fakeGitScripts{
 			windows: "@echo off\r\necho fatal: object database corrupt 1>&2\r\nexit /b 128\r\n",

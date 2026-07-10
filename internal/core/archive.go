@@ -403,27 +403,26 @@ func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath s
 		}
 		return plan, fmt.Errorf("detect git worktree: %w", err)
 	}
-	workTreeRoot := filepath.Clean(strings.TrimSpace(string(topLevel)))
+	workTreeRoot := filepath.Clean(filepath.FromSlash(strings.TrimSpace(string(topLevel))))
 	if workTreeRoot == "" {
 		return plan, nil
 	}
-	commandRoot := filepath.Clean(workspaceRoot)
-	sourceRel, ok := gitRelativePath(commandRoot, sourcePath)
+	sourceRel, ok := gitRelativePath(workTreeRoot, sourcePath)
 	if !ok {
 		return plan, nil
 	}
-	destRel, ok := gitRelativePath(commandRoot, destPath)
+	destRel, ok := gitRelativePath(workTreeRoot, destPath)
 	if !ok {
 		return plan, nil
 	}
-	if _, err := runGitCommand(ctx, gitPath, commandRoot, "ls-files", "--error-unmatch", "--", sourceRel); err != nil {
+	if _, err := runGitCommand(ctx, gitPath, workTreeRoot, "ls-files", "--error-unmatch", "--", sourceRel); err != nil {
 		if isGitUntrackedPathError(err) {
 			return plan, nil
 		}
 		return plan, fmt.Errorf("detect tracked artifact: %w", err)
 	}
 	plan.kind = artifactMoveGit
-	plan.workTreeRoot = commandRoot
+	plan.workTreeRoot = workTreeRoot
 	plan.sourceRel = sourceRel
 	plan.destRel = destRel
 	return plan, nil
@@ -587,14 +586,11 @@ func isGitOverrideEnv(key string) bool {
 }
 
 func gitRelativePath(workTreeRoot, targetPath string) (string, bool) {
-	absRoot, err := filepath.Abs(workTreeRoot)
-	if err != nil {
+	absRoot, ok := canonicalExistingPath(workTreeRoot)
+	if !ok {
 		return "", false
 	}
-	absTarget, err := filepath.Abs(targetPath)
-	if err != nil {
-		return "", false
-	}
+	absTarget := canonicalTargetPath(targetPath)
 	rel, err := filepath.Rel(absRoot, absTarget)
 	if err != nil {
 		return "", false
@@ -604,6 +600,35 @@ func gitRelativePath(workTreeRoot, targetPath string) (string, bool) {
 		return "", false
 	}
 	return rel, true
+}
+
+func canonicalExistingPath(targetPath string) (string, bool) {
+	absPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", false
+	}
+	if evalPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		return filepath.Clean(evalPath), true
+	}
+	if _, statErr := os.Stat(absPath); statErr != nil {
+		return "", false
+	}
+	return filepath.Clean(absPath), true
+}
+
+func canonicalTargetPath(targetPath string) string {
+	if existing, ok := canonicalExistingPath(targetPath); ok {
+		return existing
+	}
+	parent, ok := canonicalExistingPath(filepath.Dir(targetPath))
+	if !ok {
+		absPath, err := filepath.Abs(targetPath)
+		if err != nil {
+			return filepath.Clean(targetPath)
+		}
+		return filepath.Clean(absPath)
+	}
+	return filepath.Join(parent, filepath.Base(targetPath))
 }
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
