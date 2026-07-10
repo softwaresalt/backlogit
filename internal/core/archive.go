@@ -10,10 +10,10 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -482,54 +482,9 @@ func restoreArchiveAfterUnarchiveFailure(archivePath, originalPath string, raw [
 }
 
 func replaceFile(targetPath string, content []byte) error {
-	tmpFile, err := os.CreateTemp(filepath.Dir(targetPath), filepath.Base(targetPath)+".*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+	if err := atomicfile.WriteFileAtomic(targetPath, content); err != nil {
+		return fmt.Errorf("replace file %q: %w", targetPath, err)
 	}
-	tmpPath := tmpFile.Name()
-	removeTemp := true
-	defer func() {
-		if removeTemp {
-			if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
-				slog.Warn("replace file: failed to remove temp file", "path", tmpPath, "error", removeErr)
-			}
-		}
-	}()
-	if _, err := tmpFile.Write(content); err != nil {
-		if closeErr := tmpFile.Close(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, targetPath); err != nil {
-		if runtime.GOOS == "windows" {
-			original, readErr := os.ReadFile(targetPath)
-			if removeErr := os.Remove(targetPath); removeErr != nil && !os.IsNotExist(removeErr) {
-				return fmt.Errorf("remove existing file: %w", removeErr)
-			}
-			err = os.Rename(tmpPath, targetPath)
-			if err == nil {
-				removeTemp = false
-				return nil
-			}
-			if writeErr := os.WriteFile(targetPath, content, 0o644); writeErr == nil {
-				return nil
-			}
-			if readErr == nil {
-				if restoreErr := os.WriteFile(targetPath, original, 0o644); restoreErr != nil {
-					slog.Error("replace file: failed to restore original after rename failure",
-						"path", targetPath, "error", restoreErr)
-				}
-			}
-		}
-		if err != nil {
-			return fmt.Errorf("rename temp file: %w", err)
-		}
-	}
-	removeTemp = false
 	return nil
 }
 
@@ -584,13 +539,23 @@ func gitCommandEnv() []string {
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if isGitOverrideEnv(key) {
+		if isGitOverrideEnv(key) || isGitLocaleEnv(key) {
 			continue
 		}
 		env = append(env, entry)
 	}
 	env = append(env, "GIT_TERMINAL_PROMPT=0")
+	env = append(env, "LC_ALL=C", "LANG=C")
 	return env
+}
+
+func isGitLocaleEnv(key string) bool {
+	switch key {
+	case "LC_ALL", "LANG":
+		return true
+	default:
+		return false
+	}
 }
 
 func isGitOverrideEnv(key string) bool {

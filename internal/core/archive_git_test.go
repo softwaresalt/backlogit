@@ -218,6 +218,33 @@ func TestPerformArtifactMove_GitMoveErrorsFailClosed(t *testing.T) {
 	}
 }
 
+func TestReplaceFilePreservesExistingArtifactMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose POSIX permission preservation semantics")
+	}
+	path := filepath.Join(t.TempDir(), "artifact.md")
+	require.NoError(t, os.WriteFile(path, []byte("before\n"), 0o640))
+
+	err := replaceFile(path, []byte("after\n"))
+
+	require.NoError(t, err)
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
+}
+
+func TestGitCommandEnvForcesCLocale(t *testing.T) {
+	t.Setenv("LC_ALL", "fr_FR.UTF-8")
+	t.Setenv("LANG", "fr_FR.UTF-8")
+
+	env := gitCommandEnv()
+
+	assert.NotContains(t, env, "LC_ALL=fr_FR.UTF-8")
+	assert.NotContains(t, env, "LANG=fr_FR.UTF-8")
+	assert.Contains(t, env, "LC_ALL=C")
+	assert.Contains(t, env, "LANG=C")
+}
+
 func TestArchiveItem_GitMoveDBFailureRollsBackWorktreeAndIndex(t *testing.T) {
 	fx := newGitArchiveFixture(t, "104-T")
 	requireGitClean(t, fx.root)
