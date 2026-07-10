@@ -324,13 +324,16 @@ func TestRollbackGitArtifactMoveReversesMoveAfterContentRestoreFailure(t *testin
 func TestGitCommandEnvForcesCLocale(t *testing.T) {
 	t.Setenv("LC_ALL", "fr_FR.UTF-8")
 	t.Setenv("LANG", "fr_FR.UTF-8")
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
 
 	env := gitCommandEnv()
 
 	assert.NotContains(t, env, "LC_ALL=fr_FR.UTF-8")
 	assert.NotContains(t, env, "LANG=fr_FR.UTF-8")
+	assert.NotContains(t, env, "GIT_TERMINAL_PROMPT=1")
 	assert.Contains(t, env, "LC_ALL=C")
 	assert.Contains(t, env, "LANG=C")
+	assert.Contains(t, env, "GIT_TERMINAL_PROMPT=0")
 }
 
 func TestArchiveItem_GitMoveDBFailureRollsBackWorktreeAndIndex(t *testing.T) {

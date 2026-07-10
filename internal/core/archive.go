@@ -561,7 +561,7 @@ func gitCommandEnv() []string {
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if isGitOverrideEnv(key) || isGitLocaleEnv(key) {
+		if isGitOverrideEnv(key) || isGitLocaleEnv(key) || isGitPromptEnv(key) {
 			continue
 		}
 		env = append(env, entry)
@@ -578,6 +578,10 @@ func isGitLocaleEnv(key string) bool {
 	default:
 		return false
 	}
+}
+
+func isGitPromptEnv(key string) bool {
+	return key == "GIT_TERMINAL_PROMPT"
 }
 
 func isGitOverrideEnv(key string) bool {
