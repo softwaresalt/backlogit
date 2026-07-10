@@ -118,6 +118,26 @@ func TestPlanArtifactMove_StrategyDetection(t *testing.T) {
 		assert.Contains(t, err.Error(), "detect git worktree")
 	})
 
+	t.Run("empty git directory fails closed", func(t *testing.T) {
+		root, sourcePath, destPath := setupMoveStrategyFiles(t)
+		require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+
+		_, err := planArtifactMove(ctx, root, sourcePath, destPath)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "detect git worktree")
+	})
+
+	t.Run("broken gitfile fails closed", func(t *testing.T) {
+		root, sourcePath, destPath := setupMoveStrategyFiles(t)
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: missing\n"), 0o644))
+
+		_, err := planArtifactMove(ctx, root, sourcePath, destPath)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "detect git worktree")
+	})
+
 	t.Run("unexpected tracked-file probe error fails closed", func(t *testing.T) {
 		root, sourcePath, destPath := setupMoveStrategyFiles(t)
 		fakeDir := writeFakeGit(t, fakeGitForUnexpectedLsFiles(root))
@@ -164,6 +184,24 @@ func TestArchiveItem_TrackedGitArtifactUsesGitMoveAndPreservesFollowHistory(t *t
 	runGit(t, fx.root, "commit", "-m", "archive tracked task")
 	log := runGit(t, fx.root, "log", "--follow", "--format=%s", "--", fx.archiveRel)
 	assert.Contains(t, log, "archive tracked task")
+	assert.Contains(t, log, "seed tracked task")
+}
+
+func TestArchiveItem_TrackedShortArtifactStagesPureMoveForFollowHistory(t *testing.T) {
+	fx := newGitArchiveFixture(t, "106-T", withArtifactBody("short\n"))
+	ctx := context.Background()
+
+	_, err := ArchiveItem(ctx, fx.database, fx.workspace, fx.itemID)
+
+	require.NoError(t, err)
+	assertGitRenameStaged(t, fx.root, fx.queueRel, fx.archiveRel)
+	assertGitWorktreeModified(t, fx.root, fx.archiveRel)
+
+	runGit(t, fx.root, "commit", "-m", "archive pure move")
+	runGit(t, fx.root, "add", fx.archiveRel)
+	runGit(t, fx.root, "commit", "-m", "archive metadata")
+	log := runGit(t, fx.root, "log", "--follow", "--format=%s", "--", fx.archiveRel)
+	assert.Contains(t, log, "archive pure move")
 	assert.Contains(t, log, "seed tracked task")
 }
 
@@ -340,6 +378,7 @@ type gitArchiveFixtureOption func(*gitArchiveFixtureConfig)
 
 type gitArchiveFixtureConfig struct {
 	trackArtifact bool
+	body          string
 }
 
 func withoutTrackedArtifact() gitArchiveFixtureOption {
@@ -348,9 +387,18 @@ func withoutTrackedArtifact() gitArchiveFixtureOption {
 	}
 }
 
+func withArtifactBody(body string) gitArchiveFixtureOption {
+	return func(cfg *gitArchiveFixtureConfig) {
+		cfg.body = body
+	}
+}
+
 func newGitArchiveFixture(t *testing.T, itemID string, opts ...gitArchiveFixtureOption) gitArchiveFixture {
 	t.Helper()
-	cfg := gitArchiveFixtureConfig{trackArtifact: true}
+	cfg := gitArchiveFixtureConfig{
+		trackArtifact: true,
+		body:          strings.Repeat("Stable history body line\n", 20),
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -376,8 +424,7 @@ func newGitArchiveFixture(t *testing.T, itemID string, opts ...gitArchiveFixture
 	})
 
 	title := "Git tracked task " + itemID
-	body := strings.Repeat("Stable history body line\n", 20)
-	content := fmt.Sprintf("---\nid: %s\ntitle: %s\nstatus: done\nartifact_type: task\n---\n%s", itemID, title, body)
+	content := fmt.Sprintf("---\nid: %s\ntitle: %s\nstatus: done\nartifact_type: task\n---\n%s", itemID, title, cfg.body)
 	queuePath := filepath.Join(queueDir, itemID+".md")
 	archivePath := filepath.Join(archiveDir, itemID+".md")
 	require.NoError(t, os.WriteFile(queuePath, []byte(content), 0o644))

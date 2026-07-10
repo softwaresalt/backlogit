@@ -398,7 +398,7 @@ func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath s
 	}
 	topLevel, err := runGitCommand(ctx, gitPath, workspaceRoot, "rev-parse", "--show-toplevel")
 	if err != nil {
-		if isGitNoWorkTreeError(err) {
+		if isGitNoWorkTreeError(err, workspaceRoot) {
 			return plan, nil
 		}
 		return plan, fmt.Errorf("detect git worktree: %w", err)
@@ -510,7 +510,7 @@ func runGitCommand(ctx context.Context, gitPath, workTreeRoot string, args ...st
 	return output, nil
 }
 
-func isGitNoWorkTreeError(err error) bool {
+func isGitNoWorkTreeError(err error, workspaceRoot string) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
@@ -518,10 +518,30 @@ func isGitNoWorkTreeError(err error) bool {
 	if !errors.As(err, &exitErr) {
 		return false
 	}
+	if gitEntryPresentAtOrAbove(workspaceRoot) {
+		return false
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "not a git repository") ||
 		strings.Contains(msg, "not a gitdir") ||
 		strings.Contains(msg, "outside repository")
+}
+
+func gitEntryPresentAtOrAbove(start string) bool {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return true
+	}
+	for {
+		if _, statErr := os.Lstat(filepath.Join(dir, ".git")); statErr == nil || !os.IsNotExist(statErr) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }
 
 func isGitUntrackedPathError(err error) bool {
