@@ -233,6 +233,32 @@ func TestReplaceFilePreservesExistingArtifactMode(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
 }
 
+func TestRollbackGitArtifactMoveReversesMoveAfterContentRestoreFailure(t *testing.T) {
+	root := t.TempDir()
+	initGitRepo(t, root)
+	sourcePath := filepath.Join(root, "source.md")
+	destPath := filepath.Join(root, "dest.md")
+	require.NoError(t, os.WriteFile(sourcePath, []byte("source\n"), 0o644))
+	runGit(t, root, "add", "source.md")
+	runGit(t, root, "commit", "-m", "seed source")
+	plan := artifactMovePlan{
+		kind:         artifactMoveGit,
+		workTreeRoot: root,
+		sourceRel:    "source.md",
+		destRel:      "dest.md",
+	}
+	require.NoError(t, performArtifactMove(context.Background(), plan, "archive"))
+
+	rollbackGitArtifactMoveWithReplace(reverseArtifactMovePlan(plan), destPath, []byte("source\n"), "archive DB rollback",
+		func(string, []byte) error {
+			return fmt.Errorf("forced restore failure")
+		})
+
+	assert.FileExists(t, sourcePath)
+	assert.NoFileExists(t, destPath)
+	requireGitClean(t, root)
+}
+
 func TestGitCommandEnvForcesCLocale(t *testing.T) {
 	t.Setenv("LC_ALL", "fr_FR.UTF-8")
 	t.Setenv("LANG", "fr_FR.UTF-8")

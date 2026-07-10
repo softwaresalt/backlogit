@@ -453,10 +453,13 @@ func reverseArtifactMovePlan(plan artifactMovePlan) artifactMovePlan {
 }
 
 func rollbackGitArtifactMove(rollbackPlan artifactMovePlan, currentPath string, originalContent []byte, operation string) {
-	if restoreErr := replaceFile(currentPath, originalContent); restoreErr != nil {
+	rollbackGitArtifactMoveWithReplace(rollbackPlan, currentPath, originalContent, operation, replaceFile)
+}
+
+func rollbackGitArtifactMoveWithReplace(rollbackPlan artifactMovePlan, currentPath string, originalContent []byte, operation string, replace func(string, []byte) error) {
+	if restoreErr := replace(currentPath, originalContent); restoreErr != nil {
 		slog.Error("archive git rollback: failed to restore file content",
 			"operation", operation, "path", currentPath, "error", restoreErr)
-		return
 	}
 	rollbackCtx, cancel := context.WithTimeout(context.Background(), artifactGitCommandTimeout)
 	defer cancel()
