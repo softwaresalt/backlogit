@@ -37,16 +37,19 @@ GitHub Actions workflows in `.github/workflows/ci.yml` and `.github/workflows/re
 - "v*.*.*"
 ```
 
-### 2. Go Version Matrix
+### 2. Go Version Target
 ```yaml
-# Before
+# Historical F013 before
 go-version: ["1.22", "1.23"]
 
-# After — drop oldest, include go.mod version
+# Historical F013 after — included go.mod version
 go-version: ["1.23", "1.24"]
+
+# Current 089-S shape — no CI matrix; bare required context name stays `test`
+go-version: "1.24"
 ```
 
-Also update the build job `go-version` (not a matrix) from hardcoded `"1.22"` to `"1.24"`.
+Current CI uses a single Go 1.24 support target for lint, vet, race, and coverage so branch protection can require the stable bare `test` context. The release workflow also uses Go 1.24, but its tag-time quality gate runs plain `go test ./...`; race and coverage are sourced from protected PR CI.
 
 ### 3. SHA Pinning Pattern
 ```yaml
@@ -87,6 +90,17 @@ if ($response.object.type -eq "tag") {
 | softprops/action-gh-release | v2.2.1 | `c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda` |
 
 > ⚠️ SHAs are pinned to specific versions. Re-run the SHA lookup when upgrading action versions.
+
+## 2026-07-10 refresh: CI cost reduction without losing required checks
+
+089-S updated the workflow contract without weakening the original F013 guardrails:
+
+* `.github/workflows/ci.yml` is PR-only to avoid duplicate push-to-main runs.
+* Required PR contexts still report as `Detect code changes`, bare `test`, and `Docline frontmatter gate`; `CLI Reference Drift` remains an always-reporting job in `ci.yml`.
+* Workflow-level `paths` / `paths-ignore` remain forbidden for required workflows; expensive steps are gated inside jobs.
+* `tests/integration/ci_compliance_test.go` now encodes the trigger model, required-context names, single Go target, SHA pins, drift consolidation, and release provenance.
+
+Evidence: `docs/closure/2026-07-10-089-S-ci-cost-reduction-closure.md` and PR #201 merge `fd5cc60c92bbcd478de62fac20fa8f2d1d636911`.
 
 ## Test Strategy: Characterization-First
 
