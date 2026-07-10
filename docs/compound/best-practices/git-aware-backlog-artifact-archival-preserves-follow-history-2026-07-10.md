@@ -28,8 +28,6 @@ source: docs/compound/best-practices/git-aware-backlog-artifact-archival-preserv
 title: Git-aware backlog artifact archival stages tracked renames safely
 ---
 
-# Git-aware backlog artifact archival stages tracked renames safely
-
 ## Problem
 
 Backlog work items are Markdown files that move between queue and archive paths.
