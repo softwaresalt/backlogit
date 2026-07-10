@@ -41,7 +41,9 @@ tag provenance before packaging.
 * `actionlint .github\workflows\ci.yml .github\workflows\release.yml` passed.
 * `gofmt -l tests\integration\ci_compliance_test.go` returned empty output.
 * `gofmt -l .` was also run and returned pre-existing repository-wide formatting
-  output unrelated to the changed test file; the changed Go test file is clean.
+  output across unchanged Go files. This is recorded as a release condition below
+  instead of widening this CI-config shipment into a repository-wide formatting PR.
+  `gofmt -l tests\integration\ci_compliance_test.go` returned empty output.
 * PR #201 CI passed on the final head `8b2a94177cd35bcedc139fa127f7aff020c759e8`:
   * `Detect code changes`
   * `test`
@@ -61,9 +63,11 @@ tag provenance before packaging.
 * Merge commit: `fd5cc60c92bbcd478de62fac20fa8f2d1d636911`
 * Normal merge attempt failed with:
   `X Pull request softwaresalt/backlogit#201 is not mergeable: the base branch policy prohibits the merge.`
-* `MERGE_AUTHORIZED (admin)`: dark-mode admin fallback used
-  `gh pr merge 201 --merge --admin` after required checks were green and Copilot
-  readiness passed.
+* `MERGE_AUTHORIZED (admin)`: dark-mode activation for shipment `089-S` set
+  `merge_approval_pre_authorized = true` and `admin_fallback_pre_authorized = true`.
+  The normal merge failure was classified as `REVIEW_REQUIRED_BLOCK` because PR #201
+  had green required checks and clean Copilot readiness but `reviewDecision` was
+  `REVIEW_REQUIRED`; admin fallback used `gh pr merge 201 --merge --admin`.
 * P-009 preserved: merge commit was used; no squash or rebase merge was used.
 
 ## Ruleset coordination
@@ -85,6 +89,7 @@ in addition to PR-head validation.
 | Alert threshold | Any PR waits on a missing required context, `test` reports as a matrix context, CLI drift stops reporting, or release tags bypass protected-main provenance |
 | Owner | Repository maintainer during the next PR and release tag |
 | Observation window | Next three PRs plus the next release tag |
-| Current outcome | Healthy at merge and shipment ship; no runtime service or data migration is involved |
+| Current outcome | Ready with condition: PR #201 merged cleanly and shipment shipped; full `gofmt -l .` still reports pre-existing repository-wide formatting output outside this scope |
+| Release condition | Track and clear the existing repository-wide `gofmt -l .` baseline in a separate formatting-only change before treating the global format gate as clean |
 | Rollback trigger | A confirmed required-check satisfiability regression or release provenance false positive/negative |
 | Rollback procedure | Revert merge commit `fd5cc60c92bbcd478de62fac20fa8f2d1d636911`, rerun CI locally where applicable, and restore the previous workflow trigger model |
