@@ -94,6 +94,9 @@ $backlogitCmd = Get-Command backlogit -ErrorAction SilentlyContinue
 if ($backlogitCmd) {
     try {
         backlogit sync
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "backlogit sync exited with code $LASTEXITCODE (non-fatal); index may be stale."
+        }
     } catch {
         Write-Warning "backlogit sync failed (non-fatal): $_"
     }
