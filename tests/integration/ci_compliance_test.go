@@ -430,18 +430,18 @@ func TestRequiredPRContextsStillReport(t *testing.T) {
 
 	testJob, ok := wf.Jobs["test"]
 	require.True(t, ok, "ci.yml should define the required test job")
-	assert.Equal(t, "${{ !cancelled() }}", testJob.If, "test must report even if change detection fails")
+	assert.Equal(t, "${{ always() && !cancelled() }}", testJob.If, "test must report even if change detection fails")
 	assert.Empty(t, testJob.Name, "test job should emit the bare required 'test' context")
 
 	docsLint, ok := wf.Jobs["docs-lint"]
 	require.True(t, ok, "ci.yml should define the docs-lint job")
 	assert.Equal(t, "Docline frontmatter gate", docsLint.Name)
-	assert.Equal(t, "${{ !cancelled() }}", docsLint.If, "docs-lint must report even if change detection fails")
+	assert.Equal(t, "${{ always() && !cancelled() }}", docsLint.If, "docs-lint must report even if change detection fails")
 
 	drift, ok := wf.Jobs["cli-reference-drift"]
 	require.True(t, ok, "ci.yml should define the consolidated CLI drift job")
 	assert.Equal(t, "CLI Reference Drift", drift.Name)
-	assert.Equal(t, "${{ !cancelled() }}", drift.If, "CLI drift must report even if change detection fails")
+	assert.Equal(t, "${{ always() && !cancelled() }}", drift.If, "CLI drift must report even if change detection fails")
 }
 
 // TestCIChangeDetectorFailSafeOutputs validates the shared change detector that

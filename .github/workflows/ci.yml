@@ -75,7 +75,7 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ !cancelled() }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Skip Go gates for docs/backlog-only changes
@@ -114,7 +114,7 @@ jobs:
   docs-lint:
     name: Docline frontmatter gate
     needs: changes
-    if: ${{ !cancelled() }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Skip docline lint for code-only changes
@@ -137,7 +137,7 @@ jobs:
   cli-reference-drift:
     name: CLI Reference Drift
     needs: changes
-    if: ${{ !cancelled() }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
