@@ -45,6 +45,13 @@ continue to use filesystem moves.
 * Copilot review raised comments across multiple cycles; all valid comments were
   fixed, replied to, and resolved. The final Copilot review on
   `fbda87c8202f4d60cdfb904c1750713cd1f20f94` raised no new comments.
+* Post-mode shipment reconciliation passed:
+  `.backlogit/reconcile/088-S-post-20260709-192508.md` reports the shipment and
+  all manifest items present in archive with zero archive deletions.
+* Pre-mode reconciliation was not captured before `backlogit shipment ship
+  088-S`; the post-mode report is the durable archive-presence proof.
+* Merge commit traceability was recorded on `088-S`, `089-F`, and all scoped
+  tasks with commit `e370af1d737a2fcf881f865a92a354874487b766`.
 
 ## Merge and release record
 
@@ -64,6 +71,16 @@ metadata rewrites remain normal worktree edits unless the caller stages them.
 Rollback attempts restore file content and reverse staged git moves before
 returning wrapped errors.
 
-Runtime monitoring is limited to local and CI quality gates for the CLI and MCP
-archive surfaces. Rollback is a normal revert of merge commit
-`e370af1d737a2fcf881f865a92a354874487b766` if archive behavior regresses.
+## Monitoring and rollback
+
+| Evidence | Value |
+|---|---|
+| Signals / queries | `go test ./...`, `go vet ./...`, `golangci-lint run`, PR #198 GitHub Actions, and post-release operator checks of `backlogit archive` / restore behavior |
+| Baseline | Before release, tracked backlog artifacts used filesystem rename and did not preserve Git rename staging |
+| Healthy threshold | Quality gates pass; archive and restore of tracked artifacts stage `git mv` renames; non-git and untracked cases continue filesystem fallback |
+| Alert threshold | Any regression where tracked artifacts archive without a staged rename, fail-closed git errors silently fall back, or fallback cases stop archiving |
+| Owner | Repository maintainer during the next normal backlog archival operation |
+| Observation window | Next shipment archival or 7 days, whichever occurs first |
+| Current outcome | Healthy at merge and post-ship validation; no runtime service or migration is involved |
+| Rollback trigger | A confirmed archive/restore regression matching the alert threshold |
+| Rollback procedure | Revert merge commit `e370af1d737a2fcf881f865a92a354874487b766`, rerun `go test ./...`, and re-sync backlog state |
