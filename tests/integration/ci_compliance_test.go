@@ -203,7 +203,7 @@ func assertNoTriggerEvent(t *testing.T, path, event string) {
 	t.Helper()
 	onBlock := extractTopLevelBlock(readFileString(t, path), "on")
 	require.NotEmpty(t, onBlock, "workflow should have a parseable on: block")
-	eventKey := regexp.MustCompile(`(?m)^\s+` + regexp.QuoteMeta(event) + `:\s*(?:$|\{)`)
+	eventKey := regexp.MustCompile(`(?m)^\s+` + regexp.QuoteMeta(event) + `\s*:`)
 	assert.Falsef(t, eventKey.MatchString(onBlock), "workflow must not define on.%s", event)
 }
 
