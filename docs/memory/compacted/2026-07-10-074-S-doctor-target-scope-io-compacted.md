@@ -11,7 +11,7 @@ title: Compacted memory - 074-S doctor target scope-vs-IO classification
 ---
 ## Summary
 
-Shipment `074-S` resolved Copilot follow-up J from 071-S by distinguishing path-resolution IO faults from genuine containment-scope violations in `doctor --target` handling. Stage harvested `074-F` and `074.001-T`; Ship implemented the classification seam and left the PR merge-ready at P-014.
+Shipment `074-S` resolved Copilot follow-up J from 071-S by distinguishing path-resolution IO faults from genuine containment-scope violations in `doctor --target` handling. Stage harvested `074-F` and `074.001-T`; Ship implemented the classification seam. PR #162 merged as `f2bdb7a6711c46326720026d3ff0bc6f822ece1e`, and `074-S`, `074-F`, and `074.001-T` were shipped and archived (post-merge closure complete).
 
 ## Archived originals
 

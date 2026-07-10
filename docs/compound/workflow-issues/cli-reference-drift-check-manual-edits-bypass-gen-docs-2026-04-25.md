@@ -32,11 +32,13 @@ title: CLI Reference Drift Check fails when docs/cli-reference/ files are edited
 
 ## Problem
 
-The backlogit CI runs a required **CLI Reference Drift** job that regenerates all CLI
+The backlogit CI runs an always-reporting **CLI Reference Drift** job that regenerates all CLI
 reference docs via `go run ./cmd/gen-docs docs/cli-reference` and then asserts
 `git diff --exit-code docs/cli-reference/` is clean. Since 089-S, this job lives
-inside `.github/workflows/ci.yml` instead of a standalone workflow, but the
-contract is unchanged: any content added directly to `docs/cli-reference/*.md`
+inside `.github/workflows/ci.yml` instead of a standalone workflow. It reports on
+every PR but is **not** a required branch-protection context — per the 089-S closure
+the required contexts are `Detect code changes`, `test`, and `Docline frontmatter gate`.
+The contract is unchanged: any content added directly to `docs/cli-reference/*.md`
 without a corresponding source in the Go command definition is overwritten by
 the generator and the drift job fails.
 
