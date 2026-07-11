@@ -214,8 +214,8 @@ func TestRunSelfUpdateUnwritableTargetFailsBeforeDownload(t *testing.T) {
 		TargetPath:     target,
 		GOOS:           "linux",
 		GOARCH:         "amd64",
-		OpenForWrite: func(string) (io.Closer, error) {
-			return nil, os.ErrPermission
+		CreateProbe: func(string, string) (string, io.Closer, error) {
+			return "", nil, os.ErrPermission
 		},
 	})
 
@@ -223,6 +223,59 @@ func TestRunSelfUpdateUnwritableTargetFailsBeforeDownload(t *testing.T) {
 	assert.Contains(t, err.Error(), "manual install")
 	assert.False(t, result.Updated)
 	assert.Equal(t, oldBinary, readFile(t, target))
+	assert.Empty(t, client.downloads)
+}
+
+func TestRunSelfUpdateWriteProbeUsesUniqueTemporaryFile(t *testing.T) {
+	t.Parallel()
+
+	oldBinary := []byte("old-binary")
+	newBinary := []byte("new-binary")
+	target := writeSelfUpdateTarget(t, "backlogit", oldBinary)
+	staleFixedProbe := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".write-test")
+	require.NoError(t, os.WriteFile(staleFixedProbe, []byte("orphan"), 0o600))
+	client := newFakeSelfUpdateClient("v1.2.0", "linux", "amd64", newBinary)
+
+	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
+		Client:         client,
+		CurrentVersion: "1.0.0",
+		TargetPath:     target,
+		GOOS:           "linux",
+		GOARCH:         "amd64",
+		Rename:         posixRenameForTest,
+	})
+
+	require.NoError(t, err)
+	assert.True(t, result.Updated)
+	assert.Equal(t, newBinary, readFile(t, target))
+	assert.FileExists(t, staleFixedProbe)
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".write-test.*"))
+	require.NoError(t, err)
+	assert.Empty(t, matches)
+}
+
+func TestRunSelfUpdateAlreadyCurrentCleansWindowsOldBinary(t *testing.T) {
+	t.Parallel()
+
+	oldBinary := []byte("old-binary")
+	target := writeSelfUpdateTarget(t, "backlogit.exe", oldBinary)
+	backupPath := target + ".old"
+	require.NoError(t, os.WriteFile(backupPath, []byte("previous"), 0o600))
+	client := newFakeSelfUpdateClient("v1.0.0", "windows", "amd64", []byte("new-binary"))
+
+	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
+		Client:         client,
+		CurrentVersion: "1.0.0",
+		TargetPath:     target,
+		GOOS:           "windows",
+		GOARCH:         "amd64",
+	})
+
+	require.NoError(t, err)
+	assert.False(t, result.Updated)
+	assert.Equal(t, oldBinary, readFile(t, target))
+	assert.NoFileExists(t, backupPath)
+	assert.FileExists(t, target+".update.lock")
 	assert.Empty(t, client.downloads)
 }
 
@@ -292,7 +345,7 @@ func TestRunSelfUpdateKeepsOriginalWhenWindowsFirstRenameFails(t *testing.T) {
 	assert.NoFileExists(t, target+".old")
 }
 
-func TestRunSelfUpdateReclaimsStaleDeadLock(t *testing.T) {
+func TestRunSelfUpdateIgnoresStaleUnlockedLockFile(t *testing.T) {
 	t.Parallel()
 
 	target := writeSelfUpdateTarget(t, "backlogit.exe", []byte("old-binary"))
@@ -307,15 +360,12 @@ func TestRunSelfUpdateReclaimsStaleDeadLock(t *testing.T) {
 		TargetPath:     target,
 		GOOS:           "windows",
 		GOARCH:         "amd64",
-		ProcessRunning: func(pid int) bool {
-			return pid != 12345
-		},
 	})
 
 	require.NoError(t, err)
 	assert.True(t, result.Updated)
 	assert.Equal(t, newBinary, readFile(t, target))
-	assert.NoFileExists(t, lockPath)
+	assert.FileExists(t, lockPath)
 }
 
 func TestRunSelfUpdateRefusesLiveLock(t *testing.T) {
@@ -324,7 +374,12 @@ func TestRunSelfUpdateRefusesLiveLock(t *testing.T) {
 	oldBinary := []byte("old-binary")
 	target := writeSelfUpdateTarget(t, "backlogit.exe", oldBinary)
 	lockPath := target + ".update.lock"
-	require.NoError(t, os.WriteFile(lockPath, []byte("pid=12345\n"), 0o600))
+	lockFile, acquired, err := openSelfUpdateLockFile(lockPath)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	t.Cleanup(func() {
+		require.NoError(t, lockFile.Close())
+	})
 	client := newFakeSelfUpdateClient("v1.2.0", "windows", "amd64", []byte("new-binary"))
 
 	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
@@ -333,9 +388,6 @@ func TestRunSelfUpdateRefusesLiveLock(t *testing.T) {
 		TargetPath:     target,
 		GOOS:           "windows",
 		GOARCH:         "amd64",
-		ProcessRunning: func(pid int) bool {
-			return pid == 12345
-		},
 	})
 
 	require.Error(t, err)

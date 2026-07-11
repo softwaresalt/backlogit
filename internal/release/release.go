@@ -109,6 +109,7 @@ func (c Client) DownloadAsset(ctx context.Context, asset Asset, w io.Writer, max
 	if err != nil {
 		return 0, fmt.Errorf("create asset download request: %w", err)
 	}
+	req.Header.Del("Authorization")
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("download asset %q: %w", asset.Name, err)

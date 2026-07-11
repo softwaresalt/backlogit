@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ const (
 	selfUpdateTimeout          = 2 * time.Minute
 	selfUpdateMaxDownloadBytes = 100 << 20
 	selfUpdateMaxSumsBytes     = 1 << 20
-	selfUpdateLockStaleAfter   = time.Hour
 )
 
 type selfUpdateReleaseClient interface {
@@ -44,10 +42,8 @@ type selfUpdateOptions struct {
 	MaxSumsBytes     int64
 	Rename           func(string, string) error
 	Remove           func(string) error
-	OpenForWrite     func(string) (io.Closer, error)
+	CreateProbe      func(string, string) (string, io.Closer, error)
 	Now              func() time.Time
-	ProcessRunning   func(int) bool
-	LockStaleAfter   time.Duration
 }
 
 type selfUpdateResult struct {
@@ -99,6 +95,9 @@ func runSelfUpdate(ctx context.Context, opts selfUpdateOptions) (selfUpdateResul
 	}
 	result.UpdateAvailable = available
 	if !available {
+		if !opts.CheckOnly {
+			result.CleanupWarning = cleanupSelfUpdateBackupOnCurrent(opts)
+		}
 		return result, nil
 	}
 	if opts.CheckOnly {
@@ -118,7 +117,7 @@ func runSelfUpdate(ctx context.Context, opts selfUpdateOptions) (selfUpdateResul
 		return result, fmt.Errorf("find SHA256SUMS in release %s: asset not found", rel.TagName)
 	}
 	err = withSelfUpdateLock(opts, func() error {
-		if err := ensureSelfUpdateTargetWritable(opts.TargetPath, opts.OpenForWrite, opts.Remove); err != nil {
+		if err := ensureSelfUpdateTargetWritable(opts.TargetPath, opts.CreateProbe, opts.Remove); err != nil {
 			return err
 		}
 		expected, err := fetchExpectedSelfUpdateSHA(ctx, opts.Client, sumsAsset, assetName, opts.MaxSumsBytes)
@@ -171,21 +170,17 @@ func normalizeSelfUpdateOptions(opts selfUpdateOptions) selfUpdateOptions {
 	if opts.Remove == nil {
 		opts.Remove = os.Remove
 	}
-	if opts.OpenForWrite == nil {
-		opts.OpenForWrite = func(path string) (io.Closer, error) {
-			return os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if opts.CreateProbe == nil {
+		opts.CreateProbe = func(dir, pattern string) (string, io.Closer, error) {
+			f, err := os.CreateTemp(dir, pattern)
+			if err != nil {
+				return "", nil, err
+			}
+			return f.Name(), f, nil
 		}
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
-	}
-	if opts.ProcessRunning == nil {
-		opts.ProcessRunning = func(int) bool {
-			return true
-		}
-	}
-	if opts.LockStaleAfter <= 0 {
-		opts.LockStaleAfter = selfUpdateLockStaleAfter
 	}
 	return opts
 }
@@ -250,7 +245,11 @@ func validateSelfUpdateAssetName(name, goos, goarch string) error {
 	return nil
 }
 
-func ensureSelfUpdateTargetWritable(targetPath string, openForWrite func(string) (io.Closer, error), remove func(string) error) error {
+func ensureSelfUpdateTargetWritable(
+	targetPath string,
+	createProbe func(string, string) (string, io.Closer, error),
+	remove func(string) error,
+) error {
 	if strings.TrimSpace(targetPath) == "" {
 		return errors.New("self-update target path is empty; manual install required")
 	}
@@ -261,16 +260,20 @@ func ensureSelfUpdateTargetWritable(targetPath string, openForWrite func(string)
 	if info.IsDir() {
 		return fmt.Errorf("check update target %s: target is a directory; manual install required", targetPath)
 	}
-	probePath := filepath.Join(filepath.Dir(targetPath), "."+filepath.Base(targetPath)+".write-test")
-	f, err := openForWrite(probePath)
+	probePath, f, err := createProbe(filepath.Dir(targetPath), "."+filepath.Base(targetPath)+".write-test.*")
 	if err != nil {
 		return fmt.Errorf("check update target %s is writable: %w; manual install required", targetPath, err)
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close update target writability probe: %w", err)
+	closeErr := f.Close()
+	removeErr := remove(probePath)
+	if closeErr != nil {
+		if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return fmt.Errorf("close update target writability probe: %w; remove update target writability probe: %w", closeErr, removeErr)
+		}
+		return fmt.Errorf("close update target writability probe: %w", closeErr)
 	}
-	if err := remove(probePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove update target writability probe: %w", err)
+	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		return fmt.Errorf("remove update target writability probe: %w", removeErr)
 	}
 	return nil
 }
@@ -321,6 +324,9 @@ func downloadSelfUpdateAsset(ctx context.Context, opts selfUpdateOptions, asset 
 	if actual != strings.ToLower(expectedSHA) {
 		return "", fmt.Errorf("SHA256 mismatch for %s: expected %s, got %s", asset.Name, expectedSHA, actual)
 	}
+	if err := tmp.Chmod(0o755); err != nil {
+		return "", fmt.Errorf("chmod temporary update file: %w", err)
+	}
 	if err := tmp.Sync(); err != nil {
 		return "", fmt.Errorf("sync temporary update file: %w", err)
 	}
@@ -328,9 +334,6 @@ func downloadSelfUpdateAsset(ctx context.Context, opts selfUpdateOptions, asset 
 		return "", fmt.Errorf("close temporary update file: %w", err)
 	}
 	closed = true
-	if err := os.Chmod(tempPath, 0o755); err != nil {
-		return "", fmt.Errorf("chmod temporary update file: %w", err)
-	}
 	return tempPath, nil
 }
 
@@ -388,33 +391,34 @@ func replaceSelfUpdateBinaryWindows(opts selfUpdateOptions, tempPath string) (re
 
 func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr error) {
 	lockPath := opts.TargetPath + ".update.lock"
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	lock, acquired, err := openSelfUpdateLockFile(lockPath)
 	if err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("acquire self-update lock: %w", err)
-		}
-		reclaimed, reclaimErr := reclaimSelfUpdateLock(opts, lockPath)
-		if reclaimErr != nil {
-			return reclaimErr
-		}
-		if !reclaimed {
-			return fmt.Errorf("acquire self-update lock: another update is in progress at %s", lockPath)
-		}
-		lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err != nil {
-			return fmt.Errorf("acquire reclaimed self-update lock: %w", err)
-		}
+		return fmt.Errorf("acquire self-update lock: %w", err)
 	}
+	if !acquired {
+		return fmt.Errorf("acquire self-update lock: another update is in progress at %s", lockPath)
+	}
+	lockContent := []byte(selfUpdateLockContent(opts))
 	defer func() {
 		if err := lock.Close(); err != nil {
 			returnErr = errors.Join(returnErr, fmt.Errorf("close self-update lock: %w", err))
 		}
-		if err := opts.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			returnErr = errors.Join(returnErr, fmt.Errorf("remove self-update lock: %w", err))
-		}
 	}()
-	if _, err := fmt.Fprintf(lock, "pid=%d\n", os.Getpid()); err != nil {
+	if err := lock.Truncate(0); err != nil {
+		return fmt.Errorf("truncate self-update lock: %w", err)
+	}
+	if _, err := lock.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek self-update lock: %w", err)
+	}
+	n, err := lock.Write(lockContent)
+	if err != nil {
 		return fmt.Errorf("write self-update lock: %w", err)
+	}
+	if n != len(lockContent) {
+		return fmt.Errorf("write self-update lock: %w", io.ErrShortWrite)
+	}
+	if err := lock.Sync(); err != nil {
+		return fmt.Errorf("sync self-update lock: %w", err)
 	}
 	if err := fn(); err != nil {
 		return err
@@ -422,42 +426,8 @@ func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr erro
 	return nil
 }
 
-func reclaimSelfUpdateLock(opts selfUpdateOptions, lockPath string) (bool, error) {
-	info, err := os.Stat(lockPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return true, nil
-		}
-		return false, fmt.Errorf("stat self-update lock: %w", err)
-	}
-	lockAge := opts.Now().Sub(info.ModTime())
-	raw, readErr := os.ReadFile(lockPath)
-	if readErr != nil && lockAge <= opts.LockStaleAfter {
-		return false, fmt.Errorf("read self-update lock: %w", readErr)
-	}
-	pid, hasPID := parseSelfUpdateLockPID(string(raw))
-	if (hasPID && !opts.ProcessRunning(pid)) || lockAge > opts.LockStaleAfter {
-		if err := opts.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return false, fmt.Errorf("remove stale self-update lock: %w", err)
-		}
-		return true, nil
-	}
-	return false, nil
-}
-
-func parseSelfUpdateLockPID(raw string) (int, bool) {
-	for _, line := range strings.Split(raw, "\n") {
-		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
-		if !found || key != "pid" {
-			continue
-		}
-		pid, err := strconv.Atoi(value)
-		if err != nil || pid <= 0 {
-			return 0, false
-		}
-		return pid, true
-	}
-	return 0, false
+func selfUpdateLockContent(opts selfUpdateOptions) string {
+	return fmt.Sprintf("pid=%d\ntoken=%d\n", os.Getpid(), opts.Now().UnixNano())
 }
 
 func rollbackSelfUpdateReplacement(opts selfUpdateOptions, backupPath string) error {
@@ -472,6 +442,24 @@ func removeStaleSelfUpdateBackup(remove func(string) error, backupPath string) e
 		return fmt.Errorf("remove stale update backup: %w", err)
 	}
 	return nil
+}
+
+func cleanupSelfUpdateBackupOnCurrent(opts selfUpdateOptions) string {
+	if opts.GOOS != "windows" {
+		return ""
+	}
+	var warning string
+	err := withSelfUpdateLock(opts, func() error {
+		backupPath := opts.TargetPath + ".old"
+		if err := opts.Remove(backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			warning = fmt.Sprintf("old binary cleanup deferred: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Sprintf("old binary cleanup skipped: %v", err)
+	}
+	return warning
 }
 
 func syncSelfUpdateDir(dir string) (returnErr error) {

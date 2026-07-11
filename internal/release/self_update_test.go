@@ -31,9 +31,11 @@ func TestClientReleaseByTagAndDownloadAsset(t *testing.T) {
 				]
 			}`, serverURL(r), serverURL(r)))
 		case "/assets/backlogit-windows-amd64.exe":
+			assert.Empty(t, r.Header.Get("Authorization"))
 			_, err := w.Write(payload)
 			require.NoError(t, err)
 		case "/assets/SHA256SUMS":
+			assert.Empty(t, r.Header.Get("Authorization"))
 			mustFprint(t, w, fmt.Sprintf("%s  backlogit-windows-amd64.exe\n", hex.EncodeToString(sum[:])))
 		default:
 			http.NotFound(w, r)
