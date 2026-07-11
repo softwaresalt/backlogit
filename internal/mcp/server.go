@@ -37,10 +37,13 @@ type Server struct {
 	// internal/mcp cannot import cli directly. When nil, the catalog omits CLI
 	// command data (e.g. for a server constructed without CLI wiring).
 	CLICommandProvider func() []core.CommandInfo
-	mcp                *mcpserver.MCPServer
-	toolNames          []string
-	toolDefs           []mcplib.Tool
-	workspaceMu        sync.Mutex
+	// LatestVersionLookup, when set, overrides the latest-release lookup used by
+	// backlogit_get_version. Tests use this seam to keep version checks hermetic.
+	LatestVersionLookup func(context.Context) (string, error)
+	mcp                 *mcpserver.MCPServer
+	toolNames           []string
+	toolDefs            []mcplib.Tool
+	workspaceMu         sync.Mutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
 	// Protected by manifestMu; lock ordering: workspaceMu must be held before

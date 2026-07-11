@@ -36,7 +36,7 @@ func (s *Server) handleGetVersion(ctx context.Context, _ mcplib.CallToolRequest)
 	} else {
 		checkCtx, cancel := context.WithTimeout(ctx, mcpUpdateCheckTimeout)
 		defer cancel()
-		latest, err := release.Client{Token: os.Getenv("GITHUB_TOKEN")}.Latest(checkCtx)
+		latest, err := s.latestVersion(checkCtx)
 		if err == nil {
 			data["latest"] = latest
 			data["update_available"], data["update_check"] = release.UpdateAvailability(current, latest)
@@ -47,6 +47,13 @@ func (s *Server) handleGetVersion(ctx context.Context, _ mcplib.CallToolRequest)
 		return makeErrorResult("internal", err.Error()), nil
 	}
 	return mcplib.NewToolResultText(string(b)), nil
+}
+
+func (s *Server) latestVersion(ctx context.Context) (string, error) {
+	if s.LatestVersionLookup != nil {
+		return s.LatestVersionLookup(ctx)
+	}
+	return release.Client{Token: os.Getenv("GITHUB_TOKEN")}.Latest(ctx)
 }
 
 func mcpUpdateCheckSkipped() bool {

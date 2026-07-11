@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/version"
 )
 
 // TestHandleGetVersion_ReturnsVersionFields asserts that handleGetVersion returns
@@ -54,4 +57,86 @@ func TestHandleGetVersion_WorksWithoutWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.False(t, result.IsError, "tool must succeed without a workspace")
+}
+
+func TestHandleGetVersion_LatestLookupStates(t *testing.T) {
+	tests := []struct {
+		name            string
+		current         string
+		lookup          func(context.Context) (string, error)
+		wantLatest      string
+		wantAvailable   bool
+		wantUpdateCheck string
+	}{
+		{
+			name:    "successful lookup reports newer latest",
+			current: "1.0.0",
+			lookup: func(context.Context) (string, error) {
+				return "v1.2.0", nil
+			},
+			wantLatest:      "v1.2.0",
+			wantAvailable:   true,
+			wantUpdateCheck: "ok",
+		},
+		{
+			name:    "lookup failure degrades gracefully",
+			current: "1.0.0",
+			lookup: func(context.Context) (string, error) {
+				return "", errors.New("offline")
+			},
+			wantLatest:      "",
+			wantAvailable:   false,
+			wantUpdateCheck: "unavailable",
+		},
+		{
+			name:    "uncomparable current still reports latest",
+			current: version.DevVersion,
+			lookup: func(context.Context) (string, error) {
+				return "v1.2.0", nil
+			},
+			wantLatest:      "v1.2.0",
+			wantAvailable:   false,
+			wantUpdateCheck: "uncomparable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "")
+			restoreVersion := setVersionForTest(t, tt.current)
+			defer restoreVersion()
+			s := NewServerForRoot(t.TempDir())
+			s.LatestVersionLookup = tt.lookup
+
+			data := callGetVersionForTest(t, s)
+
+			assert.Equal(t, tt.current, data["current"])
+			assert.Equal(t, tt.wantLatest, data["latest"])
+			assert.Equal(t, tt.wantAvailable, data["update_available"])
+			assert.Equal(t, tt.wantUpdateCheck, data["update_check"])
+		})
+	}
+}
+
+func callGetVersionForTest(t *testing.T, s *Server) map[string]any {
+	t.Helper()
+	result, err := s.handleGetVersion(context.Background(), mcplib.CallToolRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Content)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok, "result content must be TextContent")
+
+	var data map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &data), "result text must be valid JSON")
+	return data
+}
+
+func setVersionForTest(t *testing.T, value string) func() {
+	t.Helper()
+	original := version.Version
+	version.Version = value
+	return func() {
+		version.Version = original
+	}
 }
