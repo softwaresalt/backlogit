@@ -148,8 +148,8 @@ Open a new shell after updating PATH.
 
 ## Method 3: Install from source
 
-Use this path if you want the Go toolchain workflow or unreleased changes.
-This method requires Go 1.24 or later.
+Use this path if you want the Go toolchain workflow for the latest tagged
+release. This method requires Go 1.24 or later.
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest

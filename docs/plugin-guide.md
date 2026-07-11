@@ -87,7 +87,8 @@ Releases.
 
 ### Option 3 — install from source
 
-Use this path when you want the Go toolchain workflow or unreleased changes:
+Use this path when you want the Go toolchain workflow for the latest tagged
+release:
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
