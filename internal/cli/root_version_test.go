@@ -17,6 +17,7 @@ func TestNewRootCommand_VersionIsSet(t *testing.T) {
 }
 
 func TestNewRootCommand_VersionFlag(t *testing.T) {
+	t.Setenv(updateCheckEnvVar, "")
 	withCurrentVersion(t, "1.0.0")
 	cmd := withVersionLatestLookup(t, func(context.Context) (string, error) {
 		return "v9.9.9", nil

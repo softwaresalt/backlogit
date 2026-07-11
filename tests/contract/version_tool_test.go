@@ -87,6 +87,22 @@ func TestGetVersion_LatestLookupContract(t *testing.T) {
 	}
 }
 
+func TestGetVersion_NoUpdateCheckArgumentContract(t *testing.T) {
+	t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "")
+	called := false
+	s := setupRealMCPServer(t)
+	s.LatestVersionLookup = func(context.Context) (string, error) {
+		called = true
+		return "v9.9.9", nil
+	}
+
+	data := callToolAndParseJSON(t, s, "backlogit_get_version", map[string]any{"no_update_check": true})
+
+	assert.False(t, called, "no_update_check should skip the latest-release lookup")
+	assert.Equal(t, "skipped", data["update_check"])
+	assert.Equal(t, false, data["update_available"])
+}
+
 func setVersionForContractTest(t *testing.T, value string) func() {
 	t.Helper()
 	original := version.Version

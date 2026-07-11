@@ -457,7 +457,8 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_get_version",
-			mcplib.WithDescription("Return backlogit version, commit SHA, build date, and Go runtime version"),
+			mcplib.WithDescription("Return backlogit current version, latest release, update availability, commit SHA, build date, and Go runtime version. Performs a bounded remote latest-release check unless no_update_check or BACKLOGIT_NO_UPDATE_CHECK skips it."),
+			mcplib.WithBoolean("no_update_check", mcplib.Description("Skip the remote latest-release check for this call")),
 		),
 		s.handleGetVersion,
 	)

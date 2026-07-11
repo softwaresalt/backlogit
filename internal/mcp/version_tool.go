@@ -19,7 +19,7 @@ const mcpUpdateCheckTimeout = 1 * time.Second
 // handleGetVersion handles the backlogit_get_version MCP tool.
 // Returns version, latest release check, commit, build_date, and go_version fields.
 // The tool must function without a workspace (safe for pre-init calls).
-func (s *Server) handleGetVersion(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func (s *Server) handleGetVersion(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	current := version.Resolve()
 	data := map[string]any{
 		"version":          current,
@@ -31,7 +31,7 @@ func (s *Server) handleGetVersion(ctx context.Context, _ mcplib.CallToolRequest)
 		"build_date":       version.BuildDate,
 		"go_version":       runtime.Version(),
 	}
-	if mcpUpdateCheckSkipped() {
+	if s.mcpUpdateCheckSkipped(request) {
 		data["update_check"] = "skipped"
 	} else {
 		checkCtx, cancel := context.WithTimeout(ctx, mcpUpdateCheckTimeout)
@@ -54,6 +54,16 @@ func (s *Server) latestVersion(ctx context.Context) (string, error) {
 		return s.LatestVersionLookup(ctx)
 	}
 	return release.Client{Token: os.Getenv("GITHUB_TOKEN")}.Latest(ctx)
+}
+
+func (s *Server) mcpUpdateCheckSkipped(request mcplib.CallToolRequest) bool {
+	if s.NoUpdateCheck || mcpUpdateCheckSkipped() {
+		return true
+	}
+	if skip, ok := request.Params.Arguments["no_update_check"].(bool); ok {
+		return skip
+	}
+	return false
 }
 
 func mcpUpdateCheckSkipped() bool {

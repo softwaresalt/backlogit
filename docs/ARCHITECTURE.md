@@ -31,6 +31,7 @@ internal/core/           ← Domain logic: metadata catalog, queue, config, type
 internal/db/             ← SQLite database layer: schema, migrations, queries
 internal/mcp/            ← MCP server: tool registrations, handlers
 internal/release/        ← Latest release lookup and SemVer comparison (stdlib-only HTTP/JSON leaf)
+internal/version/        ← Canonical build version and ldflags/module-build-info resolution leaf
 internal/docline/        ← Documentation frontmatter contract: classifier, normalizer, lint/migrate service (codec via internal/mdfront alias)
 internal/mdfront/        ← Body-preserving frontmatter codec (stdlib-only leaf; shared by docline + core)
 internal/atomicfile/     ← Hardened atomic file write: WriteFileAtomic, temp+rename (stdlib-only leaf)
@@ -46,8 +47,8 @@ internal/telemetry/      ← Telemetry harvesting: JSONL fact tables, schema ref
 cmd → cli → core, db, mcp, models, telemetry
              core → models, db, mdfront, atomicfile
              docline   → mdfront, atomicfile
-             mcp  → core, db, models, telemetry, release
-             cli  → core, db, models, telemetry, release
+             mcp  → core, db, models, telemetry, release, version
+             cli  → core, db, models, telemetry, release, version
              db        → models, events, stash, config, errors, modernc.org/sqlite
              telemetry → db, errors, modernc.org/sqlite
              models    → validator/v10
@@ -57,6 +58,7 @@ cmd → cli → core, db, mcp, models, telemetry
              mdfront    → gopkg.in/yaml.v3 (stdlib otherwise) — leaf, no internal imports
              atomicfile → (stdlib only) — leaf, no internal imports
              release    → (stdlib only) — leaf, no internal imports
+             version    → (stdlib only) — leaf, no internal imports
              errors    → (stdlib only)
 ```
 
@@ -67,6 +69,8 @@ Cross-cutting rules:
 * `models` depends only on `validator/v10`; it has no internal package dependencies.
 * `release` is a stdlib-only leaf for outbound GitHub release lookup and SemVer comparison.
   `cli` and `mcp` depend on it to keep user and agent version surfaces aligned.
+* `version` is a stdlib-only leaf for canonical build-version resolution.
+  `cli` and `mcp` depend on it when reporting installed version state.
 * `core` accesses `db` through typed function calls, not embedded `*sql.DB`.
 * `mcp` and `cli` are parallel entry-point layers. `internal/mcp` must not import
   `internal/cli` (enforced via a dependency-injection seam); the reverse

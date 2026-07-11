@@ -357,11 +357,16 @@ Use this command from MCP-capable clients such as GitHub Copilot CLI, Claude
 Code, or Cursor to expose backlogit workspace tools to agents.`,
 		Example: `  backlogit mcp
   backlogit --cwd D:\Source\MyProject mcp`,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			noUpdateCheck, err := noUpdateCheckFlagValue(cmd)
+			if err != nil {
+				return err
+			}
 			s, err := openMCPServer(context.Background(), *cwd)
 			if err != nil {
 				return err
 			}
+			s.NoUpdateCheck = noUpdateCheck
 			return mcpinternal.RunStdio(s)
 		},
 	}

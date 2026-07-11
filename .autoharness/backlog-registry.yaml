@@ -382,7 +382,7 @@ operations:
 
   get_version:
     mcp_tool: "backlogit_get_version"
-    cli_command: "backlogit version"
+    cli_command: "backlogit version --format json"
 
   export_command_map:
     mcp_tool: "backlogit_export_command_map"

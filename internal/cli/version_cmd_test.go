@@ -38,6 +38,7 @@ func TestVersionCommand_HumanOutput(t *testing.T) {
 }
 
 func TestVersionCommand_HumanOutputShowsUpdateAvailable(t *testing.T) {
+	t.Setenv(updateCheckEnvVar, "")
 	withCurrentVersion(t, "1.0.0")
 	cmd := newVersionCommandWithLookup(func(context.Context) (string, error) {
 		return "v9.9.9", nil
@@ -58,6 +59,7 @@ func TestVersionCommand_HumanOutputShowsUpdateAvailable(t *testing.T) {
 }
 
 func TestVersionCommand_GracefulUnavailable(t *testing.T) {
+	t.Setenv(updateCheckEnvVar, "")
 	cmd := newVersionCommandWithLookup(func(context.Context) (string, error) {
 		return "", errors.New("offline")
 	})
@@ -75,6 +77,7 @@ func TestVersionCommand_GracefulUnavailable(t *testing.T) {
 }
 
 func TestVersionCommand_ShowsLatestWhenCurrentIsUncomparable(t *testing.T) {
+	t.Setenv(updateCheckEnvVar, "")
 	withCurrentVersion(t, version.DevVersion)
 	cmd := newVersionCommandWithLookup(func(context.Context) (string, error) {
 		return "v9.9.9", nil
@@ -137,6 +140,7 @@ func TestVersionCommand_EnvSkipsLookup(t *testing.T) {
 // emits a JSON object with version, commit, build_date, go_version, and update
 // check fields.
 func TestVersionCommand_JSONOutput(t *testing.T) {
+	t.Setenv(updateCheckEnvVar, "")
 	withCurrentVersion(t, "1.0.0")
 	cmd := newVersionCommandWithLookup(func(context.Context) (string, error) {
 		return "v9.9.9", nil

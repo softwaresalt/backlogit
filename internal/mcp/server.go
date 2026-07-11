@@ -40,10 +40,12 @@ type Server struct {
 	// LatestVersionLookup, when set, overrides the latest-release lookup used by
 	// backlogit_get_version. Tests use this seam to keep version checks hermetic.
 	LatestVersionLookup func(context.Context) (string, error)
-	mcp                 *mcpserver.MCPServer
-	toolNames           []string
-	toolDefs            []mcplib.Tool
-	workspaceMu         sync.Mutex
+	// NoUpdateCheck disables outbound latest-release checks for version output.
+	NoUpdateCheck bool
+	mcp           *mcpserver.MCPServer
+	toolNames     []string
+	toolDefs      []mcplib.Tool
+	workspaceMu   sync.Mutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
 	// Protected by manifestMu; lock ordering: workspaceMu must be held before

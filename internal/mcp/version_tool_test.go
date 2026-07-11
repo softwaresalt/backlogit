@@ -118,9 +118,47 @@ func TestHandleGetVersion_LatestLookupStates(t *testing.T) {
 	}
 }
 
+func TestHandleGetVersion_NoUpdateCheckArgumentSkipsLookup(t *testing.T) {
+	t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "")
+	called := false
+	s := NewServerForRoot(t.TempDir())
+	s.LatestVersionLookup = func(context.Context) (string, error) {
+		called = true
+		return "v9.9.9", nil
+	}
+	request := mcplib.CallToolRequest{}
+	request.Params.Arguments = map[string]any{"no_update_check": true}
+
+	data := callGetVersionRequestForTest(t, s, request)
+
+	assert.False(t, called, "no_update_check argument should skip the lookup")
+	assert.Equal(t, "skipped", data["update_check"])
+}
+
+func TestHandleGetVersion_ServerNoUpdateCheckSkipsLookup(t *testing.T) {
+	t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "")
+	called := false
+	s := NewServerForRoot(t.TempDir())
+	s.NoUpdateCheck = true
+	s.LatestVersionLookup = func(context.Context) (string, error) {
+		called = true
+		return "v9.9.9", nil
+	}
+
+	data := callGetVersionForTest(t, s)
+
+	assert.False(t, called, "server NoUpdateCheck should skip the lookup")
+	assert.Equal(t, "skipped", data["update_check"])
+}
+
 func callGetVersionForTest(t *testing.T, s *Server) map[string]any {
 	t.Helper()
-	result, err := s.handleGetVersion(context.Background(), mcplib.CallToolRequest{})
+	return callGetVersionRequestForTest(t, s, mcplib.CallToolRequest{})
+}
+
+func callGetVersionRequestForTest(t *testing.T, s *Server, request mcplib.CallToolRequest) map[string]any {
+	t.Helper()
+	result, err := s.handleGetVersion(context.Background(), request)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Content)
