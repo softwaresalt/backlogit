@@ -249,6 +249,31 @@ func TestRunSelfUpdateUnwritableTargetFailsBeforeDownload(t *testing.T) {
 	assert.Empty(t, client.downloads)
 }
 
+func TestRunSelfUpdateLockPermissionFailureGivesManualInstall(t *testing.T) {
+	t.Parallel()
+
+	oldBinary := []byte("old-binary")
+	target := writeSelfUpdateTarget(t, "backlogit", oldBinary)
+	client := newFakeSelfUpdateClient("v1.2.0", "linux", "amd64", []byte("new-binary"))
+
+	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
+		Client:         client,
+		CurrentVersion: "1.0.0",
+		TargetPath:     target,
+		GOOS:           "linux",
+		GOARCH:         "amd64",
+		OpenLock: func(string) (*os.File, bool, error) {
+			return nil, false, os.ErrPermission
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manual install required")
+	assert.False(t, result.Updated)
+	assert.Equal(t, oldBinary, readFile(t, target))
+	assert.Empty(t, client.downloads)
+}
+
 func TestRunSelfUpdateWriteProbeUsesUniqueTemporaryFile(t *testing.T) {
 	t.Parallel()
 
@@ -275,6 +300,18 @@ func TestRunSelfUpdateWriteProbeUsesUniqueTemporaryFile(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".write-test.*"))
 	require.NoError(t, err)
 	assert.Empty(t, matches)
+}
+
+func TestSelfUpdateAvailableExplicitTargetUsesBuildMetadataIdentity(t *testing.T) {
+	t.Parallel()
+
+	available, err := selfUpdateAvailable("1.2.3+build.1", "v1.2.3+build.2", true)
+	require.NoError(t, err)
+	assert.True(t, available)
+
+	available, err = selfUpdateAvailable("v1.2.3+build.1", "1.2.3+build.1", true)
+	require.NoError(t, err)
+	assert.False(t, available)
 }
 
 func TestRunSelfUpdateAlreadyCurrentCleansWindowsOldBinary(t *testing.T) {

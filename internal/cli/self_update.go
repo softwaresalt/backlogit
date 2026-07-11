@@ -43,6 +43,7 @@ type selfUpdateOptions struct {
 	Rename           func(string, string) error
 	Remove           func(string) error
 	CreateProbe      func(string, string) (string, io.Closer, error)
+	OpenLock         func(string) (*os.File, bool, error)
 	Now              func() time.Time
 }
 
@@ -183,6 +184,9 @@ func normalizeSelfUpdateOptions(opts selfUpdateOptions) selfUpdateOptions {
 			return f.Name(), f, nil
 		}
 	}
+	if opts.OpenLock == nil {
+		opts.OpenLock = openSelfUpdateLockFile
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -208,7 +212,7 @@ func selfUpdateAvailable(current, target string, explicitTarget bool) (bool, err
 	cmp, err := release.CompareVersions(current, target)
 	if err == nil {
 		if explicitTarget {
-			return cmp != 0, nil
+			return normalizeSelfUpdateVersionIdentity(current) != normalizeSelfUpdateVersionIdentity(target), nil
 		}
 		return cmp < 0, nil
 	}
@@ -413,9 +417,9 @@ func replaceSelfUpdateBinaryWindows(opts selfUpdateOptions, tempPath string) (re
 
 func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr error) {
 	lockPath := opts.TargetPath + ".update.lock"
-	lock, acquired, err := openSelfUpdateLockFile(lockPath)
+	lock, acquired, err := opts.OpenLock(lockPath)
 	if err != nil {
-		return fmt.Errorf("acquire self-update lock: %w", err)
+		return fmt.Errorf("acquire self-update lock for %s: %w; manual install required", opts.TargetPath, err)
 	}
 	if !acquired {
 		return fmt.Errorf("acquire self-update lock: another update is in progress at %s", lockPath)
@@ -450,6 +454,14 @@ func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr erro
 
 func selfUpdateLockContent(opts selfUpdateOptions) string {
 	return fmt.Sprintf("pid=%d\ntoken=%d\n", os.Getpid(), opts.Now().UnixNano())
+}
+
+func normalizeSelfUpdateVersionIdentity(version string) string {
+	version = strings.TrimSpace(version)
+	if strings.HasPrefix(version, "v") || strings.HasPrefix(version, "V") {
+		return version[1:]
+	}
+	return version
 }
 
 func rollbackSelfUpdateReplacement(opts selfUpdateOptions, backupPath string) error {
