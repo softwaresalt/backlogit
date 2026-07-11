@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -91,9 +90,9 @@ func (c Client) Latest(ctx context.Context) (tag string, returnErr error) {
 }
 
 type semVersion struct {
-	major int
-	minor int
-	patch int
+	major string
+	minor string
+	patch string
 	pre   []string
 }
 
@@ -127,17 +126,21 @@ func UpdateAvailability(current, latest string) (bool, string) {
 
 func parseSemVersion(raw string) (semVersion, error) {
 	v := strings.TrimSpace(raw)
-	v = strings.TrimPrefix(v, "v")
-	v = strings.TrimPrefix(v, "V")
-	if i := strings.IndexByte(v, '+'); i >= 0 {
-		v = v[:i]
+	if strings.HasPrefix(v, "v") || strings.HasPrefix(v, "V") {
+		v = v[1:]
 	}
-	core, pre, hasPre := strings.Cut(v, "-")
+	coreAndPre, build, hasBuild := strings.Cut(v, "+")
+	if hasBuild {
+		if err := validateBuildMetadata(raw, build); err != nil {
+			return semVersion{}, err
+		}
+	}
+	core, pre, hasPre := strings.Cut(coreAndPre, "-")
 	parts := strings.Split(core, ".")
 	if len(parts) != 3 {
 		return semVersion{}, fmt.Errorf("parse semantic version %q: expected major.minor.patch", raw)
 	}
-	nums := make([]int, len(parts))
+	nums := make([]string, len(parts))
 	for i, part := range parts {
 		if part == "" {
 			return semVersion{}, fmt.Errorf("parse semantic version %q: empty numeric component", raw)
@@ -145,11 +148,11 @@ func parseSemVersion(raw string) (semVersion, error) {
 		if len(part) > 1 && part[0] == '0' {
 			return semVersion{}, fmt.Errorf("parse semantic version %q: numeric component %q has leading zero", raw, part)
 		}
-		n, err := strconv.Atoi(part)
-		if err != nil {
-			return semVersion{}, fmt.Errorf("parse semantic version %q: %w", raw, err)
+		normalized, ok := normalizeNumericIdentifier(part)
+		if !ok {
+			return semVersion{}, fmt.Errorf("parse semantic version %q: numeric component %q is not numeric", raw, part)
 		}
-		nums[i] = n
+		nums[i] = normalized
 	}
 	parsed := semVersion{major: nums[0], minor: nums[1], patch: nums[2]}
 	if hasPre {
@@ -164,6 +167,23 @@ func parseSemVersion(raw string) (semVersion, error) {
 		}
 	}
 	return parsed, nil
+}
+
+func validateBuildMetadata(raw, build string) error {
+	if build == "" {
+		return fmt.Errorf("parse semantic version %q: empty build metadata", raw)
+	}
+	for _, identifier := range strings.Split(build, ".") {
+		if identifier == "" {
+			return fmt.Errorf("parse semantic version %q: empty build metadata identifier", raw)
+		}
+		for _, r := range identifier {
+			if !isPrereleaseIdentifierChar(r) {
+				return fmt.Errorf("parse semantic version %q: invalid build metadata identifier %q", raw, identifier)
+			}
+		}
+	}
+	return nil
 }
 
 func validatePrereleaseIdentifier(raw, identifier string) error {
@@ -186,13 +206,13 @@ func isPrereleaseIdentifierChar(r rune) bool {
 }
 
 func compareSemVersions(a, b semVersion) int {
-	if cmp := compareInt(a.major, b.major); cmp != 0 {
+	if cmp := compareNumericStrings(a.major, b.major); cmp != 0 {
 		return cmp
 	}
-	if cmp := compareInt(a.minor, b.minor); cmp != 0 {
+	if cmp := compareNumericStrings(a.minor, b.minor); cmp != 0 {
 		return cmp
 	}
-	if cmp := compareInt(a.patch, b.patch); cmp != 0 {
+	if cmp := compareNumericStrings(a.patch, b.patch); cmp != 0 {
 		return cmp
 	}
 	return comparePrerelease(a.pre, b.pre)

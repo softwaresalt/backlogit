@@ -166,14 +166,20 @@ func TestCompareVersions(t *testing.T) {
 	}{
 		{name: "v-prefix-newer", current: "v1.4.1", latest: "1.4.2", want: -1},
 		{name: "equal-with-v-prefix", current: "1.4.2", latest: "v1.4.2", want: 0},
+		{name: "huge-core-numeric-component", current: "18446744073709551616.0.0", latest: "18446744073709551616.0.1", want: -1},
 		{name: "pre-release-before-release", current: "1.5.0-beta.1", latest: "1.5.0", want: -1},
 		{name: "release-after-pre-release", current: "1.5.0", latest: "1.5.0-beta.1", want: 1},
+		{name: "build-metadata-ignored-for-precedence", current: "1.0.0+001", latest: "1.0.0+build.2", want: 0},
 		{name: "pseudo-version-before-release", current: "1.4.2-0.20260710210001-ac688fa42dba", latest: "1.4.2", want: -1},
 		{name: "invalid-current", current: "dev", latest: "1.4.2", wantErr: true},
+		{name: "invalid-double-v-prefix", current: "vV1.2.3", latest: "1.2.3", wantErr: true},
 		{name: "invalid-core-leading-zero", current: "01.0.0", latest: "1.0.0", wantErr: true},
 		{name: "invalid-prerelease-empty-identifier", current: "1.0.0-alpha..1", latest: "1.0.0", wantErr: true},
 		{name: "invalid-prerelease-leading-zero", current: "1.0.0-01", latest: "1.0.0-1", wantErr: true},
 		{name: "invalid-prerelease-character", current: "1.0.0-alpha_beta", latest: "1.0.0", wantErr: true},
+		{name: "invalid-empty-build-metadata", current: "1.0.0+", latest: "1.0.0", wantErr: true},
+		{name: "invalid-build-empty-identifier", current: "1.0.0+meta..x", latest: "1.0.0", wantErr: true},
+		{name: "invalid-build-character", current: "1.0.0+bad_meta", latest: "1.0.0", wantErr: true},
 	}
 
 	for _, tt := range tests {
