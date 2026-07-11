@@ -170,6 +170,10 @@ func TestCompareVersions(t *testing.T) {
 		{name: "release-after-pre-release", current: "1.5.0", latest: "1.5.0-beta.1", want: 1},
 		{name: "pseudo-version-before-release", current: "1.4.2-0.20260710210001-ac688fa42dba", latest: "1.4.2", want: -1},
 		{name: "invalid-current", current: "dev", latest: "1.4.2", wantErr: true},
+		{name: "invalid-core-leading-zero", current: "01.0.0", latest: "1.0.0", wantErr: true},
+		{name: "invalid-prerelease-empty-identifier", current: "1.0.0-alpha..1", latest: "1.0.0", wantErr: true},
+		{name: "invalid-prerelease-leading-zero", current: "1.0.0-01", latest: "1.0.0-1", wantErr: true},
+		{name: "invalid-prerelease-character", current: "1.0.0-alpha_beta", latest: "1.0.0", wantErr: true},
 	}
 
 	for _, tt := range tests {

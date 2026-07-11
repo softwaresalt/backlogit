@@ -131,6 +131,9 @@ func parseSemVersion(raw string) (semVersion, error) {
 		if part == "" {
 			return semVersion{}, fmt.Errorf("parse semantic version %q: empty numeric component", raw)
 		}
+		if len(part) > 1 && part[0] == '0' {
+			return semVersion{}, fmt.Errorf("parse semantic version %q: numeric component %q has leading zero", raw, part)
+		}
 		n, err := strconv.Atoi(part)
 		if err != nil {
 			return semVersion{}, fmt.Errorf("parse semantic version %q: %w", raw, err)
@@ -143,8 +146,32 @@ func parseSemVersion(raw string) (semVersion, error) {
 			return semVersion{}, fmt.Errorf("parse semantic version %q: empty prerelease component", raw)
 		}
 		parsed.pre = strings.Split(pre, ".")
+		for _, identifier := range parsed.pre {
+			if err := validatePrereleaseIdentifier(raw, identifier); err != nil {
+				return semVersion{}, err
+			}
+		}
 	}
 	return parsed, nil
+}
+
+func validatePrereleaseIdentifier(raw, identifier string) error {
+	if identifier == "" {
+		return fmt.Errorf("parse semantic version %q: empty prerelease identifier", raw)
+	}
+	for _, r := range identifier {
+		if !isPrereleaseIdentifierChar(r) {
+			return fmt.Errorf("parse semantic version %q: invalid prerelease identifier %q", raw, identifier)
+		}
+	}
+	if _, numeric := normalizeNumericIdentifier(identifier); numeric && len(identifier) > 1 && identifier[0] == '0' {
+		return fmt.Errorf("parse semantic version %q: numeric prerelease identifier %q has leading zero", raw, identifier)
+	}
+	return nil
+}
+
+func isPrereleaseIdentifierChar(r rune) bool {
+	return r == '-' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
 }
 
 func compareSemVersions(a, b semVersion) int {

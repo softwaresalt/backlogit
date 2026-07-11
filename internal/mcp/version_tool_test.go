@@ -15,6 +15,7 @@ import (
 // TestHandleGetVersion_ReturnsVersionFields asserts that handleGetVersion returns
 // a non-error result containing version, commit, build_date, and go_version.
 func TestHandleGetVersion_ReturnsVersionFields(t *testing.T) {
+	t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "1")
 	root := t.TempDir()
 	s := NewServerForRoot(root)
 
@@ -27,9 +28,14 @@ func TestHandleGetVersion_ReturnsVersionFields(t *testing.T) {
 	tc, ok := result.Content[0].(mcplib.TextContent)
 	require.True(t, ok, "result content must be TextContent")
 
-	var data map[string]string
+	var data map[string]any
 	require.NoError(t, json.Unmarshal([]byte(tc.Text), &data), "result text must be valid JSON")
 	assert.NotEmpty(t, data["version"], "version field must be present and non-empty")
+	assert.NotEmpty(t, data["current"], "current field must be present and non-empty")
+	assert.Contains(t, data, "latest", "latest field must be present")
+	assert.Contains(t, data, "update_available", "update_available field must be present")
+	assert.Equal(t, false, data["update_available"], "skipped update check should not report an update")
+	assert.Equal(t, "skipped", data["update_check"], "env skip should be reported")
 	assert.Contains(t, data, "commit", "commit field must be present")
 	assert.Contains(t, data, "build_date", "build_date field must be present")
 	assert.NotEmpty(t, data["go_version"], "go_version field must be present and non-empty")
@@ -38,6 +44,7 @@ func TestHandleGetVersion_ReturnsVersionFields(t *testing.T) {
 // TestHandleGetVersion_WorksWithoutWorkspace asserts that handleGetVersion succeeds
 // even when the .backlogit directory has not been initialized.
 func TestHandleGetVersion_WorksWithoutWorkspace(t *testing.T) {
+	t.Setenv("BACKLOGIT_NO_UPDATE_CHECK", "1")
 	emptyDir := t.TempDir()
 	_, err := os.Stat(filepath.Join(emptyDir, ".backlogit"))
 	require.True(t, os.IsNotExist(err), "pre-condition: .backlogit should not exist")
