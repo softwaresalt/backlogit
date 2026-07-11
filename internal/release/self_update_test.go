@@ -66,6 +66,22 @@ func TestClientReleaseByTagAndDownloadAsset(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(sum[:]), parsed["backlogit-windows-amd64.exe"])
 }
 
+func TestClientLatestReleaseUsesBaseURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/releases/latest", r.URL.Path)
+		mustFprint(t, w, `{"tag_name":"v1.2.3","assets":[]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client := Client{HTTPClient: server.Client(), BaseURL: server.URL}
+	rel, err := client.LatestRelease(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "v1.2.3", rel.TagName)
+}
+
 func TestParseSHA256SUMSRejectsMalformedInput(t *testing.T) {
 	t.Parallel()
 

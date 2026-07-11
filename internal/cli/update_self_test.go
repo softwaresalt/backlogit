@@ -201,6 +201,29 @@ func TestValidateSelfUpdateAssetNameRejectsTraversal(t *testing.T) {
 	require.NoError(t, validateSelfUpdateAssetName("backlogit-windows-amd64.exe", "windows", "amd64"))
 }
 
+func TestClampSelfUpdateModePreservesRestrictiveExecutableMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		mode os.FileMode
+		want os.FileMode
+	}{
+		{name: "owner executable only", mode: 0o700, want: 0o700},
+		{name: "clamps group world write", mode: 0o777, want: 0o755},
+		{name: "preserves nonexecutable restrictive mode", mode: 0o600, want: 0o600},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, clampSelfUpdateMode(tt.mode))
+		})
+	}
+}
+
 func TestRunSelfUpdateUnwritableTargetFailsBeforeDownload(t *testing.T) {
 	t.Parallel()
 

@@ -63,7 +63,7 @@ func (c Client) Latest(ctx context.Context) (string, error) {
 func (c Client) LatestRelease(ctx context.Context) (Release, error) {
 	url := c.LatestURL
 	if url == "" {
-		url = DefaultLatestURL
+		url = c.releaseURL("/releases/latest")
 	}
 	release, err := c.fetchRelease(ctx, url, "latest release")
 	if err != nil {

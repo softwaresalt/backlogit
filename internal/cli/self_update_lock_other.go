@@ -1,4 +1,4 @@
-//go:build !windows && !unix
+//go:build !windows && !(linux || darwin || freebsd || netbsd || openbsd || dragonfly)
 
 package cli
 

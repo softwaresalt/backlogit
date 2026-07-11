@@ -120,11 +120,15 @@ func runSelfUpdate(ctx context.Context, opts selfUpdateOptions) (selfUpdateResul
 		if err := ensureSelfUpdateTargetWritable(opts.TargetPath, opts.CreateProbe, opts.Remove); err != nil {
 			return err
 		}
+		replacementMode, err := selfUpdateReplacementMode(opts.TargetPath)
+		if err != nil {
+			return err
+		}
 		expected, err := fetchExpectedSelfUpdateSHA(ctx, opts.Client, sumsAsset, assetName, opts.MaxSumsBytes)
 		if err != nil {
 			return err
 		}
-		tempPath, err := downloadSelfUpdateAsset(ctx, opts, asset, expected)
+		tempPath, err := downloadSelfUpdateAsset(ctx, opts, asset, expected, replacementMode)
 		if err != nil {
 			return err
 		}
@@ -278,6 +282,18 @@ func ensureSelfUpdateTargetWritable(
 	return nil
 }
 
+func selfUpdateReplacementMode(targetPath string) (os.FileMode, error) {
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		return 0, fmt.Errorf("read update target mode: %w", err)
+	}
+	return clampSelfUpdateMode(info.Mode()), nil
+}
+
+func clampSelfUpdateMode(mode os.FileMode) os.FileMode {
+	return mode.Perm() &^ 0o022
+}
+
 func fetchExpectedSelfUpdateSHA(ctx context.Context, client selfUpdateReleaseClient, asset release.Asset, targetName string, maxBytes int64) (string, error) {
 	var buf strings.Builder
 	if _, err := client.DownloadAsset(ctx, asset, &buf, maxBytes); err != nil {
@@ -294,7 +310,13 @@ func fetchExpectedSelfUpdateSHA(ctx context.Context, client selfUpdateReleaseCli
 	return expected, nil
 }
 
-func downloadSelfUpdateAsset(ctx context.Context, opts selfUpdateOptions, asset release.Asset, expectedSHA string) (tempPath string, returnErr error) {
+func downloadSelfUpdateAsset(
+	ctx context.Context,
+	opts selfUpdateOptions,
+	asset release.Asset,
+	expectedSHA string,
+	mode os.FileMode,
+) (tempPath string, returnErr error) {
 	targetDir := filepath.Dir(opts.TargetPath)
 	tmp, err := os.CreateTemp(targetDir, "."+filepath.Base(opts.TargetPath)+".*.new")
 	if err != nil {
@@ -324,7 +346,7 @@ func downloadSelfUpdateAsset(ctx context.Context, opts selfUpdateOptions, asset 
 	if actual != strings.ToLower(expectedSHA) {
 		return "", fmt.Errorf("SHA256 mismatch for %s: expected %s, got %s", asset.Name, expectedSHA, actual)
 	}
-	if err := tmp.Chmod(0o755); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		return "", fmt.Errorf("chmod temporary update file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
