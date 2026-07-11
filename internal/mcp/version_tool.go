@@ -14,7 +14,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/version"
 )
 
-const mcpUpdateCheckTimeout = 1500 * time.Millisecond
+const mcpUpdateCheckTimeout = 1 * time.Second
 
 // handleGetVersion handles the backlogit_get_version MCP tool.
 // Returns version, latest release check, commit, build_date, and go_version fields.

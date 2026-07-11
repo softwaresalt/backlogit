@@ -12,6 +12,14 @@ title: backlogit version
 
 Print version, latest release, commit, build date, and Go runtime information
 
+### Synopsis
+
+Print build metadata and latest-release status.
+
+By default, backlogit performs a bounded latest-release check against GitHub.
+Use --no-update-check or set BACKLOGIT_NO_UPDATE_CHECK to one of
+1, true, t, yes, y, or on to skip the remote call for CI and scripts.
+
 ```text
 backlogit version [flags]
 ```

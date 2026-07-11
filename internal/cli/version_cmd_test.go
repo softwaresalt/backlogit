@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -71,6 +72,10 @@ func TestVersionCommand_GracefulUnavailable(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "version", "installed version should still print")
 	assert.Contains(t, out, "update check unavailable", "failure should degrade with a brief note")
+}
+
+func TestVersionCommand_UpdateCheckTimeoutBudget(t *testing.T) {
+	assert.LessOrEqual(t, updateCheckTimeout, 1*time.Second, "default version checks should stay fast")
 }
 
 func TestVersionCommand_NoUpdateCheckFlagSkipsLookup(t *testing.T) {

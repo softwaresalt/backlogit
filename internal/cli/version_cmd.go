@@ -18,7 +18,7 @@ import (
 
 const (
 	updateCheckEnvVar  = "BACKLOGIT_NO_UPDATE_CHECK"
-	updateCheckTimeout = 1500 * time.Millisecond
+	updateCheckTimeout = 1 * time.Second
 )
 
 type latestVersionLookupFunc func(context.Context) (string, error)
@@ -55,6 +55,11 @@ func newVersionCommandWithLookup(lookup latestVersionLookupFunc) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version, latest release, commit, build date, and Go runtime information",
+		Long: `Print build metadata and latest-release status.
+
+By default, backlogit performs a bounded latest-release check against GitHub.
+Use --no-update-check or set BACKLOGIT_NO_UPDATE_CHECK to one of
+1, true, t, yes, y, or on to skip the remote call for CI and scripts.`,
 		Example: `  backlogit version
   backlogit version --no-update-check
   backlogit version --format json`,
