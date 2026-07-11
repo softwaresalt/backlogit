@@ -127,10 +127,11 @@ irm https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/instal
 curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
 ```
 
-These one-line installers match the scripts in
-[`scripts/install/`](scripts/install/), download the latest GitHub Release
-asset, verify it with `SHA256SUMS`, and install the `backlogit` binary into a
-user-writable directory.
+These one-line installers mirror
+[Installation Method 1](docs/installation.md#method-1-one-line-install) and
+match the scripts in [`scripts/install/`](scripts/install/). They download the
+latest GitHub Release asset, verify it with `SHA256SUMS`, and install the
+`backlogit` binary into a user-writable directory.
 
 If your organization requires review before executing remote scripts, download
 the installer script first or use a SHA256-verified binary from GitHub
