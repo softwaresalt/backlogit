@@ -3,10 +3,10 @@ chunk_strategy: h1-h2-h3
 description: Closure record for backlogit update command feature 093-F.
 doc_type: closure
 docline:
-    ms.date: 2026-07-10T00:00:00Z
+    ms.date: 2026-07-11T00:00:00Z
     ms.topic: reference
 schema_version: "1.0"
-source: docs/closure/2026-07-10-backlogit-update-command-closure.md
+source: docs/closure/2026-07-11-backlogit-update-command-closure.md
 title: Backlogit Update Command Closure
 ---
 
@@ -65,3 +65,4 @@ runs. This residual risk is tracked by follow-up `094-F`.
 * Merge commit: `e076255b8521668c7cb2067d5f86b556fb71a87e`
 * Stash: `3762BC38` was harvested and archived
 * Scope note: `--source` mode was omitted because it was optional and not needed for the release-grade binary update path
+
