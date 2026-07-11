@@ -10,7 +10,7 @@ docline:
         - binary download
         - go install
         - PATH
-    ms.date: 2026-07-09T00:00:00Z
+    ms.date: 2026-07-10T00:00:00Z
     ms.topic: how-to
 ingested_at: "2026-06-26T02:34:29Z"
 schema_version: "1.0"
@@ -47,16 +47,16 @@ one of the methods below.
 `backlogit` ships as a standalone executable. You do not need Go for the binary
 install paths below.
 
-### Linux and macOS
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
-```
-
 ### Windows PowerShell
 
 ```powershell
 irm https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.ps1 | iex
+```
+
+### Linux and macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
 ```
 
 The install scripts:
@@ -148,8 +148,8 @@ Open a new shell after updating PATH.
 
 ## Method 3: Install from source
 
-Use this path if you want the Go toolchain workflow or unreleased changes.
-This method requires Go 1.24 or later.
+Use this path if you want the Go toolchain workflow for the latest tagged
+release. This method requires Go 1.24 or later.
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
