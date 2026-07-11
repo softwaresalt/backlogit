@@ -8,12 +8,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strings"
 )
 
 const (
+	// DefaultBaseURL is the GitHub Releases API base for backlogit.
+	DefaultBaseURL = "https://api.github.com/repos/softwaresalt/backlogit"
 	// DefaultLatestURL is the GitHub Releases endpoint for the latest backlogit release.
-	DefaultLatestURL = "https://api.github.com/repos/softwaresalt/backlogit/releases/latest"
+	DefaultLatestURL = DefaultBaseURL + "/releases/latest"
 
 	// UpdateCheckOK means the latest version was fetched and compared successfully.
 	UpdateCheckOK = "ok"
@@ -24,27 +28,186 @@ const (
 	maxResponseBytes = 1 << 20
 )
 
-// Client queries the latest backlogit release.
+// Client queries backlogit releases and release assets.
 type Client struct {
 	HTTPClient *http.Client
+	BaseURL    string
 	LatestURL  string
 	Token      string
 	UserAgent  string
 }
 
-type latestReleaseResponse struct {
-	TagName string `json:"tag_name"`
+// Asset describes a downloadable GitHub release asset.
+type Asset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
+}
+
+// Release describes a GitHub release and its downloadable assets.
+type Release struct {
+	TagName string  `json:"tag_name"`
+	Assets  []Asset `json:"assets"`
 }
 
 // Latest returns the latest release tag from GitHub.
-func (c Client) Latest(ctx context.Context) (tag string, returnErr error) {
+func (c Client) Latest(ctx context.Context) (string, error) {
+	release, err := c.LatestRelease(ctx)
+	if err != nil {
+		return "", err
+	}
+	return release.TagName, nil
+}
+
+// LatestRelease returns the latest release from GitHub.
+func (c Client) LatestRelease(ctx context.Context) (Release, error) {
 	url := c.LatestURL
 	if url == "" {
 		url = DefaultLatestURL
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	release, err := c.fetchRelease(ctx, url, "latest release")
 	if err != nil {
-		return "", fmt.Errorf("create latest release request: %w", err)
+		return Release{}, err
+	}
+	return release, nil
+}
+
+// ReleaseByTag returns a specific release selected by tag.
+func (c Client) ReleaseByTag(ctx context.Context, tag string) (Release, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return Release{}, errors.New("release tag is required")
+	}
+	release, err := c.fetchRelease(ctx, c.releaseURL("/releases/tags/"+url.PathEscape(tag)), "release by tag")
+	if err != nil {
+		return Release{}, err
+	}
+	return release, nil
+}
+
+// FindAsset returns the asset with the exact name.
+func FindAsset(assets []Asset, name string) (Asset, bool) {
+	for _, asset := range assets {
+		if asset.Name == name {
+			return asset, true
+		}
+	}
+	return Asset{}, false
+}
+
+// DownloadAsset downloads a release asset into w while enforcing maxBytes.
+func (c Client) DownloadAsset(ctx context.Context, asset Asset, w io.Writer, maxBytes int64) (written int64, returnErr error) {
+	if strings.TrimSpace(asset.BrowserDownloadURL) == "" {
+		return 0, fmt.Errorf("download asset %q: missing browser_download_url", asset.Name)
+	}
+	if maxBytes <= 0 {
+		return 0, errors.New("download asset: maxBytes must be positive")
+	}
+	var buf strings.Builder
+	counting := &limitBufferWriter{limit: maxBytes, dst: &buf}
+	req, err := c.newRequest(ctx, asset.BrowserDownloadURL)
+	if err != nil {
+		return 0, fmt.Errorf("create asset download request: %w", err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("download asset %q: %w", asset.Name, err)
+	}
+	defer func() {
+		if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes)); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("drain asset response: %w", err))
+		}
+		if err := resp.Body.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close asset response: %w", err))
+		}
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("download asset %q: unexpected status %s", asset.Name, resp.Status)
+	}
+	if _, err := io.Copy(counting, resp.Body); err != nil {
+		return 0, fmt.Errorf("download asset %q: %w", asset.Name, err)
+	}
+	if _, err := io.Copy(w, strings.NewReader(buf.String())); err != nil {
+		return 0, fmt.Errorf("write asset %q: %w", asset.Name, err)
+	}
+	return counting.written, nil
+}
+
+// ParseSHA256SUMS parses a SHA256SUMS file into filename-to-hex-digest entries.
+func ParseSHA256SUMS(raw string) (map[string]string, error) {
+	entries := map[string]string{}
+	for lineNo, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("parse SHA256SUMS line %d: expected hash and filename", lineNo+1)
+		}
+		hash := strings.ToLower(fields[0])
+		if len(hash) != 64 {
+			return nil, fmt.Errorf("parse SHA256SUMS line %d: SHA256 hash must be 64 hex characters", lineNo+1)
+		}
+		for _, r := range hash {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+				return nil, fmt.Errorf("parse SHA256SUMS line %d: SHA256 hash contains non-hex characters", lineNo+1)
+			}
+		}
+		name := strings.TrimPrefix(fields[1], "*")
+		name = strings.TrimPrefix(name, "./")
+		if name == "" || filepath.Base(name) != name || strings.ContainsAny(name, `/\`) {
+			return nil, fmt.Errorf("parse SHA256SUMS line %d: invalid filename %q", lineNo+1, fields[1])
+		}
+		if _, exists := entries[name]; exists {
+			return nil, fmt.Errorf("parse SHA256SUMS line %d: duplicate filename %q", lineNo+1, name)
+		}
+		entries[name] = hash
+	}
+	if len(entries) == 0 {
+		return nil, errors.New("parse SHA256SUMS: no entries")
+	}
+	return entries, nil
+}
+
+func (c Client) fetchRelease(ctx context.Context, rawURL, label string) (release Release, returnErr error) {
+	req, err := c.newRequest(ctx, rawURL)
+	if err != nil {
+		return Release{}, fmt.Errorf("create %s request: %w", label, err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return Release{}, fmt.Errorf("fetch %s: %w", label, err)
+	}
+	defer func() {
+		if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes)); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("drain %s response: %w", label, err))
+		}
+		if err := resp.Body.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close %s response: %w", label, err))
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return Release{}, fmt.Errorf("fetch %s: unexpected status %s", label, resp.Status)
+	}
+
+	var payload Release
+	dec := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
+	if err := dec.Decode(&payload); err != nil {
+		return Release{}, fmt.Errorf("decode %s response: %w", label, err)
+	}
+	payload.TagName = strings.TrimSpace(payload.TagName)
+	if payload.TagName == "" {
+		return Release{}, fmt.Errorf("decode %s response: missing tag_name", label)
+	}
+	return payload, nil
+}
+
+func (c Client) newRequest(ctx context.Context, rawURL string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
 	}
 	userAgent := c.UserAgent
 	if userAgent == "" {
@@ -55,38 +218,40 @@ func (c Client) Latest(ctx context.Context) (tag string, returnErr error) {
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
+	return req, nil
+}
 
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+func (c Client) httpClient() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
 	}
-	resp, err := httpClient.Do(req)
+	return http.DefaultClient
+}
+
+func (c Client) releaseURL(path string) string {
+	base := strings.TrimRight(c.BaseURL, "/")
+	if base == "" {
+		base = DefaultBaseURL
+	}
+	return base + path
+}
+
+type limitBufferWriter struct {
+	limit   int64
+	written int64
+	dst     *strings.Builder
+}
+
+func (w *limitBufferWriter) Write(p []byte) (int, error) {
+	if w.written+int64(len(p)) > w.limit {
+		return 0, fmt.Errorf("response exceeds maximum size %d bytes", w.limit)
+	}
+	n, err := w.dst.Write(p)
+	w.written += int64(n)
 	if err != nil {
-		return "", fmt.Errorf("fetch latest release: %w", err)
+		return n, fmt.Errorf("buffer response: %w", err)
 	}
-	defer func() {
-		if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes)); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("drain latest release response: %w", err))
-		}
-		if err := resp.Body.Close(); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("close latest release response: %w", err))
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("fetch latest release: unexpected status %s", resp.Status)
-	}
-
-	var payload latestReleaseResponse
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
-	if err := dec.Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode latest release response: %w", err)
-	}
-	tag = strings.TrimSpace(payload.TagName)
-	if tag == "" {
-		return "", errors.New("decode latest release response: missing tag_name")
-	}
-	return tag, nil
+	return n, nil
 }
 
 type semVersion struct {

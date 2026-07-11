@@ -37,24 +37,48 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		forceGates    bool
 		forceReason   string
 		jsonOut       bool
+		checkSelf     bool
+		targetTag     string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "update <id>",
-		Short: "Update artifact fields or sections",
-		Long: `Update frontmatter fields or template-backed body sections on an existing
-artifact.
+		Use:   "update [id]",
+		Short: "Self-update backlogit or update artifact fields",
+		Long: `Update the installed backlogit binary when called without an artifact ID,
+or update frontmatter fields and template-backed body sections on an existing
+artifact when an ID is supplied.
 
 Use repeated --section name=value flags to update named sections without
 replacing the rest of the document body.`,
-		Example: `  backlogit update 001.001-T --status review
+		Example: `  backlogit update
+  backlogit update --check
+  backlogit update --to v1.2.3
+  backlogit update 001.001-T --status review
   backlogit update 001.001-T --priority high
   backlogit update 001-F --section goals="Ship passwordless sign-in"
   backlogit update 001-F --harness-status passing`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idFlag != "" {
 				return fmt.Errorf("field \"id\" is immutable and cannot be changed")
+			}
+			if len(args) == 0 {
+				if conflicts := artifactUpdateFlagsChanged(cmd); len(conflicts) > 0 {
+					return fmt.Errorf("artifact ID is required when using %s", strings.Join(conflicts, ", "))
+				}
+				ctx, cancel := context.WithTimeout(cmd.Context(), selfUpdateTimeout)
+				defer cancel()
+				opts := defaultSelfUpdateOptions()
+				opts.CheckOnly = checkSelf
+				opts.TargetTag = targetTag
+				result, err := selfUpdateRun(ctx, opts)
+				if err != nil {
+					return err
+				}
+				return writeSelfUpdateResult(cmd.OutOrStdout(), result)
+			}
+			if checkSelf || targetTag != "" {
+				return fmt.Errorf("--check and --to can only be used without an artifact ID")
 			}
 
 			id := args[0]
@@ -272,7 +296,24 @@ replacing the rest of the document body.`,
 	cmd.Flags().BoolVar(&forceGates, "force-gates", false, "operator-only: force completion past the gate (requires --force-reason)")
 	cmd.Flags().StringVar(&forceReason, "force-reason", "", "justification recorded in the forced-gate audit event")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the machine-readable gate outcome contract on a gated completion")
+	cmd.Flags().BoolVar(&checkSelf, "check", false, "check whether a backlogit binary update is available without applying it")
+	cmd.Flags().StringVar(&targetTag, "to", "", "update the backlogit binary to a specific release tag")
 	return cmd
+}
+
+func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
+	candidates := []string{
+		"title", "status", "priority", "harness-status", "description",
+		"sprint", "assigned-to", "owner", "labels", "commit", "section",
+		"size", "gate-base", "force-gates", "force-reason", "json",
+	}
+	var changed []string
+	for _, name := range candidates {
+		if cmd.Flags().Changed(name) {
+			changed = append(changed, "--"+name)
+		}
+	}
+	return changed
 }
 
 // conflictingSizeFlags returns the set of frontmatter-mutating flags (rendered as
