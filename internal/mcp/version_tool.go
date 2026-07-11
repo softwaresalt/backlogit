@@ -3,26 +3,74 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"runtime"
+	"strings"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/softwaresalt/backlogit/internal/release"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
 
+const mcpUpdateCheckTimeout = 1 * time.Second
+
 // handleGetVersion handles the backlogit_get_version MCP tool.
-// Returns version, commit, build_date, and go_version fields.
+// Returns version, latest release check, commit, build_date, and go_version fields.
 // The tool must function without a workspace (safe for pre-init calls).
-func (s *Server) handleGetVersion(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	data := map[string]string{
-		"version":    version.Resolve(),
-		"commit":     version.Commit,
-		"build_date": version.BuildDate,
-		"go_version": runtime.Version(),
+func (s *Server) handleGetVersion(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	current := version.Resolve()
+	data := map[string]any{
+		"version":          current,
+		"current":          current,
+		"latest":           "",
+		"update_available": false,
+		"update_check":     "unavailable",
+		"commit":           version.Commit,
+		"build_date":       version.BuildDate,
+		"go_version":       runtime.Version(),
+	}
+	if s.mcpUpdateCheckSkipped(request) {
+		data["update_check"] = "skipped"
+	} else {
+		checkCtx, cancel := context.WithTimeout(ctx, mcpUpdateCheckTimeout)
+		defer cancel()
+		latest, err := s.latestVersion(checkCtx)
+		if err == nil {
+			data["latest"] = latest
+			data["update_available"], data["update_check"] = release.UpdateAvailability(current, latest)
+		}
 	}
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return makeErrorResult("internal", err.Error()), nil
 	}
 	return mcplib.NewToolResultText(string(b)), nil
+}
+
+func (s *Server) latestVersion(ctx context.Context) (string, error) {
+	if s.LatestVersionLookup != nil {
+		return s.LatestVersionLookup(ctx)
+	}
+	return release.Client{Token: os.Getenv("GITHUB_TOKEN")}.Latest(ctx)
+}
+
+func (s *Server) mcpUpdateCheckSkipped(request mcplib.CallToolRequest) bool {
+	if s.NoUpdateCheck || mcpUpdateCheckSkipped() {
+		return true
+	}
+	if skip, ok := request.Params.Arguments["no_update_check"].(bool); ok {
+		return skip
+	}
+	return false
+}
+
+func mcpUpdateCheckSkipped() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BACKLOGIT_NO_UPDATE_CHECK"))) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }

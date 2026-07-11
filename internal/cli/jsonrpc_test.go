@@ -26,7 +26,7 @@ func TestJSONRPCFlag_VersionNoFlagPlainText(t *testing.T) {
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 
-	root.SetArgs([]string{"version"})
+	root.SetArgs([]string{"--no-update-check", "version"})
 	err := root.Execute()
 	require.NoError(t, err)
 
@@ -42,7 +42,7 @@ func TestJSONRPCFlag_VersionWithFlagProducesEnvelope(t *testing.T) {
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 
-	root.SetArgs([]string{"--jsonrpc", "version"})
+	root.SetArgs([]string{"--jsonrpc", "--no-update-check", "version"})
 	err := root.Execute()
 	require.NoError(t, err)
 
@@ -65,7 +65,7 @@ func TestJSONRPCFlag_VersionJSON_ResultIsObject(t *testing.T) {
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 
-	root.SetArgs([]string{"--jsonrpc", "version", "--format", "json"})
+	root.SetArgs([]string{"--jsonrpc", "--no-update-check", "version", "--format", "json"})
 	err := root.Execute()
 	require.NoError(t, err)
 
@@ -89,7 +89,7 @@ func TestJSONRPCFlag_EmptyOutput_ProducesNullResult(t *testing.T) {
 	// "version" with no flags outputs text. We test a blank-output scenario by
 	// checking the result field exists even when the buffer is empty.
 	// Use "backlogit --jsonrpc version" — text output becomes a string result.
-	root.SetArgs([]string{"--jsonrpc", "version"})
+	root.SetArgs([]string{"--jsonrpc", "--no-update-check", "version"})
 	err := root.Execute()
 	require.NoError(t, err)
 
@@ -104,7 +104,7 @@ func TestJSONRPCFlag_EmptyOutput_ProducesNullResult(t *testing.T) {
 // This test directly exercises the newRootCommandImpl + error-path logic that Execute() uses.
 func TestJSONRPCErrorWrapping_ErrorProducesJSONRPCEnvelope(t *testing.T) {
 	jctx := &jsonrpcInterceptor{}
-	root := newRootCommandImpl(jctx)
+	root := newRootCommandImpl(jctx, defaultVersionLatestLookup)
 
 	var outBuf bytes.Buffer
 	root.SetOut(&outBuf)
@@ -112,7 +112,7 @@ func TestJSONRPCErrorWrapping_ErrorProducesJSONRPCEnvelope(t *testing.T) {
 	root.SilenceErrors = true
 
 	// version --format=badformat triggers a RunE error.
-	root.SetArgs([]string{"--jsonrpc", "version", "--format", "badformat"})
+	root.SetArgs([]string{"--jsonrpc", "--no-update-check", "version", "--format", "badformat"})
 	err := root.Execute()
 	require.Error(t, err, "bad --format must cause a RunE error")
 	assert.True(t, jctx.enabled, "jctx must be enabled when --jsonrpc was set")
@@ -197,7 +197,7 @@ func TestExecute_JSONRPCCompletionProducesEnvelope(t *testing.T) {
 }
 
 func TestExecute_JSONRPCRootVersionProducesEnvelope(t *testing.T) {
-	output, err := executeWithCapturedStdout(t, "--jsonrpc", "--version")
+	output, err := executeWithCapturedStdout(t, "--jsonrpc", "--no-update-check", "--version")
 	require.NoError(t, err)
 
 	resp := decodeEnvelope(t, output)
