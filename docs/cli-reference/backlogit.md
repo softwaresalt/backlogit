@@ -44,6 +44,7 @@ stash follow-up work for later planning.
   -h, --help               help for backlogit
       --jsonrpc            wrap all output in a JSON-RPC 2.0 response envelope
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
+      --no-update-check    skip the remote latest-release check
 ```
 
 ### SEE ALSO
@@ -78,5 +79,5 @@ stash follow-up work for later planning.
 * [backlogit sync](backlogit_sync.md)	 - Rehydrate the SQLite index from Markdown source files
 * [backlogit telemetry](backlogit_telemetry.md)	 - Inspect Copilot CLI token usage and tool telemetry
 * [backlogit update](backlogit_update.md)	 - Update artifact fields or sections
-* [backlogit version](backlogit_version.md)	 - Print version, commit, build date, and Go runtime information
+* [backlogit version](backlogit_version.md)	 - Print version, latest release, commit, build date, and Go runtime information
 
