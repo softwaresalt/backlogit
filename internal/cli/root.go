@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +33,8 @@ type jsonrpcInterceptor struct {
 	cmdPath string
 }
 
+var versionTemplateOnce sync.Once
+
 // Execute creates the root command and runs it. When --jsonrpc is active and
 // the command fails (including flag-parse and argument-validation failures),
 // it writes a JSON-RPC 2.0 error envelope to stdout instead of letting Cobra
@@ -41,7 +44,7 @@ type jsonrpcInterceptor struct {
 // the full error path is covered by the JSON-RPC contract.
 func Execute() error {
 	jctx := &jsonrpcInterceptor{}
-	root := newRootCommandImpl(jctx)
+	root := newRootCommandImpl(jctx, defaultVersionLatestLookup)
 	origOut := root.OutOrStdout()
 
 	// Pre-scan os.Args to detect --jsonrpc before Cobra parses flags.
@@ -81,7 +84,9 @@ func Execute() error {
 			b = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"error":{"code":%d,"message":%q}}`,
 				cmdPath, format.ErrCodeServerError, err.Error()))
 		}
-		fmt.Fprintf(origOut, "%s\n", b)
+		if _, writeErr := fmt.Fprintf(origOut, "%s\n", b); writeErr != nil {
+			return fmt.Errorf("write JSON-RPC error response: %w", writeErr)
+		}
 		return err
 	}
 	captured, _ := root.OutOrStdout().(*bytes.Buffer)
@@ -93,8 +98,10 @@ func Execute() error {
 		if len(raw) == 0 {
 			return nil
 		}
-		_, err = fmt.Fprintf(origOut, "%s\n", raw)
-		return err
+		if _, err = fmt.Fprintf(origOut, "%s\n", raw); err != nil {
+			return fmt.Errorf("write JSON-RPC captured response: %w", err)
+		}
+		return nil
 	}
 	cmdPath := jctx.cmdPath
 	if cmdPath == "" && executed != nil {
@@ -110,14 +117,18 @@ func Execute() error {
 // Use Execute() from main.go for production use. NewRootCommand is kept for
 // test-harness access where the caller controls SetArgs and SetOut directly.
 func NewRootCommand() *cobra.Command {
-	return newRootCommandImpl(&jsonrpcInterceptor{})
+	return newRootCommandImpl(&jsonrpcInterceptor{}, defaultVersionLatestLookup)
 }
 
 // newRootCommandImpl builds the root command wired to the supplied interceptor.
-func newRootCommandImpl(jctx *jsonrpcInterceptor) *cobra.Command {
+func newRootCommandImpl(jctx *jsonrpcInterceptor, latestLookup latestVersionLookupFunc) *cobra.Command {
+	if latestLookup == nil {
+		latestLookup = defaultVersionLatestLookup
+	}
 	var cwd string
 	var logLevel string
 	var jsonrpcFlag bool
+	var noUpdateCheck bool
 
 	root := &cobra.Command{
 		Use:     "backlogit",
@@ -173,15 +184,21 @@ stash follow-up work for later planning.`,
 				return err
 			}
 			if _, err = fmt.Fprintf(jctx.origOut, "%s\n", b); err != nil {
-				return err
+				return fmt.Errorf("write JSON-RPC post-run response: %w", err)
 			}
 			jctx.wrapped = true
 			return nil
 		},
 	}
+	root.SetContext(context.WithValue(context.Background(), versionLatestLookupContextKey{}, latestLookup))
+	versionTemplateOnce.Do(func() {
+		cobra.AddTemplateFunc("backlogitVersionLine", formatRootVersionLine)
+	})
+	root.SetVersionTemplate("{{backlogitVersionLine .}}\n")
 	root.PersistentFlags().StringVar(&cwd, "cwd", ".", "workspace directory")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)")
 	root.PersistentFlags().BoolVar(&jsonrpcFlag, "jsonrpc", false, "wrap all output in a JSON-RPC 2.0 response envelope")
+	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "skip the remote latest-release check")
 
 	root.AddCommand(newInitCommand(&cwd))
 	root.AddCommand(newSyncCommand(&cwd))
@@ -212,7 +229,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(NewCheckpointCmd(&cwd))
 	root.AddCommand(newDoctorCommand(&cwd))
 	root.AddCommand(newDocsCommand(&cwd))
-	root.AddCommand(newVersionCommand())
+	root.AddCommand(newVersionCommandWithLookup(latestLookup))
 	root.AddCommand(newManifestCommand(&cwd))
 
 	return root
@@ -232,8 +249,10 @@ func writeJSONRPCResult(w io.Writer, cmdPath string, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "%s\n", b)
-	return err
+	if _, err = fmt.Fprintf(w, "%s\n", b); err != nil {
+		return fmt.Errorf("write JSON-RPC result: %w", err)
+	}
+	return nil
 }
 
 // applyLogLevel reconfigures the global slog handler at the given level.
