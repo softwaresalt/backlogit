@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Update artifact fields or sections
+description: Self-update backlogit or update artifact fields
 doc_type: reference
 ingested_at: "2026-06-26T02:27:58Z"
 schema_version: "1.0"
@@ -10,23 +10,27 @@ title: backlogit update
 
 ## backlogit update
 
-Update artifact fields or sections
+Self-update backlogit or update artifact fields
 
 ### Synopsis
 
-Update frontmatter fields or template-backed body sections on an existing
-artifact.
+Update the installed backlogit binary when called without an artifact ID,
+or update frontmatter fields and template-backed body sections on an existing
+artifact when an ID is supplied.
 
 Use repeated --section name=value flags to update named sections without
 replacing the rest of the document body.
 
 ```text
-backlogit update <id> [flags]
+backlogit update [id] [flags]
 ```
 
 ### Examples
 
 ```text
+  backlogit update
+  backlogit update --check
+  backlogit update --to v1.2.3
   backlogit update 001.001-T --status review
   backlogit update 001.001-T --priority high
   backlogit update 001-F --section goals="Ship passwordless sign-in"
@@ -37,6 +41,7 @@ backlogit update <id> [flags]
 
 ```text
       --assigned-to string      assignee
+      --check                   check whether a backlogit binary update is available without applying it
       --commit string           commit SHA
       --description string      new description
       --force-gates             operator-only: force completion past the gate (requires --force-reason)
@@ -54,6 +59,7 @@ backlogit update <id> [flags]
       --sprint string           sprint ID
       --status string           new status
       --title string            new title
+      --to string               update the backlogit binary to a specific release tag
 ```
 
 ### Options inherited from parent commands

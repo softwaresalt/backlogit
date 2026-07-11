@@ -78,6 +78,6 @@ stash follow-up work for later planning.
 * [backlogit status](backlogit_status.md)	 - Show workspace artifact summary
 * [backlogit sync](backlogit_sync.md)	 - Rehydrate the SQLite index from Markdown source files
 * [backlogit telemetry](backlogit_telemetry.md)	 - Inspect Copilot CLI token usage and tool telemetry
-* [backlogit update](backlogit_update.md)	 - Update artifact fields or sections
+* [backlogit update](backlogit_update.md)	 - Self-update backlogit or update artifact fields
 * [backlogit version](backlogit_version.md)	 - Print version, latest release, commit, build date, and Go runtime information
 
