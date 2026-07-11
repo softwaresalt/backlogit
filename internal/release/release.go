@@ -128,8 +128,9 @@ func (c Client) DownloadAsset(ctx context.Context, asset Asset, w io.Writer, max
 	if _, err := io.Copy(counting, resp.Body); err != nil {
 		return 0, fmt.Errorf("download asset %q: %w", asset.Name, err)
 	}
-	if _, err := io.Copy(w, strings.NewReader(buf.String())); err != nil {
-		return 0, fmt.Errorf("write asset %q: %w", asset.Name, err)
+	dstWritten, err := io.Copy(w, strings.NewReader(buf.String()))
+	if err != nil {
+		return dstWritten, fmt.Errorf("write asset %q: %w", asset.Name, err)
 	}
 	return counting.written, nil
 }

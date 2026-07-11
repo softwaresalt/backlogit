@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -139,6 +141,27 @@ func TestDownloadAssetEnforcesBoundedSize(t *testing.T) {
 	assert.Empty(t, got.Bytes())
 }
 
+func TestDownloadAssetReturnsDestinationWriteCountOnError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte("payload"))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	client := Client{HTTPClient: server.Client()}
+	writer := shortErrorWriter{limit: 3}
+	n, err := client.DownloadAsset(context.Background(), Asset{
+		Name:               "backlogit-linux-amd64",
+		BrowserDownloadURL: server.URL,
+	}, writer, 1<<20)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errShortAssetWrite)
+	assert.Equal(t, int64(3), n)
+}
+
 func serverURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
@@ -146,3 +169,18 @@ func serverURL(r *http.Request) string {
 	}
 	return scheme + "://" + r.Host
 }
+
+var errShortAssetWrite = errors.New("short asset write")
+
+type shortErrorWriter struct {
+	limit int
+}
+
+func (w shortErrorWriter) Write(p []byte) (int, error) {
+	if len(p) <= w.limit {
+		return len(p), nil
+	}
+	return w.limit, errShortAssetWrite
+}
+
+var _ io.Writer = shortErrorWriter{}
