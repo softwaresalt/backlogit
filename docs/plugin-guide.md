@@ -37,8 +37,8 @@ Autoharness replaces the plugin-provided agents and skills, not the
 
 * [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
 * Node.js 18+ on your PATH. The current plugin manifest still launches the MCP
-  bootstrap through `npx`; direct GitHub Releases bootstrap is tracked
-  separately.
+  bootstrap through `npx`; direct GitHub Releases bootstrap is tracked by
+  backlog stash `60B8564F`.
 
 ---
 
@@ -80,6 +80,10 @@ copilot plugin install softwaresalt/backlogit
 
 When `backlogit` is on your PATH, the current bootstrap uses it directly with
 zero binary download delay.
+
+If your organization requires review before executing remote scripts, download
+the installer script first or use a SHA256-verified binary from GitHub
+Releases.
 
 ### Option 3 — install from source
 
@@ -152,7 +156,7 @@ native backlogit binary with this fallback behavior:
 | Tier | Source | Latency |
 |------|--------|---------|
 | 1 | `backlogit` already on PATH | ~0 ms |
-| 2 | Legacy `@backlogit/{platform}-{arch}` npm optional dep | Retired in v1.5.0 |
+| 2 | Legacy `@backlogit/{platform}-{arch}` npm optional dep (retired in v1.5.0) | N/A |
 | 3 | GitHub Releases download + SHA256 verification | ~10–30 s (first time only) |
 
 The downloaded binary is cached at `~/.cache/backlogit/bin/backlogit-{version}[.exe]` and reused on subsequent starts.

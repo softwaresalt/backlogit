@@ -81,8 +81,8 @@ The plugin currently bootstraps the MCP server through an `npx` invocation of
 the `@backlogit/backlogit-mcp` wrapper, then resolves the native `backlogit`
 binary.
 The plugin bootstrap migration to direct GitHub Releases resolution is tracked
-separately. npm publishing for `@backlogit/*` was retired in v1.5.0, so do not
-use npm global installs to obtain backlogit.
+separately by backlog stash `60B8564F`. npm publishing for `@backlogit/*` was
+retired in v1.5.0, so do not use npm global installs to obtain backlogit.
 
 To avoid first-run binary resolution, install the native runtime with one of
 the supported paths:
@@ -131,6 +131,10 @@ These one-line installers match the scripts in
 [`scripts/install/`](scripts/install/), download the latest GitHub Release
 asset, verify it with `SHA256SUMS`, and install the `backlogit` binary into a
 user-writable directory.
+
+If your organization requires review before executing remote scripts, download
+the installer script first or use a SHA256-verified binary from GitHub
+Releases.
 
 **Secondary install alternatives:**
 
