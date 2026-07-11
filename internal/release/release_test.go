@@ -200,3 +200,31 @@ func TestUpdateAvailable(t *testing.T) {
 	assert.False(t, UpdateAvailable("v1.5.0", "1.5.0"))
 	assert.False(t, UpdateAvailable("dev", "1.5.0"), "uncomparable dev builds should not claim an update")
 }
+
+func TestUpdateAvailability(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		current       string
+		latest        string
+		wantAvailable bool
+		wantStatus    string
+	}{
+		{name: "newer", current: "1.4.1", latest: "1.5.0", wantAvailable: true, wantStatus: UpdateCheckOK},
+		{name: "equal", current: "v1.5.0", latest: "1.5.0", wantAvailable: false, wantStatus: UpdateCheckOK},
+		{name: "uncomparable-current", current: "dev", latest: "1.5.0", wantAvailable: false, wantStatus: UpdateCheckUncomparable},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			available, status := UpdateAvailability(tt.current, tt.latest)
+
+			assert.Equal(t, tt.wantAvailable, available)
+			assert.Equal(t, tt.wantStatus, status)
+		})
+	}
+}

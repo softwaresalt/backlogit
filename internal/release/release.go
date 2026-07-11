@@ -16,6 +16,11 @@ const (
 	// DefaultLatestURL is the GitHub Releases endpoint for the latest backlogit release.
 	DefaultLatestURL = "https://api.github.com/repos/softwaresalt/backlogit/releases/latest"
 
+	// UpdateCheckOK means the latest version was fetched and compared successfully.
+	UpdateCheckOK = "ok"
+	// UpdateCheckUncomparable means the latest version was fetched but comparison was not possible.
+	UpdateCheckUncomparable = "uncomparable"
+
 	defaultUserAgent = "backlogit"
 	maxResponseBytes = 1 << 20
 )
@@ -107,11 +112,17 @@ func CompareVersions(a, b string) (int, error) {
 
 // UpdateAvailable reports whether latest is newer than current.
 func UpdateAvailable(current, latest string) bool {
+	available, _ := UpdateAvailability(current, latest)
+	return available
+}
+
+// UpdateAvailability compares current and latest and returns a status for callers.
+func UpdateAvailability(current, latest string) (bool, string) {
 	cmp, err := CompareVersions(current, latest)
 	if err != nil {
-		return false
+		return false, UpdateCheckUncomparable
 	}
-	return cmp < 0
+	return cmp < 0, UpdateCheckOK
 }
 
 func parseSemVersion(raw string) (semVersion, error) {

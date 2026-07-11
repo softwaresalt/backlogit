@@ -39,10 +39,7 @@ func (s *Server) handleGetVersion(ctx context.Context, _ mcplib.CallToolRequest)
 		latest, err := release.Client{Token: os.Getenv("GITHUB_TOKEN")}.Latest(checkCtx)
 		if err == nil {
 			data["latest"] = latest
-			if cmp, err := release.CompareVersions(current, latest); err == nil {
-				data["update_available"] = cmp < 0
-				data["update_check"] = "ok"
-			}
+			data["update_available"], data["update_check"] = release.UpdateAvailability(current, latest)
 		}
 	}
 	b, err := json.MarshalIndent(data, "", "  ")

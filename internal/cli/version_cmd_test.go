@@ -74,6 +74,24 @@ func TestVersionCommand_GracefulUnavailable(t *testing.T) {
 	assert.Contains(t, out, "update check unavailable", "failure should degrade with a brief note")
 }
 
+func TestVersionCommand_ShowsLatestWhenCurrentIsUncomparable(t *testing.T) {
+	withCurrentVersion(t, version.DevVersion)
+	cmd := newVersionCommandWithLookup(func(context.Context) (string, error) {
+		return "v9.9.9", nil
+	})
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "v9.9.9", "successful lookup should still show latest tag")
+	assert.Contains(t, out, "update status unavailable", "uncomparable current version should be distinct from lookup failure")
+}
+
 func TestVersionCommand_UpdateCheckTimeoutBudget(t *testing.T) {
 	assert.LessOrEqual(t, updateCheckTimeout, 1*time.Second, "default version checks should stay fast")
 }

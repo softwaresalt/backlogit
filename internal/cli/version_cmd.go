@@ -130,10 +130,7 @@ func collectVersionInfo(cmd *cobra.Command, noUpdateCheck bool, lookup latestVer
 		return info
 	}
 	info.Latest = latest
-	if cmp, err := release.CompareVersions(current, latest); err == nil {
-		info.UpdateAvailable = cmp < 0
-		info.UpdateCheck = "ok"
-	}
+	info.UpdateAvailable, info.UpdateCheck = release.UpdateAvailability(current, latest)
 	return info
 }
 
@@ -144,6 +141,8 @@ func formatLatestLine(info versionInfo) string {
 			return fmt.Sprintf("%s (update available; run 'backlogit update')", info.Latest)
 		}
 		return fmt.Sprintf("%s (up to date)", info.Latest)
+	case "uncomparable":
+		return fmt.Sprintf("%s (update status unavailable for current version)", info.Latest)
 	case "skipped":
 		return "skipped (update check skipped)"
 	default:
@@ -164,6 +163,8 @@ func formatRootVersionLine(cmd *cobra.Command) string {
 			return fmt.Sprintf("%s (latest: %s -- update available; run 'backlogit update')", base, info.Latest)
 		}
 		return fmt.Sprintf("%s (latest: %s -- up to date)", base, info.Latest)
+	case "uncomparable":
+		return fmt.Sprintf("%s (latest: %s -- update status unavailable for current version)", base, info.Latest)
 	case "skipped":
 		return base + " (update check skipped)"
 	default:
