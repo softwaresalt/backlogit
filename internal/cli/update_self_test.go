@@ -292,6 +292,60 @@ func TestRunSelfUpdateKeepsOriginalWhenWindowsFirstRenameFails(t *testing.T) {
 	assert.NoFileExists(t, target+".old")
 }
 
+func TestRunSelfUpdateReclaimsStaleDeadLock(t *testing.T) {
+	t.Parallel()
+
+	target := writeSelfUpdateTarget(t, "backlogit.exe", []byte("old-binary"))
+	lockPath := target + ".update.lock"
+	require.NoError(t, os.WriteFile(lockPath, []byte("pid=12345\n"), 0o600))
+	newBinary := []byte("new-binary")
+	client := newFakeSelfUpdateClient("v1.2.0", "windows", "amd64", newBinary)
+
+	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
+		Client:         client,
+		CurrentVersion: "1.0.0",
+		TargetPath:     target,
+		GOOS:           "windows",
+		GOARCH:         "amd64",
+		ProcessRunning: func(pid int) bool {
+			return pid != 12345
+		},
+	})
+
+	require.NoError(t, err)
+	assert.True(t, result.Updated)
+	assert.Equal(t, newBinary, readFile(t, target))
+	assert.NoFileExists(t, lockPath)
+}
+
+func TestRunSelfUpdateRefusesLiveLock(t *testing.T) {
+	t.Parallel()
+
+	oldBinary := []byte("old-binary")
+	target := writeSelfUpdateTarget(t, "backlogit.exe", oldBinary)
+	lockPath := target + ".update.lock"
+	require.NoError(t, os.WriteFile(lockPath, []byte("pid=12345\n"), 0o600))
+	client := newFakeSelfUpdateClient("v1.2.0", "windows", "amd64", []byte("new-binary"))
+
+	result, err := runSelfUpdate(context.Background(), selfUpdateOptions{
+		Client:         client,
+		CurrentVersion: "1.0.0",
+		TargetPath:     target,
+		GOOS:           "windows",
+		GOARCH:         "amd64",
+		ProcessRunning: func(pid int) bool {
+			return pid == 12345
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "another update is in progress")
+	assert.False(t, result.Updated)
+	assert.Equal(t, oldBinary, readFile(t, target))
+	assert.FileExists(t, lockPath)
+	assert.Empty(t, client.downloads)
+}
+
 func TestReplaceSelfUpdateBinaryPlatformPaths(t *testing.T) {
 	t.Parallel()
 

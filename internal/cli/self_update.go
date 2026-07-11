@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ const (
 	selfUpdateTimeout          = 2 * time.Minute
 	selfUpdateMaxDownloadBytes = 100 << 20
 	selfUpdateMaxSumsBytes     = 1 << 20
+	selfUpdateLockStaleAfter   = time.Hour
 )
 
 type selfUpdateReleaseClient interface {
@@ -43,6 +45,9 @@ type selfUpdateOptions struct {
 	Rename           func(string, string) error
 	Remove           func(string) error
 	OpenForWrite     func(string) (io.Closer, error)
+	Now              func() time.Time
+	ProcessRunning   func(int) bool
+	LockStaleAfter   time.Duration
 }
 
 type selfUpdateResult struct {
@@ -170,6 +175,17 @@ func normalizeSelfUpdateOptions(opts selfUpdateOptions) selfUpdateOptions {
 		opts.OpenForWrite = func(path string) (io.Closer, error) {
 			return os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		}
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	if opts.ProcessRunning == nil {
+		opts.ProcessRunning = func(int) bool {
+			return true
+		}
+	}
+	if opts.LockStaleAfter <= 0 {
+		opts.LockStaleAfter = selfUpdateLockStaleAfter
 	}
 	return opts
 }
@@ -374,7 +390,20 @@ func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr erro
 	lockPath := opts.TargetPath + ".update.lock"
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("acquire self-update lock: %w", err)
+		if !errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("acquire self-update lock: %w", err)
+		}
+		reclaimed, reclaimErr := reclaimSelfUpdateLock(opts, lockPath)
+		if reclaimErr != nil {
+			return reclaimErr
+		}
+		if !reclaimed {
+			return fmt.Errorf("acquire self-update lock: another update is in progress at %s", lockPath)
+		}
+		lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return fmt.Errorf("acquire reclaimed self-update lock: %w", err)
+		}
 	}
 	defer func() {
 		if err := lock.Close(); err != nil {
@@ -391,6 +420,44 @@ func withSelfUpdateLock(opts selfUpdateOptions, fn func() error) (returnErr erro
 		return err
 	}
 	return nil
+}
+
+func reclaimSelfUpdateLock(opts selfUpdateOptions, lockPath string) (bool, error) {
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("stat self-update lock: %w", err)
+	}
+	lockAge := opts.Now().Sub(info.ModTime())
+	raw, readErr := os.ReadFile(lockPath)
+	if readErr != nil && lockAge <= opts.LockStaleAfter {
+		return false, fmt.Errorf("read self-update lock: %w", readErr)
+	}
+	pid, hasPID := parseSelfUpdateLockPID(string(raw))
+	if (hasPID && !opts.ProcessRunning(pid)) || lockAge > opts.LockStaleAfter {
+		if err := opts.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("remove stale self-update lock: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func parseSelfUpdateLockPID(raw string) (int, bool) {
+	for _, line := range strings.Split(raw, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if !found || key != "pid" {
+			continue
+		}
+		pid, err := strconv.Atoi(value)
+		if err != nil || pid <= 0 {
+			return 0, false
+		}
+		return pid, true
+	}
+	return 0, false
 }
 
 func rollbackSelfUpdateReplacement(opts selfUpdateOptions, backupPath string) error {
