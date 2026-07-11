@@ -10,7 +10,7 @@ docline:
         - agile
         - ai agents
         - task management
-    ms.date: 2026-07-09T00:00:00Z
+    ms.date: 2026-07-10T00:00:00Z
     ms.topic: overview
 ingested_at: "2026-06-26T02:34:51Z"
 schema_version: "1.0"
@@ -77,13 +77,23 @@ Install backlogit as a Copilot CLI plugin:
 copilot plugin install softwaresalt/backlogit
 ```
 
-The plugin uses `npx @backlogit/backlogit-mcp` to run the backlogit binary. On first invocation the binary is downloaded and cached (~10–30 s). To pre-install and avoid the first-run download:
+The plugin currently bootstraps the MCP server through an `npx` invocation of
+the `@backlogit/backlogit-mcp` wrapper, then resolves the native `backlogit`
+binary.
+The plugin bootstrap migration to direct GitHub Releases resolution is tracked
+separately. npm publishing for `@backlogit/*` was retired in v1.5.0, so do not
+use npm global installs to obtain backlogit.
+
+To avoid first-run binary resolution, install the native runtime with one of
+the supported paths:
 
 ```bash
-npm install -g @backlogit/backlogit-mcp   # pre-download
-# — or —
-go install github.com/softwaresalt/backlogit/cmd/backlogit@latest  # native binary
+go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 ```
+
+You can also use the one-line installers in the Quick Start or download a
+SHA256-verified binary from
+[GitHub Releases](https://github.com/softwaresalt/backlogit/releases).
 
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
@@ -105,10 +115,38 @@ Start here after you choose the installation path above. Path A users can run
 the standalone backlogit commands directly. Path B users should run these
 commands only after Autoharness has installed or tuned the repo-local harness.
 
-**Install from source:**
+**Recommended install — Windows PowerShell:**
+
+```powershell
+irm https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.ps1 | iex
+```
+
+**Recommended install — Linux and macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
+```
+
+These one-line installers match the scripts in
+[`scripts/install/`](scripts/install/), download the latest GitHub Release
+asset, verify it with `SHA256SUMS`, and install the `backlogit` binary into a
+user-writable directory.
+
+**Secondary install alternatives:**
+
+Use `go install` when you want the Go toolchain workflow:
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
+```
+
+Or download a SHA256-verified binary from
+[GitHub Releases](https://github.com/softwaresalt/backlogit/releases). Path A
+users who want the bundled Copilot CLI agents and skills can install the
+standalone plugin:
+
+```bash
+copilot plugin install softwaresalt/backlogit
 ```
 
 **Initialize a workspace:**

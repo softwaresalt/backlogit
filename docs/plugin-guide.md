@@ -3,14 +3,14 @@ chunk_strategy: h1-h2-h3
 description: Installing backlogit as a Copilot CLI plugin with hybrid binary distribution
 doc_type: guide
 docline:
-    ms.date: 2026-07-09T00:00:00Z
+    ms.date: 2026-07-10T00:00:00Z
     ms.topic: guide
 ingested_at: "2026-06-26T02:34:29Z"
 schema_version: "1.0"
 source: docs/plugin-guide.md
 title: backlogit Plugin Guide
 ---
-
+
 ## Overview
 
 backlogit distributes as a standalone Copilot CLI plugin. When installed, the
@@ -35,8 +35,10 @@ Autoharness replaces the plugin-provided agents and skills, not the
 
 ## Prerequisites
 
-- [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
-- Node.js 18+ on your PATH (required for the npm wrapper)
+* [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
+* Node.js 18+ on your PATH. The current plugin manifest still launches the MCP
+  bootstrap through `npx`; direct GitHub Releases bootstrap is tracked
+  separately.
 
 ---
 
@@ -52,29 +54,58 @@ This is the primary Path A installation. The plugin includes the Stage and Ship
 agents, all 19 skills listed in [`../plugin/plugin.json`](../plugin/plugin.json),
 and configures the backlogit MCP server automatically.
 
-**Note:** On first invocation, the MCP server downloads the backlogit binary (~10–30 s depending on connection speed). Subsequent starts are instant. If you want to skip this first-run delay, use Option 2 to pre-install the binary.
+**Note:** On first invocation, the MCP server resolves the backlogit binary
+(~10–30 s depending on connection speed). Subsequent starts are instant. If you
+want to skip this first-run delay, use Option 2 to pre-install the native
+runtime.
 
-### Option 2 — npm global install (faster first run)
+### Option 2 — one-line native runtime install
 
-Pre-install the npm wrapper and binary cache before installing the plugin:
+Install the native `backlogit` binary before installing the plugin. This is the
+recommended way to avoid first-run binary resolution.
 
-```bash
-npm install -g @backlogit/backlogit-mcp
+#### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.ps1 | iex
 copilot plugin install softwaresalt/backlogit
 ```
 
-With a globally installed wrapper, `npx` finds the binary immediately — no download on first use.
+#### Linux and macOS
 
-### Option 3 — native binary (maximum performance)
+```bash
+curl -fsSL https://raw.githubusercontent.com/softwaresalt/backlogit/main/scripts/install/install.sh | sh
+copilot plugin install softwaresalt/backlogit
+```
 
-Install the backlogit binary directly:
+When `backlogit` is on your PATH, the current bootstrap uses it directly with
+zero binary download delay.
+
+### Option 3 — install from source
+
+Use this path when you want the Go toolchain workflow or unreleased changes:
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 copilot plugin install softwaresalt/backlogit
 ```
 
-When `backlogit` is on your PATH, the npm wrapper uses it directly (Tier 1 resolution) with zero overhead.
+### Option 4 — direct GitHub Releases binary
+
+Download the platform asset and `SHA256SUMS` from
+[GitHub Releases](https://github.com/softwaresalt/backlogit/releases), verify
+the checksum, place the executable on your PATH, and then install the plugin:
+
+```bash
+copilot plugin install softwaresalt/backlogit
+```
+
+See [Installation](installation.md#method-2-download-the-binary-directly) for
+platform-specific commands.
+
+> [!IMPORTANT]
+> npm publishing for `@backlogit/*` was retired in v1.5.0. Do not use the
+> retired npm packages as a user install path.
 
 ---
 
@@ -114,19 +145,25 @@ harness material.
 
 ## How Binary Resolution Works
 
-The npm wrapper (`@backlogit/backlogit-mcp`) resolves the backlogit binary using a three-tier fallback:
+The current plugin bootstrap still invokes the
+`@backlogit/backlogit-mcp` wrapper through `npx`. That wrapper resolves the
+native backlogit binary with this fallback behavior:
 
 | Tier | Source | Latency |
 |------|--------|---------|
 | 1 | `backlogit` already on PATH | ~0 ms |
-| 2 | `@backlogit/{platform}-{arch}` npm optional dep | ~0 ms |
+| 2 | Legacy `@backlogit/{platform}-{arch}` npm optional dep | Retired in v1.5.0 |
 | 3 | GitHub Releases download + SHA256 verification | ~10–30 s (first time only) |
 
 The downloaded binary is cached at `~/.cache/backlogit/bin/backlogit-{version}[.exe]` and reused on subsequent starts.
 
-### Supported platforms
+The wrapper exists only as the current plugin bootstrap detail. User-facing
+installs should use `copilot plugin install`, the one-line runtime installers,
+`go install`, or a SHA256-verified GitHub Releases binary.
 
-| Platform | npm key |
+### Legacy wrapper platform keys
+
+| Platform | Key |
 |----------|---------|
 | Linux x64 | `linux-x64` |
 | Linux arm64 | `linux-arm64` |
@@ -142,7 +179,8 @@ The downloaded binary is cached at `~/.cache/backlogit/bin/backlogit-{version}[.
 
 1. **Check Node.js version**: Node 18+ is required.
 2. **Check network access**: Tier 3 downloads from `github.com`. If you're behind a proxy, set `HTTPS_PROXY`.
-3. **Install natively**: Use Option 3 to put `backlogit` on PATH and bypass all npm resolution.
+3. **Install natively**: Use Option 2 or Option 3 to put `backlogit` on PATH
+   and bypass binary download.
 4. **Clear cache**: Delete `~/.cache/backlogit/bin/` and retry.
 
 ### `copilot plugin install` shows no agents or skills
@@ -173,7 +211,8 @@ node --version   # should be >= 18
 npx --version
 ```
 
-If the binary download failed during postinstall, the server will attempt a download on first use. You can force a fresh download by removing the cache:
+If binary resolution fails, you can force a fresh download by removing the
+cache:
 
 ```bash
 rm -rf ~/.cache/backlogit/bin/
