@@ -79,6 +79,8 @@ go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 * The MCP launch path is observable by running `backlogit mcp`
 * The drift guard fails if an active plugin manifest or active plugin install
   guide reintroduces the retired npm wrapper launch
+* Readiness status: `READY_WITH_CONDITIONS` until follow-up `096-F` exercises
+  the live plugin install flow outside CI
 
 ## Rollback and limitations
 
@@ -90,6 +92,19 @@ not recommended because native Copilot CLI installs do not guarantee Node or
 The live `copilot plugin install softwaresalt/backlogit` flow was not exercised
 in CI. CI validates the checked-in manifests, documentation, and Go test guard;
 the live plugin install remains a manual runtime verification step.
+
+### Manual observation requirement
+
+| Field | Value |
+|---|---|
+| Follow-up | `096-F` |
+| Owner | Operator maintaining the Copilot CLI plugin release |
+| Window | First manual plugin verification session after the closure PR merges; observe for 30 minutes |
+| Live check | Install the plugin with `copilot plugin install softwaresalt/backlogit`, confirm `backlogit` is on `PATH`, and exercise a Copilot MCP call that starts `backlogit mcp` |
+| Healthy signal | Plugin install succeeds, the MCP server process starts from the PATH binary, and no `npx` or `@backlogit/backlogit-mcp` command appears in the active plugin launch path |
+| Alert signal | Plugin install fails, Copilot cannot resolve `backlogit`, MCP startup exits nonzero, or any active launch path invokes `npx` |
+| Rollback trigger | A reproducible live install or MCP startup failure caused by PATH-binary launch semantics |
+| Rollback action | Revert PR #213 and this closure PR, then reopen plugin packaging design before reintroducing any npm wrapper |
 
 ## Merge and closure
 
