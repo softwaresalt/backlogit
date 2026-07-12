@@ -6,7 +6,7 @@ docline:
     category: runtime_error
     component: cli
     date: 2026-04-28T00:00:00Z
-    file_path: retired-wrapper/lib/resolve.js
+    file_path: npm/backlogit-mcp/lib/resolve.js
     message: https.get() passes undefined to recursive get() call when 3xx response lacks Location header, causing an opaque crash instead of a descriptive error.
     problem_type: runtime_error
     resolution_type: code_fix

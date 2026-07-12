@@ -60,8 +60,8 @@ is neither removed nor broadened.
 
 | Scenario | Command | Observed |
 |---|---|---|
-| Isolated run (local) | `bash retired packaging characterization script` (PATH incl. jq 1.7.1) | **PASS** — 6 `package.json` valid + version-stamped; wrapper `optionalDependencies` synced |
-| Isolation invariant | inspect real `retired package metadata` after run | unchanged (test copies into `mktemp -d`, `trap cleanup EXIT`) |
+| Isolated run (local) | `bash scripts/package-npm.characterization.sh` (PATH incl. jq 1.7.1) | **PASS** — 6 `package.json` valid + version-stamped; wrapper `optionalDependencies` synced |
+| Isolation invariant | inspect real `npm/**/package.json` after run | unchanged (test copies into `mktemp -d`, `trap cleanup EXIT`) |
 | Optional npm-pack path | `RUN_NPM_PACK=1 bash …` | passes (off by default; non-fatal) |
 | CI (authoritative) | GitHub Actions `test (1.23)` + `test (1.24)` on Linux | **PASS** (Go wrapper runs the shell test; skips only on Windows) |
 
