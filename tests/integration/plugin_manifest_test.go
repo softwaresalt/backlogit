@@ -130,6 +130,40 @@ func TestActivePluginDocsDoNotReferenceRetiredNPMWrapper(t *testing.T) {
 	}
 }
 
+func TestActivePluginDocsKeepPlainOwnerRepoInstallCanonical(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	activePaths := []string{
+		"README.md",
+		"docs/installation.md",
+		"docs/plugin-guide.md",
+	}
+
+	for _, activePath := range activePaths {
+		t.Run(filepath.ToSlash(activePath), func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(repoRoot, activePath))
+			require.NoError(t, err)
+
+			content := string(data)
+			assert.Contains(t, content, "copilot plugin install softwaresalt/backlogit")
+			assert.NotContains(t, content, "copilot plugin install softwaresalt/backlogit:plugin")
+		})
+	}
+}
+
+func TestPluginClosureRecordsWindowsSubdirInstallFailure(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	closurePath := filepath.Join(repoRoot, "docs", "closure", "2026-07-12-plugin-install-path-fix-closure.md")
+	data, err := os.ReadFile(closurePath)
+	require.NoError(t, err)
+
+	content := string(data)
+	assert.Contains(t, content, "copilot plugin install softwaresalt/backlogit:plugin")
+	assert.Contains(t, content, "Windows")
+	assert.Contains(t, content, "os error 267")
+	assert.Contains(t, content, "The directory name is invalid")
+	assert.NotContains(t, content, "workaround remains available")
+}
+
 func assertPluginAssetExists(t *testing.T, repoRoot string, assetPath string) {
 	t.Helper()
 

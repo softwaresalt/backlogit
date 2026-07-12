@@ -66,17 +66,23 @@ after the merge by running:
 copilot plugin install softwaresalt/backlogit
 ```
 
-For older revisions before this fix, the immediate workaround was the
-subdirectory form:
+Operator field validation after the merge confirmed that the subdirectory
+owner/repo form fails on Windows:
 
 ```bash
 copilot plugin install softwaresalt/backlogit:plugin
 ```
 
-After this fix, use the plain owner/repo form.
+It returned `Failed to install plugin: Error: The directory name is invalid.
+(os error 267)`. Windows rejects the colon in the derived install directory name
+under `~/.copilot/installed-plugins/`, where `:` is reserved as a drive
+separator. This confirms the `.github/plugin/plugin.json` plain-form fix is
+required for cross-platform installation. Do not recommend the subdirectory
+form as a Windows workaround.
 
 ## Rollback
 
 Revert merge commit `2673e6d85ca05fae9c613e736c73a1a889f6faa1` if the canonical
-manifest causes an unexpected install regression. The old workaround remains
-available only on revisions where `plugin/plugin.json` still exists.
+manifest causes an unexpected install regression. Do not fall back to the
+`softwaresalt/backlogit:plugin` subdirectory form on Windows because it fails
+with `os error 267`.

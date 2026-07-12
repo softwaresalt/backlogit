@@ -36,7 +36,8 @@ Autoharness-generated `.github/` harness, use the Autoharness install or tune
 flow for the harness files and install only the runtime with one of the methods
 below.
 The standalone plugin manifest lives at `.github/plugin/plugin.json`, so the
-plain `copilot plugin install softwaresalt/backlogit` owner/repo form works.
+plain `copilot plugin install softwaresalt/backlogit` owner/repo form is the
+canonical cross-platform plugin install command.
 
 > [!IMPORTANT]
 > Avoid double-installing. The standalone plugin contributes its own frozen
@@ -185,7 +186,7 @@ copilot plugin install softwaresalt/backlogit
 ```
 
 For local development from a clone, use `copilot plugin install ./` from the
-repository root or `copilot plugin install .github/plugin`.
+repository root.
 
 ## Shell completion
 
