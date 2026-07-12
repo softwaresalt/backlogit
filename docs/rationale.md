@@ -92,7 +92,8 @@ An agent running inside Claude Code, GitHub Copilot CLI, or Cursor can query the
 backlogit can enter a workspace through two related paths. The standalone
 Copilot CLI plugin is a self-contained product: `copilot plugin install
 softwaresalt/backlogit` installs the Stage and Ship agents, 19 bundled skills,
-and the backlogit MCP server declared in [`../plugin/plugin.json`](../plugin/plugin.json).
+and the backlogit MCP server declared in
+[`../.github/plugin/plugin.json`](../.github/plugin/plugin.json).
 Use that path when you want to use backlogit directly.
 
 Autoharness adoption uses backlogit as one capability inside a generated

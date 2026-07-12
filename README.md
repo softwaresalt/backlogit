@@ -65,9 +65,11 @@ Choose one path before you run an install command:
   plugin for that same repo harness.
 
 The two paths share backlogit concepts, but they install different surfaces.
-The standalone bundle is declared in [`plugin/plugin.json`](plugin/plugin.json).
-This repository also contains `.autoharness/` and generated `.github/`
-materials, which are the Autoharness path.
+The standalone install manifest is
+[`.github/plugin/plugin.json`](.github/plugin/plugin.json), and it references
+the bundled agents and skills under `plugin/`. This repository also contains
+`.autoharness/` and generated `.github/` materials, which are the Autoharness
+path.
 
 ### Path A - Install standalone backlogit
 
@@ -91,6 +93,11 @@ Then install backlogit as a Copilot CLI plugin:
 ```bash
 copilot plugin install softwaresalt/backlogit
 ```
+
+The plain `softwaresalt/backlogit` owner/repo form works because Copilot CLI
+finds the canonical manifest at `.github/plugin/plugin.json`. For local
+development from a clone, use `copilot plugin install ./` from the repository
+root or `copilot plugin install .github/plugin`.
 
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
@@ -150,6 +157,9 @@ standalone plugin after `backlogit` is on PATH:
 ```bash
 copilot plugin install softwaresalt/backlogit
 ```
+
+That owner/repo command installs the bundled plugin from the canonical
+`.github/plugin/plugin.json` manifest.
 
 **Initialize a workspace:**
 

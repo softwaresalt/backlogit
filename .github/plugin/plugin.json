@@ -1,0 +1,40 @@
+{
+  "name": "backlogit",
+  "version": "1.1.0",
+  "description": "AI-native agile workspace with MCP and CLI interfaces",
+  "author": "backlogit contributors",
+  "license": "MIT",
+  "keywords": ["backlogit", "mcp", "workflow", "agents"],
+  "agents": [
+    "plugin/agents/stage.agent.md",
+    "plugin/agents/ship.agent.md"
+  ],
+  "skills": [
+    "plugin/skills/build-feature/SKILL.md",
+    "plugin/skills/compact-context/SKILL.md",
+    "plugin/skills/compound/SKILL.md",
+    "plugin/skills/compound-refresh/SKILL.md",
+    "plugin/skills/deliberate/SKILL.md",
+    "plugin/skills/file-lock/SKILL.md",
+    "plugin/skills/fix-ci/SKILL.md",
+    "plugin/skills/harness-architect/SKILL.md",
+    "plugin/skills/harvest/SKILL.md",
+    "plugin/skills/impl-plan/SKILL.md",
+    "plugin/skills/operational-closure/SKILL.md",
+    "plugin/skills/plan-harden/SKILL.md",
+    "plugin/skills/plan-review/SKILL.md",
+    "plugin/skills/pr-lifecycle/SKILL.md",
+    "plugin/skills/review/SKILL.md",
+    "plugin/skills/runtime-verification/SKILL.md",
+    "plugin/skills/safety-modes/SKILL.md",
+    "plugin/skills/skill-search/SKILL.md",
+    "plugin/skills/spike/SKILL.md"
+  ],
+  "mcpServers": {
+    "backlogit": {
+      "type": "stdio",
+      "command": "backlogit",
+      "args": ["mcp"]
+    }
+  }
+}
