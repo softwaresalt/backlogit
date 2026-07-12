@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -136,6 +137,7 @@ func TestActivePluginDocsKeepPlainOwnerRepoInstallCanonical(t *testing.T) {
 		"README.md",
 		"docs/installation.md",
 		"docs/plugin-guide.md",
+		"docs/rationale.md",
 	}
 
 	for _, activePath := range activePaths {
@@ -143,7 +145,7 @@ func TestActivePluginDocsKeepPlainOwnerRepoInstallCanonical(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join(repoRoot, activePath))
 			require.NoError(t, err)
 
-			content := string(data)
+			content := normalizeDocWhitespace(string(data))
 			assert.Contains(t, content, "copilot plugin install softwaresalt/backlogit")
 			assert.NotContains(t, content, "copilot plugin install softwaresalt/backlogit:plugin")
 		})
@@ -178,6 +180,10 @@ func assertPluginAssetExists(t *testing.T, repoRoot string, assetPath string) {
 	info, err := os.Stat(targetPath)
 	require.NoError(t, err, "plugin asset path must exist: %s", assetPath)
 	require.False(t, info.IsDir(), "plugin asset path must reference a file: %s", assetPath)
+}
+
+func normalizeDocWhitespace(content string) string {
+	return strings.Join(strings.Fields(content), " ")
 }
 
 func assertServerHasOnlyLaunchFields(t *testing.T, data []byte) {
