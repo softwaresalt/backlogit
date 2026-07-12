@@ -14,8 +14,8 @@ import (
 
 type pluginManifest struct {
 	MCPServers map[string]pluginMCPServer `json:"mcpServers"`
-	Agents     []string                   `json:"agents"`
-	Skills     []string                   `json:"skills"`
+	Agents     string                     `json:"agents"`
+	Skills     string                     `json:"skills"`
 }
 
 type pluginMCPServer struct {
@@ -45,35 +45,32 @@ func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 	assert.Equal(t, "backlogit", server.Command)
 	assert.Equal(t, []string{"mcp"}, server.Args)
 
-	assert.Equal(t, []string{
-		"plugin/agents/stage.agent.md",
-		"plugin/agents/ship.agent.md",
-	}, manifest.Agents)
-	assert.Equal(t, []string{
-		"plugin/skills/build-feature/SKILL.md",
-		"plugin/skills/compact-context/SKILL.md",
-		"plugin/skills/compound/SKILL.md",
-		"plugin/skills/compound-refresh/SKILL.md",
-		"plugin/skills/deliberate/SKILL.md",
-		"plugin/skills/file-lock/SKILL.md",
-		"plugin/skills/fix-ci/SKILL.md",
-		"plugin/skills/harness-architect/SKILL.md",
-		"plugin/skills/harvest/SKILL.md",
-		"plugin/skills/impl-plan/SKILL.md",
-		"plugin/skills/operational-closure/SKILL.md",
-		"plugin/skills/plan-harden/SKILL.md",
-		"plugin/skills/plan-review/SKILL.md",
-		"plugin/skills/pr-lifecycle/SKILL.md",
-		"plugin/skills/review/SKILL.md",
-		"plugin/skills/runtime-verification/SKILL.md",
-		"plugin/skills/safety-modes/SKILL.md",
-		"plugin/skills/skill-search/SKILL.md",
-		"plugin/skills/spike/SKILL.md",
-	}, manifest.Skills)
+	// The Copilot CLI resolves agents/skills by calling read_dir on each entry,
+	// so they MUST be directory paths (repo-root-relative), not file paths.
+	// Listing individual .agent.md/SKILL.md files causes read_dir to fail on a
+	// file with ERROR_DIRECTORY (os error 267) on Windows during install.
+	assert.Equal(t, "plugin/agents", manifest.Agents)
+	assert.Equal(t, "plugin/skills", manifest.Skills)
 
-	for _, assetPath := range append(manifest.Agents, manifest.Skills...) {
-		t.Run(assetPath, func(t *testing.T) {
-			assertPluginAssetExists(t, repoRoot, assetPath)
+	assertPluginDir(t, repoRoot, manifest.Agents)
+	assertPluginDir(t, repoRoot, manifest.Skills)
+
+	for _, agentFile := range []string{"stage.agent.md", "ship.agent.md"} {
+		t.Run("agents/"+agentFile, func(t *testing.T) {
+			assertPluginFileExists(t, repoRoot, manifest.Agents+"/"+agentFile)
+		})
+	}
+
+	for _, skillDir := range []string{
+		"build-feature", "compact-context", "compound", "compound-refresh",
+		"deliberate", "file-lock", "fix-ci", "harness-architect", "harvest",
+		"impl-plan", "operational-closure", "plan-harden", "plan-review",
+		"pr-lifecycle", "review", "runtime-verification", "safety-modes",
+		"skill-search", "spike",
+	} {
+		t.Run("skills/"+skillDir, func(t *testing.T) {
+			assertPluginDir(t, repoRoot, manifest.Skills+"/"+skillDir)
+			assertPluginFileExists(t, repoRoot, manifest.Skills+"/"+skillDir+"/SKILL.md")
 		})
 	}
 }
@@ -166,20 +163,36 @@ func TestPluginClosureRecordsWindowsSubdirInstallFailure(t *testing.T) {
 	assert.NotContains(t, content, "workaround remains available")
 }
 
-func assertPluginAssetExists(t *testing.T, repoRoot string, assetPath string) {
+func assertPluginDir(t *testing.T, repoRoot string, relPath string) {
 	t.Helper()
 
-	require.NotEmpty(t, assetPath)
-	require.False(t, filepath.IsAbs(assetPath), "plugin asset path must be repo-root-relative")
+	target := pluginAssetTarget(t, repoRoot, relPath)
+	info, err := os.Stat(target)
+	require.NoError(t, err, "plugin path must exist: %s", relPath)
+	require.True(t, info.IsDir(), "plugin path must reference a directory: %s", relPath)
+}
 
-	targetPath := filepath.Clean(filepath.Join(repoRoot, filepath.FromSlash(assetPath)))
+func assertPluginFileExists(t *testing.T, repoRoot string, relPath string) {
+	t.Helper()
+
+	target := pluginAssetTarget(t, repoRoot, relPath)
+	info, err := os.Stat(target)
+	require.NoError(t, err, "plugin file must exist: %s", relPath)
+	require.False(t, info.IsDir(), "plugin path must reference a file: %s", relPath)
+}
+
+func pluginAssetTarget(t *testing.T, repoRoot string, relPath string) string {
+	t.Helper()
+
+	require.NotEmpty(t, relPath)
+	require.False(t, filepath.IsAbs(relPath), "plugin asset path must be repo-root-relative")
+
+	targetPath := filepath.Clean(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
 	relativeTarget, err := filepath.Rel(repoRoot, targetPath)
 	require.NoError(t, err)
 	require.NotContains(t, relativeTarget, "..", "plugin asset path must stay inside repo root")
 
-	info, err := os.Stat(targetPath)
-	require.NoError(t, err, "plugin asset path must exist: %s", assetPath)
-	require.False(t, info.IsDir(), "plugin asset path must reference a file: %s", assetPath)
+	return targetPath
 }
 
 func normalizeDocWhitespace(content string) string {
