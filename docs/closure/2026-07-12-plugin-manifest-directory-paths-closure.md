@@ -13,8 +13,6 @@ item: "099-F"
 status: "verified-live"
 ---
 
-# 099-F — Plugin manifest directory paths (Windows install fix)
-
 ## Problem
 
 `copilot plugin install softwaresalt/backlogit` failed on Windows with
@@ -42,7 +40,7 @@ by asserting the paths were files.
   `agents`/`skills` to be **directories** (`os.Stat` + `IsDir`) and asserts
   each declared agent file and each of the 19 skill `SKILL.md` files exist.
 
-## Live verification (096-F residual closed)
+## Live verification (install + registration)
 
 Because `COPILOT_HOME` resolves to the in-workspace `.copilot/`, the live
 install was run inside the workspace boundary:
@@ -59,8 +57,13 @@ Installed plugins:
 `config.json` records the plugin as `enabled: true`, source `github`
 `softwaresalt/backlogit`. The installed manifest resolves
 `agents: plugin/agents`, `skills: plugin/skills`, and the `backlogit mcp`
-stdio server. No `os error 267`. This closes the 096-F live-install
-residual with real evidence.
+stdio server. No `os error 267`.
+
+This verifies plugin **install and registration** — the failure mode this
+fix targeted. The remaining 096-F step
+(`docs/closure/2026-07-11-090-S-post-drain-followups-runtime-verification.md`)
+— launching Copilot interactively and completing a harmless backlogit MCP
+request in-session — is not captured here and stays an operator check.
 
 ## Follow-up
 
