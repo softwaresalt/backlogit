@@ -2,8 +2,8 @@
   "mcpServers": {
     "backlogit": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@backlogit/backlogit-mcp", "mcp"]
+      "command": "backlogit",
+      "args": ["mcp"]
     }
   }
 }
