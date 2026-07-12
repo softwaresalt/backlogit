@@ -104,7 +104,7 @@ the live plugin install remains a manual runtime verification step.
 | Healthy signal | Plugin install succeeds, the MCP server process starts from the PATH binary, and no `npx` or `@backlogit/backlogit-mcp` command appears in the active plugin launch path |
 | Alert signal | Plugin install fails, Copilot cannot resolve `backlogit`, MCP startup exits nonzero, or any active launch path invokes `npx` |
 | Rollback trigger | A reproducible live install or MCP startup failure caused by PATH-binary launch semantics |
-| Rollback action | Revert PR #213 and this closure PR, then reopen plugin packaging design before reintroducing any npm wrapper |
+| Rollback action | Revert PR #213's runtime and documentation migration while preserving this closure record and follow-up `096-F`; reopen plugin packaging design before any npm wrapper is reintroduced |
 
 ## Merge and closure
 
@@ -117,4 +117,4 @@ the live plugin install remains a manual runtime verification step.
 * Admin fallback: not used
 * Closure branch: `chore/plugin-path-binary-closure`
 * Dark-mode markers: `LOCAL_REVIEW_READY`, `DARK_MODE_MERGE_AUTHORIZED`,
-  `DARK_MODE_COMPLETE`
+  `DARK_MODE_COMPLETE` pending closure PR merge
