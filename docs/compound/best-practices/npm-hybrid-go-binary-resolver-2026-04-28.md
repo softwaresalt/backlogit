@@ -28,6 +28,14 @@ source: docs/compound/best-practices/npm-hybrid-go-binary-resolver-2026-04-28.md
 title: Hybrid npm wrapper for Go binary distribution (three-tier resolver)
 ---
 
+## Superseded status
+
+This historical learning is retained for evidence and citations. Feature
+`095-F` supersedes the wrapper approach for the Copilot CLI plugin: current
+plugin manifests launch the PATH-resolved native binary with `backlogit mcp`.
+Use `docs/compound/best-practices/plugin-path-resolved-binary-launch-2026-07-11.md`
+for current guidance.
+
 ## Problem
 
 A Go CLI tool needs to be invokable via `npx @scope/package` without requiring
