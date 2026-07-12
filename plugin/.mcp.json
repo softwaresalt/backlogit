@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "backlogit": {
-      "type": "stdio",
-      "command": "backlogit",
-      "args": ["mcp"]
-    }
-  }
-}

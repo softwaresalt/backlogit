@@ -22,7 +22,7 @@ want to use backlogit as a self-contained Copilot CLI product.
 
 | Path | Choose when | Result |
 |---|---|---|
-| Path A - Standalone backlogit | You want backlogit agents, skills, and MCP tools without adopting a generated harness | `copilot plugin install softwaresalt/backlogit` installs the bundled product from `plugin/` |
+| Path A - Standalone backlogit | You want backlogit agents, skills, and MCP tools without adopting a generated harness | `copilot plugin install softwaresalt/backlogit` installs the canonical manifest from `.github/plugin/plugin.json`, which references the bundled product assets under `plugin/` |
 | Path B - Autoharness-composed harness | Backlogit is one capability inside an Autoharness-generated repo harness | Autoharness install or tune composes templates and writes repo-specific files into `.github/` |
 
 If Path B applies, do not install the standalone backlogit plugin into the same
@@ -77,8 +77,19 @@ copilot plugin install softwaresalt/backlogit
 ```
 
 This is the primary Path A installation. The plugin includes the Stage and Ship
-agents, all 19 skills listed in [`../plugin/plugin.json`](../plugin/plugin.json),
-and configures the backlogit MCP server automatically.
+agents, all 19 skills listed in
+[`../.github/plugin/plugin.json`](../.github/plugin/plugin.json), and configures
+the backlogit MCP server automatically. The plain `softwaresalt/backlogit`
+owner/repo form works because the manifest lives at Copilot CLI's canonical
+`.github/plugin/plugin.json` location.
+
+For local development from a clone, install from the repository root or the
+manifest directory:
+
+```bash
+copilot plugin install ./
+copilot plugin install .github/plugin
+```
 
 ### Alternative runtime install — source
 

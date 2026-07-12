@@ -13,6 +13,8 @@ import (
 
 type pluginManifest struct {
 	MCPServers map[string]pluginMCPServer `json:"mcpServers"`
+	Agents     []string                   `json:"agents"`
+	Skills     []string                   `json:"skills"`
 }
 
 type pluginMCPServer struct {
@@ -23,29 +25,69 @@ type pluginMCPServer struct {
 
 func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 	repoRoot := testRepoRoot(t)
-	manifestPaths := []string{
+	manifestPath := filepath.Join(repoRoot, ".github", "plugin", "plugin.json")
+
+	data, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "npx")
+	assert.NotContains(t, string(data), "@backlogit/")
+
+	var manifest pluginManifest
+	require.NoError(t, json.Unmarshal(data, &manifest))
+
+	serverRaw, ok := manifest.MCPServers["backlogit"]
+	require.True(t, ok, "backlogit MCP server must be declared")
+	assertServerHasOnlyLaunchFields(t, data)
+
+	server := serverRaw
+	assert.Equal(t, "stdio", server.Type)
+	assert.Equal(t, "backlogit", server.Command)
+	assert.Equal(t, []string{"mcp"}, server.Args)
+
+	assert.Equal(t, []string{
+		"plugin/agents/stage.agent.md",
+		"plugin/agents/ship.agent.md",
+	}, manifest.Agents)
+	assert.Equal(t, []string{
+		"plugin/skills/build-feature/SKILL.md",
+		"plugin/skills/compact-context/SKILL.md",
+		"plugin/skills/compound/SKILL.md",
+		"plugin/skills/compound-refresh/SKILL.md",
+		"plugin/skills/deliberate/SKILL.md",
+		"plugin/skills/file-lock/SKILL.md",
+		"plugin/skills/fix-ci/SKILL.md",
+		"plugin/skills/harness-architect/SKILL.md",
+		"plugin/skills/harvest/SKILL.md",
+		"plugin/skills/impl-plan/SKILL.md",
+		"plugin/skills/operational-closure/SKILL.md",
+		"plugin/skills/plan-harden/SKILL.md",
+		"plugin/skills/plan-review/SKILL.md",
+		"plugin/skills/pr-lifecycle/SKILL.md",
+		"plugin/skills/review/SKILL.md",
+		"plugin/skills/runtime-verification/SKILL.md",
+		"plugin/skills/safety-modes/SKILL.md",
+		"plugin/skills/skill-search/SKILL.md",
+		"plugin/skills/spike/SKILL.md",
+	}, manifest.Skills)
+
+	for _, assetPath := range append(manifest.Agents, manifest.Skills...) {
+		t.Run(assetPath, func(t *testing.T) {
+			assertPluginAssetExists(t, repoRoot, assetPath)
+		})
+	}
+}
+
+func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	legacyPaths := []string{
 		filepath.Join(repoRoot, "plugin", ".mcp.json"),
 		filepath.Join(repoRoot, "plugin", "plugin.json"),
 	}
 
-	for _, manifestPath := range manifestPaths {
-		t.Run(filepath.Base(manifestPath), func(t *testing.T) {
-			data, err := os.ReadFile(manifestPath)
-			require.NoError(t, err)
-			assert.NotContains(t, string(data), "npx")
-			assert.NotContains(t, string(data), "@backlogit/")
-
-			var manifest pluginManifest
-			require.NoError(t, json.Unmarshal(data, &manifest))
-
-			serverRaw, ok := manifest.MCPServers["backlogit"]
-			require.True(t, ok, "backlogit MCP server must be declared")
-			assertServerHasOnlyLaunchFields(t, data)
-
-			server := serverRaw
-			assert.Equal(t, "stdio", server.Type)
-			assert.Equal(t, "backlogit", server.Command)
-			assert.Equal(t, []string{"mcp"}, server.Args)
+	for _, legacyPath := range legacyPaths {
+		t.Run(filepath.Base(legacyPath), func(t *testing.T) {
+			_, err := os.Stat(legacyPath)
+			require.ErrorIs(t, err, os.ErrNotExist)
 		})
 	}
 }
@@ -63,8 +105,7 @@ func TestActivePluginDocsDoNotReferenceRetiredNPMWrapper(t *testing.T) {
 		"docs/installation.md",
 		"docs/plugin-guide.md",
 		"docs/workflow.md",
-		"plugin/.mcp.json",
-		"plugin/plugin.json",
+		".github/plugin/plugin.json",
 	}
 	forbidden := []string{
 		"npx ",
@@ -87,6 +128,22 @@ func TestActivePluginDocsDoNotReferenceRetiredNPMWrapper(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assertPluginAssetExists(t *testing.T, repoRoot string, assetPath string) {
+	t.Helper()
+
+	require.NotEmpty(t, assetPath)
+	require.False(t, filepath.IsAbs(assetPath), "plugin asset path must be repo-root-relative")
+
+	targetPath := filepath.Clean(filepath.Join(repoRoot, filepath.FromSlash(assetPath)))
+	relativeTarget, err := filepath.Rel(repoRoot, targetPath)
+	require.NoError(t, err)
+	require.NotContains(t, relativeTarget, "..", "plugin asset path must stay inside repo root")
+
+	info, err := os.Stat(targetPath)
+	require.NoError(t, err, "plugin asset path must exist: %s", assetPath)
+	require.False(t, info.IsDir(), "plugin asset path must reference a file: %s", assetPath)
 }
 
 func assertServerHasOnlyLaunchFields(t *testing.T, data []byte) {

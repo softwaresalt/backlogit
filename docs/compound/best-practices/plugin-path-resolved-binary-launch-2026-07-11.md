@@ -6,7 +6,7 @@ docline:
     category: best_practice
     component: cli
     date: 2026-07-11T00:00:00Z
-    file_path: plugin/plugin.json
+    file_path: .github/plugin/plugin.json
     message: Copilot CLI plugin MCP servers should direct-execute the native backlogit binary from PATH with args ["mcp"].
     problem_type: best_practice
     resolution_type: simplification
@@ -49,8 +49,12 @@ Releases binary, then run `copilot plugin install softwaresalt/backlogit`.
 
 ## Evidence
 
-* Feature `095-F` updated `plugin/.mcp.json` and `plugin/plugin.json`
-* `tests/integration/plugin_manifest_test.go` guards both manifests and active
-  plugin/MCP docs from drifting back to the retired wrapper path
+* Feature `095-F` updated the plugin MCP launch contract to direct-execute
+  `backlogit mcp`
+* Feature `097-F` moved the canonical install manifest to
+  `.github/plugin/plugin.json` and removed legacy drift copies
+* `tests/integration/plugin_manifest_test.go` guards the canonical manifest,
+  referenced agent and skill asset paths, and active plugin/MCP docs from
+  drifting back to the retired wrapper path
 * The superseded historical wrapper learning remains at
   `docs/compound/best-practices/npm-hybrid-go-binary-resolver-2026-04-28.md`
