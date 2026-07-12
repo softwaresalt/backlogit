@@ -88,7 +88,8 @@ You can also use the one-line installers in the Quick Start or download a
 SHA256-verified binary from
 [GitHub Releases](https://github.com/softwaresalt/backlogit/releases).
 
-Then install backlogit as a Copilot CLI plugin:
+Then install backlogit as a Copilot CLI plugin with the canonical
+cross-platform command:
 
 ```bash
 copilot plugin install softwaresalt/backlogit
@@ -97,7 +98,7 @@ copilot plugin install softwaresalt/backlogit
 The plain `softwaresalt/backlogit` owner/repo form works because Copilot CLI
 finds the canonical manifest at `.github/plugin/plugin.json`. For local
 development from a clone, use `copilot plugin install ./` from the repository
-root or `copilot plugin install .github/plugin`.
+root.
 
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
@@ -158,8 +159,8 @@ standalone plugin after `backlogit` is on PATH:
 copilot plugin install softwaresalt/backlogit
 ```
 
-That owner/repo command installs the bundled plugin from the canonical
-`.github/plugin/plugin.json` manifest.
+That owner/repo command is the canonical cross-platform plugin install path. It
+installs the bundled plugin from the `.github/plugin/plugin.json` manifest.
 
 **Initialize a workspace:**
 

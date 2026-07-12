@@ -76,19 +76,17 @@ Releases.
 copilot plugin install softwaresalt/backlogit
 ```
 
-This is the primary Path A installation. The plugin includes the Stage and Ship
-agents, all 19 skills listed in
-[`../.github/plugin/plugin.json`](../.github/plugin/plugin.json), and configures
-the backlogit MCP server automatically. The plain `softwaresalt/backlogit`
-owner/repo form works because the manifest lives at Copilot CLI's canonical
-`.github/plugin/plugin.json` location.
+This is the primary Path A installation and the canonical cross-platform plugin
+install command. The plugin includes the Stage and Ship agents, all 19 skills
+listed in [`../.github/plugin/plugin.json`](../.github/plugin/plugin.json), and
+configures the backlogit MCP server automatically. The plain
+`softwaresalt/backlogit` owner/repo form works because the manifest lives at
+Copilot CLI's canonical `.github/plugin/plugin.json` location.
 
-For local development from a clone, install from the repository root or the
-manifest directory:
+For local development from a clone, install from the repository root:
 
 ```bash
 copilot plugin install ./
-copilot plugin install .github/plugin
 ```
 
 ### Alternative runtime install — source
