@@ -141,8 +141,8 @@ version of x/sys tends to raise the go directive.
   locally after any dependency update that touches `golang.org/x/...`.
 
 * Do not run `go get` without a version pin in a repository that enforces a
-  strict `go` directive. Treat unpinned `go get` like any unpinned package-manager install — it may
-  silently upgrade your toolchain requirement.
+  strict `go` directive. Treat unpinned `go get` the same as `npm install
+  latest` — it may silently upgrade your toolchain requirement.
 
 ## Related Solutions
 

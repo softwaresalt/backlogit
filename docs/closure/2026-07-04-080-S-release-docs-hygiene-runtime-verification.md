@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Pre-merge runtime verification for shipment 080-S — release pipeline and documentation hygiene. The only true runtime surface is the tag-triggered release workflow (.github/workflows/release.yml, Unit A): it fires only on push of a v*.*.* tag and cannot be exercised end-to-end in-tree without provisioning an external npm org + NPM_TOKEN (out of scope, Principle IV; human-only stash 34F11E5A). It is therefore verified statically — actionlint EXIT 0, YAML parse OK, and a logic walkthrough of both guard branches (token-absent -> has_token=false -> both publish steps skipped, no red X; token-present -> has_token=true -> publish runs) with SHA pins, contents:read, persist-credentials:false, and continue-on-error:true all preserved. Unit B (retired packaging characterization script + retired packaging characterization test) IS exercised: green locally (Git Bash + jq 1.7.1, isolated temp workspace, real package tree untouched) and green in CI on Linux (test 1.23 + 1.24). Unit C (docs wording) verified via backlogit docs lint (0 violations). Verdict PASS WITH FOLLOW-UP — the guard is statically proven and CI-green; end-to-end tag-triggered publish behavior is deferred to observation on the next real release.'
+description: 'Pre-merge runtime verification for shipment 080-S — release pipeline and documentation hygiene. The only true runtime surface is the tag-triggered release workflow (.github/workflows/release.yml, Unit A): it fires only on push of a v*.*.* tag and cannot be exercised end-to-end in-tree without provisioning an external npm org + NPM_TOKEN (out of scope, Principle IV; human-only stash 34F11E5A). It is therefore verified statically — actionlint EXIT 0, YAML parse OK, and a logic walkthrough of both guard branches (token-absent -> has_token=false -> both publish steps skipped, no red X; token-present -> has_token=true -> publish runs) with SHA pins, contents:read, persist-credentials:false, and continue-on-error:true all preserved. Unit B (scripts/package-npm.characterization.sh + tests/integration/package_npm_characterization_test.go) IS exercised: green locally (Git Bash + jq 1.7.1, isolated temp workspace, real npm/ untouched) and green in CI on Linux (test 1.23 + 1.24). Unit C (docs wording) verified via backlogit docs lint (0 violations). Verdict PASS WITH FOLLOW-UP — the guard is statically proven and CI-green; end-to-end tag-triggered publish behavior is deferred to observation on the next real release.'
 doc_type: closure
 docline:
     ms.date: 2026-07-04T00:00:00Z
@@ -27,8 +27,8 @@ title: 080-S release pipeline & docs hygiene — Pre-Merge Runtime Verification
   never on `pull_request` — so it cannot be exercised end-to-end from a feature branch, and
   triggering it would require an external npm org + a real `NPM_TOKEN` secret, which is
   **out of scope** for 080-S (Principle IV; human-only stash `34F11E5A`). Verified statically.
-- **Unit B — `retired packaging characterization script` + `retired packaging characterization test`**.
-  A characterization test that pins `retired packaging script` output. Fully exercisable and
+- **Unit B — `scripts/package-npm.characterization.sh` + `tests/integration/package_npm_characterization_test.go`**.
+  A characterization test that pins `scripts/package-npm.sh` output. Fully exercisable and
   exercised (see below).
 - **Unit C — docs wording** (`docs/exec-plans/2026-07-02-...-hardening-plan.md`,
   `.backlogit/archive/076.002-T.md`). Not a runtime surface; validated by `backlogit docs lint`.
@@ -86,7 +86,7 @@ is neither removed nor broadened.
 **gofmt note**: the local Windows working tree is checked out with CRLF line endings (no
 `.gitattributes`, `core.autocrlf` on, blobs stored LF), so `gofmt -l` flags pre-existing `.go`
 files as a line-ending artifact, not a content issue. The new
-`retired packaging characterization test` is LF-clean (absent from `gofmt -l`).
+`tests/integration/package_npm_characterization_test.go` is LF-clean (absent from `gofmt -l`).
 The authoritative format/vet gates run on LF in CI and are green.
 
 ## CI evidence (PR #174, code-review HEAD `afab513`)
@@ -102,7 +102,7 @@ The authoritative format/vet gates run on LF in CI and are green.
 - **Secret never logged**: env-indirection emits only a boolean presence flag.
 - **Supply-chain pinning intact**: no third-party action pin was downgraded.
 - **Characterization stability**: the shell test passes against an isolated copy and never
-  mutates tracked `retired package metadata`; CI exercises it on Linux.
+  mutates tracked `npm/**/package.json`; CI exercises it on Linux.
 - **Docs honesty**: `make docs-lint` (no args, repo-wide) is now clearly distinguished from the
   scoped `go run ./cmd/backlogit docs lint --path <file>`; docline gate stays green.
 

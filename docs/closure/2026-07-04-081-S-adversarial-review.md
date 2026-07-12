@@ -68,7 +68,7 @@ _None._ No finding was flagged by more than half of reviewers.
   the heavy jobs" under `some`, but `schemas/**` is one of the three patterns
   enumerated in the WRONG example filter immediately above. Under `some` a change
   to `schemas/**` *would* correctly set `unsafe=true` in that example — it is not
-  fail-open. Only `scripts/**`, `plugin/**`, `retired package tree`, `.mcp.json` are genuinely
+  fail-open. Only `scripts/**`, `plugin/**`, `npm/**`, `.mcp.json` are genuinely
   unlisted in the stated example.
 - **Disposition**: **Valid internal inconsistency.** The core semantics remain
   correct; this is a self-contradictory illustrative aside, not a semantics error.

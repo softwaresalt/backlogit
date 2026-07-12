@@ -21,13 +21,13 @@ Shipment `080-S` shipped release-pipeline and docs hygiene. Stage bundled `9140F
 ## Decisions and outcomes
 
 * Release workflow token presence is checked through env-indirection and boolean output; the token is never echoed and publish steps retain `continue-on-error: true`.
-* `retired packaging script` received characterization through a thin Go wrapper; the script itself stayed unchanged and `npm pack` remained optional.
+* `scripts/package-npm.sh` received characterization through a thin Go wrapper; the script itself stayed unchanged and `npm pack` remained optional.
 * Docs were clarified to distinguish repo-wide `make docs-lint` from scoped `go run ./cmd/backlogit docs lint --path <file>`.
 * PR #174 merged by true merge commit `d0ebb4f`; post-merge `shipment ship 080-S` archived all scoped tasks, feature, and shipment with clean reconcile.
 
 ## Files and verification
 
-* `.github/workflows/release.yml`, `retired packaging characterization test`, and two docs/backlog wording surfaces were updated.
+* `.github/workflows/release.yml`, `tests/integration/package_npm_characterization_test.go`, and two docs/backlog wording surfaces were updated.
 * `actionlint`, YAML parse, scoped and repo-wide docs lint, Go tests, vet, lint, and CI all passed; Copilot produced no inline threads.
 * Runtime verification was PASS WITH FOLLOW-UP: observe the guard on the next real tagged release.
 * Compound refresh kept existing learnings and did not promote the Windows CRLF/gofmt gotcha.

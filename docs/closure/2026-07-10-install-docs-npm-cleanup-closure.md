@@ -19,10 +19,10 @@ The change kept the scope to install documentation:
 
 * README Quick Start now leads with the Windows PowerShell `irm` installer and
   Linux/macOS `curl` installer
-* README and the plugin guide no longer present package-manager global install as a user
+* README and the plugin guide no longer present npm global install as a user
   install path
-* The plugin guide now describes the direct PATH-based MCP launch and
-  points native runtime installation to the supported release and source paths
+* The plugin guide still describes the current `npx` wrapper bootstrap factually
+  and points the direct GitHub Releases bootstrap migration to stash `60B8564F`
 * Installation Method 1 now matches the Windows-first Quick Start priority
 
 ## Validation
@@ -32,7 +32,7 @@ Local validation before PR:
 * `backlogit docs lint`
 * Markdown link and code-fence check for README, plugin guide, and installation
   guide
-* Critical self-review assertions for installer ordering, package-manager install removal,
+* Critical self-review assertions for installer ordering, npm install removal,
   wrapper accuracy, and Method 1 ordering
 
 PR validation:
