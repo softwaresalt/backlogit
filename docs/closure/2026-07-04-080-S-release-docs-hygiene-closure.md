@@ -31,9 +31,9 @@ Three mutually-independent, low-risk (P3-only) hygiene units from plan
   output; both publish steps gated `if: steps.preflight.outputs.has_token == 'true'`. No red X
   when the token is intentionally absent. SHA pins, `contents: read`, `persist-credentials: false`,
   and `continue-on-error: true` preserved.
-- **Unit B (`test`)** — characterization test pinning `scripts/package-npm.sh` output (6 valid,
+- **Unit B (`test`)** — characterization test pinning `retired packaging script` output (6 valid,
   version-stamped `package.json`; wrapper `optionalDependencies` synced) run against an isolated
-  copy. Shell script + thin Go wrapper (2-file stop rule). `scripts/package-npm.sh` unchanged.
+  copy. Shell script + thin Go wrapper (2-file stop rule). `retired packaging script` unchanged.
 - **Unit C (`docs`)** — correct misleading `make docs-lint --path` wording in the two planned
   files, distinguishing the repo-wide no-arg `make docs-lint` from scoped
   `go run ./cmd/backlogit docs lint --path <file>`.
@@ -79,7 +79,7 @@ HEAD confirm readiness before merge presentation.
 - **Least privilege preserved**: top-level `permissions: contents: read` and every checkout's
   `persist-credentials: false` are unchanged.
 - **Characterization isolation**: the shell test copies into a `mktemp -d` workspace and never
-  mutates tracked `npm/**/package.json`; `scripts/package-npm.sh` itself is unmodified.
+  mutates tracked `retired package metadata`; `retired packaging script` itself is unmodified.
 - **Docs honesty / docline**: repo-wide `make docs-lint` (no args) is clearly distinguished from
   scoped `docs lint --path <file>`; the Docline frontmatter gate stays green.
 
@@ -165,6 +165,6 @@ action was taken. External npm-org/`NPM_TOKEN` provisioning was deliberately kep
 - External npm-org / `NPM_TOKEN` provisioning (stash `34F11E5A`) → human-only, out of scope (Principle IV).
 - External `.tmpl` parity edits (stash `EED25928`) → out of scope (out-of-tree; Principle IV).
 - Optional test hardening (P3 advisory, deferred): wrap the shell-test exec in
-  `exec.CommandContext` with a timeout in `tests/integration/package_npm_characterization_test.go`.
+  `exec.CommandContext` with a timeout in `retired packaging characterization test`.
 - Post-merge closure (Step 6) — shipment archival (`shipment ship 080-S --sha <merge>`) +
   knowledge graduation — runs on a dedicated `post-merge/080-S` branch only AFTER operator-approved merge.

@@ -51,9 +51,9 @@ A JSONL event model records state transitions, comments, and telemetry in append
 Choose one path before you run an install command:
 
 * Path A - Standalone backlogit: choose this when you want to use backlogit as
-  a self-contained Copilot CLI product. The standalone plugin installs the
-  Stage and Ship agents, 19 universal workflow skills, and the backlogit MCP
-  server in one bundle.
+  a self-contained Copilot CLI product. The standalone plugin bundles the Stage
+  and Ship agents, 19 universal workflow skills, and MCP server configuration
+  for a preinstalled `backlogit` runtime.
 * Path B - Autoharness-composed harness: choose this when backlogit is part of
   an Autoharness-generated agent harness. Autoharness composes the
   workspace-specific constitution, policies, instructions, agents, and skills
@@ -71,21 +71,12 @@ materials, which are the Autoharness path.
 
 ### Path A - Install standalone backlogit
 
-Install backlogit as a Copilot CLI plugin:
+Before you install or run the plugin, install the native `backlogit` binary and
+make sure it is on your PATH. The plugin starts the MCP server with
+`backlogit mcp`, using the same direct executable lookup as other native CLI
+plugins. It does not require Node.js or a JavaScript package manager.
 
-```bash
-copilot plugin install softwaresalt/backlogit
-```
-
-The plugin currently bootstraps the MCP server through an `npx` invocation of
-the `@backlogit/backlogit-mcp` wrapper, then resolves the native `backlogit`
-binary.
-The plugin bootstrap migration to direct GitHub Releases resolution is tracked
-separately by backlog stash `60B8564F`. npm publishing for `@backlogit/*` was
-retired in v1.5.0, so do not use npm global installs to obtain backlogit.
-
-To avoid first-run binary resolution, install the native runtime with one of
-the supported paths:
+Use `go install` when you want the Go toolchain workflow:
 
 ```bash
 go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
@@ -94,6 +85,12 @@ go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 You can also use the one-line installers in the Quick Start or download a
 SHA256-verified binary from
 [GitHub Releases](https://github.com/softwaresalt/backlogit/releases).
+
+Then install backlogit as a Copilot CLI plugin:
+
+```bash
+copilot plugin install softwaresalt/backlogit
+```
 
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
@@ -148,7 +145,7 @@ go install github.com/softwaresalt/backlogit/cmd/backlogit@latest
 Or download a SHA256-verified binary from
 [GitHub Releases](https://github.com/softwaresalt/backlogit/releases). Path A
 users who want the bundled Copilot CLI agents and skills can install the
-standalone plugin:
+standalone plugin after `backlogit` is on PATH:
 
 ```bash
 copilot plugin install softwaresalt/backlogit

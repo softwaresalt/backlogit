@@ -12,7 +12,7 @@ promoted_to: plan
 
 ## Source
 
-- Stash: `9140F65C` (kind=task, priority=low, age 3d) — "Fix/enable npm package publishing in the Release workflow." Actionable in-repo slice = npm-publish token-presence gate + `scripts/package-npm.sh`/npm-template validation. External steps (provision `@backlogit` scope, add `NPM_TOKEN` secret) require human-only npm-org + repo-secret provisioning.
+- Stash: `9140F65C` (kind=task, priority=low, age 3d) — "Fix/enable npm package publishing in the Release workflow." Actionable in-repo slice = npm-publish token-presence gate + retired package-template validation. External steps (provision the legacy scoped package, add `NPM_TOKEN` secret) require human-only npm-org + repo-secret provisioning.
 - Stash: `B55985DD` (kind=task, priority=low, age 1d) — "Fix misleading `make docs-lint --path` wording in 076-S ride-along artifacts." Reword two docs so a fixed repo-wide `make docs-lint` is not implied to accept `--path`.
 - Session: operator "Stage next" with a bias toward promotion (forward progress on remaining backlog).
 
@@ -29,7 +29,7 @@ There is **no `chore` artifact type** in this backlogit workspace (valid types: 
 
 ## Problem frame
 
-1. **npm-publish red X (`9140F65C`).** `.github/workflows/release.yml` job `npm-publish` (`continue-on-error: true`) fails at "Publish platform packages" on every release because the `@backlogit` npm scope is unprovisioned and/or `NPM_TOKEN` is absent (ENEEDAUTH / E404 / 403). `continue-on-error` keeps the GitHub Release unblocked, but the job still surfaces a red X on every release. The **in-repo** remedy is to make the publish steps *not run* (hence not fail) when the token is intentionally absent, and to validate that `scripts/package-npm.sh` emits publishable `package.json` for the 5 platform packages + the `@backlogit/backlogit-mcp` wrapper.
+1. **npm-publish red X (`9140F65C`).** `.github/workflows/release.yml` job `npm-publish` (`continue-on-error: true`) fails at "Publish platform packages" on every release because the legacy package scope is unprovisioned and/or `NPM_TOKEN` is absent (ENEEDAUTH / E404 / 403). `continue-on-error` keeps the GitHub Release unblocked, but the job still surfaces a red X on every release. The **in-repo** remedy is to make the publish steps *not run* (hence not fail) when the token is intentionally absent, and to validate that the retired packaging script emits publishable `package.json` files for the platform packages and wrapper.
 2. **Misleading docs-lint wording (`B55985DD`).** `make docs-lint` is a fixed repo-wide invocation (`go run ./cmd/backlogit docs lint`, no args); scoping requires the direct `go run ./cmd/backlogit docs lint --path <file>` form. Two ride-along docs imply `make docs-lint` is `--path`-narrowable: `docs/exec-plans/2026-07-02-stage-harvest-docline-frontmatter-hardening-plan.md` (~L104, ~L124) and `.backlogit/archive/076.002-T.md` (~L22).
 
 ## Options and decisions
@@ -65,4 +65,4 @@ Compound library has no npm-publish / CI-secret-gating prior art. The one direct
 
 ## Outcome
 
-Promote both entries under one covering **feature** "Release pipeline & documentation hygiene" with three width-isolated tasks (npm-publish token guard [config]; `package-npm.sh` output validation [shell/test]; docs-lint `--path` wording cleanup [docs]). Proceed to implementation planning.
+Promote both entries under one covering **feature** "Release pipeline & documentation hygiene" with three width-isolated tasks (npm-publish token guard [config]; retired packaging-script output validation [shell/test]; docs-lint `--path` wording cleanup [docs]). Proceed to implementation planning.

@@ -28,13 +28,13 @@ Choose the path that matches how you want backlogit to enter the workspace:
 | Path B - Autoharness-composed harness | Backlogit is being adopted as part of an Autoharness-generated agent harness | The backlogit binary/runtime from this page, plus Autoharness-composed constitution, policies, instructions, agents, and skills in `.github/` |
 
 This page covers the backlogit binary/runtime install methods. They apply to
-Path A users who want the CLI directly and to Path B users whose generated
-harness invokes `backlogit` or `backlogit mcp`. If you want the standalone
-Copilot CLI plugin bundle for Path A, start with the
-[plugin guide](plugin-guide.md#choose-plugin-or-autoharness). If your workspace
-already has an Autoharness-generated `.github/` harness, use the Autoharness
-install or tune flow for the harness files and install only the runtime with
-one of the methods below.
+Path A users who want the CLI directly or the standalone Copilot CLI plugin, and
+to Path B users whose generated harness invokes `backlogit` or `backlogit mcp`.
+The plugin manifest launches the MCP server with `backlogit mcp`, so the binary
+must be on PATH before the plugin starts. If your workspace already has an
+Autoharness-generated `.github/` harness, use the Autoharness install or tune
+flow for the harness files and install only the runtime with one of the methods
+below.
 
 > [!IMPORTANT]
 > Avoid double-installing. The standalone plugin contributes its own frozen
@@ -174,6 +174,13 @@ backlogit help
 
 You should see the available commands. If the shell cannot find `backlogit`,
 recheck the directory you installed into and your PATH configuration.
+
+Path A users who also want the bundled Copilot CLI agents and skills can install
+the standalone plugin after this check passes:
+
+```bash
+copilot plugin install softwaresalt/backlogit
+```
 
 ## Shell completion
 

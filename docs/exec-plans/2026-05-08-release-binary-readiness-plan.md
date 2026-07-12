@@ -200,7 +200,7 @@ Once the repository is green, update the canonical source version to the intende
 
 ### Unit 10: Execute the tag-driven release and validate assets
 
-**Files:** `.github/workflows/release.yml`, `scripts/package-npm.sh`, `npm/backlogit-mcp/package.json`, `npm/platforms/darwin-arm64/package.json`, `npm/platforms/darwin-x64/package.json`, `npm/platforms/linux-arm64/package.json`, `npm/platforms/linux-x64/package.json`, `npm/platforms/win32-x64/package.json`, `tests/integration/shipment_040_release_install_harness_test.go`
+**Files:** `.github/workflows/release.yml`, `retired packaging script`, `retired-wrapper/package.json`, `retired-platform-packages/darwin-arm64/package.json`, `retired-platform-packages/darwin-x64/package.json`, `retired-platform-packages/linux-arm64/package.json`, `retired-platform-packages/linux-x64/package.json`, `retired-platform-packages/win32-x64/package.json`, `tests/integration/shipment_040_release_install_harness_test.go`
 **Test files:** `tests/integration/shipment_040_release_install_harness_test.go`
 **Effort size:** medium
 **Skill domain:** config

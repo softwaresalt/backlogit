@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Post-merge operational closure for shipment 080-S — release pipeline and documentation hygiene (feature 080-F, PR #174, merge d0ebb4f, merged 2026-07-04T18:03:49Z by softwaresalt via operator-authorized admin merge over the review-required ruleset). Three mutually-independent P3-only hygiene units: 080.001-T guarded the release.yml npm-publish job on NPM_TOKEN presence via an env-indirection preflight step (boolean has_token output, if-gated publish steps, no red X when the token is absent), 080.002-T added a characterization test pinning package-npm.sh package.json output (isolated temp copy; shell script + Go wrapper, 2-file stop rule), and 080.003-T corrected misleading make docs-lint --path wording in exactly two files. Records the confirmed merge (true merge commit, parents af26c71 + e718a81, P-009 preserved and verified merge-commit-only), PR #174 CI 4/4 green (test 1.23, test 1.24, CLI Reference Drift, Docline frontmatter gate), the §1.9 Copilot gate re-verified on HEAD e718a81 before merge (Copilot reviewed 16/16 files with zero comments and zero unresolved threads), the shipment ship result (080-S shipped; all 4 manifest items + shipment archived with the merge SHA recorded; pre/post shipment-reconcile both PROCEED; P-007 archive integrity intact with only intended queue->archive moves and no spurious deletions), whole-suite gates green, runtime verification PASS WITH FOLLOW-UP (release.yml guard statically verified; characterization test executed), release-readiness SHIPPED, git-revert rollback, knowledge graduation (no ARCHITECTURE/AGENTS changes — pure hygiene; compound-refresh classified all entries keep, no supersession), source-artifact cleanup (no structured source_stash_id/source_deliberation_id on 080-F; originating stashes 9140F65C + B55985DD already retired by Stage during harvest; deliberation is a docs/decisions design record, not a queue artifact), and the deferred/out-of-scope stash entries left untouched (34F11E5A external npm/NPM_TOKEN provisioning, EED25928 external .tmpl, 21E17BFC contingency).'
+description: 'Post-merge operational closure for shipment 080-S — release pipeline and documentation hygiene (feature 080-F, PR #174, merge d0ebb4f, merged 2026-07-04T18:03:49Z by softwaresalt via operator-authorized admin merge over the review-required ruleset). Three mutually-independent P3-only hygiene units: 080.001-T guarded the release.yml npm-publish job on NPM_TOKEN presence via an env-indirection preflight step (boolean has_token output, if-gated publish steps, no red X when the token is absent), 080.002-T added a characterization test pinning retired packaging script package.json output (isolated temp copy; shell script + Go wrapper, 2-file stop rule), and 080.003-T corrected misleading make docs-lint --path wording in exactly two files. Records the confirmed merge (true merge commit, parents af26c71 + e718a81, P-009 preserved and verified merge-commit-only), PR #174 CI 4/4 green (test 1.23, test 1.24, CLI Reference Drift, Docline frontmatter gate), the §1.9 Copilot gate re-verified on HEAD e718a81 before merge (Copilot reviewed 16/16 files with zero comments and zero unresolved threads), the shipment ship result (080-S shipped; all 4 manifest items + shipment archived with the merge SHA recorded; pre/post shipment-reconcile both PROCEED; P-007 archive integrity intact with only intended queue->archive moves and no spurious deletions), whole-suite gates green, runtime verification PASS WITH FOLLOW-UP (release.yml guard statically verified; characterization test executed), release-readiness SHIPPED, git-revert rollback, knowledge graduation (no ARCHITECTURE/AGENTS changes — pure hygiene; compound-refresh classified all entries keep, no supersession), source-artifact cleanup (no structured source_stash_id/source_deliberation_id on 080-F; originating stashes 9140F65C + B55985DD already retired by Stage during harvest; deliberation is a docs/decisions design record, not a queue artifact), and the deferred/out-of-scope stash entries left untouched (34F11E5A external package registry / NPM_TOKEN provisioning, EED25928 external .tmpl, 21E17BFC contingency).'
 doc_type: closure
 docline:
     ms.date: 2026-07-04T00:00:00Z
@@ -59,11 +59,11 @@ Three mutually-independent, low-risk (P3-only) hygiene units:
   No red X when the token is intentionally absent. SHA pins, `contents: read`,
   `persist-credentials: false`, and the existing `continue-on-error: true` preserved; the token
   value is never echoed.
-- **Unit B · `080.002-T` (`test`)** — characterization test pinning `scripts/package-npm.sh`
-  output (`scripts/package-npm.characterization.sh` + `tests/integration/package_npm_characterization_test.go`).
+- **Unit B · `080.002-T` (`test`)** — characterization test pinning `retired packaging script`
+  output (`retired packaging characterization script` + `retired packaging characterization test`).
   6 valid, version-stamped `package.json` + synced wrapper `optionalDependencies`, run against an
   isolated `mktemp -d` copy so tracked files are never mutated. 2-file stop rule respected;
-  `scripts/package-npm.sh` unchanged; `npm pack` optional/off-by-default.
+  `retired packaging script` unchanged; `npm pack` optional/off-by-default.
 - **Unit C · `080.003-T` (`docs`)** — corrected misleading `make docs-lint --path` wording in
   exactly two files, distinguishing repo-wide `make docs-lint` (no args) from scoped
   `go run ./cmd/backlogit docs lint --path <file>`.
@@ -125,7 +125,7 @@ on the next `v*.*.*` tag push.
 
 - 080-F carries **no structured `source_stash_id` / `source_deliberation_id`** custom_fields
   (the source stashes are referenced in prose; the deliberation is in `references`).
-- Originating stashes **`9140F65C`** (npm-publish guard + package-npm.sh validation) and
+- Originating stashes **`9140F65C`** (npm-publish guard + retired packaging script validation) and
   **`B55985DD`** (docs-lint wording) were **already retired by Stage** during the 080-S harvest —
   both absent from the current stash list. Nothing for Ship to retire.
 - The deliberation `docs/decisions/2026-07-04-release-docs-hygiene-deliberation.md` is a
@@ -150,7 +150,7 @@ on the next `v*.*.*` tag push.
 
 - **Observe the guard on the next real tagged release** (workflow end-to-end confirmation).
 - Optional P3 test hardening (deferred): wrap the shell-test exec in `exec.CommandContext` with a
-  timeout in `tests/integration/package_npm_characterization_test.go`.
+  timeout in `retired packaging characterization test`.
 - **Stashed `2EF8B7AD`** (housekeeping, low): compact/archive the `docs/closure/` backlog — the
   directory reached 87 files / ~581 KB, exceeding the compact-context 500 KB threshold, with stale
   records back to 2026-04-07. Deferred out of this closure PR to keep it scoped (bulk historical

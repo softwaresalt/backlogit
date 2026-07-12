@@ -24,7 +24,7 @@ title: 'Compound refresh — 080-S release pipeline & docs hygiene'
 |---|---|---|
 | `F013-workflow-sha-pinning.md` | **keep** | 080.001-T's guard is purely additive and **preserved** every third-party action's full-SHA pin (verified by the Security Reviewer and actionlint). The learning is neither exercised-against nor contradicted — it remains the governing rule and the change complies with it. |
 | `2026-06-26-docline-frontmatter-contract.md` | **keep** | 080.003-T's docs wording fix and all five 080-S closure artifacts were authored to satisfy this contract (each passes the Docline frontmatter gate, 0 violations). The contract is applied, not superseded. |
-| `npm-hybrid-go-binary-resolver-2026-04-28.md` | **keep** | 080.002-T only *characterizes* `scripts/package-npm.sh` output (valid package.json, version stamping, synced `optionalDependencies`); it does not change the resolver logic this entry documents. Orthogonal — kept verbatim. |
+| `npm-hybrid-go-binary-resolver-2026-04-28.md` | **keep** | 080.002-T only *characterizes* `retired packaging script` output (valid package.json, version stamping, synced `optionalDependencies`); it does not change the resolver logic this entry documents. Orthogonal — kept verbatim. |
 | `f015-shipment-stash-patterns.md` | **keep** | Shipment/stash lifecycle handling in 080-S (pre-archived items, `shipment ship` SHA stamping, source stashes retired by Stage) matched the documented patterns; nothing to update. |
 
 No entries were classified `update`, `consolidate`, `replace`, or `delete`. Nothing in the
@@ -46,7 +46,7 @@ caveat, not a durable engineering learning, so it is intentionally **not** promo
 ## Follow-up items
 
 - None requiring manual review. The deferred/out-of-scope stashes (`34F11E5A` external
-  npm/NPM_TOKEN provisioning, `EED25928` external `.tmpl` parity, `21E17BFC` singleton-MCP
+  package registry / NPM_TOKEN provisioning, `EED25928` external `.tmpl` parity, `21E17BFC` singleton-MCP
   contingency) are Stage-owned and out of Ship's P-010 boundary — left untouched.
 
 ## Evidence

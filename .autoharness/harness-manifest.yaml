@@ -463,7 +463,7 @@ tuning_history:
       - ".github/agents/ship.agent.md"
       - ".github/skills/pr-lifecycle/SKILL.md"
   - at: "2026-04-28T00:00:00Z"
-    summary: "Harness tuning after PR #79 merge (npm/Copilot CLI plugin distribution). Regression remediation for TUNE-001/002 (stage/ship agent guardrails had regressed due to prior fix not surviving branch lifecycle). New: TUNE-003 source artifact cleanup in ship.agent.md. Learning-driven P1 additions: TUNE-004 error-type selection table in go.instructions.md (incorrect_error_type x5 compound entries), TUNE-005 schema synchronization rules (schema_mismatch x5). All 19 targeted checks pass post-tune. Backups at .autoharness/backups/2026-04-28/."
+    summary: "Harness tuning after PR #79 merge (legacy Copilot CLI plugin distribution). Regression remediation for TUNE-001/002 (stage/ship agent guardrails had regressed due to prior fix not surviving branch lifecycle). New: TUNE-003 source artifact cleanup in ship.agent.md. Learning-driven P1 additions: TUNE-004 error-type selection table in go.instructions.md (incorrect_error_type x5 compound entries), TUNE-005 schema synchronization rules (schema_mismatch x5). All 19 targeted checks pass post-tune. Backups at .autoharness/backups/2026-04-28/."
     artifacts:
       - ".github/agents/stage.agent.md"
       - ".github/agents/ship.agent.md"

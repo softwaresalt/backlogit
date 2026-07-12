@@ -8,7 +8,7 @@ status: applied
 
 ## Context
 
-Post-merge tuning after PR #79 (npm/Copilot CLI plugin distribution for backlogit). The autoharness
+Post-merge tuning after PR #79 (legacy Copilot CLI plugin distribution for backlogit). The autoharness
 templates have evolved since the 2026-04-26 tuning session, causing two previously "fixed" targeted
 checks to fail again. A new targeted check (`ship_source_artifact_cleanup`) was also failing.
 
@@ -122,9 +122,9 @@ next tuning cycle if compound library continues to grow in these areas.
 | TUNE-008 | `go` cross-cutting tag | 6 entries | go.instructions.md already updated; re-evaluate after next compound refresh |
 | TUNE-009 | `sqlite`/`rehydration` cross-cutting tags | 4 entries each | Consider a db-patterns or rehydration-reliability instruction file |
 
-## New Surface (npm/Plugin — informational)
+## New Surface (legacy plugin distribution — informational)
 
-PR #79 introduced `npm/backlogit-mcp/` (Node.js) and `plugin/` (Copilot CLI plugin). These are
+PR #79 introduced a retired JavaScript wrapper and `plugin/` (Copilot CLI plugin). These are
 application code surfaces, not harness artifacts. No harness instruction file exists for Node.js.
 If the npm surface grows (additional Node.js tooling, CI jobs for npm publishing), consider adding a
 `nodejs.instructions.md` or `npm-distribution.instructions.md` to cover Node.js coding conventions

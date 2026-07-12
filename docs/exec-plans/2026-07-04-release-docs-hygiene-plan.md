@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Implementation plan for the release-and-docs hygiene feature: guard the npm-publish job on NPM_TOKEN presence so no red X appears when the token is intentionally absent, validate scripts/package-npm.sh emits publishable package.json for the 5 platform packages plus the wrapper, and correct misleading make docs-lint --path wording in two ride-along docs.'
+description: 'Implementation plan for the release-and-docs hygiene feature: guard the npm-publish job on NPM_TOKEN presence so no red X appears when the token is intentionally absent, validate the retired packaging script emits publishable package metadata for the platform packages plus the wrapper, and correct misleading make docs-lint --path wording in two ride-along docs.'
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-07-04-release-docs-hygiene-plan.md
@@ -24,7 +24,7 @@ Two independent, low-priority hygiene items surfaced from the release pipeline a
 | Source requirement | Implementation unit |
 |---|---|
 | `9140F65C` step (5): gate npm-publish on token presence so no red X when token absent | Unit A |
-| `9140F65C` step (3): verify `scripts/package-npm.sh` emits valid `package.json` for 5 platform packages + wrapper | Unit B |
+| `9140F65C` step (3): verify the retired packaging script emits valid `package.json` for 5 platform packages + wrapper | Unit B |
 | `9140F65C` steps (1)(2): provision `@backlogit` scope + add `NPM_TOKEN` secret | OUT OF SCOPE — external human-only; re-stashed as a follow-up (see Decisions) |
 | `B55985DD`: reword misleading `make docs-lint --path` in two ride-along docs | Unit C |
 
@@ -63,11 +63,11 @@ Two independent, low-priority hygiene items surfaced from the release pipeline a
 - **Tests / verification**: Workflow parses and passes `actionlint` if available; when `NPM_TOKEN` is absent the publish steps are skipped (green), producing no red X; when present, publish steps run unchanged. Existing SHA pins and `permissions: contents: read` posture are unchanged.
 - **Execution posture**: config change; verified behaviorally (workflow lint + reasoning about the two token states). No new job, no `needs`-graph edge.
 
-### Unit B — Validate package-npm.sh package.json output (tests/shell)
+### Unit B — Validate retired packaging-script output (tests/shell)
 
 - **Domain**: tests / shell (verification; code change only if a defect is found).
-- **File(s)**: `scripts/package-npm.sh` + `npm/platforms/*/package.json` + `npm/backlogit-mcp/package.json` (read/validate; edit only on defect).
-- **Change**: Run `scripts/package-npm.sh <version> <dist>` locally against a stub `dist/` containing the 5 expected binaries (`backlogit-linux-amd64`, `backlogit-linux-arm64`, `backlogit-darwin-amd64`, `backlogit-darwin-arm64`, `backlogit-windows-amd64.exe`). Assert that each of the 5 platform `package.json` files and the `@backlogit/backlogit-mcp` wrapper are valid JSON with the version stamped, and that the wrapper's `optionalDependencies` versions are synced. `jq empty` (valid-JSON check) + `npm pack --dry-run` per package are the concrete assertions. If all pass, this unit is a pure verification with no diff; if a defect surfaces, fix it in `scripts/package-npm.sh` or the offending template (staying within the file-count budget). **Stop rule (addresses plan-review P3):** if a defect would require edits spanning more than 2 files, do NOT exceed the 2-hour/width budget — stop, record the finding, and split the fix into a follow-up task rather than growing this unit. `npm pack --dry-run` is an *additional* confidence check layered on the required `jq empty` valid-JSON assertion; if Node/npm is unavailable, `jq empty` + field inspection is the sufficient minimum.
+- **File(s)**: the retired packaging script plus generated platform and wrapper package metadata (read/validate; edit only on defect).
+- **Change**: Run the retired packaging script locally against a stub `dist/` containing the 5 expected binaries (`backlogit-linux-amd64`, `backlogit-linux-arm64`, `backlogit-darwin-amd64`, `backlogit-darwin-arm64`, `backlogit-windows-amd64.exe`). Assert that each of the 5 platform `package.json` files and the legacy wrapper are valid JSON with the version stamped, and that the wrapper's `optionalDependencies` versions are synced. `jq empty` (valid-JSON check) + `npm pack --dry-run` per package are the concrete assertions. If all pass, this unit is a pure verification with no diff; if a defect surfaces, fix it in the retired packaging script or the offending template (staying within the file-count budget). **Stop rule (addresses plan-review P3):** if a defect would require edits spanning more than 2 files, do NOT exceed the 2-hour/width budget — stop, record the finding, and split the fix into a follow-up task rather than growing this unit. `npm pack --dry-run` is an *additional* confidence check layered on the required `jq empty` valid-JSON assertion; if Node/npm is unavailable, `jq empty` + field inspection is the sufficient minimum.
 - **Tests / verification**: `jq empty` succeeds for all 6 package.json files; `npm pack --dry-run` succeeds for each package; version stamped == input version; wrapper `optionalDependencies` all == input version.
 - **Execution posture**: characterization-first (verify current output; change only if broken).
 

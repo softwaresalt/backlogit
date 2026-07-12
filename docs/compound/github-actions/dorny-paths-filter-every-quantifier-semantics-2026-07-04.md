@@ -40,7 +40,7 @@ The author and two rounds of reviewers all held the wrong mental model (assuming
 - Under `predicate-quantifier: every`: `isMatch(file) = patterns.every(rule => rule.isMatch(file))` — a **single file** must match **ALL** patterns for that file to count.
 - The filter output is `true` iff **some** changed file matches **all** patterns.
 - Therefore, with multiple **disjoint positive** path patterns (e.g. `cmd/**`, `internal/**`, `schemas/**`), **no single file can match all of them** → the filter is **constant-false**. The "unsafe" flag never fires, so the gate silently skips heavy work on every PR, including pure code PRs (dangerous fail-open).
-- Default quantifier is `some` (`patterns.some(...)`), under which a positive allowlist is fail-**open** for any path not enumerated (unlisted dirs like `scripts/**`, `plugin/**`, `npm/**`, `.mcp.json` skip the heavy jobs).
+- Default quantifier is `some` (`patterns.some(...)`), under which a positive allowlist is fail-**open** for any path not enumerated (unlisted dirs like `scripts/**`, `plugin/**`, `retired package tree`, `.mcp.json` skip the heavy jobs).
 
 ## Correct pattern
 

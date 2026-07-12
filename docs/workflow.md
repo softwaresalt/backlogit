@@ -212,11 +212,12 @@ Add the following to your Claude Code MCP configuration:
 
 ### Connecting GitHub Copilot CLI
 
-Add backlogit to `.copilot/mcp-config.json` or `.vscode/mcp.json` in your workspace:
+For GitHub Copilot CLI, add backlogit to `.copilot/mcp-config.json` in your
+workspace:
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "backlogit": {
       "type": "stdio",
       "command": "backlogit",
@@ -225,6 +226,9 @@ Add backlogit to `.copilot/mcp-config.json` or `.vscode/mcp.json` in your worksp
   }
 }
 ```
+
+For VS Code, use the same server entry under `.vscode/mcp.json`'s `servers`
+object.
 
 ### Connecting Cursor
 
