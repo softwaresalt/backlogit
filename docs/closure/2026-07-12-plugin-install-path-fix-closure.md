@@ -4,7 +4,7 @@ description: Closure record for fixing Copilot CLI owner/repo plugin install man
 doc_type: closure
 docline:
     ms.date: 2026-07-12T00:00:00Z
-    ms.topic: closure
+    ms.topic: reference
 schema_version: "1.0"
 source: docs/closure/2026-07-12-plugin-install-path-fix-closure.md
 title: Plugin install path fix closure
@@ -39,7 +39,7 @@ references them with repo-root-relative `plugin/...` paths.
 * `go test ./...`
 * `go vet ./...`
 * `golangci-lint run`
-* `gofmt -l tests\integration\plugin_manifest_test.go`
+* `gofmt -l tests/integration/plugin_manifest_test.go`
 * CI for PR #218 passed: Detect code changes, Docline frontmatter gate, CLI
   Reference Drift, and test
 
