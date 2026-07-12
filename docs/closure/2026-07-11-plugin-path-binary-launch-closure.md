@@ -40,7 +40,7 @@ direct executable lookup, and MCP server entries do not support per-OS
 
 ## Validation
 
-* TDD red phase: `TestPluginManifestsUsePathResolvedBacklogitBinary` failed
+* TDD red phase: `TestPluginManifestsLaunchBacklogitFromPath` failed
   against the prior `npx` manifest launch
 * Green phase: the guard passed after both manifests used `backlogit mcp`
 * Local gates passed before PR:
