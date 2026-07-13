@@ -2,7 +2,7 @@
 title: "Copilot review-loop convergence under dismiss-stale-on-push rulesets"
 source: docs/compound/2026-07-13-copilot-review-loop-convergence.md
 doc_type: learning
-description: "On repos where copilot_code_review runs on every push and dismiss_stale_reviews_on_push is true, each fix-push re-triggers a fresh review; converge by resolving the final review's threads without pushing once the cycle limit is hit."
+description: "On repos where copilot_code_review runs on every push and dismiss_stale_reviews_on_push is true, each fix-push re-triggers a fresh review and dismisses the prior one — a risk of repeated review resets. Batch fixes; per §1.8 the cycle cap stops automated pushing but never clears the merge gate: only fixed or objectively invalid/informational threads may be resolved, while valid unresolved findings stay merge-blocking until fixed or explicitly operator-overridden."
 docline:
     date: 2026-07-13T00:00:00Z
     severity: medium
@@ -33,27 +33,38 @@ Required checks: `Detect code changes`, `test`, `Docline frontmatter gate`.
 ## Problem
 
 Because every push re-triggers a fresh Copilot review **and** dismisses the prior
-review, a naive "fix review comment → push → re-review → fix → push" loop has no
-natural fixed point: each remediation push spawns a new review that may raise new
-threads, and `required_review_thread_resolution: true` keeps the PR merge-blocked
-until every thread is resolved. Left unbounded this is a non-terminating
-review-fix loop that never reaches "clean".
+review, a naive "fix one comment → push → re-review → fix → push" loop risks
+**repeatedly resetting** the review: each remediation push spawns a new review that
+may raise new threads, and `required_review_thread_resolution: true` keeps the PR
+merge-blocked until every thread is resolved. This does **not** make convergence
+impossible — a remediation push followed by a clean review is a natural fixed point
+(the 091-S feature PR #231 reached exactly that on its only review; see Evidence).
+The real failure modes are *slow* or *oscillating* convergence: unbatched
+per-comment pushes multiply review resets, and without a bound automated fixing can
+run longer than is useful. Hence a cycle cap — but the cap must never be used to
+clear the merge gate on findings that are still valid and unfixed.
 
 ## Solution
 
-Two rules converge it:
+Two rules converge it **without bypassing the merge gate**:
 
 1. **Bound the loop.** `.github/instructions/github-pr-automation.instructions.md`
    §1.8 caps review-fix-push cycles at 3. The cap stops additional automated
-   *pushing* — it does not clear the merge gate (§1.8 is explicit: unresolved
-   Copilot threads stay merge-blocking until resolved or operator-overridden).
-2. **Converge without pushing at the cap.** When the cycle-3 limit is reached with
-   threads still open, do **not** push again (a push would only dismiss the review
-   and spawn another). Instead, reply to and **resolve** each remaining Copilot
-   thread via `gh api graphql` (`resolveReviewThread`) as an accepted follow-up
-   with a reasoned decline, then run the §1.9 pre-merge readiness gate against the
-   current HEAD. Resolving-without-pushing is the terminating move: it satisfies
-   `required_review_thread_resolution` without triggering a fresh review.
+   *pushing* — it does **not** clear the merge gate (§1.8 is explicit: unresolved
+   Copilot threads stay merge-blocking until resolved or **explicitly
+   operator-overridden**).
+2. **Converge by fixing, not by blanket-resolving.** Handle each remaining thread
+   on its merits (§1.3): **fix** valid findings (reply with the fix commit, then
+   resolve the thread), or **decline** threads that are objectively
+   invalid/informational (reply with the rationale, then resolve). Only
+   *fixed-or-objectively-invalid* threads may be auto-resolved. A **valid** finding
+   must never be converted into a "reasoned decline" merely to satisfy branch
+   protection — it stays merge-blocking until fixed or explicitly
+   operator-overridden. If valid findings remain unfixed when the cycle cap is hit,
+   **halt and escalate to the operator** rather than resolving them to clear the
+   gate. Batch fixes into a single push (each push is a review reset, per §1.7),
+   and after the final push run the §1.9 pre-merge readiness gate against the live
+   HEAD SHA.
 
 ## Evidence and honest scope
 
@@ -70,6 +81,8 @@ Applies to any GitHub repo whose branch protection combines review-on-every-push
 automation with `dismiss_stale_reviews_on_push` and thread-resolution requirements.
 Key operational reflexes: (a) treat every push as a review reset, so batch fixes
 rather than pushing per-comment; (b) never push purely to "re-trigger" a review;
-(c) at the cycle cap, resolve remaining bot threads (fix or reasoned decline)
-without pushing, then verify readiness from scratch via a fresh GraphQL query
+(c) at the cycle cap, resolve **only** threads that were fixed or objectively
+invalid/informational — valid unresolved findings stay merge-blocking until fixed or
+explicitly operator-overridden, so **halt and escalate** rather than blanket-resolving
+to clear the gate; (d) verify readiness from scratch via a fresh GraphQL query
 against the live HEAD SHA.
