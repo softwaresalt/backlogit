@@ -164,7 +164,10 @@ stays as-is and is now consistent with `doc_type: decision`.
 4. `make verify-plugin` (`go test ./tests/integration/ -run
    'TestPluginBundleStructurallyValid'`) still passes — skill directory
    structure and SKILL.md `name`/`description` frontmatter are untouched.
-5. No files outside the two target skill files are modified.
+5. No tracked files outside the two target skill files are modified or committed.
+   The untracked scratch verification file from Verification step 2 is permitted
+   and MUST NOT be committed; being untracked, it is not a modification to a
+   tracked file and does not appear in the `git diff --stat` check (step 4).
 
 ## Verification steps (for Ship)
 
@@ -206,14 +209,21 @@ stays as-is and is now consistent with `doc_type: decision`.
 
 ## Plan Review
 
-**Gate decision: PASS** — proceed to harvest.
+**Inline pre-harvest self-review (Stage single-agent context) — no blocking
+findings.** This section is the Stage agent's own persona-lens self-assessment,
+recorded for traceability. It is NOT the output of the formal multi-persona
+`plan-review` skill (which dispatches independent reviewer subagents per
+`.github/skills/plan-review/SKILL.md`) and must not be read as that skill's
+appended gate evidence. Given the LOW blast radius (two identical instructional
+skill-doc example blocks; no schema, CLI-distribution, or multi-template-family
+surface), a formal skill run was judged disproportionate for this change. If full
+multi-persona gate evidence is required before build, run the `plan-review` skill
+and append its result here (recommended follow-up).
 
-Reviewed inline (single-agent Stage context) against the plan-review persona
-checklist. No P0/P1 findings. No plan-hardening signals (blast radius is limited
-to two instructional skill-doc examples; no schema, CLI-distribution, or
-multi-template-family surface), so `plan-harden` is correctly not required.
+No blocking (P0/P1) findings were identified in this self-review, and there were
+no plan-hardening signals, so `plan-harden` is not required.
 
-### Persona results
+### Persona-lens self-assessment (Stage single-agent; not dispatched subagents)
 
 * **Constitution Reviewer** — PASS. Principle IV honored (out-of-tree `.tmpl`
   edit deferred to a follow-up stash, not attempted). Test-First (P-II) applies
