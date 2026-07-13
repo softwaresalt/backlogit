@@ -264,16 +264,20 @@ Write the findings artifact to `docs/decisions/{YYYY-MM-DD}-{slug}-spike.md`:
 ```markdown
 ---
 title: "{Goal question — short form}"
-type: spike
-date: {YYYY-MM-DD}
-time_box: "{time_box value}"
-conclusion: "{proceed|pivot|defer|abandon}"
-confidence: "{high|medium|low}"
-linked_parent_work_item: "{feature or chore path/ID, or null}"
-promoted_to: ["{plan|queue|learnings|none}"]
-tags:
-  - "{domain tag}"
-  - "{technology tag}"
+source: docs/decisions/{YYYY-MM-DD}-{slug}-spike.md
+doc_type: decision
+description: "{One-line summary of the spike}"
+docline:
+    type: spike
+    date: {YYYY-MM-DD}
+    time_box: "{time_box value}"
+    conclusion: "{proceed|pivot|defer|abandon}"
+    confidence: "{high|medium|low}"
+    linked_parent_work_item: "{feature or chore path/ID, or null}"
+    promoted_to: ["{plan|queue|learnings|none}"]
+    tags:
+        - "{domain tag}"
+        - "{technology tag}"
 ---
 
 ## Goal
