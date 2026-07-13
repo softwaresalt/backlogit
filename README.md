@@ -23,7 +23,7 @@ title: backlogit
 AI-native agile workspace with MCP and CLI interfaces.
 
 ![Go Version](https://img.shields.io/badge/go-1.24-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
 ## Overview
@@ -253,7 +253,7 @@ backlogit mcp
 | Rate limiting    | golang.org/x/time v0.11.0            | Webhook dispatch backpressure via rate.Limiter |
 | File format      | Markdown + YAML frontmatter          | Git-friendly source of truth               |
 | Event stream     | JSONL (append-only)                  | per-item logs plus telemetry.jsonl and telemetry-sessions.jsonl |
-| License          | MIT                                  |                                            |
+| License          | Apache-2.0                           |                                            |
 
 ## Contributing
 
@@ -261,4 +261,4 @@ Contributions are welcome. Please read the contributing guidelines before openin
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for details.
+Apache-2.0. See [LICENSE](LICENSE) for details.
