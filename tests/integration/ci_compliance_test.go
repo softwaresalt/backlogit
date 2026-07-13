@@ -474,6 +474,7 @@ func TestCIChangeDetectorFailSafeOutputs(t *testing.T) {
 
 	assert.Equal(t, "${{ steps.classify.outputs.code }}", changes.Outputs["code"])
 	assert.Equal(t, "${{ steps.classify.outputs.docline_required }}", changes.Outputs["docline_required"])
+	assert.Equal(t, "${{ steps.plugin.outputs.plugin_bundle }}", changes.Outputs["plugin_bundle"])
 	assert.Equal(t, "${{ steps.cli.outputs.cli_reference }}", changes.Outputs["cli_reference"])
 
 	classify := findStepByID(t, changes, "classify")
@@ -491,6 +492,14 @@ func TestCIChangeDetectorFailSafeOutputs(t *testing.T) {
 	assert.NotContains(t, classifyFilters, "!internal/mdfront/**", "frontmatter codec changes must run docline lint")
 	assert.NotContains(t, classifyFilters, "!internal/cli/docs.go", "docs command changes must run docline lint")
 
+	plugin := findStepByID(t, changes, "plugin")
+	require.Contains(t, plugin.Uses, "dorny/paths-filter")
+	pluginFilters := requireYAMLString(t, plugin.With["filters"], "plugin filters")
+	assertContainsAll(t, pluginFilters,
+		"plugin_bundle:", "- 'plugin/**'", "- '.github/plugin/**'",
+		"- 'tests/integration/plugin_manifest_test.go'", "- 'Makefile'", "- 'make.ps1'",
+	)
+
 	cli := findStepByID(t, changes, "cli")
 	require.Contains(t, cli.Uses, "dorny/paths-filter")
 	cliFilters := requireYAMLString(t, cli.With["filters"], "cli filters")
@@ -507,10 +516,13 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 	wf := readCIWorkflow(t, ciPath)
 
 	testJob := wf.Jobs["test"]
-	assert.Equal(t, "needs.changes.outputs.code == 'false'", findStep(t, testJob, "Skip Go gates for docs/backlog-only changes").If)
+	assert.Equal(t,
+		"needs.changes.outputs.code == 'false' && needs.changes.outputs.plugin_bundle != 'true'",
+		findStep(t, testJob, "Skip Go gates for docs/backlog-only changes").If)
+	goGateIf := "needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle == 'true'"
 	for _, stepName := range []string{"Checkout", "Setup Go 1.24", "Install dependencies", "Lint", "Vet", "Test", "Coverage report"} {
 		step := findStep(t, testJob, stepName)
-		assert.Equal(t, "needs.changes.outputs.code != 'false'", step.If, "%s should fail safe toward running", stepName)
+		assert.Equal(t, goGateIf, step.If, "%s should fail safe toward running", stepName)
 	}
 	assert.Equal(t, 1, countActionUses(wf, "golangci/golangci-lint-action"), "golangci-lint should run at most once per CI workflow")
 
