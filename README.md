@@ -100,6 +100,15 @@ finds the canonical manifest at `.github/plugin/plugin.json`. For local
 development from a clone, use `copilot plugin install ./` from the repository
 root.
 
+Copilot CLI is deprecating direct repo/URL/local-path installs in favor of
+marketplace installs. To future-proof, register the bundled marketplace and
+install from it instead:
+
+```bash
+copilot plugin marketplace add softwaresalt/backlogit
+copilot plugin install backlogit@softwaresalt
+```
+
 See [docs/plugin-guide.md](docs/plugin-guide.md) for full installation options and troubleshooting.
 
 ### Path B - Use backlogit through Autoharness

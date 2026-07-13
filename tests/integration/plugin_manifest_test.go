@@ -24,6 +24,22 @@ type pluginMCPServer struct {
 	Args    []string `json:"args"`
 }
 
+type marketplaceIndex struct {
+	Name    string              `json:"name"`
+	Plugins []marketplacePlugin `json:"plugins"`
+}
+
+type marketplacePlugin struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Source  struct {
+		Source string `json:"source"`
+		Repo   string `json:"repo"`
+		Path   string `json:"path"`
+	} `json:"source"`
+	Repository string `json:"repository"`
+}
+
 func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 	repoRoot := testRepoRoot(t)
 	manifestPath := filepath.Join(repoRoot, ".github", "plugin", "plugin.json")
@@ -73,6 +89,34 @@ func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 			assertPluginFileExists(t, repoRoot, manifest.Skills+"/"+skillDir+"/SKILL.md")
 		})
 	}
+}
+
+func TestMarketplaceIndexesBacklogitPlugin(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".claude-plugin", "marketplace.json"))
+	require.NoError(t, err)
+
+	var index marketplaceIndex
+	require.NoError(t, json.Unmarshal(data, &index))
+	assert.Equal(t, "softwaresalt", index.Name)
+
+	var backlogit *marketplacePlugin
+	for i := range index.Plugins {
+		if index.Plugins[i].Name == "backlogit" {
+			backlogit = &index.Plugins[i]
+			break
+		}
+	}
+	require.NotNil(t, backlogit, "marketplace must index the backlogit plugin")
+
+	// The plugin manifest is discovered at .github/plugin/plugin.json, so the
+	// marketplace source points at the repo root with no subpath.
+	assert.Equal(t, "github", backlogit.Source.Source)
+	assert.Equal(t, "softwaresalt/backlogit", backlogit.Source.Repo)
+	assert.Empty(t, backlogit.Source.Path, "backlogit manifest is at repo-root .github/plugin/; no subpath")
+	assert.NotEmpty(t, backlogit.Version)
+	assert.NotContains(t, string(data), "npx")
+	assert.NotContains(t, string(data), "@backlogit/")
 }
 
 func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
