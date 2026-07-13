@@ -33,14 +33,14 @@ go test ./...
 go vet ./...
 golangci-lint run
 gofmt -l .
-go run ./cmd/backlogit docs lint --path docs\decisions\2026-07-13-plugin-bundle-structural-verification-decision.md
-go run ./cmd/backlogit docs lint --path docs\plugin-guide.md
+go run ./cmd/backlogit docs lint --path docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md
+go run ./cmd/backlogit docs lint --path docs/plugin-guide.md
 ```
 
-Negative-proof guardrail: temporarily renaming `plugin\skills\spike` to
-`spike.__negative-proof` made `TestPluginBundleStructurallyValid` fail on the
-missing expected skill and stray directory. The directory was restored before
-implementation continued.
+Negative-proof guardrail: temporarily renaming `plugin/skills/spike` to
+`plugin/skills/spike.__negative-proof` made
+`TestPluginBundleStructurallyValid` fail on the missing expected skill and
+stray directory. The directory was restored before implementation continued.
 
 CI checks on PR #227 passed:
 
