@@ -16,6 +16,7 @@ type pluginManifest struct {
 	MCPServers map[string]pluginMCPServer `json:"mcpServers"`
 	Agents     string                     `json:"agents"`
 	Skills     string                     `json:"skills"`
+	Version    string                     `json:"version"`
 }
 
 type pluginMCPServer struct {
@@ -114,7 +115,17 @@ func TestMarketplaceIndexesBacklogitPlugin(t *testing.T) {
 	assert.Equal(t, "github", backlogit.Source.Source)
 	assert.Equal(t, "softwaresalt/backlogit", backlogit.Source.Repo)
 	assert.Empty(t, backlogit.Source.Path, "backlogit manifest is at repo-root .github/plugin/; no subpath")
-	assert.NotEmpty(t, backlogit.Version)
+
+	// The marketplace version must match the canonical plugin manifest version,
+	// so a plugin-manifest bump cannot leave the marketplace advertising a stale
+	// version while this guard still passes.
+	manifestData, err := os.ReadFile(filepath.Join(repoRoot, ".github", "plugin", "plugin.json"))
+	require.NoError(t, err)
+	var manifest pluginManifest
+	require.NoError(t, json.Unmarshal(manifestData, &manifest))
+	require.NotEmpty(t, manifest.Version)
+	assert.Equal(t, manifest.Version, backlogit.Version,
+		"marketplace version must match .github/plugin/plugin.json version")
 }
 
 func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
