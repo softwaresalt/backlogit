@@ -17,6 +17,7 @@ type pluginManifest struct {
 	Agents     string                     `json:"agents"`
 	Skills     string                     `json:"skills"`
 	Version    string                     `json:"version"`
+	License    string                     `json:"license"`
 }
 
 type pluginMCPServer struct {
@@ -33,6 +34,7 @@ type marketplaceIndex struct {
 type marketplacePlugin struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	License string `json:"license"`
 	Source  struct {
 		Source string `json:"source"`
 		Repo   string `json:"repo"`
@@ -126,6 +128,38 @@ func TestMarketplaceIndexesBacklogitPlugin(t *testing.T) {
 	require.NotEmpty(t, manifest.Version)
 	assert.Equal(t, manifest.Version, backlogit.Version,
 		"marketplace version must match .github/plugin/plugin.json version")
+}
+
+func TestPluginLicenseMetadataAligned(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+
+	// The root LICENSE file is authoritative; all plugin distribution metadata
+	// must agree with it. This guards against a one-sided edit re-introducing
+	// the LICENSE-vs-metadata drift this change repaired.
+	const wantLicense = "Apache-2.0"
+
+	manifestData, err := os.ReadFile(filepath.Join(repoRoot, ".github", "plugin", "plugin.json"))
+	require.NoError(t, err)
+	var manifest pluginManifest
+	require.NoError(t, json.Unmarshal(manifestData, &manifest))
+	assert.Equal(t, wantLicense, manifest.License, "plugin.json license must match the LICENSE file")
+
+	marketData, err := os.ReadFile(filepath.Join(repoRoot, ".claude-plugin", "marketplace.json"))
+	require.NoError(t, err)
+	var index marketplaceIndex
+	require.NoError(t, json.Unmarshal(marketData, &index))
+	var found bool
+	for i := range index.Plugins {
+		if index.Plugins[i].Name == "backlogit" {
+			found = true
+			assert.Equal(t, wantLicense, index.Plugins[i].License, "marketplace license must match the LICENSE file")
+		}
+	}
+	require.True(t, found, "marketplace must index the backlogit plugin")
+
+	readme, err := os.ReadFile(filepath.Join(repoRoot, "README.md"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(readme), "license-MIT", "README license badge must not advertise MIT")
 }
 
 func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {

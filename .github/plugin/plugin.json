@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "description": "AI-native agile workspace with MCP and CLI interfaces",
   "author": "backlogit contributors",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["backlogit", "mcp", "workflow", "agents"],
   "agents": "plugin/agents",
   "skills": "plugin/skills",

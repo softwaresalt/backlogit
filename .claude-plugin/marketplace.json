@@ -17,7 +17,8 @@
       "description": "AI-native agile workspace with MCP and CLI interfaces \u2014 Stage and Ship agents, 19 workflow skills, and the backlogit MCP server.",
       "version": "1.1.0",
       "repository": "https://github.com/softwaresalt/backlogit",
-      "keywords": ["backlogit", "mcp", "workflow", "agents"]
+      "keywords": ["backlogit", "mcp", "workflow", "agents"],
+      "license": "Apache-2.0"
     }
   ]
 }
