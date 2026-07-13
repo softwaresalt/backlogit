@@ -32,6 +32,11 @@ var expectedPluginAgents = []string{
 	"ship.agent.md",
 }
 
+var expectedPluginAgentNames = map[string]string{
+	"stage.agent.md": "Stage",
+	"ship.agent.md":  "Ship",
+}
+
 var expectedPluginSkills = []string{
 	"build-feature",
 	"compact-context",
@@ -129,7 +134,9 @@ func TestPluginBundleStructurallyValid(t *testing.T) {
 
 	for _, agentFile := range agentFiles {
 		t.Run("agent frontmatter/"+agentFile, func(t *testing.T) {
-			assertPluginMarkdownHasNameAndBody(t, filepath.Join(repoRoot, filepath.FromSlash(manifest.Agents), agentFile))
+			assertPluginMarkdownHasMetadataAndBody(t,
+				filepath.Join(repoRoot, filepath.FromSlash(manifest.Agents), agentFile),
+				expectedPluginAgentNames[agentFile])
 		})
 	}
 
@@ -139,8 +146,9 @@ func TestPluginBundleStructurallyValid(t *testing.T) {
 
 	for _, skillDir := range skillDirs {
 		t.Run("skill frontmatter/"+skillDir, func(t *testing.T) {
-			assertPluginMarkdownHasNameAndBody(t,
-				filepath.Join(repoRoot, filepath.FromSlash(manifest.Skills), skillDir, "SKILL.md"))
+			assertPluginMarkdownHasMetadataAndBody(t,
+				filepath.Join(repoRoot, filepath.FromSlash(manifest.Skills), skillDir, "SKILL.md"),
+				skillDir)
 		})
 	}
 }
@@ -347,8 +355,10 @@ func collectPluginSkillDirs(t *testing.T, repoRoot string, skillsDir string) []s
 	return skillDirs
 }
 
-func assertPluginMarkdownHasNameAndBody(t *testing.T, path string) {
+func assertPluginMarkdownHasMetadataAndBody(t *testing.T, path string, expectedName string) {
 	t.Helper()
+
+	require.NotEmpty(t, expectedName, "plugin expected name must be configured for %s", path)
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -356,11 +366,13 @@ func assertPluginMarkdownHasNameAndBody(t *testing.T, path string) {
 	frontmatter, body := splitPluginFrontmatter(t, string(data), path)
 
 	var header struct {
-		Name string `yaml:"name"`
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
 	}
 	require.NoError(t, yaml.Unmarshal([]byte(frontmatter), &header), "parse plugin YAML frontmatter: %s", path)
 
-	require.NotEmpty(t, strings.TrimSpace(header.Name), "plugin frontmatter name must not be empty: %s", path)
+	require.Equal(t, expectedName, strings.TrimSpace(header.Name), "plugin frontmatter name must match bundle entry: %s", path)
+	require.NotEmpty(t, strings.TrimSpace(header.Description), "plugin frontmatter description must not be empty: %s", path)
 	require.NotEmpty(t, strings.TrimSpace(body), "plugin markdown body must not be empty: %s", path)
 }
 
