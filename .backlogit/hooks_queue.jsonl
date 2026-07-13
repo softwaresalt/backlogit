@@ -1231,3 +1231,4 @@
 {"seq":1231,"timestamp":"2026-07-13T22:09:03.0035703Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["status"],"item_id":"102-F","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
 {"seq":1232,"timestamp":"2026-07-13T22:09:16.1613162Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["commit"],"item_id":"102.001-T","schema_version":1}}
 {"seq":1233,"timestamp":"2026-07-13T22:09:20.7069945Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["commit"],"item_id":"102-F","schema_version":1}}
+{"seq":1234,"timestamp":"2026-07-13T22:31:38.082826Z","event_type":"ship_shipment","payload":{"actor":"backlogit","artifact_type":"shipment","changed_fields":["status"],"item_id":"091-S","schema_version":1,"status_delta":{"from":"active","to":"shipped"}}}

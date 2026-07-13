@@ -127,6 +127,41 @@ Caveat worth remembering (surfaced in PR #166 review): the authoring-profile sel
 checks `source` only for **presence** (non-empty), not format or path-match — a stale copied
 `source` passes silently. Set `source` to the file's own path at authoring time.
 
+## Reinforcement — 091-S: born-compliant *example blocks* inside agent-authoring skills
+
+Shipment 091-S (PR #231, merge `ec2b859`) extends born-compliant authoring one
+level further — from the plan/prose an agent writes to the **fenced example block
+a skill shows the agent to copy**. The `spike` skill's Phase 5 "Write Findings
+Artifact" section embedded a YAML frontmatter example that predated the docline
+contract: `type: spike` at top level (should be `doc_type: decision` for the
+`docs/decisions/**` output path), no `source`, and eight non-contract keys
+(`type`/`date`/`time_box`/`conclusion`/`confidence`/`linked_parent_work_item`/
+`promoted_to`/`tags`) at top level. An agent following it verbatim would author a
+findings artifact that fails the CI Docline gate.
+
+The fix replaced the example — identically in both in-repo copies
+`plugin/skills/spike/SKILL.md` and `.github/skills/spike/SKILL.md` — with a
+docline-conformant block: top-level `title`/`source`/`doc_type: decision`/
+`description`, all non-contract keys nested under `docline:` (4-space indent,
+matching this repo's gold-standard spike artifacts
+`docs/decisions/2026-05-05-telemetry-gap-analysis-spike.md` and
+`docs/decisions/2026-07-09-github-actions-cost-spike.md`). Verification authored a
+throwaway `docs/decisions/*-spike.md` from the reconciled example and confirmed
+`backlogit docs lint --profile authoring` reports 0 findings — the example now
+*demonstrates* the same gate it will be judged by.
+
+Generalizable rule: **an instructional example is a generator too.** If a skill
+shows an agent a copyable artifact template, that template must itself be
+born-compliant with any downstream gate; validate it by authoring-from-the-example
+and linting, not by eyeballing. One more durable note from this shipment:
+**generated-vs-source drift is inherent when you fix a generated copy in-tree.**
+Both edited SKILL.md files are generated from an upstream `spike/SKILL.md.tmpl`
+that lives in the *external* autoharness repo (Principle IV — never edited from
+this workspace). The in-repo fix is correct but the next regeneration overwrites
+it unless the upstream template is also updated; that is tracked as follow-up
+stash `7F0A6E89`. When you must fix a generated artifact in-tree, always record
+the source-template follow-up so the fix is not silently lost.
+
 ## Applicability
 
 Reuse this four-part pattern for any cross-cutting metadata contract over a large
@@ -134,3 +169,6 @@ file corpus (frontmatter, license headers, SPDX tags, codegen banners): preserve
 content, make the transform idempotent, make generators born-compliant, then gate.
 Extend "generators" to include **agent authoring surfaces** — teach the skill/prompt the
 gate-required shape and make it self-lint against the same CI entrypoint before handoff.
+Extend it once more to **instructional example blocks** a skill instructs the agent to
+copy: validate them by authoring-from-the-example and linting, and record a source-template
+follow-up whenever the fix lands on a generated copy whose upstream template is out of tree.

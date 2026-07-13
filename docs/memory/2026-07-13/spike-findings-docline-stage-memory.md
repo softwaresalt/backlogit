@@ -56,7 +56,18 @@ nested under `docline:` — matching existing conformant artifacts
 `docs/decisions/*-spike.md` (→ `doc_type: decision`, verified via
 `backlogit docs classify`).
 
-Full spec + plan-review (gate PASS): `docs/exec-plans/2026-07-13-spike-findings-docline-reconciliation-plan.md`.
+Full spec: `docs/exec-plans/2026-07-13-spike-findings-docline-reconciliation-plan.md`.
+
+**Plan-review provenance correction (post-merge; flagged by PR #230 Copilot
+review).** The earlier "plan-review (gate PASS)" phrasing here overstated the
+evidence and is corrected: the plan's "Plan Review" section is an **inline
+single-agent Stage self-assessment** recorded for traceability — it is **NOT**
+the output of the formal multi-persona `plan-review` skill, and **no formal
+plan-review gate evidence exists**. Proceeding to build was justified by the LOW
+blast radius (two identical instructional skill-doc example blocks; no schema,
+CLI-distribution, or multi-template-family surface), not by a satisfied formal
+gate. Ship's own `review` gate (report-only, Template Integrity + Constitution
+lenses) ran normally before PR #231 and returned zero P0/P1/P2 findings.
 
 ## Decisions
 
