@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 type pluginManifest struct {
@@ -24,6 +25,33 @@ type pluginMCPServer struct {
 	Type    string   `json:"type"`
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
+}
+
+var expectedPluginAgents = []string{
+	"stage.agent.md",
+	"ship.agent.md",
+}
+
+var expectedPluginSkills = []string{
+	"build-feature",
+	"compact-context",
+	"compound",
+	"compound-refresh",
+	"deliberate",
+	"file-lock",
+	"fix-ci",
+	"harness-architect",
+	"harvest",
+	"impl-plan",
+	"operational-closure",
+	"plan-harden",
+	"plan-review",
+	"pr-lifecycle",
+	"review",
+	"runtime-verification",
+	"safety-modes",
+	"skill-search",
+	"spike",
 }
 
 type marketplaceIndex struct {
@@ -74,22 +102,45 @@ func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 	assertPluginDir(t, repoRoot, manifest.Agents)
 	assertPluginDir(t, repoRoot, manifest.Skills)
 
-	for _, agentFile := range []string{"stage.agent.md", "ship.agent.md"} {
+	for _, agentFile := range expectedPluginAgents {
 		t.Run("agents/"+agentFile, func(t *testing.T) {
 			assertPluginFileExists(t, repoRoot, manifest.Agents+"/"+agentFile)
 		})
 	}
 
-	for _, skillDir := range []string{
-		"build-feature", "compact-context", "compound", "compound-refresh",
-		"deliberate", "file-lock", "fix-ci", "harness-architect", "harvest",
-		"impl-plan", "operational-closure", "plan-harden", "plan-review",
-		"pr-lifecycle", "review", "runtime-verification", "safety-modes",
-		"skill-search", "spike",
-	} {
+	for _, skillDir := range expectedPluginSkills {
 		t.Run("skills/"+skillDir, func(t *testing.T) {
 			assertPluginDir(t, repoRoot, manifest.Skills+"/"+skillDir)
 			assertPluginFileExists(t, repoRoot, manifest.Skills+"/"+skillDir+"/SKILL.md")
+		})
+	}
+}
+
+func TestPluginBundleStructurallyValid(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	manifest := readPluginManifest(t, repoRoot)
+
+	require.Equal(t, "plugin/agents", manifest.Agents)
+	require.Equal(t, "plugin/skills", manifest.Skills)
+
+	agentFiles := collectPluginAgentFiles(t, repoRoot, manifest.Agents)
+	assert.ElementsMatch(t, expectedPluginAgents, agentFiles,
+		"plugin agent set must match the canonical bundle list")
+
+	for _, agentFile := range agentFiles {
+		t.Run("agent frontmatter/"+agentFile, func(t *testing.T) {
+			assertPluginMarkdownHasNameAndBody(t, filepath.Join(repoRoot, filepath.FromSlash(manifest.Agents), agentFile))
+		})
+	}
+
+	skillDirs := collectPluginSkillDirs(t, repoRoot, manifest.Skills)
+	assert.ElementsMatch(t, expectedPluginSkills, skillDirs,
+		"plugin skill set must match the canonical bundle list")
+
+	for _, skillDir := range skillDirs {
+		t.Run("skill frontmatter/"+skillDir, func(t *testing.T) {
+			assertPluginMarkdownHasNameAndBody(t,
+				filepath.Join(repoRoot, filepath.FromSlash(manifest.Skills), skillDir, "SKILL.md"))
 		})
 	}
 }
@@ -248,6 +299,87 @@ func TestPluginClosureRecordsWindowsSubdirInstallFailure(t *testing.T) {
 	assert.Contains(t, content, "os error 267")
 	assert.Contains(t, content, "The directory name is invalid")
 	assert.NotContains(t, content, "workaround remains available")
+}
+
+func readPluginManifest(t *testing.T, repoRoot string) pluginManifest {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "plugin", "plugin.json"))
+	require.NoError(t, err)
+
+	var manifest pluginManifest
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	return manifest
+}
+
+func collectPluginAgentFiles(t *testing.T, repoRoot string, agentsDir string) []string {
+	t.Helper()
+
+	matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(agentsDir), "*.agent.md"))
+	require.NoError(t, err)
+
+	agentFiles := make([]string, 0, len(matches))
+	for _, match := range matches {
+		agentFiles = append(agentFiles, filepath.Base(match))
+	}
+	return agentFiles
+}
+
+func collectPluginSkillDirs(t *testing.T, repoRoot string, skillsDir string) []string {
+	t.Helper()
+
+	skillsPath := filepath.Join(repoRoot, filepath.FromSlash(skillsDir))
+	entries, err := os.ReadDir(skillsPath)
+	require.NoError(t, err)
+
+	skillDirs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		skillPath := filepath.Join(skillsPath, entry.Name(), "SKILL.md")
+		info, err := os.Stat(skillPath)
+		require.NoError(t, err, "plugin skill directory must contain SKILL.md: %s", entry.Name())
+		require.False(t, info.IsDir(), "plugin skill path must reference a file: %s", skillPath)
+		skillDirs = append(skillDirs, entry.Name())
+	}
+	return skillDirs
+}
+
+func assertPluginMarkdownHasNameAndBody(t *testing.T, path string) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	frontmatter, body := splitPluginFrontmatter(t, string(data), path)
+
+	var header struct {
+		Name string `yaml:"name"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(frontmatter), &header), "parse plugin YAML frontmatter: %s", path)
+
+	require.NotEmpty(t, strings.TrimSpace(header.Name), "plugin frontmatter name must not be empty: %s", path)
+	require.NotEmpty(t, strings.TrimSpace(body), "plugin markdown body must not be empty: %s", path)
+}
+
+func splitPluginFrontmatter(t *testing.T, content string, path string) (string, string) {
+	t.Helper()
+
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	require.NotEmpty(t, lines)
+	require.Equal(t, "---", lines[0], "plugin markdown must start with YAML frontmatter: %s", path)
+
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n")
+		}
+	}
+
+	require.Failf(t, "missing frontmatter close", "plugin markdown must close YAML frontmatter: %s", path)
+	return "", ""
 }
 
 func assertPluginDir(t *testing.T, repoRoot string, relPath string) {

@@ -1,4 +1,4 @@
-﻿---
+---
 name: build-feature
 description: "Usage: Build feature {task-id} with harness {harness-cmd}. Implements a requested feature by continuously looping a fast worker agent against a strict, passing-import but failing test harness until success is achieved."
 version: 2.0
