@@ -171,8 +171,14 @@ stays as-is and is now consistent with `doc_type: decision`.
 1. Apply the two identical block replacements.
 2. Author a scratch `docs/decisions/2026-07-13-scratch-spike.md` from the
    reconciled example, run `backlogit docs lint --profile authoring --path
-   docs/decisions/2026-07-13-scratch-spike.md`, confirm zero findings, then
-   delete the scratch file (it is a verification artifact only).
+   docs/decisions/2026-07-13-scratch-spike.md`, and confirm zero findings. This
+   scratch file is a verification-only artifact and MUST NOT be committed (it is
+   not one of the two in-scope skill files). Removing it is a destructive file
+   operation: Ship MUST obtain explicit operator approval before deleting the
+   scratch file (Principle VII — Destructive Command Approval, NON-NEGOTIABLE).
+   Until that approval is granted, leave the scratch file untracked and excluded
+   from the commit; untracked files do not appear in the `git diff --stat`
+   verification in step 4, so the two-file diff stays clean either way.
 3. Run `make verify-plugin`.
 4. Confirm `git diff --stat` shows only the two skill files changed.
 
