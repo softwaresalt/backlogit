@@ -517,9 +517,9 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 
 	testJob := wf.Jobs["test"]
 	assert.Equal(t,
-		"needs.changes.outputs.code == 'false' && needs.changes.outputs.plugin_bundle != 'true'",
+		"needs.changes.outputs.code == 'false' && needs.changes.outputs.plugin_bundle == 'false'",
 		findStep(t, testJob, "Skip Go gates for docs/backlog-only changes").If)
-	goGateIf := "needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle == 'true'"
+	goGateIf := "needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'"
 	for _, stepName := range []string{"Checkout", "Setup Go 1.24", "Install dependencies", "Lint", "Vet", "Test", "Coverage report"} {
 		step := findStep(t, testJob, stepName)
 		assert.Equal(t, goGateIf, step.If, "%s should fail safe toward running", stepName)
