@@ -8,9 +8,6 @@ docline:
 schema_version: "1.0"
 source: docs/closure/2026-07-12-plugin-marketplace-closure.md
 title: "100-F self-hosted Copilot plugin marketplace closure"
-date: "2026-07-12"
-item: "100-F"
-status: "verified-live"
 ---
 
 ## Problem
