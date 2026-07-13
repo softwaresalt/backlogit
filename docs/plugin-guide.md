@@ -89,6 +89,21 @@ For local development from a clone, install from the repository root:
 copilot plugin install ./
 ```
 
+### Future-proof install — Copilot marketplace
+
+Copilot CLI is deprecating direct repo, URL, and local-path installs in favor
+of marketplace installs (`plugin@marketplace`). backlogit self-hosts a
+marketplace index at [`../.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json),
+so you can register it and install from it:
+
+```bash
+copilot plugin marketplace add softwaresalt/backlogit
+copilot plugin install backlogit@softwaresalt
+```
+
+This resolves the same `backlogit` plugin (from `.github/plugin/plugin.json`)
+and is the recommended path once direct installs are removed.
+
 ### Alternative runtime install — source
 
 Use this path when you want the Go toolchain workflow for the latest tagged

@@ -188,6 +188,15 @@ copilot plugin install softwaresalt/backlogit
 For local development from a clone, use `copilot plugin install ./` from the
 repository root.
 
+Copilot CLI is deprecating direct repo/URL/local-path installs in favor of
+marketplace installs. The future-proof path registers the bundled marketplace
+(`.claude-plugin/marketplace.json`) and installs from it:
+
+```bash
+copilot plugin marketplace add softwaresalt/backlogit
+copilot plugin install backlogit@softwaresalt
+```
+
 ## Shell completion
 
 `backlogit` uses Cobra, which generates completion scripts for Bash, Zsh, Fish,

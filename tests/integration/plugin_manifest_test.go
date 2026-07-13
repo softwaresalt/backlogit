@@ -16,12 +16,29 @@ type pluginManifest struct {
 	MCPServers map[string]pluginMCPServer `json:"mcpServers"`
 	Agents     string                     `json:"agents"`
 	Skills     string                     `json:"skills"`
+	Version    string                     `json:"version"`
 }
 
 type pluginMCPServer struct {
 	Type    string   `json:"type"`
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
+}
+
+type marketplaceIndex struct {
+	Name    string              `json:"name"`
+	Plugins []marketplacePlugin `json:"plugins"`
+}
+
+type marketplacePlugin struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Source  struct {
+		Source string `json:"source"`
+		Repo   string `json:"repo"`
+		Path   string `json:"path"`
+	} `json:"source"`
+	Repository string `json:"repository"`
 }
 
 func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
@@ -73,6 +90,42 @@ func TestPluginManifestsLaunchBacklogitFromPath(t *testing.T) {
 			assertPluginFileExists(t, repoRoot, manifest.Skills+"/"+skillDir+"/SKILL.md")
 		})
 	}
+}
+
+func TestMarketplaceIndexesBacklogitPlugin(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".claude-plugin", "marketplace.json"))
+	require.NoError(t, err)
+
+	var index marketplaceIndex
+	require.NoError(t, json.Unmarshal(data, &index))
+	assert.Equal(t, "softwaresalt", index.Name)
+
+	var backlogit *marketplacePlugin
+	for i := range index.Plugins {
+		if index.Plugins[i].Name == "backlogit" {
+			backlogit = &index.Plugins[i]
+			break
+		}
+	}
+	require.NotNil(t, backlogit, "marketplace must index the backlogit plugin")
+
+	// The plugin manifest is discovered at .github/plugin/plugin.json, so the
+	// marketplace source points at the repo root with no subpath.
+	assert.Equal(t, "github", backlogit.Source.Source)
+	assert.Equal(t, "softwaresalt/backlogit", backlogit.Source.Repo)
+	assert.Empty(t, backlogit.Source.Path, "backlogit manifest is at repo-root .github/plugin/; no subpath")
+
+	// The marketplace version must match the canonical plugin manifest version,
+	// so a plugin-manifest bump cannot leave the marketplace advertising a stale
+	// version while this guard still passes.
+	manifestData, err := os.ReadFile(filepath.Join(repoRoot, ".github", "plugin", "plugin.json"))
+	require.NoError(t, err)
+	var manifest pluginManifest
+	require.NoError(t, json.Unmarshal(manifestData, &manifest))
+	require.NotEmpty(t, manifest.Version)
+	assert.Equal(t, manifest.Version, backlogit.Version,
+		"marketplace version must match .github/plugin/plugin.json version")
 }
 
 func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
