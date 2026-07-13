@@ -21,7 +21,7 @@ would eventually break.
 ## Fix (PR #224, merge 11922e4)
 
 - **`.claude-plugin/marketplace.json`** — a self-hosted marketplace indexing
-  the `backlogit` plugin via `source: {source: github, repo: softwaresalt/backlogit}`
+  the `backlogit` plugin via `"source": {"source": "github", "repo": "softwaresalt/backlogit"}`
   (no subpath; the CLI discovers the manifest at `.github/plugin/plugin.json`).
   Schema mirrors the built-in `github/copilot-plugins` marketplace.
 - **Drift-guard test** (`tests/integration/plugin_manifest_test.go`) — asserts
