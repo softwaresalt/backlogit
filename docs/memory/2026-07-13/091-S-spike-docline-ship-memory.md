@@ -50,7 +50,8 @@ title: "091-S spike findings-artifact docline reconciliation — Ship session me
   only). Proceeded on LOW blast radius; Ship's own `review` gate ran normally.
   Corrected the Stage memory doc that had implied a satisfied gate.
 * **Closure via a dedicated PR** (`chore/closure-091-S` → PR) because direct pushes
-  to `main` are ruleset-blocked (dismiss-stale-on-push + required checks).
+  to `main` are ruleset-blocked (PR required + required status checks + Copilot
+  review-on-push with required thread resolution).
 
 ## Failed approaches / gotchas
 
