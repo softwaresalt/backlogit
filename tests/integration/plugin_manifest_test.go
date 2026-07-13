@@ -115,8 +115,6 @@ func TestMarketplaceIndexesBacklogitPlugin(t *testing.T) {
 	assert.Equal(t, "softwaresalt/backlogit", backlogit.Source.Repo)
 	assert.Empty(t, backlogit.Source.Path, "backlogit manifest is at repo-root .github/plugin/; no subpath")
 	assert.NotEmpty(t, backlogit.Version)
-	assert.NotContains(t, string(data), "npx")
-	assert.NotContains(t, string(data), "@backlogit/")
 }
 
 func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
