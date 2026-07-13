@@ -5,7 +5,7 @@
 
 .PARAMETER Target
     Target to run. Defaults to 'all'.
-    Valid targets: all, build, test, lint, vet, fmt, cover, clean, install
+    Valid targets: all, build, test, lint, vet, fmt, cover, clean, install, verify-plugin
 
 .EXAMPLE
     .\make.ps1              # runs 'all' (fmt + vet + lint + test + build)
@@ -18,6 +18,7 @@
     .\make.ps1 clean        # remove bin/ and coverage.out
     .\make.ps1 install              # install to current location (or GOPATH\bin if not found)
     .\make.ps1 install -InstallPath C:\Tools  # install to specific path
+    .\make.ps1 verify-plugin # validate plugin bundle structure
 #>
 param(
     [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install", "verify-plugin")]
@@ -110,26 +111,10 @@ switch ($Target) {
 
     "verify-plugin" {
         Step "verify-plugin" {
-            $agents = @("stage.agent.md", "ship.agent.md")
-            foreach ($a in $agents) {
-                $src = ".github/agents/$a"; $dst = "plugin/agents/$a"
-                if ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash) {
-                    Write-Host "DRIFT: $a out of date" -ForegroundColor Red; exit 1
-                }
+            go test ./tests/integration/ -run 'TestPluginBundleStructurallyValid' -count=1
+            if ($LASTEXITCODE -ne 0) {
+                exit 1
             }
-            $skills = @(
-                "build-feature","compact-context","compound","compound-refresh","deliberate",
-                "file-lock","fix-ci","harness-architect","harvest","impl-plan",
-                "operational-closure","plan-harden","plan-review","pr-lifecycle","review",
-                "runtime-verification","safety-modes","skill-search","spike"
-            )
-            foreach ($s in $skills) {
-                $src = ".github/skills/$s/SKILL.md"; $dst = "plugin/skills/$s/SKILL.md"
-                if ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash) {
-                    Write-Host "DRIFT: $s/SKILL.md out of date" -ForegroundColor Red; exit 1
-                }
-            }
-            Write-Host "OK: all plugin copies match .github/ sources" -ForegroundColor Green
         }
     }
 }

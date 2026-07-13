@@ -14,18 +14,18 @@ import (
 // BranchProfile holds aggregated metrics for a single branch, enriched with
 // classification and artifact linkage.
 type BranchProfile struct {
-	Branch          string   `json:"branch"`
-	BranchType      string   `json:"branch_type"`
-	Sessions        int      `json:"sessions"`
-	TotalTokens     int      `json:"total_tokens"`
-	AvgTokens       float64  `json:"avg_tokens_per_session"`
-	TotalModelCalls int      `json:"total_model_calls"`
-	TotalToolCalls  int      `json:"total_tool_calls"`
-	AvgPeakUtil     *float64 `json:"avg_peak_utilization,omitempty"`
-	TaskCount       int      `json:"task_count"`
-	PRNumber        string   `json:"pr_number,omitempty"`
-	ShipmentID      string   `json:"shipment_id,omitempty"`
-	FeatureID       string   `json:"feature_id,omitempty"`
+	Branch          string    `json:"branch"`
+	BranchType      string    `json:"branch_type"`
+	Sessions        int       `json:"sessions"`
+	TotalTokens     int       `json:"total_tokens"`
+	AvgTokens       float64   `json:"avg_tokens_per_session"`
+	TotalModelCalls int       `json:"total_model_calls"`
+	TotalToolCalls  int       `json:"total_tool_calls"`
+	AvgPeakUtil     *float64  `json:"avg_peak_utilization,omitempty"`
+	TaskCount       int       `json:"task_count"`
+	PRNumber        string    `json:"pr_number,omitempty"`
+	ShipmentID      string    `json:"shipment_id,omitempty"`
+	FeatureID       string    `json:"feature_id,omitempty"`
 	FirstSeen       time.Time `json:"first_seen"`
 	LastSeen        time.Time `json:"last_seen"`
 }
@@ -35,8 +35,8 @@ type BranchProfile struct {
 // Ghost sessions are excluded. Results are sorted by LastSeen descending.
 func AggregateBranches(sessions []SessionSummaryRecord) []BranchProfile {
 	type branchAccum struct {
-		profile      BranchProfile
-		peakUtilSum  float64
+		profile       BranchProfile
+		peakUtilSum   float64
 		peakUtilCount int
 	}
 

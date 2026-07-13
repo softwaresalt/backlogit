@@ -77,9 +77,9 @@ copilot plugin install softwaresalt/backlogit
 ```
 
 This is the primary Path A installation and the canonical cross-platform plugin
-install command. The plugin includes the Stage and Ship agents, all 19 skills
-listed in [`../.github/plugin/plugin.json`](../.github/plugin/plugin.json), and
-configures the backlogit MCP server automatically. The plain
+install command. The plugin includes the Stage and Ship agents, the workflow
+skills shipped from [`../plugin/skills/`](../plugin/skills/), and configures the
+backlogit MCP server automatically. The plain
 `softwaresalt/backlogit` owner/repo form works because the manifest lives at
 Copilot CLI's canonical `.github/plugin/plugin.json` location.
 
@@ -135,15 +135,14 @@ platform-specific commands.
 |-----------|---------|
 | Agent: Stage | Stash-to-backlog pipeline: triage, deliberate, plan, review, harvest |
 | Agent: Ship | Backlog-to-shipped pipeline: harness, build, review, CI, PR |
-| Skills | 19 universal workflow skills (see list below) |
+| Skills | Universal workflow skills shipped from `plugin/skills/` |
 | MCP Server | backlogit MCP over stdio — all backlog tools available to agents |
 
 ### Bundled skills
 
-`build-feature`, `compact-context`, `compound`, `compound-refresh`, `deliberate`,
-`file-lock`, `fix-ci`, `harness-architect`, `harvest`, `impl-plan`,
-`operational-closure`, `plan-harden`, `plan-review`, `pr-lifecycle`, `review`,
-`runtime-verification`, `safety-modes`, `skill-search`, `spike`
+The canonical bundled-skill membership is enforced by the structural plugin
+test in `tests/integration/plugin_manifest_test.go`, which checks
+`plugin/skills/*/SKILL.md` against the expected bundle set.
 
 ## Skill locations and drift
 
