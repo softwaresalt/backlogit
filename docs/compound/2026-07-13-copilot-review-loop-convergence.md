@@ -26,11 +26,12 @@ settings whose interaction is easy to misread:
 
 * `copilot_code_review` runs on **every push** to a PR branch — each push
   auto-triggers a fresh Copilot review.
-* `dismiss_stale_reviews_on_push: true` — this dismisses stale **approvals** (formal
-  `APPROVED` / `CHANGES_REQUESTED` review state). Copilot posts `COMMENTED` reviews,
-  so this setting does **not** dismiss Copilot's review or remove its threads: prior
-  unresolved threads **persist** across pushes (they may render as `isOutdated` when
-  the lines they anchored to shift, but they still count toward
+* `dismiss_stale_reviews_on_push: true` — this dismisses stale **approvals**
+  (`APPROVED` reviews) only. `CHANGES_REQUESTED` and `COMMENTED` reviews are **not**
+  dismissed by this setting, and Copilot posts `COMMENTED` reviews — so it does not
+  dismiss Copilot's review or remove its threads: prior unresolved threads
+  **persist** across pushes (they may render as `isOutdated` when the lines they
+  anchored to shift, but they still count toward
   `required_review_thread_resolution`).
 
 Required checks: `Detect code changes`, `test`, `Docline frontmatter gate`.
