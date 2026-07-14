@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -552,7 +551,7 @@ func clearParentID(ctx context.Context, ws *Workspace, itemID string) error {
 		return nil
 	}
 	artifact.ParentID = ""
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
 		return fmt.Errorf("persist cleared parent_id for %s: %w", itemID, err)
 	}
@@ -641,7 +640,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	// Update the artifact with new parent and ID.
 	artifact.ParentID = newParentID
 	artifact.ID = newID
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 
 	// Scan for other artifacts that reference oldID in their frontmatter.
 	// This is done outside the transaction (read-only) so the walk does not
