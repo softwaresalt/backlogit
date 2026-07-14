@@ -6,7 +6,7 @@ source: docs/memory/2026-07-14/stage-governance-docline-memory.md
 doc_type: memory
 description: 'Corrected session continuity for blocked shipments 094-S and 095-S after authorization and Copilot review findings.'
 docline:
-    ms.date: 2026-07-14T21:43:31Z
+    ms.date: 2026-07-14T22:13:07Z
     ms.topic: memory
 ---
 
@@ -14,7 +14,7 @@ docline:
 
 ## Current State
 
-- Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.005-T` are blocked.
+- Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.008-T` are blocked.
 - Shipment `095-S`, feature `106-F`, and tasks `106.001-T` through `106.007-T` are blocked.
 - No shipment, feature, or task was unblocked, claimed, implemented, removed, or archived.
 - Both plans remain `review_state: blocked`; formal plan-review provenance is NOT RUN and waiver authorization is NONE.
@@ -23,16 +23,18 @@ docline:
 
 ## Refinement Decisions
 
-- Stage and both harvest skill copies independently validate durable exact-plan provenance; caller assertions and prose cleared/ready text are insufficient.
-- New task `105.005-T` width-isolates the two harvest skill copies. It depends on `105.001-T` and `105.002-T` and is a blocked member of `094-S`.
-- Direct harvest must validate immediately before every mutation. Missing/malformed evidence, invalid/reused ledger, or consumed waiver produces zero backlog mutations.
-- Future waiver mode uses exactly one uniquely parsed final `## Operator Waiver Ledger` containing one fenced YAML mapping and no trailing content.
-- Canonical lowercase SHA-256 normalizes UTF-8 CRLF to LF, removes only the validated final ledger block, and hashes every other canonical byte. Content inserted before the ledger changes the digest; content appended after it is rejected.
-- Docline task `106.001-T` retains the live-corpus guard and adds hermetic temporary-Git-repository cases for missing keys, scalar type/value, malformed YAML, tracked exclusions, and untracked exclusion in fewer than five functions.
+- Task `105.006-T` isolates the canonical final-ledger parser and digest; `105.007-T` isolates lock/CAS reservation ownership; `105.008-T` exposes the repository-native reserve/validate/consume CLI.
+- Reservation is atomic under a plan-scoped cross-process lock. Concurrent Stage/direct callers yield exactly one immutable owner plus opaque token; every loser blocks before mutation.
+- Owner, token, exact digest, state, expiry, mode, and phase are validated immediately before every mutation. Wrong or stale state fails closed.
+- `stage_managed` mode retains ownership through shipment assembly and consumes with exact harvested IDs plus required shipment ID.
+- `direct_harvest` mode consumes after its last harvest mutation with exact IDs and no shipment ID; it grants no later shipment authority.
+- Both harvest copies independently validate provenance. Missing evidence, prose readiness, conflict, wrong owner/token/phase, malformed ledger, or consumed state produces zero mutations.
+- Canonical lowercase SHA-256 normalizes valid UTF-8 CRLF to LF, removes only the uniquely parsed final ledger block, and hashes every other byte. Missing, duplicate, malformed, unknown-field, non-final, or trailing ledgers fail closed.
+- Docline task `106.001-T` retains the live-corpus guard and adds hermetic temporary-Git cases for tracked missing keys and untracked exclusion plus positive/edge cases.
 
 ## Upstream Handoff
 
-Active high-priority stash `823BADF4` now names all four external Principle IV-bounded templates:
+Active high-priority stash `823BADF4` names all four external Principle IV-bounded templates:
 
 - `templates/agents/stage.agent.md.tmpl`
 - `templates/skills/plan-review/SKILL.md.tmpl`
@@ -41,25 +43,29 @@ Active high-priority stash `823BADF4` now names all four external Principle IV-b
 
 Closure requires all four external changes to land, regeneration of all four `.github` targets, and parity verification. The stash remains outside in-repo shipments.
 
-## Authorized Review Refinement
+## Fresh Review Follow-up
 
-- `PRRT_kwDORzozKM6Q4OM7`: plan now covers both harvest copies, independent pre-mutation validation, zero-mutation negatives, and the upstream harvest template.
-- `PRRT_kwDORzozKM6Q4ONU`: `105.003-T` remains a two-file Stage concern; new `105.005-T` carries the two-file harvest concern and dependencies.
-- `PRRT_kwDORzozKM6Q4ONt` and `PRRT_kwDORzozKM6Q4OOU`: plan and decision now define the uniquely parsed final-ledger block, canonical digest, and all duplicate/missing/malformed/non-final/trailing errors.
-- `PRRT_kwDORzozKM6Q4OOr`: plan and `106.001-T` now require live-corpus plus hermetic synthetic Git fixtures.
+- Fixed the literal newline escape in this memory.
+- Corrected `105.004-T` to G1 scenario 4.
+- Added missing-ledger, unknown-field, concurrency, owner/token/phase, mode, and bypass negatives to `105.001-T`.
+- Split atomic lifecycle implementation into `105.006-T` through `105.008-T`; `105.002-T` now depends on the CLI task.
+- Reconciled Stage-managed and direct-harvest shipment timing in the plan, decision, and tasks.
+- Harvested provenance remains a supported-tooling blocker: current CLI cannot stamp `custom_fields.source_stash_id` or amend archived stash records. Stash `3E12DC97` tracks an atomic repair command for `8CD8F46A -> 105-F`, `CA877CD1 -> 105.004-T`, and `A4BE2FAD -> 106-F`; raw backlog edits are prohibited.
 
 ## Stash and Integrity
 
-- Consumed source entries `8CD8F46A`, `CA877CD1`, and `A4BE2FAD` remain archived.
-- `7F0A6E89`, `823BADF4`, and `DB1F9026` remain active/deferred; none is in an in-repo shipment.
+- Consumed source entries `8CD8F46A`, `CA877CD1`, and `A4BE2FAD` remain archived but lack rehydratable harvested provenance.
+- `7F0A6E89`, `823BADF4`, `DB1F9026`, and `3E12DC97` remain active/deferred; none is in an in-repo shipment.
 - Use `backlogit.exe --cwd .` exclusively; MCP remains bound to the installed-plugin workspace.
-- Repository docline lint reports zero violations; the repository-native index contains 850 artifacts.`r`n- Doctor reports only pre-existing orphan `016.001-R`; zero fixes were applied.
+- Repository-native sync indexed 854 artifacts; docline lint reports zero violations.
+- Doctor reports only pre-existing orphan `016.001-R`; zero fixes were applied.
 - `docs/decisions/2026-07-13-scratch-spike.md` remains untracked and must not be edited, deleted, or committed.
 
 ## Next Steps
 
-1. Keep all artifacts blocked after this refinement.
-2. Obtain fresh Copilot review for the exact refined HEAD and handle only genuinely new bounded findings.
-3. Require successful formal multi-persona evidence for each exact plan or a separate explicit waiver naming its final path and digest.
-4. Require supported requeue from `DB1F9026`, or separately authorized artifact-preserving replacement shipment assembly, before Ship intake.
-5. Do not merge the staging PR.
+1. Keep every plan, shipment, feature, and task blocked.
+2. Commit/push this bounded follow-up and resolve only review threads actually fixed.
+3. Leave harvested-provenance review open unless a supported repair becomes available.
+4. Require successful formal multi-persona evidence for each exact final plan or a separate explicit waiver naming its path and digest.
+5. Require supported requeue from `DB1F9026`, or separately authorized artifact-preserving replacement shipment assembly, before Ship intake.
+6. Do not merge the staging PR.
