@@ -1,0 +1,201 @@
+---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
+title: 'Docline soft-key regression guard implementation plan'
+source: docs/exec-plans/2026-07-14-docline-soft-key-regression-guard-plan.md
+doc_type: plan
+description: 'Test-first plan to enforce explicit docline chunk_strategy and schema_version values on tracked in-scope Markdown and backfill known omissions.'
+docline:
+    date: 2026-07-14T18:38:00Z
+    origin: docs/decisions/2026-07-14-docline-soft-key-regression-decision.md
+    linked_stash_ids:
+        - A4BE2FAD
+    review_state: bootstrap-waived
+---
+
+# Docline Soft-key Regression Guard Implementation Plan
+
+## Problem Frame
+
+Docline defaults make missing `chunk_strategy` and `schema_version` keys invisible to current validation. The repository needs a persistent guard over committed authoring state. The guard must not touch or fail because of the intentional untracked scratch spike.
+
+**Origin:** `docs/decisions/2026-07-14-docline-soft-key-regression-decision.md`.
+
+## Requirements Trace
+
+| ID | Requirement | Implementation |
+|---|---|---|
+| D1 | Detect missing explicit soft keys persistently | Unit D1 adds a git-tracked integration inventory and exact-value assertions. |
+| D2 | Prove TDD RED then GREEN | D1 first fails on nine tracked documents; D2-D7 backfill them. |
+| D3 | Preserve untracked scratch | Inventory uses `git ls-files`; no task includes the scratch path. |
+| D4 | Keep tasks under 2 hours and fewer than 3 files | Backfill is split into six one/two-file units. |
+| D5 | Avoid schema/runtime expansion | No production docline or schema file changes. |
+
+## Scope Boundaries
+
+### In Scope
+
+One Go integration guard and the nine tracked Markdown files listed in the decision.
+
+### Out of Scope
+
+- `docs/decisions/2026-07-13-scratch-spike.md` (untracked; do not read for mutation, edit, delete, or stage).
+- `internal/docline` production behavior.
+- `schemas/docline/base-frontmatter-v1.schema.json`.
+- docs/memory, docs/archive, and non-docline Markdown.
+
+## Implementation Units
+
+### Unit D1: Add tracked-doc soft-key guard
+
+**Files:** `tests/integration/docline_soft_keys_test.go`
+**Effort:** S, under 2 hours; 1 file; 3 scenarios.
+**Skill domain:** Go integration test.
+**Execution posture:** test-first.
+**Dependencies:** none.
+
+Use `git ls-files` from the repository root to enumerate committed Markdown. Filter to `docs/**` except `docs/memory/**` and `docs/archive/**`, plus `README.md` and `AGENTS.md`. Parse leading YAML with the existing YAML dependency and require exact values `h1-h2-h3` and `1.0`. Table/subtests must report each path and field. Fail clearly if Git enumeration or YAML parsing fails.
+
+Scenarios: compliant tracked document, tracked document missing either key (represented by the current corpus during RED), and excluded/untracked paths not entering the inventory. The live-corpus test is the persistent regression guard.
+
+**RED:** `go test ./tests/integration -run TestTrackedDoclineSoftKeys -count=1` fails and names exactly the nine tracked omissions from the decision.
+**GREEN:** after D2-D7, the same command passes.
+
+**Acceptance criteria:** deterministic tracked-only scope; exact values enforced; no scratch path staged or modified.
+
+### Unit D2: Backfill 092-S closure metadata
+
+**Files:** `docs/closure/2026-07-13-092-S-compound-refresh.md`, `docs/closure/2026-07-13-092-S-item-writer-utc-closure.md`
+**Effort:** XS; 2 files.
+**Skill domain:** closure Markdown metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+Add the two canonical keys without changing body bytes or other frontmatter semantics.
+
+### Unit D3: Backfill parallel-test and lifecycle learnings
+
+**Files:** `docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md`, `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md`
+**Effort:** XS; 2 files.
+**Skill domain:** compound Markdown metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+### Unit D4: Backfill UTC timestamp learning
+
+**Files:** `docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md`
+**Effort:** XS; 1 file.
+**Skill domain:** compound Markdown metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+### Unit D5: Backfill deterministic-gates decision and plan
+
+**Files:** `docs/decisions/2026-06-30-backlogit-deterministic-gates-slice-deliberation.md`, `docs/exec-plans/2026-06-30-backlogit-deterministic-gates-slice-plan.md`
+**Effort:** XS; 2 files.
+**Skill domain:** paired planning-document metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+### Unit D6: Backfill evals design metadata
+
+**Files:** `docs/design-docs/autoharness-evals-gates-design.md`
+**Effort:** XS; 1 file.
+**Skill domain:** design Markdown metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+### Unit D7: Backfill covering-feature plan metadata
+
+**Files:** `docs/exec-plans/2026-07-02-shipment-covering-feature-display-plan.md`
+**Effort:** XS; 1 file.
+**Skill domain:** plan Markdown metadata.
+**Execution posture:** metadata-only green step.
+**Dependencies:** D1 RED.
+
+Units D3-D7 use the same acceptance criterion as D2: canonical keys added, body bytes and all unrelated frontmatter unchanged.
+
+## Dependency Graph
+
+`D1 RED → {D2, D3, D4, D5, D6, D7} → D1 GREEN`. Backfill units are independent.
+
+## TDD and Quality-gate Sequence
+
+1. Add D1 and run the targeted test; capture the nine-file RED set.
+2. Apply D2-D7, preserving body bytes.
+3. Run the targeted test; require GREEN.
+4. Run `go test ./...`.
+5. Run `go vet ./...`.
+6. Run `golangci-lint run`.
+7. Run `gofmt -l .` and require no output.
+8. Run `go run ./cmd/backlogit docs lint` in a clean checkout and require zero violations.
+9. Verify `git status --short` still lists the pre-existing scratch file only as untracked and never staged.
+
+## Decisions and Rationale
+
+- **Integration test rather than production lint rule:** the invariant concerns committed repository authoring, while schema defaults remain legitimate for ingestion.
+- **Git-tracked inventory:** CI guards every committed document and leaves operator-owned scratch untouched.
+- **Exact values:** mere key presence would allow empty or drifted values.
+- **Small backfill slices:** each unit stays below the file-count heuristic.
+
+## Risks and Caveats
+
+- Integration execution requires Git; this repository's CI checkout and development workflow already require it.
+- Scope filtering duplicates the public docline scope at a high level; comments must identify that coupling.
+- A future schema version intentionally updates test and corpus together.
+- Local full-tree docs lint may inspect untracked scratch; do not modify the scratch to make a local command green. Use the targeted guard and clean-CI result honestly.
+
+## Plan Hardening Signals
+
+- **Public API, schema, or contract change:** absent — no production/schema behavior changes.
+- **Security, auth, permission, or compliance:** absent.
+- **Migration, backfill, destructive action:** limited additive metadata backfill; reversible, no body edits.
+- **External integration or dependency:** Git is already a repository prerequisite; no new dependency.
+- **High runtime, rollout, or rollback risk:** absent; test-only guard plus metadata.
+
+Requires plan hardening: no
+
+## Runtime Verification and Closure
+
+No shipped runtime surface changes. Verification is the targeted integration test, full Go gates, body-byte-preservation review, and CI. Closure should record the RED omission set, GREEN commit, and confirmation that the untracked scratch file was untouched. Rollback is commit revert.
+
+## Constitution Check
+
+- **I:** only a Go integration test is added; standard gates and idiomatic error assertions apply.
+- **II (NON-NEGOTIABLE):** D1 is observed RED on known omissions before any backfill, then GREEN.
+- **III/IV (NON-NEGOTIABLE containment):** Git enumeration and writes remain inside the repository; scratch is excluded from mutation.
+- **V:** failures name exact paths/fields and closure records RED/GREEN evidence.
+- **VI:** no dependency is added; test and metadata units are isolated.
+- **VII (NON-NEGOTIABLE):** no deletion/overwrite of the scratch file is authorized.
+- **VIII:** blast radius is low; investigate-first research completed and hardening is not required.
+- **IX:** the test guards committed human-readable state.
+- **X:** deterministic inventory avoids repeated broad manual audits.
+- **XI:** downstream delivery remains merge-commit-only.
+
+No constitutional violation, waiver, or exception is planned.
+
+## Plan Review
+
+### Gate Decision: WAIVED — bootstrap only
+
+**Formal plan-review provenance:** NOT RUN. This invocation exposes no agent/task dispatch tool; no independent reviewer persona was spawned. The following assessment is informal single-agent work.
+
+**Bootstrap authorization:** operator's 2026-07-14 `stage next` instruction.
+**Scope:** this plan only.
+**Missing capability:** semantic reviewer subagent dispatch.
+**Reason:** operator directed plan/review/harvest while the environment was known not to expose dispatch.
+**Authorizer:** operator via current request.
+**Issued:** 2026-07-14T18:38:00Z.
+**Expiry:** single use; immediately after this plan's harvest.
+**Residual risk:** no independent persona critique; hosted staging-PR review is supplemental.
+**Disposition:** one-time harvest authorized under WAIVED mode, not formal PASS.
+
+### Informal Single-agent Structured Assessment
+
+- **Constitution lens:** PASS; TDD and scratch preservation are explicit.
+- **Go lens:** PASS; one integration test, existing YAML dependency, fewer than four scenarios.
+- **Scope lens:** PASS; each unit is one or two files and one concern.
+- **Learnings lens:** applies the mirrored-asset regression principle by guarding the actual committed surface rather than trusting defaults.
+- **Architecture lens:** PASS; no runtime/schema coupling added.
+
+No P0/P1 finding was identified by this non-formal assessment. It is not formal multi-persona evidence.
