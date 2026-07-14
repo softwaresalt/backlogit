@@ -3,14 +3,11 @@ chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 title: 'Stage memory: blocked planning governance and docline shipments'
 source: docs/memory/2026-07-14/stage-governance-docline-memory.md
-doc_type: guide
+doc_type: memory
 description: 'Corrected session continuity for blocked shipments 094-S and 095-S after authorization and Copilot review findings.'
 docline:
-    date: 2026-07-14T19:15:00Z
-    agent: stage
-    shipments:
-        - 094-S
-        - 095-S
+    ms.date: 2026-07-14T19:15:00Z
+    ms.topic: memory
 ---
 
 # Stage Memory: Blocked Planning Governance and Docline Shipments

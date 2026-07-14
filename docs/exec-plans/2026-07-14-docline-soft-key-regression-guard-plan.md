@@ -54,7 +54,7 @@ One Go integration guard and the nine tracked Markdown files listed in the decis
 **Execution posture:** test-first.
 **Dependencies:** none.
 
-Use `git ls-files` from the repository root to enumerate committed Markdown. Filter to `docs/**` except `docs/memory/**` and `docs/archive/**`, plus `README.md` and `AGENTS.md`. Parse leading YAML with the existing YAML dependency and require exact values `h1-h2-h3` and `1.0`. Table/subtests must report each path and field. Fail clearly if Git enumeration or YAML parsing fails.
+Use `git ls-files` from the repository root to enumerate committed Markdown. Filter to `docs/**` except `docs/memory/**` and `docs/archive/**`, plus `README.md` and `AGENTS.md`. Parse leading YAML with the existing YAML dependency and require exact YAML scalar values `h1-h2-h3` and the string `"1.0"` (not numeric `1.0`). Table/subtests must report each path and field. Fail clearly if Git enumeration or YAML parsing fails.
 
 Scenarios: compliant tracked document, tracked document missing either key (represented by the current corpus during RED), and excluded/untracked paths not entering the inventory. The live-corpus test is the persistent regression guard.
 
