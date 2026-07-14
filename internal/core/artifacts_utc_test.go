@@ -20,9 +20,10 @@ var zoneOffsetRE = regexp.MustCompile(`[+-]\d{2}:\d{2}$`)
 // withNonUTCLocal forces the process-global time.Local to a fixed non-UTC zone
 // so a pre-change time.Now() write serializes a machine-local offset instead of
 // a canonical trailing "Z". The override is restored on cleanup. Tests using it
-// MUST be serial (no t.Parallel) because time.Local is process-global; package
-// core_test runs a single t.Parallel test, which the Go runtime resumes only
-// after all serial tests complete, so these serial overrides never overlap it.
+// MUST be serial (no t.Parallel) because time.Local is process-global. The
+// core_test binary currently runs no t.Parallel tests; even if one were added,
+// the Go runtime resumes parallel tests only after all serial tests complete,
+// so a serial override restored on cleanup never overlaps a parallel test.
 func withNonUTCLocal(t *testing.T) {
 	t.Helper()
 	orig := time.Local
