@@ -1,6 +1,8 @@
 ---
 description: "Compound-refresh report for shipment 091-S post-merge closure — reinforced the docline contract learning and captured the Copilot review-loop convergence dynamic."
 doc_type: closure
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 docline:
   ms.date: 2026-07-13T00:00:00Z
   ms.topic: reference
