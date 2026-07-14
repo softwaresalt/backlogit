@@ -3,6 +3,8 @@ title: "Copilot review-loop convergence under auto-review-on-push rulesets"
 source: docs/compound/2026-07-13-copilot-review-loop-convergence.md
 doc_type: learning
 description: "On repos where copilot_code_review auto-triggers on every push, each push spawns a fresh Copilot review that may raise new threads while prior unresolved threads persist (dismiss_stale_reviews_on_push affects stale approvals, not COMMENTED reviews or their threads). Batch fixes to minimize review passes; per §1.8 the cycle cap stops automated pushing but never clears the merge gate: only fixed or objectively invalid/informational threads may be resolved, while valid unresolved findings stay merge-blocking until fixed or explicitly operator-overridden."
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 docline:
     date: 2026-07-13T00:00:00Z
     severity: medium

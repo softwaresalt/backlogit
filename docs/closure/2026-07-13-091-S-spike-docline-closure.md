@@ -1,6 +1,8 @@
 ---
 description: "Post-merge operational closure for shipment 091-S — reconciled the spike skill findings-artifact frontmatter example with the docline base-frontmatter v1 contract."
 doc_type: closure
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 docline:
   ms.date: 2026-07-13T00:00:00Z
   ms.topic: reference
