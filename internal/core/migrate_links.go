@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -164,7 +163,7 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 			result.Skipped++
 			continue
 		}
-		artifact.UpdatedAt = time.Now()
+		artifact.UpdatedAt = models.NowUTC()
 		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: file write failed; skipping",
 				"source_id", sourceID, "error", writeErr)
