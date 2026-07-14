@@ -10,7 +10,7 @@ docline:
     origin: docs/decisions/2026-07-14-docline-soft-key-regression-decision.md
     linked_stash_ids:
         - A4BE2FAD
-    review_state: bootstrap-waived
+    review_state: blocked
 ---
 
 # Docline Soft-key Regression Guard Implementation Plan
@@ -176,26 +176,15 @@ No constitutional violation, waiver, or exception is planned.
 
 ## Plan Review
 
-### Gate Decision: WAIVED — bootstrap only
+### Gate Decision: BLOCKED
 
-**Formal plan-review provenance:** NOT RUN. This invocation exposes no agent/task dispatch tool; no independent reviewer persona was spawned. The following assessment is informal single-agent work.
+**Formal plan-review provenance:** NOT RUN. This invocation exposes no agent/task dispatch tool, so no independent reviewer persona was spawned and no formal gate result exists.
 
-**Bootstrap authorization:** operator's 2026-07-14 `stage next` instruction.
-**Scope:** this plan only.
+**Waiver authorization:** NONE. The operator's generic `stage next` command is workflow routing, not a waiver or approval signal.
 **Missing capability:** semantic reviewer subagent dispatch.
-**Reason:** operator directed plan/review/harvest while the environment was known not to expose dispatch.
-**Authorizer:** operator via current request.
-**Issued:** 2026-07-14T18:38:00Z.
-**Expiry:** single use; immediately after this plan's harvest.
-**Residual risk:** no independent persona critique; hosted staging-PR review is supplemental.
-**Disposition:** one-time harvest authorized under WAIVED mode, not formal PASS.
+**Current disposition:** shipment `095-S`, feature `106-F`, and all member tasks are blocked. Preserved backlog artifacts are not harvest- or Ship-ready.
+**Required unblock:** either append successful formal multi-persona review evidence for this exact plan, or obtain a new explicit plan-scoped operator waiver that names the plan, authorization, scope, risk, and expiry and is handled through the durable reservation/consumption contract in the governance plan.
 
-### Informal Single-agent Structured Assessment
+### Informal Single-agent Assessment
 
-- **Constitution lens:** PASS; TDD and scratch preservation are explicit.
-- **Go lens:** PASS; one integration test, existing YAML dependency, fewer than four scenarios.
-- **Scope lens:** PASS; each unit is one or two files and one concern.
-- **Learnings lens:** applies the mirrored-asset regression principle by guarding the actual committed surface rather than trusting defaults.
-- **Architecture lens:** PASS; no runtime/schema coupling added.
-
-No P0/P1 finding was identified by this non-formal assessment. It is not formal multi-persona evidence.
+The existing planning observations remain informal context only. They are not a formal gate verdict and cannot unblock harvest or Ship.
