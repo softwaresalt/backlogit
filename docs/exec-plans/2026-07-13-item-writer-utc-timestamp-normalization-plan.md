@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Normalize backlogit item-artifact created_at/updated_at emission to UTC (Z) across the internal/core item writers so item frontmatter matches the UTC style already used by stash entries.
+description: Normalize backlogit item-artifact created_at/updated_at emission to canonical UTC (Z) across EVERY item-artifact timestamp write site in internal/core (create, update, link, gate, queue, section-serializer, shipment, lifecycle, and migration paths), split into two ≤2h tasks.
 doc_type: plan
 docline:
     stash_ref: 9B38A09E
@@ -19,111 +19,173 @@ Stash entry `9B38A09E` (task, medium): *"Normalize backlogit CLI
 created_at/updated_at timestamp emission to UTC (Z) across item artifact
 writers."* Surfaced by the PR #230 Copilot review.
 
-backlogit currently writes two timestamp styles into `.backlogit/`:
+backlogit writes two timestamp styles into `.backlogit/`:
 
-* **Stash entries** are written UTC-normalized. `internal/core/stash.go`
-  uses `time.Now().UTC()` at every write site (lines 279, 286, 395, 592,
-  658, 758, 868), so `stash.jsonl` timestamps end in `Z`.
-* **Item artifacts** (features, tasks, shipments, subtasks) are written with a
-  local offset. `internal/core/artifacts.go` stamps `now := time.Now()`
-  (line 225) into `CreatedAt`/`UpdatedAt`, and the update paths at lines 552,
-  819, and 856 use `time.Now()` as well. When the frontmatter map (lines
-  290-296) is serialized, the `time.Time` retains its local zone, producing
-  offsets such as `-07:00` (see the fixtures in
-  `internal/core/artifact_size_test.go:28,34`).
+* **Stash entries** are UTC-normalized. `internal/core/stash.go` uses
+  `time.Now().UTC()` at every write site, so `stash.jsonl` timestamps end in
+  `Z`.
+* **Item artifacts** (features, tasks, subtasks, shipments) are written with a
+  local offset. The writers stamp `time.Now()` (local zone) into
+  `CreatedAt`/`UpdatedAt`; the YAML serializer (`internal/models/frontmatter.go`
+  `SerializeFrontmatter` → `yaml.Marshal`) renders the `time.Time` in RFC3339Nano
+  **preserving its zone**, producing offsets such as `-07:00` (confirmed on
+  disk, e.g. `created_at: 2026-07-13T16:46:33.0672771-07:00`).
 
-The mixed styles are cosmetically inconsistent and can surprise lexical
-sorting and cross-artifact auditing tooling that assumes a single canonical
-zone.
+The mixed styles are cosmetically inconsistent and can surprise lexical sorting
+and cross-artifact auditing that assumes a single canonical zone.
 
 ## Goal
 
-Every item-artifact writer emits `created_at`/`updated_at` in UTC (`Z`),
-matching the stash convention, with no change to timestamp precision
-(RFC3339Nano) and full backward compatibility for already-written artifacts.
+**Every** item-artifact writer emits `created_at`/`updated_at` in canonical UTC
+(trailing `Z`), matching the stash convention, with no change to timestamp
+precision (RFC3339Nano) and full backward compatibility for already-written
+artifacts.
+
+## Complete implementation inventory (audited 2026-07-13)
+
+The initial draft under-scoped this to `artifacts.go` alone. A full audit of
+`internal/core` (revised in response to PR #234 Copilot review, threads
+`3575108864` / `3575121017`) enumerates **every** item-artifact timestamp write
+site. All are `time.Now()` (local); each must become UTC via a shared helper.
+
+**Cluster 1 — core item writers (Task `103.001-T`):**
+
+| File | Line(s) | Path |
+|---|---|---|
+| `internal/core/artifacts.go` | 225 (`now := time.Now()` → CreatedAt+UpdatedAt) | create |
+| `internal/core/artifacts.go` | 552 | harness_status update restamp |
+| `internal/core/artifacts.go` | 819 | AddLink restamp (`source.UpdatedAt`) |
+| `internal/core/artifacts.go` | 856 | RemoveLink restamp (`source.UpdatedAt`) |
+| `internal/core/artifact_references.go` | 105 | adopt / ID-rewrite deep-copy restamp |
+| `internal/core/gate_transition.go` | 341 | `writeStatusDirect` restamp |
+| `internal/core/queue.go` | 277 (`stamp := time.Now()` → assigned 293), 395 | queue mutation restamps |
+| `internal/core/templates/service.go` | 124-127 (`now := time.Now()`; `fm["updated_at"] = now`) | **direct frontmatter serializer** (section-update path — bypasses the central writer) |
+
+**Cluster 2 — shipment, lifecycle & migration writers (Task `103.002-T`):**
+
+| File | Line(s) | Path |
+|---|---|---|
+| `internal/core/shipment.go` | 144, 200, 248 (`shipment.UpdatedAt`), 255 (`item.UpdatedAt`) | shipment create/add/mutate restamps |
+| `internal/core/shipment_lifecycle.go` | 352, 491, 530 (`parent.UpdatedAt`), 555, 644 | shipment lifecycle transition restamps |
+| `internal/core/migrate_links.go` | 167 | link-migration restamp |
+
+**Explicitly OUT of scope (separate concern, not item frontmatter):** JSONL
+event-log timestamps, e.g. `events.Event.Timestamp: time.Now()` at
+`internal/core/shipment.go:299` (and peers), which are formatted by
+`internal/core/logs.go` via RFC3339Nano into `.backlogit/logs/*.jsonl`. Those
+are the event-history stream, not item artifacts, and are deferred as a distinct
+follow-up if raised.
 
 ## Non-goals
 
 * No backfill/rewrite of existing on-disk artifacts. Historical local-offset
-  timestamps remain valid; the DB read path already parses both forms.
-* No change to the JSONL event-log timestamp emission in `internal/core/logs.go`
-  (out of scope for this stash entry; it is a separate concern if raised).
-* No schema, CLI-distribution, or template-family changes.
+  timestamps remain valid; the DB read path (`internal/core/queries.go:75-86`)
+  already parses `RFC3339Nano` and `RFC3339` and is zone-agnostic.
+* No change to JSONL event-log emission (`logs.go`) — see out-of-scope note.
+* No schema, CLI-distribution, or `.tmpl` template-family changes.
 
 ## Blast-radius assessment
 
-* **Touches:** `internal/core` production code only (item writer + update
-  paths). Behavior change is confined to the zone of newly emitted item
-  timestamps.
-* **Does NOT touch:** JSON schemas, CLI packaging/distribution, or any
-  template family. Therefore `plan-harden` is **not** invoked (the elevated
-  blast-radius triggers — schemas, distribution, multi-template — are all
-  absent). The change is additive normalization: `internal/core/queries.go`
-  (lines 75-86) already falls back across `RFC3339Nano` and `RFC3339` when
-  parsing, and neither variant is zone-restricted, so mixed old/new zones
-  round-trip cleanly.
+* **Touches:** `internal/core` production Go code only, now spanning 8 files
+  (~19 assignment sites). `internal/core/templates/service.go` is the template
+  **service** (section-serialization Go code), **not** a `.tmpl` template
+  family.
+* **Does NOT touch:** JSON schemas, CLI packaging/distribution, or any `.tmpl`
+  template family. The elevated-blast-radius `plan-harden` triggers (schemas,
+  distribution, multiple template families) are therefore absent, so
+  `plan-harden` is **not** invoked. Mitigation for the broader-but-mechanical
+  surface: a single shared `nowUTC()` helper centralizes the convention so
+  every current and future writer inherits it. The change is additive
+  normalization; mixed old/new zones round-trip cleanly through the zone-agnostic
+  read path.
 
 ## Approach (test-first / TDD)
 
-1. **Write the failing test first.** Add a regression test in
-   `internal/core` (e.g. `artifacts_utc_timestamp_test.go`) that:
-   * calls `CreateArtifact` for an item type,
-   * reads back the written Markdown frontmatter,
-   * asserts the raw `created_at` and `updated_at` strings are UTC — the
-     serialized value ends in `Z` (or has a `+00:00` offset), i.e. equals the
-     value formatted with `.UTC()`.
-   * Add a parallel assertion for an update path (e.g. a field/status update
-     that restamps `UpdatedAt`) so lines 552/819/856 are covered too.
-   Confirm the test fails against current `time.Now()` emission.
+1. **Introduce a shared helper.** Add `nowUTC() time.Time { return
+   time.Now().UTC() }` (or reuse the stash convention) in `internal/core`, so
+   the UTC contract is enforced centrally.
 
-2. **Make the minimal change.** Replace the item-writer `time.Now()` calls
-   with `time.Now().UTC()` at the emission sites:
-   * `internal/core/artifacts.go:225` (create),
-   * `internal/core/artifacts.go:552`, `:819`, `:856` (update restamps),
-   * audit `internal/core/artifact_references.go:105` and
-     `internal/core/gate_transition.go:341` (both restamp `UpdatedAt =
-     time.Now()`) and normalize any that write item frontmatter.
-   Prefer a single shared helper (e.g. `nowUTC()` or reuse the stash pattern)
-   so the convention is centrally enforced and future writers inherit it.
+2. **Write failing tests FIRST (exact `Z` assertion).** For each cluster, add
+   regression tests that call the writer, read back the emitted Markdown
+   **frontmatter string**, and assert the raw `created_at`/`updated_at` values
+   **end with exactly `Z`** (canonical UTC) — not merely a zero numeric offset.
+   Concretely: assert `strings.HasSuffix(value, "Z")` (equivalently, the
+   serialized value equals the value formatted with `.UTC()`), and assert it
+   does NOT contain a `+HH:MM`/`-HH:MM` offset. Confirm these tests **fail**
+   against the current local-`time.Now()` emission (red phase). Parse-side
+   tests may *separately* keep accepting historical `+/-HH:MM` offsets to prove
+   backward compatibility — the tolerance is on read, the strict `Z` assertion
+   is on write.
 
-3. **Green + regression.** Re-run the new test plus the existing
-   `internal/core` suite. Confirm round-trip parse still works and no existing
-   fixture assertion breaks (the `-07:00` fixtures in `artifact_size_test.go`
-   are *inputs* to the parser, not emission assertions, so they remain valid).
+3. **Make the minimal change.** Replace every inventoried `time.Now()` write
+   site (both clusters) with the shared `nowUTC()` helper.
 
-4. **Full package gate.** `go test ./internal/core/...` (and the wider suite
-   if touched) must stay green.
+4. **Green + regression.** Re-run the new tests plus the existing
+   `internal/core` suite. Confirm round-trip parse still works; the `-07:00`
+   fixtures in `artifact_size_test.go` are parser *inputs*, not emission
+   assertions, so they remain valid.
+
+5. **Full package gate.** `go test ./internal/core/...` (and `./internal/models/...`
+   if touched) stays green.
+
+## Task decomposition (2-hour rule / width isolation)
+
+Because the audited surface is ~19 sites across 8 files with comprehensive
+per-path TDD, it exceeds a single ~2-hour task and is split:
+
+* **`103.001-T` — Core item writers + shared helper.** Introduce `nowUTC()`;
+  normalize `artifacts.go` (create + update/link sites), `artifact_references.go`,
+  `gate_transition.go`, `queue.go`, and the `templates/service.go` direct
+  serializer. Exact-`Z` tests for create, harness-status update, link add/remove,
+  adopt/reference-rewrite, gate status-direct, queue update, and section-update.
+* **`103.002-T` — Shipment, lifecycle & migration writers.** Depends on
+  `103.001-T` (consumes the shared `nowUTC()` helper). Normalize `shipment.go`,
+  `shipment_lifecycle.go`, and `migrate_links.go`. Exact-`Z` tests for shipment
+  create/add/mutate, lifecycle transitions, and link migration.
+
+Both tasks belong to shipment `092-S`.
 
 ## Acceptance criteria
 
-* New item artifacts written by the CLI/MCP emit `created_at`/`updated_at` in
-  UTC (`Z`).
-* A regression test asserts UTC emission for both the create and an update
-  path and fails on the pre-change code.
-* Existing artifacts with local-offset timestamps still parse and round-trip
-  (no forced backfill).
+* A shared UTC-now helper exists and is used by **all** inventoried item-artifact
+  write sites (both clusters); no item writer calls bare `time.Now()`.
+* New item artifacts (features, tasks, subtasks, shipments) emit
+  `created_at`/`updated_at` ending in exactly `Z`.
+* Per-path regression tests assert exact-`Z` emission and **fail** on the
+  pre-change code (red phase demonstrated); parse-side tests continue to accept
+  historical offsets (backward compatibility proven).
 * `go test ./internal/core/...` is green.
 
 ## Estimated effort
 
-Single focused change in one package with test-first coverage. Well within the
-2-hour rule; single skill domain (Go code) — no doc/template work bundled in.
+Two focused tasks, each within the 2-hour rule; single skill domain (Go code)
+with no doc/template-family work bundled in.
 
 ## Plan review
 
-**Provenance: inline single-agent self-assessment by the Stage agent — NOT a
-formal multi-persona `plan-review` skill run.** The Stage agent operates as a
-single agent in this environment and cannot spawn the independent reviewer
-personas the formal gate requires, so this is labeled honestly as a self-check.
+**Provenance (honest): inline single-agent self-assessment + incorporation of
+external automated review (GitHub Copilot code review on PR #234).** This is
+**NOT** a formal multi-persona `plan-review` skill run. The formal
+`plan-review` skill (`.github/skills/plan-review/SKILL.md`; required gate in the
+AGENTS.md Release Unit Pipeline) **spawns independent reviewer persona
+subagents**; the Stage agent in this environment cannot dispatch persona
+subagents, so the formal gate could not be executed. It is not simulated or
+claimed.
 
-* **Scope / width isolation:** PASS. Single package (`internal/core`), single
-  concern (timestamp zone). No docs/schema/template work folded in.
-* **2-hour rule:** PASS. Contained edit + focused regression test.
-* **Test-first:** PASS. Failing test precedes the change; both create and
-  update paths covered.
-* **Backward compatibility:** PASS. Read path already parses mixed zones; no
-  backfill required.
-* **Residual risk:** LOW. If a later concern wants event-log (`logs.go`) or
-  a historical backfill, that is explicitly deferred as a separate item.
+External review findings incorporated into this revision:
 
-Self-assessment disposition: **proceed to harvest.** No `plan-harden` needed.
+* **[B — high] Incomplete writer audit** (threads `3575108864`, `3575121017`):
+  resolved by the Complete Implementation Inventory above (all 8 files / ~19
+  sites enumerated and verified in-tree) and the two-task split.
+* **[D — TDD precision] Assert canonical `Z`** (thread `3575108894`): resolved
+  by the exact-`Z` write-side assertion in Approach step 2, with parse-side
+  offset tolerance kept separate.
+
+Self-assessment: scope/width isolation PASS (Go-only, no docs/schema/template
+family); 2-hour rule PASS (split into two ≤2h tasks); test-first PASS (red phase
+now demonstrable via exact-`Z` assertions); backward compatibility PASS
+(zone-agnostic read path). Residual: none blocking.
+
+**Recommended pre-build follow-up:** run the formal multi-persona `plan-review`
+skill against this revised plan before Ship builds `092-S`, and append its real
+result here.
