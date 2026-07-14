@@ -1,6 +1,8 @@
 ---
 description: "Ship session memory for shipment 091-S — spike findings-artifact docline reconciliation: build, review, PR #231, merge ec2b859, and post-merge closure."
 doc_type: memory
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 docline:
   ms.date: 2026-07-13T00:00:00Z
   ms.topic: memory
