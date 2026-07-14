@@ -2,7 +2,7 @@
 title: "Post-merge lifecycle writes must use a binary built from the merged source, not a stale workspace binary"
 source: docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md
 doc_type: learning
-description: "A Ship agent's post-merge closure step often runs a workspace CLI (e.g. backlogit.exe) to perform state-mutating lifecycle operations like ship_shipment, which WRITE artifacts. If that binary was built before the feature merged, it silently emits pre-fix output — here, item-artifact timestamps in local -07:00 offset instead of the canonical UTC Z that the just-merged change guarantees. The workspace binary is a build artifact whose freshness is not enforced by git. Rule: before any post-merge operation that writes artifacts, rebuild the tool from the merged HEAD (or assert its build is newer than the merge commit) and verify the write path, so closure does not re-emit the very defect it is closing."
+description: "A Ship agent's post-merge closure step often runs a workspace CLI (e.g. backlogit.exe) to perform state-mutating lifecycle operations like ship_shipment, which WRITE artifacts. If that binary was built before the feature merged, it silently emits pre-fix output — here, item-artifact timestamps in local -07:00 offset instead of the canonical UTC Z that the just-merged change guarantees. The workspace binary is a build artifact whose freshness is not enforced by git. Rule: before any post-merge operation that writes artifacts, rebuild the tool from the merged HEAD — or verify the binary's embedded VCS revision matches HEAD (Go stamps this via runtime/debug build info, surfaced by `backlogit version`; never rely on file mtime, which cannot establish which source produced the binary) — and verify the write path, so closure does not re-emit the very defect it is closing."
 docline:
     date: 2026-07-13T00:00:00Z
     severity: high
@@ -54,9 +54,15 @@ workspace tool:
 1. **Rebuild the tool from the merged HEAD first** — `go build -o backlogit.exe
    ./cmd/backlogit` (or `go run ./cmd/backlogit …`, which always compiles current
    source). Treat "rebuild the CLI" as step 0 of closure, not an afterthought.
-2. **Or assert freshness** — compare the binary's build/mtime against the merge
-   commit time and refuse to proceed if older
-   (`(Get-Item backlogit.exe).LastWriteTime` vs `git show -s --format=%ci HEAD`).
+2. **Or verify embedded VCS provenance** — check the binary's stamped build
+   revision against the merged `HEAD` and refuse to proceed on mismatch, on a
+   dirty marker, or when the stamp is absent (fail closed). Go embeds this
+   automatically via `runtime/debug.ReadBuildInfo` (surfaced by
+   `backlogit version`, e.g. `…-2152acf01b24+dirty`); compare it to
+   `git rev-parse HEAD`. **Do not** use file mtime as the check — a newer mtime
+   can come from a copy or from a rebuild off an *older* checkout, so it cannot
+   establish which source produced the binary. When in doubt, prefer the
+   unconditional rebuild in (1).
 3. **Verify the write path** the operation exercises — run the merged tests that
    assert the emitted format (`go test … -run UTC`), and after the operation,
    grep the written artifacts for the expected canonical form.
