@@ -3,8 +3,6 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,33 +21,38 @@ import (
 // 3575121058). TestPluginBundleStructurallyValid remains a secondary
 // regression gate for the PLUGIN copies only.
 //
-// This test fails on the pre-change .github copy (which declares only a
-// description: key and no name:) and passes once name: spike is added.
+// The test fails on the pre-change .github copy (which declares only a
+// description: key and no name:) and passes once name: spike is added. It
+// enforces FULL top-level frontmatter parity — every key AND value — via a
+// complete map comparison, so drift in any shared scalar (e.g. description)
+// between the two copies is also caught, matching the parity contract the test
+// name advertises.
 func TestGitHubSpikeSkillFrontmatterMatchesPluginCopy(t *testing.T) {
 	repoRoot := testRepoRoot(t)
 
 	githubPath := filepath.Join(repoRoot, ".github", "skills", "spike", "SKILL.md")
 	pluginPath := filepath.Join(repoRoot, "plugin", "skills", "spike", "SKILL.md")
 
-	githubKeys := topLevelFrontmatterKeys(t, githubPath)
-	pluginKeys := topLevelFrontmatterKeys(t, pluginPath)
+	githubDoc := parseFrontmatterDoc(t, githubPath)
+	pluginDoc := parseFrontmatterDoc(t, pluginPath)
 
-	require.Contains(t, githubKeys, "name",
+	// Sharp, targeted assertion for the RED scenario: the pre-change .github
+	// copy lacks the top-level name: key. Keeping this as a distinct check
+	// yields a clear failure message for the specific gap 104.001-T closes.
+	require.Contains(t, githubDoc, "name",
 		".github/skills/spike/SKILL.md frontmatter must declare a top-level name: key to match the plugin copy")
+	require.NotEmpty(t, pluginDoc["name"], "plugin spike SKILL.md must declare a non-empty name:")
 
-	require.ElementsMatch(t, pluginKeys, githubKeys,
-		".github and plugin spike SKILL.md must share identical top-level frontmatter keys")
-
-	githubName := frontmatterStringValue(t, githubPath, "name")
-	pluginName := frontmatterStringValue(t, pluginPath, "name")
-	require.NotEmpty(t, pluginName, "plugin spike SKILL.md must declare a non-empty name:")
-	require.Equal(t, pluginName, githubName,
-		".github spike SKILL.md name: value must match the plugin copy")
+	// Full parity: identical top-level frontmatter keys AND values across both
+	// copies. This catches the name: gap (the 104.001-T fix) and any future
+	// drift in description or other shared scalars.
+	require.Equal(t, pluginDoc, githubDoc,
+		".github and plugin spike SKILL.md must have identical top-level frontmatter (keys and values)")
 }
 
-// topLevelFrontmatterKeys parses the YAML frontmatter at path and returns its
-// sorted set of top-level keys.
-func topLevelFrontmatterKeys(t *testing.T, path string) []string {
+// parseFrontmatterDoc reads the file at path, splits its leading YAML
+// frontmatter, and unmarshals it into a generic map for structural comparison.
+func parseFrontmatterDoc(t *testing.T, path string) map[string]any {
 	t.Helper()
 
 	data, err := os.ReadFile(path)
@@ -59,32 +62,5 @@ func topLevelFrontmatterKeys(t *testing.T, path string) []string {
 
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(frontmatter), &doc), "parse YAML frontmatter: %s", path)
-
-	keys := make([]string, 0, len(doc))
-	for key := range doc {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// frontmatterStringValue returns the string value for key in the YAML
-// frontmatter at path, or "" when the key is absent or non-scalar.
-func frontmatterStringValue(t *testing.T, path string, key string) string {
-	t.Helper()
-
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	frontmatter, _ := splitPluginFrontmatter(t, string(data), path)
-
-	var doc map[string]any
-	require.NoError(t, yaml.Unmarshal([]byte(frontmatter), &doc), "parse YAML frontmatter: %s", path)
-
-	value, ok := doc[key]
-	if !ok {
-		return ""
-	}
-	str, _ := value.(string)
-	return strings.TrimSpace(str)
+	return doc
 }
