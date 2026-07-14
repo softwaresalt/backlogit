@@ -68,13 +68,19 @@ new threads. §1.9 readiness gate passed before HALT.
    scope, not introduced here, destructive `--fix-orphans` NOT run.
 3. **`shipment ship 093-S --sha 647263c`** — archived all 5 members with
    `commit: 647263c`.
-4. **shipment-reconcile (post)** — all 5 members `status: archived` /
-   `archived_status: shipped`; none remain in queue; doctor unchanged (same lone
-   pre-existing orphan). **UTC verification:** all 5 archived members carry
-   `updated_at` in canonical UTC `Z` (e.g. `2026-07-14T16:12:19.6422255Z`). 093-S
-   is the FIRST shipment shipped with the merged 092-S UTC-normalized writer —
-   confirmed working end-to-end. (`created_at` retains its original local offset;
-   expected — only mutations are UTC-normalized.)
+4. **shipment-reconcile (post)** — all 5 members `status: archived`;
+   `archived_status` splits by member role: the shipment `093-S` carries
+   `archived_status: shipped`, while feature `104-F` and tasks
+   `104.001-T`/`104.002-T`/`104.003-T` retain `archived_status: done` (they were
+   archived at feature/task completion in Phase 1; the `shipment ship` op then
+   stamped `commit: 647263c` + a fresh UTC `updated_at` on each **without**
+   flipping their completion `archived_status`). None remain in queue; doctor
+   unchanged (same lone pre-existing orphan). **UTC verification:** all 5
+   archived members carry `updated_at` in canonical UTC `Z` (e.g.
+   `2026-07-14T16:12:19.6422255Z`). 093-S is the FIRST shipment shipped with the
+   merged 092-S UTC-normalized writer — confirmed working end-to-end.
+   (`created_at` retains its original local offset; expected — only mutations are
+   UTC-normalized.)
 5. **compound-refresh** (apply) — created new learning
    `docs/compound/2026-07-14-github-plugin-skill-parity-test-gap.md`; the four
    recent `2026-07-13` entries reviewed and kept (reinforced/unaffected). Report:
