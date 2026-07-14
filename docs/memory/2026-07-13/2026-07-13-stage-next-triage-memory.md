@@ -19,20 +19,23 @@ two `queued` shipments on staging branch `stage/2026-07-13-stage-next-triage`
 ## Shipments produced (queued)
 
 * **092-S** — Item-writer UTC timestamp normalization → **103-F** +
-  **103.001-T … 103.010-T** (harvested from stash `9B38A09E`, Go/CLI,
+  **103.001-T … 103.011-T** (harvested from stash `9B38A09E`, Go/CLI,
   test-first impl-plan). After an exhaustive writer-site re-sweep (PR #234
-  cycle-3), the work was decomposed into **ten** tasks, each modifying exactly
-  **one production file + its colocated `*_test.go` = 2 files** (strictly fewer
-  than the constitution's `<3 files` heuristic, which counts test files). Split
-  map: 103.001-T = `internal/models/frontmatter.go` (`models.NowUTC()` helper +
-  defensive defaults); 103.002-T = `internal/core/artifacts.go`; 103.003-T =
-  `queue.go`; 103.004-T = `shipment.go`; 103.005-T = `shipment_lifecycle.go`;
+  cycle-3) and a function-count audit (cycle-4), the work was decomposed into
+  **eleven** tasks, each modifying **one production file + its colocated
+  `*_test.go` (2 files, `<3`)** and **`<5` functions**. Split map: 103.001-T =
+  `internal/models/frontmatter.go` (`models.NowUTC()` helper + defensive
+  defaults); 103.002-T = `internal/core/artifacts.go`; 103.003-T = `queue.go`;
+  103.004-T = `shipment.go`; 103.005-T = `shipment_lifecycle.go`
+  (attachCommitToItems/setArtifactStatus/cascadePersistedParentStatuses, 3 funcs);
   103.006-T = `gate_transition.go`; 103.007-T = `artifact_references.go`;
-  103.008-T = `migrate_links.go`; 103.009-T = `internal/core/templates/service.go`;
-  103.010-T = `internal/cli/update.go` (the `update --section` serializer, newly
-  found in the cycle-3 re-sweep). 103.002–103.010-T depend on 103.001-T. Tests
-  force a non-UTC local zone (deterministic red phase on UTC CI) and assert
-  emitted frontmatter ends with exactly `Z`.
+  103.008-T = `migrate_links.go`; 103.009-T =
+  `internal/core/templates/service.go`; 103.010-T = `internal/cli/update.go`
+  (the `update --section` serializer, found in the cycle-3 re-sweep); 103.011-T =
+  `shipment_lifecycle.go` (clearParentID/AdoptItem, 2 funcs — split from
+  103.005-T for the `<5 functions` heuristic). 103.002–103.011-T depend on
+  103.001-T. Tests force a non-UTC local zone (deterministic red phase on UTC CI)
+  and assert emitted frontmatter ends with exactly `Z`.
 * **093-S** — Frontmatter hygiene backfill → **104-F** + **104.001-T**
   (from `B42F5EF3`, spike SKILL `name:` key + RED-phase test) + **104.002-T** and
   **104.003-T** (from `3F3FB119`, docline-key backfill split 2 docs + 2 docs so
