@@ -18,8 +18,16 @@ two `queued` shipments on staging branch `stage/2026-07-13-stage-next-triage`
 
 ## Shipments produced (queued)
 
-* **092-S** — Item-writer UTC timestamp normalization → **103-F** + **103.001-T**
-  (harvested from stash `9B38A09E`, Go/CLI, test-first impl-plan).
+* **092-S** — Item-writer UTC timestamp normalization → **103-F** +
+  **103.001-T**, **103.002-T**, **103.003-T**, **103.004-T**, **103.005-T**
+  (harvested from stash `9B38A09E`, Go/CLI, test-first impl-plan). The single
+  original task was split into five ≤2-file tasks in response to PR #234 Copilot
+  review (constitution Task Granularity: &lt;3 files, &lt;5 functions,
+  &lt;4 test scenarios per task). Split map: 103.001-T = shared
+  `models.NowUTC()` helper + `artifacts.go`; 103.002-T = `queue.go` +
+  `gate_transition.go`; 103.003-T = `artifact_references.go` +
+  `templates/service.go`; 103.004-T = `shipment.go` + `migrate_links.go`;
+  103.005-T = `shipment_lifecycle.go`. 103.002-005 depend on 103.001-T.
 * **093-S** — Frontmatter hygiene backfill → **104-F** + **104.001-T**
   (from `B42F5EF3`) + **104.002-T** (from `3F3FB119`), docs hygiene.
 
@@ -31,8 +39,11 @@ two `queued` shipments on staging branch `stage/2026-07-13-stage-next-triage`
 * Stash `7F0A6E89` left **active** — out-of-tree `.tmpl` in the external
   autoharness repo (Principle IV); not shippable here.
 * No deliberation created — all items were small/well-scoped; lean impl-plans
-  preferred. Plan-review recorded as **inline single-agent self-assessment**
-  (not a formal multi-persona gate).
+  preferred. Plan-review recorded as **inline single-agent self-assessment
+  plus incorporation of external Copilot (PR #234) review findings** — NOT a
+  formal multi-persona `plan-review` skill run (this environment cannot dispatch
+  independent reviewer personas). A formal `plan-review` gate is recommended as
+  a pre-build follow-up before Ship implements 092-S/093-S.
 
 ## Environment finding (for follow-up)
 
