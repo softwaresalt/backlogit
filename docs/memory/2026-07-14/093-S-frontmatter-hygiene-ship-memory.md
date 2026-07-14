@@ -51,9 +51,19 @@ shipment — queue empty after this closure.**
   lifecycle op. Confirmed the merged 092-S UTC writer: all 5 archived members
   carry `updated_at` in canonical UTC `Z` (093-S is the first shipment shipped
   with that writer — verified end-to-end).
-* **compact-context = no-op (honest).** Memory 8 files / 28.2 KB, oldest 4 days;
-  recent closures 1 day old; no plan with appended plan-review verbosity. Nothing
-  meets compaction thresholds — did NOT fabricate compaction work.
+* **compact-context = preserve/no-op (full criteria applied).** Ran with the
+  complete Phase-2 candidate rules (`.github/skills/compact-context/SKILL.md:59-65`),
+  including "memory files part of a completed feature/chore." The 093-S memory
+  DOES match that rule (feature 104-F done), but Phase 3 + the "preserve the most
+  recent checkpoint for each completed task" constraint govern the action: it is
+  the sole, newest checkpoint for 104-F (only file in its date-group, nothing
+  superseded), so it is preserved — no group to consolidate. Older date-groups
+  belong to prior already-closed shipments (out of scope). Global thresholds not
+  hit (8 files / 28.2 KB). Result: no compaction; nothing archived — did NOT
+  fabricate compaction work.
+* **Backlog index resync (Step 9).** Ran `backlogit sync` after archival + stash
+  mutations → `Indexed 834 artifacts`, exit 0 → `CLOSURE_INDEX_SYNC_OK`; index
+  verified reflecting the archived shipment/tasks.
 * **Governance follow-ups deferred to stash**, not silently dropped: plan-review
   persona gate not runnable in this env; plans lack a labeled Constitution Check;
   soft docline keys have no regression guard.

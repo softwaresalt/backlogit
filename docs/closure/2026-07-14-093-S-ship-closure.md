@@ -79,11 +79,40 @@ new threads. §1.9 readiness gate passed before HALT.
    `docs/compound/2026-07-14-github-plugin-skill-parity-test-gap.md`; the four
    recent `2026-07-13` entries reviewed and kept (reinforced/unaffected). Report:
    `docs/closure/2026-07-14-093-S-compound-refresh.md`.
-6. **compact-context** — assessed `docs/memory/` (8 files / 28.2 KB, oldest 4
-   days), `docs/exec-plans/`, `docs/closure/` (recent closures 1 day old). No
-   artifact meets the compaction criteria (age ≥14d / count ≥40 / size ≥500 KB /
-   plan with appended plan-review verbosity). **No-op** — compaction would be
-   premature; nothing archived.
+6. **compact-context** (`target: all`) — applied the FULL Phase-2 candidate
+   criteria (`.github/skills/compact-context/SKILL.md:59-65`), not only the
+   age/count/size and appended-plan thresholds:
+   * **Memory — "part of a completed feature or chore":** the new
+     `docs/memory/2026-07-14/093-S-frontmatter-hygiene-ship-memory.md` DOES match
+     this candidate rule (feature 104-F is done). Governing action per Phase 3 +
+     the behavioral constraints "**Preserve the most recent checkpoint for each
+     completed task**" and "never compact active/most-recent checkpoints":
+     memory compaction consolidates a *group* of superseded/verbose checkpoints
+     into one summary and archives the originals. This file is the **sole,
+     newest** checkpoint for 104-F (only file in its `2026-07-14` date-group,
+     with no superseded siblings), so it is **preserved**, not consolidated —
+     there is no multi-file group to collapse. The older date-groups
+     (`2026-07-10`/`-12`/`-13`) belong to prior *already-closed* shipments; each
+     is likewise the most-recent checkpoint for its own unit and is out of THIS
+     closure's scope.
+   * **Memory — age/superseded rules:** none qualify (oldest 4 days < 14-day
+     threshold; no superseded duplicates).
+   * **Plans:** the 093-S plan has no appended plan-review verbosity to
+     consolidate into a decided-plan (its "Plan Review" is an inline
+     single-agent self-assessment) and is 1 day old.
+   * **Closure records:** recent (1 day old, < 14-day threshold).
+   * **Global thresholds:** memory 8 files / 28.2 KB (« 40 files / 500 KB).
+
+   **Result: no compaction performed** — the only completed-feature candidate is
+   the just-written 093-S checkpoint, which the preserve-most-recent constraint
+   requires be kept intact; nothing archived. This is the correct governed
+   outcome, not an omission of the completed-feature rule.
+7. **Backlog index resync** (`.ship.agent.md:553`, Step 9) — ran
+   `backlogit sync` after all archival + stash mutations: **`Indexed 834
+   artifacts`, exit 0 → `CLOSURE_INDEX_SYNC_OK`**. Verified the index reflects
+   the closure (`093-S`/`104-F`/tasks now `status: archived` via
+   `backlogit query`). Sync did not modify any tracked files (SQLite index is
+   gitignored).
 
 ## Stash follow-ups created (operator-requested)
 
