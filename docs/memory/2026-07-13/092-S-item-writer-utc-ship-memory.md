@@ -49,6 +49,7 @@ merged in `4a90bf4`):**
   `docs/closure/2026-07-13-092-S-compound-refresh.md`.
 * `docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md` (new),
   `docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md` (new),
+  `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md` (new),
   `docs/compound/2026-07-13-copilot-review-loop-convergence.md` (reinforced §092-S).
 * `docs/memory/2026-07-13/092-S-item-writer-utc-ship-memory.md` (this file).
 
@@ -73,6 +74,15 @@ merged in `4a90bf4`):**
 
 ## Failed approaches / gotchas
 
+* **Stale workspace binary re-emitted the closed defect.** The post-merge
+  `ship_shipment` ran a `backlogit.exe` built ~11h **before** the merge, so it
+  stamped archive `updated_at` in local `-07:00` — exactly what 092-S closes.
+  Caught by the closure PR #236 Copilot review. Fix: rebuild
+  (`go build -o backlogit.exe ./cmd/backlogit`), re-verify the write path
+  (`go test … -run UTC`), and normalize the 13 members' `updated_at` to their
+  instant-preserving `Z` equivalents. New compound learning captured
+  (`…post-merge-lifecycle-requires-fresh-binary.md`). Reflex: rebuild the tool
+  from merged HEAD **before** any post-merge write.
 * A process-global `time.Local` override in a `t.Parallel()` package is a **data
   race** (`go test -race` trips it); the hermetic subprocess is the safe variant.
 * Asserting a zero *offset* (`+00:00`) is weaker than asserting `Z` — a writer

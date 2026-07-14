@@ -58,8 +58,14 @@ additional stamping sites were found beyond the plan's inventory.
 
 * `go test ./...` — pass. `go vet ./...` — pass. `golangci-lint run` — pass.
   `gofmt -l .` — clean. (Full Constitution quality-gate sequence, run untruncated.)
-* **Runtime verification:** the built binary, run under a non-UTC `TZ`, emits
-  frontmatter `created_at`/`updated_at` ending in `Z` (not a local offset).
+* **Runtime verification (write path, including shipment/archival):** the binary
+  built from the merged source, run under a non-UTC zone, emits freshly-written
+  frontmatter timestamps ending in `Z` (not a local offset). The merged UTC test
+  suite covers every write site — including the shipment/archival lifecycle path
+  (`shipment_lifecycle_utc_test.go`, `shipment_lifecycle_adopt_utc_test.go`) — and
+  passes, proving `ship_shipment` / `attachCommitToItems` stamp `updated_at` in
+  canonical `Z` under a controlled non-UTC zone. Historical timestamps already on
+  disk are preserved by the offset-tolerant read path.
 * **RED-phase design (parallel-test-safe):** for the `t.Parallel()` package
   `internal/cli` (task 103.010-T), the RED test drives a hermetic subprocess
   (`exec.Command(os.Args[0], "-test.run=^TestHelperUpdateSectionUTCChild$")` with
@@ -70,6 +76,29 @@ additional stamping sites were found beyond the plan's inventory.
   in `internal/cli/update_utc_test.go`, not outstanding.
 * CI on PR #235 — all required checks green (`Detect code changes`, `test`,
   `Docline frontmatter gate`).
+
+### Closure lifecycle repair — stale-binary incident (transparent record)
+
+The initial post-merge `ship_shipment 092-S --sha 4a90bf4` was run with a
+workspace `backlogit.exe` that had been **built ~11h before the merge commit**,
+so it predated the `NowUTC()` normalization and stamped the newly-written
+archive `updated_at` fields with a local `-07:00` offset — surfaced by the
+closure PR #236 Copilot review. Root cause and repair:
+
+* **Root cause fixed:** rebuilt `backlogit.exe` from the merged source
+  (`go build -o backlogit.exe ./cmd/backlogit`); the fresh binary carries the
+  UTC-emission code path.
+* **Ship path re-verified under a non-UTC zone:** the merged UTC test suite
+  (`go test ./internal/{core,models,cli}/... -run UTC`) passes, proving the
+  shipment/archival lifecycle writers emit `Z` under a controlled zone.
+* **Output repaired (instant-preserving):** the 13 newly-archived members'
+  `updated_at` values were normalized to their exact UTC `Z` equivalents (same
+  instant; e.g. `2026-07-13T22:33:28.7497461-07:00` → `2026-07-14T05:33:28.7497461Z`),
+  matching the byte-form the merged serializer produces. Historical `created_at`
+  values (and the broader pre-092-S archive corpus) are **intentionally
+  preserved** as-is — that is precisely the backward-compatible, offset-tolerant
+  read path this shipment guarantees; 092-S normalizes emission on **write**, it
+  does not migrate historical data.
 
 ## Review
 
@@ -124,6 +153,9 @@ operator decision.** Unrelated to 092-S.
 * Reinforced `docs/compound/2026-07-13-copilot-review-loop-convergence.md`
   (§092-S: 36-file clean first-HEAD convergence; upstream hardening beats
   after-the-fact thread resolution).
+* Created `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md`
+  (post-merge lifecycle writes must use a binary built from merged HEAD — captured
+  from the closure PR #236 stale-binary incident, see the repair note above).
 
 Refresh report: `docs/closure/2026-07-13-092-S-compound-refresh.md`.
 

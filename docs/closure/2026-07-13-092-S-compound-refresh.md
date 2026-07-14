@@ -20,6 +20,7 @@ timestamp normalization), feature 103-F, PR #235, merge `4a90bf4`. Mode: apply.
 | `docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md` | create | New `doc_type: learning` entry: route every timestamp write site through one exported helper `models.NowUTC()` (= `time.Now().UTC()`) so `created_at`/`updated_at` serialize as canonical UTC with a trailing `Z`; keep the read/parse path offset-tolerant so historical `+/-hh:mm` artifacts still load; export the helper from the lowest package (`models`) so `core/templates` and `cli` reuse it without an import cycle; assert the exact `Z`, not a zero offset (`+00:00`). |
 | `docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md` | create | New `doc_type: learning` entry: to prove (RED) that local-offset emission fails even on a UTC CI runner, run the write under a controlled non-UTC zone; a process-global `time.Local` override is a **data race** in any `t.Parallel()` package (notably `internal/cli`), so use a hermetic subprocess — re-exec the test binary at a helper test with `TZ=America/Los_Angeles` in the child env, emit the serialized timestamp on stdout, and assert `HasSuffix(value, "Z")` in the parent. Serial packages may use a scoped `time.Local` override with defer-restore. |
 | `docs/compound/2026-07-13-copilot-review-loop-convergence.md` | reinforce | Added "Reinforcement — 092-S" section: the 36-file feature PR #235 hit the same clean first-HEAD fixed point (Copilot `COMMENTED`, "36/36 files, no comments", 0 threads, 0 review-fix cycles); a second, larger data point that the operative variable is upstream hardening (exhaustive plan + explicit parallel-safe RED design), not luck. Contrasted the staging PR's pre-hardening multi-cycle loop. |
+| `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md` | create | New `doc_type: learning` entry (severity high) captured from the closure PR #236 incident: the post-merge `ship_shipment` ran a workspace `backlogit.exe` built ~11h **before** the merge, so it stamped `updated_at` in local `-07:00` — re-emitting the very defect 092-S closed. Rule: before any post-merge operation that WRITES artifacts, rebuild the tool from merged HEAD (or assert build > merge time), verify the write path, and on a stale-write repair instant-preservingly + record transparently. |
 
 ## Stale / low-signal review
 
@@ -33,6 +34,7 @@ superseded. No deletions or archival needed.
 
 * Created: `docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md`
 * Created: `docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md`
+* Created: `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md`
 * Updated: `docs/compound/2026-07-13-copilot-review-loop-convergence.md`
 
 All pass `backlogit docs lint` (default profile / CI Docline gate — 0 findings).
