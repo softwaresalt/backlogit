@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
@@ -338,7 +337,7 @@ func (ws *Workspace) handleGateSetupError(ctx context.Context, id, oldStatus str
 // validation and status-directory relocation.
 func (ws *Workspace) writeStatusDirect(ctx context.Context, a *models.Artifact, oldStatus, newStatus string) (*models.Artifact, error) {
 	a.Status = models.ArtifactStatus(newStatus)
-	a.UpdatedAt = time.Now()
+	a.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(a, models.ArtifactStatus(oldStatus))
 
 	if err := requireHeaderDef(ws); err != nil {

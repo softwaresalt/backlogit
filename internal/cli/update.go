@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -237,7 +236,7 @@ replacing the rest of the document body.`,
 				}
 
 				// Bump updated_at so callers can detect the change.
-				now := time.Now()
+				now := models.NowUTC()
 				fm["updated_at"] = now
 
 				newContent := models.SerializeFrontmatter(fm, newBody)

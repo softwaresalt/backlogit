@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
@@ -121,7 +120,7 @@ func (s *Service) Update(ctx context.Context, ws *core.Workspace, id string, sec
 		return nil, fmt.Errorf("write sections: %w", err)
 	}
 
-	now := time.Now()
+	now := models.NowUTC()
 	artifact.Description = newBody
 	artifact.UpdatedAt = now
 	fm["updated_at"] = now

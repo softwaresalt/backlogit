@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/db"
@@ -222,7 +221,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		status = "queued"
 	}
 
-	now := time.Now()
+	now := models.NowUTC()
 	artifact := &models.Artifact{
 		ID:           artifactID,
 		Title:        title,
@@ -549,7 +548,7 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		}
 		artifact.CustomFields["harness_status"] = v
 	}
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(artifact, previousStatus)
 
 	// Fail closed when the workspace schema is absent (see requireHeaderDef). This
@@ -816,7 +815,7 @@ func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, lin
 		TargetID: targetID,
 		LinkType: linkType,
 	})
-	source.UpdatedAt = time.Now()
+	source.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, source, false); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
@@ -853,7 +852,7 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	} else {
 		source.Links = filtered
 	}
-	source.UpdatedAt = time.Now()
+	source.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, source, false); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}

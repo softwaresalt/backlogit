@@ -141,7 +141,7 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 	}
 
 	shipment.Status = models.ArtifactStatus(newStatus)
-	shipment.UpdatedAt = time.Now()
+	shipment.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, shipment, true); err != nil {
 		return fmt.Errorf("move shipment %s: %w", shipmentID, err)
 	}
@@ -197,7 +197,7 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 		shipment.CustomFields = map[string]any{}
 	}
 	shipment.CustomFields["items"] = items
-	shipment.UpdatedAt = time.Now()
+	shipment.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, shipment, false); err != nil {
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, err)
 	}
@@ -245,14 +245,14 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 		shipment.CustomFields = map[string]any{}
 	}
 	shipment.CustomFields["items"] = removeString(items, itemID)
-	shipment.UpdatedAt = time.Now()
+	shipment.UpdatedAt = models.NowUTC()
 
 	if item.CustomFields == nil {
 		item.CustomFields = map[string]any{}
 	}
 	item.Status = models.StatusBlocked
 	item.CustomFields["blocked_reason"] = reason
-	item.UpdatedAt = time.Now()
+	item.UpdatedAt = models.NowUTC()
 
 	rolledBack, err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, shipment, originalItem, item)
 	if err != nil {

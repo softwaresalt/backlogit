@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -349,7 +348,7 @@ func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, c
 			return fmt.Errorf("load item %s for commit link: %w", itemID, err)
 		}
 		artifact.Commit = commit.SHA
-		artifact.UpdatedAt = time.Now()
+		artifact.UpdatedAt = models.NowUTC()
 		if err := persistArtifact(ctx, ws, artifact, false); err != nil {
 			return fmt.Errorf("persist item %s commit: %w", itemID, err)
 		}
@@ -488,7 +487,7 @@ func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newSta
 
 	previous := artifact.Status
 	artifact.Status = newStatus
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(artifact, previous)
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return nil, err
@@ -527,7 +526,7 @@ func cascadePersistedParentStatuses(ctx context.Context, ws *Workspace, itemID s
 
 	previous := parent.Status
 	parent.Status = newStatus
-	parent.UpdatedAt = time.Now()
+	parent.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(parent, previous)
 	if err := persistArtifact(ctx, ws, parent, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return err
@@ -552,7 +551,7 @@ func clearParentID(ctx context.Context, ws *Workspace, itemID string) error {
 		return nil
 	}
 	artifact.ParentID = ""
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
 		return fmt.Errorf("persist cleared parent_id for %s: %w", itemID, err)
 	}
@@ -641,7 +640,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	// Update the artifact with new parent and ID.
 	artifact.ParentID = newParentID
 	artifact.ID = newID
-	artifact.UpdatedAt = time.Now()
+	artifact.UpdatedAt = models.NowUTC()
 
 	// Scan for other artifacts that reference oldID in their frontmatter.
 	// This is done outside the transaction (read-only) so the walk does not

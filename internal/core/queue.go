@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -274,7 +273,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 	}
 	targetIndex := position - 1
 	reordered := reorderQueueItems(view.Items, currentIndex, targetIndex)
-	stamp := time.Now()
+	stamp := models.NowUTC()
 	originals := make(map[string]*models.Artifact, len(reordered))
 	persistedIDs := make([]string, 0, len(reordered))
 	for index, item := range reordered {
@@ -392,7 +391,7 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 		}
 		previousStatus := artifact.Status
 		artifact.Status = models.ArtifactStatus(newStatus)
-		artifact.UpdatedAt = time.Now()
+		artifact.UpdatedAt = models.NowUTC()
 		if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 			slog.WarnContext(ctx, "bulk update status: persist failed, skipping",
 				"id", id, "error", err)

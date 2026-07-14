@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -102,7 +101,7 @@ func findCrossArtifactReferences(
 
 			// Deep-copy and rewrite.
 			updated := *a
-			updated.UpdatedAt = time.Now()
+			updated.UpdatedAt = models.NowUTC()
 
 			if refersParent {
 				updated.ParentID = newID
