@@ -4,7 +4,7 @@ schema_version: "1.0"
 title: 'Plan-review dispatch and fail-closed waiver governance'
 source: docs/decisions/2026-07-14-plan-review-governance-deliberation.md
 doc_type: decision
-description: 'Decision to use real reviewer subagent dispatch when available and permit only a new explicit, auditable, consumable operator waiver when it is not.'
+description: 'Decision for real reviewer dispatch, uniquely parsed final-ledger waivers, and independent fail-closed enforcement at Stage and direct-harvest boundaries.'
 docline:
     date: 2026-07-14T18:30:00Z
     decision_status: decided
@@ -21,7 +21,7 @@ docline:
 
 Stage must run `plan-review` before harvest, but recent API-launched Stage sessions had no agent or task dispatch tool. Inline single-agent assessment cannot satisfy a skill that requires independent persona outputs. The same planning surface also omits the constitution's required labeled `## Constitution Check`.
 
-Success means formal review is executable in supported environments, its provenance is inspectable, missing capability blocks harvest by default, and any exception is operator-authorized, bounded, and durably consumed. Hosted Copilot review may supplement the gate but cannot impersonate a local reviewer persona.
+Success means formal review is executable in supported environments, its provenance is inspectable, missing capability blocks every Stage-mediated or direct-harvest path by default, and any exception is operator-authorized, digest-bound, bounded, and durably consumed. Hosted Copilot review may supplement the gate but cannot impersonate a local reviewer persona.
 
 ## Research Findings
 
@@ -32,7 +32,8 @@ Success means formal review is executable in supported environments, its provena
 - Reviewer definitions are read-only leaf executors with `subagent_depth: 0`; the depth and role policies therefore permit dispatch.
 - This API invocation exposes no agent/task dispatch tool. The defect is invocation-tool-surface degradation, not a structurally impossible repository design.
 - Existing Stage inputs `skip_review` and `force_harvest_no_gates` can bypass provenance unless removed or routed through the same fresh-waiver validation.
-- The three `.github` targets are generated from external autoharness templates and require a tracked upstream handoff.
+- Both harvest skill copies currently accept prose cleared/ready assertions and can mutate backlog state when invoked directly; Stage-only enforcement is insufficient.
+- The Stage, plan-review, impl-plan, and harvest `.github` targets are generated from four external autoharness templates and require a tracked upstream handoff.
 
 ## Options Evaluated
 
@@ -63,17 +64,20 @@ A formal gate record must include:
 
 A missing, failed, or unattributed required persona makes the gate FAIL. Inline self-assessment must be labeled `informal_single_agent`; it never counts as formal evidence. Hosted review remains supplemental.
 
-A future waiver is valid only when the plan gate record includes `review_mode: operator_waiver`, a unique `waiver_id`, exact plan path and digest, operator authorization reference and authorizer, missing capability, reason, UTC issue time, expiry, acknowledged residual risk, and intended disposition. Generic workflow commands are never waiver signals.
+A future waiver is valid only when the plan gate record includes `review_mode: operator_waiver`, a unique `waiver_id`, exact plan path and digest, operator authorization reference and authorizer, missing capability, reason, UTC issue/expiry, acknowledged residual risk, and intended disposition. Generic workflow commands and this refinement authorization are never waiver signals.
 
-The digest is lowercase hexadecimal SHA-256 over exact UTF-8 bytes from byte zero up to, but excluding, the exact heading `## Operator Waiver Ledger` and its immediately preceding separator line break; without that heading, hash the entire file. The ledger is appended at EOF after exactly one additional line-break sequence matching the file; the excluded suffix starts at the first byte of that added line break, so removing it reconstructs the exact pre-reservation bytes. Reservation, later validation, and consumption always recompute this ledger-excluded canonical range, so plan-content edits invalidate the waiver while ledger-only state changes do not.
+Waiver mode uses exactly one uniquely parsed `## Operator Waiver Ledger` as the final H2 section. The Markdown-aware parser ignores heading-like text inside fenced code, so examples do not count. The section contains exactly one fenced YAML mapping, only known unique keys, state-compatible required fields, a closing fence, one terminal line ending, and EOF. Duplicate headings or keys, a missing ledger in waiver mode, malformed YAML, unknown fields, another heading, prose, whitespace, or bytes after the allowed terminal ending all fail closed.
 
-Before any harvest mutation, Stage must append a durable waiver reservation to the same plan: `waiver_id`, `state: reserved`, `reserved_at`, `reserved_by_stage_session`, and plan digest. Existing reserved or consumed records reject reuse. After successful harvest, Stage updates that record to `state: consumed` with `consumed_at`, `consumed_by_harvest_ids`, and `shipment_id`. A crash after reservation remains fail-closed and requires a new explicit operator decision; it never silently frees the waiver.
+Canonical digest decodes valid UTF-8 without BOM, rejects invalid UTF-8 or bare CR, normalizes CRLF to LF, and requires exactly one terminal LF. Lowercase SHA-256 covers every canonical byte except the validated final ledger block and its one separator LF. Before reservation, hash the whole ledger-free canonical plan. After reservation, remove only the uniquely parsed final block and hash every remaining canonical byte. Windows and Unix checkouts therefore agree, while plan/review content inserted before the ledger changes the digest and requires a new explicit waiver; content appended after the ledger is rejected. Formal mode may have no ledger.
 
-The legacy `skip_review: true` and `force_harvest_no_gates: true` values are not bypasses. If retained for compatibility, they only request the operator-waiver path and cannot reach harvest without a fresh valid waiver and successful reservation.
+Before any backlog mutation, Stage or a directly invoked harvest workflow must validate the exact plan and persist waiver state `reserved` with `reserved_at` and `reserved_by_stage_session`. An existing consumed record never authorizes new mutation; an existing reserved record cannot be reused by another run. Successful harvest changes that same final ledger to `consumed` with `consumed_at`, exact `consumed_by_harvest_ids`, and `shipment_id`. A crash or partial harvest remains fail-closed.
 
+Both harvest copies independently re-read and validate durable formal evidence or the reserved final ledger immediately before every create, dependency, link, adoption, or shipment-membership mutation. Caller/Stage assertions and prose cleared/ready text are not proof. Direct invocation with missing/malformed evidence, invalid ledger, or consumed waiver must produce zero backlog mutations.
+
+The legacy `skip_review: true` and `force_harvest_no_gates: true` values are not bypasses. If retained, they only request the same exact operator-waiver validation and cannot reach Stage or direct harvest without valid durable provenance.
 ## Current Gate State
 
-No waiver was authorized for either current plan. The generic `stage next` command is workflow routing only. Formal reviewer dispatch was unavailable, so both plans and shipments are BLOCKED pending either successful formal multi-persona evidence or a new explicit, plan-scoped operator waiver. No waiver reservation or consumption record exists.
+The operator authorized one additional plan/backlog refinement cycle only; that authorization is not formal review evidence and is not a waiver. No waiver was authorized for either current plan. The generic `stage next` command is workflow routing only. Formal reviewer dispatch was unavailable, so both plans and shipments are BLOCKED pending either successful formal multi-persona evidence or a new explicit, plan-scoped operator waiver. No waiver reservation or consumption record exists.
 
 The repository's generic artifact transition accepted shipment `blocked`, but shipment lifecycle code has no `blocked -> queued` transition and `ClaimShipment` accepts only queued manifests. Stash `DB1F9026` tracks atomic hold/requeue support. Until it lands, approval alone does not make `094-S` or `095-S` claimable; generic `blocked -> active` is forbidden because it bypasses atomic member activation.
 
@@ -84,16 +88,16 @@ Stash `823BADF4` tracks the Principle IV-bounded external work for all generated
 - `templates/agents/stage.agent.md.tmpl`
 - `templates/skills/plan-review/SKILL.md.tmpl`
 - `templates/skills/impl-plan/SKILL.md.tmpl`
+- `templates/skills/harvest/SKILL.md.tmpl`
 
-The in-repo governance work is not operationally closed until those external templates land and regeneration verifies all three `.github` targets retain the behavior. The external work is not part of either in-repo shipment.
-
+The in-repo governance work is not operationally closed until all four external templates land and regeneration/parity verification proves all four `.github` targets retain formal dispatch, final-ledger digest, reservation/consumption, legacy bypass, direct-harvest pre-mutation, and Constitution Check behavior. External work is not part of either in-repo shipment.
 ## Constitution Check
 
 - **I — Safety-First Go:** no production code is changed during staging; implementation requires normal Go gates for contract tests.
 - **II — Test-First:** contract tests fail before skill/agent instruction changes and pass after them.
 - **III/IV — Isolation and containment:** all current writes stay in this repository; upstream work is stash-only.
 - **V — Observability:** dispatch, waiver reservation, consumption, and verdict evidence are durable.
-- **VI — Single Responsibility:** planning governance stays separate from docline regression work and external template execution.
+- **VI — Single Responsibility:** Stage, harvest, contract-test, docline, and external-template concerns remain width-isolated.
 - **VII — Destructive approval:** no destructive action is authorized.
 - **VIII — Elevated risk:** governance changes require plan hardening before review.
 - **IX — Git-friendly persistence:** evidence travels with the plan.
@@ -104,15 +108,17 @@ No constitutional violation or standing exception is requested. No current workf
 
 ## Rejected Alternatives
 
-Silent skip, inline self-certification, hosted-review substitution, generic-command-as-authorization, reusable textual waivers, and global/permanent waivers are rejected.
+Silent skip, inline self-certification, hosted-review substitution, prose cleared/ready harvest, caller-trusted direct harvest, generic-command/refinement-as-authorization, suffix-excluding digests, reusable textual waivers, and global/permanent waivers are rejected.
 
 ## Risks and Mitigations
 
 - **Runtime tool names vary:** describe capability semantically and list known `agent`/`agent/runSubagent` names.
 - **Fabricated attribution:** require actual returned outputs and identifiers; absence fails.
 - **Waiver reuse:** reserve before harvest and persist consumed IDs afterward; reject existing reservation/consumption.
+- **Ledger suffix attack:** parse exactly one final fenced-YAML ledger, hash every other byte, and reject any trailing content.
+- **Direct harvest bypass:** both harvest copies independently validate before every mutation and prove zero-mutation negatives.
 - **Bypass drift:** negatively test `skip_review` and `force_harvest_no_gates`.
-- **Regeneration drift:** require upstream closure through stash `823BADF4`.
+- **Regeneration drift:** require four-template upstream closure through stash `823BADF4`.
 
 ## Promotion
 

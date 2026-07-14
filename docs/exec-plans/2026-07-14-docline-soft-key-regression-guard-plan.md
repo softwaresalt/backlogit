@@ -46,23 +46,31 @@ One Go integration guard and the nine tracked Markdown files listed in the decis
 
 ## Implementation Units
 
-### Unit D1: Add tracked-doc soft-key guard
+### Unit D1: Add live-corpus and hermetic soft-key guard
 
 **Files:** `tests/integration/docline_soft_keys_test.go`
-**Effort:** S, under 2 hours; 1 file; 3 scenarios.
+**Effort:** S, under 2 hours; 1 file; two tests plus at most two shared helpers (fewer than five functions total).
 **Skill domain:** Go integration test.
 **Execution posture:** test-first.
 **Dependencies:** none.
 
-Use `git ls-files` from the repository root to enumerate committed Markdown. Filter to `docs/**` except `docs/memory/**` and `docs/archive/**`, plus `README.md` and `AGENTS.md`. Parse leading YAML with the existing YAML dependency and require exact YAML scalar values `h1-h2-h3` and the string `"1.0"` (not numeric `1.0`). Table/subtests must report each path and field. Fail clearly if Git enumeration or YAML parsing fails.
+Keep a live-corpus test that runs `git ls-files -z` from the repository root, filters to `docs/**` except `docs/memory/**` and `docs/archive/**` plus `README.md` and `AGENTS.md`, parses leading YAML with the existing dependency, and requires `chunk_strategy: h1-h2-h3` plus `schema_version` as YAML string `"1.0"` rather than numeric `1.0`. Fail path-specifically on Git errors, malformed YAML, missing keys, wrong scalar type, or wrong value.
 
-Scenarios: compliant tracked document, tracked document missing either key (represented by the current corpus during RED), and excluded/untracked paths not entering the inventory. The live-corpus test is the persistent regression guard.
+Add a hermetic table test that creates temporary Git repositories, stages fixture paths, and calls the same guard helper. Required cases:
 
-**RED:** `go test ./tests/integration -run TestTrackedDoclineSoftKeys -count=1` fails and names exactly the nine tracked omissions from the decision.
-**GREEN:** after D2-D7, the same command passes.
+1. compliant tracked Markdown passes;
+2. tracked Markdown missing `chunk_strategy` fails with path/field;
+3. tracked Markdown missing `schema_version` fails with path/field;
+4. numeric `schema_version: 1.0`, wrong `chunk_strategy`, and malformed YAML each fail distinctly;
+5. invalid untracked Markdown is absent from findings while an invalid tracked peer is found;
+6. tracked `docs/memory/**` and `docs/archive/**` fixtures are excluded.
 
-**Acceptance criteria:** deterministic tracked-only scope; exact values enforced; no scratch path staged or modified.
+The synthetic cases remain in CI after the live corpus is backfilled and do not depend on the protected local scratch file. Use one shared inventory/validation helper, one temporary-repository helper, and two tests so weakened parser or inventory logic cannot pass accidentally.
 
+**RED:** `go test ./tests/integration -run TestTrackedDoclineSoftKeys -count=1` fails the live-corpus subtest and names exactly the nine tracked omissions while hermetic cases exercise missing-key, type, parse, and untracked/excluded behavior.
+**GREEN:** after D2-D7, the live corpus passes and every hermetic positive/negative case remains active and passes.
+
+**Acceptance criteria:** deterministic tracked-only live scope; hermetic negative coverage independent of repository state; exact values/types enforced; path-specific diagnostics; fewer than five functions; no scratch path staged or modified.
 ### Unit D2: Backfill 092-S closure metadata
 
 **Files:** `docs/closure/2026-07-13-092-S-compound-refresh.md`, `docs/closure/2026-07-13-092-S-item-writer-utc-closure.md`
@@ -121,20 +129,21 @@ Units D3-D7 use the same acceptance criterion as D2: canonical keys added, body 
 
 ## TDD and Quality-gate Sequence
 
-1. Add D1 and run the targeted test; capture the nine-file RED set.
-2. Apply D2-D7, preserving body bytes.
-3. Run the targeted test; require GREEN.
-4. Run `go test ./...`.
-5. Run `go vet ./...`.
-6. Run `golangci-lint run`.
-7. Run `gofmt -l .` and require no output.
-8. Run `go run ./cmd/backlogit docs lint` in a clean checkout and require zero violations.
-9. Verify `git status --short` still lists the pre-existing scratch file only as untracked and never staged.
-
+1. Add D1 shared guard plus live and synthetic tests; run targeted RED and capture exactly nine live omissions.
+2. Confirm hermetic cases independently cover missing keys, numeric/string distinction, malformed YAML, wrong value, untracked exclusion, and excluded tracked paths.
+3. Apply D2-D7 while preserving body bytes.
+4. Run the targeted test; require live-corpus GREEN and all synthetic cases GREEN.
+5. Run `go test ./...`.
+6. Run `go vet ./...`.
+7. Run `golangci-lint run`.
+8. Run `gofmt -l .` and require no output.
+9. Run `go run ./cmd/backlogit docs lint` in a clean checkout and require zero violations.
+10. Verify `git status --short` still lists the pre-existing scratch file only as untracked and never staged.
 ## Decisions and Rationale
 
 - **Integration test rather than production lint rule:** the invariant concerns committed repository authoring, while schema defaults remain legitimate for ingestion.
 - **Git-tracked inventory:** CI guards every committed document and leaves operator-owned scratch untouched.
+- **Hermetic fixtures:** synthetic temporary repositories retain missing-key and untracked-exclusion negatives after the live corpus becomes compliant.
 - **Exact values:** mere key presence would allow empty or drifted values.
 - **Small backfill slices:** each unit stays below the file-count heuristic.
 
@@ -142,6 +151,7 @@ Units D3-D7 use the same acceptance criterion as D2: canonical keys added, body 
 
 - Integration execution requires Git; this repository's CI checkout and development workflow already require it.
 - Scope filtering duplicates the public docline scope at a high level; comments must identify that coupling.
+- Synthetic tests must initialize and stage fixtures deterministically without reading global Git configuration.
 - A future schema version intentionally updates test and corpus together.
 - Local full-tree docs lint may inspect untracked scratch; do not modify the scratch to make a local command green. Use the targeted guard and clean-CI result honestly.
 
@@ -181,6 +191,7 @@ No constitutional violation, waiver, or exception is planned.
 **Formal plan-review provenance:** NOT RUN. This invocation exposes no agent/task dispatch tool, so no independent reviewer persona was spawned and no formal gate result exists.
 
 **Waiver authorization:** NONE. The operator's generic `stage next` command is workflow routing, not a waiver or approval signal.
+**Refinement authorization:** the operator authorized one plan/backlog refinement cycle only; it is not formal review evidence and is not a waiver.
 **Missing capability:** semantic reviewer subagent dispatch.
 **Current disposition:** shipment `095-S`, feature `106-F`, and all member tasks are blocked. Preserved backlog artifacts are not harvest- or Ship-ready.
 **Required unblock:** either append successful formal multi-persona review evidence for this exact plan, or obtain a new explicit plan-scoped operator waiver that names the plan, authorization, scope, risk, and expiry and is handled through the durable reservation/consumption contract in the governance plan.

@@ -25,6 +25,7 @@ docline:
 - A repository scan found nine tracked in-scope documents missing one or both keys: two closure docs, three compound docs, one decision, one design doc, and two plans.
 - The intentional untracked scratch spike also lacks both keys. A full filesystem lint rule would make this operator workspace fail until that unapproved file changed.
 - CI and future regressions concern committed content. A git-tracked integration guard can enforce repository authoring discipline while deliberately ignoring untracked operator scratch state.
+- After backfill the live corpus has no missing-key negative, and CI never sees the local scratch file; hermetic temporary Git repositories are required to keep missing-key and untracked-exclusion behavior testable.
 
 ## Decision
 
@@ -33,7 +34,9 @@ Add a Go integration test that enumerates tracked Markdown with `git ls-files`, 
 - `chunk_strategy: h1-h2-h3`;
 - `schema_version: "1.0"`.
 
-The guard applies to every tracked in-scope document regardless of `doc_type`; these are common base-contract authoring conventions. It is deliberately a test rather than a production lint-rule change because the requirement is repository persistence, while the schema defaults remain valid for external ingestion. The test's first run must fail on the nine tracked omissions. Backfill only those tracked files, in small file-family slices, then confirm green.
+The guard applies to every tracked in-scope document regardless of `doc_type`; these are common base-contract authoring conventions. It is deliberately a test rather than a production lint-rule change because the requirement is repository persistence, while the schema defaults remain valid for external ingestion. The live-corpus test's first run must fail on the nine tracked omissions. Backfill only those tracked files, in small file-family slices, then confirm green.
+
+The same test file must also create hermetic temporary Git repositories and exercise compliant tracked input, each missing key, wrong value/type, malformed YAML, invalid untracked exclusion, and tracked memory/archive exclusion. These synthetic cases call the same inventory/parser helper and remain active after the live corpus becomes compliant.
 
 ## Tracked Backfill Set
 
@@ -54,9 +57,9 @@ The untracked scratch spike is not read, edited, deleted, staged, or backfilled.
 ## Constitution Check
 
 - **I — Safety-First Go:** the guard uses existing Go/test dependencies and standard error handling.
-- **II — Test-First:** observe the new guard fail on the known tracked omissions before backfill, then pass.
+- **II — Test-First:** observe the live guard fail on known omissions before backfill, then pass while hermetic negative cases remain active.
 - **III/IV — Isolation and containment:** enumerate only files tracked inside this repository.
-- **V — Observability:** failure output names every offending file and key.
+- **V — Observability:** live and synthetic failures name every offending file and key.
 - **VI — Single Responsibility:** one test guards authoring convention; backfill tasks contain only Markdown metadata.
 - **VII — Destructive approval:** the scratch file is preserved untouched; no deletion or overwrite is authorized.
 - **VIII — Elevated risk:** no runtime/schema contract change; hardening is unnecessary.
@@ -70,6 +73,7 @@ No waiver or constitutional exception is required.
 
 - **Git dependency in integration tests:** this repository's CI always checks out Git history and existing integration helpers already resolve the repository root. Fail clearly if `git ls-files` cannot run.
 - **Scope-rule duplication:** encode and document the current public scope contract; keep the test narrow to base authoring keys.
+- **False confidence after backfill:** synthetic staged/untracked fixtures retain negative coverage independent of repository and operator state.
 - **Future schema version:** a deliberate contract upgrade must update this guard and corpus together.
 
 ## Promotion
