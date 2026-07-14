@@ -19,23 +19,31 @@ two `queued` shipments on staging branch `stage/2026-07-13-stage-next-triage`
 ## Shipments produced (queued)
 
 * **092-S** — Item-writer UTC timestamp normalization → **103-F** +
-  **103.001-T**, **103.002-T**, **103.003-T**, **103.004-T**, **103.005-T**
-  (harvested from stash `9B38A09E`, Go/CLI, test-first impl-plan). The single
-  original task was split into five ≤2-file tasks in response to PR #234 Copilot
-  review (constitution Task Granularity: &lt;3 files, &lt;5 functions,
-  &lt;4 test scenarios per task). Split map: 103.001-T = shared
-  `models.NowUTC()` helper + `artifacts.go`; 103.002-T = `queue.go` +
-  `gate_transition.go`; 103.003-T = `artifact_references.go` +
-  `templates/service.go`; 103.004-T = `shipment.go` + `migrate_links.go`;
-  103.005-T = `shipment_lifecycle.go`. 103.002-005 depend on 103.001-T.
+  **103.001-T … 103.010-T** (harvested from stash `9B38A09E`, Go/CLI,
+  test-first impl-plan). After an exhaustive writer-site re-sweep (PR #234
+  cycle-3), the work was decomposed into **ten** tasks, each modifying exactly
+  **one production file + its colocated `*_test.go` = 2 files** (strictly fewer
+  than the constitution's `<3 files` heuristic, which counts test files). Split
+  map: 103.001-T = `internal/models/frontmatter.go` (`models.NowUTC()` helper +
+  defensive defaults); 103.002-T = `internal/core/artifacts.go`; 103.003-T =
+  `queue.go`; 103.004-T = `shipment.go`; 103.005-T = `shipment_lifecycle.go`;
+  103.006-T = `gate_transition.go`; 103.007-T = `artifact_references.go`;
+  103.008-T = `migrate_links.go`; 103.009-T = `internal/core/templates/service.go`;
+  103.010-T = `internal/cli/update.go` (the `update --section` serializer, newly
+  found in the cycle-3 re-sweep). 103.002–103.010-T depend on 103.001-T. Tests
+  force a non-UTC local zone (deterministic red phase on UTC CI) and assert
+  emitted frontmatter ends with exactly `Z`.
 * **093-S** — Frontmatter hygiene backfill → **104-F** + **104.001-T**
-  (from `B42F5EF3`) + **104.002-T** (from `3F3FB119`), docs hygiene.
+  (from `B42F5EF3`, spike SKILL `name:` key + RED-phase test) + **104.002-T** and
+  **104.003-T** (from `3F3FB119`, docline-key backfill split 2 docs + 2 docs so
+  each task stays `<3 files`; PR #234 cycle-3). Docs hygiene.
 
 ## Decisions
 
 * Width isolation: Go/CLI (092-S) kept separate from docs hygiene (093-S).
 * The two low-priority doc-hygiene items grouped into one shipment (093-S) as
-  two separate tasks (skill-doc vs docline-doc concerns).
+  separate tasks: 104.001-T (skill-doc `name:` key) plus the docline-doc backfill
+  split across 104.002-T/104.003-T (two docs each, `<3 files`).
 * Stash `7F0A6E89` left **active** — out-of-tree `.tmpl` in the external
   autoharness repo (Principle IV); not shippable here.
 * No deliberation created — all items were small/well-scoped; lean impl-plans

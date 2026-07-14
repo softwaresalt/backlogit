@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Normalize backlogit item-artifact created_at/updated_at emission to canonical UTC (Z) across EVERY item-artifact timestamp write site in internal/core via a shared exported models.NowUTC() helper, decomposed into five heuristic-compliant (<3 files each) tasks.
+description: Normalize backlogit item-artifact created_at/updated_at emission to canonical UTC (Z) across EVERY item-artifact timestamp write site in internal/models, internal/core, internal/core/templates and internal/cli via a shared exported models.NowUTC() helper, decomposed into ten heuristic-compliant tasks (each one production file plus its colocated test = 2 files, strictly fewer than 3).
 doc_type: plan
 docline:
     stash_ref: 9B38A09E
@@ -53,25 +53,53 @@ the helper there is importable by both writer packages with **no import cycle**.
 An unexported `core.nowUTC` would NOT be callable from the `templates` package
 (PR #234 review, thread `3575231557`), so the helper is exported from `models`.
 
-## Complete implementation inventory → task mapping (audited 2026-07-13)
+## Complete implementation inventory → task mapping (audited 2026-07-13, revised for PR #234 cycle-3)
 
-Full audit of every item-artifact timestamp write site (revised in response to
-PR #234 Copilot review). Each is `time.Now()` (local) and becomes
-`models.NowUTC()`.
+Exhaustive sweep of every item-artifact timestamp write site, produced by
+grepping `internal/core/**`, `internal/cli/**`, `internal/db/**`,
+`internal/models/**`, `internal/telemetry/**`, `internal/events/**` for
+`time.Now()`, `created_at`/`updated_at`, `.UpdatedAt =`/`.CreatedAt =`, and every
+`models.SerializeFrontmatter` caller. Each **in-scope** site currently stamps
+`time.Now()` (local zone) into an item artifact's frontmatter and becomes
+`models.NowUTC()`. Sites are grouped one production file per task so each task
+modifies exactly **two files** (the production file + its colocated
+`*_test.go`), strictly fewer than the constitution's 3-file heuristic.
 
-| Task | File(s) (<3 per task) | Site(s) | Path |
+| Task | Production file | Site line(s) | Write path |
 |---|---|---|---|
-| `103.001-T` | `internal/models/*.go` (add `NowUTC`); `internal/core/artifacts.go` | 225 (create), 552, 819, 856 | helper + core create/update/link restamps |
-| `103.002-T` | `internal/core/queue.go`; `internal/core/gate_transition.go` | queue 277/293, 395; gate 341 | queue mutation + gate status-direct restamps |
-| `103.003-T` | `internal/core/artifact_references.go`; `internal/core/templates/service.go` | refs 105; service 124-127 | adopt/ID-rewrite restamp + direct section serializer |
-| `103.004-T` | `internal/core/shipment.go`; `internal/core/migrate_links.go` | shipment 144/200/248/255; migrate 167 | shipment create/add/mutate + link migration |
-| `103.005-T` | `internal/core/shipment_lifecycle.go` | 352/491/530/555/644 | shipment lifecycle transition restamps |
+| `103.001-T` | `internal/models/frontmatter.go` | add `NowUTC`; 42, 43 | shared helper + defensive `ArtifactFromFrontmatter` defaults (used when a parsed artifact omits timestamps) |
+| `103.002-T` | `internal/core/artifacts.go` | 225 (create `now`), 552, 819, 856 | create + update + adopt/section restamps (serialized 328, 726) |
+| `103.003-T` | `internal/core/queue.go` | 277 (`stamp`)→293, 395 | queue move/update restamps |
+| `103.004-T` | `internal/core/shipment.go` | 144, 200, 248, 255 | shipment create/add/mutate item restamps (299 = event log, OUT) |
+| `103.005-T` | `internal/core/shipment_lifecycle.go` | 352, 491, 530, 555, 644 | shipment lifecycle transition restamps |
+| `103.006-T` | `internal/core/gate_transition.go` | 341 | gate status-direct restamp |
+| `103.007-T` | `internal/core/artifact_references.go` | 105 | adopt/ID-rewrite reference restamp |
+| `103.008-T` | `internal/core/migrate_links.go` | 167 | link-migration restamp |
+| `103.009-T` | `internal/core/templates/service.go` | 124 (`now`)→126, serialized 129 | direct section-update frontmatter serializer (`package templates`) |
+| `103.010-T` | `internal/cli/update.go` | 240 (`now`)→241, 259, serialized 243 | CLI `update --section` direct frontmatter serializer |
 
-**Explicitly OUT of scope (separate concern, not item frontmatter):** JSONL
-event-log timestamps, e.g. `events.Event.Timestamp: time.Now()` at
-`internal/core/shipment.go:299` (and peers), formatted by `internal/core/logs.go`
-via RFC3339Nano into `.backlogit/logs/*.jsonl`. Those are the event-history
-stream, not item artifacts, and are deferred as a distinct follow-up if raised.
+Ten production files, ten tasks. `103.002`–`103.010-T` depend on `103.001-T`
+(they consume the shared `models.NowUTC()` helper).
+
+**Explicitly OUT of scope (verified, not item-artifact frontmatter):**
+
+* **JSONL event-log / history timestamps** (`events.Event.Timestamp`,
+  `ArchiveRecord.ArchivedAt`, commit/gate-evidence events): `shipment.go:299`,
+  `archive.go:277,315`, `commits.go:40`, `gate_evidence.go:43`,
+  `mcp/tools.go:573`, `db/logs.go:39,60` — the event-history stream formatted by
+  `internal/core/logs.go`, not item frontmatter.
+* **Already-UTC writers** (stash, checkpoints, hooks, telemetry, doctor,
+  docline clock): `internal/core/stash.go` (all sites `.UTC()`),
+  `internal/stash/stash.go:110`, `internal/db/stash.go`, `internal/events/**`
+  (checkpoint/hook/memory), `internal/hooks/**`, `internal/telemetry/harvest.go`,
+  `internal/core/doctor.go:158`, `internal/cli/checkpoint.go:185`,
+  `internal/cli/docs.go:106`, `internal/mcp/docs_tools.go:73` — these already
+  emit `Z`.
+* **Non-stamping re-serializers** (preserve the existing `updated_at`, add no new
+  timestamp): `archive.go:217,714` (archive/restore re-serialize),
+  `mcp/tools.go:1087` (`writeSectionsToFile` re-serializes parsed `fm` without a
+  new stamp — the MCP section path does not bump `updated_at`).
+* **Non-write comparisons**: `archive.go:887,903`, `task_lock.go:*` (deadlines).
 
 ## Non-goals
 
@@ -83,8 +111,9 @@ stream, not item artifacts, and are deferred as a distinct follow-up if raised.
 
 ## Blast-radius assessment
 
-* **Touches:** production Go code in `internal/models` (one small helper),
-  `internal/core`, and `internal/core/templates` (~19 assignment sites).
+* **Touches:** production Go code in `internal/models` (one small helper +
+  defensive defaults), `internal/core`, the separate `internal/core/templates`
+  package, and `internal/cli` (~20 assignment/serializer sites across 10 files).
   `internal/core/templates/service.go` is the template **service**
   (section-serialization Go code), **not** a `.tmpl` template family.
 * **Does NOT touch:** JSON schemas, CLI packaging/distribution, or any `.tmpl`
@@ -99,59 +128,88 @@ stream, not item artifacts, and are deferred as a distinct follow-up if raised.
 ## Approach (test-first / TDD)
 
 1. **`103.001-T` introduces the shared helper.** Add exported
-   `models.NowUTC()`; then swap the `artifacts.go` write sites.
-2. **Write failing tests FIRST (exact `Z` assertion).** For each task, add
-   regression tests that call the writer, read back the emitted Markdown
-   **frontmatter string**, and assert the raw `created_at`/`updated_at` values
-   **end with exactly `Z`** (canonical UTC): assert `strings.HasSuffix(value,
-   "Z")` (equivalently, equals the value formatted with `.UTC()`) and assert it
-   contains no `+HH:MM`/`-HH:MM` offset. Confirm the tests **fail** against the
-   current local-`time.Now()` emission (red phase). Parse-side tests may
-   *separately* keep accepting historical `+/-HH:MM` offsets to prove backward
-   compatibility — tolerance is on read; the strict `Z` assertion is on write.
-3. **Make the minimal change.** Replace each inventoried `time.Now()` write site
-   with `models.NowUTC()`.
-4. **Green + regression.** Re-run new tests plus the existing `internal/core`
-   suite. The `-07:00` fixtures in `artifact_size_test.go` are parser *inputs*,
-   not emission assertions, so they remain valid.
-5. **Full package gate.** `go test ./internal/...` stays green.
+   `models.NowUTC()`; convert the defensive `ArtifactFromFrontmatter` defaults.
+2. **Write failing tests FIRST with a DETERMINISTIC, environment-independent red
+   phase.** The naive assertion "emitted `updated_at` ends with `Z`" is NOT a
+   reliable red phase: CI runs on `ubuntu-latest` where the local zone is
+   normally **UTC**, so the pre-change `time.Now()` writers already serialize a
+   trailing `Z` and the test would pass before implementation (PR #234 cycle-3
+   thread `3575266998`). Each writer test MUST therefore **force a non-UTC local
+   zone** so the pre-change code deterministically fails on any runner:
+   * **Preferred (in-process):** at the top of the test, override the process
+     local zone and restore it on cleanup:
+     `orig := time.Local; time.Local = time.FixedZone("TESTNONUTC", -8*3600);
+     t.Cleanup(func(){ time.Local = orig })`. These tests MUST be **serial**
+     (no `t.Parallel`) because `time.Local` is process-global. Under this zone
+     the pre-change `time.Now()` path serializes `-08:00` (red); the post-change
+     `models.NowUTC()` path serializes `Z` (green).
+   * **Alternative (hermetic):** re-exec the writer assertion in a subprocess
+     with `TZ=America/Los_Angeles` set, for packages where mutating `time.Local`
+     is undesirable.
+3. **Assert canonical `Z` on the emitted frontmatter string.** Read back the
+   written Markdown, extract the raw `created_at`/`updated_at` values, and assert
+   each **ends with exactly `Z`** (`strings.HasSuffix(value, "Z")`, equivalently
+   equals the value formatted with `.UTC()`) and contains **no** `+HH:MM`/`-HH:MM`
+   offset. Parse-side tests may *separately* keep accepting historical
+   `+/-HH:MM` offsets to prove backward compatibility — tolerance is on read; the
+   strict `Z` assertion is on write.
+4. **Make the minimal change.** Replace each inventoried `time.Now()` write site
+   with `models.NowUTC()`. Confirm the test now passes (green).
+5. **Green + regression.** Re-run new tests plus the existing package suite. The
+   `-07:00` fixtures in `artifact_size_test.go` are parser *inputs*, not emission
+   assertions, so they remain valid.
+6. **Full package gate.** `go test ./internal/...` stays green.
 
 ## Task decomposition (2-hour rule — constitution §Task Granularity)
 
-The constitution heuristic caps a task at **<3 files, <5 functions, <4 test
-scenarios**. The audited surface (9 files including the helper, ~19 sites) is
-therefore split into **five** tasks, each modifying **≤2 files** with **≤3 test
-scenarios** (see the inventory table). The per-file site counts are mechanical
-one-line `models.NowUTC()` substitutions (not independent logic changes), so
-each task stays well within ~2 hours of human-equivalent effort.
+The constitution heuristic (NON-NEGOTIABLE) caps a task at **fewer than 3 files
+modified**, fewer than 5 functions changed, fewer than 4 test scenarios. PR #234
+cycle-3 thread `3575267006` correctly noted that a colocated `*_test.go`
+**counts toward the file limit**, so a task touching two production files plus
+its test is 3 files and breaches the heuristic. The decomposition is therefore
+**one production file + its one colocated `*_test.go` per task = exactly 2 files**
+(strictly fewer than 3), across ten tasks:
 
-* **`103.001-T`** — shared `models.NowUTC()` helper + `artifacts.go` writers.
-* **`103.002-T`** — `queue.go` + `gate_transition.go` writers. *(dep: 103.001-T)*
-* **`103.003-T`** — `artifact_references.go` + `templates/service.go` serializer. *(dep: 103.001-T)*
-* **`103.004-T`** — `shipment.go` + `migrate_links.go` writers. *(dep: 103.001-T)*
-* **`103.005-T`** — `shipment_lifecycle.go` writers. *(dep: 103.001-T)*
+* **`103.001-T`** — `internal/models/frontmatter.go`: add `models.NowUTC()` +
+  convert defensive defaults; `frontmatter_test.go`. *(foundation)*
+* **`103.002-T`** — `internal/core/artifacts.go` writers + test. *(dep: 103.001-T)*
+* **`103.003-T`** — `internal/core/queue.go` writers + test. *(dep: 103.001-T)*
+* **`103.004-T`** — `internal/core/shipment.go` writers + test. *(dep: 103.001-T)*
+* **`103.005-T`** — `internal/core/shipment_lifecycle.go` writers + test. *(dep: 103.001-T)*
+* **`103.006-T`** — `internal/core/gate_transition.go` writer + test. *(dep: 103.001-T)*
+* **`103.007-T`** — `internal/core/artifact_references.go` writer + test. *(dep: 103.001-T)*
+* **`103.008-T`** — `internal/core/migrate_links.go` writer + test. *(dep: 103.001-T)*
+* **`103.009-T`** — `internal/core/templates/service.go` serializer + test. *(dep: 103.001-T)*
+* **`103.010-T`** — `internal/cli/update.go` `update --section` serializer + test. *(dep: 103.001-T)*
 
-`103.002-005-T` depend on `103.001-T` because they consume the shared helper.
-All five belong to shipment `092-S`. Width isolation holds: every task is a
-single skill domain (Go code); no docs/schema/template-family work is bundled.
+`103.002`–`103.010-T` depend on `103.001-T` because they consume the shared
+helper. All ten belong to shipment `092-S`. The per-file substitutions are
+mechanical one-line `models.NowUTC()` swaps (not independent logic changes), so
+each task stays well within ~2 hours of human-equivalent effort. Width isolation
+holds: every task is a single skill domain (Go code); the colocated unit test is
+the atomic-milestone verification artifact for that same production change, not
+separate test-infrastructure work — no docs/schema/template-family work is
+bundled.
 
 ## Acceptance criteria
 
 * An exported `models.NowUTC()` helper exists and is used by **all** inventoried
-  item-artifact write sites across all five tasks; no item writer calls bare
+  item-artifact write sites across all ten tasks; no item writer calls bare
   `time.Now()`.
 * New item artifacts (features, tasks, subtasks, shipments) emit
   `created_at`/`updated_at` ending in exactly `Z`.
-* Per-task regression tests assert exact-`Z` emission and **fail** on the
-  pre-change code (red phase demonstrated); parse-side tests continue to accept
-  historical offsets (backward compatibility proven).
+* Per-task regression tests force a non-UTC local zone, assert exact-`Z`
+  emission, and **fail** on the pre-change code (deterministic red phase on any
+  runner, including UTC CI); parse-side tests continue to accept historical
+  offsets (backward compatibility proven).
 * `go test ./internal/...` is green.
 
 ## Estimated effort
 
-Five focused tasks, each within the constitution's per-task heuristic (<3 files,
-<4 test scenarios); single skill domain (Go code) with no doc/template-family
-work bundled in.
+Ten focused tasks, each within the constitution's per-task heuristic (2 files,
+&lt;4 test scenarios); single skill domain (Go code) with no doc/template-family
+work bundled in. Individually mechanical; the split satisfies the strict
+file-count heuristic rather than reflecting large per-task effort.
 
 ## Plan review
 
@@ -170,21 +228,31 @@ External review findings incorporated:
   `3575121017`): resolved by the Complete Implementation Inventory (all sites
   enumerated and verified in-tree).
 * **[D — pass 1] Assert canonical `Z`** (thread `3575108894`): resolved by the
-  exact-`Z` write-side assertion (Approach step 2), parse-side tolerance kept
+  exact-`Z` write-side assertion (Approach step 3), parse-side tolerance kept
   separate.
 * **[pass 2 — helper package boundary]** (thread `3575231557`): resolved — the
   helper is an **exported `models.NowUTC()`** callable from both `internal/core`
   and the separate `internal/core/templates` package (no import cycle).
 * **[pass 2 — 2-hour heuristic]** (thread `3575231580`): resolved — split into
-  five tasks, each ≤2 files / ≤3 test scenarios per constitution §Task
-  Granularity.
+  discrete per-file tasks per constitution §Task Granularity.
 * **[pass 2 — wrong path]** (thread `3575231596`): resolved — corrected
   `internal/core/queries.go` → **`internal/db/queries.go:75-86`** (Non-goals +
   blast-radius).
+* **[pass 3 — missed CLI writer]** (thread `3575266981`): resolved — added
+  `internal/cli/update.go:240` (`update --section` direct serializer) to the
+  inventory as `103.010-T`, after an exhaustive re-sweep of `internal/cli/**`,
+  `internal/db/**`, `internal/models/**`, `internal/telemetry/**`,
+  `internal/events/**` in addition to `internal/core/**`.
+* **[pass 3 — non-deterministic red phase]** (thread `3575266998`): resolved —
+  Approach step 2 forces a non-UTC local zone (`time.Local` override or `TZ`
+  subprocess) so the pre-change code fails on UTC CI runners.
+* **[pass 3 — test files count toward file limit]** (thread `3575267006`):
+  resolved — re-split to **one production file + one colocated test = 2 files**
+  per task (ten tasks), strictly fewer than 3.
 
-Self-assessment: scope/width isolation PASS (Go-only); 2-hour rule PASS (five
-≤2-file tasks); test-first PASS (exact-`Z` red phase); backward compatibility
-PASS (zone-agnostic read path). Residual: none blocking.
+Self-assessment: scope/width isolation PASS (Go-only); 2-hour rule PASS (ten
+2-file tasks); test-first PASS (deterministic non-UTC red phase + exact-`Z`);
+backward compatibility PASS (zone-agnostic read path). Residual: none blocking.
 
 **Recommended pre-build follow-up:** run the formal multi-persona `plan-review`
 skill against this revised plan before Ship builds `092-S`, and append its real

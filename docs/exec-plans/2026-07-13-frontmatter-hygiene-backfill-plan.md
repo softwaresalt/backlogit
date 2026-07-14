@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Lean plan to backfill two soft-convention frontmatter gaps — the missing name key on the in-repo spike SKILL.md (with a targeted RED-phase test) and the missing chunk_strategy/schema_version keys on four 091-S docline docs — as a single frontmatter-hygiene shipment.
+description: Lean plan to backfill two soft-convention frontmatter gaps — the missing name key on the in-repo spike SKILL.md (with a targeted RED-phase test) and the missing chunk_strategy/schema_version keys on four 091-S docline docs (split across two <3-file tasks) — as a single frontmatter-hygiene shipment.
 doc_type: plan
 docline:
     stash_ref: B42F5EF3
@@ -73,14 +73,30 @@ guards the `.github` skill metadata; and existing validators stay green.
 3. **Green.** The new parity/metadata test passes; `TestPluginBundleStructurallyValid`
    stays green.
 
-### Task 2 — `3F3FB119` (add docline keys to four docs)
+### Task 2 — `3F3FB119` part A: `104.002-T` (docline keys, docs 1–2)
 
-1. For each of the four docs, add `chunk_strategy: h1-h2-h3` and
-   `schema_version: "1.0"` to the YAML frontmatter, preserving existing keys and
-   ordering conventions. Keep nested `docline:` blocks at their existing
-   indentation; the two new keys are top-level scalars.
-2. Verify with `backlogit docs lint` — the three in-scope docs must stay valid
-   (0 violations); the memory doc is out of scope but edited for consistency.
+1. Add `chunk_strategy: h1-h2-h3` and `schema_version: "1.0"` to the YAML
+   frontmatter of the two **docline-governed** docs, preserving existing keys and
+   ordering; nested `docline:` blocks keep their indentation, the two new keys are
+   top-level scalars:
+   * `docs/compound/2026-07-13-copilot-review-loop-convergence.md`
+   * `docs/closure/2026-07-13-091-S-spike-docline-closure.md`
+2. Verify with `backlogit docs lint` — both docs must stay valid (0 violations).
+
+Two files, strictly fewer than the 3-file heuristic.
+
+### Task 3 — `3F3FB119` part B: `104.003-T` (docline keys, docs 3–4)
+
+1. Add the same two keys to the remaining two docs:
+   * `docs/closure/2026-07-13-091-S-compound-refresh.md` (docline-governed)
+   * `docs/memory/2026-07-13/091-S-spike-docline-ship-memory.md`
+     (`docs/memory/` is docline-**excluded**, so its keys are pure convention —
+     added for cross-doc consistency, not lint-enforced)
+2. Verify with `backlogit docs lint` — the in-scope closure doc must stay valid
+   (0 violations).
+
+Two files, strictly fewer than the 3-file heuristic. `104.002-T` and `104.003-T`
+are independent (no dependency); both belong to shipment `093-S`.
 
 ## Non-goals
 
@@ -99,13 +115,17 @@ guards the `.github` skill metadata; and existing validators stay green.
   stays green as a secondary regression gate.
 * `.github/skills/spike/SKILL.md` frontmatter begins with `name: spike`.
 * All four named docline docs carry `chunk_strategy: h1-h2-h3` and
-  `schema_version: "1.0"`; `backlogit docs lint` reports the in-scope docs valid.
+  `schema_version: "1.0"`, backfilled across two tasks (`104.002-T` docs 1–2,
+  `104.003-T` docs 3–4), each modifying two files; `backlogit docs lint` reports
+  the in-scope (docline-governed) docs valid.
 
 ## Estimated effort
 
-Two trivial, surgical edit sets (plus one small targeted test for Task 1). Well
-within the 2-hour rule; kept as two tasks so the skill-doc concern and the
-docline-doc concern stay isolated.
+Three trivial, surgical edit sets (plus one small targeted test for Task 1). Well
+within the 2-hour rule. Kept as three tasks: the skill-doc concern (`104.001-T`)
+stays isolated from the docline-doc backfill, and the four-doc backfill is split
+into two `104.002-T`/`104.003-T` tasks so each stays within the constitution's
+`<3 files` heuristic (PR #234 cycle-3 thread `3575267020`).
 
 ## Plan review
 
@@ -127,11 +147,16 @@ External review finding incorporated into this revision:
   `.github` copy.
 * **[E — nit] Grammar** (threads `3575108909`, `3575121086`): "edits sets" →
   "edit sets" (Estimated effort).
+* **[pass 3 — four-doc task exceeds file limit]** (thread `3575267020`):
+  resolved — the four-doc backfill (`3F3FB119`) is split into two tasks
+  (`104.002-T` docs 1–2, `104.003-T` docs 3–4), each modifying two files,
+  strictly fewer than the constitution's `<3 files` heuristic; `093-S` updated
+  to cover both.
 
 Self-assessment: scope/width isolation PASS (docs/test only, no Go/schema/template
-family code); 2-hour rule PASS; test-first PASS for Task 1 (red phase now
-demonstrable); validator coverage PASS (each task names its verifier). Residual:
-none blocking.
+family code); 2-hour rule PASS (each task &lt;3 files); test-first PASS for Task 1
+(red phase now demonstrable); validator coverage PASS (each task names its
+verifier). Residual: none blocking.
 
 **Recommended pre-build follow-up:** run the formal multi-persona `plan-review`
 skill against this revised plan before Ship builds `093-S`, and append its real
