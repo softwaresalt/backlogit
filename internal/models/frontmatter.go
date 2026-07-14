@@ -8,6 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// NowUTC returns the current wall-clock time normalized to UTC, so that every
+// item-artifact writer serializes created_at/updated_at with a canonical
+// trailing "Z" instead of a machine-local offset. It is exported so both
+// internal/core and the separate internal/core/templates and internal/cli
+// packages can share one timestamp convention without an import cycle.
+func NowUTC() time.Time { return time.Now().UTC() }
+
 // ParseFrontmatter extracts YAML frontmatter from Markdown content.
 // Returns the parsed key-value pairs, the remaining body text, and any error.
 // Both LF and CRLF line endings are supported.
@@ -39,8 +46,8 @@ func ParseFrontmatter(content string) (map[string]any, string, error) {
 func ArtifactFromFrontmatter(fm map[string]any, body string) (*Artifact, error) {
 	a := &Artifact{
 		Description: body,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   NowUTC(),
+		UpdatedAt:   NowUTC(),
 	}
 
 	if v, ok := fm["id"].(string); ok {
