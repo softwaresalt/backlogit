@@ -43,8 +43,18 @@ artifacts.
 
 ## Shared helper (package-boundary aware)
 
-Introduce an **exported** `func NowUTC() time.Time { return time.Now().UTC() }`
-in **`internal/models`**. Rationale: the write sites live in two packages —
+Introduce an **exported, doc-commented** helper in **`internal/models`**, written
+born-compliant with Go's exported-identifier documentation convention (and
+`golangci-lint`'s `revive`/`golint` exported-comment rule):
+
+```go
+// NowUTC returns the current wall-clock time normalized to UTC, so that every
+// item-artifact writer serializes created_at/updated_at with a canonical
+// trailing "Z" instead of a machine-local offset.
+func NowUTC() time.Time { return time.Now().UTC() }
+```
+
+Rationale: the write sites live in two packages —
 `internal/core` and the separate `internal/core/templates` package
 (`templates/service.go` is `package templates`). `internal/core/templates`
 imports `internal/models` (for `SerializeFrontmatter`), and `internal/core`
@@ -170,7 +180,10 @@ functions and `<3` files.
 5. **Green + regression.** Re-run new tests plus the existing package suite. The
    `-07:00` fixtures in `artifact_size_test.go` are parser *inputs*, not emission
    assertions, so they remain valid.
-6. **Full package gate.** `go test ./internal/...` stays green.
+6. **Full quality-gate sequence (constitution).** The complete gate MUST pass:
+   `go test ./...`, `go vet ./...`, `golangci-lint run`, and `gofmt -l .` (no
+   output). The new `models.NowUTC()` helper is authored born-compliant with the
+   exported-doc-comment lint rule (see Shared helper).
 
 ## Task decomposition (2-hour rule — constitution §Task Granularity)
 
@@ -218,7 +231,10 @@ no docs/schema/template-family work is bundled.
   emission, and **fail** on the pre-change code (deterministic red phase on any
   runner, including UTC CI); parse-side tests continue to accept historical
   offsets (backward compatibility proven).
-* `go test ./internal/...` is green.
+* The full constitution quality-gate sequence passes: **`go test ./...`**,
+  **`go vet ./...`**, **`golangci-lint run`**, and **`gofmt -l .`** (empty output).
+  The exported `models.NowUTC()` helper carries its required Go doc comment so the
+  linter's exported-comment rule is satisfied.
 
 ## Estimated effort
 

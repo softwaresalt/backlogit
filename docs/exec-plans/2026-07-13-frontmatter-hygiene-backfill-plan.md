@@ -118,6 +118,11 @@ are independent (no dependency); both belong to shipment `093-S`.
   `schema_version: "1.0"`, backfilled across two tasks (`104.002-T` docs 1–2,
   `104.003-T` docs 3–4), each modifying two files; `backlogit docs lint` reports
   the in-scope (docline-governed) docs valid.
+* Because `104.001-T` adds Go **test** code (the `.github` parity/metadata test),
+  the full constitution quality-gate sequence MUST pass on that task:
+  **`go test ./...`**, **`go vet ./...`**, **`golangci-lint run`**, and
+  **`gofmt -l .`** (empty output). The docs-only tasks (`104.002-T`/`104.003-T`)
+  are additionally gated by `backlogit docs lint`.
 
 ## Estimated effort
 
