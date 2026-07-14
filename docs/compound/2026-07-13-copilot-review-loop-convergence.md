@@ -86,6 +86,26 @@ convergence rule derived from the verifiable ruleset configuration and §1.8*, n
 loop this session had to break. The guidance stands for any future PR on this
 ruleset that does draw Copilot threads.
 
+## Reinforcement — 092-S (PR #235, merge `4a90bf4`)
+
+The feature PR for shipment 092-S (item-writer UTC timestamp normalization — 36
+changed files across `internal/models`, `internal/core`, `internal/core/templates`,
+and `internal/cli`) reached the **same clean fixed point on its first and only
+HEAD**: Copilot posted a single `COMMENTED` review ("36/36 files, no comments"),
+0 threads, so **0 review-fix cycles** ran and the §1.9 readiness gate passed
+directly. This is a second, larger data point (36 files vs 091-S's 6) that a
+substantive change can converge in one pass — and the operative variable was
+**upstream hardening, not luck**: the implementation plan carried an exhaustive
+writer-site inventory and an explicit parallel-test-safe RED-phase design (the
+`t.Parallel()` / hermetic-`TZ`-subprocess caveat), so the code that landed left
+little for the bot to flag. Contrast the *staging* PR in the same lineage, which
+ran a multi-cycle loop before its plan was hardened. The durable inference: the
+cheapest way to keep the Copilot loop at zero cycles is to eliminate findings
+**before** the first push (thorough plan + local `review` gate + green
+constitution gates), not to get better at resolving threads after the fact. The
+cycle-cap discipline (§1.8) remains the safety net for PRs that *do* draw
+threads, and must never be used to clear the merge gate on still-valid findings.
+
 ## Applicability
 
 Applies to any GitHub repo whose branch protection auto-triggers a bot review on
