@@ -65,6 +65,8 @@ A missing, failed, or unattributed required persona makes the gate FAIL. Inline 
 
 A future waiver is valid only when the plan gate record includes `review_mode: operator_waiver`, a unique `waiver_id`, exact plan path and digest, operator authorization reference and authorizer, missing capability, reason, UTC issue time, expiry, acknowledged residual risk, and intended disposition. Generic workflow commands are never waiver signals.
 
+The digest is lowercase hexadecimal SHA-256 over exact UTF-8 bytes from byte zero up to, but excluding, the exact heading `## Operator Waiver Ledger` and its immediately preceding separator line break; without that heading, hash the entire file. The ledger is appended at EOF after exactly one additional line-break sequence matching the file; the excluded suffix starts at the first byte of that added line break, so removing it reconstructs the exact pre-reservation bytes. Reservation, later validation, and consumption always recompute this ledger-excluded canonical range, so plan-content edits invalidate the waiver while ledger-only state changes do not.
+
 Before any harvest mutation, Stage must append a durable waiver reservation to the same plan: `waiver_id`, `state: reserved`, `reserved_at`, `reserved_by_stage_session`, and plan digest. Existing reserved or consumed records reject reuse. After successful harvest, Stage updates that record to `state: consumed` with `consumed_at`, `consumed_by_harvest_ids`, and `shipment_id`. A crash after reservation remains fail-closed and requires a new explicit operator decision; it never silently frees the waiver.
 
 The legacy `skip_review: true` and `force_harvest_no_gates: true` values are not bypasses. If retained for compatibility, they only request the operator-waiver path and cannot reach harvest without a fresh valid waiver and successful reservation.
@@ -72,6 +74,8 @@ The legacy `skip_review: true` and `force_harvest_no_gates: true` values are not
 ## Current Gate State
 
 No waiver was authorized for either current plan. The generic `stage next` command is workflow routing only. Formal reviewer dispatch was unavailable, so both plans and shipments are BLOCKED pending either successful formal multi-persona evidence or a new explicit, plan-scoped operator waiver. No waiver reservation or consumption record exists.
+
+The repository's generic artifact transition accepted shipment `blocked`, but shipment lifecycle code has no `blocked -> queued` transition and `ClaimShipment` accepts only queued manifests. Stash `DB1F9026` tracks atomic hold/requeue support. Until it lands, approval alone does not make `094-S` or `095-S` claimable; generic `blocked -> active` is forbidden because it bypasses atomic member activation.
 
 ## Upstream Template Handoff
 

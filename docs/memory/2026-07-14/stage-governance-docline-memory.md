@@ -17,6 +17,7 @@ docline:
 - Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.004-T` are blocked.
 - Shipment `095-S`, feature `106-F`, and tasks `106.001-T` through `106.007-T` are blocked.
 - The artifacts remain in `.backlogit/queue/` and were not removed or archived.
+- Shipment `blocked` was accepted by generic artifact update but cannot transition back to queued through shipment lifecycle; `ClaimShipment` therefore cannot resume either manifest. Stash `DB1F9026` tracks atomic hold/requeue support, and generic `blocked -> active` is forbidden.
 - Formal plan-review dispatch was unavailable in this invocation.
 - No operator waiver exists. Generic `stage next` routing was incorrectly interpreted earlier and is not authorization.
 - Unblocking requires successful formal multi-persona evidence for each plan or a new explicit plan-scoped operator waiver.
@@ -48,6 +49,7 @@ docline:
 - Consumed source entries `8CD8F46A`, `CA877CD1`, and `A4BE2FAD` remain archived.
 - `7F0A6E89` remains active/deferred for the external spike template.
 - `823BADF4` remains active/deferred for the three external governance templates and must not enter an in-repo shipment.
+- `DB1F9026` remains active/high for width-isolated atomic shipment hold/requeue lifecycle; it is not part of either blocked shipment.
 
 ## Validation and Known State
 
@@ -57,10 +59,15 @@ docline:
 - Tool-generated shipment manifests previously produced non-blocking blank-line-at-EOF `git diff --check` warnings; do not claim that check was clean.
 - `docs/decisions/2026-07-13-scratch-spike.md` remains untracked and must not be edited, deleted, or committed.
 
+## Additional Review Corrections
+
+- All eleven harvested tasks now carry concrete RED/GREEN or preservation acceptance criteria.
+- The waiver digest is lowercase SHA-256 over exact ledger-excluded UTF-8 bytes, so plan edits invalidate authorization and ledger-only state updates do not.
+- Shipment `blocked` is fail-closed but not resumable in current lifecycle code; stash `DB1F9026` records the separate prerequisite.
+
 ## Next Steps
 
-1. Commit and push the authorization correction and three Copilot fixes in one commit.
-2. Reply to all three Copilot comments with that SHA, then resolve each thread.
-3. Wait for a fresh Copilot review covering the new HEAD and green CI.
-4. Do not present the PR or shipments as ready while formal plan review remains blocked.
-5. Do not merge the staging PR.
+1. Keep both plans, shipments, features, and tasks blocked; do not claim or implement them.
+2. Require exact-plan formal evidence or a new explicit plan-scoped waiver before any plan-gate unblock.
+3. Require supported requeue from `DB1F9026`, or explicit operator-authorized artifact-preserving replacement shipment assembly, before Ship intake.
+4. Do not merge the staging PR.

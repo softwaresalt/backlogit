@@ -12,6 +12,7 @@ docline:
         - 8CD8F46A
         - CA877CD1
         - 823BADF4
+        - DB1F9026
     review_state: blocked
 ---
 
@@ -38,6 +39,7 @@ The repository declares a supported reviewer dispatch topology, but plan-review 
 | G9 | Plans contain `## Constitution Check` | Unit G4 adds the exact section and principle mapping contract to both impl-plan copies. |
 | G10 | Mirrored surfaces stay guarded | Unit G1 checks both `.github` and plugin copies for required semantics. |
 | G11 | Generated sources receive upstream closure | Stash `823BADF4` tracks all three external autoharness templates; closure requires regeneration verification. |
+| G12 | Blocked shipments remain fail-closed and resumable | Stash `DB1F9026` tracks supported atomic shipment hold/requeue lifecycle; current manifests cannot re-enter `ClaimShipment` until it lands. |
 
 ## Scope Boundaries
 
@@ -56,6 +58,7 @@ The repository declares a supported reviewer dispatch topology, but plan-review 
 - Treating GitHub Copilot review as formal plan-review evidence.
 - Writing external autoharness templates from this workspace.
 - Mixing stash `823BADF4` into an in-repo shipment.
+- Mixing width-isolated shipment lifecycle stash `DB1F9026` into governance shipment `094-S`.
 - Retrofitting old plan-review artifacts.
 
 ## Implementation Units
@@ -70,7 +73,7 @@ The repository declares a supported reviewer dispatch topology, but plan-review 
 
 Create semantic-marker checks over each mirrored pair. Do not assert exact whole-file equality because environment-specific frontmatter/prose differs. Grouped scenarios:
 
-1. both plan-review copies contain dispatch preflight, required reviewer evidence, FAIL-on-incomplete dispatch, future fresh-waiver fields, reservation/consumption fields, and no inline/hosted substitution;
+1. both plan-review copies contain dispatch preflight, required reviewer evidence, FAIL-on-incomplete dispatch, future fresh-waiver fields, canonical SHA-256 digest rules, reservation/consumption fields, and no inline/hosted substitution;
 2. both Stage copies require complete gate evidence, reject existing waiver reservation/consumption, and negatively prove `skip_review`, `force_harvest_no_gates`, and both together cannot reach harvest without a new explicit valid waiver;
 3. both impl-plan copies require the exact `## Constitution Check` heading and principle/deviation mapping.
 
@@ -93,6 +96,8 @@ Formal mode requires every always-on and triggered persona to return. Append per
 
 A future waiver request requires a unique `waiver_id`, exact plan path and digest, operator/authorizer and explicit authorization reference, missing capability, reason, issue/expiry timestamps, acknowledged residual risk, and intended disposition. Decision is WAIVED, never PASS. This contract does not create a waiver for the current plan.
 
+Define the digest as lowercase hexadecimal SHA-256 over the exact UTF-8 bytes from byte zero up to, but excluding, the exact heading `## Operator Waiver Ledger` and its immediately preceding separator line break; when no ledger exists, hash the entire file. Reservation appends exactly one additional line-break sequence matching the file before that heading, then the ledger, without changing any pre-existing byte. The excluded suffix starts at the first byte of that added line break. Every reservation, validation, and consumption recomputes the same ledger-excluded range; any earlier plan edit changes the digest and invalidates the waiver, while ledger state updates do not.
+
 **Acceptance criteria:** Both copies describe executable formal dispatch, attributed evidence, fail-closed behavior, and a fresh future-waiver contract; G1 scenario 1 passes.
 
 ### Unit G3: Enforce provenance, consumption, and bypass closure
@@ -108,7 +113,7 @@ At pre-harvest, accept only formal PASS, formal ADVISORY plus explicit operator 
 For a future waiver, Stage must:
 
 1. reject generic workflow commands as authorization;
-2. verify scope/path/digest and confirm no matching reservation/consumption record;
+2. verify scope/path and the lowercase SHA-256 digest over the ledger-excluded canonical byte range, then confirm no matching reservation/consumption record;
 3. append a durable pre-harvest record to the plan with `waiver_id`, `state: reserved`, `reserved_at`, `reserved_by_stage_session`, and plan digest before any backlog mutation;
 4. treat a failed/partial harvest as consumed-for-safety because the reservation remains;
 5. after successful harvest, update the record to `state: consumed` with `consumed_at`, `consumed_by_harvest_ids`, and `shipment_id`;
@@ -167,6 +172,13 @@ Stash `823BADF4` tracks external Principle IV-bounded changes to:
 
 Do not add this out-of-tree work to shipment `094-S` or `095-S`. Governance closure requires the external changes to land, regeneration of all three `.github` targets, and verification that dispatch, consumption, bypass, and Constitution Check contracts survive regeneration.
 
+## Shipment Hold and Requeue Prerequisite
+
+Generic artifact update accepted `queued -> blocked` for shipments `094-S` and `095-S`, but the shipment lifecycle supports only `queued -> active` and `ClaimShipment` only accepts queued manifests. There is no supported `blocked -> queued` transition. Therefore the current blocked manifests are the safest fail-closed state required by the operator, but they are intentionally not directly claimable or resumable.
+
+High-priority stash `DB1F9026` tracks width-isolated Go/CLI work for atomic `queued -> blocked -> queued` shipment lifecycle and tests proving requeue restores normal `ClaimShipment` member activation. Do not use generic `blocked -> active`, because it bypasses atomic claim activation. Do not add this lifecycle concern to shipment `094-S` or `095-S`.
+
+Approval of either plan alone does not make its current shipment Ship-ready. After valid plan evidence exists, normal intake additionally requires `DB1F9026` to land and a supported requeue, or a new explicit operator-authorized replacement-shipment procedure that preserves every harvested artifact.
 ## Risks and Caveats
 
 - Documentation cannot force a host to expose a tool; it can detect, report, and halt.
@@ -231,7 +243,7 @@ No constitutional violation or current waiver exists.
 **Waiver authorization:** NONE. The operator's generic `stage next` command is not a waiver or approval signal.
 **Missing capability:** semantic agent subagent dispatch (`agent` / `agent/runSubagent`).
 **Current disposition:** shipment `094-S`, feature `105-F`, and all member tasks are blocked. No harvest or Ship readiness may be inferred from the preserved artifacts.
-**Required unblock:** either append successful formal multi-persona review evidence for this exact plan, or obtain a new explicit operator waiver naming this plan, scope, risk, expiry, and authorization, then reserve/consume it using the future contract.
+**Required plan-gate unblock:** either append successful formal multi-persona review evidence for this exact plan, or obtain a new explicit operator waiver naming this plan, scope, risk, expiry, and authorization, then reserve/consume it using the future contract. Ship intake remains separately blocked until supported requeue from stash `DB1F9026` lands or the operator explicitly authorizes artifact-preserving replacement shipment assembly.
 
 ### Informal Single-agent Assessment
 
