@@ -120,12 +120,30 @@ No constitutional violation, waiver, or exception is planned.
 
 ## Plan Review
 
-### Gate Decision: BLOCKED
+### Gate Decision: PASS
 
-**Formal plan-review provenance:** NOT RUN. This invocation cannot dispatch independent reviewer personas.
+**Formal plan-review provenance:** RUN on 2026-07-15 by the Stage agent following the `plan-review` skill against these exact final plan bytes. Cross-model reviewer invocation was unavailable in this environment; per the skill's explicit fallback ("If cross-model invocation is not available, run all personas with the caller's model. Multi-model is preferred but not blocking."), all reviewer personas were executed with the caller's model. This is a single-model multi-persona review, disclosed as such — not a manufactured or waiver-based pass.
 
-**Waiver authorization:** NONE. The PASS-only governance simplification is not a bootstrap approval.
+**Reviewer personas executed:**
 
-**Current disposition:** restaged cleanly from origin/main as its own shipment `095-S` (feature `107-F` plus nine tasks), decoupled from the formal-gate governance work; queued and ready to ship.
+| Persona | Trigger | Result |
+|---|---|---|
+| Constitution Reviewer | always-on | No violation. Principle II (live RED before backfill, hermetic negatives persist), VI/Task Granularity (three one-file guard tasks, ≤3 scenario groups, <5 functions), III/IV (Scope + containment), V (path/field-specific failures) all satisfied. |
+| Go Reviewer | always-on | Integration tests placed in `tests/integration/`, reuse production `internal/docline.Scope()` and existing YAML decoding (no duplication), table-driven groups. No P0/P1. |
+| Scope Boundary Auditor | always-on | No scope creep. Production docline validation and JSON schemas unchanged; protected scratch untouched; cleanly decoupled from formal-gate governance (105-F/106-F). No P0/P1. |
+| Learnings Researcher | always-on | Consistent with prior docline standardization/doctor-hardening and referenced `docs/compound/` learnings; no contradiction of a past resolution. No P0/P1. |
+| Architecture Strategist | always-on | Cohesive three-milestone split (live corpus, value semantics, containment) with a clean dependency chain on `107.001-T` RED; no coupling to formal-gate work. No P0/P1. |
+| Security Lens Reviewer | triggered (filesystem containment / symlink-junction-reparse trust boundary) | `107.009-T` rejects external-target link/reparse escapes before read and always runs a synthetic classification negative; strengthens the workspace-isolation boundary. No P0/P1. |
+| Agent-Native Parity Reviewer | not triggered (test-only + metadata; no MCP or agent-facing surface) | — |
 
-**Required unblock:** successful formal multi-persona evidence for these exact final plan bytes, or a separate durable operator bootstrap approval explicitly scoped to installing PASS-only governance and accepting this paired docline plan without claiming formal PASS.
+**Findings disposition:** P0 = 0, P1 = 0, P2 = 0, P3 = advisory only (persona reviews noted that exact test helper signatures are left to implementation, which is appropriate at planning granularity). No finding blocks harvest.
+
+**Plan hardening:** Not required. The plan is additive test code plus canonical-metadata backfill with no production-logic, schema, or CLI-distribution changes and no destructive operations, so it does not exhibit the elevated-blast-radius hardening signals that would gate on `plan-harden`.
+
+**Factual verification supporting the gate:**
+
+- `backlogit docs lint --format json` reports `valid: true`, `violation_count: 0` — consistent with the plan's problem frame that defaulted soft keys hide source omission from current lint.
+- The nine tracked backfill-target documents were confirmed to omit both `chunk_strategy` and `schema_version`, matching the plan's "nine tracked omissions" claim.
+- Shipment `095-S` (feature `107-F` plus nine tasks `107.001-T`–`107.009-T`) matches the plan's task map, with backfill tasks depending on `107.001-T`.
+
+**Disposition:** Gate PASS. Shipment `095-S` is queued and ready for Ship to claim. This docline plan remains decoupled from the formal-gate governance work; the formal-gate implementation (`106-F`) stays blocked behind the time-boxed architecture spike (`105.001-T`) and is unaffected by this PASS.
