@@ -4,93 +4,181 @@ schema_version: "1.0"
 title: 'Optional size estimation for feature and shipment artifacts plan'
 source: docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md
 doc_type: plan
-description: 'Bounded plan extending optional size estimation to feature and shipment levels with level-specific semantics, provenance metadata, estimate history, and non-persisted derived rollups.'
+description: 'Contract/architecture spike charter (PR #241 refocus) for optional backlogit-owned size extensions on the docline base contract: structured composition, provenance/history atomicity, and ruleset ownership questions gated before any implementation.'
 docline:
     date: 2026-07-14T23:40:00Z
+    refocused: 2026-07-15T00:00:00Z
+    time_box: "2h"
+    conclusion: "pending"
+    confidence: "low"
     linked_stash_ids:
         - D7B1B33D
-    review_state: passed
-    gate: PASS
-    review_provenance: "plan-review skill RUN 2026-07-15 by Stage against final plan bytes; single-model multi-persona (cross-model unavailable per skill fallback); P0=0 P1=0 P2=0"
+    review_state: spike-chartered
+    gate: SPIKE
+    review_provenance: "plan-review skill RE-RUN 2026-07-15 by Stage against final plan bytes after PR #241 refocus to a contract/architecture spike; single-model multi-persona (cross-model unavailable per skill fallback); no implementation PASS recorded — spike exit criteria only"
 ---
 
-# Optional Size Estimation for Feature and Shipment Artifacts
+# Size Extension Contract Architecture Spike — Feature and Shipment Sizing (D7B1B33D)
+
+## Status: Refocused to a contract/architecture spike (PR #241)
+
+This document was harvested as an implementation plan and previously recorded an
+implementation-ready PASS. Bounded investigation for PR #241 found that
+provenance/history atomicity and XS-XL aggregation semantics are **not yet
+resolvable as an implementable contract** against current code. Per the Stage
+honesty rule ("do not manufacture implementation readiness"), it is refocused
+into a **time-boxed (2h) contract/architecture spike** (`108.001-T`) that gates
+three blocked implementation follow-ups (`108.002-T`/`108.003-T`/`108.004-T`).
+The resolvable parts (base-contract/extension ownership and the structured
+composition sketch) are recorded below as spike inputs; the unresolved parts are
+named explicitly as spike questions, not decisions.
 
 ## Problem Frame
 
-Size estimation currently exists as an optional `size` field on tasks (enum
-XS-XL). Stash `D7B1B33D` asks to extend optional size estimation to the feature
-and shipment levels **without** conflating human-authored estimates with
-machine-derived rollups. The core risk is provenance: a derived composition
-(e.g., a feature size implied by its child tasks) must never be written back as
-though a human authored it. The work is backlogit-internal (schema contract plus
-Go CLI), and it must stay decoupled from the formal-gate spike and the docline
-guard staged alongside it.
+Size estimation currently exists as an optional `size` field on **tasks only**
+(enum XS-XL; `.backlogit/header-def.yaml`). Feature and shipment types define no
+`size` field, and no `size_source`, `size_ruleset_version`, or estimate-history
+concept exists anywhere in `internal/`, `schemas/`, or the header-def. Stash
+`D7B1B33D` asks to extend optional size estimation to feature and shipment
+levels **without** conflating human-authored estimates with machine-derived
+composition.
 
-## Requirements Trace
+**Base-contract / extension ownership (authoritative, PR #241).** Docline owns
+only the base Markdown/frontmatter ingestion contract and its compatibility
+rules. That base contract is open/extensible — like a base class that can be
+extended with additional optional properties. `size`, `size_source`, and
+`size_ruleset_version` are optional **backlogit-owned** extension properties.
+Docline does **not** calculate, default, aggregate, validate domain semantics,
+or emit size; consumers (graphtor, engram) tolerate/preserve or safely ignore
+these extension keys per existing codec behavior. Any derived feature/shipment
+composition is a backlogit runtime/query projection and is **never** persisted as
+if human-authored.
 
-| ID | Requirement | Task |
+## Bounded Investigation Findings (read-only, current HEAD)
+
+| # | Finding | Evidence |
 |---|---|---|
-| SE1 | Level-specific size semantics for feature vs shipment (schema/contract) | `108.001-T` |
-| SE2 | Provenance metadata fields `size_source` and `size_ruleset_version` defined in schema; persisted through the shared `core.SetArtifactSize` seam | `108.001-T` (define) / `108.002-T` (persist) |
-| SE3 | Estimate-history behavior on size/source change (append-only), emitted from the same core seam | `108.002-T` |
-| SE4 | Derived composition/rollups exposed at render time with CLI/MCP parity, never persisted as authored | `108.003-T` |
-| SE5 | CLI/MCP parity documentation and verification for feature/shipment sizing | `108.004-T` |
+| F1 | The size mutation seam accepts only `(id, size)` and has no provenance inputs. | `internal/core/artifact_size.go:35` — `SetArtifactSize(ctx, ws, id, size string)`. |
+| F2 | Both adapters route only `size` through that seam. | CLI `internal/cli/update.go:97-115`; MCP `internal/mcp/tools.go:747-755`. |
+| F3 | `SetArtifactSize` intentionally emits **no** event (size-only changes bypass the hook chain). | `internal/core/artifact_size.go:32-34`. |
+| F4 | Item history is append-only **JSONL** events, not YAML frontmatter; appends are best-effort (warn-on-failure). | `internal/core/commits.go:36-53` (`events.NewEventWriter`, `AppendEvent`, `slog.Warn` on failure). |
+| F5 | Production containment/write path is lexical only and offers no realpath/rollback atomicity. | `internal/core/workspace.go:271-290` `SafeResolve` (lexical). |
+| F6 | No canonical XS-XL aggregation ruleset exists anywhere in the codebase. | grep of `internal/`, `schemas/`, header-def: no `size_source`/`size_ruleset`/size-rollup/histogram code. |
 
-## Task Map (width-isolated, each <=2h)
+## Requirements Trace (contract sketch → spike; implementation gated)
 
-### `108.001-T` — Schema and contract (schema only)
+| ID | Requirement | Disposition |
+|---|---|---|
+| SE1 | Level-specific optional `size` semantics for feature vs shipment (schema/contract) | Resolvable; sketch in spike `108.001-T`, implemented by gated `108.002-T` after proceed. |
+| SE2 | Typed provenance inputs `size_source`/`size_ruleset_version` and defaulting across the core seam and both adapters | **Unresolved** (F1–F3): the seam has no provenance input path today. Named spike question. |
+| SE3 | Estimate-history behavior covering **every** provenance-field change, with a defined event/write failure ordering | **Unresolved** (F3–F5): overlaps the partial-core-mutation-rollback open question. Named spike question. |
+| SE4 | Explicit **structured** derived composition (not a synthetic categorical aggregate) exposed at render with CLI/MCP parity | Composition shape resolvable (see below); membership/dedup/ruleset ownership must be ratified by the spike. |
+| SE5 | CLI/MCP parity documentation and verification | Gated `108.004-T` after the contract is ratified. |
 
-Define optional `size` semantics distinctly for `feature` and `shipment` in the
-schema/registry: what a level's authored size means, the allowed enum, and the
-new provenance fields `size_source` (e.g., `human`, `derived`, `ruleset`) and
-`size_ruleset_version`. Schema/contract change only — no writer or render logic.
+## Structured Composition Contract Sketch (spike input, must be ratified)
 
-**Backward compatibility:** the change is purely additive. Existing task-level
-`size` values without provenance remain valid; `size_source` and
-`size_ruleset_version` are optional, and absent provenance is read as
-unknown/legacy and never rewritten as `human`. No migration of existing
-artifacts is performed.
+No canonical XS-XL aggregation ruleset exists (F6), so summing categorical
+values into a single synthetic size would invent arithmetic. The spike's
+preferred direction is an **explicit structured composition** response, computed
+on read and never persisted:
 
-### `108.002-T` — Provenance persistence and estimate history (core seam, both adapters)
+```
+composition:
+  histogram: { XS: n, S: n, M: n, L: n, XL: n }   # counts per authored size
+  unsized: n                                        # members with no size
+  members: [ canonical member IDs counted ]         # exact, de-duplicated
+  ruleset_version: <string|null>                    # null until a ruleset is owned
+```
 
-Extend the canonical `core.SetArtifactSize` seam (`internal/core/artifact_size.go`)
-— the single body-preserving size-mutation helper — rather than duplicating logic
-in the CLI. On feature/shipment size writes it persists `size_source` and
-`size_ruleset_version` and appends an estimate-history event (append-only log)
-when size or source changes. Because both the CLI (`internal/cli/update.go`
-`update --size`) and the MCP adapter (`internal/mcp/tools.go` `update_item` size
-argument) already route through this one seam, provenance and history are covered
-identically for CLI and MCP with no adapter-specific duplication. Derived values
-MUST NOT be written with `size_source: human`. Core mutation-seam concern only.
+**Membership and de-duplication (resolves the double-count finding):**
 
-### `108.003-T` — Derived composition/rollups at render (CLI + MCP parity)
+* **Feature composition** counts a feature's **direct children by `parent_id`**
+  (tasks/reviews), each canonical ID once.
+* **Shipment composition** expands the shipment manifest, then **de-duplicates the
+  union of `{feature, its child tasks}`** so a manifest listing both a feature and
+  its child tasks counts each canonical work item exactly once. The `members`
+  array makes the counted set auditable.
+* **Missing/legacy handling:** members without an authored `size` increment
+  `unsized`, never a default bucket. Absent `size_source` reads as unknown/legacy
+  and is never rewritten as `human`.
 
-Expose derived composition/rollups (aggregated child sizing) for feature and
-shipment at render time via a shared render/query helper consumed by BOTH the CLI
-(`get`/`queue` render) and the MCP surfaces (`get_item`, `get_shipment`), so
-composition is presented with CLI/MCP parity rather than CLI-only. Derived
-rollups are computed on read and are never persisted into the artifact body as
-authored estimates. Render/query concern only.
+This shape is implementable and avoids both invented categorical arithmetic and
+feature+child double counting. It remains a **sketch** until `108.001-T` ratifies
+membership rules, the `unsized` contract, and ruleset-version ownership.
 
-### `108.004-T` — Documentation and CLI/MCP parity (docs)
+## Named Spike Questions (unresolved — do not manufacture readiness)
 
-Document the feature/shipment sizing contract, provenance fields, and
-render-only rollups; verify CLI and MCP surfaces expose sizing identically.
-Documentation and parity verification concern only.
+1. **Typed mutation/defaulting seam.** `SetArtifactSize` is `(id, size)`-only
+   (F1–F2). What is the typed signature that carries `size_source`/
+   `size_ruleset_version`, and what are the defaulting rules, without duplicating
+   logic across the CLI and MCP adapters? Both adapters must gain source/version
+   inputs or a defined default; a `size_ruleset_version`-only change must be
+   representable.
+2. **Provenance/history atomicity.** History is best-effort JSONL (F3–F4) and
+   `SetArtifactSize` emits no event today. What is the write/append ordering that
+   guarantees **exactly one** history event per persisted provenance change
+   (including `size_ruleset_version`-only changes), and the failure contract
+   (fail-closed vs. rollback)? This overlaps the formal-gate spike's open
+   partial-core-mutation-rollback question and must be resolved coherently, not
+   assumed.
+3. **Ruleset-version ownership.** Who owns and versions any future aggregation
+   ruleset, and until one exists, is `ruleset_version` simply `null` with the
+   structured histogram as the only composition output?
+4. **Provenance vs. history storage split.** Provenance (`size_source`,
+   `size_ruleset_version`) belongs in YAML frontmatter; estimate **history**
+   belongs in append-only JSONL item-event logs. These are separate durability
+   surfaces and the plan must state each guarantee honestly (JSONL append is
+   best-effort warn-on-failure today).
+
+## Task Map (spike + gated follow-ups)
+
+### `108.001-T` — Run size extension contract architecture spike (2h max, QUEUED)
+
+Strictly time-boxed (2h, investigation only) contract/architecture spike. Produce
+one coherent contract sketch across the base-contract/extension ownership model,
+the structured composition contract above, and the four named spike questions,
+plus a `proceed`/`pivot`/`defer` conclusion with a confidence rating. No code,
+schema, or CLI changes. If atomicity or aggregation semantics remain unresolved
+at the box, the conclusion is `defer`/`pivot` with the unresolved questions named
+— not a manufactured implementation contract.
+
+### `108.002-T` — Provenance persistence and estimate history (BLOCKED on 108.001-T)
+
+Gated implementation. Only after a `proceed` conclusion: extend the size-mutation
+seam with typed provenance inputs and defaulting (resolving question 1), persist
+`size_source`/`size_ruleset_version`, and append an estimate-history **JSONL**
+event covering **every** provenance-field change (including
+`size_ruleset_version`-only), with the failure/ordering contract from question 2.
+Derived values MUST NOT be written with `size_source: human`. One shared core seam
+consumed by both CLI and MCP; no adapter duplication.
+
+### `108.003-T` — Structured composition at render (BLOCKED on 108.001-T)
+
+Gated implementation. Only after `proceed`: implement the structured composition
+response (histogram + `unsized` + de-duplicated `members`) via a shared
+render/query helper consumed by BOTH the CLI (`get`/`queue`) and MCP
+(`get_item`/`get_shipment`) surfaces, using the ratified membership/dedup rules.
+Computed on read; never persisted as authored.
+
+### `108.004-T` — Documentation and CLI/MCP parity (BLOCKED on 108.002-T, 108.003-T)
+
+Gated docs. Document the ratified size-extension contract, provenance fields,
+structured composition, and render-only projection; verify CLI/MCP parity.
 
 ## Sequencing
 
-`108.001-T` (schema/contract) lands first. `108.002-T` and `108.003-T` depend on
-it and may proceed in parallel. `108.004-T` depends on `108.002-T` and
-`108.003-T`.
+`108.001-T` (spike) runs first and gates everything. Only a `proceed` conclusion
+unblocks `108.002-T` and `108.003-T` (parallel); `108.004-T` depends on both. A
+`defer`/`pivot` conclusion keeps the follow-ups blocked and re-enters staging.
 
 ## Non-Goals
 
-* No coupling to the formal-gate architecture spike or the docline soft-key
-  guard staged in the same PR.
+* No coupling to the formal-gate architecture spike or the docline open
+  extension-key guard staged in the same PR.
 * No mandatory sizing; the field stays optional at every level.
-* No persisting of derived rollups as human-authored estimates.
+* No persisting of derived composition as human-authored estimates.
+* No invented categorical arithmetic and no manufactured implementation readiness
+  while atomicity/aggregation questions are open.
 
 ## Constitution Check
 
@@ -103,19 +191,24 @@ it and may proceed in parallel. `108.004-T` depends on `108.002-T` and
 - **III/IV (Workspace isolation / CLI containment):** Size writes go through the
   existing body-preserving `core.SetArtifactSize` path (`atomicfile` within the
   workspace root); no path traversal, no writes outside the cwd tree.
-- **V (Structured Observability):** The append-only estimate-history event makes
-  every size/source change traceable.
-- **VI (Single Responsibility):** No new dependencies; the plan reuses the
-  existing `core.SetArtifactSize` seam and existing schema/registry rather than
-  adding libraries.
+- **V (Structured Observability):** Each provenance change is intended to emit
+  exactly one append-only **JSONL** estimate-history event; the exact
+  write/append ordering and failure contract is a named spike question, not an
+  assumed guarantee.
+- **VI (Single Responsibility):** No new dependencies; the design reuses the
+  existing size-mutation seam and schema/registry rather than adding libraries.
 - **VII (Destructive Approval, NON-NEGOTIABLE):** No destructive operations —
   writes are body-preserving and history is append-only; the schema change is
   additive and non-migrating.
-- **VIII (Safety Modes):** Freeze-scope posture — work is confined to the size
-  subsystem (schema, core seam, render, docs) and explicitly decoupled from the
-  formal-gate spike and docline guard.
-- **IX (Git-Friendly Persistence):** Provenance and history serialize to
-  human-readable Markdown/YAML with atomic writes.
+- **VIII (Safety Modes):** Investigate-first + freeze-scope posture — the spike is
+  read-only investigation confined to the size subsystem, explicitly decoupled
+  from the formal-gate spike and docline guard.
+- **IX (Git-Friendly Persistence):** Provenance fields (`size_source`,
+  `size_ruleset_version`) serialize to human-readable YAML frontmatter; estimate
+  **history** is separate append-only **JSONL** item-event logs (`events`
+  package). These are distinct durability surfaces — the earlier "history as
+  Markdown/YAML" wording is corrected here — and the JSONL append is best-effort
+  (warn-on-failure) today, which the atomicity spike question must resolve.
 - **X (Context Efficiency):** Rollups are computed on read and exposed through
   existing query/render surfaces; no bulk duplication.
 - **XI (Merge Commit Preservation):** Not applicable at plan stage; Stage does
@@ -129,38 +222,57 @@ constitutional violation, waiver, or exception is planned.
 
 ## Plan Review
 
-### Gate Decision: PASS
+### Gate Decision: SPIKE (no implementation PASS)
 
-**Formal plan-review provenance:** RUN on 2026-07-15 by the Stage agent
-following the `.github/skills/plan-review/SKILL.md` gate against the exact final
-plan bytes above (Problem Frame through Constitution Check). Cross-model reviewer
-invocation was unavailable in this environment; per the skill's explicit fallback
-("If cross-model invocation is not available, run all personas with the caller's
-model. Multi-model is preferred but not blocking."), all reviewer personas were
-executed with the caller's model. This is a single-model multi-persona review,
-disclosed as such — not a manufactured or waiver-based pass.
+**Formal review provenance:** RE-RUN on 2026-07-15 by the Stage agent following
+the `plan-review` skill against these exact final bytes after the PR #241 refocus.
+The prior implementation PASS is **withdrawn** and replaced with a spike-charter
+review, because bounded investigation (F1–F6) showed the provenance/history
+atomicity and XS-XL aggregation semantics are not yet an implementable contract.
+Recording an implementation PASS now would manufacture readiness. Cross-model
+invocation was unavailable; per the skill's fallback, all personas ran with the
+caller's model (single-model multi-persona, disclosed).
 
-**Reviewer personas executed:**
+**Reviewer personas executed (against the refocused spike charter):**
 
 | Persona | Trigger | Result |
 |---|---|---|
-| Constitution Reviewer | always-on | No violation. II (test-first labels), VI (no new deps; reuses `core.SetArtifactSize`), VII (additive schema, body-preserving/append-only writes) satisfied. Surfaced one advisory on schema backward-compat (now addressed in `108.001-T`). |
-| Go Reviewer | always-on | Reuse of the single body-preserving `core.SetArtifactSize` seam avoids duplicated CLI logic; render helper is read-only. Advisory (P3): estimate-history storage location/format is left to implementation, which is appropriate at planning granularity. No P0/P1. |
-| Scope Boundary Auditor | always-on | Width isolation holds — schema / core seam / render / docs are one concern each; covering both adapters via a shared seam or helper does not break isolation. Cleanly decoupled from formal-gate (105-F/106-F) and docline (107-F). No P0/P1. |
-| Learnings Researcher | always-on | Consistent with the prior task-level size work (`071.007-T` established `core.SetArtifactSize` as the single body-preserving mutation seam). The plan extends that seam rather than contradicting it. No P0/P1. |
-| Architecture Strategist | always-on | Cohesive schema→seam→render→docs chain; reusing one mutation seam directly resolves the "duplicate CLI logic" risk and yields inherent CLI/MCP parity. Clean dependency order. No P0/P1. |
-| Agent-Native Parity Reviewer | triggered (plan exposes MCP `update_item`/`get_item`/`get_shipment` and CLI parity-sensitive sizing workflows) | Parity is designed in: `108.002-T` persists provenance through the shared core seam both adapters already call, `108.003-T` exposes rollups via a shared render helper consumed by CLI and MCP, and `108.004-T` verifies parity. No CLI-only gap. No P0/P1. |
-| Security Lens Reviewer | not triggered (no auth/authz, secrets, external integrations, or cross-trust-boundary data; append-only history stays within the workspace) | — |
+| Constitution Reviewer | always-on | The refocus resolves the honesty violation (Principle II / no manufactured readiness): unresolved atomicity/aggregation are named as spike questions, not asserted contracts. `108.002-T`/`108.003-T`/`108.004-T` are blocked behind the spike. No P0/P1 on the charter. |
+| Go Reviewer | always-on | Corrected factual claims: `SetArtifactSize` is `(id, size)`-only and emits no event (F1–F3); history is JSONL best-effort (F4). The charter no longer asserts a seam capability that does not exist. No P0/P1. |
+| Scope Boundary Auditor | always-on | Width isolation intact; spike is read-only investigation, decoupled from formal-gate (105-F/106-F) and docline (107-F). No P0/P1. |
+| Learnings Researcher | always-on | The atomicity question is correctly linked to the formal-gate spike's open partial-core-mutation-rollback question rather than re-deciding it in isolation. No P0/P1. |
+| Architecture Strategist | always-on | Structured composition (histogram + `unsized` + de-duplicated `members`) is a sound direction that avoids invented categorical arithmetic and feature+child double counting; correctly held as a sketch pending spike ratification. No P0/P1. |
+| Agent-Native Parity Reviewer | triggered (sizing touches MCP `update_item`/`get_item`/`get_shipment` and CLI) | Parity is designed into the gated tasks via one shared seam/helper; verification deferred to `108.004-T` after ratification. No P0/P1. |
+| Security Lens Reviewer | not triggered | — |
 
-**Findings disposition:** P0 = 0, P1 = 0, P2 = 0, P3 = advisory only (estimate-history storage format and exact helper signatures are left to implementation; appropriate at planning granularity). The one Constitution Reviewer advisory (schema backward-compat) was closed by adding the explicit additive/non-migrating backward-compatibility note to `108.001-T`. No finding blocks harvest.
+**Findings disposition:** The prior latent P1s raised by Copilot — undefined
+aggregation/membership (3585440713, 3585440748), missing provenance-input seam
+(3585440776, 3585440806), and the YAML-vs-JSONL history contradiction
+(3585440828) — are addressed structurally: the composition contract is made
+explicit, the seam gap and history split are named as spike questions, and the
+Constitution Check IX contradiction is corrected. None are resolved into an
+implementation contract here; that is the spike's job.
 
-**Plan hardening:** Evaluated and NOT required. Although the plan touches the
-schema and the core mutation seam, every change is additive and optional
-(new provenance fields, feature/shipment size), body-preserving and append-only,
-with no data migration, no destructive operation, and no CLI-distribution change.
-These are not the elevated-blast-radius signals that gate on `plan-harden`.
+**Plan hardening:** N/A for a read-only spike charter. If the spike concludes
+`proceed`, the resulting implementation plan (touching the core mutation seam and
+event durability) MUST be evaluated for `plan-harden` before the gated tasks are
+unblocked.
 
-**Disposition:** Gate PASS. Shipment `096-S` (feature `108-F` plus tasks
-`108.001-T`–`108.004-T`) matches this task map and is queued for Ship to claim.
-This plan remains decoupled from the formal-gate governance work and the docline
-soft-key guard staged in the same PR.
+### Spike Exit Criteria (in lieu of an implementation PASS)
+
+The `108.001-T` spike is complete when EITHER:
+
+* a coherent contract sketch resolves the base-contract/extension ownership, the
+  structured composition membership/dedup/`unsized`/ruleset-ownership rules, and
+  the four named spike questions, with a `proceed` conclusion and confidence
+  rating — after which a bounded implementation plan is authored and re-reviewed
+  (with `plan-harden` evaluated) before `108.002-T`/`108.003-T` unblock; OR
+* the 2h box is reached with atomicity or aggregation still unresolved, in which
+  case the conclusion is `defer`/`pivot`, the unresolved questions are named, and
+  the follow-ups stay blocked.
+
+**Disposition:** SPIKE chartered. Shipment `096-S` now carries the size extension
+contract spike (`108-F` + queued spike `108.001-T` + blocked `108.002-T`/
+`108.003-T`/`108.004-T`). No implementation is authorized. This work remains
+decoupled from the formal-gate governance work and the docline open extension-key
+guard staged in the same PR.

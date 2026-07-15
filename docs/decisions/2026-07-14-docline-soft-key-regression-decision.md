@@ -73,3 +73,7 @@ No waiver or constitutional exception is required.
 ## Promotion
 
 Promote this decision to `docs/exec-plans/2026-07-14-docline-soft-key-regression-guard-plan.md`.
+
+## Correction (PR #241, 2026-07-15)
+
+The `107.009-T` milestone originally described as "Scope exclusion and lexical/symlink/junction/reparse containment fixtures" is reclassified. Production docline containment is lexical-only (`core.SafeResolve`), and `ApplyMigration` explicitly adds no symlink-based realpath containment, so a test-only task could not deliver external-target rejection without new production behavior unrelated to the docline base-contract/extension boundary. Under the authoritative base-class/extension model — docline owns only the base Markdown/frontmatter ingestion contract, and `size`/`size_source`/`size_ruleset_version` are optional backlogit-owned extensions docline never owns — `107.009-T` now guards **open extension-key compatibility**: representative optional extension keys must not break base docline ingestion/lint/migration, and docline must tolerate/preserve rather than validate or emit them. No production containment is implemented. The "Containment and Platform Rules" section above is superseded for `107.009-T` by this correction; the live-corpus (`107.001-T`) and hermetic-value (`107.008-T`) milestones are unchanged.
