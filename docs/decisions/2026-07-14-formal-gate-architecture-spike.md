@@ -8,7 +8,7 @@ description: 'Time-boxed architecture spike charter defining the trust/atomicity
 docline:
     type: spike
     date: 2026-07-14T00:00:00Z
-    time_box: "8h"
+    time_box: "2h"
     conclusion: "pending"
     confidence: "low"
     linked_parent_work_item: null
@@ -39,20 +39,26 @@ contract), not an implementation deliverable.
 
 ## Goal
 
-Produce one coherent, internally consistent **trust/atomicity contract** for a
-fail-closed formal PASS-only planning gate that answers all seven open questions
-below without contradiction, and that is small enough to implement in bounded
-follow-up units. The spike answers: *"What is the minimal, forgery-resistant,
-atomic contract under which a formal PASS-only gate can be implemented without
-re-opening architecture questions during implementation?"*
+Within a strict 2-hour box, produce a **first-pass trust/atomicity contract
+sketch** for a fail-closed formal PASS-only planning gate across the seven open
+questions below, and a `proceed`/`pivot`/`defer` conclusion with a confidence
+rating. The spike frames: *"What is the minimal, forgery-resistant, atomic
+contract under which a formal PASS-only gate could be implemented without
+re-opening architecture questions during implementation?"* Fully resolving all
+seven questions coherently is a **stretch outcome, not a requirement**: at the
+2-hour limit the spike MAY output unresolved decisions and follow-up
+recommendations rather than a complete contract. It MUST NOT expand into broad
+formal-gate implementation planning.
 
 ## Time Box
 
-**8 hours** of human-equivalent effort (investigation only). If the contract is
-not coherent at the limit, the conclusion is `defer` with the specific
-unresolved question(s) named — not an extension.
+**2 hours** of human-equivalent effort (investigation only), consistent with the
+constitutional 2-Hour Rule for the executable spike task (`105.001-T`). If the
+contract is not coherent at the limit, the conclusion is `defer` with the
+specific unresolved question(s) and any follow-up recommendations named — not an
+extension.
 
-## Open Questions (the contract must resolve all seven, coherently)
+## Open Questions (the contract sketch should address all seven; unresolved ones are named, not extended)
 
 1. **Formal evidence trust/forgery model** — What makes a PASS evidence record
    trustworthy and non-forgeable? Who/what may author it, how is authorship
@@ -98,12 +104,13 @@ unresolved question(s) named — not an extension.
 
 At conclusion the spike must produce:
 
-* A single written trust/atomicity contract answering all seven questions with
-  no internal contradiction.
-* A conclusion of `proceed` (contract coherent — promote to impl-plan for
-  bounded follow-up units), `pivot` (a materially different gate design is
-  required), or `defer` (contract not coherent within the time box; named
-  unresolved questions).
+* A written first-pass trust/atomicity contract sketch addressing the seven
+  questions, with any question left unresolved explicitly named alongside a
+  follow-up recommendation.
+* A conclusion of `proceed` (contract sketch coherent enough — promote to
+  impl-plan for bounded follow-up units), `pivot` (a materially different gate
+  design is required), or `defer` (contract not coherent within the 2h box;
+  named unresolved questions and follow-up recommendations).
 * A confidence rating (high/medium/low).
 * If `proceed`: an enumeration of bounded, ≤2h implementation units the contract
   decomposes into — created only after this spike, never before.
@@ -122,11 +129,12 @@ At conclusion the spike must produce:
 
 The spike is complete when EITHER:
 
-* All seven questions are answered in one coherent contract with a `proceed` or
-  `pivot` conclusion and a confidence rating, and (if `proceed`) a bounded
-  follow-up decomposition is listed; OR
-* The 8h time box is reached, in which case the conclusion is `defer` with each
-  unresolved question named and the partial contract recorded.
+* A coherent first-pass contract sketch is produced with a `proceed` or `pivot`
+  conclusion and a confidence rating (and, if `proceed`, a bounded follow-up
+  decomposition), with any still-open question named; OR
+* The 2h time box is reached, in which case the conclusion is `defer` with each
+  unresolved question and follow-up recommendation named and the partial
+  contract sketch recorded.
 
 No formal-gate implementation unit may be opened until this charter's decision
 output records `proceed` (or `pivot` with a replacement contract).

@@ -92,7 +92,7 @@ Observe `107.001-T` RED first. Then `{107.002-T–107.009-T}` may proceed in par
 3. Add containment fixtures and run synthetic plus supported real-link cases.
 4. Apply six bounded backfill tasks without body changes.
 5. Require all three guard files GREEN.
-6. Run `go test ./...`, `go vet ./...`, `golangci-lint run`, and require `gofmt -l .` to emit no output.
+6. Run `go test ./...`, `go vet ./...`, `golangci-lint run`, and require `gofmt -l` to emit no output **for the Go files changed by this shipment** (the three new guard test files under `tests/integration/`). A repo-wide `gofmt -l .` is intentionally NOT required as a pass criterion: the repository carries pre-existing formatting debt in files unrelated to this work (26 files at time of writing), and forcing a repo-wide cleanup here would violate width isolation and silently expand scope. Quality-gate honesty: this criterion verifies the changed files are formatted, not that unrelated pre-existing debt has been remediated.
 7. Run `go run ./cmd/backlogit docs lint` in a clean checkout.
 8. Verify protected scratch remains untracked, untouched, and unstaged.
 
