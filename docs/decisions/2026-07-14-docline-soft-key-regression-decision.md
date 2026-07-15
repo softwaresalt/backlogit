@@ -4,7 +4,7 @@ schema_version: "1.0"
 title: 'Bounded tracked-doc regression guards for docline soft keys'
 source: docs/decisions/2026-07-14-docline-soft-key-regression-decision.md
 doc_type: decision
-description: 'Decision to split live corpus, hermetic value, and filesystem-containment checks while preserving production Scope and protected scratch state.'
+description: 'Decision to guard live tracked corpus, hermetic value semantics, and open extension-key compatibility on the base/open-extensible docline contract while preserving production Scope and protected scratch state; no realpath/symlink filesystem containment is implemented.'
 docline:
     date: 2026-07-14T18:32:00Z
     decision_status: decided
@@ -24,7 +24,8 @@ docline:
 - Nine tracked in-scope documents omit one or both explicit soft keys.
 - The intentional untracked scratch spike also omits them and must remain untouched.
 - Live corpus becomes all-positive after backfill, so hermetic negative fixtures remain necessary.
-- Value parsing and filesystem containment are independent milestones and can use separate one-file integration tests.
+- Value parsing and open extension-key compatibility are independent milestones and can use separate one-file integration tests.
+- Production docline containment is **lexical-only** (`core.SafeResolve`) and `ApplyMigration` explicitly adds **no** symlink-based realpath containment, so a test-only task cannot deliver external-target rejection without unrelated new production behavior. The base docline contract is open/extensible, and `size`/`size_source`/`size_ruleset_version` are optional backlogit-owned extension keys docline never owns — so the third milestone guards **open extension-key compatibility**, not filesystem containment.
 
 ## Decision
 
@@ -32,9 +33,9 @@ Split the guard into three tasks:
 
 1. `107.001-T`: live Git-tracked corpus plus production Scope and exact soft-key values;
 2. `107.008-T`: hermetic value/type/malformed/tracked-versus-untracked fixtures;
-3. `107.009-T`: Scope exclusion and lexical/symlink/junction/reparse containment fixtures.
+3. `107.009-T`: open extension-key compatibility fixtures — representative optional backlogit-owned extension keys (`size`, `size_source`, `size_ruleset_version`) must not break base docline ingestion/lint/migration, and docline must tolerate/preserve rather than validate or emit them. This task implements **no** production filesystem containment and asserts **no** realpath/symlink guarantee.
 
-Each task has one file, fewer than five functions, and at most three scenario groups. Shared production behavior remains `internal/docline.Scope()` and existing YAML decoding; tests do not duplicate a scope table or change schema defaults.
+Each task has one file, fewer than five functions, and at most three scenario groups. Shared production behavior remains `internal/docline.Scope()` and existing YAML decoding; tests do not duplicate a scope table, add production containment, or change schema defaults.
 
 ## Tracked Backfill Set
 
@@ -47,9 +48,9 @@ Each task has one file, fewer than five functions, and at most three scenario gr
 
 Each backfill task depends only on observing `107.001-T` RED and changes no body bytes.
 
-## Containment and Platform Rules
+## Base Contract and Extension-Key Compatibility
 
-Git determines tracked candidates. Production Scope filters them. Before any selected file is read, containment rejects invalid or non-regular paths and external-target symlink, junction, or reparse escapes. A platform may skip real-link creation only after an always-run synthetic link-classification negative executes.
+Git determines tracked candidates and production `internal/docline.Scope()` filters them; this is the only include/exclude authority. The base docline contract is open/extensible: optional producer-specific keys — including the backlogit-owned `size`, `size_source`, and `size_ruleset_version` extensions — may be present without docline owning their meaning. The extension-compatibility milestone (`107.009-T`) asserts that such optional keys do not break base ingestion/lint/migration and that docline tolerates/preserves rather than validates, defaults, rewrites, or emits them. No realpath, symlink, junction, or reparse containment is implemented or claimed by any milestone; production containment stays lexical (`core.SafeResolve`) and is out of scope for this guard.
 
 ## Scope Boundary
 
@@ -58,12 +59,12 @@ The untracked `docs/decisions/2026-07-13-scratch-spike.md` is not read for mutat
 ## Constitution Check
 
 - **I:** tests use existing Go and YAML dependencies.
-- **II:** live RED precedes backfill; hermetic value and containment negatives stay active after GREEN.
-- **III/IV:** Git inventory, production Scope, and real-path containment protect workspace boundaries.
-- **V:** every failure names its path and field or containment class.
-- **VI:** live, values, and containment are separate one-file tasks with at most three scenario groups.
+- **II:** live RED precedes backfill; hermetic value and open extension-key compatibility negatives stay active after GREEN.
+- **III/IV:** Git inventory and production `internal/docline.Scope()` bound the read set and exclude scratch; no real-path/symlink containment is added, and none is claimed.
+- **V:** every failure names its path and field or extension-compatibility case.
+- **VI:** live, values, and open extension-key compatibility are separate one-file tasks with at most three scenario groups.
 - **VII:** no protected scratch mutation is authorized.
-- **VIII:** platform-specific containment receives its own focused negatives.
+- **VIII:** open extension-key compatibility receives its own focused fixtures; no filesystem trust boundary is asserted.
 - **IX:** the guard protects committed Git-readable state.
 - **X:** bounded tests avoid one oversized scenario matrix.
 - **XI:** Stage does not merge or ship.
@@ -74,6 +75,15 @@ No waiver or constitutional exception is required.
 
 Promote this decision to `docs/exec-plans/2026-07-14-docline-soft-key-regression-guard-plan.md`.
 
-## Correction (PR #241, 2026-07-15)
+## Superseded Historical Note
 
-The `107.009-T` milestone originally described as "Scope exclusion and lexical/symlink/junction/reparse containment fixtures" is reclassified. Production docline containment is lexical-only (`core.SafeResolve`), and `ApplyMigration` explicitly adds no symlink-based realpath containment, so a test-only task could not deliver external-target rejection without new production behavior unrelated to the docline base-contract/extension boundary. Under the authoritative base-class/extension model — docline owns only the base Markdown/frontmatter ingestion contract, and `size`/`size_source`/`size_ruleset_version` are optional backlogit-owned extensions docline never owns — `107.009-T` now guards **open extension-key compatibility**: representative optional extension keys must not break base docline ingestion/lint/migration, and docline must tolerate/preserve rather than validate or emit them. No production containment is implemented. The "Containment and Platform Rules" section above is superseded for `107.009-T` by this correction; the live-corpus (`107.001-T`) and hermetic-value (`107.008-T`) milestones are unchanged.
+> **Superseded — do not treat as current.** An earlier revision of this decision
+> framed `107.009-T` as "Scope exclusion and lexical/symlink/junction/reparse
+> containment fixtures" and described real-path containment protecting workspace
+> boundaries. That framing is **withdrawn**: production docline containment is
+> lexical-only (`core.SafeResolve`) and `ApplyMigration` adds no symlink-based
+> realpath containment, so a test-only task could not deliver external-target
+> rejection without unrelated new production behavior. The authoritative decision
+> above (open extension-key compatibility on the base/open-extensible docline
+> contract, with **no** realpath/symlink containment) governs. This note is
+> retained only for history and must not be read as a current requirement.

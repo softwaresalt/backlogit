@@ -111,7 +111,7 @@ Observe `107.001-T` RED first. Then `{107.002-T–107.009-T}` may proceed in par
 
 - **I:** only bounded Go integration tests and metadata are planned.
 - **II (NON-NEGOTIABLE):** live RED precedes backfill, while hermetic negatives remain active.
-- **III/IV:** Git, production Scope, and containment protect every read and exclude scratch.
+- **III/IV:** Git inventory and production `internal/docline.Scope()` bound every read and exclude scratch; this guard adds no realpath/symlink filesystem containment and claims none.
 - **V:** failures identify exact paths and fields.
 - **VI:** three one-file guard tasks each contain at most three scenario groups and fewer than five functions.
 - **VII:** no scratch deletion, edit, or staging is authorized.
