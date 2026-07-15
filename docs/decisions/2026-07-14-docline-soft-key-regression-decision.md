@@ -1,10 +1,10 @@
 ---
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
-title: 'Tracked-doc regression guard for docline soft keys'
+title: 'Bounded tracked-doc regression guards for docline soft keys'
 source: docs/decisions/2026-07-14-docline-soft-key-regression-decision.md
 doc_type: decision
-description: 'Decision to guard explicit chunk_strategy and schema_version values on every tracked in-scope Markdown document without touching the intentional untracked scratch file.'
+description: 'Decision to split live corpus, hermetic value, and filesystem-containment checks while preserving production Scope and protected scratch state.'
 docline:
     date: 2026-07-14T18:32:00Z
     decision_status: decided
@@ -12,69 +12,63 @@ docline:
         - A4BE2FAD
 ---
 
-# Tracked-doc Regression Guard for Docline Soft Keys
+# Bounded Tracked-doc Regression Guards for Docline Soft Keys
 
 ## Problem Frame
 
-`chunk_strategy` and `schema_version` are contract fields with defaults. `FromMap` supplies their values when keys are absent, so `docs lint` validates the defaulted object and cannot detect source-frontmatter drift. A persistent guard is needed without changing or deleting the operator-owned untracked `docs/decisions/2026-07-13-scratch-spike.md`.
+`chunk_strategy` and `schema_version` have defaults, so normal lint cannot detect source-frontmatter omission. One earlier test task combined live Git inventory, production Scope, YAML semantics, temporary repositories, and platform-specific containment, exceeding the repository's task heuristics.
 
 ## Research Findings
 
-- `internal/docline/frontmatter.go` captures original key presence before applying defaults, but current validation only uses presence for optional min-length fields.
-- The JSON schema defines defaults and does not list either soft key as required. Turning them into schema-required fields would change ingestion semantics, not merely repository authoring discipline.
-- A repository scan found nine tracked in-scope documents missing one or both keys: two closure docs, three compound docs, one decision, one design doc, and two plans.
-- The intentional untracked scratch spike also lacks both keys. A full filesystem lint rule would make this operator workspace fail until that unapproved file changed.
-- CI and future regressions concern committed content. A git-tracked integration guard can enforce repository authoring discipline while deliberately ignoring untracked operator scratch state.
-- After backfill the live corpus has no missing-key negative, and CI never sees the local scratch file; hermetic temporary Git repositories are required to keep missing-key and untracked-exclusion behavior testable.
+- `internal/docline.Scope()` is the production include/exclude authority and must not be copied.
+- Nine tracked in-scope documents omit one or both explicit soft keys.
+- The intentional untracked scratch spike also omits them and must remain untouched.
+- Live corpus becomes all-positive after backfill, so hermetic negative fixtures remain necessary.
+- Value parsing and filesystem containment are independent milestones and can use separate one-file integration tests.
 
 ## Decision
 
-Add a Go integration test that enumerates candidates with `git ls-files`, filters them through the exported production `internal/docline.Scope()` descriptor rather than a copied scope table, rejects symlink/junction/reparse or resolved-target escapes before reading, parses YAML frontmatter, and requires:
+Split the guard into three tasks:
 
-- `chunk_strategy: h1-h2-h3`;
-- `schema_version: "1.0"`.
+1. `106.001-T`: live Git-tracked corpus plus production Scope and exact soft-key values;
+2. `106.008-T`: hermetic value/type/malformed/tracked-versus-untracked fixtures;
+3. `106.009-T`: Scope exclusion and lexical/symlink/junction/reparse containment fixtures.
 
-The guard applies to every tracked in-scope document regardless of `doc_type`; these are common base-contract authoring conventions. It is deliberately a test rather than a production lint-rule change because the requirement is repository persistence, while the schema defaults remain valid for external ingestion. The live-corpus test's first run must fail on the nine tracked omissions. Backfill only those tracked files, in small file-family slices, then confirm green.
-
-The same test file creates hermetic temporary Git repositories and exercises compliant tracked input, each missing key, wrong value/type, malformed YAML, invalid untracked exclusion, production-Scope exclusions, and an external-target symlink/reparse escape. Live and hermetic paths call the same inventory/Scope/containment/parser helper. If real link creation is unavailable, an explicit platform skip is allowed only alongside an always-run synthetic link-classification negative.
+Each task has one file, fewer than five functions, and at most three scenario groups. Shared production behavior remains `internal/docline.Scope()` and existing YAML decoding; tests do not duplicate a scope table or change schema defaults.
 
 ## Tracked Backfill Set
 
-- `docs/closure/2026-07-13-092-S-compound-refresh.md`
-- `docs/closure/2026-07-13-092-S-item-writer-utc-closure.md`
-- `docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md`
-- `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md`
-- `docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md`
-- `docs/decisions/2026-06-30-backlogit-deterministic-gates-slice-deliberation.md`
-- `docs/design-docs/autoharness-evals-gates-design.md`
-- `docs/exec-plans/2026-06-30-backlogit-deterministic-gates-slice-plan.md`
-- `docs/exec-plans/2026-07-02-shipment-covering-feature-display-plan.md`
+- `106.002-T`: two 092-S closure documents.
+- `106.003-T`: parallel-test and lifecycle compound documents.
+- `106.004-T`: UTC timestamp compound document.
+- `106.005-T`: deterministic-gates decision and plan.
+- `106.006-T`: evals design document.
+- `106.007-T`: covering-feature plan.
+
+Each backfill task depends only on observing `106.001-T` RED and changes no body bytes.
+
+## Containment and Platform Rules
+
+Git determines tracked candidates. Production Scope filters them. Before any selected file is read, containment rejects invalid or non-regular paths and external-target symlink, junction, or reparse escapes. A platform may skip real-link creation only after an always-run synthetic link-classification negative executes.
 
 ## Scope Boundary
 
-The untracked scratch spike is not read, edited, deleted, staged, or backfilled. Production docline validation behavior and the JSON schema remain unchanged.
+The untracked `docs/decisions/2026-07-13-scratch-spike.md` is not read for mutation, edited, deleted, staged, or backfilled. Production docline validation and JSON schemas remain unchanged.
 
 ## Constitution Check
 
-- **I — Safety-First Go:** the guard uses existing Go/test dependencies and standard error handling.
-- **II — Test-First:** observe the live guard fail on known omissions before backfill, then pass while hermetic negative cases remain active.
-- **III/IV — Isolation and containment:** enumerate Git-tracked candidates, filter through production Scope, and reject link/reparse or resolved-target escapes before reading.
-- **V — Observability:** live and synthetic failures name every offending file and key.
-- **VI — Single Responsibility:** one test guards authoring convention; backfill tasks contain only Markdown metadata.
-- **VII — Destructive approval:** the scratch file is preserved untouched; no deletion or overwrite is authorized.
-- **VIII — Elevated risk:** no runtime/schema contract change; hardening is unnecessary.
-- **IX — Git-friendly persistence:** the guard targets committed Markdown state.
-- **X — Context efficiency:** one deterministic inventory replaces ad hoc audits.
-- **XI — Merge history:** downstream delivery remains merge-commit-only.
+- **I:** tests use existing Go and YAML dependencies.
+- **II:** live RED precedes backfill; hermetic value and containment negatives stay active after GREEN.
+- **III/IV:** Git inventory, production Scope, and real-path containment protect workspace boundaries.
+- **V:** every failure names its path and field or containment class.
+- **VI:** live, values, and containment are separate one-file tasks with at most three scenario groups.
+- **VII:** no protected scratch mutation is authorized.
+- **VIII:** platform-specific containment receives its own focused negatives.
+- **IX:** the guard protects committed Git-readable state.
+- **X:** bounded tests avoid one oversized scenario matrix.
+- **XI:** Stage does not merge or ship.
 
 No waiver or constitutional exception is required.
-
-## Risks and Mitigations
-
-- **Git dependency in integration tests:** this repository's CI always checks out Git history and existing integration helpers already resolve the repository root. Fail clearly if `git ls-files` cannot run.
-- **Scope drift:** import `internal/docline.Scope()` as the sole filter so production changes cannot leave a stale copied table.
-- **False confidence after backfill/platform limits:** synthetic staged/untracked/scope/link-classification fixtures always run; real-link privilege skips are explicit and never the only containment assertion.
-- **Future schema version:** a deliberate contract upgrade must update this guard and corpus together.
 
 ## Promotion
 
