@@ -6,7 +6,7 @@ source: docs/memory/2026-07-14/stage-governance-docline-memory.md
 doc_type: memory
 description: 'Corrected session continuity for blocked shipments 094-S and 095-S after authorization and Copilot review findings.'
 docline:
-    ms.date: 2026-07-14T22:13:07Z
+    ms.date: 2026-07-15T01:03:00Z
     ms.topic: memory
 ---
 
@@ -14,58 +14,73 @@ docline:
 
 ## Current State
 
-- Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.008-T` are blocked.
+- Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.013-T` are blocked.
 - Shipment `095-S`, feature `106-F`, and tasks `106.001-T` through `106.007-T` are blocked.
-- No shipment, feature, or task was unblocked, claimed, implemented, removed, or archived.
-- Both plans remain `review_state: blocked`; formal plan-review provenance is NOT RUN and waiver authorization is NONE.
-- The operator authorized one additional refinement cycle only. That authorization is not formal evidence and is not a plan-review waiver.
-- Shipment `blocked` remains non-resumable through current `ClaimShipment`; stash `DB1F9026` tracks atomic hold/requeue support and generic `blocked -> active` is forbidden.
+- Both plans remain `review_state: blocked`; formal plan-review is NOT RUN and waiver authorization is NONE.
+- This operator direction authorizes one bounded refinement pass only; it is not formal evidence or a waiver.
+- No shipment was queued, claimed, implemented, removed, or archived.
 
-## Refinement Decisions
+## Twelve-thread Refinement
 
-- Task `105.006-T` isolates the canonical final-ledger parser and digest; `105.007-T` isolates lock/CAS reservation ownership; `105.008-T` exposes the repository-native reserve/validate/consume CLI.
-- Reservation is atomic under a plan-scoped cross-process lock. Concurrent Stage/direct callers yield exactly one immutable owner plus opaque token; every loser blocks before mutation.
-- Owner, token, exact digest, state, expiry, mode, and phase are validated immediately before every mutation. Wrong or stale state fails closed.
-- `stage_managed` mode retains ownership through shipment assembly and consumes with exact harvested IDs plus required shipment ID.
-- `direct_harvest` mode consumes after its last harvest mutation with exact IDs and no shipment ID; it grants no later shipment authority.
-- Both harvest copies independently validate provenance. Missing evidence, prose readiness, conflict, wrong owner/token/phase, malformed ledger, or consumed state produces zero mutations.
-- Canonical lowercase SHA-256 normalizes valid UTF-8 CRLF to LF, removes only the uniquely parsed final ledger block, and hashes every other byte. Missing, duplicate, malformed, unknown-field, non-final, or trailing ledgers fail closed.
-- Docline task `106.001-T` retains the live-corpus guard and adds hermetic temporary-Git cases for tracked missing keys and untracked exclusion plus positive/edge cases.
+- Formal evidence now uses one unique final machine-validated record with exact canonical plan digest, complete attributed persona returns, and duplicate/stale/edit/trailing negatives.
+- Formal and waiver records share one terminal parser but retain distinct schemas and verdict semantics.
+- Waiver schema includes `intended_disposition`; every non-transition field is bound by an immutable authorization payload hash.
+- Reservation returns the raw token once only to a long-lived in-process owner session, never to command/tool output; only its fingerprint persists and timing-safe comparison occurs under lock.
+- Every mutation is a typed governed operation holding the plan lock/lease through revalidation and commit; validate-then-command is forbidden.
+- `internal/atomicfile.WriteFileAtomic` is reused without fsync because Git supplies durability and governance requires atomic visibility.
+- Plan-review produces evidence only. Stage owns stage-managed lifecycle; direct harvest owns direct lifecycle.
+- Stage-managed ADVISORY requires durable plan-scoped confirmation; direct harvest accepts PASS or valid waiver only.
+- Plan paths must be workspace-relative and reject traversal, symlink, junction, and reparse escapes before access.
 
-## Upstream Handoff
+## Task and Manifest Changes
 
-Active high-priority stash `823BADF4` names all four external Principle IV-bounded templates:
+Five blocked tasks were added to `094-S`:
 
-- `templates/agents/stage.agent.md.tmpl`
-- `templates/skills/plan-review/SKILL.md.tmpl`
-- `templates/skills/impl-plan/SKILL.md.tmpl`
-- `templates/skills/harvest/SKILL.md.tmpl`
+- `105.009-T` — final formal review schema.
+- `105.010-T` — immutable waiver schema.
+- `105.011-T` — lock-held gate lease.
+- `105.012-T` — governed core mutation broker.
+- `105.013-T` — workspace plan-path containment.
 
-Closure requires all four external changes to land, regeneration of all four `.github` targets, and parity verification. The stash remains outside in-repo shipments.
+Existing `105.001-T` through `105.008-T` were re-scoped for shared terminal parsing, token secrecy, immutable payload, correct lifecycle ownership, governed mutation, direct ADVISORY rejection, and expanded negative contracts. Every task remains at most two files and fewer than five production/test functions.
 
-## Fresh Review Follow-up
+## Provenance Repair
 
-- Fixed the literal newline escape in this memory.
-- Corrected `105.004-T` to G1 scenario 4.
-- Added missing-ledger, unknown-field, concurrency, owner/token/phase, mode, and bypass negatives to `105.001-T`.
-- Split atomic lifecycle implementation into `105.006-T` through `105.008-T`; `105.002-T` now depends on the CLI task.
-- Reconciled Stage-managed and direct-harvest shipment timing in the plan, decision, and tasks.
-- Harvested provenance remains a supported-tooling blocker: current CLI cannot stamp `custom_fields.source_stash_id` or amend archived stash records. Stash `3E12DC97` tracks an atomic repair command for `8CD8F46A -> 105-F`, `CA877CD1 -> 105.004-T`, and `A4BE2FAD -> 106-F`; raw backlog edits are prohibited.
+Canonical source provenance now maps:
 
-## Stash and Integrity
+- `8CD8F46A -> 105-F`
+- `CA877CD1 -> 105.004-T`
+- `A4BE2FAD -> 106-F`
 
-- Consumed source entries `8CD8F46A`, `CA877CD1`, and `A4BE2FAD` remain archived but lack rehydratable harvested provenance.
-- `7F0A6E89`, `823BADF4`, `DB1F9026`, and `3E12DC97` remain active/deferred; none is in an in-repo shipment.
-- Use `backlogit.exe --cwd .` exclusively; MCP remains bound to the installed-plugin workspace.
-- Repository-native sync indexed 854 artifacts; docline lint reports zero violations.
+Targets carry standard `source_stash_*` metadata and archived source records carry harvested artifact IDs. Two consecutive repository-native syncs rebuilt exact `state: harvested` stash links. Repair stash `3E12DC97` was updated with verification evidence and archived only afterward.
+
+## Docline Guard Refinement
+
+`106.001-T`, its plan, and decision now require Git-tracked inventory filtered through exported `internal/docline.Scope()` rather than duplicated scope tables. Every selected path is checked for symlink/junction/reparse and resolved-target containment before read. Hermetic tests include an external-target escape and an always-run synthetic link-classification negative when real link creation lacks platform privilege.
+
+## Upstream and Independent Intake
+
+- Active stash `823BADF4` covers all four external generated templates and the refined formal/waiver, lifecycle ownership, governed mutation, ADVISORY, path, bypass, and Constitution contracts.
+- Stash `DB1F9026` still tracks supported shipment requeue; generic `blocked -> active` remains forbidden.
+- `D7B1B33D` remains active, unharvested, outside both shipments, and independently isolated in PR #240. This refinement does not modify PR #240.
+
+## Integrity
+
+- Use repository-native `backlogit.exe --cwd .`; MCP remains bound to the wrong installed-plugin workspace.
+- Two final syncs indexed 859 artifacts and preserved all three harvested links; docline lint reports zero violations.
 - Doctor reports only pre-existing orphan `016.001-R`; zero fixes were applied.
-- `docs/decisions/2026-07-13-scratch-spike.md` remains untracked and must not be edited, deleted, or committed.
+- Protected `docs/decisions/2026-07-13-scratch-spike.md` remains untracked, untouched, and unstaged.
+
+## Exact Blocked Plan Digests
+
+- `docs/exec-plans/2026-07-14-planning-governance-gates-plan.md`: `be37dbb4a00d34c286d290e0da13638717bd0fdab285bae207c782b31a1cb948`
+- `docs/exec-plans/2026-07-14-docline-soft-key-regression-guard-plan.md`: `73bee3cc00e52d354655412c5fbcaee557a4cf12a012cc4afb739afcdcfdd40b`
+
+These are canonical UTF-8/LF digests of the current exact blocked plan bytes. They are not approvals. Any later plan edit requires a new digest and new exact-plan evidence or authorization.
 
 ## Next Steps
 
-1. Keep every plan, shipment, feature, and task blocked.
-2. Commit/push this bounded follow-up and resolve only review threads actually fixed.
-3. Leave harvested-provenance review open unless a supported repair becomes available.
-4. Require successful formal multi-persona evidence for each exact final plan or a separate explicit waiver naming its path and digest.
-5. Require supported requeue from `DB1F9026`, or separately authorized artifact-preserving replacement shipment assembly, before Ship intake.
-6. Do not merge the staging PR.
+1. Commit/push the bounded pass; reply to and resolve the exact twelve authorized threads.
+2. Wait for fresh exact-head Copilot review and report any genuinely new substantive findings without another broad redesign.
+3. Require formal multi-persona evidence or a separate exact-plan waiver before unblocking either plan.
+4. Do not merge PR #239 or mark either shipment queued.

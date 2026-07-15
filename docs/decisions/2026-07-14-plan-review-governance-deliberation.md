@@ -4,7 +4,7 @@ schema_version: "1.0"
 title: 'Plan-review dispatch and fail-closed waiver governance'
 source: docs/decisions/2026-07-14-plan-review-governance-deliberation.md
 doc_type: decision
-description: 'Decision for real reviewer dispatch, uniquely parsed final-ledger waivers, and independent fail-closed enforcement at Stage and direct-harvest boundaries.'
+description: 'Decision for exact-byte formal evidence, immutable private-token waiver lifecycle, lock-held governed mutation, contained paths, and fail-closed Stage/direct-harvest ownership.'
 docline:
     date: 2026-07-14T18:30:00Z
     decision_status: decided
@@ -19,114 +19,117 @@ docline:
 
 ## Problem Frame
 
-Stage must run `plan-review` before harvest, but recent API-launched Stage sessions had no agent or task dispatch tool. Inline single-agent assessment cannot satisfy a skill that requires independent persona outputs. The same planning surface also omits the constitution's required labeled `## Constitution Check`.
+Stage must prefer real independent plan-review dispatch, prove the exact bytes reviewed, and prevent every Stage or direct-harvest mutation when evidence is missing or stale. A future waiver must be explicit, immutable, private-owner, single-use, and mode-scoped. The workflow also needs a final formal record, lock-held mutation, real-path containment, correct lifecycle ownership, and fail-closed ADVISORY behavior. Current plans have neither formal evidence nor an operator waiver.
 
-Success means formal review is executable in supported environments, its provenance is inspectable, missing capability blocks every Stage-mediated or direct-harvest path by default, and any exception is operator-authorized, digest-bound, bounded, and durably consumed. Hosted Copilot review may supplement the gate but cannot impersonate a local reviewer persona.
+## Evidence and Investigation
 
-## Research Findings
+- Supported Copilot topologies can expose semantic subagent dispatch, but this invocation exposes no agent/task dispatch tool.
+- Inline self-assessment and hosted review cannot impersonate required personas.
+- Existing harvest copies and legacy Stage flags can otherwise bypass caller-only prose checks.
+- `internal/atomicfile.WriteFileAtomic` is the shared repository writer. It intentionally provides atomic visibility without fsync because Git supplies document durability.
+- Repository sync rehydrates stash promotion links from target artifact `source_stash_*` fields.
+- `internal/docline.Scope()` is the production source of include/exclude truth for docline inventory.
 
-- `.github/skills/plan-review/SKILL.md` requires all always-on personas plus triggered personas and appends their findings to the plan.
-- `.github/agents/.stage.agent.md` declares the abstract `agent` tool, `max_subagent_tier: 3`, and `subagent_depth: 2`.
-- `plugin/agents/stage.agent.md` declares the concrete `agent/runSubagent` tool and `subagent_depth: 2`.
-- `.github/agents/_orchestrator.agent.md` permits depth 3: Orchestrator → Stage → skill → reviewer persona.
-- Reviewer definitions are read-only leaf executors with `subagent_depth: 0`; the depth and role policies therefore permit dispatch.
-- This API invocation exposes no agent/task dispatch tool. The defect is invocation-tool-surface degradation, not a structurally impossible repository design.
-- Existing Stage inputs `skip_review` and `force_harvest_no_gates` can bypass provenance unless removed or routed through the same fresh-waiver validation.
-- Both harvest skill copies currently accept prose cleared/ready assertions and can mutate backlog state when invoked directly; Stage-only enforcement is insufficient.
-- The Stage, plan-review, impl-plan, and harvest `.github` targets are generated from four external autoharness templates and require a tracked upstream handoff.
+## Options Considered
 
-## Options Evaluated
+### A — Silent or reusable bypass
 
-### Option A: Dispatch only, no contingency
+Rejected. It permits false attribution, stale PASS, waiver races, and unauditable mutation.
 
-Use `agent/runSubagent` where present and halt everywhere else. Strongest, but it provides no explicit exceptional path for an operator who understands and accepts a plan-specific residual risk.
+### B — Formal dispatch only, no contingency
 
-### Option B: Treat inline or hosted review as equivalent
+Safe but unnecessarily blocks an explicitly authorized operator exception when runtime capability is absent.
 
-Allow one caller model or GitHub Copilot review to stand in for personas. Rejected because provenance would be false and independent focus would be lost.
+### C — Exact formal evidence with a narrow immutable waiver contingency
 
-### Option C: Dispatch first with a narrow waiver contingency
-
-Run formal personas whenever dispatch is exposed. When it is absent, fail closed unless the operator supplies a new plan-scoped, auditable waiver that Stage can reserve and consume exactly once. Record waiver mode distinctly from PASS.
+Selected. Formal review is preferred. Unsupported dispatch blocks unless a new plan-scoped operator authorization is processed by the Stage/direct run that actually owns mutations.
 
 ## Decision
 
-Choose Option C. Supported Copilot environments already have a viable dispatch topology; implementation must make that path explicit and observable rather than silently falling back.
+Use one Markdown-aware canonical terminal-record parser with two distinct final schemas:
 
-A formal gate record must include:
+1. `## Formal Plan Review Record` for attributed formal evidence and PASS/ADVISORY/FAIL.
+2. `## Operator Waiver Ledger` for an operator-waived lifecycle.
 
-1. `review_mode: formal`;
-2. every required persona name and agent definition path;
-3. dispatch/return evidence or invocation identifier;
-4. model/provider when the runtime exposes it, otherwise `unknown`;
-5. each persona's structured findings and disposition;
-6. merged severities and final PASS, ADVISORY, or FAIL.
+Exactly one record may be the final H2 section. Each contains one fenced YAML mapping and EOF-only termination. Duplicate/non-final/malformed/unknown/trailing records and fenced-example confusion fail. Canonical UTF-8/LF SHA-256 removes only the uniquely parsed final record and hashes every other plan byte.
 
-A missing, failed, or unattributed required persona makes the gate FAIL. Inline self-assessment must be labeled `informal_single_agent`; it never counts as formal evidence. Hosted review remains supplemental.
+### Formal Evidence
 
-A future waiver is valid only when the plan gate record includes `review_mode: operator_waiver`, a unique `waiver_id`, exact plan path and digest, operator authorization reference and authorizer, missing capability, reason, UTC issue/expiry, acknowledged residual risk, completion mode, authorized phases, and intended disposition. Generic workflow commands and this refinement authorization are never waiver signals.
+The formal record contains `record_type`, schema version, unique review ID, exact workspace-relative plan path/digest, review time, required persona set, one attributed dispatch/result per persona, and verdict. Before Stage/direct harvest, recompute the digest and require exact match. Plan edits, appended content, stale digest, duplicate record, or missing persona/result block.
 
-Waiver mode uses exactly one uniquely parsed `## Operator Waiver Ledger` as the final H2 section. The Markdown-aware parser ignores heading-like text inside fenced code, so examples do not count. The section contains exactly one fenced YAML mapping, only known unique keys, state-compatible required fields, a closing fence, one terminal line ending, and EOF. Duplicate headings or keys, a missing ledger in waiver mode, malformed YAML, unknown fields, another heading, prose, whitespace, or bytes after the allowed terminal ending all fail closed.
+Formal ADVISORY is not direct-harvest evidence. Only Stage-managed flow may accept it, and only with a durable nested confirmation naming operator, authorization reference, confirmation time, exact plan path/digest, and `scope: stage_managed`. Direct harvest accepts formal PASS or valid direct waiver only.
 
-Canonical digest decodes valid UTF-8 without BOM, rejects invalid UTF-8 or bare CR, normalizes CRLF to LF, and requires exactly one terminal LF. Lowercase SHA-256 covers every canonical byte except the validated final ledger block and its one separator LF. Before reservation, hash the whole ledger-free canonical plan. After reservation, remove only the uniquely parsed final block and hash every remaining canonical byte. Windows and Unix checkouts therefore agree, while plan/review content inserted before the ledger changes the digest and requires a new explicit waiver; content appended after the ledger is rejected. Formal mode may have no ledger.
+### Waiver Authorization
 
-Atomic waiver lifecycle is repository-native, never instruction-level check-then-write. A plan-scoped cross-process lock plus compare-and-swap re-reads and validates the canonical plan under lock, atomically writes the final ledger, and returns one immutable reservation owner/run ID plus a cryptographically random opaque token. Concurrent Stage/direct callers for the same waiver yield exactly one winner; every loser conflicts before mutation. Validate checks waiver ID, path/digest, state, owner, token, expiry, completion mode, and authorized phase immediately before every backlog mutation. Consume is a locked CAS allowed only to the same owner/token. Any mismatch, concurrent conflict, stale/partial state, or crash fails closed.
+The strict waiver schema fixes `verdict: WAIVED` and contains waiver ID, plan path/digest, authorizer/reference, missing capability, reason, issue/expiry, residual risk, `intended_disposition`, completion mode, `authorization_scope: exact_plan`, and authorized phases. All these non-transition fields are encoded deterministically and bound by `authorization_payload_sha256`. Unknown fields remain forbidden.
 
-The ledger has two explicit completion modes. `stage_managed` authorizes `[harvest, shipment_assembly]`: harvest returns exact IDs without consuming; Stage retains owner/token through shipment creation and consumes afterward with `consumed_at`, exact IDs, and required `shipment_id`. `direct_harvest` authorizes `[harvest]`: harvest consumes immediately after its last mutation with exact IDs and no `shipment_id`; that consumed waiver cannot later authorize shipment assembly. Reserved records forbid consumed fields. Consumed records require time and non-empty exact IDs. Invalid mode/phase/field combinations fail closed.
+Reservation runs under a plan lock/CAS. It returns one cryptographically random raw token only to the winning long-lived in-process `GateSession` and persists only `reservation_token_sha256`; the token stays in process memory and never enters stdout/stderr, tool results, transcripts, persistence, or logs. Validation hashes the session-held token and compares with `crypto/subtle.ConstantTimeCompare`. Every immutable payload field is recomputed and compared. Only reserved/consumed transition fields may change. Tampering, loser or public-session-handle adoption, wrong owner/phase, expiry, or reuse fails closed.
 
-Both harvest copies independently re-read and validate durable formal evidence or the owner/token reservation immediately before every create, dependency, link, adoption, or shipment-membership mutation. Caller/Stage assertions and prose cleared/ready text are not proof. Direct invocation with missing/malformed evidence, wrong owner/token/phase, conflict, or consumed waiver must produce zero backlog mutations.
+`stage_managed` authorizes harvest plus shipment assembly and consumes afterward with exact IDs and required shipment ID. `direct_harvest` authorizes harvest only, consumes after its last mutation with exact IDs and no shipment ID, and grants no later shipment authority. `intended_disposition` must match the mode.
 
-The legacy `skip_review: true` and `force_harvest_no_gates: true` values are not bypasses. If retained, they only request the same atomic operator-waiver validation and cannot reach Stage or direct harvest without valid durable provenance.
+### Governed Mutation and Ownership
+
+Plan-review owns dispatch and evidence production only. It never reserves, validates lifecycle credentials, mutates backlog state, or consumes.
+
+Stage starts, owns, and drives one long-lived `GateSession` for `stage_managed`; direct harvest does so for `direct_harvest`. The raw token remains private to that process while callers use a non-secret handle. Harvest operating under Stage uses the Stage session but never consumes it.
+
+No workflow may call validate and then a separate backlog command. One typed governed operation resolves/contains the plan, holds the cross-process lock, validates record/digest/expiry/owner/token/payload/phase, stages an allowlisted Markdown-first mutation, revalidates at the exact commit boundary, and publishes while locked. Drift or expiry aborts with zero durable mutation. Race tests pause between initial validation and commit to prove no plan/ledger change can slip through.
+
+### Path and Write Policy
+
+Every lifecycle path is workspace-relative under `docs/exec-plans/`. Reject absolute, UNC/volume, traversal, missing/non-regular, and symlink/junction/reparse escapes before read, lock, or write. Resolve real target and require containment inside the configured workspace.
+
+Reuse `internal/atomicfile.WriteFileAtomic`; do not duplicate temp/rename code. Fsync is not required for these Git-backed records because the correctness requirement is atomic visibility, not power-loss persistence.
+
+### Bypass Reconciliation
+
+`skip_review` and `force_harvest_no_gates` are never bypasses. If retained, they can only request the same evidence/lifecycle route. Both harvest copies independently accept exact formal PASS or a mode-valid reservation; direct ADVISORY, inline/hosted review, caller assertion, and prose cleared/ready text produce zero mutation.
+
+## Provenance Repair
+
+The bounded pass repaired canonical promotion provenance:
+
+- `8CD8F46A -> 105-F`
+- `CA877CD1 -> 105.004-T`
+- `A4BE2FAD -> 106-F`
+
+Target artifacts now carry source stash ID/kind/priority/path/text and applicable deliberation. Archived stash records carry harvested reason and artifact ID. Two repository-native syncs rebuilt all three harvested links exactly; repair stash `3E12DC97` was retired only afterward.
 
 ## Current Gate State
 
-The operator authorized one additional plan/backlog refinement cycle only; that authorization is not formal review evidence and is not a waiver. No waiver was authorized for either current plan. The generic `stage next` command is workflow routing only. Formal reviewer dispatch was unavailable, so both plans and shipments are BLOCKED pending either successful formal multi-persona evidence or a new explicit, plan-scoped operator waiver. No waiver reservation or consumption record exists. Shipment `094-S`, feature `105-F`, and tasks `105.001-T` through `105.008-T` remain blocked; shipment `095-S`, feature `106-F`, and tasks `106.001-T` through `106.007-T` remain blocked.
+This operator direction authorizes one bounded refinement pass, not a review waiver. Formal reviewer dispatch remains NOT RUN and waiver authorization remains NONE. Shipment `094-S`, feature `105-F`, tasks `105.001-T` through `105.013-T`, shipment `095-S`, feature `106-F`, and tasks `106.001-T` through `106.007-T` remain BLOCKED.
 
-The repository's generic artifact transition accepted shipment `blocked`, but shipment lifecycle code has no `blocked -> queued` transition and `ClaimShipment` accepts only queued manifests. Stash `DB1F9026` tracks atomic hold/requeue support. Until it lands, approval alone does not make `094-S` or `095-S` claimable; generic `blocked -> active` is forbidden because it bypasses atomic member activation.
-
-Archived source stash links for `8CD8F46A -> 105-F`, `CA877CD1 -> 105.004-T`, and `A4BE2FAD -> 106-F` are not rehydratable because current artifacts lack `custom_fields.source_stash_id` and the CLI has no supported repair command. Stash `3E12DC97` tracks that atomic repair path. Raw backlog files must not be edited, so this remains an explicit traceability blocker.
+Shipment requeue remains separately tracked by `DB1F9026`. Generic `blocked -> active` is forbidden. Stash `D7B1B33D` remains active and independently isolated in PR #240.
 
 ## Upstream Template Handoff
 
-Stash `823BADF4` tracks the Principle IV-bounded external work for all generated sources:
+Stash `823BADF4` tracks external updates to:
 
 - `templates/agents/stage.agent.md.tmpl`
 - `templates/skills/plan-review/SKILL.md.tmpl`
 - `templates/skills/impl-plan/SKILL.md.tmpl`
 - `templates/skills/harvest/SKILL.md.tmpl`
 
-The in-repo governance work is not operationally closed until all four external templates land and regeneration/parity verification proves all four `.github` targets retain formal dispatch, canonical final-ledger digest, atomic owner/token/phase validation, both completion modes, legacy bypass, direct-harvest pre-mutation, and Constitution Check behavior. External work is not part of either in-repo shipment.
+Closure requires regeneration parity for final formal/waiver schemas, exact digest checks, ADVISORY behavior, lifecycle ownership, governed mutation, legacy bypass rejection, and Constitution Check output. External work is not part of either shipment.
 
 ## Constitution Check
 
-- **I — Safety-First Go:** no production code is changed during staging; implementation isolates the leaf parser/reservation and thin CLI adapter and requires normal Go gates.
-- **II — Test-First:** integration contracts fail first; parser, atomic reservation, and CLI units are test-first; all gates pass before instruction work completes.
-- **III/IV — Isolation and containment:** all current writes stay in this repository; upstream work is stash-only.
-- **V — Observability:** dispatch, atomic owner/token reservation, phase validation, mode-specific consumption, and verdict evidence are durable.
-- **VI — Single Responsibility:** parser, reservation, CLI, Stage, harvest, contract-test, docline, and external-template concerns remain width-isolated.
-- **VII — Destructive approval:** no destructive action is authorized.
-- **VIII — Elevated risk:** governance changes require plan hardening before review.
-- **IX — Git-friendly persistence:** evidence travels with the plan.
-- **X — Context efficiency:** structured evidence replaces transcript claims.
-- **XI — Merge history:** implementation remains merge-commit-only; Stage will not merge.
+- **I:** implementation is split into small leaf Go/schema/lease/path units, a core broker, focused tests, and thin CLI.
+- **II (NON-NEGOTIABLE):** formal/waiver/race/containment contracts begin RED and end GREEN.
+- **III/IV (NON-NEGOTIABLE):** real-path containment precedes file access; external templates remain stash-only.
+- **V:** persona evidence, exact digest, payload hash, token fingerprint, owner, and transitions are durable and queryable.
+- **VI:** each task has one concern, at most two files, and fewer than five functions.
+- **VII (NON-NEGOTIABLE):** no deletion or scratch mutation is authorized.
+- **VIII:** governance/concurrency/security risk requires hardening and adversarial tests.
+- **IX:** canonical evidence remains human-readable and Git-backed.
+- **X:** compact records avoid transcript reliance.
+- **XI:** implementation remains merge-commit-only; Stage does not merge.
 
-No constitutional violation or standing exception is requested. No current workflow waiver exists.
+No constitutional exception or current waiver exists.
 
 ## Rejected Alternatives
 
-Silent skip, inline self-certification, hosted-review substitution, prose cleared/ready harvest, caller-trusted direct harvest, generic-command/refinement-as-authorization, suffix-excluding digests, check-then-write reservations, shipment-before-ID consumption, reusable textual waivers, and global/permanent waivers are rejected.
-
-## Risks and Mitigations
-
-- **Runtime tool names vary:** describe capability semantically and list known `agent`/`agent/runSubagent` names.
-- **Fabricated attribution:** require actual returned outputs and identifiers; absence fails.
-- **Reservation race/reuse:** plan lock plus CAS yields one owner/token; validate ownership/phase before each mutation and reject every conflicting or consumed record.
-- **Shipment timing:** distinct completion modes keep Stage ownership through shipment assembly while direct harvest consumes without granting shipment authority.
-- **Ledger suffix attack:** parse exactly one final fenced-YAML ledger, hash every other byte, and reject any trailing content.
-- **Direct harvest bypass:** both harvest copies independently validate before every mutation and prove zero-mutation negatives.
-- **Bypass drift:** negatively test `skip_review` and `force_harvest_no_gates`.
-- **Regeneration drift:** require four-template upstream closure through stash `823BADF4`.
-- **Missing stash provenance:** use only the future supported repair from stash `3E12DC97`; do not raw-edit archived records.
+Silent skip, self-certification, hosted-review substitution, stale formal PASS, check-then-mutate, raw persisted bearer token, mutable authorization payload, duplicate atomic writer, unconstrained caller paths, direct ADVISORY, and reusable/global waivers are rejected.
 
 ## Promotion
 

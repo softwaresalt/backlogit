@@ -25,11 +25,13 @@ Docline defaults make missing `chunk_strategy` and `schema_version` keys invisib
 
 | ID | Requirement | Implementation |
 |---|---|---|
-| D1 | Detect missing explicit soft keys persistently | Unit D1 adds a git-tracked integration inventory and exact-value assertions. |
+| D1 | Detect missing explicit soft keys persistently | Unit D1 adds a Git-tracked inventory and exact-value assertions. |
 | D2 | Prove TDD RED then GREEN | D1 first fails on nine tracked documents; D2-D7 backfill them. |
 | D3 | Preserve untracked scratch | Inventory uses `git ls-files`; no task includes the scratch path. |
-| D4 | Keep tasks under 2 hours and fewer than 3 files | Backfill is split into six one/two-file units. |
-| D5 | Avoid schema/runtime expansion | No production docline or schema file changes. |
+| D4 | Keep tasks under two hours and fewer than three files | Backfill remains six one/two-file units. |
+| D5 | Avoid schema/runtime expansion | No production parser or schema semantics change. |
+| D6 | Share production scope truth | D1 filters tracked candidates through exported `internal/docline.Scope()`. |
+| D7 | Contain every tracked read | D1 rejects symlink/junction/reparse or resolved-target escapes before reading. |
 
 ## Scope Boundaries
 
@@ -54,23 +56,26 @@ One Go integration guard and the nine tracked Markdown files listed in the decis
 **Execution posture:** test-first.
 **Dependencies:** none.
 
-Keep a live-corpus test that runs `git ls-files -z` from the repository root, filters to `docs/**` except `docs/memory/**` and `docs/archive/**` plus `README.md` and `AGENTS.md`, parses leading YAML with the existing dependency, and requires `chunk_strategy: h1-h2-h3` plus `schema_version` as YAML string `"1.0"` rather than numeric `1.0`. Fail path-specifically on Git errors, malformed YAML, missing keys, wrong scalar type, or wrong value.
+Run `git ls-files -z` from the repository root to obtain candidates, then filter every live and hermetic path through the exported `internal/docline.Scope()` descriptor. Do not copy include/exclude tables into the test. Require production scope changes to affect the guard automatically, with a fixture proving a descriptor exclusion is honored.
 
-Add a hermetic table test that creates temporary Git repositories, stages fixture paths, and calls the same guard helper. Required cases:
+Before reading any selected path, `Lstat` each component and reject symlink, junction, or reparse entries; resolve the real target and require it remains under the repository/temporary-root boundary. Reject missing/non-regular targets. On platforms where creating a real link is unavailable, the real-link case may report an explicit platform skip only after an always-run synthetic reparse/symlink-classification negative proves rejection logic, so unsupported privileges cannot create a false pass.
 
-1. compliant tracked Markdown passes;
-2. tracked Markdown missing `chunk_strategy` fails with path/field;
-3. tracked Markdown missing `schema_version` fails with path/field;
-4. numeric `schema_version: 1.0`, wrong `chunk_strategy`, and malformed YAML each fail distinctly;
-5. invalid untracked Markdown is absent from findings while an invalid tracked peer is found;
-6. tracked `docs/memory/**` and `docs/archive/**` fixtures are excluded.
+Parse leading YAML with the existing dependency and require `chunk_strategy: h1-h2-h3` plus `schema_version` as YAML string `"1.0"`, not numeric `1.0`. Fail path-specifically on Git, containment, malformed YAML, missing key, scalar type, or wrong value.
 
-The synthetic cases remain in CI after the live corpus is backfilled and do not depend on the protected local scratch file. Use one shared inventory/validation helper, one temporary-repository helper, and two tests so weakened parser or inventory logic cannot pass accidentally.
+Hermetic temporary-Git cases use the same inventory/scope/containment helper and cover:
 
-**RED:** `go test ./tests/integration -run TestTrackedDoclineSoftKeys -count=1` fails the live-corpus subtest and names exactly the nine tracked omissions while hermetic cases exercise missing-key, type, parse, and untracked/excluded behavior.
-**GREEN:** after D2-D7, the live corpus passes and every hermetic positive/negative case remains active and passes.
+1. compliant tracked Markdown;
+2. each missing key;
+3. numeric schema version, wrong chunk strategy, and malformed YAML;
+4. invalid untracked Markdown excluded while an invalid tracked peer is found;
+5. production Scope exclusions;
+6. tracked link/reparse entry targeting outside root rejected before read.
 
-**Acceptance criteria:** deterministic tracked-only live scope; hermetic negative coverage independent of repository state; exact values/types enforced; path-specific diagnostics; fewer than five functions; no scratch path staged or modified.
+**RED:** `go test ./tests/integration -run TestTrackedDoclineSoftKeys -count=1` names the nine live omissions while hermetic scope/containment negatives execute.
+**GREEN:** after D2-D7, live corpus and all hermetic cases pass.
+
+**Acceptance criteria:** production Scope is the sole filter; deterministic tracked inventory; fail-closed real-path containment; exact values/types; path-specific diagnostics; fewer than five functions; no scratch mutation.
+
 ### Unit D2: Backfill 092-S closure metadata
 
 **Files:** `docs/closure/2026-07-13-092-S-compound-refresh.md`, `docs/closure/2026-07-13-092-S-item-writer-utc-closure.md`
@@ -129,36 +134,35 @@ Units D3-D7 use the same acceptance criterion as D2: canonical keys added, body 
 
 ## TDD and Quality-gate Sequence
 
-1. Add D1 shared guard plus live and synthetic tests; run targeted RED and capture exactly nine live omissions.
-2. Confirm hermetic cases independently cover missing keys, numeric/string distinction, malformed YAML, wrong value, untracked exclusion, and excluded tracked paths.
+1. Add D1 shared inventory/scope/containment guard and record RED on exactly nine live omissions.
+2. Confirm hermetic missing-key, type/value, malformed YAML, untracked, production-Scope, synthetic reparse, and external-target link cases execute independently.
 3. Apply D2-D7 while preserving body bytes.
-4. Run the targeted test; require live-corpus GREEN and all synthetic cases GREEN.
-5. Run `go test ./...`.
-6. Run `go vet ./...`.
-7. Run `golangci-lint run`.
-8. Run `gofmt -l .` and require no output.
-9. Run `go run ./cmd/backlogit docs lint` in a clean checkout and require zero violations.
-10. Verify `git status --short` still lists the pre-existing scratch file only as untracked and never staged.
+4. Run the targeted test and require live plus all hermetic cases GREEN.
+5. Run `go test ./...`, `go vet ./...`, `golangci-lint run`, and `gofmt -l .` with no output.
+6. Run `go run ./cmd/backlogit docs lint` in a clean checkout and require zero violations.
+7. Verify the protected scratch remains untracked, untouched, and unstaged.
+
 ## Decisions and Rationale
 
-- **Integration test rather than production lint rule:** the invariant concerns committed repository authoring, while schema defaults remain legitimate for ingestion.
-- **Git-tracked inventory:** CI guards every committed document and leaves operator-owned scratch untouched.
-- **Hermetic fixtures:** synthetic temporary repositories retain missing-key and untracked-exclusion negatives after the live corpus becomes compliant.
-- **Exact values:** mere key presence would allow empty or drifted values.
-- **Small backfill slices:** each unit stays below the file-count heuristic.
+- **Integration test, not lint-rule change:** schema defaults remain legitimate for external ingestion.
+- **Git inventory plus production Scope:** Git determines tracked candidates; `internal/docline.Scope()` is the only include/exclude authority.
+- **Contain before read:** reject link/reparse components and outside real targets.
+- **Hermetic fixtures:** missing-key, untracked, scope drift, and path escape negatives survive backfill.
+- **Explicit platform fallback:** unsupported real-link creation never skips the always-run classifier negative.
+- **Small backfill slices:** each metadata unit stays below the file-count heuristic.
 
 ## Risks and Caveats
 
-- Integration execution requires Git; this repository's CI checkout and development workflow already require it.
-- Scope filtering duplicates the public docline scope at a high level; comments must identify that coupling.
-- Synthetic tests must initialize and stage fixtures deterministically without reading global Git configuration.
-- A future schema version intentionally updates test and corpus together.
-- Local full-tree docs lint may inspect untracked scratch; do not modify the scratch to make a local command green. Use the targeted guard and clean-CI result honestly.
+- Git remains a repository prerequisite.
+- Real symlink privilege varies; explicit skip plus always-run classification avoids false confidence.
+- Production Scope changes intentionally alter the guard corpus and must update fixtures with the change.
+- A deliberate schema version upgrade changes guard and corpus together.
+- Local full-tree lint may inspect protected untracked scratch; never modify it to make local output green.
 
 ## Plan Hardening Signals
 
 - **Public API, schema, or contract change:** absent — no production/schema behavior changes.
-- **Security, auth, permission, or compliance:** absent.
+- **Security, auth, permission, or compliance:** present but test-local — path containment prevents tracked links from reading outside the workspace.
 - **Migration, backfill, destructive action:** limited additive metadata backfill; reversible, no body edits.
 - **External integration or dependency:** Git is already a repository prerequisite; no new dependency.
 - **High runtime, rollout, or rollback risk:** absent; test-only guard plus metadata.
@@ -173,9 +177,9 @@ No shipped runtime surface changes. Verification is the targeted integration tes
 
 - **I:** only a Go integration test is added; standard gates and idiomatic error assertions apply.
 - **II (NON-NEGOTIABLE):** D1 is observed RED on known omissions before any backfill, then GREEN.
-- **III/IV (NON-NEGOTIABLE containment):** Git enumeration and writes remain inside the repository; scratch is excluded from mutation.
+- **III/IV (NON-NEGOTIABLE containment):** Git candidates use production Scope, and link/reparse plus resolved-target checks keep every read inside the repository; scratch is excluded.
 - **V:** failures name exact paths/fields and closure records RED/GREEN evidence.
-- **VI:** no dependency is added; test and metadata units are isolated.
+- **VI:** no dependency is added; one test file owns inventory, production-Scope filtering, containment, and fixtures while metadata units remain isolated.
 - **VII (NON-NEGOTIABLE):** no deletion/overwrite of the scratch file is authorized.
 - **VIII:** blast radius is low; investigate-first research completed and hardening is not required.
 - **IX:** the test guards committed human-readable state.

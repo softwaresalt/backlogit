@@ -29,14 +29,14 @@ docline:
 
 ## Decision
 
-Add a Go integration test that enumerates tracked Markdown with `git ls-files`, applies the existing docline scope exclusions (`docs/memory/**`, `docs/archive/**`, and non-doc roots except `README.md`/`AGENTS.md`), parses YAML frontmatter, and requires:
+Add a Go integration test that enumerates candidates with `git ls-files`, filters them through the exported production `internal/docline.Scope()` descriptor rather than a copied scope table, rejects symlink/junction/reparse or resolved-target escapes before reading, parses YAML frontmatter, and requires:
 
 - `chunk_strategy: h1-h2-h3`;
 - `schema_version: "1.0"`.
 
 The guard applies to every tracked in-scope document regardless of `doc_type`; these are common base-contract authoring conventions. It is deliberately a test rather than a production lint-rule change because the requirement is repository persistence, while the schema defaults remain valid for external ingestion. The live-corpus test's first run must fail on the nine tracked omissions. Backfill only those tracked files, in small file-family slices, then confirm green.
 
-The same test file must also create hermetic temporary Git repositories and exercise compliant tracked input, each missing key, wrong value/type, malformed YAML, invalid untracked exclusion, and tracked memory/archive exclusion. These synthetic cases call the same inventory/parser helper and remain active after the live corpus becomes compliant.
+The same test file creates hermetic temporary Git repositories and exercises compliant tracked input, each missing key, wrong value/type, malformed YAML, invalid untracked exclusion, production-Scope exclusions, and an external-target symlink/reparse escape. Live and hermetic paths call the same inventory/Scope/containment/parser helper. If real link creation is unavailable, an explicit platform skip is allowed only alongside an always-run synthetic link-classification negative.
 
 ## Tracked Backfill Set
 
@@ -58,7 +58,7 @@ The untracked scratch spike is not read, edited, deleted, staged, or backfilled.
 
 - **I — Safety-First Go:** the guard uses existing Go/test dependencies and standard error handling.
 - **II — Test-First:** observe the live guard fail on known omissions before backfill, then pass while hermetic negative cases remain active.
-- **III/IV — Isolation and containment:** enumerate only files tracked inside this repository.
+- **III/IV — Isolation and containment:** enumerate Git-tracked candidates, filter through production Scope, and reject link/reparse or resolved-target escapes before reading.
 - **V — Observability:** live and synthetic failures name every offending file and key.
 - **VI — Single Responsibility:** one test guards authoring convention; backfill tasks contain only Markdown metadata.
 - **VII — Destructive approval:** the scratch file is preserved untouched; no deletion or overwrite is authorized.
@@ -72,8 +72,8 @@ No waiver or constitutional exception is required.
 ## Risks and Mitigations
 
 - **Git dependency in integration tests:** this repository's CI always checks out Git history and existing integration helpers already resolve the repository root. Fail clearly if `git ls-files` cannot run.
-- **Scope-rule duplication:** encode and document the current public scope contract; keep the test narrow to base authoring keys.
-- **False confidence after backfill:** synthetic staged/untracked fixtures retain negative coverage independent of repository and operator state.
+- **Scope drift:** import `internal/docline.Scope()` as the sole filter so production changes cannot leave a stale copied table.
+- **False confidence after backfill/platform limits:** synthetic staged/untracked/scope/link-classification fixtures always run; real-link privilege skips are explicit and never the only containment assertion.
 - **Future schema version:** a deliberate contract upgrade must update this guard and corpus together.
 
 ## Promotion
