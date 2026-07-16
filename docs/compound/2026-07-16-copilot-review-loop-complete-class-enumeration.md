@@ -3,15 +3,14 @@ chunk_strategy: h1-h2-h3
 description: How to terminate a recurring Copilot review whack-a-mole loop on prose-consistency defects by enumerating the entire defect class in one adversarial pass instead of patching flagged lines individually
 doc_type: learning
 docline:
-  ms.date: 2026-07-16T00:00:00Z
-  ms.topic: reference
+  date: 2026-07-16T00:00:00Z
+  severity: medium
   tags:
     - review
     - copilot
     - process
     - adversarial-review
     - circuit-breaker
-ingested_at: "2026-07-16T00:00:00Z"
 schema_version: "1.0"
 source: docs/compound/2026-07-16-copilot-review-loop-complete-class-enumeration.md
 title: Terminate Copilot review whack-a-mole with complete-class enumeration
@@ -54,11 +53,15 @@ Break the loop by treating the finding as a *class*, not a line:
 4. **Adversarial re-grep** for residual instances (expect 0) AND for
    correct-boundary presence (expect >0) before committing.
 5. **Run the readiness gate.** If the next fresh review returns zero new
-   findings, the class is closed. If it returns genuinely NEW substantive
-   findings after a complete-class sweep, invoke the circuit breaker — that
-   indicates diminishing returns / a moving target, not a fixable gap. Resolve
-   remaining items as accurate backlog and present ready-with-documented-residual
-   rather than entering yet another cycle.
+   findings, the class is closed. If it returns another finding of the SAME
+   class, the sweep was incomplete — finish it (that same-class recurrence, not
+   a new topic, is what this technique eliminates). Genuinely NEW, different
+   findings are normal review iteration, NOT a circuit-breaker trip: per
+   `.github/instructions/circuit-breaker.instructions.md` the universal breaker
+   trips only on the SAME error 3 times. Handle new findings within the
+   review-fix cycle limit (3 cycles); after that limit, accept remaining
+   findings as accurate backlog and present the PR
+   ready-with-documented-residual.
 
 ## Evidence
 

@@ -57,9 +57,15 @@ Repeated rounds of copilot reviews is inefficient").
   DROPPED (no carrier at HEAD).
 - `core.SetArtifactSize` (`internal/core/artifact_size.go:35-95`): decodes/encodes
   via `internal/mdfront` directly; preserves EXACT body bytes + the FULL
-  frontmatter map including unknown top-level keys. Sole top-level-preserving
-  path. (Stores size under nested `custom_fields.size` today, while 109-F proposes
-  size* as top-level — a documented reconciliation tension.)
+  frontmatter map including unknown top-level keys. It is the size-write path;
+  it is NOT the only mdfront-based body/map-preserving mutator — the doctor
+  archived_from repair codec (`rewriteArchivedFromField` /
+  `removeArchivedFromField`, `internal/core/doctor.go:695,720`) likewise
+  preserves the full top-level map + exact body bytes. What is unique to the
+  generic rebuild route is the DROP of unknown top-level keys; the mdfront-based
+  mutators preserve them. (SetArtifactSize stores size under nested
+  `custom_fields.size` today, while 109-F proposes size* as top-level — a
+  documented reconciliation tension.)
 
 ## Loop termination
 
