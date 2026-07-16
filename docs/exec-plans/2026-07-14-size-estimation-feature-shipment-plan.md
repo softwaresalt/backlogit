@@ -79,7 +79,7 @@ shippable release scope and consistent lifecycle history:
   codec; `109.001-T` inventories this gap and `109.004-T` records the concrete bridge
   (which base fields/schema/codec invariants backlog artifacts must implement or reuse)
   without assuming direct reuse of `docline.Scope`. The `107.009-T`/`107.011-T` edges do
-  **not** provide backlog-artifact round-trip preservation; `109.002-T`/`109.004-T`
+  **not** provide backlog-artifact round-trip preservation; `109.002-T` (call-site inventory), `109.007-T` (preserve/drop classification, loss points, and bridge options), and `109.004-T` (final bridge selection)
   resolve the backlog writers separately. Dependency completion is
   outcome-agnostic and does not auto-transition `108-F`. Its child tasks (`108.001-T`..`108.004-T`) are blocked implementation
   placeholders that are **not authorized** and may be re-scoped or superseded by
