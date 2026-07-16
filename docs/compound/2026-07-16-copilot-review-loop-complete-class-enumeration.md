@@ -59,9 +59,13 @@ Break the loop by treating the finding as a *class*, not a line:
    findings are normal review iteration, NOT a circuit-breaker trip: per
    `.github/instructions/circuit-breaker.instructions.md` the universal breaker
    trips only on the SAME error 3 times. Handle new findings within the
-   review-fix cycle limit (3 cycles); after that limit, accept remaining
-   findings as accurate backlog and present the PR
-   ready-with-documented-residual.
+   review-fix cycle limit (3 cycles). Reaching that cap stops additional
+   automated FIXING but does NOT clear the merge gate: per the GitHub PR
+   automation policy (§1.8), unresolved valid Copilot findings stay
+   merge-blocking until each thread is resolved — fixed, or declined with a
+   rationale reply and filed as accurate backlog — or explicitly overridden by
+   the operator. Never present residual UNRESOLVED threads as mergeable; resolve
+   or decline each, then let the operator make the merge decision.
 
 ## Evidence
 
