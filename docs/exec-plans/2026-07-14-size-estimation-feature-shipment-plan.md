@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
-title: 'Optional size estimation for feature and shipment artifacts plan'
+title: 'Size Extension Contract Architecture Spike Charter — Feature and Shipment Sizing (SPIKE; conclusion pending)'
 source: docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md
 doc_type: plan
 description: 'Architecture spike charter (PR #241 refocus) of four sequenced <=2h research/decision tasks for optional backlogit-owned size extensions on the docline base contract: base/extension ownership, mutation/provenance/JSONL history durability and the unresolved size-write containment boundary, structured-composition membership/dedup/ruleset, and an explicit proceed/pivot exit decision — no implementation and no root-containment claim.'
@@ -45,21 +45,30 @@ shippable release scope and consistent lifecycle history:
 * **`108-F` — BLOCKED future-implementation placeholder (outside `096-S`).** The
   originally-harvested `D7B1B33D` feature and its `108.*` tasks are preserved as a
   blocked implementation-planning placeholder tree, mirroring the `106-F`
-  formal-gate pattern. `108-F` is authored `blocked`, depends on **two**
+  formal-gate pattern. `108-F` is authored `blocked` and **unmanifested** (no
+  shipment home until a later Stage restaging), and depends on **three**
   necessary-but-not-sufficient gate edges — `109.004-T` (the spike exit
-  decision) **and** `107.009-T` (the docline top-level extension pass-through
-  production task in shipment `095-S`) — and is **informed by** `109-F`. The
-  `107.009-T` edge is a genuine cross-shipment prerequisite: the top-level
+  decision), `107.009-T` (the docline top-level extension pass-through
+  production codec task in shipment `095-S`), **and** `107.011-T` (the docline
+  base-schema opening for declared producer extensions, shipment `095-S`) — and is
+  **informed by** `109-F`. The
+  `107.009-T` and `107.011-T` edges are genuine cross-shipment prerequisites: the top-level
   derived size fields (`size`, `size_source`, `size_ruleset_version`) are
-  top-level backlogit-owned extension keys, and docline currently folds unknown
-  top-level keys under the `docline` namespace and drops them on serialization,
+  top-level backlogit-owned extension keys; docline currently folds unknown
+  top-level keys under the `docline` namespace and drops them on serialization, and
+  the base schema rejects them via `additionalProperties: false`,
   so future feature/shipment size provenance cannot survive a docline
-  lint/migration round-trip until `107.009-T` lands. Dependency completion is
+  lint/migration round-trip or validate against the base contract until both land.
+  Base-contract conformance is **necessary but not sufficient**: backlogit's own
+  `.backlogit` rewrite paths (`models.ArtifactFromFrontmatter`,
+  `core.WriteArtifactFile`, `core.SetArtifactSize`, generic title/status/section
+  updates) must independently preserve top-level extensions. Dependency completion is
   outcome-agnostic and does not auto-transition `108-F`. Its child tasks (`108.001-T`..`108.004-T`) are blocked implementation
   placeholders that are **not authorized** and may be re-scoped or superseded by
   the spike outcome. No implementation activates until `109.004-T` records a
-  `proceed` decision (with the containment boundary resolved) **and** a later Stage
-  restaging moves `108-F` `blocked->active` and re-harvests bounded ≤2h units.
+  `proceed` decision (with the containment boundary and canonical size-location
+  resolved) **and** a later Stage
+  restaging moves `108-F` `blocked->active`, gives it a shipment home, and re-harvests bounded ≤2h units.
   `D7B1B33D` traceability is preserved on `108-F`.
 
 The resolvable parts (base-contract/extension ownership and the structured
@@ -183,6 +192,27 @@ boundary and surface.
    permitted** until this containment boundary is resolved. This is a named open
    question and evidence item — not a decision, and not something implemented in
    this Stage turn.
+6. **Generic backlog rewrite paths must preserve top-level size extensions.**
+   The `.backlogit` artifact mutation paths use **generic backlog artifact
+   readers/writers**, not `internal/docline.Scope()` alone, so a future
+   top-level `size`/`size_source`/`size_ruleset_version` extension could be
+   silently dropped by any later write. `109.002-T` MUST inventory each generic
+   rewrite path and record whether it round-trips unknown top-level extension
+   keys: `models.ArtifactFromFrontmatter` (`internal/models/frontmatter.go`,
+   frontmatter→Artifact parse), `core.WriteArtifactFile`
+   (`internal/core/artifacts.go`, generic write), `core.SetArtifactSize`
+   (`internal/core/artifact_size.go`, which today stores size under the **nested**
+   `custom_fields.size`, not top-level), and the generic title/status/section
+   update rewrites. This is the evidence that a future top-level size extension
+   survives backlogit's own read/modify/write cycle **independent of docline**.
+7. **Size placement consistency (must be decided before `proceed`).** Existing
+   task size is physically stored under `custom_fields.size` (a **nested**
+   location) via `core.SetArtifactSize`, while this spike proposes feature/shipment
+   size as a **top-level** backlogit-owned extension. `109.004-T` MUST record this
+   inconsistency and make a **canonical-location decision** (reconcile task
+   `custom_fields.size` vs feature/shipment top-level size — whether task size
+   migrates to top-level or the two coexist with a documented rationale) as a
+   first-class exit criterion before any `proceed`.
 
 ## Task Map (four sequenced research/decision tasks under 109-F, all QUEUED)
 
@@ -212,9 +242,15 @@ fail-surface, and shipment gate-evidence fail-closed — as distinct precedents 
 the size ordering/rollback choice; the write/append ordering options for exactly
 one history event per persisted provenance change; and the **unresolved
 workspace-containment boundary** (F5 — size writes reach `atomicfile` without
-`SafeResolve`). Deliverable: durability-policy inventory, ordering options, and
-the containment open question as **evidence** (the ordering/rollback selection is
-made in `109.004-T`, not here). No implementation.
+`SafeResolve`); and the **generic backlog rewrite-path inventory** (spike question
+6) — `models.ArtifactFromFrontmatter`, `core.WriteArtifactFile`,
+`core.SetArtifactSize` (today nested `custom_fields.size`), and the generic
+title/status/section update rewrites — recording whether each round-trips unknown
+top-level extension keys so no later write drops a future top-level size
+extension. Deliverable: durability-policy inventory, ordering options, the
+containment open question, and the generic rewrite-path preservation inventory as
+**evidence** (the ordering/rollback selection is made in `109.004-T`, not here).
+No implementation.
 
 ### `109.003-T` — Structured-composition membership/dedup/missing/ruleset (2h max, QUEUED)
 
@@ -233,25 +269,42 @@ Research/decision (depends on `109.002-T`, `109.003-T`). (a) Verify CLI/MCP
 parity across **true command-to-tool pairs**. READ/projection pairs a future size
 projection must populate identically: CLI `queue view` ↔ MCP `get_queue`; CLI
 `shipment get` ↔ MCP `get_shipment`; CLI `shipment list` ↔ MCP `list_shipments`;
-CLI `get` ↔ MCP `get_item`; CLI `list` ↔ MCP `list_items`. **MUTATION pair:**
+CLI `get` ↔ MCP `get_item`; CLI `list` ↔ MCP `list_items`. For each read pair,
+record **request-contract parity** (exact CLI flags vs MCP params, default
+filters, default sort, default grouping) and the **shared-subset vs capability
+gaps** for the queue and list surfaces, not only response shape. **Pin** the CLI
+`get --format json` ↔ MCP `get_item` comparison specifically and record an
+**explicit decision** on the `body` / `dependencies_detail` / `commit_links`
+context asymmetry (which context fields each surface returns and whether a future
+size projection must appear identically on both). **MUTATION pair:**
 inventory the current true write pair CLI `update --size` ↔ MCP `update_item`
 size (both route only `size` through `core.SetArtifactSize` today) and record its
-write-shape parity; then, as a **decision output (not implementation)**, inventory
+write-shape parity **and mandatory validation/error parity** across invalid size
+value, unsupported artifact type, busy-lock/conflict (`ErrTaskBusy`), and
+workspace-open failures; then, as a **decision output (not implementation)**, inventory
 and decide the paired **future** CLI flags / MCP fields and the **validation/error
 semantics** for `size_source`/`size_ruleset_version` across both surfaces (flag and
 field names, accepted values, defaulting, rejection of unknown source/version, and
-identical error-shape parity from CLI and MCP). Record read-shape parity AND
-mutation/validation/error-shape parity as evidence and exit criteria. (b) Synthesize the
+identical error-shape parity from CLI and MCP). Confirm via the `109.002-T`
+generic rewrite-path inventory that those paths preserve top-level size extensions.
+Record read request/response parity AND mutation/validation/error-shape parity as
+evidence and exit criteria. (b) Synthesize the
 three prior investigations and record an **explicit `proceed`/`pivot`/`defer` exit
 decision** with confidence in this plan's `docline.conclusion`. (c) Record the
 **explicit selection** of the size mutation/event ordering and the
 rollback-vs-fail-closed policy (choosing among the `109.002-T` precedents) as a
-first-class decision output. (d) Finalize composition ratification jointly with
-`109.003-T`. The containment-boundary question (`109.002-T`) MUST be resolved
-before any `proceed`. A `proceed` decision is the ONLY authorization for a later,
+first-class decision output. (d) Finalize composition ratification jointly with `109.003-T`. (e) **Size
+placement consistency:** record that task size is stored under the nested
+`custom_fields.size` while feature/shipment size is proposed as a top-level
+extension, and make a **canonical-location decision** (task `custom_fields.size`
+vs feature/shipment top-level size — migrate or coexist with rationale) as a
+first-class exit criterion. A `proceed` outcome is permitted ONLY if **both** the
+containment-boundary question (`109.002-T`) AND this canonical size-location
+question are resolved. A `proceed` decision is the ONLY authorization for a later,
 separately planned, harvested, and reviewed implementation (with `plan-harden`
-evaluated). Deliverable: the recorded decision + parity/exit-criteria
-confirmation. No implementation.
+evaluated). Deliverable: the recorded decision + read request/response parity,
+mutation/validation/error parity, rewrite-path preservation confirmation,
+canonical size-location decision, and exit-criteria confirmation. No implementation.
 
 ## Sequencing
 
@@ -262,13 +315,13 @@ CLI/MCP parity, and records the exit decision (including the durability
 ordering/rollback selection). All four are queued research tasks — none carries a
 `blocked` status or implementation readiness, so shipment `096-S` completes under
 recursive release-scope semantics. The blocked `108-F` implementation placeholder
-sits **outside** `096-S`, depends on `109.004-T` **and** on the docline
-pass-through task `107.009-T` (shipment `095-S`), and is informed by `109-F`; a
+sits **outside** `096-S` (unmanifested), depends on `109.004-T`, the docline
+pass-through codec task `107.009-T`, **and** the docline base-schema task `107.011-T` (both shipment `095-S`), and is informed by `109-F`; a
 future implementation plan is authored only after `109.004-T` records a `proceed`
 decision and a later Stage restaging moves `108-F` `blocked->active`. The
-`107.009-T` edge exists because top-level derived size fields cannot survive
-docline normalization until docline preserves unknown top-level extension keys in
-place.
+`107.009-T` and `107.011-T` edges exist because top-level derived size fields cannot survive
+docline normalization or validate against the base contract until docline preserves unknown top-level extension keys in
+place **and** the base schema sanctions declared producer extensions.
 
 ## Non-Goals
 
@@ -344,7 +397,7 @@ the `plan-review` skill against these exact final bytes after the PR #241 refocu
 feature `109-F` + four sequenced ≤2h research/decision tasks `109.001-T`..
 `109.004-T` (with `096-S` rebound to the `109` tree only), (b) restores the
 harvested `108-F` tree to a BLOCKED implementation placeholder outside `096-S`
-(depends on `109.004-T` **and** the docline pass-through task `107.009-T`,
+(depends on `109.004-T`, the docline pass-through codec task `107.009-T`, **and** the docline base-schema task `107.011-T`,
 informed by `109-F`), (c) inventories the non-uniform
 JSONL durability policies and makes the size ordering/rollback selection an
 explicit `109.004-T` decision output, (d) makes composition ratification depend on
@@ -367,7 +420,7 @@ unavailable; per the skill's fallback, all personas ran with the caller's model
 | Scope Boundary Auditor | always-on | Width isolation intact; the spike is read-only investigation, decoupled from formal-gate (105-F/106-F) and docline (107-F). `096-S` carries only the `109` tree; `108-F` is a separate blocked placeholder. The charter no longer claims implementation granularity ("three files/five functions") for research tasks. No P0/P1. |
 | Learnings Researcher | always-on | The atomicity question is correctly linked to the formal-gate spike's open partial-core-mutation-rollback question rather than re-deciding it in isolation, and the durability inventory reuses established codebase precedents rather than inventing a policy. No P0/P1. |
 | Architecture Strategist | always-on | Structured composition (histogram + `unsized` + de-duplicated `members`) is a sound direction that avoids invented categorical arithmetic and feature+child double counting; correctly held as an investigation input ratified jointly by `109.003-T` and the `109.004-T` decision. No P0/P1. |
-| Agent-Native Parity Reviewer | triggered (sizing touches MCP and CLI surfaces) | Parity is verified as an investigation in `109.004-T` using true command-to-tool pairs across read surfaces (CLI `queue view`↔MCP `get_queue`; CLI `shipment get`↔MCP `get_shipment`; CLI `shipment list`↔MCP `list_shipments`; CLI `get`↔MCP `get_item`; CLI `list`↔MCP `list_items`) **and the mutation pair** (CLI `update --size`↔MCP `update_item` size), with response-shape and mutation/validation/error-shape parity plus the decision on future `size_source`/`size_ruleset_version` flags/fields as exit criteria; no implementation parity is claimed. No P0/P1. |
+| Agent-Native Parity Reviewer | triggered (sizing touches MCP and CLI surfaces) | Parity is verified as an investigation in `109.004-T` using true command-to-tool pairs across read surfaces (CLI `queue view`↔MCP `get_queue`; CLI `shipment get`↔MCP `get_shipment`; CLI `shipment list`↔MCP `list_shipments`; CLI `get`↔MCP `get_item`; CLI `list`↔MCP `list_items`) **and the mutation pair** (CLI `update --size`↔MCP `update_item` size). Scope now covers **request-contract** parity (exact CLI flags vs MCP params, default filters/sort/grouping, shared-subset vs capability gaps), the pinned CLI `get --format json`↔MCP `get_item` decision on `body`/`dependencies_detail`/`commit_links` asymmetry, **mandatory mutation validation/error parity** (invalid size, unsupported type, busy-lock/conflict, workspace-open), the future `size_source`/`size_ruleset_version` flags/fields decision, and the canonical size-location decision (nested `custom_fields.size` vs top-level) — all as exit criteria; no implementation parity is claimed. No P0/P1. |
 | Security Lens Reviewer | triggered (F5 raises a workspace-containment/trust-boundary question) | The unresolved containment boundary is recorded honestly as spike question 5 and is a hard precondition for any `proceed`. No claim of proven containment remains. No P0/P1. |
 
 **Findings disposition:** The prior latent P1s raised by Copilot — undefined
@@ -379,18 +432,32 @@ sketch is an investigation input ratified by `109.003-T` + `109.004-T`, the seam
 gap, the **non-uniform** durability inventory, and the containment boundary are
 named spike questions with an explicit ordering/rollback decision output in
 `109.004-T`, and the Constitution Check III/IV, V, and IX claims are corrected.
-Two additional LOCAL review findings for PR #241 are incorporated without adding
-implementation: (1) **cross-shipment prerequisite** — `108-F` now depends on the
-docline pass-through task `107.009-T` (shipment `095-S`) in addition to
+Additional LOCAL review findings for PR #241 (and its follow-up local-review
+fixes) are incorporated without adding
+implementation: (1) **cross-shipment prerequisites** — `108-F` now depends on the
+docline pass-through codec task `107.009-T` **and** the docline base-schema opening
+task `107.011-T` (both shipment `095-S`) in addition to
 `109.004-T`, because top-level derived size fields cannot survive docline
-normalization until unknown top-level extension keys are preserved in place; both
-edges stay necessary-but-not-sufficient and `108-F` stays authored `blocked`.
+normalization until unknown top-level extension keys are preserved in place and the
+base schema sanctions declared producer extensions; all edges stay
+necessary-but-not-sufficient and `108-F` stays authored `blocked` and unmanifested.
 (2) **mutation parity** — `109.004-T` now inventories the current true write pair
-(CLI `update --size` ↔ MCP `update_item` size) and **decides** the paired future
+(CLI `update --size` ↔ MCP `update_item` size), records **mandatory
+validation/error parity** (invalid size, unsupported artifact type,
+busy-lock/conflict, workspace-open failures), and **decides** the paired future
 CLI flags / MCP fields and validation/error-shape semantics for
 `size_source`/`size_ruleset_version`, closing a gap where only read list/get pairs
-were inventoried. None are resolved into an implementation contract here; that is
-the spike's job.
+were inventoried. (3) **request-contract parity** — read pairs now require exact
+CLI flags vs MCP params, default filters/sort/grouping, shared-subset vs capability
+gaps, and a pinned CLI `get --format json` ↔ MCP `get_item` decision on the
+`body`/`dependencies_detail`/`commit_links` context asymmetry. (4) **generic
+rewrite-path preservation** — `109.002-T` inventories `models.ArtifactFromFrontmatter`,
+`core.WriteArtifactFile`, `core.SetArtifactSize`, and the generic
+title/status/section rewrites so top-level size extensions are not dropped by later
+writes. (5) **size placement consistency** — task size is stored under the nested
+`custom_fields.size` while feature/shipment size is proposed top-level; `109.004-T`
+must make a canonical-location decision before any `proceed`. None are resolved
+into an implementation contract here; that is the spike's job.
 
 **Plan hardening:** N/A for a read-only spike charter. If `109.004-T` records a
 `proceed` decision, the resulting implementation plan (touching the core mutation
@@ -405,25 +472,35 @@ Each research/decision task has an explicit, independently verifiable exit:
   the typed size-surface inventory are recorded.
 * **`109.002-T`** — exits when the mutation/provenance path, the **non-uniform
   JSONL durability-policy inventory** (LinkCommit warn-continue, AppendComment
-  fail-surface, gate-evidence fail-closed), the write/append ordering options, and
-  the **containment boundary** (F5) are documented as findings and open questions
-  (no policy selected here).
+  fail-surface, gate-evidence fail-closed), the write/append ordering options, the
+  **containment boundary** (F5), and the **generic backlog rewrite-path
+  preservation inventory** (`models.ArtifactFromFrontmatter`,
+  `core.WriteArtifactFile`, `core.SetArtifactSize`, generic title/status/section
+  rewrites) are documented as findings and open questions (no policy selected here).
 * **`109.003-T`** — exits when feature/shipment structured-composition membership,
   dedup, missing/legacy handling, and ruleset-version ownership are documented as
   findings feeding ratification.
-* **`109.004-T`** — exits when: CLI/MCP **response-shape parity** is verified
-  across the true command-to-tool READ pairs (CLI `queue view`↔MCP `get_queue`; CLI
+* **`109.004-T`** — exits when: CLI/MCP **request-contract and response-shape
+  parity** is verified across the true command-to-tool READ pairs (CLI `queue view`↔MCP `get_queue`; CLI
   `shipment get`↔MCP `get_shipment`; CLI `shipment list`↔MCP `list_shipments`; CLI
-  `get`↔MCP `get_item`; CLI `list`↔MCP `list_items`); **mutation parity** is
+  `get`↔MCP `get_item`; CLI `list`↔MCP `list_items`), including exact CLI flags vs
+  MCP params, default filters/sort/grouping, shared-subset vs capability gaps, and
+  the pinned CLI `get --format json`↔MCP `get_item` decision on
+  `body`/`dependencies_detail`/`commit_links` asymmetry; **mutation parity** is
   recorded for the current true write pair (CLI `update --size`↔MCP `update_item`
-  size) and the paired **future** CLI flags / MCP fields plus validation/error-shape
+  size) including **mandatory validation/error parity** (invalid size, unsupported
+  artifact type, busy-lock/conflict, workspace-open failures) and the paired
+  **future** CLI flags / MCP fields plus validation/error-shape
   semantics for `size_source`/`size_ruleset_version` are inventoried and **decided**
-  across both surfaces; the size mutation/event
+  across both surfaces; the generic rewrite-path preservation is confirmed; the
+  **canonical size-location decision** (nested `custom_fields.size` vs top-level)
+  is recorded; the size mutation/event
   ordering and rollback-vs-fail-closed policy is **explicitly selected** as a
   decision output; the composition contract is **ratified jointly** with
   `109.003-T`; and an explicit `proceed`/`pivot`/`defer` decision with confidence
   is recorded in `docline.conclusion`. A `proceed` outcome is **only** permitted if
-  the containment boundary from `109.002-T` is resolved. A `proceed` decision is
+  **both** the containment boundary from `109.002-T` **and** the canonical
+  size-location question are resolved. A `proceed` decision is
   the sole authorization for a later, separately planned and re-reviewed (with
   `plan-harden` evaluated) implementation, and for a Stage restaging that moves
   `108-F` `blocked->active`; `pivot`/`defer` keeps size implementation out of scope
@@ -433,7 +510,7 @@ Each research/decision task has an explicit, independently verifiable exit:
 contract architecture spike (`109-F` + four **queued research/decision** tasks
 `109.001-T`/`109.002-T`/`109.003-T`/`109.004-T`, none `blocked`). The originally
 harvested `108-F` tree is preserved as a BLOCKED future-implementation placeholder
-**outside** `096-S`, depends on `109.004-T` **and** on the docline pass-through
-task `107.009-T` (shipment `095-S`), and is informed by `109-F`. No
+**outside** `096-S`, is **unmanifested** (no shipment home until a later Stage restaging), depends on `109.004-T`, the docline pass-through codec
+task `107.009-T`, **and** the docline base-schema task `107.011-T` (both shipment `095-S`), and is informed by `109-F`. No
 implementation is authorized. This work remains decoupled from the formal-gate
 governance work and the docline open extension-key guard staged in the same PR.
