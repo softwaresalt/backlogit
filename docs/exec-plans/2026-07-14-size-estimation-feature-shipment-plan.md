@@ -269,11 +269,11 @@ workspace-containment boundary** (F5 — size writes reach `atomicfile` without
 `SafeResolve`); and the **generic backlog rewrite-path inventory** (spike question
 6) — `models.ArtifactFromFrontmatter`, `core.WriteArtifactFile`,
 `core.SetArtifactSize` (today nested `custom_fields.size`), and the generic
-title/status/section update rewrites — recording whether each round-trips unknown
-top-level extension keys so no later write drops a future top-level size
-extension. Deliverable: durability-policy inventory, ordering options, the
-containment open question, and the generic rewrite-path preserve/drop inventory as
-**evidence** (the ordering/rollback selection is made in `109.004-T`, not here).
+title/status/section update rewrites — enumerating each call site as **input**
+for the `109.007-T` preserve/drop classification (`109.002-T` inventories call
+sites; `109.007-T` classifies preserve/drop). Deliverable: durability-policy inventory, ordering options, the
+containment open question, and the generic rewrite-path call-site inventory as
+**evidence** (preserve/drop classification is deferred to `109.007-T`; the ordering/rollback selection is made in `109.004-T`, not here).
 No implementation.
 
 ### `109.003-T` — Structured-composition membership/dedup/missing/ruleset (2h max, QUEUED)
@@ -615,9 +615,9 @@ Each research/decision task has an explicit, independently verifiable exit:
   JSONL durability-policy inventory** (LinkCommit warn-continue, AppendComment
   fail-surface, gate-evidence fail-closed), the write/append ordering options, the
   **containment boundary** (F5), and the **generic backlog rewrite-path
-  preserve/drop inventory** (`models.ArtifactFromFrontmatter`,
+  call-site inventory** (`models.ArtifactFromFrontmatter`,
   `core.WriteArtifactFile`, `core.SetArtifactSize`, generic title/status/section
-  rewrites) are documented as findings and open questions (no policy selected here).
+  rewrites; preserve/drop classification deferred to `109.007-T`) are documented as findings and open questions (no policy selected here).
 * **`109.003-T`** — exits when feature/shipment structured-composition membership,
   dedup, missing/legacy handling, and ruleset-version ownership are documented as
   findings feeding ratification.
