@@ -111,7 +111,8 @@ rules. That base contract is open/extensible — like a base class that can be
 extended with additional optional properties. `size`, `size_source`, and
 `size_ruleset_version` are optional **backlogit-owned** extension properties.
 Docline does **not** calculate, default, aggregate, validate domain semantics,
-or emit size; consumers (graphtor, engram) tolerate/preserve or safely ignore
+or synthesize size (it re-emits/serializes caller-provided size unchanged at the
+top level when present but attaches no semantics); consumers (graphtor, engram) tolerate/preserve or safely ignore
 these extension keys per existing codec behavior. Any derived feature/shipment
 composition is a backlogit runtime/query projection and is **never** persisted as
 if human-authored.
@@ -251,7 +252,8 @@ Research/decision. Inventory the typed size surface (task-only `size` enum under
 `size`). Record the base-contract/extension ownership boundary: docline owns only
 the base ingestion contract; the size keys are optional backlogit-owned extensions
 (top-level in the derived backlogit contract) docline never calculates/defaults/
-aggregates/validates/emits. Deliverable: written ownership boundary + surface
+aggregates/validates/synthesizes (it re-emits caller-provided extension keys unchanged
+at the top level but attaches no semantics). Deliverable: written ownership boundary + surface
 inventory feeding `109.002-T`/`109.003-T`. No code, schema, or CLI changes.
 
 ### `109.002-T` — Mutation/provenance/JSONL history durability, ordering, and containment (2h max, QUEUED)
@@ -535,7 +537,7 @@ provenance/history atomicity, XS-XL aggregation semantics, and workspace-
 containment boundary are not yet an implementable contract. Recording an
 implementation PASS now would manufacture readiness. Cross-model invocation was
 unavailable; per the skill's fallback, all personas ran with the caller's model
-(single-model multi-persona, disclosed).
+(single-model multi-persona, disclosed). **PR #242 review-fix CYCLE 3 re-run (FINAL, 2026-07-16):** re-run against these exact final bytes as the final automated fix cycle. The docline current-HEAD behavior is restated as **relocation** (folded/nested, preserved) with only a **latent** top-level drop; contradictory *never emitted* wording is replaced with the generation-vs-serialization contract (docline **re-emits/serializes** caller-provided extension keys at the top level when present but never synthesizes/defaults/validates/interprets their semantics); the generic backlog rewrite-path **drop** evidence (`models.ArtifactFromFrontmatter` enumerated-key parse and struct-only `core.WriteArtifactFile` re-emit) is preserved as-is because it is a distinct backlogit-writer subsystem, not docline; and the size spike remains a charter-only **SPIKE** with **P0 = 0, P1 = 0** and no manufactured implementation readiness.
 
 **Reviewer personas executed (against the restructured spike charter):**
 
