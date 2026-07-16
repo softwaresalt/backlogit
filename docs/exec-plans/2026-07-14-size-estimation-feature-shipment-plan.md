@@ -272,7 +272,7 @@ workspace-containment boundary** (F5 — size writes reach `atomicfile` without
 title/status/section update rewrites — recording whether each round-trips unknown
 top-level extension keys so no later write drops a future top-level size
 extension. Deliverable: durability-policy inventory, ordering options, the
-containment open question, and the generic rewrite-path preservation inventory as
+containment open question, and the generic rewrite-path preserve/drop inventory as
 **evidence** (the ordering/rollback selection is made in `109.004-T`, not here).
 No implementation.
 
@@ -335,7 +335,7 @@ assuming direct reuse of `internal/docline.Scope` or `internal/docline.Normalize
 current `.backlogit` artifacts are parsed/written by backlogit's own models/core
 codec, so the `107.009-T`/`107.011-T` base-contract edges are necessary but do not
 themselves provide backlog-artifact round-trip preservation. (b) **Generic
-rewrite-path preservation confirmation:** consume the `109.002-T` generic
+rewrite-path preserve/drop classification:** consume the `109.002-T` generic
 rewrite-path inventory (`models.ArtifactFromFrontmatter`, `core.WriteArtifactFile`,
 `core.SetArtifactSize`, generic title/status/section updates) and **classify each path
 as preserve or drop** for unknown top-level extension keys, identifying the exact
@@ -508,7 +508,7 @@ across list/get surfaces. **PR #242 re-run (2026-07-16)** additionally split the
 oversized `109.004-T` into the width-isolated ≤2h evidence tasks `109.005-T`
 (read-surface request/response/context parity), `109.006-T` (mutation
 validation/error parity + future `size_source`/`size_ruleset_version` flags/fields),
-and `109.007-T` (inheritance-bridge + generic rewrite-path preservation + canonical
+and `109.007-T` (inheritance-bridge + generic rewrite-path preserve/drop classification + canonical
 size-location evidence), refocusing `109.004-T` to final synthesis/exit only
 (depends on `109.002`/`109.003`/`109.005`/`109.006`/`109.007`), raised the timebox
 to 14h, and restated preservation of top-level size extensions as semantic/deep-value
@@ -615,7 +615,7 @@ Each research/decision task has an explicit, independently verifiable exit:
   JSONL durability-policy inventory** (LinkCommit warn-continue, AppendComment
   fail-surface, gate-evidence fail-closed), the write/append ordering options, the
   **containment boundary** (F5), and the **generic backlog rewrite-path
-  preservation inventory** (`models.ArtifactFromFrontmatter`,
+  preserve/drop inventory** (`models.ArtifactFromFrontmatter`,
   `core.WriteArtifactFile`, `core.SetArtifactSize`, generic title/status/section
   rewrites) are documented as findings and open questions (no policy selected here).
 * **`109.003-T`** — exits when feature/shipment structured-composition membership,
