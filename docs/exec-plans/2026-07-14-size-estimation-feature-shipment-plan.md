@@ -212,7 +212,7 @@ boundary and surface.
    question and evidence item — not a decision, and not something implemented in
    this Stage turn.
 6. **Generic backlog rewrite paths — preserve/drop classification (do NOT assume preservation).**
-   The `.backlogit` artifact mutation paths use **generic backlog artifact
+   Most `.backlogit` artifact mutation paths use **generic backlog artifact
    readers/writers**, not `internal/docline.Scope()` alone, and the current generic
    paths **demonstrably drop** unknown top-level extension fields, so a future
    top-level `size`/`size_source`/`size_ruleset_version` extension could be
@@ -224,7 +224,7 @@ boundary and surface.
    **top-level** keys have no carrier and are dropped on read), `core.WriteArtifactFile`
    (`internal/core/artifacts.go`, generic write — re-emits only struct-backed fields; a
    top-level extension is not carried), `core.SetArtifactSize`
-   (`internal/core/artifact_size.go`, which today stores size under the **nested**
+   (`internal/core/artifact_size.go:56-79`, the **preserve** path that decodes/encodes through `internal/mdfront` and preserves the **full frontmatter map including unknown top-level keys** and **exact body bytes**; it today stores size under the **nested**
    `custom_fields.size`, which survives because `custom_fields` is captured), and the generic title/status/section
    update rewrites. This is the evidence — classification, loss points, and bridge
    options — that a future top-level size extension can be made to survive backlogit's own read/modify/write cycle **independent of docline**; the bridge **selection** is made in `109.004-T`.
@@ -349,9 +349,7 @@ is the body-preserving case: it decodes/encodes through `internal/mdfront` direc
 so it retains **exact body bytes** and the **full frontmatter map including unknown
 top-level keys** — this is why it deliberately bypasses the generic rebuild route. The
 generic rewrite paths (`models.ParseFrontmatter` -> `ArtifactFromFrontmatter` ->
-`core.WriteArtifactFile`) are the LF-normalized case: a preserved extension key/value
-graph stays **semantically/deep-value equivalent and top-level**, with **canonical,
-LF-normalized body equivalence** and **idempotent normalization**. Neither case preserves
+`core.WriteArtifactFile`) are the LF-normalized, top-level-dropping case: they LF-normalize the body and re-emit only struct-backed fields, so the nested `custom_fields` survives but any unknown top-level extension key is dropped (no carrier at HEAD). There is therefore no preserved top-level extension graph on this route today; any such preservation is a future target contingent on a selected bridge (adding a top-level carrier), at which point it would be semantic/deep-value equivalence of that graph plus canonical, LF-normalized body equivalence and idempotent normalization. Neither case preserves
 the frontmatter block as **raw lexical bytes** (both re-emit YAML; out of scope
 unless a future YAML-node/raw-byte design is explicitly chosen). (c) **Canonical
 size-location evidence:** record that task size is physically stored under the
@@ -378,12 +376,7 @@ evidence:** consume the completed `109.005-T` read request/response/context pari
 completed `109.006-T` mutation validation/error parity (including the future
 `size_source`/`size_ruleset_version` flag/field options), and the `109.007-T`
 inheritance-bridge + generic rewrite-path preserve/drop classification + canonical size-location
-evidence (this task performs no parity investigation of its own); where a path preserves,
-that is honored as **semantic/deep-value
-equivalence** of the top-level extension key/value graph plus canonical, LF-normalized body
-equivalence and idempotent normalization (the codec reserializes YAML and may
-canonicalize ordering/quotes/scalar spelling/comments/anchors), **not** raw
-frontmatter byte/lexical preservation. (d) **Inheritance-bridge selection:**
+evidence (this task performs no parity investigation of its own); preservation is path-specific: `core.SetArtifactSize` preserves the top-level extension graph via exact body bytes and the full frontmatter map (through `internal/mdfront`), whereas the generic rebuild route drops unknown top-level keys today and, only once a bridge adds a top-level carrier, would provide semantic/deep-value equivalence of that graph plus canonical, LF-normalized body equivalence and idempotent normalization (the generic codec reserializes YAML and may canonicalize ordering/quotes/scalar spelling/comments/anchors); neither path preserves the frontmatter block as raw lexical bytes. (d) **Inheritance-bridge selection:**
 informed by the `109.007-T` bridge decision-input and preserve/drop classification,
 **SELECT** the concrete inheritance bridge — which base fields/schema/codec invariants
 the `.backlogit` backlog writers implement or reuse, and how the identified DROP loss
@@ -517,9 +510,7 @@ validation/error parity + future `size_source`/`size_ruleset_version` flags/fiel
 and `109.007-T` (inheritance-bridge + generic rewrite-path preserve/drop classification + canonical
 size-location evidence), refocusing `109.004-T` to final synthesis/exit only
 (depends on `109.002`/`109.003`/`109.005`/`109.006`/`109.007`), raised the timebox
-to 14h, and restated preservation of top-level size extensions as semantic/deep-value
-equivalence + canonical, LF-normalized body equivalence + idempotency rather than raw frontmatter
-byte/lexical preservation. **PR #242 review-fix CYCLE 2 re-run (2026-07-16)** — with the
+to 14h, and restated top-level size-extension preservation as path-specific - exact body bytes plus the full frontmatter map on the `core.SetArtifactSize` seam, versus (only after a future bridge adds a top-level carrier) semantic/deep-value equivalence plus canonical, LF-normalized body equivalence plus idempotency on the generic rebuild route - rather than raw frontmatter byte/lexical preservation on either. **PR #242 review-fix CYCLE 2 re-run (2026-07-16)** — with the
 Schema-CLI-Docs Coupling and Agent-Native Parity reviewers triggered — additionally:
 assigned SE5 read-surface parity ownership to `109.005-T` and mutation parity to
 `109.006-T`, with `109.004-T` consuming completed evidence only and performing no parity
@@ -592,9 +583,7 @@ rewrite-path preserve/drop classification** — `109.002-T` inventories `models.
 title/status/section rewrites, and `109.007-T` **classifies each path preserve or drop,
 identifies the loss points, and proposes concrete bridge options** — the current generic
 paths demonstrably **drop** unknown top-level fields (enumerated-key parse with no top-level
-carrier; struct-only re-emit; only nested `custom_fields` survives). Where a path preserves,
-equivalence is semantic/deep-value (canonical, LF-normalized body equivalence + idempotent
-normalization, not raw frontmatter byte/lexical preservation); the bridge **selection**
+carrier; struct-only re-emit; only nested `custom_fields` survives). Preservation is path-specific: `core.SetArtifactSize` is exact-body-byte plus full-map, while the generic route only after a future top-level-carrier bridge gives semantic/deep-value equivalence plus canonical, LF-normalized body equivalence plus idempotent normalization; neither is raw frontmatter byte/lexical preservation; the bridge **selection**
 is made in `109.004-T`. (5) **size placement consistency** — task size is stored under the nested
 `custom_fields.size` while feature/shipment size is proposed top-level; `109.007-T`
 gathers the reconciliation evidence and `109.004-T`
