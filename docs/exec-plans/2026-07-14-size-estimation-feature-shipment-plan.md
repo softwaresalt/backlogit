@@ -15,7 +15,7 @@ docline:
         - D7B1B33D
     review_state: spike-chartered
     gate: SPIKE
-    review_provenance: "plan-review skill RE-RUN 2026-07-15 by Stage against final plan bytes after PR #241 refocus AND the restructure that (a) moves the spike into a NEW queued feature 109-F + four sequenced <=2h research/decision tasks 109.001-T..109.004-T (096-S rebound to the 109 tree only), (b) restores the harvested 108-F tree to a BLOCKED future-implementation placeholder outside 096-S that depends on 109.004-T AND the docline pass-through task 107.009-T (shipment 095-S) (the third edge 107.011-T was added in the 2026-07-16 cycle-2 re-run recorded below), informed by 109-F, (c) inventories the multiple established JSONL durability policies (LinkCommit warn-continue, AppendComment fail-surface, gate-evidence fail-closed) and makes the size ordering/rollback policy an explicit 109.004-T decision output, (d) makes composition ratification depend on 109.003-T + 109.004-T, and (e) uses true CLI/MCP command-to-tool parity pairs across READ surfaces AND the mutation pair (CLI update --size <-> MCP update_item size), with 109.004-T deciding future size_source/size_ruleset_version flags/fields and transport-aware validation/error parity (equivalent category/message); single-model multi-persona (cross-model unavailable per skill fallback); no implementation PASS recorded — spike exit criteria only, gate remains SPIKE. PR #242 review-fix RE-RUN 2026-07-16 split the oversized 109.004-T into width-isolated <=2h evidence tasks 109.005-T (read-surface request/response/context parity), 109.006-T (mutation validation/error parity + future provenance flag/field options), and 109.007-T (inheritance-bridge + generic rewrite-path preservation + canonical size-location evidence); 109.004-T refocused to final synthesis/exit only (depends on 109.002/109.003/109.005/109.006/109.007); 096-S now carries 109-F + seven tasks; timebox raised to 14h; preservation of top-level size extensions restated as semantic/deep-value equivalence + unchanged body bytes + idempotency, not raw frontmatter byte/lexical preservation; gate remains SPIKE. PR #242 review-fix CYCLE 2 RE-RUN 2026-07-16 by Stage against these exact final bytes with the Schema-CLI-Docs Coupling and Agent-Native Parity reviewers: read-surface parity ownership assigned to 109.005-T and mutation parity to 109.006-T with 109.004-T consuming completed evidence only (no parity investigation in 109.004-T); 109.007-T restated from preservation-confirmation to per-path preserve/drop CLASSIFICATION with identified loss points and concrete bridge options (current generic paths demonstrably drop unknown top-level fields); 109.004-T gains an explicit inheritance-bridge SELECTION exit criterion (proceed impossible until selected); current-HEAD docline behavior corrected to relocation-under-docline with a latent (not current) top-level drop; base schema restated as OPEN to producer-owned top-level extension properties without enumerating/validating size fields and without a declared-vs-legacy distinction (backlogit derived contract owns size validation later); 109-F summary names all three 108-F prerequisites (109.004-T + 107.009-T + 107.011-T, necessary-but-not-sufficient); gate remains SPIKE (conclusion pending)"
+    review_provenance: "plan-review skill RE-RUN 2026-07-15 by Stage against final plan bytes after PR #241 refocus AND the restructure that (a) moves the spike into a NEW queued feature 109-F + four sequenced <=2h research/decision tasks 109.001-T..109.004-T (096-S rebound to the 109 tree only), (b) restores the harvested 108-F tree to a BLOCKED future-implementation placeholder outside 096-S that depends on 109.004-T AND the docline pass-through task 107.009-T (shipment 095-S) (the third edge 107.011-T was added in the 2026-07-16 cycle-2 re-run recorded below), informed by 109-F, (c) inventories the multiple established JSONL durability policies (LinkCommit warn-continue, AppendComment fail-surface, gate-evidence fail-closed) and makes the size ordering/rollback policy an explicit 109.004-T decision output, (d) makes composition ratification depend on 109.003-T + 109.004-T, and (e) uses true CLI/MCP command-to-tool parity pairs across READ surfaces AND the mutation pair (CLI update --size <-> MCP update_item size), with 109.004-T deciding future size_source/size_ruleset_version flags/fields and transport-aware validation/error parity (equivalent category/message); single-model multi-persona (cross-model unavailable per skill fallback); no implementation PASS recorded — spike exit criteria only, gate remains SPIKE. PR #242 review-fix RE-RUN 2026-07-16 split the oversized 109.004-T into width-isolated <=2h evidence tasks 109.005-T (read-surface request/response/context parity), 109.006-T (mutation validation/error parity + future provenance flag/field options), and 109.007-T (inheritance-bridge + generic rewrite-path preservation + canonical size-location evidence); 109.004-T refocused to final synthesis/exit only (depends on 109.002/109.003/109.005/109.006/109.007); 096-S now carries 109-F + seven tasks; timebox raised to 14h; preservation of top-level size extensions restated as semantic/deep-value equivalence + canonical, LF-normalized body equivalence + idempotency, not raw frontmatter byte/lexical preservation; gate remains SPIKE. PR #242 review-fix CYCLE 2 RE-RUN 2026-07-16 by Stage against these exact final bytes with the Schema-CLI-Docs Coupling and Agent-Native Parity reviewers: read-surface parity ownership assigned to 109.005-T and mutation parity to 109.006-T with 109.004-T consuming completed evidence only (no parity investigation in 109.004-T); 109.007-T restated from preservation-confirmation to per-path preserve/drop CLASSIFICATION with identified loss points and concrete bridge options (current generic paths demonstrably drop unknown top-level fields); 109.004-T gains an explicit inheritance-bridge SELECTION exit criterion (proceed impossible until selected); current-HEAD docline behavior corrected to relocation-under-docline with a latent (not current) top-level drop; base schema restated as OPEN to producer-owned top-level extension properties without enumerating/validating size fields and without a declared-vs-legacy distinction (backlogit derived contract owns size validation later); 109-F summary names all three 108-F prerequisites (109.004-T + 107.009-T + 107.011-T, necessary-but-not-sufficient); gate remains SPIKE (conclusion pending)"
 ---
 
 # Size Extension Contract Architecture Spike — Feature and Shipment Sizing (D7B1B33D)
@@ -345,7 +345,7 @@ fields (`models.ArtifactFromFrontmatter` maps only enumerated known keys, so a t
 extension has no carrier and is dropped on read; `core.WriteArtifactFile` re-emits only
 struct-backed fields; only the nested `custom_fields` survives). Where a path already
 preserves, that is stated honestly as the extension key/value graph staying **semantically/deep-value
-equivalent and top-level**, with **unchanged document body bytes** and **idempotent
+equivalent and top-level**, with **canonical, LF-normalized body equivalence** and **idempotent
 normalization** — **not** raw frontmatter byte/lexical preservation (out of scope
 unless a future YAML-node/raw-byte design is explicitly chosen). (c) **Canonical
 size-location evidence:** record that task size is physically stored under the
@@ -374,8 +374,8 @@ completed `109.006-T` mutation validation/error parity (including the future
 inheritance-bridge + generic rewrite-path preserve/drop classification + canonical size-location
 evidence (this task performs no parity investigation of its own); where a path preserves,
 that is honored as **semantic/deep-value
-equivalence** of the top-level extension key/value graph plus unchanged document
-body bytes and idempotent normalization (the codec reserializes YAML and may
+equivalence** of the top-level extension key/value graph plus canonical, LF-normalized body
+equivalence and idempotent normalization (the codec reserializes YAML and may
 canonicalize ordering/quotes/scalar spelling/comments/anchors), **not** raw
 frontmatter byte/lexical preservation. (d) **Inheritance-bridge selection:**
 informed by the `109.007-T` bridge decision-input and preserve/drop classification,
@@ -512,7 +512,7 @@ and `109.007-T` (inheritance-bridge + generic rewrite-path preserve/drop classif
 size-location evidence), refocusing `109.004-T` to final synthesis/exit only
 (depends on `109.002`/`109.003`/`109.005`/`109.006`/`109.007`), raised the timebox
 to 14h, and restated preservation of top-level size extensions as semantic/deep-value
-equivalence + unchanged body bytes + idempotency rather than raw frontmatter
+equivalence + canonical, LF-normalized body equivalence + idempotency rather than raw frontmatter
 byte/lexical preservation. **PR #242 review-fix CYCLE 2 re-run (2026-07-16)** — with the
 Schema-CLI-Docs Coupling and Agent-Native Parity reviewers triggered — additionally:
 assigned SE5 read-surface parity ownership to `109.005-T` and mutation parity to
@@ -587,7 +587,7 @@ title/status/section rewrites, and `109.007-T` **classifies each path preserve o
 identifies the loss points, and proposes concrete bridge options** — the current generic
 paths demonstrably **drop** unknown top-level fields (enumerated-key parse with no top-level
 carrier; struct-only re-emit; only nested `custom_fields` survives). Where a path preserves,
-equivalence is semantic/deep-value (unchanged body bytes + idempotent
+equivalence is semantic/deep-value (canonical, LF-normalized body equivalence + idempotent
 normalization, not raw frontmatter byte/lexical preservation); the bridge **selection**
 is made in `109.004-T`. (5) **size placement consistency** — task size is stored under the nested
 `custom_fields.size` while feature/shipment size is proposed top-level; `109.007-T`
@@ -641,7 +641,7 @@ Each research/decision task has an explicit, independently verifiable exit:
   direct `internal/docline` reuse), the **generic rewrite-path preserve/drop
   classification** (each path classified preserve or drop, with identified loss
   points and concrete bridge options; the current generic paths drop unknown
-  top-level fields; where preserved, semantic/deep-value equivalence + unchanged body bytes +
+  top-level fields; where preserved, semantic/deep-value equivalence + canonical, LF-normalized body equivalence +
   idempotency, **not** raw frontmatter byte/lexical preservation), and the
   **canonical size-location** reconciliation options are documented as evidence
   for `109.004-T` — with **no** preservation success condition asserted here.
