@@ -340,13 +340,19 @@ rewrite-path inventory (`models.ArtifactFromFrontmatter`, `core.WriteArtifactFil
 `core.SetArtifactSize`, generic title/status/section updates) and **classify each path
 as preserve or drop** for unknown top-level extension keys, identifying the exact
 **loss points** and proposing **concrete bridge options** — do NOT assert a preservation
-success condition. The current generic paths demonstrably **drop** unknown top-level
+success condition. The current generic rebuild paths demonstrably **drop** unknown top-level
 fields (`models.ArtifactFromFrontmatter` maps only enumerated known keys, so a top-level
 extension has no carrier and is dropped on read; `core.WriteArtifactFile` re-emits only
-struct-backed fields; only the nested `custom_fields` survives). Where a path already
-preserves, that is stated honestly as the extension key/value graph staying **semantically/deep-value
-equivalent and top-level**, with **canonical, LF-normalized body equivalence** and **idempotent
-normalization** — **not** raw frontmatter byte/lexical preservation (out of scope
+struct-backed fields; only the nested `custom_fields` survives). Where a path already preserves, classify it by its actual codec. `core.SetArtifactSize`
+is the body-preserving case: it decodes/encodes through `internal/mdfront` directly
+(CRLF is normalized only inside the frontmatter block and the body is never touched),
+so it retains **exact body bytes** and the **full frontmatter map including unknown
+top-level keys** — this is why it deliberately bypasses the generic rebuild route. The
+generic rewrite paths (`models.ParseFrontmatter` -> `ArtifactFromFrontmatter` ->
+`core.WriteArtifactFile`) are the LF-normalized case: a preserved extension key/value
+graph stays **semantically/deep-value equivalent and top-level**, with **canonical,
+LF-normalized body equivalence** and **idempotent normalization**. Neither case preserves
+the frontmatter block as **raw lexical bytes** (both re-emit YAML; out of scope
 unless a future YAML-node/raw-byte design is explicitly chosen). (c) **Canonical
 size-location evidence:** record that task size is physically stored under the
 nested `custom_fields.size` (via `core.SetArtifactSize`) while feature/shipment
