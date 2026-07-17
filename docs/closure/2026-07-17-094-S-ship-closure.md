@@ -141,8 +141,13 @@ never committed. Noted as a follow-up, not fabricated as a synthetic event.
     `backlogit get` surfaces `commit` directly from this scalar.
   * **`commit_links` row + `commit_tracked` item-log event** — created by invoking
     the real `core.LinkCommit` for each item (the exact function the ship path
-    calls), so the local index and per-item JSONL log match ship-time state
-    byte-for-byte. `LinkCommit` never touches frontmatter, so provenance is
+    calls), so the local index row and per-item JSONL event match ship-time output
+    in **event shape and commit metadata** (`commit_sha`, `message`, `author`,
+    `event_type: commit_tracked`, actor `backlogit`). The event **timestamp
+    differs**: `LinkCommit` stamps `time.Now()` at invocation
+    (`internal/core/commits.go:39-50`), so this backfill records the backfill
+    instant, not the merge instant — the association is equivalent, not
+    byte-identical. `LinkCommit` never touches frontmatter, so provenance is
     unaffected. These two projections live in the **gitignored**
     `.backlogit/backlogit.db` (commit_links) and `.backlogit/logs/*.jsonl`
     (commit_tracked); they are local runtime/log state that a normal `ship --sha`
