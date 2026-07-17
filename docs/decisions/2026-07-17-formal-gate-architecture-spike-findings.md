@@ -192,8 +192,9 @@ questions; plus a single documented rule for how `archived` composes with
 ### Q5 — Dependency-type durability
 
 **Current mechanism.** The SQLite `item_deps(item_id, depends_on, dep_type)`
-schema is durable (`internal/db/schema.go:262-269`) and stores `dep_type` on every
-row (`internal/db/dependencies.go`). But rehydration rebuilds edges from
+schema **contains** a `dep_type` column (`internal/db/schema.go:262-269`) and stores
+it on every row (`internal/db/dependencies.go`) — but that SQLite table is a
+**disposable projection**, not a durable store. Rehydration rebuilds edges from
 **markdown frontmatter, which carries only target IDs**: it reads
 `artifact.Dependencies` (a `[]string`) and upserts with the target ID only, after
 deleting all `item_deps` (`internal/db/rehydration.go:165-170`, `:217-223`). Core
@@ -261,10 +262,12 @@ for governed ops, not just flag presence.
 
 PR #239 collapsed because implementation and review-fix patching proceeded while
 these foundations were open, so each review round surfaced a new architectural
-contradiction (waiver schemas and reservation/session handles were added then
-removed; the plan-digest was self-referential). The findings above show the prior
-contract (exact canonical plan digest + waiver/session admission) is **not
-implementable on the current substrate** without first resolving Q1–Q6. But they
+contradiction — waiver schemas and reservation/session handles were added then
+**discarded** across iterations, leaving a final "exact canonical plan digest,
+PASS-only" design. The findings above show that even that final digest-based
+contract is **not implementable on the current substrate** without first resolving
+Q1–Q6 (no evidence authenticity, no manifest↔evidence binding, no single
+canonicalizer). But they
 also show the substrate **already has the right shape** in the gate-evidence log
 architecture: logs-as-source-of-truth, append-before-commit ordering,
 `evidence_required` fail-closed refusal, a single shared evidence predicate, and
@@ -314,8 +317,12 @@ spike. Recommended decomposition into bounded (~2h) units for a follow-up plan:
 * **F5 — Journaled multi-mutation wrapper (Q6).** All-or-nothing (or
   idempotent-replay) envelope for governed create+link mutations. *Non-trivial →
   medium confidence.*
-* **F6 — Governed-op parity hardening (Q7).** Route `update --commit` through
-  `LinkCommit`; assert behavioral parity for governed ops.
+* **F6 — Governed-op parity hardening (Q7).** Introduce **one commit-association
+  operation** that updates *all* representations (frontmatter scalar + `commit_links`
+  + JSONL) and route both CLI `update --commit` and MCP `update_item(commit=…)` /
+  `track_commit` through it — today `LinkCommit` writes only `commit_links` + JSONL
+  (`internal/core/commits.go:25-56`) while the CLI writes only the frontmatter
+  scalar; assert behavioral parity for governed ops.
 
 Recommended ordering: F2 and F3 first (cheap, unblock F1); F1 next; F4/F6 in
 parallel; F5 last.
