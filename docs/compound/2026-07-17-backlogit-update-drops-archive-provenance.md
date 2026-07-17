@@ -55,14 +55,24 @@ lossy for them.
 
 ## Guidance
 
-* **Do not use `backlogit update` (any flag) to mutate already-archived items.** The
-  typed round-trip is lossy for archive provenance.
-* **Attach the commit at ship time**, in one atomic step:
+* **Do not use `backlogit update`'s generic field flags on already-archived items.**
+  The lossy path is specifically the field-update flags (`--commit`, `--status`,
+  `--priority`, `--owner`, `--labels`, ...) that route through
+  `UpdateArtifactWithGate` → `UpdateArtifact` → `WriteArtifactFile` (the typed
+  round-trip). By contrast, `--section`-only updates reserialize the **raw**
+  frontmatter map (`internal/cli/update.go:188-260`, via `models.ParseFrontmatter`)
+  and `--size` uses the raw `mdfront` path (`internal/core/artifact_size.go:35-70`),
+  so both **preserve** archive-only keys. Caveat: combining `--section` with a
+  generic field flag in the same invocation is still lossy, because the field-flag
+  branch runs the typed rewrite.
+* **Attach the commit at ship time** with a single command:
   `backlogit shipment ship <id> --sha <merge-sha> --message ... --author ...`.
-  `attachCommitToItems` writes both the durable frontmatter `commit` and the
-  `commit_links` projection while archival provenance is set correctly. Note
-  `shipment ship` cannot be re-run once the shipment is `shipped` (it guards on
-  `status: active`).
+  `attachCommitToItems` writes the durable frontmatter `commit` and then the
+  `commit_links` projection while archival provenance is set correctly. This is a
+  single sequential workflow (persist frontmatter, then `LinkCommit`), **not** a
+  transaction — there is no rollback if the second step fails
+  (`internal/core/shipment_lifecycle.go:345-357`). Note `shipment ship` cannot be
+  re-run once the shipment is `shipped` (it guards on `status: active`).
 * **If a post-hoc backfill on an archived record is unavoidable**, treat the
   frontmatter `commit` scalar and the commit *traceability* records as two
   independent concerns:
@@ -78,11 +88,14 @@ lossy for them.
   * **Full traceability (archive-safe)** — to record the commit in the durable
     traceability surface, use `backlogit_track_commit` (MCP) →
     `LinkCommit` (`internal/core/commits.go:25-57`). It inserts the `commit_links`
-    row and appends the `commit_tracked` log event **without rewriting the
-    artifact markdown**, so it preserves `archived_from`/`archived_status`. Note
-    it populates the traceability tables/log, **not** the frontmatter `commit`
-    scalar — the two are independent, and only the ship-time `shipment ship
-    --sha` path writes both atomically (`internal/core/shipment_lifecycle.go:355`).
+    row **without rewriting the artifact markdown**, so it preserves
+    `archived_from`/`archived_status`. The accompanying `commit_tracked` log event
+    is **best-effort**: an append/index failure is only logged as a warning and
+    `LinkCommit` still returns success (`internal/core/commits.go:50-56`), so
+    **verify** the `commit_tracked` event landed when durable rehydration matters.
+    Note it populates the traceability tables/log, **not** the frontmatter `commit`
+    scalar — the two are independent, and only the ship-time `shipment ship --sha`
+    path writes both (in the single sequential workflow above).
 
 ## Evidence
 
