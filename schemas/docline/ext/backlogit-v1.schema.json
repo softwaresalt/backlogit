@@ -10,7 +10,7 @@
   ],
   "properties": {
     "docline": {
-      "type": "object",
+      "$comment": "No `type` constraint here: the base contract permits `docline` to be `object | null`. Declaring `type: object` would narrow that union and reject base-valid documents whose `docline` is null. JSON Schema `properties` is ignored for non-object instances, so `docline.backlogit` is still constrained whenever `docline` is an object.",
       "properties": {
         "backlogit": {
           "$comment": "Owner profile: backlogit-owned, backlogit-versioned metadata nested under the docline map. Additive-not-enveloping: it adds keys to docline; it never wraps or relocates docline base fields.",
@@ -24,6 +24,9 @@
               "type": "string"
             }
           },
+          "required": [
+            "schema_version"
+          ],
           "additionalProperties": true
         }
       }

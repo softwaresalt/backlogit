@@ -112,6 +112,36 @@ func TestExtSchemaConstrainsOnlyDoclineBacklogit(t *testing.T) {
 		"docline.backlogit carries a per-owner schema_version")
 }
 
+// TestExtSchemaPreservesBaseNullAndRequiresProfileVersion pins two contract
+// invariants surfaced in review: (1) the extension must not narrow the base
+// contract's `docline` union (object | null) down to object-only, or base-valid
+// documents with `docline: null` would fail the composed schema; and (2) the
+// backlogit owner profile must REQUIRE schema_version, because `default` is a
+// non-enforcing annotation and would otherwise permit an unversioned profile.
+func TestExtSchemaPreservesBaseNullAndRequiresProfileVersion(t *testing.T) {
+	ext := readSchemaJSON(t, extSchemaPath)
+
+	doclineProp := ext["properties"].(map[string]any)["docline"].(map[string]any)
+
+	// The ext must not pin docline to the scalar "object" type: that narrows the
+	// base's object|null union and rejects base-valid `docline: null` documents.
+	if declaredType, ok := doclineProp["type"]; ok {
+		assert.NotEqual(t, "object", declaredType,
+			"ext must not narrow docline to object-only; base permits docline: null")
+	}
+
+	backlogit := doclineProp["properties"].(map[string]any)["backlogit"].(map[string]any)
+
+	required, ok := backlogit["required"].([]any)
+	require.True(t, ok, "backlogit owner profile must declare a required list")
+	requiredKeys := make([]string, 0, len(required))
+	for _, k := range required {
+		requiredKeys = append(requiredKeys, k.(string))
+	}
+	assert.Contains(t, requiredKeys, "schema_version",
+		"backlogit owner profile must require schema_version (default is annotation-only)")
+}
+
 // sortedKeys returns the map keys in deterministic order for stable assertions.
 func sortedKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
