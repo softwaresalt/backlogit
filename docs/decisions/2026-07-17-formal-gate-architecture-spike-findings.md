@@ -14,7 +14,7 @@ docline:
     linked_parent_work_item: 105.001-T
     review_state: concluded
     charter: docs/decisions/2026-07-14-formal-gate-architecture-spike.md
-    supersedes: PR #239 (closed, unmerged) formal-gate implementation loop
+    supersedes: "PR #239 (closed, unmerged) formal-gate implementation loop"
     tags:
         - governance
         - architecture
@@ -79,10 +79,15 @@ bare PATH name; the broker itself performs no durable write
 append-only hash-chain. A hand-authored or replayed JSONL record that fits the
 `Latest` predicate is accepted as genuine.
 
-**Contract requirement.** A formal PASS-only gate needs an **authenticity proof**
-on evidence events (e.g. an HMAC over the canonical event delta with a
-workspace-scoped key, or a per-item append-only hash-chain), so a forged or
-replayed record is rejected regardless of structural validity.
+**Contract requirement.** Define the threat boundary explicitly: the actor can
+hand-edit the JSONL log, so any proof kept **only inside that log is forgeable** —
+a hand-editor can rewrite a per-item hash-chain end-to-end, and a previously valid
+chain segment stays replayable. A formal PASS-only gate therefore needs an
+**authenticated proof anchored outside the log** (e.g. an HMAC or signature over a
+canonical digest of the complete event, keyed by material the mutating actor does
+not control, or a trusted head/freshness state persisted outside the item log)
+**plus explicit anti-replay state** (a monotonic counter or nonce bound into the
+proof). A bare append-only hash-chain is necessary but not sufficient on its own.
 
 ### Q2 — Mutation-manifest replay / binding
 
@@ -100,37 +105,52 @@ or plan state that authorized it** — only current-HEAD ancestry. A stale or
 replayed manifest whose `head_sha` remains an ancestor of the current head is not
 independently rejected.
 
-**Contract requirement.** Bind the manifest to the evidence: record, on the
-shipment/plan record, the `EvidenceSHA` (already available on
-`gateevidence.Evidence`, `internal/gateevidence/gateevidence.go:46-49`) of each
-member's selected event, and verify it at ship time. This upgrades replay
-resistance from "still an ancestor" to "same evidence bytes that authorized it."
+**Contract requirement.** Bind the manifest to the evidence with a **new digest
+over the complete authenticated event plus the exact manifest/plan state** — do
+not reuse today's `EvidenceSHA`. That field is copied verbatim from
+`delta["gate_report_hash"]` (`internal/gateevidence/gateevidence.go:46`, `:118-120`),
+and that hash covers only the raw gate report
+(`internal/core/gate_evidence.go:71-78`); it does not bind event type, `ran`,
+`head_sha`, item identity, or plan state, so distinct or replayed events can share
+the same value. The binding digest must span the authenticated event (Q1) and the
+exact plan/manifest bytes and be verified at ship time — upgrading replay
+resistance from "still an ancestor" to "same authenticated evidence and plan state
+that authorized it."
 
 ### Q3 — Exact-byte / CRLF semantics
 
-**Current mechanism.** `mdfront` preserves body bytes verbatim but normalizes
-CRLF→LF **inside the frontmatter block** and emits LF-only fences
-(`internal/mdfront/codec.go:29-85`, `:88-126`); `internal/docline/codec.go:7-28`
-forwards to it. The typed model path normalizes CRLF→LF before parsing,
-reconstructs the body with `---\n\n`, and reserializes the frontmatter map via
-`yaml.Marshal` with **no key-order preservation**
-(`internal/models/frontmatter.go:21-42`, `:126-133`). `atomicfile` writes exact
-bytes without normalization (`internal/atomicfile/atomicfile.go:15-63`). sha256
-is used only on **derived payloads** (gate reports, release binaries), never on
-raw markdown file bytes.
+**Current mechanism.** `mdfront` preserves body bytes verbatim (including CRLF
+line endings) but normalizes CRLF→LF **inside the frontmatter block** and emits
+LF-only fences; its `Encode` `yaml.Marshal`s the frontmatter map, which yields
+**deterministic sorted-key** output — encoding is byte-stable, pinned by
+`TestEncode_SortedKeysStable` (`internal/mdfront/codec.go:66-85`,
+`internal/mdfront/codec_test.go:108-122`). `internal/docline/codec.go:7-28`
+forwards to it. The typed model path normalizes CRLF→LF across the **whole input**
+before parsing and reconstructs with a `---\n\n` (double-newline) separator, also
+`yaml.Marshal`-ing a sorted-key map (`internal/models/frontmatter.go:21-42`,
+`:126-133`). `atomicfile` writes exact bytes without normalization
+(`internal/atomicfile/atomicfile.go:15-63`). sha256 is used only on **derived
+payloads** (gate reports, release binaries), never on raw markdown file bytes.
 
-**Gap.** File-on-disk bytes are **not deterministic across platforms** once
-content passes through `mdfront` or the typed frontmatter path (both collapse to
-LF; key order is unstable). PR #239's "exact canonical digest excluding only the
-final formal-record block" is therefore both **brittle cross-platform** and
-**self-referential** (the digest must exclude the record embedded in the file it
-hashes).
+**Gap.** Key ordering is **not** the problem — both codecs emit sorted keys. The
+real cross-platform instability is **line-ending and separator handling**:
+`mdfront` preserves body line endings (a CRLF body stays CRLF) while canonicalizing
+only the frontmatter block, whereas the typed path normalizes the entire input to
+LF and emits a different (`---\n\n`) separator. The same logical content therefore
+hashes differently depending on which codec last wrote it and whether the body
+carried CRLF. PR #239's "exact canonical digest excluding only the final
+formal-record block" is thus both **brittle cross-platform** and **self-referential**
+(the digest must exclude the record embedded in the file it hashes).
 
 **Contract requirement.** Never hash file-on-disk bytes. Define **one canonical
 serialization** (LF, sorted keys, explicit trailing-newline rule) and hash that
 canonical form for all evidence and manifest binding — decoupled from the bytes
-the OS wrote. This is what `gate_report_hash` already does for the in-process
-report and what any plan/evidence digest must do.
+the OS wrote. Note that `gate_report_hash` does **not** already do this: it
+SHA-256s the broker-provided report bytes directly, with no canonicalization
+(`internal/core/gate_evidence.go:71-78`), so platform- or producer-dependent report
+bytes can still hash inconsistently. The new canonicalizer must therefore also
+cover gate reports, unless the report producer contract guarantees canonical bytes
+at the source.
 
 ### Q4 — Status model reconciliation
 
@@ -257,9 +277,12 @@ A fail-closed formal PASS-only gate is viable if, and only if, it:
 Per the charter's non-goals, no implementation backlog items are created by this
 spike. Recommended decomposition into bounded (~2h) units for a follow-up plan:
 
-* **F1 — Evidence authenticity primitive (Q1, Q2).** Decide HMAC vs append-only
-  hash-chain; add the proof to the evidence event and the `EvidenceSHA` binding at
-  ship time. *Needs its own micro-decision → medium confidence.*
+* **F1 — Evidence authenticity primitive (Q1, Q2).** Decide the externally
+  anchored proof (HMAC/signature keyed outside the log, plus anti-replay state);
+  add the authenticated proof to the evidence event and a **new manifest↔evidence
+  binding digest** (over the full event + plan/manifest state, not the reused
+  `EvidenceSHA`) verified at ship time. *Needs its own micro-decision → medium
+  confidence.*
 * **F2 — Canonical serialization + hash (Q3).** One canonicalizer (LF, sorted
   keys, trailing-newline rule) reused by evidence and manifest hashing.
 * **F3 — Single terminal-status predicate (Q4).** Shared `IsTerminal` used by

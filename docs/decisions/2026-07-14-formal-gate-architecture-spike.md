@@ -14,7 +14,7 @@ docline:
     linked_parent_work_item: 105.001-T
     review_state: concluded
     findings: docs/decisions/2026-07-17-formal-gate-architecture-spike-findings.md
-    supersedes: PR #239 (closed, unmerged) formal-gate implementation loop
+    supersedes: "PR #239 (closed, unmerged) formal-gate implementation loop"
     tags:
         - governance
         - architecture
