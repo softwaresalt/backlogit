@@ -32,7 +32,7 @@ append-before-commit ordering, `evidence_required` fail-closed refusal, a single
 shared evidence predicate, argv-array/`MinimalEnv` broker, POSIX atomic file
 replacement — **not** on the plan-digest design that PR #239 collapsed under.
 
-**Five foundational gaps** (the Q-series) must be closed first:
+**Seven foundational gaps** (the Q-series, Q1–Q7) must be closed first:
 
 | Q | Gap |
 |---|---|
