@@ -97,14 +97,28 @@ the fix HEAD (`8127fa5`) and raised no new threads.
 * `shipment ship 097-S` → `shipped`; archived `097-S`, `110-F`,
   `110.001/002/003-T`, and linked `052-DL`.
 * **Release-SHA traceability:** the initial `shipment ship 097-S` was run without
-  `--sha`, so the merge SHA was not attached. Backfilled the parent merge commit
-  `b9bae626c1cb6c8243511f669b6b0b6e06b3f0fd` onto every archived scope item
-  (`097-S`, `110-F`, `110.001-T`, `110.002-T`, `110.003-T`, `052-DL`) via
-  `backlogit update <id> --commit b9bae62`, writing the durable frontmatter
-  `commit` field on each. Re-running `shipment ship --sha` was not possible
-  because the shipment was already `shipped` (the ship path requires
-  `status: active`). Future ships should pass
-  `shipment ship <id> --sha <merge-sha> --message ... --author ...` in one step.
+  `--sha`, so the merge SHA was not attached. Re-running `shipment ship --sha` was
+  not possible because the shipment was already `shipped` (the ship path requires
+  `status: active`), so the parent merge commit
+  `b9bae626c1cb6c8243511f669b6b0b6e06b3f0fd` was backfilled onto every archived
+  scope item (`097-S`, `110-F`, `110.001-T`, `110.002-T`, `110.003-T`, `052-DL`).
+* **Backfill hazard + repair (audit trail):** the first backfill attempt used
+  `backlogit update <id> --commit b9bae62`. That path round-trips the record
+  through the generic artifact model/writer
+  (`internal/models/artifact.go:33-55`, `internal/core/artifacts.go:682-725`),
+  which does **not** carry the archive-only fields `archived_from` /
+  `archived_status` that `ArchiveItem` stamps — so the update **silently dropped
+  the provenance**, leaving the records non-invertible (`UnarchiveItem`,
+  `internal/core/archive.go:675-681`, requires `archived_from`) and losing the
+  original `done` status. This was caught in closure-PR review and repaired by
+  (1) restoring the post-ship archive state, (2) re-applying the `commit` field
+  via a direct, body-preserving frontmatter edit (no codec round-trip), and
+  (3) restamping each item's `updated_at` to its commit-update event time
+  (`hooks_queue.jsonl` seq 1438–1443). **Do not use `backlogit update --commit`
+  to backfill commits on archived items.** Future ships should attach the SHA at
+  ship time via `shipment ship <id> --sha <merge-sha> --message ... --author ...`
+  in one step; post-hoc backfill on archived records must use a direct
+  frontmatter edit.
 * Shipment-reconcile GI/GR (pre + post): all manifest items confirmed archived;
   `097-S.md` moved queue→archive.
 * Post-merge backlog state committed (`cd82c54`) and shipped via closure branch

@@ -59,6 +59,16 @@ title: "097-S Ship closure — session memory"
 * Local Go toolchain is go1.26.5 vs repo pin 1.24.0 → repo-wide `gofmt -l .`
   flags ~28 pre-existing unrelated files; ignore (not CI-enforced; golangci-lint
   owns formatting).
+* **Failed release-SHA backfill path (gotcha):** backfilling the merge SHA with
+  `backlogit update --commit` on already-archived items silently dropped the
+  `archived_from` / `archived_status` provenance (the generic artifact codec does
+  not model those archive-only fields), making the records non-invertible and
+  losing the original `done` status. Caught in closure-PR review and repaired via
+  direct, body-preserving frontmatter edits: restore provenance, re-add `commit`,
+  and restamp `updated_at` to the commit-update event time. Rule for future
+  handoffs: **generic `backlogit update` is NOT safe for archived records** —
+  attach commits at ship time (`shipment ship --sha ...`) or use a direct
+  frontmatter edit for post-hoc backfill.
 
 ## Next steps
 
