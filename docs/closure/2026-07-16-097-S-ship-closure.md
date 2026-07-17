@@ -80,9 +80,15 @@ the fix HEAD (`8127fa5`) and raised no new threads.
   changes, Docline frontmatter gate).
 * §1.9 pre-merge readiness: review fresh on HEAD, 0 unresolved Copilot threads,
   no branch-protection block.
-* Local gates: `go build`, `go test ./internal/docline/...`, `go vet`,
-  `golangci-lint`, `gofmt`, ext-schema JSON validity — all clean on merged
-  `main`.
+* Local gates that PASSED on merged `main`: `go build`, `go test
+  ./internal/docline/...`, `go vet`, `golangci-lint run ./internal/docline/...`,
+  `gofmt -l` on the changed files (empty output), and ext-schema JSON validity.
+* Format-check caveat (non-passing, non-blocking): repo-wide `gofmt -l .` reports
+  ~28 pre-existing unrelated files as unformatted. This is a local
+  toolchain-version artifact (local go1.26.5 vs the repo pin 1.24.0), NOT a
+  regression from this shipment and NOT CI-enforced — CI has no standalone
+  `gofmt` gate; golangci-lint (with its own pinned formatter) owns formatting.
+  The changed files in this shipment are `gofmt`-clean.
 * P-009: true merge commit `b9bae62` (two parents). P-014: operator approved
   merge explicitly.
 
@@ -90,6 +96,15 @@ the fix HEAD (`8127fa5`) and raised no new threads.
 
 * `shipment ship 097-S` → `shipped`; archived `097-S`, `110-F`,
   `110.001/002/003-T`, and linked `052-DL`.
+* **Release-SHA traceability:** the initial `shipment ship 097-S` was run without
+  `--sha`, so the merge SHA was not attached. Backfilled the parent merge commit
+  `b9bae626c1cb6c8243511f669b6b0b6e06b3f0fd` onto every archived scope item
+  (`097-S`, `110-F`, `110.001-T`, `110.002-T`, `110.003-T`, `052-DL`) via
+  `backlogit update <id> --commit b9bae62`, writing the durable frontmatter
+  `commit` field on each. Re-running `shipment ship --sha` was not possible
+  because the shipment was already `shipped` (the ship path requires
+  `status: active`). Future ships should pass
+  `shipment ship <id> --sha <merge-sha> --message ... --author ...` in one step.
 * Shipment-reconcile GI/GR (pre + post): all manifest items confirmed archived;
   `097-S.md` moved queue→archive.
 * Post-merge backlog state committed (`cd82c54`) and shipped via closure branch
