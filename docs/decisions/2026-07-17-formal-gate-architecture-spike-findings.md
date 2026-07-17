@@ -311,7 +311,16 @@ A fail-closed formal PASS-only gate is viable if, and only if, it:
    (which accepts `EventGateForced` regardless of `ran` and keeps an earlier pass
    even after a later block or requeue) — the formal predicate must require an
    authenticated, non-forced **real** PASS and must treat any later block/requeue
-   as invalidating a prior pass (Q1/Q4).
+   as invalidating a prior pass (Q1/Q4). A non-forced PASS is **not sufficient on
+   its own**: today the broker maps exit 0 to `DecisionProceed` even when stdout is
+   empty or non-JSON (`internal/core/gate/decision.go:56-60`), and the parsed
+   report carries only `repeated_failure` (`internal/core/gate/types.go:45-49`), so
+   authenticating that event proves only that the broker *ran*, not that a complete
+   attributed formal review occurred — an empty-output gate binary could otherwise
+   yield an admissible "real" PASS. The formal predicate must therefore also require
+   a **schema-validated formal report carrying the required persona/review
+   evidence**, and that validated report must be the payload bound into the
+   authenticity proof (Q1/Q2).
 
 ## Recommended bounded follow-up (Stage to harvest; not created here)
 
