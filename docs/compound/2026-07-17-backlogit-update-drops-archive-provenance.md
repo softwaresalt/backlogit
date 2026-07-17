@@ -63,13 +63,26 @@ lossy for them.
   `commit_links` projection while archival provenance is set correctly. Note
   `shipment ship` cannot be re-run once the shipment is `shipped` (it guards on
   `status: active`).
-* **If a post-hoc backfill on an archived record is unavoidable**, edit the
-  frontmatter **directly** (body-preserving text edit): restore/keep
-  `archived_from` and `archived_status`, add the `commit` line, and restamp
-  `updated_at` to the mutation time (align it with the corresponding
-  `hooks_queue.jsonl` event so sync/query consumers do not see a stale modification
-  time). Then `backlogit sync` to refresh the index. Verify the diff is exactly the
-  intended lines and that provenance keys survive.
+* **If a post-hoc backfill on an archived record is unavoidable**, treat the
+  frontmatter `commit` scalar and the commit *traceability* records as two
+  independent concerns:
+  * **Frontmatter-only** — edit the frontmatter **directly** (body-preserving
+    text edit): restore/keep `archived_from` and `archived_status`, add the
+    `commit` line, and set `updated_at` to the edit time. Then `backlogit sync`
+    reprojects the `commit` scalar into `items.commit`. This is **all** a direct
+    edit does: it does **not** create a `commit_links` row, does **not** append a
+    durable `commit_tracked` log event, and fires **no** hooks — so `sync` does
+    not "complete" the backfill, and there is no hook event to align `updated_at`
+    against (set it directly). Verify the diff is exactly the intended lines and
+    that provenance keys survive.
+  * **Full traceability (archive-safe)** — to record the commit in the durable
+    traceability surface, use `backlogit_track_commit` (MCP) →
+    `LinkCommit` (`internal/core/commits.go:25-57`). It inserts the `commit_links`
+    row and appends the `commit_tracked` log event **without rewriting the
+    artifact markdown**, so it preserves `archived_from`/`archived_status`. Note
+    it populates the traceability tables/log, **not** the frontmatter `commit`
+    scalar — the two are independent, and only the ship-time `shipment ship
+    --sha` path writes both atomically (`internal/core/shipment_lifecycle.go:355`).
 
 ## Evidence
 
