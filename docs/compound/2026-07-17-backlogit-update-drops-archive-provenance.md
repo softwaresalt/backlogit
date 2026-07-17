@@ -1,0 +1,81 @@
+---
+chunk_strategy: h1-h2-h3
+description: Running `backlogit update` (e.g. `--commit`) on an already-archived item silently drops the archive-only provenance fields `archived_from` and `archived_status`, because the typed Artifact codec does not model them. The result is a non-invertible archive record (`UnarchiveItem` hard-fails) and a lost original status. Backfill commits on archived items with a direct frontmatter edit, or attach the SHA at ship time via `shipment ship --sha`.
+doc_type: learning
+docline:
+  date: 2026-07-17T00:00:00Z
+  severity: high
+  tags:
+    - backlogit
+    - archive
+    - provenance
+    - codec
+    - data-integrity
+    - cli
+schema_version: "1.0"
+source: docs/compound/2026-07-17-backlogit-update-drops-archive-provenance.md
+title: backlogit update on archived items silently drops archive provenance (archived_from/archived_status)
+---
+
+## Problem
+
+During 097-S post-merge closure the shipment had been shipped without `--sha`, so
+the merge commit was not attached to the archived scope items. Backfilling it with
+`backlogit update <id> --commit <sha>` on the already-archived records **silently
+dropped** the `archived_from` and `archived_status` frontmatter keys that
+`ArchiveItem` stamps. The closure-PR (#246) Copilot review caught it: the mutated
+archive records were now non-invertible (`UnarchiveItem` hard-fails with
+`archived item <id> is missing archived_from metadata`) and the original pre-archive
+status (`done`) was lost. The same round-trip also reorders the `links` sequence and
+restamps `updated_at`.
+
+## Root cause
+
+`backlogit update` loads the record through the **typed generic Artifact codec** and
+writes it back through `WriteArtifactFile`. That path only round-trips the fields the
+`models.Artifact` struct models — and the struct has **no** `ArchivedFrom` /
+`ArchivedStatus` fields:
+
+* `internal/models/artifact.go:34-55` — the `Artifact` struct enumerates id, title,
+  status, artifact_type, parent_id, sprint, priority, description, assigned_to,
+  owner, labels, dependencies, links, references, commit, custom_fields, created_at,
+  updated_at, level, hierarchy_path. There is no carrier for the archive-only keys.
+* `internal/core/artifacts.go:681-725` — `WriteArtifactFile` builds the output
+  frontmatter map by **explicitly enumerating recognized keys**. Any key not in that
+  enumeration (`archived_from`, `archived_status`) is not re-emitted, so it is
+  dropped on write.
+* `internal/core/archive.go:675-681` — `UnarchiveItem` reads `archived_from` from the
+  raw frontmatter and returns a hard error when it is absent. Dropping the field
+  makes the archive record non-invertible.
+
+This is the same class of gotcha as "the generic artifact codec carries only
+`custom_fields` and drops unmodeled top-level keys" — archived records carry
+provenance keys that live **outside** the typed model, so any typed round-trip is
+lossy for them.
+
+## Guidance
+
+* **Do not use `backlogit update` (any flag) to mutate already-archived items.** The
+  typed round-trip is lossy for archive provenance.
+* **Attach the commit at ship time**, in one atomic step:
+  `backlogit shipment ship <id> --sha <merge-sha> --message ... --author ...`.
+  `attachCommitToItems` writes both the durable frontmatter `commit` and the
+  `commit_links` projection while archival provenance is set correctly. Note
+  `shipment ship` cannot be re-run once the shipment is `shipped` (it guards on
+  `status: active`).
+* **If a post-hoc backfill on an archived record is unavoidable**, edit the
+  frontmatter **directly** (body-preserving text edit): restore/keep
+  `archived_from` and `archived_status`, add the `commit` line, and restamp
+  `updated_at` to the mutation time (align it with the corresponding
+  `hooks_queue.jsonl` event so sync/query consumers do not see a stale modification
+  time). Then `backlogit sync` to refresh the index. Verify the diff is exactly the
+  intended lines and that provenance keys survive.
+
+## Evidence
+
+* Observed in shipment 097-S post-merge closure (PR #246); the lossy backfill was
+  reverted and repaired via direct frontmatter edits (restore provenance, re-add
+  commit, restamp `updated_at`).
+* Product-bug follow-up: the `update`/`WriteArtifactFile` path should preserve
+  unmodeled archive-only frontmatter keys (or refuse to mutate archived items)
+  rather than silently dropping provenance.
