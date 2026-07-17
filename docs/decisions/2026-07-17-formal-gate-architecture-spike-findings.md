@@ -292,9 +292,15 @@ A fail-closed formal PASS-only gate is viable if, and only if, it:
    context-specific predicates (Q4);
 5. reasons only over dependency semantics that are **durable in markdown** (Q5);
 6. treats any multi-store mutation as advisory unless wrapped in a **journaled /
-   idempotent** operation (Q6); and
+   idempotent** operation (Q6);
 7. routes every governed operation through **one shared core function** with
-   behavioral parity asserted across MCP and CLI (Q7).
+   behavioral parity asserted across MCP and CLI (Q7); and
+8. admits the current gate decision through a **dedicated formal-admission
+   predicate**, distinct from the existing shared `Latest` evidence predicate
+   (which accepts `EventGateForced` regardless of `ran` and keeps an earlier pass
+   even after a later block or requeue) — the formal predicate must require an
+   authenticated, non-forced **real** PASS and must treat any later block/requeue
+   as invalidating a prior pass (Q1/Q4).
 
 ## Recommended bounded follow-up (Stage to harvest; not created here)
 
