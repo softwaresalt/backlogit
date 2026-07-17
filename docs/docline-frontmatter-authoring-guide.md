@@ -92,6 +92,60 @@ docline:
 When you add bespoke metadata, place it under `docline.<key>` yourself, or just
 add it at the top level and let `backlogit docs migrate` relocate it.
 
+## Owner-scoped extension profiles
+
+Tools that consume this repository's documents sometimes need their own metadata
+on a document without touching the shared contract. The **owner profile**
+convention gives each tool a reserved sub-namespace inside the `docline` map.
+
+An owner's extension properties live nested under the `docline` map at
+`docline.<owner>.*`, never at the top level. backlogit is the first owner, at
+`docline.backlogit.*`:
+
+```yaml
+---
+title: Example Decision
+source: docs/decisions/example.md
+doc_type: decision
+docline:
+  date: 2026-07-16T00:00:00Z
+  backlogit:
+    schema_version: "1.0"
+    size: 4212
+---
+```
+
+The convention has three rules:
+
+* **Owner key.** Each owner reserves one key under `docline` (here, `backlogit`).
+  All of that owner's metadata lives under it.
+* **Per-owner `schema_version`.** Each owner profile versions itself,
+  independently of the docline base `schema_version`.
+* **Additive, not enveloping.** An owner profile only adds keys to the `docline`
+  map. It never wraps or relocates the docline base fields. The base contract
+  fields stay at the top level and the `docline` map stays in place.
+
+Ownership splits cleanly:
+
+* **docline** owns and validates only the base fields, and preserves the
+  `docline` map in place through its read/write cycle.
+* **The owner** (backlogit) owns and validates its own subtree,
+  `docline.backlogit.*`, through a derived extension schema
+  (`schemas/docline/ext/backlogit-v1.schema.json`) composed `allOf` on top of
+  base v1.
+
+The top level stays `additionalProperties: false`. Do not add a top-level
+`backlogit` or `x-backlogit` key, and do not wrap the base fields inside an owner
+container — both break the shared contract that ingestion and downstream
+consumers read.
+
+> [!NOTE]
+> This convention applies to docline **documents**. Persisting owner profiles on
+> `.backlogit` feature, task, or shipment artifact frontmatter is a separate,
+> still-open question: the generic artifact codec carries only `custom_fields`,
+> so a top-level `docline` map is dropped on those artifacts. See the
+> [Model A decision doc](decisions/2026-07-16-docline-backlogit-owner-profile-model-a-decision.md).
+
 ## Ownership tiers
 
 Three tiers resolve the tension between the schema's required fields and what a
@@ -146,3 +200,5 @@ root knowledge files `README.md` and `AGENTS.md`. Out of scope: `.github/**` and
 * Taxonomy and field-mapping decision: `docs/decisions/2026-06-22-docline-taxonomy-and-field-mapping.md`
 * Standardization plan: `docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md`
 * Contract schema: `schemas/docline/base-frontmatter-v1.schema.json`
+* Owner-profile decision (Model A): `docs/decisions/2026-07-16-docline-backlogit-owner-profile-model-a-decision.md`
+* backlogit owner-profile ext schema: `schemas/docline/ext/backlogit-v1.schema.json`
