@@ -72,6 +72,10 @@ bound into the authenticity proof.
   1445/1446 corrected from `from:"active"` to `from:"queued"` (see below).
 * `.backlogit/archive/105-F.md`, `.backlogit/archive/105.001-T.md` — moved
   queue→archive on merge.
+* `.backlogit/queue/094-S.md` — shipment-state claim `status: queued` → `active`
+  (deferred-ship convention: the shipment is claimed on the feature branch, but
+  its own queue→archive move is deferred to the post-merge `shipment ship 094-S`,
+  so this file stayed in `queue/` at merge time).
 
 ## Review findings addressed
 
