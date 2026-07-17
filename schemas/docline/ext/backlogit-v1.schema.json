@@ -1,0 +1,32 @@
+{
+  "$id": "https://docline.softwaresalt.dev/schema/ext/backlogit/v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BacklogitDoclineExtensionV1",
+  "description": "Model A owner-scoped extension schema for the `backlogit` profile.\n\nThis layered extension validates ONLY the `docline.backlogit` subtree and is\ncomposed `allOf` on top of the docline base-frontmatter v1 contract. The base\ncontract's closed top level (additionalProperties:false) is NOT opened; the\nbacklogit owner profile lives nested under the open `docline` map at\n`docline.backlogit.*`, additive and never enveloping the docline base fields.\n\nScope: this schema is valid ONLY for docline DOCUMENTS (whose top level satisfies\nbase-frontmatter v1). It is NOT the contract for .backlogit feature/task/shipment\nartifact frontmatter; validating docline.backlogit on .backlogit artifacts would\nrequire a separate backlogit-artifact schema plus an artifact-codec bridge, both\nout of scope here and gated on the 109.x spike decision.\n\nOwnership: docline owns and validates only the base fields and preserves the\n`docline` map in place; backlogit owns and validates the `docline.backlogit`\nsubtree via this derived, backlogit-versioned schema.",
+  "allOf": [
+    {
+      "$ref": "https://docline.softwaresalt.dev/schema/base-frontmatter/v1.json"
+    }
+  ],
+  "properties": {
+    "docline": {
+      "type": "object",
+      "properties": {
+        "backlogit": {
+          "$comment": "Owner profile: backlogit-owned, backlogit-versioned metadata nested under the docline map. Additive-not-enveloping: it adds keys to docline; it never wraps or relocates docline base fields.",
+          "title": "BacklogitOwnerProfile",
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "description": "Semantic version of the backlogit owner profile contract (per-owner, independent of the docline base schema_version).",
+              "default": "1.0",
+              "title": "Backlogit Profile Schema Version",
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
