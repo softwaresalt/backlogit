@@ -29,7 +29,8 @@ docline:
 
 A coherent first-pass trust/atomicity contract sketch is achievable, but not on
 the design that collapsed PR #239 (an "exact canonical plan digest, PASS-only"
-gate layered with waiver / reservation / session machinery). The current
+gate whose review iterations churned through and ultimately **discarded** waiver /
+reservation / session machinery — see "Why PIVOT" below). The current
 substrate already supplies most of the right primitives through the shipped
 **gate-evidence log architecture** (082-F/083-F). The correct direction is to
 build the formal gate **on that existing log substrate** and close five specific
@@ -90,7 +91,9 @@ chain segment stays replayable. A formal PASS-only gate therefore needs an
 canonical digest of the complete event, keyed by material the mutating actor does
 not control, or a trusted head/freshness state persisted outside the item log)
 **plus explicit anti-replay state** (a monotonic counter or nonce bound into the
-proof). A bare append-only hash-chain is necessary but not sufficient on its own.
+proof). A bare append-only hash-chain is neither necessary nor sufficient on its
+own — it is only one candidate integrity structure among the HMAC/signature
+options above, which do not require an in-log chain at all.
 
 ### Q2 — Mutation-manifest replay / binding
 
@@ -141,9 +144,10 @@ real cross-platform instability is **line-ending and separator handling**:
 only the frontmatter block, whereas the typed path normalizes the entire input to
 LF and emits a different (`---\n\n`) separator. The same logical content therefore
 hashes differently depending on which codec last wrote it and whether the body
-carried CRLF. PR #239's "exact canonical digest excluding only the final
-formal-record block" is thus both **brittle cross-platform** and **self-referential**
-(the digest must exclude the record embedded in the file it hashes).
+carried CRLF. Any formal digest built naively over on-disk bytes is therefore
+**cross-platform-brittle** on the current substrate, and any scheme that embeds its
+own digest inside the hashed file must define an explicit **exclude-the-digest-block**
+canonicalization rule to avoid self-reference.
 
 **Contract requirement.** Never hash file-on-disk bytes. Define **one canonical
 serialization** (LF, sorted keys, explicit trailing-newline rule) and hash that
@@ -177,9 +181,13 @@ marker; the gate-terminal, queue-terminal, and shipment-terminal sets are not th
 same. A formal gate reading "is this item complete?" can get different answers
 from different call sites.
 
-**Contract requirement.** One **authoritative terminal-status predicate** shared
-by gate, queue, and shipment logic, and a single documented rule for how
-`archived` composes with `archived_status`.
+**Contract requirement.** One **authoritative status taxonomy** with explicitly
+named, context-specific predicates — "no-longer-blocking" for dependency resolution
+(where `shipped`/`abandoned` stop blocking), "releasable" for shipment (only
+`done`/`accepted`/`rejected`/`archived`), and the gate's configurable completion
+target — rather than a single shared boolean that would collapse those distinct
+questions; plus a single documented rule for how `archived` composes with
+`archived_status`.
 
 ### Q5 — Dependency-type durability
 
@@ -270,11 +278,15 @@ plan-digest/waiver contract.
 
 A fail-closed formal PASS-only gate is viable if, and only if, it:
 
-1. treats the per-item JSONL evidence log as the sole source of truth (as today);
+1. keeps the per-item JSONL evidence log as the durable **event source**, while
+   evidence **validity** additionally depends on trusted freshness/anti-replay
+   state persisted outside the mutable log (Q1) — the log stays authoritative for
+   events, but is not the sole arbiter of validity;
 2. adds an **authenticity proof** to evidence events (Q1) and binds the
    authorizing evidence hash to the manifest (Q2);
 3. hashes a **single canonical serialization**, never file-on-disk bytes (Q3);
-4. reads completion through **one authoritative terminal-status predicate** (Q4);
+4. reads completion through **one authoritative status taxonomy** with
+   context-specific predicates (Q4);
 5. reasons only over dependency semantics that are **durable in markdown** (Q5);
 6. treats any multi-store mutation as advisory unless wrapped in a **journaled /
    idempotent** operation (Q6); and
@@ -294,8 +306,9 @@ spike. Recommended decomposition into bounded (~2h) units for a follow-up plan:
   confidence.*
 * **F2 — Canonical serialization + hash (Q3).** One canonicalizer (LF, sorted
   keys, trailing-newline rule) reused by evidence and manifest hashing.
-* **F3 — Single terminal-status predicate (Q4).** Shared `IsTerminal` used by
-  gate, queue, and shipment; document `archived`/`archived_status` composition.
+* **F3 — Authoritative status taxonomy (Q4).** One taxonomy with named
+  context-specific predicates (no-longer-blocking / releasable / gate-target) used
+  by gate, queue, and shipment; document `archived`/`archived_status` composition.
 * **F4 — Durable dependency type (Q5).** Typed dependency objects in frontmatter
   so `dep_type` survives rehydration.
 * **F5 — Journaled multi-mutation wrapper (Q6).** All-or-nothing (or
