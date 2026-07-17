@@ -59,15 +59,18 @@ JSONL event streams, never to frontmatter
 (`internal/core/gate_evidence.go:13-18`, `internal/gateevidence/gateevidence.go:13-15`).
 On the gated completion path the append happens **before** the durable status
 write, and under `evidence_required` a failed append refuses the transition
-(`internal/core/gate_transition.go:34-58`, `:490-499`). The derived
+(`internal/core/gate_transition.go:234-257`, where `completeGatePass` appends
+evidence and refuses on error before calling `updateArtifactUngated`). The derived
 `gate_evidence` SQLite table is an explicitly disposable projection rebuilt from
 the logs (`internal/db/rehydration.go:264-269`). The single shared `Latest`
 predicate selects the most recent `EventGateForced` (any `ran`) or
 `EventGatePassed` with `ran==true`; a fail-open no-run pass is skipped
-(`internal/gateevidence/gateevidence.go:69-120`). Each evidence event already
-carries a `gate_report_hash` (sha256 of the gate report,
-`internal/core/gate_evidence.go:71-79`) and a `head_sha`
-(`internal/core/gate_transition.go:360-410`). The broker executes the gate binary
+(`internal/gateevidence/gateevidence.go:69-120`). Task evidence events carry a
+`gate_report_hash` (sha256 of the gate report, `internal/core/gate_evidence.go:71-79`)
+and a `head_sha` **only when non-empty** (`internal/core/gate_transition.go:406-411`),
+while shipment-level passing evidence records **neither**
+(`internal/core/shipment_gate.go:490-499`) — so today these binding fields are
+optional metadata, not guaranteed primitives. The broker executes the gate binary
 argv-array only with an allowlisted `MinimalEnv`
 (`internal/core/gate/runner.go:25-56`, `:103-127`) and validates the binary as a
 bare PATH name; the broker itself performs no durable write
@@ -163,9 +166,11 @@ with validation at `:37`. Shipment statuses are a **separate** enum
 rule**: it writes `status: archived` plus a helper `archived_status: <previous>`
 and restores from that helper on unarchive (`internal/core/archive.go:214-217`,
 `:252-270`). Terminality is computed differently again: the gate defaults terminal
-to `done` (`internal/core/gate_transition.go:120-133`), while queue and shipment
-logic use broader terminal sets
-(`internal/core/queue.go:119-125`, `internal/core/shipment_lifecycle.go:250-277`).
+to `done` (`internal/core/gate_transition.go:120-133`), while queue dependency
+resolution uses the shared `TerminalStatuses` list
+(`internal/core/blocking_cascade.go:14`, applied in
+`internal/core/queue.go:406-413`) and shipment release uses a separate
+`isTerminalReleaseStatus` predicate (`internal/core/shipment_lifecycle.go:897`).
 
 **Gap.** `archived` is simultaneously a real persisted status and a temporary
 marker; the gate-terminal, queue-terminal, and shipment-terminal sets are not the
@@ -233,8 +238,10 @@ a CLI-only allow-list (`init`, `mcp`, `manifest`, `migrate`, `status`,
 logically "same" operations do different things per surface: CLI `update --commit`
 writes only the frontmatter scalar (`internal/cli/update.go:146-148`) while MCP
 `track_commit` calls `LinkCommit` and inserts `commit_links`
-(`internal/mcp/tools.go:1298-1320`); CLI `update` supports
-`--section/--size/--gate-base/--force-gates` that MCP `update_item` does not
+(`internal/mcp/tools.go:1298-1320`). MCP `update_item` already exposes and
+implements `sections` and `size` (`internal/mcp/tools.go:57-70`, `:739-770`); the
+genuine surface gap is the operator-only gate controls `--gate-base/--force-gates`,
+which CLI `update` exposes but MCP `update_item` does not
 (`internal/cli/update.go:43-300` vs `internal/mcp/tools.go:722-777`).
 
 **Contract requirement.** For every **governed** operation, both surfaces must
@@ -253,7 +260,9 @@ implementable on the current substrate** without first resolving Q1–Q6. But th
 also show the substrate **already has the right shape** in the gate-evidence log
 architecture: logs-as-source-of-truth, append-before-commit ordering,
 `evidence_required` fail-closed refusal, a single shared evidence predicate, and
-`gate_report_hash` + `head_sha` on every event. The materially different (and
+optional `gate_report_hash` + `head_sha` metadata on task evidence events (which
+the replacement contract must promote to mandatory authenticated fields). The
+materially different (and
 cheaper) design is to **extend that substrate** rather than build a parallel
 plan-digest/waiver contract.
 
@@ -300,8 +309,12 @@ parallel; F5 last.
 
 ## Residual / unresolved questions
 
-* The exact authenticity mechanism (HMAC key management vs keyless hash-chain) is
-  **not resolved** — deferred to F1's micro-decision.
+* The exact authenticity mechanism is **not resolved** — deferred to F1's
+  micro-decision. A keyless in-log hash-chain alone is **not** viable under the Q1
+  threat model (an actor who can edit the log can rewrite the chain end-to-end); the
+  viable options are HMAC/signature key management **or an externally persisted
+  trusted chain head** anchored outside the mutable item log, per the Q1 contract
+  requirement above.
 * The journaled-mutation design (write-ahead journal vs idempotent replay) is
   **not resolved** — deferred to F5's micro-decision.
 * Machine-waiver / ADVISORY admission remains explicitly out of scope (charter
