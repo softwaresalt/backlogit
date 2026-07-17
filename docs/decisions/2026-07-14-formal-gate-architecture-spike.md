@@ -9,11 +9,12 @@ docline:
     type: spike
     date: 2026-07-14T00:00:00Z
     time_box: "2h"
-    conclusion: "pending"
-    confidence: "low"
-    linked_parent_work_item: null
-    review_state: chartered
-    supersedes: PR #239 (closed, unmerged) formal-gate implementation loop
+    conclusion: "pivot"
+    confidence: "medium"
+    linked_parent_work_item: 105.001-T
+    review_state: concluded
+    findings: docs/decisions/2026-07-17-formal-gate-architecture-spike-findings.md
+    supersedes: "PR #239 (closed, unmerged) formal-gate implementation loop"
     tags:
         - governance
         - architecture
