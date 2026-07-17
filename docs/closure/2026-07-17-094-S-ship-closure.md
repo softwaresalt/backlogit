@@ -125,12 +125,29 @@ never committed. Noted as a follow-up, not fabricated as a synthetic event.
   was not possible (the ship path requires `status: active` and the shipment was
   already `shipped`), so the merge commit
   `98b05221ba3dd8d6f862a2f14c2db9b02da86e4c` was backfilled onto every archived
-  scope item (`094-S`, `105-F`, `105.001-T`) via a **direct, body-preserving
-  frontmatter edit**. This deliberately avoids `backlogit update --commit`, which
-  round-trips archived records through the generic artifact model/writer and
-  silently drops the archive-only `archived_from`/`archived_status` provenance (the
-  094-S session compound learning). Verified post-edit: `commit` indexed on all
-  three items and `archived_from`/`archived_status` preserved.
+  scope item (`094-S`, `105-F`, `105.001-T`) to reproduce every effect of the
+  ship-time `attachCommitToItems` path, while staying provenance-safe:
+  * **Frontmatter `commit` scalar + restamped `updated_at`** — applied via a
+    **direct, body-preserving frontmatter edit**. This deliberately avoids
+    `backlogit update --commit`, which round-trips archived records through the
+    generic artifact model/writer and silently drops the archive-only
+    `archived_from`/`archived_status` provenance (the 094-S session compound
+    learning). These two fields are the only **version-controlled** record of the
+    association — the archive `.md` frontmatter is what a fresh clone reads, and
+    `backlogit get` surfaces `commit` directly from this scalar.
+  * **`commit_links` row + `commit_tracked` item-log event** — created by invoking
+    the real `core.LinkCommit` for each item (the exact function the ship path
+    calls), so the local index and per-item JSONL log match ship-time state
+    byte-for-byte. `LinkCommit` never touches frontmatter, so provenance is
+    unaffected. These two projections live in the **gitignored**
+    `.backlogit/backlogit.db` (commit_links) and `.backlogit/logs/*.jsonl`
+    (commit_tracked); they are local runtime/log state that a normal `ship --sha`
+    would likewise produce locally and never commit. Note that `commit_links` is
+    an append-only index projection that `sync` neither clears nor rebuilds from
+    the JSONL log (a Q7/F6 parity gap the spike itself documents).
+  * **Verified post-backfill:** `commit` indexed and returned by `get` on all
+    three items; `commit_links` and `commit_tracked` rows present for all three
+    and durable across a full `sync`; `archived_from`/`archived_status` preserved.
 * Future ships should attach the SHA at ship time via
   `shipment ship <id> --sha <merge-sha> --message ... --author ...` in one step.
 * Shipment-reconcile GI/GR (pre + post): all manifest items confirmed archived;
