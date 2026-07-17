@@ -118,10 +118,15 @@ not reuse today's `EvidenceSHA`. That field is copied verbatim from
 and that hash covers only the raw gate report
 (`internal/core/gate_evidence.go:71-78`); it does not bind event type, `ran`,
 `head_sha`, item identity, or plan state, so distinct or replayed events can share
-the same value. The binding digest must span the authenticated event (Q1) and the
-exact plan/manifest bytes and be verified at ship time — upgrading replay
-resistance from "still an ancestor" to "same authenticated evidence and plan state
-that authorized it."
+the same value. A bare digest is **not** a binding on its own: an actor who edits
+the manifest can recompute an ordinary hash over the still-valid signed event plus
+the altered plan, so a self-covering digest still permits manifest substitution.
+The binding must therefore be **covered by Q1's authenticity proof** — the
+HMAC/signature is computed over a canonical payload that *includes* the
+plan/manifest digest, and the proof itself is stored **outside** that payload so
+the mutating actor cannot recompute it. Verified at ship time, this upgrades
+replay resistance from "still an ancestor" to "same authenticated evidence and
+plan state that authorized it."
 
 ### Q3 — Exact-byte / CRLF semantics
 
@@ -214,8 +219,12 @@ rehydration.
 
 ### Q6 — Partial core-mutation rollback
 
-**Current mechanism.** File writes are atomic per file via temp+rename with a
-Windows destination-remove retry (`internal/atomicfile/atomicfile.go:11-63`). The
+**Current mechanism.** File writes are atomic per file via temp+rename **on
+POSIX**, where `rename(2)` atomically replaces an existing destination. On Windows
+the helper falls back to `os.Remove(dest)` then rename
+(`internal/atomicfile/atomicfile.go:11-63`), which is **not atomic**: between the
+remove and a successful rename the destination is absent, so a crash in that
+window loses the file rather than leaving either the old or the new bytes. The
 ship path is **sequential, not transactional**: it persists the artifact and then
 calls `LinkCommit` with no rollback wrapper
 (`internal/core/shipment_lifecycle.go:345-357`). `LinkCommit` updates SQLite first,
@@ -224,7 +233,9 @@ and does not rewrite markdown (`internal/core/commits.go:25-57`).
 
 **Gap.** There is **no journaling or all-or-nothing guarantee across a multi-file /
 multi-store mutation** (frontmatter + DB + logs). Atomicity holds only at the
-single-file boundary.
+single-file boundary — and even there the Windows remove-then-rename fallback
+opens a crash window in which the destination is absent, so a formal rollback
+contract must treat single-file replacement as non-atomic on that platform.
 
 **Contract requirement.** A governed mutation that creates items + dependencies +
 shipment membership needs a **journaled or idempotent-replay wrapper** so a
