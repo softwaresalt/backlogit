@@ -8,7 +8,7 @@ title: "Spike: durable size-extension contract for .backlogit artifacts (custom_
 docline:
     type: spike
     date: 2026-07-18
-    time_box: "8h"
+    time_box: "14h"
     conclusion: "proceed"
     confidence: "high"
     linked_parent_work_item: "109-F"
