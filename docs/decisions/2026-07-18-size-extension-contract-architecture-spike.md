@@ -201,38 +201,122 @@ containment validation (`internal/config/schema.go:99-104`). The correct
 hardening is realpath/`EvalSymlinks` containment on the size write path, not
 `SafeResolve` alone.
 
-#### 7. CLI/MCP parity and the durable-everywhere / validated-once asymmetry (109.005-T, 109.006-T)
+#### 7. CLI/MCP parity matrices (109.005-T read, 109.006-T mutation)
 
-* **Mutation seam — GOOD**: both CLI `update --size`
-  (`internal/cli/update.go:91-114,281-293`) and MCP `update_item` size
-  (`internal/mcp/tools.go:56-72,743-755`) route through the single
-  `core.SetArtifactSize` seam.
-* **Validation — seam-only (asymmetry)**: enum validation lives in
-  `validateSizeValue` and is **intentionally not** retrofitted into
-  `ValidateArtifactFields` (`internal/core/artifact_size.go:66-69,97-122`). So
-  `custom_fields.size` is *durable on every currently-wired path* but *validated
-  only on the size seam* — a durable-everywhere / validated-once asymmetry the
-  impl-plan must carry.
-* **Error parity — aligned by category**: not-found → CLI exit 1 / MCP
-  `not_found`; busy-lock (`ErrTaskBusy`) → CLI `ExitError{Code:4}` / MCP
-  `conflict`; invalid enum (`ErrValidation`) → CLI exit 1 / MCP
-  `validation_failed` (`internal/cli/exit_error.go:5-32`,
-  `internal/mcp/errors.go:14-98`).
-* **Read parity — minor gap**: MCP `get_item`/`list_items` expose size via the
-  structured `custom_fields` payload; CLI `get` shows it and CLI `list --json`
-  exposes `custom_fields` (`internal/cli/list.go:132-135`), but the CLI `list`
-  human **columns** omit size (`internal/cli/list.go:20-41`).
+**Mutation seam — GOOD**: both CLI `update --size`
+(`internal/cli/update.go:91-114,281-293`) and MCP `update_item` size
+(`internal/mcp/tools.go:56-72,743-755`) route through the single
+`core.SetArtifactSize` seam. Validation is **seam-only**: `validateSizeValue`
+is **intentionally not** retrofitted into `ValidateArtifactFields`
+(`internal/core/artifact_size.go:66-69,97-122`) — so `custom_fields.size` is
+*durable on every currently-wired path* but *validated only on the size seam*, a
+durable-everywhere / validated-once asymmetry the impl-plan must carry.
 
-#### 8. Structured-composition rails for future aggregation (109.003-T)
+**Read-surface parity (109.005-T)** — the five true command→tool read pairs a
+future size projection must populate identically:
+
+| CLI ↔ MCP pair | Request-contract parity | Response-shape parity for `size` |
+|---|---|---|
+| `queue view` ↔ `get_queue` | CLI flags vs MCP params; both default to the queue ordering (`internal/core/queue.go:127-191`) | size not currently projected on either; a future projection must appear on both |
+| `shipment get` ↔ `get_shipment` | single-ID lookup, symmetric | shipment `custom_fields` returned by both |
+| `shipment list` ↔ `list_shipments` | list filters symmetric | structured `custom_fields` on MCP; CLI human columns omit size |
+| `get` ↔ `get_item` | single-ID; **pinned** `get --format json` ↔ `get_item` | both emit `custom_fields.size` field-for-field in JSON |
+| `list` ↔ `list_items` | list filters symmetric | MCP structured `custom_fields`; CLI `--json` exposes `custom_fields` (`internal/cli/list.go:132-135`), CLI human columns omit size (`internal/cli/list.go:20-41`) |
+
+**Pinned `get --format json` ↔ `get_item` context asymmetry — decision-input**:
+the two surfaces differ on the *context* fields they attach (`body`,
+`dependencies_detail`, `commit_links`). **Decision**: a future size projection
+MUST ride on `custom_fields.size` (present identically on both surfaces),
+**not** on any surface-specific context block, so read parity for size is
+independent of the `body`/`dependencies_detail`/`commit_links` asymmetry. The
+only current read gap is cosmetic — the CLI `list`/`shipment list` **human
+columns** omit size — and is a non-blocking follow-up.
+
+**Mutation-surface parity (109.006-T)** — current write pair
+`CLI update --size` ↔ `MCP update_item size`, error parity by category
+(equivalent category + message; transport carriers mapped, not byte-identical):
+
+| Failure | CLI carrier | MCP carrier |
+|---|---|---|
+| invalid enum value | `ErrValidation` → exit 1 | `validation_failed` |
+| unsupported artifact type | validation error → exit 1 | `validation_failed` |
+| busy task lock (`ErrTaskBusy`) | `ExitError{Code:4}` (`internal/cli/exit_error.go:5-32`) | `conflict` (`internal/mcp/errors.go:14-98`) |
+| not-found | exit 1 | `not_found` |
+| workspace-open failure | exit 1 (config/setup) | structured `{error,message}` |
+
+**Future provenance flags/fields — SELECTED (109.006-T evidence, 109.004-T (f)
+selection)**: `size_source` (CLI `--size-source`, MCP field `size_source`),
+accepted values `{human, agent, derived}`; **defaulting** — an authored size
+with no explicit source is stamped from the actor context, an **absent**
+`size_source` reads as `unknown`/legacy and is **never rewritten as `human`**
+(per 109.003-T); unknown values are **rejected** with the same `validation_failed`
+/ exit-1 category as an invalid size. `size_ruleset_version` (CLI
+`--size-ruleset-version`, MCP field `size_ruleset_version`) is `null` until a
+canonical XS–XL aggregation ruleset is owned; an unknown/unsupported version is
+rejected with the same category. Both fields live under `custom_fields`
+(durable by the same mechanism as size) and are validated at the size seam, and
+both surfaces map the same error category with transport-specific carriers
+(CLI Cobra error / `ExitError{Code:4}`; MCP `{error,message}` via
+`domainError`/`makeErrorResult`).
+
+#### 8. Ratified structured-composition contract (109.003-T, ratified with 109.004-T)
 
 A future feature/shipment size derived from member task sizes is feasible on
-existing rails: parent/child membership via `parent_id` queries
-(`internal/core/hierarchy.go`), shipment membership via `NormalizeShipmentItems`
-(`internal/core/shipment.go:525-571`), dedup via `uniqueNonEmptyStrings`,
-missing-handling via `DeriveCoveringFeature` (skip `ErrNotFound`, warn+skip
-others), mixed-status via `CheckChildrenTerminal`, and an **ordered-enum
-comparator precedent** in the priority `CASE` (`internal/core/queue.go:183-191`)
-that a size ordering (`XS<S<M<L<XL`) would mirror.
+existing rails, and the **structured-composition contract is ratified here**:
+
+* **Response shape**: a computed-on-read, **never-persisted** structure of an
+  `XS–XL` **count histogram** + an **`unsized`** count + a **de-duplicated
+  canonical members** array. `ruleset_version` is **`null`** until a canonical
+  XS–XL aggregation ruleset is owned (none exists in current code).
+* **Membership**: feature membership = direct children by `parent_id`
+  (`internal/core/hierarchy.go`); shipment membership = manifest expansion via
+  `NormalizeShipmentItems` (`internal/core/shipment.go:525-571`).
+* **De-duplication**: the `{feature + its child tasks}` ID set is de-duplicated
+  (via `uniqueNonEmptyStrings`) so a manifest listing both a feature and its
+  child tasks counts each canonical work item **exactly once**.
+* **Missing/legacy handling**: a member without an authored size increments
+  **`unsized`**, never a default bucket; an absent `size_source` reads as
+  `unknown`/legacy and is **never rewritten as `human`**; missing members are
+  skipped (`DeriveCoveringFeature` precedent: skip `ErrNotFound`, warn+skip
+  others).
+* **Ordering**: the XS<S<M<L<XL comparator mirrors the priority `CASE`
+  ordered-enum precedent (`internal/core/queue.go:183-191`).
+
+#### 9. Synthesis exit decisions (109.004-T (a)–(g))
+
+The 2h synthesis task records these first-class decisions (it performs no new
+inventory; it consumes the evidence above):
+
+* **(a) Durability/ordering policy — SELECTED: fail-surface, event-after-write,
+  no rollback.** The size value is the primary durable state (lands first via
+  the mdfront seam into `custom_fields.size`); a provenance event append follows
+  and, on failure, is **surfaced** to the caller (AppendComment precedent,
+  `internal/core/commits.go:72-97`) rather than silently warn-continued
+  (LinkCommit, the weakest option for user-visible state). Fail-closed
+  (gate-evidence, `internal/core/gate_evidence.go:34-58`) is **rejected** for
+  the size mutation itself: size is user-visible primary state, not a completion
+  gate, so refusing a valid size write because an audit note could not be
+  recorded would harm usability more than the audit gap; fail-closed remains the
+  right model only for gate-evidence, not for size provenance. The size write is
+  **not rolled back** on a provenance-append failure because it is valid durable
+  state on its own.
+* **(b) Composition — RATIFIED** per section 8 (jointly with 109.003-T).
+* **(c) Parity — CONSUMED** per section 7 (read + mutation matrices).
+* **(d) Inheritance bridge — SELECTED: no carrier bridge; store under
+  `custom_fields`.** Closes the DROP loss points (`ArtifactFromFrontmatter`
+  enumerated-key mapping; `WriteArtifactFile` struct-only re-emit) by using the
+  already-preserved `custom_fields` carrier rather than adding a `Docline`
+  field to `models.Artifact`. Model A sanctions exactly this option (`:147-152`).
+* **(e) Canonical size-location — DECIDED: `custom_fields.size` at all levels**
+  (task already there; extend to feature/shipment; coexist, no migration
+  needed).
+* **(f) Future provenance flags/fields — SELECTED** per section 7
+  (`size_source`, `size_ruleset_version`, values, defaulting, rejection,
+  transport-aware error mapping).
+* **(g) Exit decision — PIVOT (confidence per the Recommendation).** All three
+  proceed-gates (containment boundary, canonical size-location, inheritance
+  bridge) are resolved, so a later separately-planned, harvested, and
+  re-reviewed implementation is authorized.
 
 ### What Was Tried and Failed
 
@@ -244,23 +328,29 @@ that a size ordering (`XS<S<M<L<XL`) would mirror.
 
 ### Remaining Unknowns
 
-* Exact provenance schema (`size_source`, `size_ruleset_version`,
-  estimate-history) and the durability policy pick (fail-surface vs.
-  fail-closed) — medium-confidence input, finalized in the 108-F impl-plan.
-* Aggregation ruleset semantics (rounding, missing-member policy) — deferred to
-  impl-plan.
+* The durability policy, provenance flags/fields, and composition contract are
+  now **decided** (sections 7–9); what remains for the 108-F impl-plan is
+  **implementation detail**, not decision: the concrete enum wiring for
+  `size_source`, the seam that emits the provenance event, and the aggregation
+  computation itself.
+* Aggregation **rounding** semantics for a future single-bucket rollup (if one
+  is ever wanted in addition to the histogram) — the ratified contract returns a
+  histogram + `unsized`, so a single collapsed bucket is an explicit non-goal
+  unless a later work item requests it.
 * The single-namespace *unification* enhancement (make artifacts also use
   `docline.backlogit.size` via the carrier bridge) is an **optional** future
-  enhancement the spike recommends against for now (see below); it is not a gate
-  on the size feature.
+  enhancement the spike recommends against for now; it is not a gate on the size
+  feature.
 
 ## Recommendation
 
 **Conclusion**: pivot
-**Confidence**: high — for the durability finding and the artifact-size
-placement (empirically proven, code-confirmed, and within the spike's
-Model-A-delegated authority). medium — for the provenance schema/policy pick and
-the aggregation ruleset, which are finalized in the 108-F impl-plan.
+**Confidence**: high — for the durability finding, the artifact-size placement
+(`custom_fields.size`), the inheritance-bridge selection, and the containment
+fix (empirically proven, code-confirmed, and within the spike's
+Model-A-delegated authority). medium — for the provenance flag/field selection
+and the composition ruleset, which are **decided here** (sections 7–9) but whose
+concrete wiring is validated during 108-F implementation.
 
 Store feature/shipment `size` at **`custom_fields.size`** — the option Model A
 pre-named and delegated to this spike — reserving top-level `docline.backlogit.*`
@@ -293,15 +383,17 @@ the `feature` and `shipment` header-def types and reuse the existing
    `internal/core/doctor_target.go:256-279` (not `SafeResolve`, which is lexical
    only and would not close the symlink risk).
 
-**Provenance (medium confidence, for impl-plan)**: if added, `size_source` /
-`size_ruleset_version` should also live under `custom_fields` (durable by the
-same mechanism). A provenance audit trail argues for an **event-stream append**
-(distinct from the intentionally-omitted lifecycle hook event at
-`artifact_size.go:32-34`); the impl-plan should justify **fail-surface vs.
-fail-closed** explicitly — fail-closed (gate-evidence precedent: refuse the
-mutation if provenance cannot be recorded) is a live alternative to fail-surface
-for an audit trail, and warn-continue is the weakest option for user-visible
-state.
+**Provenance (SELECTED; see section 9(a),(f))**: `size_source` /
+`size_ruleset_version` live under `custom_fields` (durable by the same
+mechanism), validated at the size seam. The provenance audit record is emitted
+as an **event-stream append** (distinct from the intentionally-omitted lifecycle
+hook event at `artifact_size.go:32-34`) under a **fail-surface, event-after-write,
+no-rollback** policy: the size write lands first as valid durable state, then the
+provenance append is surfaced (not silently swallowed) on failure. Fail-closed is
+deliberately **not** chosen for the size mutation itself (size is user-visible
+primary state, not a completion gate); warn-continue is the weakest option and is
+rejected for user-visible state. The impl-plan implements this selection; it does
+not re-decide it.
 
 This selection is consistent with Model A, which scoped `docline.backlogit.*` to
 documents and delegated the artifact-bridge choice to this spike.
@@ -324,21 +416,23 @@ tiers (Claude Opus, GPT-5.6, Gemini 3.1 Pro) before shipping:
   (RESOLVED + high + an "operator-ratification gate" + pre-enqueued work); this
   final version removes the ratification-gate framing and scopes confidence
   explicitly (high on placement, medium on provenance/aggregation).
-* **Factual corrections applied**: containment fix changed from `SafeResolve` to
-  realpath/`EvalSymlinks`; the `custom_fields`-durability claim qualified as
-  currently-wired-paths with the map-replacement caveat; the section-rewrite
-  matrix corrected; mdfront "untouched" changed to "semantically preserved";
-  the "reserved for documents" wording attributed to this spike's recommendation
-  rather than a Model-A requirement.
+* **Second review cycle (Copilot, task-completion contracts)**: a follow-up
+  review flagged that marking 109.003–006-T and 109.004-T/109-F done required the
+  artifact to *record* the concrete parity matrices, ratified composition
+  contract, durability-policy selection, and provenance flag/field selection that
+  those tasks' completion contracts mandate — rather than defer them. Resolved by
+  recording all of them here (sections 7–9); no task was left with unmet exit
+  criteria, so no task was reopened.
 
 ## Next Steps
 
 1. Promote to `impl-plan` (108-F size feature): update
-   `docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md` to adopt
-   `custom_fields.size` for feature/shipment, the realpath containment hardening,
-   provenance-under-`custom_fields`, and a justified fail-surface-vs-fail-closed
-   event policy; carry the map-replacement and validated-once caveats as
-   constraints.
+   `docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md` to
+   **implement** the decisions recorded here — `custom_fields.size` for
+   feature/shipment, the realpath containment hardening, provenance under
+   `custom_fields` with the selected fail-surface event policy (section 9(a)),
+   and the `size_source`/`size_ruleset_version` flags/fields (section 7); carry
+   the map-replacement and validated-once caveats as constraints.
 2. Plan the size-aggregation ruleset as a separate work item, reusing the
    membership/dedup/missing-handling rails and the priority `CASE` ordered-enum
    comparator precedent.
