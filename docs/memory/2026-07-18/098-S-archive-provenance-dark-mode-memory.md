@@ -7,8 +7,6 @@ source: docs/memory/2026-07-18/098-S-archive-provenance-dark-mode-memory.md
 title: 098-S archive-provenance ship (dark-mode) — session memory
 ---
 
-# 098-S Archive-Provenance Ship (DARK_MODE) — Session Memory
-
 ## Scope
 
 DARK_MODE (P-017) dark-factory pipeline, operator AFK. Ordered scope: ship
@@ -37,7 +35,10 @@ Merged via **PR #255**, merge commit `7767bc3`, at 2026-07-18T06:34:03Z.
   hook forbids `archived → anything`, so a `clearStaleArchiveProvenance` helper
   on the update path would be unreachable dead code AND would leave other
   writers (queue.go, move-relocate, migrate) able to emit stale keys. The
-  status-gate in the shared seam enforces "provenance ⟺ archived" universally.
+  status-gate makes emission one-way at the shared seam: archived status is
+  necessary for the keys to be written, and non-archived writes suppress them.
+  It does not backfill provenance for archived items that arrive without it
+  (see the CreateArtifact / DB-sourced follow-ups).
 - **Declined the arch P1** (remove the gate for an explicit clear-helper) with
   that rationale; instead **added** `TestUpdateArtifact_RejectsUnarchiveViaStatusUpdate`
   to pin the transition-hook coupling the reviewer called fragile.

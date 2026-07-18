@@ -32,7 +32,7 @@ pre-archive status.
 |---|---|---|
 | Typed provenance fields | 111.001-T | `internal/models/artifact.go` — added `ArchivedFrom` / `ArchivedStatus string` with `omitempty` + doc comment. |
 | Frontmatter parse | 111.001-T | `internal/models/frontmatter.go` — `ArtifactFromFrontmatter` now parses `archived_from` / `archived_status`. |
-| Status-gated emit (the fix) | 111.001-T | `internal/core/artifacts.go` — `WriteArtifactFile` emits the two keys **only** when `Status == StatusArchived`. This is the single persist seam all typed paths funnel through, so it enforces the invariant "archive provenance ⟺ archived status" universally: preserves on archived updates, auto-clears on any write that leaves archived status. |
+| Status-gated emit (the fix) | 111.001-T | `internal/core/artifacts.go` — `WriteArtifactFile` emits the two keys **only** when `Status == StatusArchived` and the field is non-empty. This is the single persist seam all typed paths funnel through, so emission is status-gated at one place: it preserves existing provenance on archived writes and suppresses the keys on any non-archived write. The guard is one-way — archived status is necessary for emission, so a non-archived write can never carry the keys — but it does **not** synthesize missing provenance for archived items that arrive without it (see the `CreateArtifact` and DB-sourced follow-ups below). |
 | Regression tests | 111.001-T | `internal/core/archive_update_provenance_test.go` — 4 tests (see below). |
 
 ### Design decision: status-gate over clear-helper
@@ -127,7 +127,21 @@ Three P2 follow-ups filed to stash for future triage:
 - `12B5649E` — serializer consolidation (WriteArtifactFile vs `createArtifact`
   inline map builder).
 
-None block the shipped invariant; all are pre-existing, low-reachability.
+None block the shipped behavior; all are pre-existing, low-reachability.
+
+## Release-observability (operational evidence)
+
+The shipped change (PR #255) modifies the `WriteArtifactFile` serializer, a
+runtime-affecting persist path. Operational evidence for the release:
+
+| Item | Value |
+|---|---|
+| Monitoring signal | **Manual** — no runtime metrics system for the local backlogit index. Health signal: archived artifacts under `.backlogit/archive/*.md` retain `archived_from` / `archived_status` after subsequent typed updates (e.g. `track_commit`, `migrate`). The 4 regression tests in `archive_update_provenance_test.go` are the automated guard. |
+| Owner | Ship agent (dark-mode session); operator on return. |
+| Observation window | Next backlog mutation cycle that touches an archived item (commit tracking, migrate, references). No timed window — surfaced by the regression suite on every `go test ./...`. |
+| Baseline | Pre-fix: typed updates of archived items dropped both provenance keys. Post-fix: keys preserved on archived writes, suppressed on non-archived writes. |
+| Rollback trigger | An archived item losing `archived_from` / `archived_status` after a typed update, OR a non-archived item emitting the keys, OR any new `archive_update_provenance_test.go` failure. |
+| Rollback procedure | Revert merge commit `7767bc3` (PR #255) via `git revert -m 1 7767bc3`; the change is isolated to `artifact.go` / `frontmatter.go` / `artifacts.go` with no schema or data migration, so revert is clean and non-destructive. |
 
 ## Compound-refresh
 
