@@ -32,26 +32,33 @@ type ArtifactLink struct {
 
 // Artifact holds the current state of a backlogit work item.
 type Artifact struct {
-	ID            string         `json:"id" yaml:"id" validate:"required"`
-	Title         string         `json:"title" yaml:"title" validate:"required,max=200"`
-	Status        ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected archived shipped abandoned"`
-	ArtifactType  string         `json:"artifact_type" yaml:"artifact_type" validate:"required"`
-	ParentID      string         `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
-	Sprint        string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`
-	Priority      string         `json:"priority,omitempty" yaml:"priority,omitempty"`
-	Description   string         `json:"description,omitempty" yaml:"description,omitempty"`
-	AssignedTo    string         `json:"assigned_to,omitempty" yaml:"assigned_to,omitempty"`
-	Owner         string         `json:"owner,omitempty" yaml:"owner,omitempty"`
-	Labels        []string       `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Dependencies  []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Links         []ArtifactLink `json:"links,omitempty" yaml:"links,omitempty"`
-	References    []string       `json:"references,omitempty" yaml:"references,omitempty"`
-	Commit        string         `json:"commit,omitempty" yaml:"commit,omitempty"`
-	CustomFields  map[string]any `json:"custom_fields,omitempty" yaml:"custom_fields,omitempty"`
-	CreatedAt     time.Time      `json:"created_at" yaml:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at" yaml:"updated_at"`
-	Level         int            `json:"level,omitempty" yaml:"level,omitempty"`
-	HierarchyPath string         `json:"hierarchy_path,omitempty" yaml:"hierarchy_path,omitempty"`
+	ID           string         `json:"id" yaml:"id" validate:"required"`
+	Title        string         `json:"title" yaml:"title" validate:"required,max=200"`
+	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected archived shipped abandoned"`
+	ArtifactType string         `json:"artifact_type" yaml:"artifact_type" validate:"required"`
+	ParentID     string         `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
+	Sprint       string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`
+	Priority     string         `json:"priority,omitempty" yaml:"priority,omitempty"`
+	Description  string         `json:"description,omitempty" yaml:"description,omitempty"`
+	AssignedTo   string         `json:"assigned_to,omitempty" yaml:"assigned_to,omitempty"`
+	Owner        string         `json:"owner,omitempty" yaml:"owner,omitempty"`
+	Labels       []string       `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Dependencies []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Links        []ArtifactLink `json:"links,omitempty" yaml:"links,omitempty"`
+	References   []string       `json:"references,omitempty" yaml:"references,omitempty"`
+	Commit       string         `json:"commit,omitempty" yaml:"commit,omitempty"`
+	// ArchivedFrom and ArchivedStatus carry archive provenance so an archived
+	// item survives the typed update round-trip (they are written raw by
+	// ArchiveItem and would otherwise be dropped, leaving the record
+	// non-invertible). WriteArtifactFile emits them only while the item is
+	// archived; UnarchiveItem clears them via the raw frontmatter path.
+	ArchivedFrom   string         `json:"archived_from,omitempty" yaml:"archived_from,omitempty"`
+	ArchivedStatus string         `json:"archived_status,omitempty" yaml:"archived_status,omitempty"`
+	CustomFields   map[string]any `json:"custom_fields,omitempty" yaml:"custom_fields,omitempty"`
+	CreatedAt      time.Time      `json:"created_at" yaml:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at" yaml:"updated_at"`
+	Level          int            `json:"level,omitempty" yaml:"level,omitempty"`
+	HierarchyPath  string         `json:"hierarchy_path,omitempty" yaml:"hierarchy_path,omitempty"`
 }
 
 // Validate checks all struct tags and returns a descriptive error on failure.
