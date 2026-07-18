@@ -141,7 +141,7 @@ runtime-affecting persist path. Operational evidence for the release:
 | Observation window | Next backlog mutation cycle that touches an archived item (commit tracking, migrate, references). No timed window — surfaced by the regression suite on every `go test ./...`. |
 | Baseline | Pre-fix: typed updates of archived items dropped both provenance keys. Post-fix: keys preserved on archived writes, suppressed on non-archived writes. |
 | Rollback trigger | An archived item losing `archived_from` / `archived_status` after a typed update, OR a non-archived item emitting the keys, OR any new `archive_update_provenance_test.go` failure. |
-| Rollback procedure | Revert merge commit `7767bc3` (PR #255) via `git revert -m 1 7767bc3`; the change is isolated to `artifact.go` / `frontmatter.go` / `artifacts.go` with no schema or data migration, so revert is clean and non-destructive. |
+| Rollback procedure | Revert merge commit `7767bc3` (PR #255) via `git revert -m 1 7767bc3`. The revert is clean at the code level (isolated to `artifact.go` / `frontmatter.go` / `artifacts.go`, no schema or data migration). **It is not behaviorally safe on its own**: reverting re-exposes the original defect, where the next typed update of an archived item can erase `archived_from` / `archived_status`. Containment before updates resume: (1) freeze typed updates of archived items (avoid `track_commit` / `migrate` / `references` on archived artifacts), (2) back up `.backlogit/archive/*.md` so provenance can be restored if lost, and (3) re-run `go test ./internal/core -run ArchiveProvenance` to confirm the regression guard state before re-enabling archived-item mutations. Prefer a roll-forward fix over leaving the revert in place. |
 
 ## Compound-refresh
 
