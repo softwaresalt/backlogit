@@ -103,11 +103,11 @@ merges spanning this dark-mode scope:
 
 | PR | Purpose | Reviewed HEAD | Merge commit |
 |---|---|---|---|
-| #250 | 095-S ship | (prior session) | `ede77ed` |
-| #251 | 095-S closure | (prior session) | `6d2eda4` |
+| #250 | 095-S ship | `9f11df7` | `ede77ed` |
+| #251 | 095-S closure | `e804e71` | `6d2eda4` |
 | #252 | 096-S spike ship | `e845145` | `86aa6ec` |
-| #253 | 096-S closure | (prior session) | `4e3dae7` |
-| #254 | 096-S archive-status corrective | (prior session) | `dd0e2dd` |
+| #253 | 096-S closure | `5ce04d5` | `4e3dae7` |
+| #254 | 096-S archive-status corrective | `fe8bd54` | `dd0e2dd` |
 | #255 | 111-F/098-S code fix | `e298084` | `7767bc3` |
 | #256 | 098-S closure | `08f9102` | `4d3cbfce` |
 | #257 | stash-archive housekeeping | `c0e8be9` | `cc24d44` |
