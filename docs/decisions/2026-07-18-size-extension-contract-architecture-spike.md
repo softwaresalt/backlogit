@@ -97,11 +97,14 @@ the round-trip test and makes the delegated selection.
 The ground truth is codified as a committed, test-tier regression guard —
 `internal/core/docline_codec_roundtrip_test.go`
 (`TestGenericArtifactCodec_DropsTopLevelDocline`,
-`TestSetArtifactSize_PreservesTopLevelDocline`) — so a future codec change that
-alters this behavior fails a test and forces this decision to be revisited. No
-production code was changed. Both tests exercise the two codec routes with an
-artifact carrying a top-level `docline: { backlogit: { size: L } }` plus
-`custom_fields: { size: M }`.
+`TestSetArtifactSize_PreservesTopLevelDocline`, and
+`TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields`) — so a future
+codec change that alters this behavior fails a test and forces this decision to
+be revisited. No production code was changed. All three tests exercise the codec
+behavior with an artifact carrying a top-level `docline: { backlogit: { size: L } }`
+plus `custom_fields: { size: M }`; the third additionally drives the **ordinary
+generic mutation path** so the drop/preserve premise is guarded on the real
+update route, not only the codec functions in isolation.
 
 * **Generic codec route** (`models.ParseFrontmatter` →
   `models.ArtifactFromFrontmatter` → `core.WriteArtifactFile`): the raw parse
@@ -113,6 +116,14 @@ artifact carrying a top-level `docline: { backlogit: { size: L } }` plus
   L` is preserved and the mutation lands in `custom_fields.size: S`, body bytes
   unchanged. Observed:
   `docline survives = true ; docline.backlogit.size = L ; custom_fields.size = S`.
+
+* **Ordinary mutation route** (`core.UpdateArtifact` → `findArtifact` →
+  `persistArtifact`/`WriteArtifactFile`): an update touching neither `docline` nor
+  `custom_fields` still drops the top-level `docline` map and preserves
+  `custom_fields.size: M`. Observed:
+  `docline survives = false ; custom_fields.size = M`. This closes the gap a
+  codec-only test would leave if `UpdateArtifact`/persist later switched to a
+  docline-preserving writer.
 
 This empirically confirms Model A's recorded loss point: **the generic artifact
 codec drops a top-level `docline` map; `custom_fields` (a recognized carrier)
@@ -203,11 +214,17 @@ but never calls `Lstat`/`EvalSymlinks`, so adding it would **not** close a
 symlink escape. The repo's real symlink-containment pattern uses `EvalSymlinks`
 + realpath containment (`internal/core/doctor_target.go:256-279`). The residual
 risk is nuanced: a **leaf-file** symlink under a search dir can cause an
-out-of-workspace *read*; an **intermediate** symlink in a configured search path
-can redirect a *write*. `QueueLayout.RootDir` is only `required`, with no
-containment validation (`internal/config/schema.go:99-104`). The correct
-hardening is realpath/`EvalSymlinks` containment on the size write path, not
-`SafeResolve` alone.
+out-of-workspace *read* — and that read happens during **lookup**, because
+`FindArtifactPath`/`findArtifact` walk each candidate and call
+`parseFile`→`os.ReadFile` immediately (`internal/core/artifacts.go:657-665,
+752`, `parseFile` at `:772-775`), before any write-path check; an
+**intermediate** symlink in a configured search path can redirect a *write*.
+`QueueLayout.RootDir` is only `required`, with no containment validation
+(`internal/config/schema.go:99-104`). The correct hardening is
+realpath/`EvalSymlinks` containment applied at **lookup time** — realpath-resolve
+and re-contain each candidate *before* `parseFile` reads it — with revalidation
+of the resolved target before lock/read/write, not `SafeResolve` alone and not
+only on the write path.
 
 #### 7. CLI/MCP parity matrices (109.005-T read, 109.006-T mutation)
 
@@ -387,9 +404,13 @@ the `feature` and `shipment` header-def types and reuse the existing
    bridge remains a documented, reversible future option if uniform-namespace
    tooling ever justifies it.
 3. **Containment boundary — RESOLVED with the correct fix**: add
-   realpath/`EvalSymlinks` containment to the size write path, mirroring
-   `internal/core/doctor_target.go:256-279` (not `SafeResolve`, which is lexical
-   only and would not close the symlink risk).
+   realpath/`EvalSymlinks` containment at **lookup time** — realpath-resolve and
+   re-contain each candidate *before* `parseFile` reads it (a leaf-file symlink is
+   otherwise read out-of-workspace during the `FindArtifactPath` walk), then
+   revalidate the resolved target before lock/read/write — mirroring
+   `internal/core/doctor_target.go:256-279`. `SafeResolve` alone is insufficient
+   (lexical only), and a write-path-only check is too late because the read
+   already happened during lookup.
 
 **Provenance (SELECTED; see section 9(a),(f))**: `size_source` /
 `size_ruleset_version` live under `custom_fields` (durable by the same
