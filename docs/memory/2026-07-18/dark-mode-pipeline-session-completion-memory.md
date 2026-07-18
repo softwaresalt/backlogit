@@ -21,15 +21,18 @@ admin fallback NOT authorized. Ordered scope, all complete:
 
 ### 095-S (shipped)
 
-Docline soft-key regression guard shipped via **PR #250** (merged). Post-merge
-closure completed in prior sessions.
+Docline soft-key regression guard shipped via **PR #250** (merged `ede77ed`);
+post-merge closure merged via **PR #251** (`6d2eda4`). Both completed in prior
+sessions.
 
 ### 096-S (shipped)
 
-Size extension contract architecture spike shipped via **PR #252** (merged).
-Read-only spike; five Copilot review cycles plus a two-model adversarial
-re-review (P0 pivot to `proceed` per charter; three P1 and one P2 accepted and
-applied on HEAD `ed016e3`). Post-merge closure completed in prior sessions.
+Size extension contract architecture spike shipped via **PR #252** (merged
+`86aa6ec`). Read-only spike; eight Copilot review cycles plus a two-model
+adversarial re-review (P0 pivot to `proceed` per charter; three P1 and one P2
+accepted and applied, final HEAD `e845145`). Post-merge closure merged via
+**PR #253** (`4e3dae7`), with a corrective follow-up **PR #254** (`dd0e2dd`)
+fixing the 096-S shipment archive status. All completed in prior sessions.
 
 ### Stage next (complete)
 
@@ -38,7 +41,7 @@ Triaged the active stash. The primary ship deliverable was bug **50C90A1B**
 **111.001-T** / shipment **098-S**:
 
 - **PR #255** — the code fix (status-gated emit of `archived_from` /
-  `archived_status` at the single persist seam in `WriteArtifactFile`, plus
+  `archived_status` at the `WriteArtifactFile` persist seam, plus
   typed `ArchivedFrom` / `ArchivedStatus` model fields and four regression
   tests). Two-model adversarial review (P0=0; P1=1 declined with a guard test;
   P2=3 filed as stash follow-ups). Merged at **`7767bc3`**.
@@ -79,13 +82,30 @@ separate future shipment and was intentionally left for a later cycle.
 ## DARK_MODE_COMPLETE
 
 All three ordered scope items are complete. Preserved safety held throughout:
-P-001 single-release-unit completion, P-009 merge-commit-only (all four merges
-used merge commits), P-014 Copilot review gate (§1.9 GraphQL readiness verified
-on current HEAD before every merge), P-016 no parallel implementation branch,
+P-001 single-release-unit completion, P-009 merge-commit-only (every merge used
+a merge commit), P-014 Copilot review gate (§1.9 GraphQL readiness verified on
+the current HEAD before every merge), P-016 no parallel implementation branch,
 Stage/Ship role boundaries, and authoritative local review readiness. No admin
 fallback was used; every merge went through the normal PR path (branch
 protection requires PRs and three passing checks). No destructive action was
 taken outside the activation contract.
+
+Reviewed-HEAD audit trail (PR — reviewed HEAD — merge commit) for the eight
+merges spanning this dark-mode scope:
+
+| PR | Purpose | Reviewed HEAD | Merge commit |
+|---|---|---|---|
+| #250 | 095-S ship | (prior session) | `ede77ed` |
+| #251 | 095-S closure | (prior session) | `6d2eda4` |
+| #252 | 096-S spike ship | `e845145` | `86aa6ec` |
+| #253 | 096-S closure | (prior session) | `4e3dae7` |
+| #254 | 096-S archive-status corrective | (prior session) | `dd0e2dd` |
+| #255 | 111-F/098-S code fix | `e298084` | `7767bc3` |
+| #256 | 098-S closure | `08f9102` | `4d3cbfce` |
+| #257 | stash-archive housekeeping | `c0e8be9` | `cc24d44` |
+
+This completion record (PR #258, reviewed HEAD `33bd49a`) is the closing
+artifact; its own merge commit is recorded at merge time.
 
 Remaining stashed work is either governance requiring operator judgment or
 pre-existing low-reachability follow-ups — none safe or in-scope to ship
@@ -97,7 +117,13 @@ autonomously. Session halts cleanly with the backlog in a consistent state.
   `docs/decisions/2026-07-13-scratch-spike.md` and
   `docs/memory/2026-07-17/094-S-ship-closure-memory.md`.
 - The three archive-provenance follow-ups (`80DD65C4`, `7EEADCD3`, `12B5649E`)
-  share a root theme: unmodeled frontmatter loss on DB-sourced or create-path
-  writes. `12B5649E` (serializer consolidation via a shared
-  `ToFrontmatterMap()`) would structurally prevent the whole class and should be
-  sequenced first when this cluster is next triaged.
+  share a theme of unmodeled frontmatter loss, but they are two distinct fix
+  classes, not one. `12B5649E` (a shared `ToFrontmatterMap()`) addresses only
+  create/write serializer divergence — where both serializers exist but one
+  omits a field. `80DD65C4` is different: the DB-sourced artifact from
+  `QueryQueue` has already lost `archived_from` / `archived_status` before any
+  serializer runs, so a shared serializer cannot recover them; it needs an
+  independent DB reload-before-persist or a provenance-carrying DB codec. Do not
+  sequence `12B5649E` as a class-wide fix — `80DD65C4` remains independently
+  necessary. `7EEADCD3` (reject `archived` as an initial create status) is a
+  separate create-path guard.
