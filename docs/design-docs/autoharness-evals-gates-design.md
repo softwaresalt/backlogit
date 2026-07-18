@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "Design Document: Deterministic Gates, Telemetry & Evaluation Engine"
 source: "docs/design-docs/autoharness-evals-gates-design.md"
 doc_type: "design"

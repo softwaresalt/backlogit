@@ -1,4 +1,5 @@
 ---
+chunk_strategy: h1-h2-h3
 description: "Forward-UX display convention surfacing each shipment's covering feature ID and title in CLI and MCP shipment views — read-only presentation layer, no manifest mutation"
 doc_type: plan
 title: 'Surface Covering Feature in Shipment Views'

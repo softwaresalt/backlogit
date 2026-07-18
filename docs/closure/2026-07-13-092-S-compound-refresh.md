@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 description: "Compound-refresh report for shipment 092-S post-merge closure — captured the UTC-frontmatter NowUTC() helper pattern and the parallel-test-safe hermetic-TZ-subprocess RED-phase technique, and reinforced the Copilot review-loop convergence learning."
 doc_type: closure
 docline:

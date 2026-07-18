@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "backlogit Deterministic-Gates slice — implementation plan"
 description: "Doctor target-mode, per-task locking, task size schema, and body-preserving size mutation CLI (+ MCP parity)"
 source: "docs/decisions/2026-06-30-backlogit-deterministic-gates-slice-deliberation.md"

@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "Post-merge lifecycle writes must use a binary built from the merged source, not a stale workspace binary"
 source: docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md
 doc_type: learning

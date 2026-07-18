@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "UTC-normalized frontmatter timestamps via a shared NowUTC() helper with a backward-compatible parse path"
 source: docs/compound/2026-07-13-utc-frontmatter-timestamp-normalization.md
 doc_type: learning
