@@ -7,7 +7,10 @@
 
 Shipped 095-S end-to-end autonomously under dark mode. Live-corpus docline
 soft-key regression guard + hermetic value test + 12-doc backfill + CI docs-lint
-enforcement. Merged via merge commit (P-009); post-merge closure complete.
+enforcement. Feature PR #250 merged via merge commit (P-009). Closure artifacts
+(shipment archival, closure doc, this memory) are generated; the post-merge
+closure PR (#251) is still pending Copilot review + merge — do NOT treat the
+workflow as finished until #251 merges.
 
 ## Task IDs completed
 
