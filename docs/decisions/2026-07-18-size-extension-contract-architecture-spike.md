@@ -167,9 +167,17 @@ append** — a distinction the provenance recommendation below must respect.
 Three distinct, precedented JSONL policies exist — a future size-provenance
 append must pick one deliberately:
 
-* **LinkCommit — warn-continue**: durable DB write first, then best-effort event
-  append; append failure is `slog.Warn`-logged and swallowed
-  (`internal/core/commits.go:27-56`).
+* **LinkCommit — warn-continue on the durable append**: the
+  `INSERT OR REPLACE INTO commit_links` write targets the **disposable** SQLite
+  index (fail-surfaced) and is *not* rebuilt on a fresh index rehydration — only
+  `items`/`item_deps`/`item_links`/`gate_evidence` are cleared and repopulated
+  (`internal/db/rehydration.go:165-171,473`), and no path re-inserts `commit_links`
+  from JSONL. The **durable** record is the subsequent best-effort `commit_tracked`
+  JSONL history append (which rehydrates into `item_log_entries`), whose failure is
+  `slog.Warn`-logged and swallowed (`internal/core/commits.go:27-56`). Warn-continue
+  therefore governs the *durable* audit append — the precise analogue for a
+  size-provenance append, and the reason this precedent is weaker than it first
+  appears.
 * **AppendComment — fail-surface**: event append failure is returned to the
   caller (`internal/core/commits.go:72-97`); events carry a zero `Timestamp`,
   stamped `time.Now()` independently by `AppendEvent`

@@ -32,6 +32,7 @@ import (
 // are non-vacuous.
 const doclineCarrierTaskFile = "---\n" +
 	"artifact_type: task\n" +
+	"created_at: 2026-07-18T00:00:00.000Z\n" +
 	"custom_fields:\n" +
 	"    size: M\n" +
 	"docline:\n" +
@@ -115,4 +116,46 @@ func TestSetArtifactSize_PreservesTopLevelDocline(t *testing.T) {
 	cf, ok := md.Frontmatter["custom_fields"].(map[string]any)
 	require.True(t, ok, "custom_fields must be present after the size mutation")
 	assert.Equal(t, "S", cf["size"], "SetArtifactSize must write custom_fields.size")
+}
+
+// TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields proves the same
+// drop/preserve behavior through the ORDINARY generic mutation path
+// (core.UpdateArtifact -> findArtifact -> persistArtifact/WriteArtifactFile),
+// not just the codec functions in isolation. An update that touches neither
+// docline nor custom_fields still drops an unmodeled top-level docline map while
+// preserving custom_fields.size. If UpdateArtifact/persist ever switched to a
+// docline-preserving writer, this guard fails and forces the spike premise to be
+// revisited — the codec-only test above would not catch that regression.
+func TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+
+	path := filepath.Join(backlogitDir, "queue", "910.001-T.md")
+	require.NoError(t, os.WriteFile(path, []byte(doclineCarrierTaskFile), 0o644))
+
+	// An ordinary field update: no docline key, no custom_fields key.
+	updated, err := core.UpdateArtifact(ctx, ws, "910.001-T", map[string]any{"title": "Updated title"})
+	require.NoError(t, err)
+	assert.Equal(t, "Updated title", updated.Title)
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	fmOut, _, err := models.ParseFrontmatter(string(raw))
+	require.NoError(t, err)
+
+	// The ordinary mutation path drops the unmodeled top-level docline map.
+	assert.NotContains(t, fmOut, "docline",
+		"UpdateArtifact must drop unmodeled top-level docline (no models.Artifact carrier)")
+
+	// custom_fields.size survives the ordinary mutation path untouched.
+	cf, ok := fmOut["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must survive the ordinary UpdateArtifact path")
+	assert.Equal(t, "M", cf["size"], "custom_fields.size must survive UpdateArtifact")
 }
