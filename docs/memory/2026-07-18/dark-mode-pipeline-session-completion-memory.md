@@ -66,18 +66,26 @@ Left stashed (six entries, intentionally NOT shipped):
 
 | Stash | Disposition | Rationale |
 |---|---|---|
-| `8CD8F46A` | needs operator input | governance: labeled Constitution Check section policy |
+| `8CD8F46A` | needs operator input | formal multi-persona plan-review gate — this environment cannot dispatch independent reviewer persona sub-agents, so a real persona-dispatch path or a documented operator waiver is required |
 | `7F0A6E89` | blocked | Principle IV external-repo scope |
-| `CA877CD1` | deferred | low-priority prompt-artifact governance |
+| `CA877CD1` | deferred | add a labeled Constitution Check section to `impl-plan` skill output (low-priority governance follow-up) |
 | `80DD65C4` | follow-up | MoveInQueue DB-sourced persist drops provenance (pre-existing, low reachability; from 111-F review) |
 | `7EEADCD3` | follow-up | CreateArtifact accepts `archived` initial status (pre-existing edge case; from 111-F review) |
 | `12B5649E` | follow-up | consolidate the two frontmatter serializers (refactor; from 111-F review) |
 
-## Out-of-scope note
+## 108-F restaging (actioned in this pass)
 
-096-S resolved to `proceed`, which authorizes restaging **108-F** (size
-extension contract implementation, roughly a 14-hour effort). That is a
-separate future shipment and was intentionally left for a later cycle.
+The 096-S spike concluded `proceed`, and its decision record
+(`docs/decisions/2026-07-18-size-extension-contract-architecture-spike.md`,
+Next Steps #1) assigns the `108-F` `blocked→active` restaging to the stage-next
+phase. Both blocking conditions are now satisfied — the proceed outcome is
+recorded and both dependencies (`109.004-T`, `110-F`) are archived — so this
+pass **restaged 108-F**: status `blocked→active`, removed the `blocked-on-spike`
+label, and updated the title. The `custom_fields.size` / containment /
+provenance **implementation** (roughly a 14-hour effort, requiring impl-plan
+promotion per the decision record) is a separate future shipment and was
+intentionally NOT started here — restaging is a status transition, not
+implementation, so P-001 is not engaged.
 
 ## DARK_MODE_COMPLETE
 
