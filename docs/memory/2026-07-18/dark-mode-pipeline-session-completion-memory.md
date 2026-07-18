@@ -112,8 +112,13 @@ merges spanning this dark-mode scope:
 | #256 | 098-S closure | `08f9102` | `4d3cbfce` |
 | #257 | stash-archive housekeeping | `c0e8be9` | `cc24d44` |
 
-This completion record (PR #258, reviewed HEAD `33bd49a`) is the closing
-artifact; its own merge commit is recorded at merge time.
+This completion record is itself delivered as **PR #258**. Its own reviewed HEAD
+and merge commit are intentionally not embedded here: a self-referential SHA
+advances with every review-fix commit and would always read as stale. The
+authoritative current-HEAD readiness signal for this PR is its own
+`LOCAL_REVIEW_READY` block (updated to the current HEAD on every push and
+re-verified by Copilot's §1.9 gate against the final HEAD before merge); the
+merge commit is recorded in Git history at merge time.
 
 Remaining stashed work is either governance requiring operator judgment or
 pre-existing low-reachability follow-ups — none safe or in-scope to ship
