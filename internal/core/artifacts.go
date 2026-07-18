@@ -718,6 +718,18 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	if artifact.Commit != "" {
 		fm["commit"] = artifact.Commit
 	}
+	// Archive provenance is emitted only while the item is archived, keeping the
+	// invariant "archive provenance <=> archived status". This preserves the
+	// keys across an update round-trip on an archived item and omits stale keys
+	// on any non-archived item.
+	if artifact.Status == models.StatusArchived {
+		if artifact.ArchivedFrom != "" {
+			fm["archived_from"] = artifact.ArchivedFrom
+		}
+		if artifact.ArchivedStatus != "" {
+			fm["archived_status"] = artifact.ArchivedStatus
+		}
+	}
 	if artifact.CustomFields != nil {
 		fm["custom_fields"] = artifact.CustomFields
 	}

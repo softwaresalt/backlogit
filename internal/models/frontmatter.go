@@ -97,6 +97,12 @@ func ArtifactFromFrontmatter(fm map[string]any, body string) (*Artifact, error) 
 	if v, ok := fm["commit"].(string); ok {
 		a.Commit = v
 	}
+	if v, ok := fm["archived_from"].(string); ok {
+		a.ArchivedFrom = v
+	}
+	if v, ok := fm["archived_status"].(string); ok {
+		a.ArchivedStatus = v
+	}
 	// YAML unmarshals sequence values as []interface{}, not []string.
 	if v, ok := fm["labels"]; ok {
 		a.Labels = toStringSlice(v)
