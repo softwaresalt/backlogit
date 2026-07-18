@@ -9,7 +9,7 @@ docline:
     type: spike
     date: 2026-07-18
     time_box: "8h"
-    conclusion: "pivot"
+    conclusion: "proceed"
     confidence: "high"
     linked_parent_work_item: "109-F"
     promoted_to:
@@ -50,10 +50,12 @@ vs. `custom_fields`) is the canonical, durable location for feature/shipment
 * The **bridge selection** (custom_fields vs. carrier) and the **containment
   boundary** are in-scope decisions for this spike (Model A delegated the former
   to 109.004-T; the size plan's SE3 mandates a durability-policy decision).
-* The exact **provenance schema** (`size_source`, `size_ruleset_version`,
-  estimate-history) and the size **aggregation ruleset** are inventoried as
-  feasibility evidence only; their final design is medium-confidence input to the
-  108-F impl-plan, not settled here.
+* The **provenance schema** (`size_source`, `size_ruleset_version`,
+  estimate-history) is **selected here at medium confidence** — field names,
+  accepted values, defaulting, and the exactly-once durability policy are decided
+  (sections 7, 9). Only the size **aggregation ruleset** arithmetic (the XS–XL
+  rollup weights) and the concrete write/event **atomicity mechanism** are
+  deferred to the 108-F impl-plan as implementation detail.
 
 ## Investigation Approach
 
@@ -203,8 +205,9 @@ append must pick one deliberately:
 #### 6. Containment boundary — a realpath gap, not a SafeResolve gap (109.002-T)
 
 `SetArtifactSize` resolves via `FindArtifactPath`/`WalkDir` within
-`artifactSearchDirs` (built under `WorkspaceStorageRoot`; registry paths reject
-absolute and leading-`..`, `internal/config/loader.go:77-85`) and writes via
+`artifactSearchDirs` (built under `WorkspaceStorageRoot`; the absolute /
+leading-`..` rejection in `internal/config/loader.go:77-85` guards **only
+`reg.Directories`**, not the queue-layout root) and writes via
 `atomicfile.WriteFileAtomic`, without calling `SafeResolve`
 (`internal/core/artifact_size.go:35-80`). `SafeResolve` **is** used by
 `MoveArtifactFile` and `WriteCommandMap` (`internal/core/routing.go:30-42`,
@@ -219,12 +222,18 @@ out-of-workspace *read* — and that read happens during **lookup**, because
 `parseFile`→`os.ReadFile` immediately (`internal/core/artifacts.go:657-665,
 752`, `parseFile` at `:772-775`), before any write-path check; an
 **intermediate** symlink in a configured search path can redirect a *write*.
-`QueueLayout.RootDir` is only `required`, with no containment validation
-(`internal/config/schema.go:99-104`). The correct hardening is
-realpath/`EvalSymlinks` containment applied at **lookup time** — realpath-resolve
-and re-contain each candidate *before* `parseFile` reads it — with revalidation
-of the resolved target before lock/read/write, not `SafeResolve` alone and not
-only on the write path.
+`QueueLayout.RootDir` — which is joined into `artifactSearchDirs`
+(`internal/core/artifacts.go:618-640`) — carries only `validate:"required"` with
+**no containment validation** (`internal/config/schema.go:99-104`), so a
+configured `RootDir: "..\..\outside"` is a **purely lexical** `..`-traversal
+escape **independent of symlinks**. The correct hardening is therefore
+**two-layered**: (1) reject lexical `..`/absolute escape in `RootDir` (and every
+configured search root) at config-load time, **and** (2) apply
+realpath/`EvalSymlinks` containment at **lookup time** — realpath-resolve and
+re-contain each candidate *before* `parseFile` reads it, then revalidate the
+resolved target before lock/read/write — mirroring the full
+`internal/core/doctor_target.go:230-280` pattern (not `SafeResolve` alone, which
+is lexical-only, and not only on the write path).
 
 #### 7. CLI/MCP parity matrices (109.005-T read, 109.006-T mutation)
 
@@ -242,11 +251,11 @@ future size projection must populate identically:
 
 | CLI ↔ MCP pair | Request-contract parity | Response-shape parity for `size` |
 |---|---|---|
-| `queue view` ↔ `get_queue` | CLI flags vs MCP params; both default to the queue ordering (`internal/core/queue.go:127-191`) | size not currently projected on either; a future projection must appear on both |
+| `queue view` ↔ `get_queue` | **asymmetric defaults**: CLI defaults to the 4-status queue set + `--sort priority` (`internal/cli/queue_cmd.go:54-55,77,101`); MCP `get_queue` defaults to **no** status filter + core `created_at` ordering (`internal/mcp/tools.go:1272`, `internal/core/queue.go:173-204`); CLI exposes `--sort`/`--format`, MCP exposes `assigned_to`/`limit`/`offset` | MCP `get_queue` JSON already returns full `custom_fields` (incl. `size` when present); CLI `queue view` human columns omit it — a future projection must populate the CLI columns |
 | `shipment get` ↔ `get_shipment` | single-ID lookup, symmetric | shipment `custom_fields` returned by both |
 | `shipment list` ↔ `list_shipments` | list filters symmetric | structured `custom_fields` on MCP; CLI human columns omit size |
 | `get` ↔ `get_item` | single-ID; **pinned** `get --format json` ↔ `get_item` | both emit `custom_fields.size` field-for-field in JSON |
-| `list` ↔ `list_items` | list filters symmetric | MCP structured `custom_fields`; CLI `--json` exposes `custom_fields` (`internal/cli/list.go:132-135`), CLI human columns omit size (`internal/cli/list.go:20-41`) |
+| `list` ↔ `list_items` | **filter gap**: CLI `list` exposes `--priority` and `--owner` (`internal/cli/list.go:160,162`) that MCP `list_items` lacks (`internal/mcp/tools.go:77-80`: type/status/assigned_to/sprint only) | MCP structured `custom_fields`; CLI `--json` exposes `custom_fields` (`internal/cli/list.go:132-135`), CLI human columns omit size (`internal/cli/list.go:20-41`) |
 
 **Pinned `get --format json` ↔ `get_item` context asymmetry — decision-input**:
 the two surfaces differ on the *context* fields they attach (`body`,
@@ -281,8 +290,9 @@ canonical XS–XL aggregation ruleset is owned; an unknown/unsupported version i
 rejected with the same category. Both fields live under `custom_fields`
 (durable by the same mechanism as size) and are validated at the size seam, and
 both surfaces map the same error category with transport-specific carriers
-(CLI Cobra error / `ExitError{Code:4}`; MCP `{error,message}` via
-`domainError`/`makeErrorResult`).
+(CLI **validation → exit 1**, per the `invalid enum value` row above — **not**
+`ExitError{Code:4}`, which is reserved for busy-lock conflicts; MCP
+`validation_failed` `{error,message}` via `domainError`/`makeErrorResult`).
 
 #### 8. Ratified structured-composition contract (109.003-T, ratified with 109.004-T)
 
@@ -312,19 +322,30 @@ existing rails, and the **structured-composition contract is ratified here**:
 The 2h synthesis task records these first-class decisions (it performs no new
 inventory; it consumes the evidence above):
 
-* **(a) Durability/ordering policy — SELECTED: fail-surface, event-after-write,
-  no rollback.** The size value is the primary durable state (lands first via
-  the mdfront seam into `custom_fields.size`); a provenance event append follows
-  and, on failure, is **surfaced** to the caller (AppendComment precedent,
-  `internal/core/commits.go:72-97`) rather than silently warn-continued
-  (LinkCommit, the weakest option for user-visible state). Fail-closed
-  (gate-evidence, `internal/core/gate_evidence.go:34-58`) is **rejected** for
-  the size mutation itself: size is user-visible primary state, not a completion
-  gate, so refusing a valid size write because an audit note could not be
-  recorded would harm usability more than the audit gap; fail-closed remains the
-  right model only for gate-evidence, not for size provenance. The size write is
-  **not rolled back** on a provenance-append failure because it is valid durable
-  state on its own.
+* **(a) Durability/ordering policy — SELECTED: event-before-write, fail-closed,
+  atomic with the size write (exactly-once).** The 096-S charter requires the
+  provenance policy to *guarantee exactly one history event per persisted
+  provenance change*, including `size_ruleset_version`-only changes
+  (`docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md:183-193`).
+  A simple event-**after**-write, no-rollback ordering **cannot** satisfy this: a
+  provenance-append failure would leave a persisted `custom_fields.size` change
+  with **zero** events (an under-count), violating the requirement. The spike
+  therefore adopts the **gate-evidence precedent**
+  (`internal/core/gate_evidence.go:34-58`, where evidence is appended **before**
+  the durable status write and an append failure refuses the completion): the
+  estimate-history event appends **first**, and an append failure **fails closed**
+  — the size write is refused — so no persisted size change ever lacks its event.
+  True exactly-once across a crash *between* a successful event append and the
+  size write requires the append and the write to be **atomic** (an
+  outbox/transactional append or a compensating rollback); that is the **same
+  open partial-core-mutation-rollback question** the formal-gate spike owns
+  (`plan:192`), which the impl-plan resolves — but this spike **mandates the
+  exactly-once semantics** (no persisted change without exactly one event, and no
+  orphan event without a persisted change). The earlier usability argument for a
+  lenient fail-surface policy is **overridden** by the charter's explicit
+  exactly-once mandate. (AppendComment `internal/core/commits.go:72-97` surfaces
+  append failures; LinkCommit warn-continue remains the weakest option and is
+  rejected.)
 * **(b) Composition — RATIFIED** per section 8 (jointly with 109.003-T).
 * **(c) Parity — CONSUMED** per section 7 (read + mutation matrices).
 * **(d) Inheritance bridge — SELECTED: no carrier bridge; store under
@@ -338,10 +359,17 @@ inventory; it consumes the evidence above):
 * **(f) Future provenance flags/fields — SELECTED** per section 7
   (`size_source`, `size_ruleset_version`, values, defaulting, rejection,
   transport-aware error mapping).
-* **(g) Exit decision — PIVOT (confidence per the Recommendation).** All three
+* **(g) Exit decision — PROCEED (confidence per the Recommendation).** All three
   proceed-gates (containment boundary, canonical size-location, inheritance
-  bridge) are resolved, so a later separately-planned, harvested, and
-  re-reviewed implementation is authorized.
+  bridge) are resolved, which — per the 096-S charter
+  (`docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md:652-664`)
+  — is the **sole** condition authorizing a later, separately planned, harvested,
+  and re-reviewed size implementation and the Stage restaging that moves `108-F`
+  `blocked→active`. This is a `proceed`, **not** a `pivot`: `pivot`/`defer` would
+  keep size implementation out of scope and re-enter staging, whereas the resolved
+  gates plus authorized implementation are precisely the `proceed` contract. The
+  spike itself remains read-only; the restaging and implementation happen
+  downstream (see Next Steps).
 
 ### What Was Tried and Failed
 
@@ -369,7 +397,7 @@ inventory; it consumes the evidence above):
 
 ## Recommendation
 
-**Conclusion**: pivot
+**Conclusion**: proceed
 **Confidence**: high — for the durability finding, the artifact-size placement
 (`custom_fields.size`), the inheritance-bridge selection, and the containment
 fix (empirically proven, code-confirmed, and within the spike's
@@ -403,26 +431,36 @@ the `feature` and `shipment` header-def types and reuse the existing
    Model A — no evidence indicates they read `.backlogit` artifact size. The
    bridge remains a documented, reversible future option if uniform-namespace
    tooling ever justifies it.
-3. **Containment boundary — RESOLVED with the correct fix**: add
-   realpath/`EvalSymlinks` containment at **lookup time** — realpath-resolve and
+3. **Containment boundary — RESOLVED with the correct two-layer fix**: (1) reject
+   lexical `..`/absolute escape in `QueueLayout.RootDir` and every configured
+   search root at config-load time — today `internal/config/loader.go:77-85`
+   guards only `reg.Directories`, leaving a **symlink-independent lexical escape**
+   via `RootDir` (`internal/config/schema.go:99-104`) — **and** (2) add
+   realpath/`EvalSymlinks` containment at **lookup time**: realpath-resolve and
    re-contain each candidate *before* `parseFile` reads it (a leaf-file symlink is
    otherwise read out-of-workspace during the `FindArtifactPath` walk), then
    revalidate the resolved target before lock/read/write — mirroring
-   `internal/core/doctor_target.go:256-279`. `SafeResolve` alone is insufficient
+   `internal/core/doctor_target.go:230-280`. `SafeResolve` alone is insufficient
    (lexical only), and a write-path-only check is too late because the read
    already happened during lookup.
 
 **Provenance (SELECTED; see section 9(a),(f))**: `size_source` /
 `size_ruleset_version` live under `custom_fields` (durable by the same
-mechanism), validated at the size seam. The provenance audit record is emitted
-as an **event-stream append** (distinct from the intentionally-omitted lifecycle
-hook event at `artifact_size.go:32-34`) under a **fail-surface, event-after-write,
-no-rollback** policy: the size write lands first as valid durable state, then the
-provenance append is surfaced (not silently swallowed) on failure. Fail-closed is
-deliberately **not** chosen for the size mutation itself (size is user-visible
-primary state, not a completion gate); warn-continue is the weakest option and is
-rejected for user-visible state. The impl-plan implements this selection; it does
-not re-decide it.
+mechanism), validated at the size seam. The provenance audit record is emitted as
+an **event-stream append** (distinct from the intentionally-omitted lifecycle
+hook event at `artifact_size.go:32-34`) under an **event-before-write, fail-closed**
+policy that **guarantees exactly one history event per persisted provenance
+change** (the charter requirement,
+`docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md:183-193`):
+the estimate-history event appends first (gate-evidence precedent,
+`internal/core/gate_evidence.go:34-58`); if it cannot be recorded, the size write
+is **refused**, so no persisted size change ever lacks its event. Exactly-once
+across a mid-operation crash requires the event append and the size write to be
+**atomic**, resolved jointly with the formal-gate spike's open
+partial-core-mutation-rollback question (`plan:192`); the impl-plan implements
+that atomicity but does not re-decide the exactly-once mandate. A lenient
+event-after-write / warn-continue policy is **rejected** — it would allow a
+persisted size with zero events, which the charter forbids.
 
 This selection is consistent with Model A, which scoped `docline.backlogit.*` to
 documents and delegated the artifact-bridge choice to this spike.
@@ -452,16 +490,37 @@ tiers (Claude Opus, GPT-5.6, Gemini 3.1 Pro) before shipping:
   those tasks' completion contracts mandate — rather than defer them. Resolved by
   recording all of them here (sections 7–9); no task was left with unmet exit
   criteria, so no task was reopened.
+* **Third cycle (two-model adversarial re-review on the current HEAD)**: after the
+  doc-refinement commits, two independent reviewers (GPT-5.6-sol, Gemini 3.1 Pro)
+  re-reviewed the full diff. Gemini returned clean (premise, decision authority,
+  scope, and containment reasoning all confirmed). GPT-5.6-sol surfaced — and this
+  revision **accepts and applies** — five charter-cross-checked findings: (P0) the
+  exit conclusion is **`proceed`, not `pivot`**, because the charter
+  (`exec-plan:652-664`) makes `proceed` the sole authorization for implementation
+  once all three proceed-gates resolve, and all three are resolved here; (P1) the
+  durability policy must **guarantee exactly-once** history events per persisted
+  provenance change (`exec-plan:183-193`), so the lenient event-after-write policy
+  was replaced with **event-before-write, fail-closed** (section 9(a)); (P1)
+  `QueueLayout.RootDir` admits a **lexical `..` escape** independent of symlinks,
+  so section 6 now mandates a two-layer lexical + realpath containment fix; (P1)
+  read-parity matrix corrections (queue/list default divergence, `get_queue`
+  already projecting `custom_fields`, and the `ExitError{Code:4}` mis-citation for
+  a validation rejection); and (P2) provenance-scope coherence (Scope now states
+  provenance is SELECTED at medium confidence). No P0/P1 remained unaddressed at
+  the reviewed HEAD.
 
 ## Next Steps
 
-1. Promote to `impl-plan` (108-F size feature): update
+1. Promote to `impl-plan` (108-F size feature): the `proceed` conclusion
+   authorizes the Stage restaging that moves `108-F` `blocked→active` (actioned in
+   the stage-next phase, not here). Update
    `docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md` to
    **implement** the decisions recorded here — `custom_fields.size` for
-   feature/shipment, the realpath containment hardening, provenance under
-   `custom_fields` with the selected fail-surface event policy (section 9(a)),
-   and the `size_source`/`size_ruleset_version` flags/fields (section 7); carry
-   the map-replacement and validated-once caveats as constraints.
+   feature/shipment, the two-layer lexical + realpath containment hardening,
+   provenance under `custom_fields` with the selected **event-before-write,
+   fail-closed exactly-once** policy (section 9(a)), and the
+   `size_source`/`size_ruleset_version` flags/fields (section 7); carry the
+   map-replacement and validated-once caveats as constraints.
 2. Plan the size-aggregation ruleset as a separate work item, reusing the
    membership/dedup/missing-handling rails and the priority `CASE` ordered-enum
    comparator precedent.
