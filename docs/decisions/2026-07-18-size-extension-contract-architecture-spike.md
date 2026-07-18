@@ -43,9 +43,10 @@ vs. `custom_fields`) is the canonical, durable location for feature/shipment
 
 ## Scope Constraints
 
-* **Read-only investigation** — no production code changed. The round-trip test
-  was a throwaway `*_test.go` executed for evidence and then deleted; it is not
-  committed.
+* **Read-only investigation** — no production code changed. The round-trip
+  behavior is codified as a committed **test-tier** regression guard
+  (`internal/core/docline_codec_roundtrip_test.go`); tests are not production
+  code.
 * The **bridge selection** (custom_fields vs. carrier) and the **containment
   boundary** are in-scope decisions for this spike (Model A delegated the former
   to 109.004-T; the size plan's SE3 mandates a durability-policy decision).
@@ -91,10 +92,15 @@ artifact frontmatter, because `allOf` on base v1 would reject artifact fields
 such as `id`, `artifact_type`, and `status`" (`:143-146`). This spike executes
 the round-trip test and makes the delegated selection.
 
-#### 2. Executable round-trip test — ground truth
+#### 2. Executable round-trip test — ground truth (committed regression guard)
 
-Two throwaway tests exercised both codec routes with an artifact carrying a
-top-level `docline: { backlogit: { size: L, schema_version: "1.0" } }` plus
+The ground truth is codified as a committed, test-tier regression guard —
+`internal/core/docline_codec_roundtrip_test.go`
+(`TestGenericArtifactCodec_DropsTopLevelDocline`,
+`TestSetArtifactSize_PreservesTopLevelDocline`) — so a future codec change that
+alters this behavior fails a test and forces this decision to be revisited. No
+production code was changed. Both tests exercise the two codec routes with an
+artifact carrying a top-level `docline: { backlogit: { size: L } }` plus
 `custom_fields: { size: M }`.
 
 * **Generic codec route** (`models.ParseFrontmatter` →
@@ -351,4 +357,4 @@ tiers (Claude Opus, GPT-5.6, Gemini 3.1 Pro) before shipping:
 * Parity: `internal/cli/update.go:91-114,187-242,281-293`, `internal/cli/exit_error.go:5-32`, `internal/cli/list.go:20-41,132-135`, `internal/mcp/tools.go:56-72,743-755,1047-1087`, `internal/mcp/errors.go:14-98`.
 * Composition rails: `internal/core/hierarchy.go`, `internal/core/shipment.go:466-571`, `internal/core/shipment_covering.go:61-77`, `internal/core/queue.go:127-191`.
 * Ext schema: `schemas/docline/ext/backlogit-v1.schema.json:5-30`, `schemas/docline/base-frontmatter-v1.schema.json:5-40`.
-* Ground-truth round-trip test: throwaway `internal/core/*_test.go` (executed for evidence, not committed); observed results reproduced inline above.
+* Ground-truth round-trip test (committed regression guard): `internal/core/docline_codec_roundtrip_test.go` (`TestGenericArtifactCodec_DropsTopLevelDocline`, `TestSetArtifactSize_PreservesTopLevelDocline`).
