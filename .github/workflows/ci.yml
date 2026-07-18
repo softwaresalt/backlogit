@@ -145,6 +145,9 @@ jobs:
       - name: Lint documentation frontmatter
         if: needs.changes.outputs.docline_required != 'false'
         run: make docs-lint
+      - name: Enforce docline soft keys on tracked corpus
+        if: needs.changes.outputs.docline_required != 'false'
+        run: go test ./tests/integration/ -run '^TestDoclineSoftKeys_LiveTrackedCorpus$' -count=1
 
   cli-reference-drift:
     name: CLI Reference Drift

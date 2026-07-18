@@ -1,5 +1,5 @@
 ---
-chunk_strategy: h1-h2
+chunk_strategy: h1-h2-h3
 description: 'Compound refresh report for shipment 079-S — reviewed the CLI/MCP parity compound entries, classified the three existing entries as keep (distinct layers, still accurate), and captured one new evidence-backed learning covering shared-EventWriter threading through a core extraction so a long-lived MCP server preserves per-item JSONL append serialization while a one-shot CLI reuses the same code path.'
 doc_type: closure
 docline:

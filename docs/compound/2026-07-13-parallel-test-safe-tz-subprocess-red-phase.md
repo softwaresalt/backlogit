@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "Parallel-test-safe RED phase for timezone-dependent emission: hermetic TZ subprocess re-exec instead of a global time.Local override"
 source: docs/compound/2026-07-13-parallel-test-safe-tz-subprocess-red-phase.md
 doc_type: learning

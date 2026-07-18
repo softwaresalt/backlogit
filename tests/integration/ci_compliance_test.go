@@ -528,10 +528,16 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 
 	docsLint := wf.Jobs["docs-lint"]
 	assert.Equal(t, "needs.changes.outputs.docline_required == 'false'", findStep(t, docsLint, "Skip docline lint for code-only changes").If)
-	for _, stepName := range []string{"Checkout", "Setup Go for docline lint", "Lint documentation frontmatter"} {
+	for _, stepName := range []string{"Checkout", "Setup Go for docline lint", "Lint documentation frontmatter", "Enforce docline soft keys on tracked corpus"} {
 		step := findStep(t, docsLint, stepName)
 		assert.Equal(t, "needs.changes.outputs.docline_required != 'false'", step.If, "%s should run on docs, frontmatter, unknown, or detector failure", stepName)
 	}
+	// The docs-lint job must actually run the live soft-key corpus guard so
+	// docs-only pull requests cannot introduce soft-key drift that would later
+	// poison an unrelated code PR. Protect the wiring, not just its presence.
+	softKeyGuard := findStep(t, docsLint, "Enforce docline soft keys on tracked corpus")
+	assert.Contains(t, softKeyGuard.Run, "TestDoclineSoftKeys_LiveTrackedCorpus",
+		"docs-lint must enforce the live docline soft-key corpus guard on docs-only PRs")
 
 	drift := wf.Jobs["cli-reference-drift"]
 	assert.Equal(t,

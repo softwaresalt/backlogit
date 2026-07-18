@@ -1,5 +1,5 @@
 ---
-chunk_strategy: h1-h2
+chunk_strategy: h1-h2-h3
 description: 'Compound refresh report for shipment 078-S — reviewed the CLI/MCP parity compound entries, classified the two existing entries as keep (distinct layers), and captured one new evidence-backed learning covering the honest registry fallback map, drift test, gap-fill discipline, output-shape parity, and fallback blast-radius parity.'
 doc_type: closure
 docline:

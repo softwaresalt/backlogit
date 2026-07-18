@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 description: "Post-merge operational closure for shipment 092-S — normalized every item-artifact writer's created_at/updated_at frontmatter emission to canonical UTC (trailing Z) via a shared models.NowUTC() helper, with a backward-compatible offset-tolerant read path."
 doc_type: closure
 docline:

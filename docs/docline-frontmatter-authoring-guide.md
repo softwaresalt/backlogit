@@ -44,6 +44,16 @@ fields below; everything else belongs under the [`docline` namespace](#the-docli
 | `schema_version` | string | `1.0` | Contract version. |
 | `docline` | map | omitted when empty | Namespace for all non-contract metadata. |
 
+> **Required in repository source.** Although `chunk_strategy` and
+> `schema_version` are schema-optional (the validator defaults them when
+> absent), every Git-tracked, in-scope Markdown document MUST declare them
+> explicitly with their canonical values — `chunk_strategy: h1-h2-h3` and
+> `schema_version: "1.0"` (a YAML string). The live corpus guard
+> `TestDoclineSoftKeys_LiveTrackedCorpus`
+> (`tests/integration/docline_soft_keys_test.go`) fails CI — including on
+> docs-only pull requests, via the Docline frontmatter gate — when a tracked
+> in-scope document omits or misdeclares either key.
+
 ## The `doc_type` taxonomy
 
 `doc_type` is a **closed vocabulary** of 11 values. It is **derived from the
