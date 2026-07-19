@@ -112,7 +112,7 @@ document the contract.
 | D5 composition rollups | Add a computed-on-read, never-persisted histogram+unsized+members function for feature and shipment membership, with **explicit feature→children expansion** for feature-typed shipment members (`NormalizeShipmentItems` returns explicit `custom_fields.items` only — **Copilot G4**) and the XS<S<M<L<XL comparator | SE-4 |
 | D3 mutation parity | Add `--size-source`/`--size-ruleset-version` (CLI) and `size_source`/`size_ruleset_version` (MCP) via `SizeMutation`; transport-aware error parity; reject agent human-masquerade | SE-5 |
 | §7 read parity + D5 exposure | Project `custom_fields.size`/provenance identically on `get`/`get_item`/`get_queue`/`shipment get` (**both transports**); expose the derived composition on the **MCP read surfaces only** — CLI-JSON composition parity is **not** claimed (separate shapers `buildDetailMap`/`QueryQueue`) and is filed as stash `387DE4BF`; CLI human columns filed as stash `D5FA1EE9` (**Copilot G5**) | SE-6 |
-| D6 containment (config-load layer) | Reject lexical `..`/absolute + env-expansion escape on `RootDir`/search roots at config-load | SE-7a |
+| D6 containment (config-load layer) | Reject lexical `..`/absolute escape on `RootDir`/search roots at config-load (env-expansion dropped — `RootDir`/search roots are never `os.ExpandEnv`-expanded; see SE-7a reconciliation) | SE-7a |
 | D6 containment (lookup-time layer) | Realpath/`EvalSymlinks` re-containment at lookup time (before `parseFile`) in the seam path | SE-7b |
 | Document the contract | Author/refresh the sizing contract doc (levels, provenance, durability, composition, parity, caveats) | SE-8 |
 
@@ -417,18 +417,22 @@ width isolation (single domain), and an atomic verifiable milestone.
   `QueueLayout.RootDir` and every configured search root — today
   `internal/config/loader.go:77-85` guards only `reg.Directories`, leaving a
   symlink-independent lexical escape via `RootDir`
-  (`internal/config/schema.go:99-104`). Also assert that `RootDir` and the
-  configured search roots are **not** environment-variable-expanded (or reject
-  expansion-based escape) so env expansion cannot reintroduce a traversal vector.
-  **Single domain: config.**
+  (`internal/config/schema.go:99-104`). **Single domain: config.**
+- **Scope reconciled 2026-07-18 (PR #260, wave-7 F7):** the earlier
+  env-variable-expansion rejection requirement is **removed**. Only notification
+  header values are env-expanded (`internal/config/loader.go:113-121`);
+  `QueueLayout.RootDir` and the configured search roots are never passed through
+  `os.ExpandEnv`, so there is no expansion vector to reject. Only the lexical
+  `..`/absolute containment guard applies. See 108.009-T, 108.014-T (F7
+  reconciliation record), and
+  `docs/decisions/2026-07-18-108-F-wave7-staging-review-followups.md`.
 - **Files:** `internal/config/loader.go` (or `schema.go` validation).
-- **Tests (unit):** a `RootDir: "..\\..\\outside"` config is rejected at load; an
-  env-expansion escape in a search root is rejected; a legitimate in-workspace
-  config still loads.
+- **Tests (unit):** a `RootDir: "..\\..\\outside"` config is rejected at load; a
+  legitimate in-workspace config still loads. (No env-expansion test — search
+  roots are never expanded, per the scope reconciliation above.)
 - **Execution posture:** test-first (add failing config-containment tests, then
   harden).
-- **Milestone:** no configured root can lexically or via env-expansion point
-  outside the workspace.
+- **Milestone:** no configured root can lexically point outside the workspace.
 
 ### SE-7b — Lookup-time containment (core / security)
 
@@ -632,7 +636,7 @@ containment layers land before the seam is extended.
 | SE-4 | No (pure read) | composition deterministic; never persists | n/a |
 | SE-5 | Yes (CLI + MCP) | both surfaces reach the seam; parity error categories; agent human-masquerade rejected | parity matrix in contract doc |
 | SE-6 | Yes (CLI + MCP read) | size/provenance visible with JSON/MCP parity on **both** transports; derived composition on **MCP read surfaces only** (CLI-JSON composition deferred to stash `387DE4BF`; CLI human columns to stash `D5FA1EE9` — **Copilot G5**) | read-parity matrix in contract doc |
-| SE-7a | Yes (config-load) | lexical `..` config rejected; env-expansion escape rejected; in-workspace config still loads | containment regression tests; rollback trigger: any accepted escaping config |
+| SE-7a | Yes (config-load) | lexical `..` config rejected; in-workspace config still loads (env-expansion rejection dropped — `RootDir`/search roots are never `os.ExpandEnv`-expanded; see SE-7a reconciliation) | containment regression tests; rollback trigger: any accepted escaping config |
 | SE-7b | Yes (lookup/write path) | symlink lookup refused before `parseFile`; in-workspace still resolves | containment regression tests; rollback trigger: any out-of-workspace read/write |
 | SE-8 | No (docs) | docline lint clean | the doc itself |
 
@@ -786,8 +790,8 @@ or history rewrite. The durable append is fail-closed, not destructive.
   **re-upserts the SQLite index** (file-then-index ordering holds); (c) the shared
   per-item JSONL is **never** truncated.
 - **SE-7a target scenarios:** (a) `RootDir: "..\\..\\outside"` rejected at load;
-  (b) env-expansion escape in a search root rejected; (c) legitimate in-workspace
-  config still loads.
+  (b) legitimate in-workspace config still loads. (Env-expansion scenario removed
+  — see SE-7a scope reconciliation.)
 - **SE-7b target scenarios:** (a) leaf-file symlink under a search dir refused at
   lookup (before `parseFile`); (b) legitimate in-workspace artifact still resolves
   and writes.
