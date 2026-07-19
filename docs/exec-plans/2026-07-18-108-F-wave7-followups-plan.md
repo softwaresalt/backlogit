@@ -1,0 +1,154 @@
+---
+chunk_strategy: h1-h2-h3
+title: "108-F wave-7 staging review follow-ups — implementation plan"
+source: docs/exec-plans/2026-07-18-108-F-wave7-followups-plan.md
+doc_type: exec-plan
+description: "Implementation plan for three verified follow-up findings (F5/F6/F7) from the 099-S/108-F wave-7 staging review on PR #259."
+docline:
+    date: 2026-07-18
+    status: accepted
+    linked_parent_work_item: 108-F
+    tags:
+        - size-estimation
+        - staging
+        - review-followup
+        - robustness
+schema_version: "1.0"
+---
+
+# 108-F Wave-7 Follow-ups — Implementation Plan
+
+**Source**: `docs/decisions/2026-07-18-108-F-wave7-staging-review-followups.md` (operator-endorsed decision artifact)
+**Covering feature**: 108-F (Size estimation for feature and shipment implementation)
+**Stash origin**: B062B90A (kind=feature, priority=medium)
+
+## Objective
+
+Deliver three bounded, ≤2h, width-isolated tasks under 108-F addressing the verified
+Copilot wave-7 findings F5, F6, and F7 deferred from PR #259 (099-S staging).
+
+## Constitution Check
+
+- **P-II (Test-First)**: F6 task requires a fail-then-retry test written before the rollback fix. F7 task corrects test scope — removes a test targeting nonexistent behavior.
+- **P-I (Safety-First Go)**: F6 changes core error paths; all errors must be wrapped with context.
+- **2-Hour Rule**: Each task is <3 files, <5 functions, <4 test scenarios.
+- **Width Isolation**: F5 = backlog domain, F6 = core domain, F7 = config/test domain.
+
+## Implementation Units
+
+### IU-1: F5 — Reconcile 108-F backlog artifact for 099-S membership (backlog)
+
+**Scope**: Single file edit to `.backlogit/queue/108-F.md`.
+
+**What to do**:
+1. Add an authoritative reconciliation block (similar to existing `<!-- BEGIN:restage-*` and
+   `<!-- BEGIN:reconciliation-model-a -->` patterns) recording that 108-F is now a member of
+   shipment 099-S, superseding the "no shipment home" and "impl-plan promotion pending"
+   statements in the body.
+2. Soften the title: remove "impl-plan promotion pending" — replace with a title reflecting
+   current state (e.g., "Size estimation for feature and shipment implementation (active;
+   member of 099-S)").
+3. Keep implementation deferred; retain historical narrative marked as superseded.
+
+**Files**: `.backlogit/queue/108-F.md` (1 file)
+**Functions**: 0 (backlog artifact, not source code)
+**Test scenarios**: 0 (no code change; artifact consistency verification only)
+**Acceptance criteria**:
+- 108-F.md title no longer says "impl-plan promotion pending"
+- 108-F.md body contains authoritative reconciliation block recording 099-S membership
+- Historical narrative is preserved with superseded markers
+**Estimated effort**: <30 min
+**Execution posture**: direct backlog edit
+
+### IU-2: F6 — Add rollback/cleanup to CreateArtifact post-create failure boundary (core)
+
+**Scope**: Fix the failure boundary in `core.CreateArtifact` where a post-create size/event
+failure orphans an unsized artifact and prevents retry due to ID collision.
+
+**What to do**:
+1. **Test-first**: Write a fail-then-retry migration test:
+   - Inject a size/event-append failure after CreateArtifact persists the file and index.
+   - Assert no orphaned unsized artifact remains in the filesystem or DB index.
+   - Assert retry with the same ID succeeds after cleanup.
+2. **Implement rollback/cleanup**: On post-create failure, remove the just-created file,
+   remove the DB index row, and invalidate the `canonicalCache` record so a retry does not
+   collide on `ErrIDCollision` (:338-339).
+3. All errors wrapped with context per P-I.
+
+**Prior art (compound learnings)**:
+- `atomic-multi-item-claim-rollback-and-stale-blocked-clearing-2026-06-27.md`: Pre-mutation
+  snapshot + activated-set rollback pattern from shipment lifecycle.
+- `crash-safe-delete-rename-rollback-go-2026-04-23.md`: Rename-back-on-failure pattern for
+  crash-safe operations.
+
+**Files**: `internal/core/artifacts.go` (rollback logic), 1 test file (migration test)
+**Functions**: ~3 (cleanup helper, modify CreateArtifact error path, test function)
+**Test scenarios**: 2-3 (inject size failure → verify cleanup, verify retry succeeds,
+optionally verify event-append failure path)
+**Acceptance criteria**:
+- Fail-then-retry test exists and passes
+- Post-create size/event failure does not leave orphaned artifact
+- Retry with same ID succeeds after cleanup
+- No regression in existing CreateArtifact tests
+**Estimated effort**: ~2h
+**Execution posture**: test-first (red → green)
+**Dependencies**: None (independent of other 108-F tasks)
+
+**F6/9D5BB492 ride-along decision**: F6 addresses the **in-process error-return** path (size
+write fails, function returns error, caller can retry). Stash 9D5BB492 addresses the
+**crash-window exactly-once** path (process dies mid-mutation; requires OpID, deterministic
+multi-orphan ordering, doctor reconciliation). These are different failure classes. F6's
+rollback/cleanup is necessary regardless of whether crash-window exactly-once is ever
+implemented. **Decision: keep 9D5BB492 as a separate deferred stash entry.** The F6 fix is
+strictly in-process and does not supersede the crash-window requirements.
+
+### IU-3: F7 — Correct 108.009-T env-expansion test scope (config/test)
+
+**Scope**: Correct the scope of existing task 108.009-T (SE-7a) to drop the env-var-expansion
+rejection requirement that targets nonexistent behavior.
+
+**What to do**:
+1. In the implementation of SE-7a (108.009-T), do NOT write an env-expansion escape test.
+2. Keep only the lexical `../`/absolute containment guard for:
+   - `QueueLayout.RootDir` (`schema.go:99-104`) — currently unguarded, real gap.
+   - Every configured search root (`loader.go:77-85` already guards `reg.Directories`).
+3. Optionally add a test asserting roots are treated literally (NOT env-expanded) to document
+   the intentional non-expansion.
+4. Update 108.009-T description to reflect the corrected scope.
+5. Update the impl-plan SE-7a section if needed.
+
+**Files**: `internal/config/loader.go` or `schema.go` (containment validation), 1 test file,
+`.backlogit/queue/108.009-T.md` (scope correction)
+**Functions**: ~2-3 (add RootDir containment check, test functions)
+**Test scenarios**: 2-3 (RootDir `../` rejected, RootDir absolute path rejected, optionally
+literal `$VAR` root not expanded)
+**Acceptance criteria**:
+- No env-expansion escape test exists
+- Lexical containment guard covers QueueLayout.RootDir and all search roots
+- 108.009-T description updated to remove env-expansion requirement
+**Estimated effort**: ~1.5h
+**Execution posture**: test-first (red → green)
+**Dependencies**: None (independent, but logically precedes 108.010-T SE-7b)
+
+## Dependency Graph
+
+```
+IU-1 (F5) — independent, no deps
+IU-2 (F6) — independent, no deps
+IU-3 (F7) — independent, blocks 108.010-T (SE-7b, already in 099-S)
+```
+
+All three IUs are independent of each other and can be executed in any order.
+
+## Requires plan hardening
+
+No. All three tasks are low-to-moderate blast radius, bounded to ≤2h, single-domain,
+and the decision document already contains verified code evidence for each.
+
+## Risk Assessment
+
+| Finding | Blast Radius | Risk | Mitigation |
+|---------|-------------|------|------------|
+| F5 | Low (single backlog file) | Low | Artifact consistency check |
+| F6 | Moderate (core create path) | Moderate | Test-first; rollback is additive |
+| F7 | Low (config test scope) | Low | Removes invalid test, keeps real guard |
