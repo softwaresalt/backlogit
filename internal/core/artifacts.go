@@ -371,7 +371,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 	if createArtifactPostCreateFailureHook != nil {
 		if postCreateErr := createArtifactPostCreateFailureHook(ctx, ws, artifact); postCreateErr != nil {
-			if rollbackErr := rollbackCreatedArtifactAfterPostCreateFailure(ctx, ws, artifact); rollbackErr != nil {
+			if rollbackErr := rollbackCreatedArtifactAfterPostCreateFailure(ctx, ws, artifact, filePath); rollbackErr != nil {
 				return nil, fmt.Errorf("rollback artifact %s after post-create failure: %w", artifact.ID, rollbackErr)
 			}
 			return nil, fmt.Errorf("post-create size/provenance for artifact %s: %w", artifact.ID, postCreateErr)
@@ -398,8 +398,21 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	return artifact, nil
 }
 
-func rollbackCreatedArtifactAfterPostCreateFailure(_ context.Context, _ *Workspace, _ *models.Artifact) error {
-	return fmt.Errorf("F6 CreateArtifact rollback cleanup: %w", ErrSizeEstimationNotImplemented)
+// rollbackCreatedArtifactAfterPostCreateFailure removes the freshly-created
+// artifact's Markdown file and SQLite index row so a post-create failure leaves
+// no half-created artifact behind and the sequence ID is freed for a retry
+// (108-F F6). It returns the first cleanup error, if any.
+func rollbackCreatedArtifactAfterPostCreateFailure(ctx context.Context, ws *Workspace, artifact *models.Artifact, filePath string) error {
+	var firstErr error
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		firstErr = fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
+	}
+	if ws.DB != nil {
+		if err := db.DeleteItem(ctx, ws.DB, artifact.ID); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("delete index row %s: %w", artifact.ID, err)
+		}
+	}
+	return firstErr
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
@@ -696,11 +709,14 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 }
 
 func ensureArtifactLookupContained(ws *Workspace, path string) error {
-	info, err := os.Lstat(path)
-	if err != nil || info.Mode()&os.ModeSymlink == 0 {
-		return nil
+	absTarget, inScope, err := confineToStorageRoot(ws, path)
+	if err != nil {
+		return fmt.Errorf("resolve artifact path containment: %w", err)
 	}
-	return fmt.Errorf("SE-7b lookup-time containment: %w", ErrSizeEstimationNotImplemented)
+	if !inScope {
+		return fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", absTarget, blerrors.ErrValidation)
+	}
+	return nil
 }
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
