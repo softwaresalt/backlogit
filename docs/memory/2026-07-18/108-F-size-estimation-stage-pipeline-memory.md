@@ -117,3 +117,48 @@ build/test/lint; shipment left in `queued` (not claimed/shipped).
 
 - Claim shipment 099-S, generate harness (harness-architect), build-feature loop
   from SE-1 outward following the dependency graph, review, PR, closure.
+
+## Reconciliation Addendum (2026-07-18, post-shipment)
+
+Operator flagged an incorrect premise in the original brief: "size requires an
+artifact-codec bridge (docline carrier on models.Artifact) proven by a round-trip
+test." VERIFIED WRONG against source:
+
+- `docs/decisions/2026-07-18-size-extension-contract-architecture-spike.md`
+  §9(d)/(e) + Recommendation 2: SELECTED `custom_fields.size`; REJECTED any
+  models.Artifact docline carrier. docline.backlogit.* is for docline DOCUMENTS,
+  not .backlogit artifact frontmatter.
+- `internal/core/docline_codec_roundtrip_test.go`: 3 already-passing guards prove
+  the generic codec drops top-level docline while custom_fields round-trips. NO
+  bridge to build.
+
+Actions taken (Stage-role, no code/git):
+- SE-2 (108.005-T) COLLAPSED (not removed) → test-only round-trip guard extending
+  docline_codec_roundtrip_test.go to feature/shipment size + size_source +
+  size_ruleset_version under custom_fields. Retitled. Now a leaf depending only on
+  SE-1; nothing depends on it.
+- Write-path single-writer integrity (reject/strip on create, merge-not-replace on
+  update) MOVED to SE-3a (108.002-T); files now include internal/core/artifacts.go.
+- ToFrontmatterMap two-emitter consolidation DESCOPED (optional, not required).
+- Dependency rewire: removed 108.002→108.005 (persist→bridge); added 108.002→108.001
+  (persist→schema). Also removed 3 stale placeholder edges. Final: 11 blocks edges,
+  acyclic.
+- 108.001-T description made explicit: custom_fields.size/size_source/size_ruleset_version
+  (recognized carrier), NOT docline.backlogit on artifacts.
+- Plan doc + review artifact updated with reconciliation notes; both lint clean.
+
+Gate unchanged: PASS (scope narrowed, no P0/P1 reopened). 099-S remains queued.
+
+## Final dependency graph (post-reconciliation, 11 blocks edges)
+
+- 108.002 ← 108.001  (SE-3a ← SE-1)   [NEW, replaces ←108.005]
+- 108.002 ← 108.009  (SE-3a ← SE-7)
+- 108.003 ← 108.001  (SE-4 ← SE-1)
+- 108.005 ← 108.001  (SE-2 guard ← SE-1)  [leaf; no dependents]
+- 108.006 ← 108.002  (SE-3b ← SE-3a)
+- 108.007 ← 108.006  (SE-5 ← SE-3b)
+- 108.008 ← 108.002  (SE-6 ← SE-3a)
+- 108.008 ← 108.003  (SE-6 ← SE-4)
+- 108.004 ← 108.007  (SE-8 ← SE-5)
+- 108.004 ← 108.008  (SE-8 ← SE-6)
+- 108.004 ← 108.009  (SE-8 ← SE-7)

@@ -105,8 +105,9 @@ applied op. Only a P3 advisory remains (no action required).
 ## Residual / deferred (non-blocking)
 
 - **P2 (Go):** per-unit test-scenario counts sit at the 2-hour boundary. The plan
-  states table-driven `t.Run` subtests count as one scenario and flags SE-2's
-  characterization lock as a splittable sibling if the envelope is exceeded.
+  states table-driven `t.Run` subtests count as one scenario. Post-reconciliation
+  (below) the unit closest to the envelope is **SE-3a**; if it exceeds one 2-hour
+  envelope, split the reserved-key write-path guard into a sibling task.
 - **P3 (Security):** transport-aware stamping cannot prevent masquerade if an
   agent has unrestricted local shell (it can invoke the CLI directly). To be noted
   in the SE-8 contract doc.
@@ -122,3 +123,53 @@ independent review-fix cycles were run against genuine cross-model persona
 subagents; each cycle's findings were addressed in the plan before re-gating. The
 final PASS reflects resolution of every P0/P1 finding, with the residual items
 explicitly recorded above rather than silently dropped.
+
+## Reconciliation Addendum (2026-07-18, post-PASS)
+
+After the gate PASSed, the operator flagged an incorrect premise in the original
+Stage brief: it described the size-extension work as requiring an **artifact-codec
+bridge** (adding a docline carrier to `models.Artifact`), proven by a new
+round-trip test. That premise was **wrong** and was corrected against source
+evidence.
+
+**Evidence verified directly (not taken on assertion):**
+
+- `docs/decisions/2026-07-18-size-extension-contract-architecture-spike.md` — its
+  title and §9(d)/(e) + Recommendation 2 **SELECT `custom_fields.size`** as the
+  canonical, durable home for `.backlogit` artifact size and **REJECT** any
+  `models.Artifact` docline carrier. `docline.backlogit.*` is the owner-scoped
+  namespace for docline **documents**, not for `.backlogit` artifact frontmatter.
+- `internal/core/docline_codec_roundtrip_test.go` — three **already-passing** guard
+  tests (`TestGenericArtifactCodec_DropsTopLevelDocline`,
+  `TestSetArtifactSize_PreservesTopLevelDocline`,
+  `TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields`) empirically prove
+  the generic codec drops a top-level `docline` map while `custom_fields`
+  round-trips. There is **no bridge to build**.
+
+**Reconciliation applied to the plan and backlog:**
+
+- **SE-2 (`108.005-T`) disposition = COLLAPSED (not removed)** to a bounded
+  **test-only** regression guard: extend `docline_codec_roundtrip_test.go` to cover
+  the new feature/shipment `size` + `size_source` + `size_ruleset_version` keys
+  under `custom_fields` and assert generic round-trip (docline-drop guard
+  unchanged). Rationale: the newly-defined feature/shipment provenance fields are
+  **not** covered by the existing task-only guard; a regression guard protecting the
+  spike's "no bridge needed" premise for the new fields is genuine, bounded (≤2h),
+  width-isolated (test/codec) work. SE-2 is now a **leaf** depending only on SE-1;
+  nothing depends on it.
+- **Write-path single-writer integrity moved to SE-3a (`108.002-T`)** — the reserved
+  sizing-key guard (reject/strip on generic create, merge-not-replace on generic
+  update) belongs with the size seam (the sole `custom_fields.size` writer), per the
+  spike's own conditional caveat (§ Recommendation gate 1). Protected invariant #2
+  and P1-#2's safety intent are preserved; only the location changed.
+- **`ToFrontmatterMap()` two-emitter consolidation descoped** — an optional
+  drift-reduction the size contract does not require; left as a documented,
+  reversible future option.
+- **Dependency rewire:** removed the invalid `108.002 → 108.005` (persist → bridge)
+  edge and added `108.002 → 108.001` (persist → schema). Final graph remains 11
+  `blocks` edges, acyclic. Also removed three stale placeholder edges left over from
+  the original 108.001–004 placeholders.
+
+**Gate status unchanged: PASS.** This reconciliation *narrows* scope (removes
+unnecessary bridge/refactor work) and does not reopen any P0/P1 finding. The
+shipment `099-S` remains `queued`.

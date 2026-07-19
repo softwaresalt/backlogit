@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Implementation plan for extending optional size estimation to feature and shipment artifacts: canonical custom_fields.size at all levels, an artifact-codec bridge proven by a round-trip test, event-before-write fail-closed exactly-once provenance, computed-on-read composition rollups, CLI/MCP mutation and read parity, and two-layer containment hardening of the size seam.'
+description: 'Implementation plan for extending optional size estimation to feature and shipment artifacts: canonical custom_fields.size at all levels (the spike-selected carrier; no codec bridge), a round-trip regression guard, event-before-write fail-closed exactly-once provenance, computed-on-read composition rollups, CLI/MCP mutation and read parity, and two-layer containment hardening of the size seam.'
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-07-18-108-F-size-estimation-impl-plan.md
@@ -40,6 +40,23 @@ title: '108-F: Size estimation for feature and shipment (custom_fields.size + pr
 | D5 | **Composition = computed-on-read, never persisted.** XS–XL count histogram + `unsized` count + de-duplicated canonical members array; `ruleset_version = null`. Feature membership = children by `parent_id`; shipment membership = `NormalizeShipmentItems`. Missing member → `unsized`; skip `ErrNotFound`. Comparator XS<S<M<L<XL mirrors the priority `CASE` ordered-enum. | §8, §9(b) |
 | D6 | **Containment = two-layer fix.** (1) reject lexical `..`/absolute escape in `QueueLayout.RootDir` and every configured search root at config-load time; (2) realpath/`EvalSymlinks` re-containment at lookup time before `parseFile` reads a candidate. Mirror `internal/core/doctor_target.go:230-280`. `SafeResolve` alone is insufficient (lexical only). | §6, Recommendation 3 |
 
+> **Reconciliation addendum (2026-07-18).** An earlier framing of this plan
+> treated SE-2 as an **artifact-codec bridge** to be *built* and proven by a
+> round-trip test. That framing was incorrect. Per D2 (§9(d), Recommendation 2)
+> the spike **rejected** any `models.Artifact` docline carrier and **selected
+> `custom_fields`**, which already round-trips — a fact **already proven** by the
+> committed guard `internal/core/docline_codec_roundtrip_test.go`
+> (`TestGenericArtifactCodec_DropsTopLevelDocline`,
+> `TestSetArtifactSize_PreservesTopLevelDocline`,
+> `TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields`, all passing).
+> There is therefore **no bridge to build**. SE-2 is now a bounded **test-only
+> regression guard** that *extends* those tests to the new feature/shipment
+> `size` + `size_source` + `size_ruleset_version` keys. The write-path
+> single-writer/merge-not-replace integrity that the earlier SE-2 carried moves to
+> **SE-3a** (the size seam / sole `custom_fields.size` writer). The optional
+> `ToFrontmatterMap()` two-emitter consolidation is **descoped** (not required by
+> the spike) and left as a documented, reversible future drift-reduction.
+
 ## Problem Frame
 
 backlogit's **generic artifact codec** captures only `custom_fields` and re-emits
@@ -51,9 +68,10 @@ only struct fields plus `custom_fields`:
 - `core.WriteArtifactFile` (`internal/core/artifacts.go:682-735`) rebuilds
   frontmatter from struct fields only, appending `custom_fields` if non-nil.
 - The inline map builder in `createArtifact` (`internal/core/artifacts.go` ~`:289`)
-  duplicates that emission logic — a **drift risk** the spike flags as a
-  consolidation opportunity (`models.Artifact.ToFrontmatterMap()` shared by both
-  write paths).
+  duplicates that emission logic — a latent **drift risk** the spike notes as an
+  *optional* consolidation opportunity (`models.Artifact.ToFrontmatterMap()` shared
+  by both write paths). This consolidation is **not required** by the size
+  contract and is **descoped** here; it remains a documented future drift-reduction.
 
 Consequently any **top-level `docline` map is DROPPED** on `.backlogit`
 artifacts, while `custom_fields` survives every currently-wired mutation path.
@@ -68,8 +86,11 @@ retrofitted into `ValidateArtifactFields`. Today `size` is defined **only** on
 
 The work is therefore: (1) define the fields on `feature`/`shipment` (and
 provenance fields at all levels); (2) prove `custom_fields.size` durability on
-those levels with an executable round-trip test and remove the two-emitter
-drift; (3) persist provenance with an exactly-once estimate-history event; (4)
+those levels by **extending the existing round-trip regression guard** (no codec
+bridge is built — `custom_fields` is the spike-selected, already-durable carrier);
+(3) persist provenance with an exactly-once estimate-history event, keeping the
+size seam the sole writer of the reserved sizing keys (merge-not-replace on
+generic update, reject/strip on generic create); (4)
 compute (never persist) composition rollups; (5) reach CLI/MCP mutation and read
 parity; (6) close the containment gap in the seam's lookup/write path; (7)
 document the contract.
@@ -80,7 +101,8 @@ document the contract.
 |---|---|---|
 | D1 canonical `custom_fields.size` on feature/shipment | Add `size` enum to `feature`/`shipment` header-def types + defaults; enable seam validation for those types | SE-1 |
 | D3 provenance field definitions | Add `size_source` (enum) and `size_ruleset_version` (**bounded**, not free-text) to task/feature/shipment header-def | SE-1 |
-| D2 no carrier bridge; durability of `custom_fields.size` | Consolidate the two frontmatter emitters into `models.Artifact.ToFrontmatterMap()` (preserving status-gated archive keys/`links`); keep the size seam the sole `custom_fields.size` writer (merge-not-replace, reserved keys); prove with an executable round-trip test | SE-2 |
+| D2 no carrier bridge; durability of `custom_fields.size` | **Extend the committed round-trip guard** (`docline_codec_roundtrip_test.go`) to assert feature/shipment `size` + `size_source` + `size_ruleset_version` survive the generic codec under `custom_fields` (docline-drop guard unchanged). No codec bridge is built. | SE-2 |
+| D2 sole-writer integrity of reserved sizing keys | Keep the size seam the **sole writer** of `custom_fields.size`/`size_source`/`size_ruleset_version`/`size_op_id`: merge-not-replace on generic update (closes the `updateArtifactUngated` whole-map-replace hazard); reject/strip reserved sizing keys on generic create so an initial size is only authorable via `SizeMutation` (never eventless) | SE-3a |
 | D4 exactly-once provenance | Typed `SizeMutation` seam that persists `size_source`/`size_ruleset_version`; append estimate-history event **before** the write, fail-closed | SE-3a |
 | D3 actor-context stamping | New-authored size with no explicit `size_source` stamped from actor context (CLI ⇒ `human`, agent/MCP ⇒ `agent`); absent-on-read stays `unknown`, never rewritten | SE-3a / SE-5 |
 | D4 crash-safety | Op-id-tagged, idempotent, reconciliation-not-truncation crash policy (no eventless write; orphan events doctor-reconciled) | SE-3b |
@@ -114,58 +136,35 @@ width isolation (single domain), and an atomic verifiable milestone.
 - **Milestone:** `feature`/`shipment` accept a size enum at the seam; provenance
   fields are schema-known.
 
-### SE-2 — Artifact-codec bridge + round-trip durability (core codec)
+### SE-2 — Codec round-trip guard for feature/shipment size + provenance (test)
 
-- **Changes:** Extract a single `models.Artifact.ToFrontmatterMap()` and route
-  **both** `core.WriteArtifactFile` and the inline `createArtifact` emitter
-  through it, eliminating the two-emitter drift (spike consolidation
-  opportunity). **Preserve the two emitters' current field-set differences:**
-  `WriteArtifactFile` emits `links` and **status-gated** `archived_from`/
-  `archived_status` (only when `Status == Archived`), while the inline
-  `createArtifact` emitter omits them — the shared emitter MUST keep archive
-  provenance status-gated (protecting the "archive provenance ⇔ archived status"
-  invariant) and must not silently start emitting `links` at create time.
-  **Enforce the single-writer invariant at BOTH generic boundaries:** the size
-  seam stays the **sole** writer of
-  `custom_fields.size`/`size_source`/`size_ruleset_version`/`size_op_id` via
-  **merge-not-replace**. A generic **update** carrying a `custom_fields` key MUST
-  merge-preserve (not replace or delete) these **reserved** keys, or be rejected —
-  closing the `updateArtifactUngated` whole-map-replacement hazard
-  (`internal/core/artifacts.go:542-544`). A generic **create**
-  (`WithFields`/`createArtifact`) MUST **reject or strip** the reserved sizing keys
-  so an initial size can only be authored through `SizeMutation` (which emits the
-  provenance event) — otherwise a create could persist a sizing change with **no**
-  history event, violating Protected invariant #1. **Canonical projection rule
-  (resolves the create-vs-write field-set question):** `ToFrontmatterMap()` emits
-  **model state** with status-gated `archived_from`/`archived_status` and `links`;
-  which model fields are *populated* is controlled by the caller (create leaves
-  archive fields empty and `links` unset because the model has none yet), so the
-  **single shared emitter** is field-set-consistent — there is no create-specific
-  emitter branch. The reserved sizing keys are never sourced from the caller-passed
-  `custom_fields` on either path.
-- **Files:** `internal/models/artifact.go` (or `internal/core/artifacts.go`),
-  `internal/core/artifacts.go`.
-- **Tests (test-tier, extend `internal/core/docline_codec_roundtrip_test.go`;
-  table-driven `t.Run` subtests count as one scenario for the 2-hour rule):**
-  **MANDATORY executable round-trip** — create a `feature` and a `shipment` with
-  `custom_fields.size` + `size_source`, read back, run an ordinary non-size field
-  update, read back again, and assert `custom_fields.size` and `size_source`
-  **survive** on both (assert on the frontmatter **map**, not body byte-identity —
-  see the CRLF caveat); assert a top-level `docline` map is still dropped (guard
-  unchanged); assert a generic update carrying a `custom_fields` key preserves the
-  reserved size keys **and** a generic create carrying reserved sizing keys is
-  rejected/stripped (create-path single-writer enforcement). **Red-phase gate:** a
-  **post-refactor target** assertion that the two emitters produce
-  field-set-equivalent frontmatter under the canonical projection rule (red before
-  consolidation, green after). If the round-trip + create-guard + equivalence gate
-  exceed a single 2-hour envelope, split the **characterization lock** into a
-  sibling follow-up and keep SE-2 focused on the consolidation proof.
-- **Execution posture:** characterization-first (lock the pre-refactor round-trip),
-  then observe the two-emitter equivalence assertion **red**, then refactor to the
-  shared emitter to turn it **green**.
-- **Milestone:** `custom_fields.size`/provenance provably round-trips on
-  feature/shipment through create + generic update; single emitter with preserved
-  field-set semantics and enforced single-writer reserved keys.
+- **Reconciliation note:** the spike **selected `custom_fields`** and **rejected**
+  any `models.Artifact` docline carrier (D2). `custom_fields` already round-trips,
+  proven by the committed `internal/core/docline_codec_roundtrip_test.go`. **No
+  codec bridge is built.** This unit is a **test-only** regression guard that
+  extends that proof to the newly-defined feature/shipment fields; the write-path
+  single-writer integrity that an earlier draft placed here now lives in **SE-3a**,
+  and the optional two-emitter `ToFrontmatterMap()` consolidation is **descoped**.
+- **Changes:** Extend `internal/core/docline_codec_roundtrip_test.go` with
+  feature/shipment coverage for the new `custom_fields` sizing keys. No production
+  code changes.
+- **Files:** `internal/core/docline_codec_roundtrip_test.go` (test-tier only).
+- **Tests (test-tier; table-driven `t.Run` subtests count as one scenario for the
+  2-hour rule):** for a `feature` and a `shipment` artifact carrying
+  `custom_fields.size` + `custom_fields.size_source` + `custom_fields.size_ruleset_version`:
+  (1) the generic codec (`ParseFrontmatter` → `ArtifactFromFrontmatter` →
+  `WriteArtifactFile`) round-trips **all three** keys (assert on the frontmatter
+  **map**, not body byte-identity — the generic parser normalizes CRLF→LF; see the
+  CRLF caveat); (2) an unmodeled top-level `docline` map is still **dropped**
+  (premise-protection guard, unchanged); (3) the ordinary `UpdateArtifact` path,
+  driven by a non-size field update, **preserves** all three provenance keys. These
+  guards fail if a future codec change ever adds a docline carrier or breaks
+  `custom_fields` preservation, forcing the spike selection to be revisited.
+- **Execution posture:** test-first — the feature/shipment provenance-key
+  assertions are **red** until SE-1 defines the fields and SE-3a persists them, and
+  the docline-drop assertion is green from the outset.
+- **Milestone:** the durability premise for feature/shipment `custom_fields.size`
+  and provenance is codified as an executable, committed regression guard.
 
 ### SE-3a — Provenance persistence + estimate-history event (core persistence)
 
@@ -184,7 +183,16 @@ width isolation (single domain), and an atomic verifiable milestone.
   SE-5). It maps to the event's plain-string `Actor` field (`stream.go` `Event.Actor
   string`) via a single documented projection (`human`/`agent`/`derived` →
   identical string), so the seam needs no ad-hoc mapping.
-  Persist all three under `custom_fields` (merge-not-replace). **Provenance
+  Persist all three under `custom_fields` (**merge-not-replace**). **Sole-writer
+  integrity (moved here from the earlier SE-2):** keep the size seam the only
+  writer of the reserved sizing keys
+  (`size`/`size_source`/`size_ruleset_version`/`size_op_id`) — a generic **update**
+  carrying a `custom_fields` key must merge-preserve (not replace/delete) them
+  (closes the `updateArtifactUngated` whole-map-replace hazard,
+  `internal/core/artifacts.go:542-544`), and a generic **create** must reject/strip
+  those reserved keys so an initial size is only authorable through `SizeMutation`
+  (never eventless — protects Protected invariant #1). This is a **minimal targeted
+  guard**, not an emitter refactor. **Provenance
   defaulting has two distinct rules:** (a) a **new authored** size with no explicit
   `size_source` is stamped from the **actor context** (CLI human actor ⇒ `human`;
   agent/MCP transport ⇒ `agent`); (b) an **absent** `size_source` on **read** is
@@ -196,11 +204,15 @@ width isolation (single domain), and an atomic verifiable milestone.
   fails, **refuse** the write — so no persisted size/provenance change ever lacks
   its event.
 - **Files:** `internal/core/artifact_size.go`, `internal/events/stream.go`
-  (new `EventType` constant only).
-- **Tests (unit):** event appended before write; forced append failure ⇒ no
-  persisted change (fail-closed); a `size_ruleset_version`-only change still emits
-  **exactly one** event; absent `size_source` reads as `unknown`/legacy, never
-  rewritten as `human`.
+  (new `EventType` constant only), and a minimal reserved-key guard in
+  `internal/core/artifacts.go` (generic create reject/strip + update merge-preserve).
+- **Tests (unit; table-driven `t.Run` subtests count as one scenario):** event
+  appended before write; forced append failure ⇒ no persisted change (fail-closed);
+  a `size_ruleset_version`-only change still emits **exactly one** event; absent
+  `size_source` reads as `unknown`/legacy, never rewritten as `human`; a generic
+  create carrying reserved sizing keys is rejected/stripped and a generic update
+  carrying a `custom_fields` key merge-preserves the reserved keys (sole-writer
+  integrity).
 - **Execution posture:** test-first.
 - **Milestone:** every persisted size/provenance change carries exactly one
   history event on the non-crash path; no eventless writes.
@@ -372,23 +384,27 @@ Acyclic. Edges are `blocks` (target depends on source). SE-1 and SE-7 are the
 two roots; SE-3a/SE-3b/SE-4 can be built in parallel once their inputs exist:
 
 ```text
-SE-1 ─┬▶ SE-2 ─▶ SE-3a ─▶ SE-3b ─▶ SE-5 ─▶ SE-8
-      │            └────────────┐
-      └▶ SE-4 ──────────────────┼▶ SE-6 ─▶ (into SE-8)
-SE-7 ─────────────▶ SE-3a       │
+SE-1 ─┬▶ SE-2 (test guard; leaf)
+      ├▶ SE-3a ─▶ SE-3b ─▶ SE-5 ─▶ SE-8
+      │    └───────────────────┐
+      └▶ SE-4 ─────────────────┼▶ SE-6 ─▶ (into SE-8)
+SE-7 ─────────────▶ SE-3a      │
 SE-7 ─────────────────────────────▶ SE-8
 ```
 
-(SE-6 depends on SE-3a and SE-4; SE-8 depends on SE-5, SE-6, and SE-7. There is
-**no** SE-2→SE-4 edge — SE-4 depends only on SE-1.)
+(SE-2 is a **test-only** regression guard depending solely on SE-1; **nothing
+depends on SE-2**. SE-3a depends on SE-1 and SE-7 — the schema fields plus a
+hardened seam, no longer on SE-2 since there is no codec bridge to build. SE-6
+depends on SE-3a and SE-4; SE-8 depends on SE-5, SE-6, and SE-7. There is **no**
+SE-2→SE-4 and **no** SE-2→SE-3a edge.)
 
 Explicit edges to wire with `backlogit dep add <task> <depends_on> --type blocks`:
 
-- SE-2 depends on SE-1
+- SE-2 depends on SE-1 (the guard asserts the schema-defined feature/shipment keys)
 - SE-4 depends on SE-1 (composition consumes the schema contract; it does not
   require the emitter consolidation — de-serialized per review)
-- SE-3a depends on SE-2 and SE-7 (durable custom_fields + a hardened seam before
-  routing more provenance writes through it)
+- SE-3a depends on SE-1 and SE-7 (schema fields + a hardened seam before routing
+  provenance writes through it — repointed off the descoped SE-2 bridge)
 - SE-3b depends on SE-3a (crash-safety builds on the append+write path)
 - SE-5 depends on SE-3b (surfaces provenance mutation on the crash-safe seam)
 - SE-6 depends on SE-3a and SE-4 (read projection surfaces persisted size +
@@ -433,18 +449,21 @@ routing additional provenance writes through it.
   independent of symlinks, and a leaf-file symlink is read during lookup before
   any write-path check — so a write-only or lexical-only fix is insufficient. The
   realpath pattern already exists in `doctor_target.go` and is reused.
-- **Single seam + single emitter.** Keeping `SetArtifactSize` the sole
-  `custom_fields.size` writer and collapsing the two frontmatter emitters into
-  `ToFrontmatterMap()` removes the drift that the map-replacement caveat would
-  otherwise weaponize.
+- **Single seam, sole writer (no emitter consolidation).** `SetArtifactSize`
+  stays the only `custom_fields.size` writer; SE-3a adds a minimal reserved-key
+  guard (create reject/strip, update merge-not-replace) so the map-replacement
+  caveat cannot be weaponized. The `ToFrontmatterMap()` two-emitter consolidation
+  is **descoped** — it is an optional drift-reduction the size contract does not
+  require, left as a documented, reversible future option.
 
 ## Risks and Caveats
 
 - **Map-replacement caveat:** `updateArtifactUngated` *replaces* the whole
   `custom_fields` map when an update carries a `custom_fields` key
   (`internal/core/artifacts.go:542-544`). Harmless today (no surface passes
-  arbitrary `custom_fields`), but SE-2 must add a guard so this stays true, and
-  SE-5 must never route provenance through a full-map passthrough.
+  arbitrary `custom_fields`), but **SE-3a** adds a reserved-key merge-preserve
+  guard so this stays true, and SE-5 must never route provenance through a
+  full-map passthrough.
 - **Validated-once asymmetry:** `custom_fields.size` is durable on every wired
   path but validated **only** at the size seam (`validateSizeValue`), not in
   `ValidateArtifactFields`. SE-5 must keep both surfaces on the seam so no path
@@ -490,7 +509,7 @@ routing additional provenance writes through it.
 | Unit | Runtime surface? | Verify before absorbed | Closure artifact |
 |---|---|---|---|
 | SE-1 | No (config) | header-def loads; seam validates feature/shipment size | schema note in the contract doc |
-| SE-2 | No (codec) | round-trip test green on feature+shipment; single emitter | round-trip regression guard is the closure evidence |
+| SE-2 | No (test) | round-trip guard green on feature+shipment; docline-drop guard unchanged | the extended round-trip regression guard is the closure evidence |
 | SE-3a | Yes (mutation seam) | event-before-write proven; forced-append-failure refuses write; exactly-once on ruleset-only change; actor-context stamping (CLI human / agent) proven | rollback trigger: any persisted size without an event ⇒ revert; owner + validation window |
 | SE-3b | Yes (crash recovery) | post-append crash leaves op-id orphan + no persisted change; doctor reconciles; retried op-id idempotent; **no** shared-JSONL truncation | rollback trigger: any shared-log truncation or duplicate event ⇒ revert |
 | SE-4 | No (pure read) | composition deterministic; never persists | n/a |
@@ -517,7 +536,7 @@ constitution mapping for 108-F.)
 | **III. Workspace Isolation** | SE-7 *strengthens* isolation (two-layer lexical + realpath containment). No secrets are added. |
 | **IV. CLI Containment (NON-NEGOTIABLE)** | SE-7 enforces cwd/workspace containment at config-load and lookup time; no unit writes outside the workspace root. |
 | **V. Structured Observability** | SE-3a adds a durable estimate-history event stream (traceable provenance) — an observability *gain*; SE-3b keeps it consistent under crash via op-id reconciliation. |
-| **VI. Single Responsibility** | No new external dependency (SE-3b reuses existing `atomicfile`/JSONL/`doctor` rails); SE-2 *reduces* surface by collapsing two emitters into one. |
+| **VI. Single Responsibility** | No new external dependency (SE-3b reuses existing `atomicfile`/JSONL/`doctor` rails); no new carrier is added to `models.Artifact` — the spike-selected `custom_fields` carrier is reused, so the codec surface is unchanged. The optional two-emitter consolidation is descoped to avoid speculative refactoring. |
 | **VII. Destructive Command Approval** | No destructive terminal commands. The durable append is fail-closed, not force-overwrite; SE-3b explicitly forbids truncating the shared log. |
 | **VIII. Safety Modes** | Elevated blast radius (mutation seam + containment) is flagged; `Requires plan hardening: yes`; Ship should operate in careful/investigate-first posture for SE-3a/SE-3b/SE-7. |
 | **IX. Git-Friendly Persistence** | `custom_fields.*` stays human-readable YAML frontmatter; `mdfront` preserves body bytes and semantic ordering. |
@@ -567,9 +586,10 @@ the risky units.
 2. **Sole writer (create + update):** `SetArtifactSize` remains the only writer of
    `custom_fields.size`/`size_source`/`size_ruleset_version`/`size_op_id`; no
    generic **create** or **update** path may inject or replace these reserved keys
-   (create rejects/strips them; update merge-preserves them), and
-   `ToFrontmatterMap()` preserves status-gated `archived_from`/`archived_status`
-   and `links`. (SE-2, SE-5)
+   (create rejects/strips them; update merge-preserves them). Enforced by a minimal
+   reserved-key guard in **SE-3a** (no emitter consolidation). The round-trip guard
+   (SE-2) proves the keys survive; the CRLF-safe map assertion covers the codec.
+   (SE-3a, SE-2, SE-5)
 3. **Legacy non-rewrite:** an absent `size_source` reads as `unknown`/legacy and
    is never rewritten as `human`; agent/MCP transports may not stamp `human`.
    (SE-3a, SE-4, SE-5)
@@ -585,7 +605,7 @@ the risky units.
 | PA-1 | Route provenance writes through an event-before-write, fail-closed, **op-id-reconciled** append+write in the live size seam (SE-3a persists+events; SE-3b crash-safety) | `internal/core/artifact_size.go`, `internal/events/stream.go`, `internal/core/doctor_target.go` | durable append + mutation (contract) | **high** | revert the seam commit; the append is additive to the JSONL event stream and index-rehydratable; a failed write leaves the prior size intact (fail-closed); orphan events are op-id-tagged and doctor-reconciled, **never** resolved by truncating the shared log | prefer approval (production mutation-path + failure-semantics change) | planned |
 | PA-2 | Add two-layer lexical + realpath containment at config-load and lookup time | `internal/config/loader.go`, `internal/core/artifacts.go` | config validation + security guard | **high** | revert; new rejections are fail-closed (worst case: a previously-accepted escaping config is now refused — surface a clear diagnostic) | prefer approval (changes accepted-config surface) | planned |
 | PA-3 | Extend header-def with size on feature/shipment + provenance fields | `.backlogit/header-def.yaml`, `internal/config/defaults.go` | schema/contract | **moderate** | revert; fields are `optional`, additive, backward-compatible (coexist, no migration) | standard review | planned |
-| PA-4 | Collapse two frontmatter emitters into `ToFrontmatterMap()` | `internal/models/artifact.go`, `internal/core/artifacts.go` | shared-code refactor | **moderate** | revert; guarded by the SE-2 round-trip test asserting on the frontmatter **map** (not body byte-identity — the generic parser normalizes CRLF→LF) plus the two-emitter field-set-equivalence gate | standard review | planned |
+| PA-4 | Add a minimal reserved-key write-path guard (create reject/strip + update merge-not-replace) so the size seam stays the sole writer of the reserved sizing keys | `internal/core/artifacts.go` | write-path integrity guard | **moderate** | revert; the guard is additive and fail-closed (a create/update that tries to inject reserved sizing keys is rejected/stripped), guarded by the SE-3a sole-writer tests and the SE-2 round-trip map assertion | standard review | planned |
 
 No `ActionRisk: destructive` step exists — there is no deletion, force-overwrite,
 or history rewrite. The durable append is fail-closed, not destructive.
@@ -623,7 +643,8 @@ or history rewrite. The durable append is fail-closed, not destructive.
   matching event ⇒ revert SE-3a/SE-3b; (2) any shared-JSONL truncation or
   duplicate event ⇒ revert SE-3b; (3) any out-of-workspace read/write observed ⇒
   revert SE-7 and treat as a security incident; (4) round-trip test regression on
-  feature/shipment ⇒ revert SE-2.
+  feature/shipment ⇒ the SE-2 guard is the **detector**; investigate and revert
+  the codec or write-path change (SE-3a) that broke preservation.
 - **Rollback procedure:** each unit is a coherent, revertible commit; the schema
   and provenance additions are optional/backward-compatible, so a revert cannot
   strand data (existing `custom_fields.size` values remain valid).
@@ -668,11 +689,16 @@ parallel on different model tiers. Full findings are archived at
    events. **Resolved:** split into SE-3a (persist + event-before-write,
    fail-closed) and SE-3b (op-id + `PrevOpID` predecessor chain; doctor
    compare-and-swap; no truncation; orphan-tolerant).
-2. **SE-2 single-writer was update-only (Architecture).** A generic create could
-   inject reserved sizing keys, bypassing the provenance event. **Resolved:** SE-2
-   enforces reject/strip on **create** and merge-preserve on **update**; a
-   canonical `ToFrontmatterMap()` projection rule removes the emitter-equivalence
-   contradiction.
+2. **Single-writer of reserved sizing keys (Architecture).** A generic create
+   could inject reserved sizing keys, bypassing the provenance event; a generic
+   update could whole-map-replace them. **Resolved:** the sole-writer guard
+   (reject/strip on create, merge-preserve on update) is enforced by a minimal
+   reserved-key guard in **SE-3a**. *(Reconciliation 2026-07-18: this guard was
+   originally drafted inside SE-2 alongside a `ToFrontmatterMap()` emitter
+   consolidation. Because the spike selected `custom_fields` with **no** codec
+   bridge, SE-2 collapsed to a test-only round-trip guard and the write-path
+   integrity moved to SE-3a; the emitter consolidation was descoped. The safety
+   intent is unchanged — the reserved-key guard still ships in SE-3a.)*
 3. **size_source human-masquerade via MCP (Security + Constitution).** **Resolved:**
    transport-aware actor stamping — MCP/agent rejects/overrides `human`; CLI stamps
    `human`; absent-on-read stays `unknown`, never rewritten.
@@ -683,8 +709,11 @@ parallel on different model tiers. Full findings are archived at
 ### Residual / deferred (non-blocking)
 
 - **P2 (Go):** per-unit test-scenario counts sit at the 2-hour boundary; the plan
-  states table-driven `t.Run` subtests count as one scenario, and flags SE-2's
-  characterization lock as a splittable sibling if the envelope is exceeded.
+  states table-driven `t.Run` subtests count as one scenario. Post-reconciliation
+  the unit closest to the envelope is **SE-3a** (typed seam + provenance event +
+  reserved-key sole-writer guard across `artifact_size.go`/`stream.go`/`artifacts.go`);
+  if it exceeds a single 2-hour envelope, split the reserved-key write-path guard
+  into a sibling task.
 - **P3 (Security):** transport-aware stamping cannot stop masquerade if an agent
   is granted unrestricted local shell (it can invoke the CLI directly) — to be
   noted in the SE-8 contract doc.
