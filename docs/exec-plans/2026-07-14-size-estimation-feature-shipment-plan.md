@@ -22,6 +22,12 @@ docline:
 
 ## Status: Restructured to a queued spike (109-F) plus a blocked implementation placeholder (108-F) (PR #241)
 
+> [!NOTE]
+> Shipped outcome: the size estimation contract was implemented in feature
+> `108-F` (shipment `099-S`). The durable contract now lives in
+> [2026-07-19-size-estimation-contract.md](../design-docs/2026-07-19-size-estimation-contract.md).
+> This charter is retained for the originating spike analysis and history.
+
 This document was harvested as an implementation plan and previously recorded an
 implementation-ready PASS. Bounded investigation for PR #241 found that
 provenance/history atomicity, XS-XL aggregation semantics, and even the
