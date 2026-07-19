@@ -111,10 +111,13 @@ Thread: `.backlogit/queue/108.009-T.md:17`.
   configured search root. Optionally add a test asserting roots are treated
   literally (NOT env-expanded).
 
-## Retrieval / next-round entry
+## Staging outcome (completed)
 
-- backlogit stash: `B062B90A` (kind=feature, priority=medium).
-- This doc + the stash entry are git-stashed off PR #259 (scope-pure) and will
-  be `git stash pop`-ed onto `main` and committed after PR #259 merges.
-- Next staging round: harvest F5 (1 task), F6 (1–2 tasks, highest value —
-  core robustness), F7 (1 task) under `108-F`.
+Completed in the next staging round (shipment `100-S`, PR #260):
+
+- Stash `B062B90A` triaged and **archived** (consumed).
+- Shipment **`100-S`** created (`queued`) — "108-F wave-7 staging review follow-ups (F5/F6/F7)".
+- **F5** → task `108.012-T` — reconcile 108-F backlog artifact for 099-S membership.
+- **F6** → task `108.013-T` — add rollback/cleanup to `CreateArtifact` post-create failure boundary; **depends on `108.002-T`** (099-S), which introduces the post-create size/estimate-event operation whose failure boundary this task hardens.
+- **F7** → task `108.014-T` — reconciliation record. The correction was applied **in place** to `108.009-T` (SE-7a, shipment 099-S) during staging (env-var-expansion rejection requirement + test dropped; lexical `../`/absolute containment guard retained). The containment implementation remains in `108.009-T` so the SE-7a/SE-7b two-layer invariant ships as one unit with `108.010-T` in 099-S; `108.014-T` carries no separate implementation.
+- F6 / `9D5BB492` crash-window stash kept separate (different failure class).

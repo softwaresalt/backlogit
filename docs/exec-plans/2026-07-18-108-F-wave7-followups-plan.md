@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 title: "108-F wave-7 staging review follow-ups — implementation plan"
 source: docs/exec-plans/2026-07-18-108-F-wave7-followups-plan.md
-doc_type: exec-plan
+doc_type: plan
 description: "Implementation plan for three verified follow-up findings (F5/F6/F7) from the 099-S/108-F wave-7 staging review on PR #259."
 docline:
     date: 2026-07-18
@@ -92,7 +92,7 @@ optionally verify event-append failure path)
 - No regression in existing CreateArtifact tests
 **Estimated effort**: ~2h
 **Execution posture**: test-first (red → green)
-**Dependencies**: None (independent of other 108-F tasks)
+**Dependencies**: 108.002-T (099-S) — introduces the post-create size/estimate-event operation whose failure boundary this task hardens; the orphaned-artifact / retry-collision boundary does not exist until 108.002-T lands. Added as an explicit blocking dependency (wave-7 F6 review, PR #260).
 
 **F6/9D5BB492 ride-along decision**: F6 addresses the **in-process error-return** path (size
 write fails, function returns error, caller can retry). Stash 9D5BB492 addresses the
@@ -128,17 +128,17 @@ literal `$VAR` root not expanded)
 - 108.009-T description updated to remove env-expansion requirement
 **Estimated effort**: ~1.5h
 **Execution posture**: test-first (red → green)
-**Dependencies**: None (independent, but logically precedes 108.010-T SE-7b)
+**Dependencies**: None. **Reconciliation applied (wave-7 review, PR #260)**: the env-var-expansion rejection requirement was corrected **in place** on `108.009-T` (SE-7a, shipment 099-S) during staging — the requirement and its test were dropped; only the lexical `../`/absolute containment guard for `QueueLayout.RootDir` and every configured search root remains. The containment **implementation stays in `108.009-T`** so the SE-7a/SE-7b two-layer containment invariant continues to ship as one unit with `108.010-T` in 099-S. `108.014-T` is therefore the traceable F7 reconciliation / verification record (`related_to` 108.009-T) and carries **no separate implementation** in 100-S. `108.010-T`'s dependency edge is unchanged (still depends on the surviving `108.009-T`).
 
 ## Dependency Graph
 
 ```
-IU-1 (F5) — independent, no deps
-IU-2 (F6) — independent, no deps
-IU-3 (F7) — independent, blocks 108.010-T (SE-7b, already in 099-S)
+IU-1 (F5, 108.012-T) — independent, no deps
+IU-2 (F6, 108.013-T) — depends on 108.002-T (099-S); the failure boundary does not exist until 108.002-T introduces the post-create size/estimate-event operation
+IU-3 (F7, 108.014-T) — reconciliation applied in place to 108.009-T at staging (PR #260); no separate implementation. 108.010-T (SE-7b) still depends on the surviving 108.009-T (unchanged).
 ```
 
-All three IUs are independent of each other and can be executed in any order.
+IU-1 is independent. IU-2 must follow 108.002-T (099-S). IU-3 was resolved by an in-place staging correction of 108.009-T (099-S), so it carries no new implementation.
 
 ## Requires plan hardening
 
