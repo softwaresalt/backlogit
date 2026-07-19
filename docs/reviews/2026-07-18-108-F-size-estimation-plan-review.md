@@ -233,3 +233,78 @@ a sibling task.
 **Gate status: PASS holds.** The 7 reconciliations narrow scope, split a
 cross-domain task into single-domain units, and add idempotency/guardrail detail;
 no P0/P1 was reopened. Shipment `099-S` remains `queued` (11 members).
+
+## Copilot cycle-2 reconciliation addendum (2026-07-18) — genuine multi-persona re-review
+
+A second external Copilot pass on the pushed HEAD raised 10 findings (G1-G8; G9 is
+the PR description, out of Stage scope). All technical findings were verified against
+ground-truth code facts and reconciled in planning/backlog artifacts only (no
+source/test/config changed). Backlog outcome: shipment `099-S` now has **12 members**
+(108-F + 108.001-T..108.011-T), **14** `blocks` edges, graph re-verified **acyclic**.
+
+### G2-G8 dispositions
+
+- **G2 (P1) — index staleness.** `SetArtifactSize` writes the file
+  (`artifact_size.go:79`) before `db.UpsertItem` (`:90`); a write-succeeded/
+  index-failed crash leaves the SQLite row stale, and an op-id-only idempotency check
+  would skip the re-upsert. **Resolved:** the applied-check path re-verifies and
+  re-`UpsertItem`s the index before returning success; added a "write-succeeded/
+  index-failed => retry re-upserts the index" test. (SE-3b / `108.006-T`.)
+- **G3 (P1) — durability overstated.** Both `atomicfile.WriteFileAtomic` and
+  `events.AppendEvent` are sync-free. **Resolved:** invariant narrowed to
+  **process-crash** scope everywhere (D4 summary, invariant #1, Decisions D4, SE-3b
+  tail); OS-crash/power-loss fsync protocol is out of scope, filed as stash
+  **`131CEAE4`**. No fsync added to shared writers.
+- **G4 (P1) — feature=>children expansion missing.** `NormalizeShipmentItems` returns
+  only explicit `custom_fields.items`. **Resolved:** SE-4 adds explicit
+  feature=>children expansion; tests for a feature-only manifest and a
+  feature-plus-explicit-child manifest (dedup). (SE-4 / `108.003-T`.)
+- **G5 (P1) — CLI/MCP JSON parity overclaimed.** CLI `get` JSON (`buildDetailMap`) and
+  queue JSON (`QueryQueue`) are separate shapers. **Resolved:** composition scoped to
+  **MCP read surfaces only**; size/provenance parity holds on both transports; the
+  CLI-JSON composition gap is filed as stash **`387DE4BF`** (distinct from the CLI
+  human-column gap `D5FA1EE9`). (SE-6 / `108.008-T`.)
+- **G6 (P1) — SE-3b granularity.** SE-3b admitted at/over 2h. **Resolved:** split into
+  SE-3b (online seam crash-safety, now genuinely <=2h) and new **SE-3c
+  (`108.011-T`)** doctor CLEAR-recovery reconcile, depending on `108.006-T`. Manifest
+  =>12 members; edges =>14; re-verified acyclic.
+- **G7 (P1) — migration path breakage.** `cli/migrate.go` routes imported metadata
+  through `WithFields` => `CreateArtifact`. **Resolved:** migration-safe create
+  preserves a **provenanced** imported size (routes through the seam, records the
+  event) and rejects/strips only an **unprovenanced** reserved size; added an import
+  test. (SE-3a / `108.001-T`.)
+- **G8 (P2) — stale dep text.** `108.004-T` body still said "SE-7". **Resolved:**
+  updated to name **SE-7b (`108.010-T`)**.
+
+### G1 (done last) — genuine multi-persona re-review of the FINAL plan
+
+Unlike the F1-F7 cycle (a single-agent inline delta assessment), the final plan was
+re-reviewed by **four independent persona subagents dispatched in parallel** over the
+fully reconciled plan:
+
+| Persona (agent) | Tier | Focus checked | Verdict |
+|---|---|---|---|
+| Architecture Strategist | 2 | cohesion, coupling, dependency-graph acyclicity, seam/online-offline-split design, feature=>children placement | **PASS** (P2/P3 advisories) |
+| Scope Boundary Auditor | 2 | 2-hour rule, width isolation, YAGNI, deferral tracking (fsync/composition/human-column stashes) | **PASS after fix** |
+| Constitution Reviewer | 2 | constitution principle mapping, Test-First honesty (SE-2), buildable-commit (SE-5 wrapper) | **PASS after fix** |
+| Security Lens Reviewer | 2 | human-masquerade defense, two-layer path containment, crash-safety robustness, migration provenance | **PASS** (P2/P3 tracked) |
+
+**Two P1s surfaced and were resolved in-plan (no source touched):**
+
+1. **Scope P1 — SE-3a at the 3-file budget boundary** (contested: Architecture P2,
+   Constitution P3, Scope P1). Resolved by **documenting** it as a bounded,
+   single-domain near-boundary case with an explicit Ship-time split fallback (carve
+   the `artifacts.go` reserved-key guard into a sibling if it exceeds 2h), per the
+   Governance Conflict-resolution clause.
+2. **Constitution P1 — SE-5 wrapper retirement crossed into core and risked a
+   non-buildable commit.** Resolved by making SE-5 remove the `SetArtifactSize`
+   wrapper **and migrate the core tests in the same commit** (buildable-commit
+   preserved), documented as a bounded single-axis migration deviation.
+
+**Cycle-2 gate: PASS (genuine multi-persona).** The verdict now reflects
+multi-persona coverage of the FINAL plan, not a single-agent addendum. The two P1s
+are resolved; only P2/P3 advisories remain, tracked as residuals in the impl-plan
+(migration provenance-marker, OpID uniqueness, competing same-PrevOpID orphan
+ordering, containment choke-point confirmation, shared read-shaper, and assorted P3
+labeling/doc items). No unresolved P0/P1 remains. Shipment `099-S` remains `queued`
+(12 members).

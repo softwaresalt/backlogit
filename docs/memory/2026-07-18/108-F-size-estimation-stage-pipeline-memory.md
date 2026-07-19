@@ -242,3 +242,57 @@ CLEAR-recovery reconcile into a sibling task during Ship if it exceeds one envel
 re-assessment** of the deltas (no fresh multi-persona dispatch); each finding was
 independently source-verified before acceptance. Recorded in the plan-review
 addendum.
+
+## CYCLE-2 addendum (Copilot G1-G8, 2026-07-18)
+
+Second Copilot pass on pushed HEAD raised 10 findings (G1-G8; G9 = PR desc, not
+Stage). Planning/backlog artifacts only; no source/test/config; no git.
+
+**Backlog now:** shipment `099-S` = **12 members** (108-F + 108.001-T..108.011-T),
+**14** `blocks` edges, graph re-verified **acyclic** (python topo sort). Status:
+**queued**.
+
+**New task (G6 split):** `108.011-T` "SE-3c: Doctor CLEAR-recovery reconcile for
+size crash-safety (core doctor)" — parent 108-F, queued, medium, labels
+size,core,doctor,crash-safety. Dep `108.011-T <- 108.006-T`. Added to 099-S.
+
+**New edge (G6):** `108.004-T <- 108.011-T` (SE-8 docs depend on SE-3c). Final
+14-edge set adds `108.006<-108.002` retained plus `108.011<-108.006` and
+`108.004<-108.011` on top of the prior 12.
+
+**Stashes filed this cycle:** `131CEAE4` (G3 OS-crash/power-loss fsync follow-up,
+out of scope), `387DE4BF` (G5 CLI-JSON composition gap). Pre-existing `D5FA1EE9`
+(F6 CLI human-column gap).
+
+**Disposition summary:**
+- G2: SE-3b applied-check path re-verifies + re-UpsertItems the index before success
+  (repairs write-succeeded/index-failed stale row). 108.006-T updated.
+- G3: durability narrowed to **process-crash** scope (sync-free writers); power-loss
+  out of scope (stash 131CEAE4). No fsync added. D4 summary, invariant #1, SE-3b tail.
+- G4: SE-4 explicit feature=>children expansion + feature-only & feature-plus-child
+  dedup tests. 108.003-T updated.
+- G5: composition **MCP-only**; size/provenance parity both transports; CLI-JSON
+  composition gap => stash 387DE4BF. 108.008-T updated.
+- G6: split SE-3b into SE-3b (online seam, now <=2h) + SE-3c (108.011-T, offline
+  doctor CLEAR-recovery). Manifest 12, edges 14.
+- G7: migration-safe create — preserve provenanced imported size (record event),
+  reject/strip only unprovenanced. 108.001-T + 108.002-T updated; migration test.
+- G8: 108.004-T body now names SE-7b (108.010-T), not "SE-7".
+
+**G1 — genuine multi-persona re-review (FINAL plan):** four independent persona
+subagents dispatched in parallel — Architecture Strategist (**PASS**, P2/P3),
+Scope Boundary Auditor (**PASS after fix**), Constitution Reviewer (**PASS after
+fix**), Security Lens Reviewer (**PASS**, P2/P3 tracked). Two P1s surfaced and were
+resolved in-plan (no source): (1) Scope P1 SE-3a 3-file boundary => documented as
+bounded near-boundary deviation with Ship-time split fallback; (2) Constitution P1
+SE-5 wrapper retirement => scope made explicit (removes wrapper + migrates core
+tests in the same commit; buildable-commit preserved), documented deviation.
+**Cycle-2 gate: PASS (multi-persona, final plan).** No unresolved P0/P1. Remaining
+P2/P3 advisories tracked as residuals in the impl-plan (migration provenance marker,
+OpID uniqueness, competing same-PrevOpID orphan ordering, containment choke-point,
+shared read-shaper, P3 labeling/doc items).
+
+**Width-isolation claim reconciled:** replaced the blanket "all width-isolated / no
+deviations" with an accurate statement — no task mixes skill domains; two bounded,
+single-domain cross-file deviations (SE-3a near-boundary, SE-5 wrapper retirement)
+are explicitly documented per the Governance Conflict-resolution clause.
