@@ -348,3 +348,88 @@ gone).
 this memory, plan-review (docs/reviews/2026-07-18-108-F-size-estimation-plan-review.md),
 .backlogit/queue/099-S.md, 108.006-T.md, 108.003-T.md, 108.007-T.md, 108.008-T.md,
 .backlogit/stash.jsonl (new 9D5BB492), 108.011-T archived to .backlogit/archive/.
+
+## Cycle-4 addendum (2026-07-18, Copilot PR #259 wave-4, I1 — trivial)
+
+Single finding I1: `108.005-T` `labels` was one literal label `size codec test`.
+Split into three slice entries `size`/`codec`/`test` (neighbor style) via
+`backlogit update 108.005-T --labels "size,codec,test"` (index kept in sync).
+No other change; hooks_queue/stash unaffected beyond the update hook event.
+
+## Cycle-5 addendum (2026-07-18, Copilot PR #259 wave-5, J1/J2 + consistency sweep)
+
+Two self-inflicted inconsistencies introduced by the Option-B2 descope, both on the
+impl-plan. Operator directed a fix plus a full consistency SWEEP so a wave-6 finds
+nothing (fix the whole class, not just the flagged lines). **This is the last allowed
+fix cycle (§1.8 limit = 3).**
+
+**Per-finding disposition:**
+
+- **J1 (P1) — SE-3b had no distinct production milestone.** After the descope, SE-3b
+  restated SE-3a's SAME append-before-write / fail-closed-read protocol on the SAME
+  file. **Recast SE-3b as an explicitly TEST-ONLY crash-audit characterization unit**
+  that verifies SE-3a's semantics and adds NO production code. Clean, non-overlapping
+  test-ownership line: SE-3a keeps the happy-path ordering tests (event-before-write;
+  forced-append-failure ⇒ no persisted change); SE-3b owns the crash-residue tests —
+  (a) fail-closed READ ignores an orphan event, (b) orphan never replayed + shared
+  JSONL never truncated, (c) normal set is index-consistent (re-upsert). SE-3b Files =
+  test-only (`internal/core/artifact_size_test.go`, no production file); Milestone =
+  "tests green; no new production code — verifies SE-3a's crash-audit semantics."
+  Still depends on SE-3a (108.002-T); SE-5→SE-3b edge retained as release-ordering.
+- **J2 (P1) — Protected Invariant #2 "Sole writer" was stale/contradictory.** It named
+  the positional `SetArtifactSize` as "only writer" (SE-5 RETIRES it, H3) and said
+  "create rejects/strips them" as a blanket reject (G7 migration-safe create PRESERVES
+  a provenanced import). **Restated on the typed seam:** `SetArtifactSizeWithProvenance`
+  is the sole writer; the positional wrapper is retired by SE-5 (not a second writer);
+  a generic update merge-preserves; a generic create rejects/strips an UNPROVENANCED
+  size but PRESERVES a PROVENANCED import (records the event).
+
+**Consistency sweep — every additional occurrence reconciled in the impl-plan** (fixed
+the whole class, not just L259/L734):
+
+1. Requirements Trace D4 crash-posture row → owner now "SE-3a (impl) / SE-3b (tests)".
+2. Overview sole-writer line → unprovenanced-reject vs provenanced-preserve distinction.
+3. Dependency-graph prose "built in parallel" → SE-3b is a test-only unit whose tests
+   follow SE-3a; SE-3b and SE-5 edge bullets reworded (verification / release-ordering).
+4. Decision "Best-effort audit ordering … implemented in SE-3a and verified by SE-3b."
+5. Runtime-Verification SE-3b row → "No (test-only)"; reframed as test verification.
+6. Constitution Check rows II (Test-First: SE-2 **and SE-3b** are test-only
+   characterization units), II (width: SE-3b single-domain test), V, VI, VII, VIII, and
+   the deviations paragraph → all reflect SE-3b test-only.
+7. Rollback triggers → production reverts point at SE-3a; SE-3b tests are the detector.
+8. Unresolved-decision heading "SE-3a durability policy … verified by SE-3b tests."
+9. Plan Review narrative → "FINAL gate is the Copilot cycle-5 multi-persona re-review";
+   added a "Copilot cycle-5 reconciliation" subsection with the J1/J2 disposition table,
+   the sweep list, and a 4-persona PASS table.
+10. Superseded annotations on the cycle-2/cycle-3 historical rows that described SE-3b as
+    an online-seam production unit (persona table + G6-unwind bullet), pointing forward
+    to the cycle-5 recast (audit trail preserved, not rewritten).
+
+**Task artifact updated:** `108.006-T` — title → "SE-3b: Crash-audit robustness
+verification (test-only; verifies SE-3a)"; labels → `size`/`crash-safety`/**`test`**
+(was `core`); description → full test-only recast; Files → test-only. `backlogit update`
++ `backlogit sync` (index refreshed, 889 artifacts). Other task files (108.001-T SE-1,
+108.002-T SE-3a, 108.007-T SE-5) were already consistent with J1/J2 (they correctly name
+the typed seam and the unprovenanced-reject / provenanced-preserve rule) — no change.
+
+**Graph re-verified acyclic (unchanged this cycle):** 10 task nodes, **12 `blocks`
+edges**; roots {108.001 SE-1, 108.009 SE-7a}; leaves {108.004 SE-8, 108.005 SE-2}; topo
+-sorts cleanly. The SE-5→SE-3b edge (108.007←108.006) is intentionally KEPT as
+release-ordering, so no `item_deps` mutation was needed. No task's ≤2h / files claim
+broke — SE-3b is now test-only single-domain (test), still ≤2h.
+
+**Backlog state after cycle-5:** 099-S **QUEUED, 11 members** (108-F + 108.001-T…
+108.010-T) — unchanged. No new stash (J1/J2 were plan-consistency fixes; the deferred
+ambition remains stash 9D5BB492 from cycle-3).
+
+**Cycle-5 multi-persona re-review of the FINAL (J1/J2-reconciled) plan: PASS.**
+Architecture/cohesion (graph acyclic, clean test-ownership boundary), Scope-boundary/
+YAGNI (SE-3b test-only ≤2h, no capability added), Standards/constitution (SE-3b a
+documented test-only characterization unit, not a skipped red phase), Security/
+robustness (durability still best-effort process-crash; sole-writer invariant correct
+on the typed seam) — all PASS. No P0/P1 remains. J1/J2 are strictly clarifying /
+scope-reducing, so the earlier multi-persona PASS holds a fortiori.
+
+**Files changed this cycle:** impl-plan (docs/exec-plans/2026-07-18-108-F-size-
+estimation-impl-plan.md), .backlogit/queue/108.006-T.md, and this memory. Docs lint
+clean.
