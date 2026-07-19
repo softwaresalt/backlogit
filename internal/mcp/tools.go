@@ -67,6 +67,8 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
 			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
+			mcplib.WithString("size_source", mcplib.Description("Size provenance source (human, agent, derived)")),
+			mcplib.WithString("size_ruleset_version", mcplib.Description("Size ruleset version")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
 		),
 		s.handleUpdateItem,
@@ -744,16 +746,38 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	// core.SetArtifactSize. It is mutually exclusive with generic field updates and
 	// section writes, which go through the rebuild path; combining them would
 	// double-write and negate body preservation.
-	if size, ok := request.Params.Arguments["size"].(string); ok && size != "" {
+	if hasSizeMutationArguments(request.Params.Arguments) {
 		if len(updates) > 0 || sections != nil {
 			return ValidationFailed("size cannot be combined with other field updates or sections"), nil
 		}
-		artifact, err := core.SetArtifactSize(ctx, s.Workspace, id, size)
+		size, _ := request.Params.Arguments["size"].(string)
+		source, _ := request.Params.Arguments["size_source"].(string)
+		rulesetVersion, _ := request.Params.Arguments["size_ruleset_version"].(string)
+		var artifact *models.Artifact
+		var err error
+		if source != "" || rulesetVersion != "" {
+			// Provenance-carrying mutations route through the typed seam
+			// (SE-3a/SE-5); implemented in the build phase.
+			mutation := core.SizeMutation{Actor: core.ActorContextAgent}
+			if size != "" {
+				mutation.Size = &size
+			}
+			if source != "" {
+				mutation.Source = &source
+			}
+			if rulesetVersion != "" {
+				mutation.RulesetVersion = &rulesetVersion
+			}
+			artifact, err = core.SetArtifactSizeWithProvenance(ctx, s.Workspace, id, mutation)
+		} else {
+			artifact, err = core.SetArtifactSize(ctx, s.Workspace, id, size)
+		}
 		if err != nil {
 			return domainError("set artifact size", err), nil
 		}
 		return toolResultJSON(artifact)
 	}
+
 	requestedStatus, _ := updates["status"].(string)
 	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
 	if err != nil {
@@ -775,6 +799,15 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return gatePassResult(artifact, outcome)
 	}
 	return toolResultJSON(artifact)
+}
+
+func hasSizeMutationArguments(args map[string]any) bool {
+	for _, key := range []string{"size", "size_source", "size_ruleset_version"} {
+		if value, ok := args[key].(string); ok && value != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleQuerySQL(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

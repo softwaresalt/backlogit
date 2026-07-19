@@ -13,6 +13,29 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
+// ErrSizeEstimationNotImplemented marks the 108-F red-phase sizing harness.
+var ErrSizeEstimationNotImplemented = errors.New("TODO: implement 108-F size estimation")
+
+// ActorContext identifies the trusted transport actor for size provenance.
+type ActorContext string
+
+const (
+	// ActorContextHuman records a trusted human/CLI-authored size mutation.
+	ActorContextHuman ActorContext = "human"
+	// ActorContextAgent records an agent/MCP-authored size mutation.
+	ActorContextAgent ActorContext = "agent"
+	// ActorContextDerived records a derived size mutation.
+	ActorContextDerived ActorContext = "derived"
+)
+
+// SizeMutation is the presence-aware command for size/provenance updates.
+type SizeMutation struct {
+	Size           *string
+	Source         *string
+	RulesetVersion *string
+	Actor          ActorContext
+}
+
 // SetArtifactSize sets the logical `size` field on an artifact, physically stored
 // under custom_fields.size, via a body-preserving write. It is the SINGLE seam for
 // size mutation and deliberately bypasses the generic UpdateArtifact rebuild path.
@@ -92,6 +115,11 @@ func SetArtifactSize(ctx context.Context, ws *Workspace, id, size string) (*mode
 		}
 	}
 	return artifact, nil
+}
+
+// SetArtifactSizeWithProvenance persists size and provenance through the 108-F typed seam.
+func SetArtifactSizeWithProvenance(_ context.Context, _ *Workspace, _ string, _ SizeMutation) (*models.Artifact, error) {
+	return nil, fmt.Errorf("SE-3a SetArtifactSizeWithProvenance: %w", ErrSizeEstimationNotImplemented)
 }
 
 // validateSizeValue confirms size is a member of the type's header-def `size`

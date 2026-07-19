@@ -53,3 +53,22 @@ func TestArtifactSize_AbsentSizeStillValid(t *testing.T) {
 	// size is optional with no default: a task without it must still validate.
 	assert.NoError(t, ValidateArtifactFields(task, hd))
 }
+
+func TestSE1ValidateSizeValueFeatureShipmentHarness(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, config.WriteDefaults(dir))
+	hd, err := config.LoadHeaderDef(dir)
+	require.NoError(t, err)
+	ws := &Workspace{HeaderDef: hd}
+
+	for _, artifactType := range []string{"feature", "shipment"} {
+		t.Run(artifactType, func(t *testing.T) {
+			err := validateSizeValue(ws, artifactType, "M")
+			if err != nil {
+				t.Fatalf("TODO: implement SE-1 size seam schema for %s: %v", artifactType, err)
+			}
+			assert.NoError(t, validateSizeValue(ws, artifactType, "M"))
+			assert.Error(t, validateSizeValue(ws, artifactType, "bogus"))
+		})
+	}
+}

@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// EventEstimateHistory records size/provenance mutation audit entries.
+const EventEstimateHistory = "estimate_history"
+
 // Event represents a state change or comment in the event stream.
 type Event struct {
 	Timestamp time.Time      `json:"timestamp"`

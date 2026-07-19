@@ -1,0 +1,105 @@
+package mcp
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
+)
+
+func requireNoSizingTODOMCP(t *testing.T, resultText string) {
+	t.Helper()
+	if strings.Contains(resultText, "TODO: implement 108-F size estimation") {
+		t.Fatalf("%s", resultText)
+	}
+}
+
+func resultTextForHarness(t *testing.T, result *mcplib.CallToolResult) string {
+	t.Helper()
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Content)
+	text, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok, "expected text content, got %T", result.Content[0])
+	return text.Text
+}
+
+func TestSE5MCPUpdateSizeProvenanceFieldsHarness(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	feature, err := core.CreateArtifact(ctx, ws, "MCP size feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "MCP size task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	result, err := s.handleUpdateItem(ctx, contractRequest(map[string]any{
+		"id":                   task.ID,
+		"size":                 "M",
+		"size_source":          "agent",
+		"size_ruleset_version": "ruleset-alpha",
+	}))
+	require.NoError(t, err)
+	text := resultTextForHarness(t, result)
+	requireNoSizingTODOMCP(t, text)
+	require.False(t, result.IsError, text)
+}
+
+func TestSE5MCPRejectsHumanMasqueradeHarness(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	feature, err := core.CreateArtifact(ctx, ws, "MCP mask feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "MCP mask task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	result, err := s.handleUpdateItem(ctx, contractRequest(map[string]any{
+		"id":          task.ID,
+		"size":        "S",
+		"size_source": "human",
+	}))
+	require.NoError(t, err)
+	text := resultTextForHarness(t, result)
+	requireNoSizingTODOMCP(t, text)
+	if result.IsError {
+		assert.Equal(t, "validation_failed", contractErrorType(t, result))
+		return
+	}
+	data := extractResultJSON(t, result)
+	customFields, ok := data["custom_fields"].(map[string]any)
+	require.True(t, ok)
+	assert.NotEqual(t, "human", customFields["size_source"])
+}
+
+func TestSE6MCPReadProjectionSizeCompositionHarness(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	feature := &models.Artifact{
+		ID:           "960-F",
+		Title:        "Read projection feature",
+		Status:       models.StatusActive,
+		ArtifactType: "feature",
+		CustomFields: map[string]any{
+			"size":                 "L",
+			"size_source":          "agent",
+			"size_ruleset_version": "ruleset-alpha",
+		},
+	}
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+
+	result, err := s.handleGetItem(ctx, contractRequest(map[string]any{"id": feature.ID}))
+	require.NoError(t, err)
+	text := resultTextForHarness(t, result)
+	requireNoSizingTODOMCP(t, text)
+	require.False(t, result.IsError, text)
+	data := extractResultJSON(t, result)
+	customFields, ok := data["custom_fields"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "L", customFields["size"])
+	assert.Contains(t, data, "size_composition")
+}

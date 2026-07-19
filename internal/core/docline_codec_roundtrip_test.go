@@ -159,3 +159,105 @@ func TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields(t *testing.T)
 	require.True(t, ok, "custom_fields must survive the ordinary UpdateArtifact path")
 	assert.Equal(t, "M", cf["size"], "custom_fields.size must survive UpdateArtifact")
 }
+
+func TestSE2FeatureShipmentSizingCustomFieldsRoundTrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		id           string
+		artifactType string
+		status       string
+	}{
+		{name: "feature", id: "920-F", artifactType: "feature", status: "active"},
+		{name: "shipment", id: "921-S", artifactType: "shipment", status: "queued"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := sizingCarrierArtifactFile(tt.id, tt.artifactType, tt.status)
+			fmIn, body, err := models.ParseFrontmatter(input)
+			require.NoError(t, err)
+			require.Contains(t, fmIn, "docline")
+
+			artifact, err := models.ArtifactFromFrontmatter(fmIn, body)
+			require.NoError(t, err)
+			path := filepath.Join(t.TempDir(), tt.id+".md")
+			require.NoError(t, core.WriteArtifactFile(artifact, path))
+
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			fmOut, _, err := models.ParseFrontmatter(string(raw))
+			require.NoError(t, err)
+
+			assert.NotContains(t, fmOut, "docline")
+			assertSizingCustomFields(t, fmOut)
+		})
+	}
+}
+
+func TestSE2UpdateArtifactPreservesFeatureShipmentSizingCustomFields(t *testing.T) {
+	tests := []struct {
+		name         string
+		id           string
+		artifactType string
+		status       string
+		update       map[string]any
+	}{
+		{name: "feature", id: "922-F", artifactType: "feature", status: "active", update: map[string]any{"title": "Updated feature"}},
+		{name: "shipment", id: "923-S", artifactType: "shipment", status: "queued", update: map[string]any{"title": "Updated shipment"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			root := t.TempDir()
+			backlogitDir := filepath.Join(root, ".backlogit")
+			require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
+			require.NoError(t, config.WriteDefaults(backlogitDir))
+
+			ws, err := core.NewWorkspace(ctx, root)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = ws.Close() })
+
+			path := filepath.Join(backlogitDir, "queue", tt.id+".md")
+			require.NoError(t, os.WriteFile(path, []byte(sizingCarrierArtifactFile(tt.id, tt.artifactType, tt.status)), 0o644))
+
+			_, err = core.UpdateArtifact(ctx, ws, tt.id, tt.update)
+			require.NoError(t, err)
+
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			fmOut, _, err := models.ParseFrontmatter(string(raw))
+			require.NoError(t, err)
+
+			assert.NotContains(t, fmOut, "docline")
+			assertSizingCustomFields(t, fmOut)
+		})
+	}
+}
+
+func sizingCarrierArtifactFile(id, artifactType, status string) string {
+	return "---\n" +
+		"artifact_type: " + artifactType + "\n" +
+		"created_at: 2026-07-18T00:00:00.000Z\n" +
+		"custom_fields:\n" +
+		"    size: M\n" +
+		"    size_source: agent\n" +
+		"    size_ruleset_version: ruleset-alpha\n" +
+		"docline:\n" +
+		"    backlogit:\n" +
+		"        size: L\n" +
+		"id: " + id + "\n" +
+		"status: " + status + "\n" +
+		"title: Sizing carrier " + artifactType + "\n" +
+		"updated_at: 2026-07-18T00:00:00.000Z\n" +
+		"---\n\nBody paragraph.\n"
+}
+
+func assertSizingCustomFields(t *testing.T, fm map[string]any) {
+	t.Helper()
+	cf, ok := fm["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must survive")
+	assert.Equal(t, "M", cf["size"])
+	assert.Equal(t, "agent", cf["size_source"])
+	assert.Equal(t, "ruleset-alpha", cf["size_ruleset_version"])
+}

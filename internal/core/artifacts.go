@@ -36,6 +36,8 @@ type createOptions struct {
 	canonicalCache *CanonicalCache
 }
 
+var createArtifactPostCreateFailureHook func(context.Context, *Workspace, *models.Artifact) error
+
 // WithParent sets the parent artifact ID.
 func WithParent(id string) Option {
 	return func(o *createOptions) { o.ParentID = id }
@@ -367,6 +369,14 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
 		}
 	}
+	if createArtifactPostCreateFailureHook != nil {
+		if postCreateErr := createArtifactPostCreateFailureHook(ctx, ws, artifact); postCreateErr != nil {
+			if rollbackErr := rollbackCreatedArtifactAfterPostCreateFailure(ctx, ws, artifact); rollbackErr != nil {
+				return nil, fmt.Errorf("rollback artifact %s after post-create failure: %w", artifact.ID, rollbackErr)
+			}
+			return nil, fmt.Errorf("post-create size/provenance for artifact %s: %w", artifact.ID, postCreateErr)
+		}
+	}
 
 	// Fire post-create hooks.
 	if ws.HookRunner != nil {
@@ -386,6 +396,10 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 
 	return artifact, nil
+}
+
+func rollbackCreatedArtifactAfterPostCreateFailure(_ context.Context, _ *Workspace, _ *models.Artifact) error {
+	return fmt.Errorf("F6 CreateArtifact rollback cleanup: %w", ErrSizeEstimationNotImplemented)
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
@@ -658,6 +672,9 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}
+			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+				return guardErr
+			}
 			a, _, parseErr := parseFile(path)
 			if parseErr != nil {
 				return nil
@@ -676,6 +693,14 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 		}
 	}
 	return "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+}
+
+func ensureArtifactLookupContained(ws *Workspace, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	return fmt.Errorf("SE-7b lookup-time containment: %w", ErrSizeEstimationNotImplemented)
 }
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
