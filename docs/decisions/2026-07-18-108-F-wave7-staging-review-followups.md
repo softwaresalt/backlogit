@@ -113,10 +113,10 @@ Thread: `.backlogit/queue/108.009-T.md:17`.
 
 ## Staging outcome (completed)
 
-Completed in the next staging round (shipment `100-S`, PR #260):
+Completed in the next staging round (folded into shipment `099-S`, PR #260):
 
 - Stash `B062B90A` triaged and **archived** (consumed).
-- Shipment **`100-S`** created (`queued`) — "108-F wave-7 staging review follow-ups (F5/F6/F7)".
+- The three follow-up tasks (`108.012-T`, `108.013-T`, `108.014-T`) were harvested under `108-F` and **folded into shipment `099-S`** (which already manifests `108-F`). A separate shipment `100-S` was briefly created for them but was **superseded by `099-S` and archived**: a single feature (`108-F`) cannot span two live shipments — shipping either would corrupt the other via feature→descendant scope expansion (staging review, PR #260 thread `r3610214410`).
 - **F5** → task `108.012-T` — reconcile 108-F backlog artifact for 099-S membership.
 - **F6** → task `108.013-T` — add rollback/cleanup to `CreateArtifact` post-create failure boundary; **depends on `108.002-T`** (099-S), which introduces the post-create size/estimate-event operation whose failure boundary this task hardens.
 - **F7** → task `108.014-T` — reconciliation record. The correction was applied **in place** to `108.009-T` (SE-7a, shipment 099-S) during staging (env-var-expansion rejection requirement + test dropped; lexical `../`/absolute containment guard retained). The containment implementation remains in `108.009-T` so the SE-7a/SE-7b two-layer invariant ships as one unit with `108.010-T` in 099-S; `108.014-T` carries no separate implementation.
