@@ -411,7 +411,7 @@ func rollbackCreatedArtifactAfterPostCreateFailure(ctx context.Context, ws *Work
 		firstErr = fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
 	}
 	if ws.DB != nil {
-		if err := db.DeleteItem(ctx, ws.DB, artifact.ID); err != nil && firstErr == nil {
+		if err := db.DeleteItemCascade(ctx, ws.DB, artifact.ID); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("delete index row %s: %w", artifact.ID, err)
 		}
 	}
