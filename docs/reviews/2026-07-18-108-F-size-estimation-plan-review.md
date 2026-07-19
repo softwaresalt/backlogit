@@ -173,3 +173,63 @@ evidence.
 **Gate status unchanged: PASS.** This reconciliation *narrows* scope (removes
 unnecessary bridge/refactor work) and does not reopen any P0/P1 finding. The
 shipment `099-S` remains `queued`.
+
+## Copilot PR #259 Reconciliation Addendum (2026-07-18, post-PASS)
+
+External Copilot review on staging PR #259 returned **7 distinct, valid findings**
+(F1–F7) against the 099-S planning artifacts. Each was verified against source
+(engram-indexed) and accepted; all reconciliation was confined to
+planning/backlog artifacts (no source/test/config code touched). Dispositions:
+
+- **F1 (P1) — Width Isolation violation.** SE-7 (`108.009-T`) combined config-load
+  validation with core lookup-time containment as a declared "width exception,"
+  contradicting the plan's own "all width-isolated" claim. **Resolved by SPLIT:**
+  `108.009-T` re-scoped to **SE-7a (config-load, config domain)**; new
+  `108.010-T` created for **SE-7b (lookup-time, core domain)**; wired
+  `SE-7a → SE-7b` so the two-layer D6 invariant still releases as one unit while
+  each task stays single-domain. Manifest (099-S now 11 members), dependency edges,
+  impl-plan task table + Constitution Check, and memory were updated. The
+  "no width deviations" claim is now genuinely accurate across all ten tasks.
+- **F2 (P1) — Non-buildable intermediate.** SE-3a changed the `SetArtifactSize`
+  signature but callers migrate only in SE-5. **Resolved:** SE-3a introduces
+  `SetArtifactSizeWithProvenance` and keeps `SetArtifactSize` as a thin compat
+  wrapper until SE-5 migrates callers and removes it — every commit stays buildable.
+- **F3 (P1) — SE-2 not actually red.** The plan framed SE-2 (`108.005-T`) as a red
+  harness, but `ArtifactFromFrontmatter` preserves `custom_fields` with no schema
+  consult (`internal/models/frontmatter.go:74-75`) and a non-size update already
+  preserves untouched custom fields (`docline_codec_roundtrip_test.go:121-160`), so
+  the assertions are green from the outset. **Resolved:** SE-2 reframed as an
+  **expected-green characterization/round-trip guard**; SE-3a dependency removed
+  (SE-2 depends only on SE-1). The Constitution Check II. Test-First entry now
+  documents SE-2 as characterization, not a skipped red phase.
+- **F4 (P1) — Crash-retry not idempotent.** If the event append succeeds but the
+  artifact write fails, `size_op_id` stays at `PrevOpID`, so retrying the same OpID
+  re-appends a duplicate event. **Resolved:** SE-3b pre-append OpID orphan-check —
+  if an event with this OpID already exists, reconcile the pending write instead of
+  re-appending; added a retry-from-orphan test.
+- **F5 (P1) — Doctor recovery underspecified.** Recovery cannot reconstruct the
+  mutation from OpID/PrevOpID alone. **Resolved:** the event payload now pins the
+  full presence-aware desired state (`size`/`size_source`/`size_ruleset_version`)
+  with SET/CLEAR (field-removal) semantics; added a CLEAR-a-field recovery test.
+- **F6 (P2) — Unowned deferred follow-up.** SE-6 referenced a "separate P2
+  follow-up" with no backing artifact. **Resolved:** filed concrete stash
+  **`D5FA1EE9`** (kind: task, priority: low); plan and `108.008-T` now name it.
+- **F7 (P2) — Summary overstated atomicity.** The D4 summary implied two-way
+  atomicity, which SE-3b intentionally does not provide. **Resolved:** restated the
+  actual hard invariant — append-then-write with crash-safe reconcile/dedup on
+  retry; the event log is the source of truth.
+
+**Single-agent inline note (unchanged limitation):** the original gate used genuine
+cross-model persona subagents. This Copilot-findings reconciliation was performed
+as a **single-agent inline re-assessment** of the deltas (no new multi-persona
+dispatch); each finding was independently source-verified before acceptance.
+
+**New residual (non-blocking, P2):** SE-3b (`108.006-T`) now carries two additional
+scenarios (retry-from-orphan, doctor CLEAR-a-field recovery) plus the full
+presence-aware payload, pushing it to/over the 2-hour envelope alongside SE-3a. If
+it exceeds one envelope during Ship, split the doctor CLEAR-recovery reconcile into
+a sibling task.
+
+**Gate status: PASS holds.** The 7 reconciliations narrow scope, split a
+cross-domain task into single-domain units, and add idempotency/guardrail detail;
+no P0/P1 was reopened. Shipment `099-S` remains `queued` (11 members).

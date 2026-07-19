@@ -36,7 +36,7 @@ title: '108-F: Size estimation for feature and shipment (custom_fields.size + pr
 | D1 | **Canonical size-location = `custom_fields.size` at all levels.** Task already there; extend to `feature` and `shipment`. Coexist; **no migration**. | §9(e), Recommendation 1 |
 | D2 | **Inheritance bridge = no `models.Artifact` carrier; store under `custom_fields`.** The docline-carrier bridge is rejected for now (documented, reversible). | §9(d), Recommendation 2 |
 | D3 | **Provenance fields = `size_source` {human, agent, derived} and `size_ruleset_version` (null until a ruleset is owned), under `custom_fields`, validated at the size seam.** Absent `size_source` reads as `unknown`/legacy and is **never rewritten as `human`**; unknown values are **rejected** with the same category as an invalid size. | §7, §9(f), Provenance |
-| D4 | **Durability policy = event-before-write, fail-closed, exactly-once.** The estimate-history event appends **first** (gate-evidence precedent); an append failure **refuses** the size write, so no persisted size/provenance change ever lacks its event, and no orphan event lacks a persisted change. Crash-atomicity across append+write is implemented here. | §9(a), Provenance |
+| D4 | **Durability policy = event-before-write, fail-closed, exactly-once with crash-safe reconcile.** The estimate-history event appends **first** (gate-evidence precedent) and is the **source of truth**; an append failure **refuses** the size write, so the **hard invariant** is "**no persisted size/provenance change without its event**." This is **not** a two-way atomicity guarantee: a crash between a successful append and the artifact write may leave an **op-id-tagged orphan event** whose write did not land. Such an orphan is **reconciled/deduped on retry** (a pre-append lookup by `OpID` short-circuits, so no duplicate event) and **doctor-reconciled** (CAS on the predecessor op-id), never resolved by mutating the shared log. | §9(a), Provenance |
 | D5 | **Composition = computed-on-read, never persisted.** XS–XL count histogram + `unsized` count + de-duplicated canonical members array; `ruleset_version = null`. Feature membership = children by `parent_id`; shipment membership = `NormalizeShipmentItems`. Missing member → `unsized`; skip `ErrNotFound`. Comparator XS<S<M<L<XL mirrors the priority `CASE` ordered-enum. | §8, §9(b) |
 | D6 | **Containment = two-layer fix.** (1) reject lexical `..`/absolute escape in `QueueLayout.RootDir` and every configured search root at config-load time; (2) realpath/`EvalSymlinks` re-containment at lookup time before `parseFile` reads a candidate. Mirror `internal/core/doctor_target.go:230-280`. `SafeResolve` alone is insufficient (lexical only). | §6, Recommendation 3 |
 
@@ -108,8 +108,9 @@ document the contract.
 | D4 crash-safety | Op-id-tagged, idempotent, reconciliation-not-truncation crash policy (no eventless write; orphan events doctor-reconciled) | SE-3b |
 | D5 composition rollups | Add a computed-on-read, never-persisted histogram+unsized+members function for feature and shipment membership, with the XS<S<M<L<XL comparator | SE-4 |
 | D3 mutation parity | Add `--size-source`/`--size-ruleset-version` (CLI) and `size_source`/`size_ruleset_version` (MCP) via `SizeMutation`; transport-aware error parity; reject agent human-masquerade | SE-5 |
-| §7 read parity + D5 exposure | Project `custom_fields.size`/provenance identically on `get`/`get_item`/`get_queue`/`shipment get`; expose the derived composition on the MCP read surfaces (CLI human columns are a separate P2 follow-up) | SE-6 |
-| D6 containment | Two-layer lexical + realpath containment on `RootDir`/search roots (config-load) and at lookup time (before `parseFile`) | SE-7 |
+| §7 read parity + D5 exposure | Project `custom_fields.size`/provenance identically on `get`/`get_item`/`get_queue`/`shipment get`; expose the derived composition on the MCP read surfaces (CLI human columns are filed as stash `D5FA1EE9`, a separate P2 follow-up) | SE-6 |
+| D6 containment (config-load layer) | Reject lexical `..`/absolute + env-expansion escape on `RootDir`/search roots at config-load | SE-7a |
+| D6 containment (lookup-time layer) | Realpath/`EvalSymlinks` re-containment at lookup time (before `parseFile`) in the seam path | SE-7b |
 | Document the contract | Author/refresh the sizing contract doc (levels, provenance, durability, composition, parity, caveats) | SE-8 |
 
 ## Implementation Units
@@ -160,20 +161,36 @@ width isolation (single domain), and an atomic verifiable milestone.
   driven by a non-size field update, **preserves** all three provenance keys. These
   guards fail if a future codec change ever adds a docline carrier or breaks
   `custom_fields` preservation, forcing the spike selection to be revisited.
-- **Execution posture:** test-first — the feature/shipment provenance-key
-  assertions are **red** until SE-1 defines the fields and SE-3a persists them, and
-  the docline-drop assertion is green from the outset.
+- **Execution posture:** test-first authoring, but **expected-green
+  characterization** — **not a red harness**. `ArtifactFromFrontmatter` copies the
+  whole `custom_fields` map with **no schema consultation**
+  (`internal/models/frontmatter.go:74-75`), and the committed guard already shows an
+  ordinary non-size `UpdateArtifact` preserves untouched custom fields
+  (`docline_codec_roundtrip_test.go:121-160`). The new feature/shipment
+  `size`/`size_source`/`size_ruleset_version` keys therefore survive the generic
+  codec **from the outset**, so these assertions **pass against the current code**.
+  This unit locks that behavior as a committed regression guard; it does **not**
+  depend on SE-3a (no persistence is needed for the codec to preserve the map) and
+  it needs no red-first step. (If a genuinely-red assertion about persistence is
+  wanted, it belongs in the implementation tasks SE-1/SE-3a, not here.)
 - **Milestone:** the durability premise for feature/shipment `custom_fields.size`
   and provenance is codified as an executable, committed regression guard.
 
 ### SE-3a — Provenance persistence + estimate-history event (core persistence)
 
-- **Changes:** Replace the positional `SetArtifactSize(ctx, ws, id, size string)`
-  signature with a **presence-aware typed command** —
-  `SizeMutation{ Size, Source *string, RulesetVersion *string, Actor ActorContext }`
-  — so callers can distinguish *omitted* from *cleared* from *set*, and so
-  defaulting/validation is centralized at one boundary (resolves the four-adjacent-
-  strings hazard and the omitted-vs-null ambiguity). The seam validates
+- **Changes:** Introduce a **new** presence-aware typed entry point —
+  `SetArtifactSizeWithProvenance(ctx, ws, id, SizeMutation{ Size, Source *string,
+  RulesetVersion *string, Actor ActorContext, OpID *string })` — and **keep the
+  existing positional `SetArtifactSize(ctx, ws, id, size string)` as a thin
+  compatibility wrapper** that constructs a `SizeMutation` (no provenance, actor
+  from context) and delegates to the new entry point. This keeps the repo
+  **buildable at every commit**: the current callers
+  (`internal/cli/update.go:103`, `internal/mcp/tools.go:751`, and the existing core
+  tests) keep compiling against the wrapper; **SE-5** migrates them to the typed
+  path and then removes the wrapper. The typed command lets callers distinguish
+  *omitted* from *cleared* from *set*, and centralizes defaulting/validation at one
+  boundary (resolving the four-adjacent-strings hazard and the omitted-vs-null
+  ambiguity). The seam validates
   `size_source` against `{human, agent, derived}` and `size_ruleset_version`
   against a **bounded** set (accept only `null`/empty until a canonical ruleset is
   owned; unknown → `ErrValidation`) — never an unbounded free-text write.
@@ -230,21 +247,37 @@ width isolation (single domain), and an atomic verifiable milestone.
      the seam generates one. A retry reuses the same `OpID`, making the whole
      operation idempotent.
   2. **applied-check + predecessor capture (before append):** read the target
-     artifact's current `custom_fields.size_op_id` — call it `PrevOpID` (empty for a
-     never-sized artifact). If `PrevOpID` already equals **this** `OpID`, the write
-     already landed — return success **without** appending a second event (satisfies
-     "no duplicate event on retry").
-  3. **append:** append the estimate-history event tagged with **both** `OpID` and
-     the captured `PrevOpID` (an explicit predecessor link, so the event stream
-     forms a per-artifact version chain) — fail-closed; append failure refuses the
-     write.
-  4. **atomic write:** persist `size`/provenance **and** set
-     `custom_fields.size_op_id = OpID` (a reserved, system-managed key) in the same
-     `mdfront` atomic write, so the artifact durably records which op last applied.
-  Recovery is **reconciliation, not truncation**, and ordering is **decidable from
-  the predecessor chain, not opaque ID equality**. For an event with `OpID`/`PrevOpID`,
-  a `doctor` check (under the per-task lock) compares the artifact's **current**
-  `size_op_id` `C`:
+     artifact's current `custom_fields.size_op_id` — call it `C` (empty for a
+     never-sized artifact) and capture the intended predecessor `PrevOpID = C`. If
+     `C` already equals **this** `OpID`, the write already landed — return success
+     **without** appending (fully-applied idempotent no-op).
+  3. **orphan dedup by `OpID` (before append — closes the crash-retry gap):** scan
+     the estimate-history event stream for an event **already tagged with this
+     `OpID`**. If one exists, a prior attempt appended the event but its artifact
+     write did **not** land (so `C == PrevOpID`, **not** `OpID`, and step 2 did not
+     short-circuit). Do **not** append a second event; instead **reconcile** by
+     completing the artifact write from that event's pinned desired-state payload
+     (CAS on `PrevOpID`), then return. This makes a retried `OpID` idempotent **even
+     across the documented append-succeeded / write-failed crash window**, so the
+     retry never appends a **duplicate** event.
+  4. **append (only when no event for this `OpID` already exists):** append the
+     estimate-history event tagged with **both** `OpID` and the captured `PrevOpID`
+     (an explicit predecessor link, so the event stream forms a per-artifact version
+     chain) **and carrying the complete presence-aware desired state** — for **each**
+     of `size`, `size_source`, `size_ruleset_version`, an explicit **SET(value)** or
+     **CLEAR(remove)** marker (not merely a set). Recovery therefore reconstructs the
+     exact intended mutation — **including field removal (CLEAR)** — from the event
+     alone. Fail-closed; append failure refuses the write.
+  5. **atomic write:** apply the pinned desired state (`size`/provenance SET/CLEAR)
+     **and** set `custom_fields.size_op_id = OpID` (a reserved, system-managed key)
+     in the same `mdfront` atomic write, so the artifact durably records which op
+     last applied.
+  Recovery is **reconciliation, not truncation**; the intended mutation is
+  reconstructed from the event's **pinned presence-aware desired-state payload**
+  (SET/CLEAR per field), **not** from `OpID`/`PrevOpID` alone; and ordering is
+  **decidable from the predecessor chain, not opaque ID equality**. For an event
+  with `OpID`/`PrevOpID`, a `doctor` check (under the per-task lock) compares the
+  artifact's **current** `size_op_id` `C`:
   - `C == OpID` ⇒ **already applied** (idempotent no-op);
   - `C == PrevOpID` ⇒ a **fresh orphan** whose write did not land — safe to
     **compare-and-swap apply** the orphan's intended state (the artifact is exactly
@@ -261,10 +294,15 @@ width isolation (single domain), and an atomic verifiable milestone.
 - **Tests (unit; table-driven `t.Run` subtests count as one scenario):** a write
   failure **after** a successful append leaves an orphan event carrying `OpID`+
   `PrevOpID` and **no** persisted change (fail-closed, no truncation of the shared
-  JSONL); doctor **applies** a fresh orphan whose `PrevOpID` equals the artifact's
-  current `size_op_id`, and **skips** a stale orphan whose `PrevOpID` does not
-  (artifact already advanced); a retried op-id is idempotent — the applied-check
-  short-circuits **before** the append, so no duplicate event and no double write.
+  JSONL); **retry from the orphan state** — the same `OpID` is re-submitted while an
+  event for it already exists and the artifact still shows `PrevOpID`: the seam
+  **detects the existing event, appends no duplicate**, and completes the write
+  (idempotent across the crash window); doctor **applies** a fresh orphan whose
+  `PrevOpID` equals the artifact's current `size_op_id` and **skips** a stale orphan
+  whose `PrevOpID` does not (artifact already advanced); **doctor reconciles a
+  CLEAR-a-field mutation exactly** — an orphan whose payload marks a provenance field
+  CLEAR is recovered by *removing* that field (not leaving a stale value); a retried
+  op-id that already fully applied short-circuits at the applied-check.
 - **Execution posture:** test-first (crash-injection at the post-append boundary).
 - **Milestone:** the crash window is closed to "orphan-tolerant, op-id-reconciled";
   no eventless persisted change and no shared-log data loss.
@@ -324,7 +362,7 @@ width isolation (single domain), and an atomic verifiable milestone.
   surfaces (`get_item`/`get_shipment`/`get_queue`) as a derived, clearly
   non-persisted field. The **cosmetic CLI human-column** gap (`list`/`shipment
   list`/`queue view` columns omit size) is **out of scope for SE-6** and is filed
-  as a **separate P2 backlog follow-up** so SE-6 stays two-file (MCP projection +
+  as stash **`D5FA1EE9`** (P2 backlog follow-up) so SE-6 stays two-file (MCP projection +
   CLI `--json`) within the 2-hour envelope.
 - **Files:** `internal/mcp/tools.go`, `internal/cli/list.go`.
 - **Tests (unit):** `get_item` JSON exposes `custom_fields.size` and the derived
@@ -332,35 +370,53 @@ width isolation (single domain), and an atomic verifiable milestone.
 - **Execution posture:** test-first.
 - **Milestone:** size + composition are visible with CLI/MCP JSON read parity.
 
-### SE-7 — Containment hardening of the size seam (config / security)
+> **Two-layer containment, split for width isolation (Copilot F1).** D6 is a
+> two-layer security invariant, but the two layers live in **different domains**
+> (config-load validation vs. core lookup-time re-containment), so combining them in
+> one task violated Width Isolation. The work is split into **SE-7a** (config) and
+> **SE-7b** (core), wired as **dependent single-domain tasks** (`SE-7a → SE-7b`) so
+> the two-layer invariant still ships as one release unit — no half-closed traversal
+> hole is ever released — **without** a cross-domain task. Both are members of
+> `099-S`.
 
-- **Changes:** (1) At config-load, reject lexical `..`/absolute escape in
+### SE-7a — Config-load containment (config / security)
+
+- **Changes:** At config-load, reject lexical `..`/absolute escape in
   `QueueLayout.RootDir` and every configured search root — today
   `internal/config/loader.go:77-85` guards only `reg.Directories`, leaving a
   symlink-independent lexical escape via `RootDir`
-  (`internal/config/schema.go:99-104`). (2) At **lookup time**, realpath-resolve
-  and re-contain each candidate **before** `parseFile` reads it (a leaf-file
-  symlink is otherwise read out-of-workspace during the `FindArtifactPath` walk),
-  then revalidate the resolved target before lock/read/write — mirroring
-  `internal/core/doctor_target.go:230-280` (`EvalSymlinks` + realpath
-  containment), **not** `SafeResolve` alone (lexical only) and not a write-only
-  check (the read already happened during lookup). Also assert that `RootDir` and
-  the configured search roots are **not** environment-variable-expanded (or reject
+  (`internal/config/schema.go:99-104`). Also assert that `RootDir` and the
+  configured search roots are **not** environment-variable-expanded (or reject
   expansion-based escape) so env expansion cannot reintroduce a traversal vector.
-  **Deliberate width exception:** SE-7 spans config-load validation and
-  lookup-time re-containment because D6 is a single atomic two-layer security
-  invariant — splitting it would leave a half-closed traversal hole in an
-  intermediate state. This is a documented exception, not width drift; SE-7 is
-  targeted seam hardening (a broader workspace-wide containment audit, if wanted,
-  is a separate backlog item).
-- **Files:** `internal/config/loader.go` (or `schema.go` validation),
-  `internal/core/artifacts.go` (lookup-time re-containment helper).
+  **Single domain: config.**
+- **Files:** `internal/config/loader.go` (or `schema.go` validation).
 - **Tests (unit):** a `RootDir: "..\\..\\outside"` config is rejected at load; an
-  env-expansion escape in a search root is rejected; a leaf-file symlink under a
-  search dir is refused at lookup; an in-workspace path still resolves.
-- **Execution posture:** test-first (add failing containment tests, then harden).
+  env-expansion escape in a search root is rejected; a legitimate in-workspace
+  config still loads.
+- **Execution posture:** test-first (add failing config-containment tests, then
+  harden).
+- **Milestone:** no configured root can lexically or via env-expansion point
+  outside the workspace.
+
+### SE-7b — Lookup-time containment (core / security)
+
+- **Changes:** At **lookup time**, realpath-resolve and re-contain each candidate
+  **before** `parseFile` reads it (a leaf-file symlink is otherwise read
+  out-of-workspace during the `FindArtifactPath` walk), then revalidate the resolved
+  target before lock/read/write — mirroring `internal/core/doctor_target.go:230-280`
+  (`EvalSymlinks` + realpath containment), **not** `SafeResolve` alone (lexical
+  only) and not a write-only check (the read already happened during lookup).
+  **Single domain: core.**
+- **Files:** `internal/core/artifacts.go` (lookup-time re-containment helper).
+- **Tests (unit):** a leaf-file symlink under a search dir is refused at lookup; an
+  in-workspace path still resolves and reads.
+- **Execution posture:** test-first (add failing lookup-containment tests, then
+  harden).
+- **Dependency:** depends on **SE-7a** — the two layers release together as the D6
+  invariant; the seam-path guard (this unit) is the layer SE-3a routes writes
+  through.
 - **Milestone:** the size-lookup/write path cannot read or write outside the
-  workspace via lexical `..` or symlink escape.
+  workspace via symlink escape.
 
 ### SE-8 — Sizing contract documentation (docs)
 
@@ -380,7 +436,7 @@ width isolation (single domain), and an atomic verifiable milestone.
 
 ## Dependency Graph
 
-Acyclic. Edges are `blocks` (target depends on source). SE-1 and SE-7 are the
+Acyclic. Edges are `blocks` (target depends on source). SE-1 and SE-7a are the
 two roots; SE-3a/SE-3b/SE-4 can be built in parallel once their inputs exist:
 
 ```text
@@ -388,31 +444,40 @@ SE-1 ─┬▶ SE-2 (test guard; leaf)
       ├▶ SE-3a ─▶ SE-3b ─▶ SE-5 ─▶ SE-8
       │    └───────────────────┐
       └▶ SE-4 ─────────────────┼▶ SE-6 ─▶ (into SE-8)
-SE-7 ─────────────▶ SE-3a      │
-SE-7 ─────────────────────────────▶ SE-8
+SE-7a ─▶ SE-7b ──┬▶ SE-3a      │
+                 └▶ SE-8 ───────┘
 ```
 
-(SE-2 is a **test-only** regression guard depending solely on SE-1; **nothing
-depends on SE-2**. SE-3a depends on SE-1 and SE-7 — the schema fields plus a
-hardened seam, no longer on SE-2 since there is no codec bridge to build. SE-6
-depends on SE-3a and SE-4; SE-8 depends on SE-5, SE-6, and SE-7. There is **no**
-SE-2→SE-4 and **no** SE-2→SE-3a edge.)
+(SE-2 is a **test-only, expected-green** regression guard depending solely on SE-1;
+**nothing depends on SE-2**, and it has **no** dependency on SE-3a — the codec
+preserves `custom_fields` with no schema/persistence step, so the guard passes
+against current code. SE-7a and SE-7b are the two width-isolated containment layers,
+wired `SE-7a → SE-7b` so the D6 invariant ships together. SE-3a depends on SE-1 and
+**SE-7b** — the schema fields plus the hardened lookup-time seam (transitively SE-7a)
+— no longer on any codec bridge. SE-6 depends on SE-3a and SE-4; SE-8 depends on
+SE-5, SE-6, and **SE-7b** (transitively SE-7a). There is **no** SE-2→SE-4 and **no**
+SE-2→SE-3a edge.)
 
-Explicit edges to wire with `backlogit dep add <task> <depends_on> --type blocks`:
+Explicit edges to wire with `backlogit dep add <task> <depends_on> --type blocks`
+(12 edges total):
 
-- SE-2 depends on SE-1 (the guard asserts the schema-defined feature/shipment keys)
+- SE-2 depends on SE-1 (green characterization guard; references the schema-defined
+  feature/shipment keys — it does **not** depend on SE-3a)
 - SE-4 depends on SE-1 (composition consumes the schema contract; it does not
   require the emitter consolidation — de-serialized per review)
-- SE-3a depends on SE-1 and SE-7 (schema fields + a hardened seam before routing
-  provenance writes through it — repointed off the descoped SE-2 bridge)
+- SE-7b depends on SE-7a (the two containment layers release as one D6 invariant)
+- SE-3a depends on SE-1 and SE-7b (schema fields + the hardened lookup-time seam
+  before routing provenance writes through it)
 - SE-3b depends on SE-3a (crash-safety builds on the append+write path)
 - SE-5 depends on SE-3b (surfaces provenance mutation on the crash-safe seam)
 - SE-6 depends on SE-3a and SE-4 (read projection surfaces persisted size +
   composition)
-- SE-8 depends on SE-5, SE-6, and SE-7 (documents the final contract)
+- SE-8 depends on SE-5, SE-6, and SE-7b (documents the final contract)
 
-Rationale for `SE-3a depends on SE-7`: harden the seam's containment **before**
-routing additional provenance writes through it.
+Rationale for `SE-3a depends on SE-7b`: harden the seam's **lookup-time**
+containment (the layer in the seam's read/write path) before routing additional
+provenance writes through it; SE-7b already carries SE-7a transitively, so both
+containment layers land before the seam is extended.
 
 ## Decisions and Rationale
 
@@ -445,10 +510,14 @@ routing additional provenance writes through it.
   hazard the feature was raised to avoid. A histogram + `unsized` (not a single
   collapsed bucket) keeps the contract lossless; a single bucket is an explicit
   non-goal unless a later work item requests it.
-- **Two-layer containment (D6).** `RootDir` admits a purely lexical `..` escape
-  independent of symlinks, and a leaf-file symlink is read during lookup before
-  any write-path check — so a write-only or lexical-only fix is insufficient. The
-  realpath pattern already exists in `doctor_target.go` and is reused.
+- **Two-layer containment, width-isolated (D6).** `RootDir` admits a purely lexical
+  `..` escape independent of symlinks (a **config** concern), and a leaf-file symlink
+  is read during lookup before any write-path check (a **core** concern) — so a
+  write-only or lexical-only fix is insufficient. Because the two layers live in
+  different domains, they are **split into SE-7a (config-load) and SE-7b
+  (lookup-time)**, wired `SE-7a → SE-7b` so the invariant still releases as one unit
+  (no half-closed hole) while each task stays single-domain. The realpath pattern
+  already exists in `doctor_target.go` and is reused by SE-7b.
 - **Single seam, sole writer (no emitter consolidation).** `SetArtifactSize`
   stays the only `custom_fields.size` writer; SE-3a adds a minimal reserved-key
   guard (create reject/strip, update merge-not-replace) so the map-replacement
@@ -481,7 +550,7 @@ routing additional provenance writes through it.
   CRLF→LF document-wide while `mdfront` preserves body bytes; round-trip tests
   (SE-2) must assert on the frontmatter map, not byte-identity of the body.
 - **Cosmetic read gap is non-blocking and out of SE-6:** the CLI human-column
-  size omission is filed as a **separate P2 backlog follow-up**, not part of SE-6,
+  size omission is filed as stash **`D5FA1EE9`** (P2 backlog follow-up), not part of SE-6,
   so SE-6 stays two-file (MCP projection + CLI `--json`) inside the 2-hour
   envelope; JSON/MCP parity is the SE-6 deliverable.
 
@@ -491,7 +560,7 @@ routing additional provenance writes through it.
   feature/shipment; new provenance fields; new MCP/CLI surface; composition read
   contract).
 - security, auth, permission, or compliance-sensitive behavior — **present**
-  (SE-7 workspace-containment hardening; path traversal / symlink escape).
+  (SE-7a/SE-7b workspace-containment hardening; path traversal / symlink escape).
 - migration, backfill, destructive data/config action, or irreversible step —
   **present-adjacent** (no migration by decision — coexist — but a durable
   event-stream append with a fail-closed refusal path and crash-atomicity is an
@@ -514,11 +583,12 @@ routing additional provenance writes through it.
 | SE-3b | Yes (crash recovery) | post-append crash leaves op-id orphan + no persisted change; doctor reconciles; retried op-id idempotent; **no** shared-JSONL truncation | rollback trigger: any shared-log truncation or duplicate event ⇒ revert |
 | SE-4 | No (pure read) | composition deterministic; never persists | n/a |
 | SE-5 | Yes (CLI + MCP) | both surfaces reach the seam; parity error categories; agent human-masquerade rejected | parity matrix in contract doc |
-| SE-6 | Yes (CLI + MCP read) | size + composition visible; JSON/MCP parity (CLI human columns deferred to P2) | read-parity matrix in contract doc |
-| SE-7 | Yes (lookup/write path) | lexical `..` config rejected; env-expansion escape rejected; symlink lookup refused; in-workspace still resolves | containment regression tests; rollback trigger: any out-of-workspace read/write |
+| SE-6 | Yes (CLI + MCP read) | size + composition visible; JSON/MCP parity (CLI human columns deferred to filed stash `D5FA1EE9`) | read-parity matrix in contract doc |
+| SE-7a | Yes (config-load) | lexical `..` config rejected; env-expansion escape rejected; in-workspace config still loads | containment regression tests; rollback trigger: any accepted escaping config |
+| SE-7b | Yes (lookup/write path) | symlink lookup refused before `parseFile`; in-workspace still resolves | containment regression tests; rollback trigger: any out-of-workspace read/write |
 | SE-8 | No (docs) | docline lint clean | the doc itself |
 
-When SE-3a/SE-3b and SE-7 are hardened (below), the downstream Ship
+When SE-3a/SE-3b and SE-7a/SE-7b are hardened (below), the downstream Ship
 runtime-verification and operational-closure steps should carry the fail-closed
 refusal path, the op-id crash-reconciliation note, and the containment invariants
 as explicit checks.
@@ -532,21 +602,25 @@ constitution mapping for 108-F.)
 | Principle | Compliance |
 |---|---|
 | **I. Safety-First Go** | All units wrap errors with `fmt.Errorf("...: %w", err)`; provenance rejection reuses the `ErrValidation` sentinel; no `unsafe`. Gates (`go vet`, `golangci-lint`, `gofmt`) run in Ship, not Stage. |
-| **II. Test-First (NON-NEGOTIABLE)** | Every code unit is test-first / characterization-first; SE-2 mandates an **executable round-trip test** as the durability proof; the harness must be red before implementation. |
-| **III. Workspace Isolation** | SE-7 *strengthens* isolation (two-layer lexical + realpath containment). No secrets are added. |
-| **IV. CLI Containment (NON-NEGOTIABLE)** | SE-7 enforces cwd/workspace containment at config-load and lookup time; no unit writes outside the workspace root. |
+| **II. Test-First (NON-NEGOTIABLE)** | Every code unit is red-first (write the failing test, then implement). SE-2 is the one deliberate exception: it is an **expected-green characterization guard** (the generic codec already preserves `custom_fields`), so it locks current behavior as an executable committed regression guard rather than driving new code — this is characterization, not a skipped red phase. |
+| **III. Workspace Isolation** | SE-7a/SE-7b *strengthen* isolation (two-layer lexical + realpath containment, split by domain). No secrets are added. |
+| **IV. CLI Containment (NON-NEGOTIABLE)** | SE-7a enforces containment at config-load and SE-7b at lookup time; no unit writes outside the workspace root. |
 | **V. Structured Observability** | SE-3a adds a durable estimate-history event stream (traceable provenance) — an observability *gain*; SE-3b keeps it consistent under crash via op-id reconciliation. |
 | **VI. Single Responsibility** | No new external dependency (SE-3b reuses existing `atomicfile`/JSONL/`doctor` rails); no new carrier is added to `models.Artifact` — the spike-selected `custom_fields` carrier is reused, so the codec surface is unchanged. The optional two-emitter consolidation is descoped to avoid speculative refactoring. |
 | **VII. Destructive Command Approval** | No destructive terminal commands. The durable append is fail-closed, not force-overwrite; SE-3b explicitly forbids truncating the shared log. |
-| **VIII. Safety Modes** | Elevated blast radius (mutation seam + containment) is flagged; `Requires plan hardening: yes`; Ship should operate in careful/investigate-first posture for SE-3a/SE-3b/SE-7. |
+| **VIII. Safety Modes** | Elevated blast radius (mutation seam + containment) is flagged; `Requires plan hardening: yes`; Ship should operate in careful/investigate-first posture for SE-3a/SE-3b/SE-7a/SE-7b. |
 | **IX. Git-Friendly Persistence** | `custom_fields.*` stays human-readable YAML frontmatter; `mdfront` preserves body bytes and semantic ordering. |
 | **X. Context Efficiency** | Composition is computed-on-read via targeted membership queries, not bulk scans; MCP read projection returns structured `custom_fields`. |
 | **XI. Merge Commit History** | Not applicable to planning; Ship enforces merge-commit strategy at PR time. |
 
-**Justified deviations:** none. No principle requires a documented violation.
-The map-replacement and validated-once **asymmetries** are pre-existing codebase
-constraints carried as caveats (Risks), not new violations introduced by this
-plan.
+**Justified deviations:** none. The former SE-7 "width exception" (a single task
+spanning config + core) is **removed** — SE-7 is split into the single-domain
+SE-7a/SE-7b, wired `SE-7a → SE-7b`, so Width Isolation holds for **all ten** tasks
+with no deviation. SE-2's expected-green characterization posture is a documented
+test-authoring choice, not a Test-First violation (it still ships an executable
+committed guard). The map-replacement and validated-once **asymmetries** are
+pre-existing codebase constraints carried as caveats (Risks), not new violations
+introduced by this plan.
 
 ## Plan Hardening
 
@@ -566,14 +640,14 @@ the risky units.
   `internal/core/shipment_gate.go:490-499` — the append-before-durable-write,
   fail-closed precedent SE-3a reuses.
 - `internal/core/doctor_target.go:230-280` — the realpath/`EvalSymlinks`
-  containment pattern SE-7 mirrors.
+  containment pattern SE-7b mirrors.
 - `internal/core/commits.go:27-97`, `internal/events/stream.go:39-46`,
   `internal/db/logs.go:32-40` — event-append durability + independent timestamp
   stamping, relevant to SE-3a exactly-once.
 - Compound library: no existing `docs/compound/` learning contradicts this plan;
   the closest prior art is the fail-closed / "absence is not a pass" family
   (e.g. `exported-cache-zero-value-bypass`) — SE-3a's fail-closed refusal and
-  SE-7's "unknown path ⇒ refuse" both apply that governing rule.
+  SE-7a/SE-7b's "unknown path ⇒ refuse" both apply that governing rule.
 
 ### Protected invariants
 
@@ -588,13 +662,13 @@ the risky units.
    generic **create** or **update** path may inject or replace these reserved keys
    (create rejects/strips them; update merge-preserves them). Enforced by a minimal
    reserved-key guard in **SE-3a** (no emitter consolidation). The round-trip guard
-   (SE-2) proves the keys survive; the CRLF-safe map assertion covers the codec.
-   (SE-3a, SE-2, SE-5)
+   (SE-2) proves the keys survive (expected-green characterization); the CRLF-safe
+   map assertion covers the codec. (SE-3a, SE-2, SE-5)
 3. **Legacy non-rewrite:** an absent `size_source` reads as `unknown`/legacy and
    is never rewritten as `human`; agent/MCP transports may not stamp `human`.
    (SE-3a, SE-4, SE-5)
 4. **Containment:** no size lookup or write may read or write outside the
-   workspace root via lexical `..`, absolute path, or symlink escape. (SE-7)
+   workspace root via lexical `..`, absolute path, or symlink escape. (SE-7a, SE-7b)
 5. **No-persist derived:** composition rollups are computed-on-read and never
    written to disk. (SE-4)
 
@@ -603,14 +677,14 @@ the risky units.
 | # | ProposedAction | targets | change_kind | ActionRisk | rollback | approval | ActionResult |
 |---|---|---|---|---|---|---|---|
 | PA-1 | Route provenance writes through an event-before-write, fail-closed, **op-id-reconciled** append+write in the live size seam (SE-3a persists+events; SE-3b crash-safety) | `internal/core/artifact_size.go`, `internal/events/stream.go`, `internal/core/doctor_target.go` | durable append + mutation (contract) | **high** | revert the seam commit; the append is additive to the JSONL event stream and index-rehydratable; a failed write leaves the prior size intact (fail-closed); orphan events are op-id-tagged and doctor-reconciled, **never** resolved by truncating the shared log | prefer approval (production mutation-path + failure-semantics change) | planned |
-| PA-2 | Add two-layer lexical + realpath containment at config-load and lookup time | `internal/config/loader.go`, `internal/core/artifacts.go` | config validation + security guard | **high** | revert; new rejections are fail-closed (worst case: a previously-accepted escaping config is now refused — surface a clear diagnostic) | prefer approval (changes accepted-config surface) | planned |
+| PA-2 | Add two-layer lexical + realpath containment, split by domain: SE-7a at config-load, SE-7b at lookup time | `internal/config/loader.go` (SE-7a), `internal/core/artifacts.go` (SE-7b) | config validation + security guard | **high** | revert; new rejections are fail-closed (worst case: a previously-accepted escaping config is now refused — surface a clear diagnostic) | prefer approval (changes accepted-config surface) | planned |
 | PA-3 | Extend header-def with size on feature/shipment + provenance fields | `.backlogit/header-def.yaml`, `internal/config/defaults.go` | schema/contract | **moderate** | revert; fields are `optional`, additive, backward-compatible (coexist, no migration) | standard review | planned |
 | PA-4 | Add a minimal reserved-key write-path guard (create reject/strip + update merge-not-replace) so the size seam stays the sole writer of the reserved sizing keys | `internal/core/artifacts.go` | write-path integrity guard | **moderate** | revert; the guard is additive and fail-closed (a create/update that tries to inject reserved sizing keys is rejected/stripped), guarded by the SE-3a sole-writer tests and the SE-2 round-trip map assertion | standard review | planned |
 
 No `ActionRisk: destructive` step exists — there is no deletion, force-overwrite,
 or history rewrite. The durable append is fail-closed, not destructive.
 
-### Deepened runtime verification (SE-3a/SE-3b, SE-7)
+### Deepened runtime verification (SE-3a/SE-3b, SE-7a/SE-7b)
 
 - **SE-3a environment prechecks:** confirm the event stream is writable and
   index-rehydratable before enabling the fail-closed refusal; run the seam under
@@ -626,10 +700,12 @@ or history rewrite. The durable append is fail-closed, not destructive.
   **skips** a stale one (artifact advanced); (c) retried op-id is idempotent
   (applied-check short-circuits before append); (d) the shared per-item JSONL is
   **never** truncated.
-- **SE-7 target scenarios:** (a) `RootDir: "..\\..\\outside"` rejected at load;
-  (b) env-expansion escape in a search root rejected; (c) leaf-file symlink under
-  a search dir refused at lookup (before `parseFile`); (d) legitimate in-workspace
-  artifact still resolves and writes.
+- **SE-7a target scenarios:** (a) `RootDir: "..\\..\\outside"` rejected at load;
+  (b) env-expansion escape in a search root rejected; (c) legitimate in-workspace
+  config still loads.
+- **SE-7b target scenarios:** (a) leaf-file symlink under a search dir refused at
+  lookup (before `parseFile`); (b) legitimate in-workspace artifact still resolves
+  and writes.
 
 ### Operational closure detail
 
@@ -642,14 +718,14 @@ or history rewrite. The durable append is fail-closed, not destructive.
 - **Rollback triggers:** (1) any persisted size change observed without a
   matching event ⇒ revert SE-3a/SE-3b; (2) any shared-JSONL truncation or
   duplicate event ⇒ revert SE-3b; (3) any out-of-workspace read/write observed ⇒
-  revert SE-7 and treat as a security incident; (4) round-trip test regression on
+  revert SE-7a/SE-7b and treat as a security incident; (4) round-trip test regression on
   feature/shipment ⇒ the SE-2 guard is the **detector**; investigate and revert
   the codec or write-path change (SE-3a) that broke preservation.
 - **Rollback procedure:** each unit is a coherent, revertible commit; the schema
   and provenance additions are optional/backward-compatible, so a revert cannot
   strand data (existing `custom_fields.size` values remain valid).
 - **Owner / validation window:** the Ship agent owns runtime verification and
-  closure; validate SE-3a/SE-3b and SE-7 across a full create→update→read cycle on
+  closure; validate SE-3a/SE-3b and SE-7a/SE-7b across a full create→update→read cycle on
   a scratch feature and shipment before the observation window closes.
 
 ### Unresolved operator decisions
@@ -663,7 +739,8 @@ or history rewrite. The durable append is fail-closed, not destructive.
   anything else is stale/conflict — never replayed). No sidecar file, no new
   external dependency. Only the exact JSON key names and the doctor check's
   reporting verbosity remain Ship-level detail.
-- **SE-6 CLI human-column parity** is deferred to a P2 backlog item; JSON/MCP
+- **SE-6 CLI human-column parity** is deferred and tracked as filed stash
+  **`D5FA1EE9`** (kind: task, priority: low, outside 099-S scope); JSON/MCP
   parity is the blocking SE-6 requirement.
 
 ## Plan Review
@@ -704,7 +781,12 @@ parallel on different model tiers. Full findings are archived at
    `human`; absent-on-read stays `unknown`, never rewritten.
 4. **Positional-string seam signature (Architecture + Go).** **Resolved:** typed
    presence-aware `SizeMutation{Size, Source *string, RulesetVersion *string,
-   Actor ActorContext, OpID *string}`.
+   Actor ActorContext, OpID *string}`. *(Reconciliation 2026-07-18, Copilot F2: to
+   keep every commit buildable, SE-3a introduces the typed entry point as
+   `SetArtifactSizeWithProvenance` and retains the existing `SetArtifactSize` as a
+   thin compatibility wrapper; SE-5 migrates the `internal/cli/update.go` and
+   `internal/mcp/tools.go` callers and removes the wrapper. No intermediate
+   non-compiling state.)*
 
 ### Residual / deferred (non-blocking)
 
@@ -714,9 +796,36 @@ parallel on different model tiers. Full findings are archived at
   reserved-key sole-writer guard across `artifact_size.go`/`stream.go`/`artifacts.go`);
   if it exceeds a single 2-hour envelope, split the reserved-key write-path guard
   into a sibling task.
+- **P2 (Go), added by Copilot F4/F5 reconciliation:** **SE-3b** now carries two
+  extra scenarios — retry-from-orphan idempotency and doctor CLEAR-a-field
+  recovery — plus the full presence-aware desired-state event payload, so it sits
+  at/over the 2-hour envelope alongside SE-3a. If SE-3b exceeds one envelope,
+  split the doctor CLEAR-recovery reconcile into a sibling task.
 - **P3 (Security):** transport-aware stamping cannot stop masquerade if an agent
   is granted unrestricted local shell (it can invoke the CLI directly) — to be
   noted in the SE-8 contract doc.
 - **P3 (Architecture):** exact `size_op_id`/`PrevOpID` JSON key names and doctor
   reporting verbosity are Ship-level implementation detail.
-- **Deferred item:** SE-6 CLI human-column parity → separate P2 backlog follow-up.
+- **Deferred item:** SE-6 CLI human-column parity → filed stash **`D5FA1EE9`**
+  (kind: task, priority: low), tracked outside 099-S.
+
+### Copilot PR #259 reconciliation (2026-07-18)
+
+External Copilot review on staging PR #259 raised 7 valid findings against the
+099-S planning artifacts. All were accepted and reconciled in-plan and in the
+backlog (no source/test/config code changed). Dispositions:
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 (P1) | SE-7 combined config-load + core containment as a declared "width exception" — violates Width Isolation | **Split** SE-7 into `108.009-T` (SE-7a, config-load) and new `108.010-T` (SE-7b, lookup-time), wired `SE-7a → SE-7b`; 099-S manifest, dep graph, task table, Constitution Check, and memory updated. "All width-isolated / no deviations" is now genuinely true across all ten tasks. |
+| F2 (P1) | SE-3a signature change left callers uncompiled until SE-5 (non-buildable intermediate) | New entry point `SetArtifactSizeWithProvenance`; existing `SetArtifactSize` kept as a thin compat wrapper until SE-5 migrates callers and removes it. |
+| F3 (P1) | SE-2 was framed as a red harness but its assertions are already green | Reframed SE-2 (`108.005-T`) as an **expected-green characterization/round-trip guard**; removed its SE-3a dependency (depends only on SE-1). |
+| F4 (P1) | SE-3b retry not idempotent (append-then-write crash appends a duplicate event) | Pre-append OpID orphan-check: if an event with this OpID already exists, reconcile the pending write instead of re-appending; added a retry-from-orphan test. |
+| F5 (P1) | Doctor recovery underspecified (cannot reconstruct mutation from OpID/PrevOpID alone) | Event payload now pins the full presence-aware desired state (size / size_source / size_ruleset_version) with SET/CLEAR semantics; added a CLEAR-a-field recovery test. |
+| F6 (P2) | SE-6 referenced a "separate P2 follow-up" that did not exist | Filed concrete stash **`D5FA1EE9`**; plan §328 and `108.008-T` now name it. |
+| F7 (P2) | Summary overstated two-way atomicity | Restated the actual hard invariant: append-then-write with crash-safe reconcile/dedup on retry; the event log is source of truth (no two-way atomicity claim). |
+
+**Post-reconciliation gate:** PASS holds. The changes narrow scope, split a
+cross-domain task into single-domain units, and add guardrail/idempotency detail;
+no P0/P1 was reopened. New residual: SE-3b now sits at/over the 2-hour envelope
+(see Residual/deferred P2 above).

@@ -14,9 +14,10 @@ status: complete
 
 Ran the Stage stash-to-backlog pipeline end to end for feature **108-F**
 ("Size estimation for feature and shipment implementation"). Produced a
-**queued** shipment **099-S** containing 108-F plus 9 bounded, width-isolated
-implementation tasks. No source/test/config code modified; no git; no
-build/test/lint; shipment left in `queued` (not claimed/shipped).
+**queued** shipment **099-S** containing 108-F plus 10 bounded, width-isolated
+implementation tasks (originally 9; SE-7 later split into SE-7a/SE-7b per Copilot
+F1 — see the Copilot PR #259 addendum below). No source/test/config code modified;
+no git; no build/test/lint; shipment left in `queued` (not claimed/shipped).
 
 ## Pipeline stages completed
 
@@ -162,3 +163,82 @@ Gate unchanged: PASS (scope narrowed, no P0/P1 reopened). 099-S remains queued.
 - 108.004 ← 108.007  (SE-8 ← SE-5)
 - 108.004 ← 108.008  (SE-8 ← SE-6)
 - 108.004 ← 108.009  (SE-8 ← SE-7)
+
+## Copilot PR #259 Reconciliation Addendum (2026-07-18)
+
+External Copilot review on staging PR #259 returned **7 valid findings (F1–F7)**
+against the 099-S planning artifacts. All were source-verified (engram-indexed) and
+accepted; reconciliation stayed within planning/backlog artifacts (no source/test/
+config, no git). 099-S remains **queued**; gate **PASS** holds (no P0/P1 reopened).
+
+**Correcting the "all width-isolated" claim above:** the Outcome/task-mapping and
+dependency-graph sections earlier in this file are **pre-F1**. After the SE-7 split
+the shipment has **10 tasks, all single-domain** — the earlier "9 tasks" count and
+the SE-7 "core+config" mapping row are superseded by this addendum.
+
+Finding dispositions:
+
+- **F1 (P1) — Width Isolation.** SE-7 combined config + core containment. **SPLIT:**
+  `108.009-T` → **SE-7a (config-load, config)**; new **`108.010-T`** → **SE-7b
+  (lookup-time, core)**; wired `SE-7a → SE-7b`. 099-S manifest grew to **11 members**
+  (108-F + 108.001-T…108.010-T). Plan task table, Constitution Check, and this memory
+  updated. All ten tasks are now width-isolated with no declared deviation.
+- **F2 (P1) — Non-buildable intermediate.** SE-3a (`108.002-T`) now adds
+  `SetArtifactSizeWithProvenance` and keeps `SetArtifactSize` as a thin compat
+  wrapper until SE-5 (`108.007-T`) migrates callers and removes it.
+- **F3 (P1) — SE-2 not red.** SE-2 (`108.005-T`) reframed as an **expected-green
+  characterization/round-trip guard**; its SE-3a dependency removed (depends only on
+  SE-1). Constitution Check II documents SE-2 as characterization, not a skipped red.
+- **F4 (P1) — Retry idempotency.** SE-3b (`108.006-T`) adds a pre-append OpID
+  orphan-check: reconcile the pending write instead of re-appending a duplicate; new
+  retry-from-orphan test.
+- **F5 (P1) — Doctor recovery.** SE-3b event payload now pins full presence-aware
+  desired state (size/size_source/size_ruleset_version) with SET/CLEAR semantics; new
+  CLEAR-a-field recovery test.
+- **F6 (P2) — Unowned follow-up.** Filed stash **`D5FA1EE9`** (kind task, priority
+  low) for deferred CLI human-column parity; plan §328 and `108.008-T` name it.
+- **F7 (P2) — Atomicity overstated.** Plan D4 summary restated to the actual hard
+  invariant (append-then-write; crash-safe reconcile/dedup on retry; log is source of
+  truth). No two-way atomicity claim.
+
+**Updated task-ID → unit mapping (post-F1):**
+
+| Task ID | Unit | Domain |
+|---|---|---|
+| 108.001-T | SE-1 | config (schema) |
+| 108.002-T | SE-3a | core (persist + event + sole-writer; compat wrapper) |
+| 108.003-T | SE-4 | core (composition rollups) |
+| 108.004-T | SE-8 | docs |
+| 108.005-T | SE-2 | test (expected-green round-trip guard; leaf) |
+| 108.006-T | SE-3b | core (crash-safety; orphan dedup; SET/CLEAR payload) |
+| 108.007-T | SE-5 | cli+mcp (mutation parity; removes compat wrapper) |
+| 108.008-T | SE-6 | cli+mcp (read parity; CLI human cols → stash D5FA1EE9) |
+| 108.009-T | SE-7a | config (config-load containment) |
+| 108.010-T | SE-7b | core (lookup-time containment) |
+
+**Final dependency graph (post-F1, 12 blocks edges, acyclic; item ← depends_on):**
+
+- 108.002 ← 108.001  (SE-3a ← SE-1)
+- 108.002 ← 108.010  (SE-3a ← SE-7b)   [NEW; replaces ←108.009]
+- 108.003 ← 108.001  (SE-4 ← SE-1)
+- 108.004 ← 108.007  (SE-8 ← SE-5)
+- 108.004 ← 108.008  (SE-8 ← SE-6)
+- 108.004 ← 108.010  (SE-8 ← SE-7b)    [NEW; replaces ←108.009]
+- 108.005 ← 108.001  (SE-2 guard ← SE-1)  [leaf; no dependents]
+- 108.006 ← 108.002  (SE-3b ← SE-3a)
+- 108.007 ← 108.006  (SE-5 ← SE-3b)
+- 108.008 ← 108.002  (SE-6 ← SE-3a)
+- 108.008 ← 108.003  (SE-6 ← SE-4)
+- 108.010 ← 108.009  (SE-7b ← SE-7a)   [NEW]
+
+Roots: 108.001 (SE-1), 108.009 (SE-7a). Leaf: 108.005 (SE-2). Removed edges:
+108.002 ← 108.009 and 108.004 ← 108.009 (repointed to 108.010 / SE-7b).
+
+**Residual (P2, non-blocking):** SE-3b (`108.006-T`) now sits at/over the 2-hour
+envelope (orphan-retry + CLEAR-recovery scenarios + full payload); split the doctor
+CLEAR-recovery reconcile into a sibling task during Ship if it exceeds one envelope.
+
+**Review posture:** the Copilot-findings pass was a **single-agent inline
+re-assessment** of the deltas (no fresh multi-persona dispatch); each finding was
+independently source-verified before acceptance. Recorded in the plan-review
+addendum.
