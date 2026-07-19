@@ -102,32 +102,33 @@ rollback/cleanup is necessary regardless of whether crash-window exactly-once is
 implemented. **Decision: keep 9D5BB492 as a separate deferred stash entry.** The F6 fix is
 strictly in-process and does not supersede the crash-window requirements.
 
-### IU-3: F7 — Correct 108.009-T env-expansion test scope (config/test)
+### IU-3: F7 — Reconcile 108.009-T env-expansion scope (verify-only)
 
-**Scope**: Correct the scope of existing task 108.009-T (SE-7a) to drop the env-var-expansion
-rejection requirement that targets nonexistent behavior.
+**Scope**: Record and verify the scope correction already applied in place to existing task
+108.009-T (SE-7a): the env-var-expansion rejection requirement targeting nonexistent behavior was
+dropped. This is a **verify-only reconciliation item** — it carries **no new implementation** and
+does not re-implement the containment guard, which is owned by 108.009-T in shipment 099-S.
 
-**What to do**:
-1. In the implementation of SE-7a (108.009-T), do NOT write an env-expansion escape test.
-2. Keep only the lexical `../`/absolute containment guard for:
-   - `QueueLayout.RootDir` (`schema.go:99-104`) — currently unguarded, real gap.
-   - Every configured search root (`loader.go:77-85` already guards `reg.Directories`).
-3. Optionally add a test asserting roots are treated literally (NOT env-expanded) to document
-   the intentional non-expansion.
-4. Update 108.009-T description to reflect the corrected scope.
-5. Update the impl-plan SE-7a section if needed.
+**What to do** (verify-only — no production code or tests are written under this item):
+1. Confirm 108.009-T no longer requires an env-expansion escape test and its description reflects
+   the corrected scope.
+2. Confirm the lexical `../`/absolute containment guard remains the sole surviving SE-7a
+   requirement, covering `QueueLayout.RootDir` (`schema.go:99-104`) and every configured search
+   root (`loader.go:77-85`). That guard is implemented by 108.009-T in 099-S, not here.
+3. Confirm 108.014-T stands as the traceable reconciliation record (`related_to` 108.009-T) with no
+   separate implementation, and that 108.010-T's dependency edge on 108.009-T is unchanged.
+4. Do NOT modify `internal/config/*` or add tests under this item.
 
-**Files**: `internal/config/loader.go` or `schema.go` (containment validation), 1 test file,
-`.backlogit/queue/108.009-T.md` (scope correction)
-**Functions**: ~2-3 (add RootDir containment check, test functions)
-**Test scenarios**: 2-3 (RootDir `../` rejected, RootDir absolute path rejected, optionally
-literal `$VAR` root not expanded)
+**Files**: `.backlogit/queue/108.014-T.md` (reconciliation record); `.backlogit/queue/108.009-T.md`
+(verify corrected scope — correction already applied). No `internal/config` changes are owned here.
+**Functions**: none (verify-only).
+**Test scenarios**: none in this item; the SE-7a containment test is owned by 108.009-T (099-S).
 **Acceptance criteria**:
-- No env-expansion escape test exists
-- Lexical containment guard covers QueueLayout.RootDir and all search roots
-- 108.009-T description updated to remove env-expansion requirement
-**Estimated effort**: ~1.5h
-**Execution posture**: test-first (red → green)
+- 108.009-T description reflects the corrected scope (env-expansion requirement removed)
+- 108.014-T records the reconciliation and links to 108.009-T; no duplicate implementation contract
+- 108.010-T dependency on 108.009-T remains intact
+**Estimated effort**: ~0.5h (verification / record only)
+**Execution posture**: verify-only (no red → green; no new production code or tests in this item)
 **Dependencies**: None. **Reconciliation applied (wave-7 review, PR #260)**: the env-var-expansion rejection requirement was corrected **in place** on `108.009-T` (SE-7a, shipment 099-S) during staging — the requirement and its test were dropped; only the lexical `../`/absolute containment guard for `QueueLayout.RootDir` and every configured search root remains. The containment **implementation stays in `108.009-T`** so the SE-7a/SE-7b two-layer containment invariant continues to ship as one unit with `108.010-T` in 099-S. `108.014-T` is therefore the traceable F7 reconciliation / verification record (`related_to` 108.009-T) and carries **no separate implementation** in 100-S. `108.010-T`'s dependency edge is unchanged (still depends on the surviving `108.009-T`).
 
 ## Dependency Graph
@@ -151,4 +152,4 @@ and the decision document already contains verified code evidence for each.
 |---------|-------------|------|------------|
 | F5 | Low (single backlog file) | Low | Artifact consistency check |
 | F6 | Moderate (core create path) | Moderate | Test-first; rollback is additive |
-| F7 | Low (config test scope) | Low | Removes invalid test, keeps real guard |
+| F7 | Low (backlog reconciliation record) | Low | Verify-only; containment implementation owned by 108.009-T (099-S) |
