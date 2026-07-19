@@ -135,6 +135,9 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if !ok {
 		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
 	}
+	if err := rejectUnprovenancedReservedSize(o.Fields); err != nil {
+		return nil, err
+	}
 	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {
 		return nil, err
 	}
@@ -567,7 +570,7 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		artifact.ParentID = v
 	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
-		artifact.CustomFields = v
+		artifact.CustomFields = mergePreserveReservedSizingKeys(artifact.CustomFields, v)
 	}
 	if v, ok := updates["harness_status"].(string); ok {
 		if artifact.CustomFields == nil {

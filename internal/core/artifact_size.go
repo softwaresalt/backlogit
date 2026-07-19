@@ -9,6 +9,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -36,26 +37,35 @@ type SizeMutation struct {
 	Actor          ActorContext
 }
 
-// SetArtifactSize sets the logical `size` field on an artifact, physically stored
-// under custom_fields.size, via a body-preserving write. It is the SINGLE seam for
-// size mutation and deliberately bypasses the generic UpdateArtifact rebuild path.
-//
-// The sequence is: (a) enum-validate size against the type's header-def schema
-// BEFORE any write (a targeted check — global enum enforcement is intentionally
-// NOT retrofitted into ValidateArtifactFields, which would regress legacy
-// artifacts); (b) acquire the per-task advisory lock (non-blocking; a held lock
-// returns ErrTaskBusy); (c) mdfront.Decode the file and set custom_fields.size,
-// leaving every other frontmatter key and the ENTIRE body bytes untouched;
-// (d) mdfront.Encode -> atomicfile.WriteFileAtomic; (e) keep the SQLite index in
-// sync via db.UpsertItem with a FULLY-POPULATED artifact reconstructed from the
-// same decode. The reconstruction is critical: UpsertItem is INSERT OR REPLACE on
-// the full row, so a partial {ID, CustomFields} stub would null title/status/
-// priority and re-open markdown<->DB drift.
-//
-// SetArtifactSize intentionally emits no mutation hook event (size-only changes
-// bypass the generic HookUpdateArtifact chain); this is documented as acceptable
-// because the only pre-hook is a no-op when status is unchanged.
+// SetArtifactSize sets the logical `size` field on an artifact via the typed
+// provenance seam. It is a thin compatibility wrapper that constructs a
+// provenance-free SizeMutation (human actor context) and delegates to
+// SetArtifactSizeWithProvenance. Callers that need to record `size_source` /
+// `size_ruleset_version` must use SetArtifactSizeWithProvenance directly.
 func SetArtifactSize(ctx context.Context, ws *Workspace, id, size string) (*models.Artifact, error) {
+	return SetArtifactSizeWithProvenance(ctx, ws, id, SizeMutation{Size: &size, Actor: ActorContextHuman})
+}
+
+// SetArtifactSizeWithProvenance is the SINGLE seam for size + provenance mutation
+// (108-F SE-3a). It deliberately bypasses the generic UpdateArtifact rebuild path.
+//
+// The sequence is: (a) enum-validate the supplied size against the type's
+// header-def schema and validate provenance completeness BEFORE any write (a
+// targeted check — global enum enforcement is intentionally NOT retrofitted into
+// ValidateArtifactFields, which would regress legacy artifacts); (b) acquire the
+// per-task advisory lock (non-blocking; a held lock returns ErrTaskBusy);
+// (c) append the estimate-history audit event under event-before-write,
+// fail-closed ordering — if the append fails, the durable write is refused so no
+// persisted size/provenance change ever lacks its event (the durable
+// custom_fields.size remains the sole source of truth; the audit stream is never
+// read back as truth); (d) merge-set only the provided reserved keys in the
+// decoded frontmatter, leaving every other frontmatter key and the ENTIRE body
+// bytes untouched; (e) mdfront.Encode -> atomicfile.WriteFileAtomic; (f) keep the
+// SQLite index in sync via db.UpsertItem with a FULLY-POPULATED artifact
+// reconstructed from the same decode (UpsertItem is INSERT OR REPLACE on the full
+// row, so a partial stub would null non-size columns and re-open markdown<->DB
+// drift).
+func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string, m SizeMutation) (*models.Artifact, error) {
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
@@ -86,14 +96,39 @@ func SetArtifactSize(ctx context.Context, ws *Workspace, id, size string) (*mode
 
 	artifactType, _ := mdDoc.Frontmatter["artifact_type"].(string)
 
-	// Targeted enum validation BEFORE any write.
-	if err := validateSizeValue(ws, artifactType, size); err != nil {
+	// Targeted validation BEFORE any audit append or durable write.
+	if err := validateSizeMutation(ws, artifactType, m); err != nil {
 		return nil, err
 	}
 
-	// Set custom_fields.size in the decoded frontmatter, preserving all other
-	// frontmatter keys and the entire body bytes.
-	setDecodedCustomField(mdDoc, "size", size)
+	// Event-before-write, fail-closed: append the estimate-history audit event
+	// first; refuse the durable write if the append fails so no persisted change
+	// lacks its event (gate-evidence precedent).
+	delta := map[string]any{"actor": string(m.Actor)}
+	if m.Size != nil {
+		delta["size"] = *m.Size
+	}
+	if m.Source != nil {
+		delta["size_source"] = *m.Source
+	}
+	if m.RulesetVersion != nil {
+		delta["size_ruleset_version"] = *m.RulesetVersion
+	}
+	if err := appendItemEventErr(ctx, ws, id, events.EventEstimateHistory, delta); err != nil {
+		return nil, fmt.Errorf("append estimate-history event for %s: %w", id, err)
+	}
+
+	// Merge-not-replace: set only the reserved keys the caller supplied, leaving
+	// all other frontmatter keys and the entire body bytes untouched.
+	if m.Size != nil {
+		setDecodedCustomField(mdDoc, "size", *m.Size)
+	}
+	if m.Source != nil {
+		setDecodedCustomField(mdDoc, "size_source", *m.Source)
+	}
+	if m.RulesetVersion != nil {
+		setDecodedCustomField(mdDoc, "size_ruleset_version", *m.RulesetVersion)
+	}
 
 	out, err := mdDoc.Encode()
 	if err != nil {
@@ -117,9 +152,71 @@ func SetArtifactSize(ctx context.Context, ws *Workspace, id, size string) (*mode
 	return artifact, nil
 }
 
-// SetArtifactSizeWithProvenance persists size and provenance through the 108-F typed seam.
-func SetArtifactSizeWithProvenance(_ context.Context, _ *Workspace, _ string, _ SizeMutation) (*models.Artifact, error) {
-	return nil, fmt.Errorf("SE-3a SetArtifactSizeWithProvenance: %w", ErrSizeEstimationNotImplemented)
+// reservedSizingKeys are the size/provenance custom_fields keys that only the
+// size seam may author. Generic create/update paths must not write them off-seam.
+var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version"}
+
+// validateSizeMutation performs the targeted pre-write validation for the size
+// seam: the size value against the type's enum, size_source against the fixed
+// provenance set, and provenance completeness (an explicit size_source must be
+// accompanied by a size_ruleset_version so a recorded estimate always states the
+// ruleset it was produced under). All failures wrap ErrValidation so the MCP
+// layer surfaces them as validation_failed (422) rather than opaque internal
+// (500) errors.
+func validateSizeMutation(ws *Workspace, artifactType string, m SizeMutation) error {
+	if m.Size != nil {
+		if err := validateSizeValue(ws, artifactType, *m.Size); err != nil {
+			return err
+		}
+	}
+	if m.Source != nil {
+		switch ActorContext(*m.Source) {
+		case ActorContextHuman, ActorContextAgent, ActorContextDerived:
+		default:
+			return fmt.Errorf("invalid size_source %q: must be one of [human agent derived]: %w", *m.Source, blerrors.ErrValidation)
+		}
+		if m.RulesetVersion == nil {
+			return fmt.Errorf("size_source %q requires an accompanying size_ruleset_version: %w", *m.Source, blerrors.ErrValidation)
+		}
+	}
+	return nil
+}
+
+// rejectUnprovenancedReservedSize enforces sole-writer integrity at the generic
+// create boundary (108-F SE-3a, Copilot G7): a create carrying a reserved `size`
+// without accompanying `size_source` provenance is refused so an initial size is
+// never recorded eventless and off-seam. A provenanced size (size + size_source)
+// is permitted so migration/import preserves an already-sized item.
+func rejectUnprovenancedReservedSize(fields map[string]any) error {
+	if fields == nil {
+		return nil
+	}
+	if _, hasSize := fields["size"]; !hasSize {
+		return nil
+	}
+	if _, hasSource := fields["size_source"]; !hasSource {
+		return fmt.Errorf("create carrying reserved size without size_source provenance must route through the size seam: %w", blerrors.ErrValidation)
+	}
+	return nil
+}
+
+// mergePreserveReservedSizingKeys carries the reserved sizing keys from the prior
+// custom_fields into an incoming replacement map when the incoming map omits them,
+// so a generic update never silently drops the size/provenance the size seam owns
+// (108-F SE-3a sole-writer integrity).
+func mergePreserveReservedSizingKeys(prior, incoming map[string]any) map[string]any {
+	if incoming == nil {
+		incoming = map[string]any{}
+	}
+	for _, k := range reservedSizingKeys {
+		if _, ok := incoming[k]; ok {
+			continue
+		}
+		if v, ok := prior[k]; ok {
+			incoming[k] = v
+		}
+	}
+	return incoming
 }
 
 // validateSizeValue confirms size is a member of the type's header-def `size`
