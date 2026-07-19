@@ -16,6 +16,25 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected", "archived"},
 		Default: "queued",
 	}
+	// size + provenance schema (108-F). size is an optional T-shirt enum with no
+	// default so legacy artifacts without it stay valid. size_source records who
+	// authored the estimate. size_ruleset_version is bounded — an enum with a
+	// currently-empty accepted set (only null/absent is valid until a canonical
+	// ruleset is owned), which forecloses the free-text injection vector.
+	sizeField := &FieldDef{
+		Type:     "enum",
+		Values:   []string{"XS", "S", "M", "L", "XL"},
+		Optional: true,
+	}
+	sizeSourceField := &FieldDef{
+		Type:     "enum",
+		Values:   []string{"human", "agent", "derived"},
+		Optional: true,
+	}
+	sizeRulesetVersionField := &FieldDef{
+		Type:     "enum",
+		Optional: true,
+	}
 	return &HeaderDefConfig{
 		Defaults: SystemDefaults{
 			ID:          FieldDef{Type: "string", Immutable: true},
@@ -35,6 +54,9 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Default:  "pending",
 						Optional: true,
 					},
+					"size":                 sizeField,
+					"size_source":          sizeSourceField,
+					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 			"deliberation": {
@@ -61,11 +83,9 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Values:  []string{"low", "medium", "high", "critical"},
 						Default: "medium",
 					},
-					"size": {
-						Type:     "enum",
-						Values:   []string{"XS", "S", "M", "L", "XL"},
-						Optional: true,
-					},
+					"size":                 sizeField,
+					"size_source":          sizeSourceField,
+					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 			"review": {
@@ -119,6 +139,9 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Type:     "list",
 						Optional: true,
 					},
+					"size":                 sizeField,
+					"size_source":          sizeSourceField,
+					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 		},
