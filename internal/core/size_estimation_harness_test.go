@@ -118,12 +118,27 @@ func TestSE3aSetArtifactSizeWithProvenanceHarness(t *testing.T) {
 }
 
 func TestSE3aReservedSizingKeyGuardHarness(t *testing.T) {
-	t.Run("generic create rejects unprovenanced reserved size", func(t *testing.T) {
+	t.Run("generic create rejects all reserved sizing keys", func(t *testing.T) {
 		ws, _ := newSizeEstimationHarnessWorkspace(t)
 		_, err := SetArtifactSizeWithProvenance(context.Background(), ws, "placeholder", SizeMutation{Size: stringPtr("M"), Actor: ActorContextAgent})
 		requireNoSizeEstimationTODO(t, err)
 
+		// Unprovenanced size (size without size_source) is refused.
 		_, err = CreateArtifact(context.Background(), ws, "Unprovenanced import", "feature", WithFields(map[string]any{"size": "M"}))
+		require.Error(t, err)
+
+		// A fully provenanced size is ALSO refused: the generic create path bypasses
+		// validateSizeMutation and the fail-closed estimate_history event, so it may
+		// never author size off-seam (108-F SE-3a, Copilot cycle-2).
+		_, err = CreateArtifact(context.Background(), ws, "Provenanced import", "feature", WithFields(map[string]any{
+			"size":                 "M",
+			"size_source":          "agent",
+			"size_ruleset_version": "ruleset-alpha",
+		}))
+		require.Error(t, err)
+
+		// Provenance keys without a size are meaningless off-seam and are refused too.
+		_, err = CreateArtifact(context.Background(), ws, "Orphan provenance", "feature", WithFields(map[string]any{"size_source": "agent"}))
 		require.Error(t, err)
 	})
 

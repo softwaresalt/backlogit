@@ -135,7 +135,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if !ok {
 		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
 	}
-	if err := rejectUnprovenancedReservedSize(o.Fields); err != nil {
+	if err := rejectReservedSizingKeysOnCreate(o.Fields); err != nil {
 		return nil, err
 	}
 	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {

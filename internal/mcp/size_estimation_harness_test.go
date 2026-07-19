@@ -102,4 +102,46 @@ func TestSE6MCPReadProjectionSizeCompositionHarness(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "L", customFields["size"])
 	assert.Contains(t, data, "size_composition")
+
+	// SE-6: get_shipment must also expose the never-persisted composition rollup.
+	shipment := &models.Artifact{
+		ID:           "961-S",
+		Title:        "Read projection shipment",
+		Status:       models.StatusActive,
+		ArtifactType: "shipment",
+		CustomFields: map[string]any{
+			"items": []any{feature.ID},
+		},
+	}
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, shipment))
+	shipResult, err := s.handleGetShipment(ctx, contractRequest(map[string]any{"id": shipment.ID}))
+	require.NoError(t, err)
+	shipText := resultTextForHarness(t, shipResult)
+	requireNoSizingTODOMCP(t, shipText)
+	require.False(t, shipResult.IsError, shipText)
+	shipData := extractResultJSON(t, shipResult)
+	assert.Contains(t, shipData, "size_composition")
+
+	// SE-6: get_queue must project the composition onto feature/shipment items.
+	queueResult, err := s.handleGetQueue(ctx, contractRequest(map[string]any{"type": "feature"}))
+	require.NoError(t, err)
+	queueText := resultTextForHarness(t, queueResult)
+	requireNoSizingTODOMCP(t, queueText)
+	require.False(t, queueResult.IsError, queueText)
+	queueData := extractResultJSON(t, queueResult)
+	queueItems, ok := queueData["items"].([]any)
+	require.True(t, ok, queueText)
+	require.NotEmpty(t, queueItems)
+	foundFeature := false
+	for _, it := range queueItems {
+		im, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		if im["id"] == feature.ID {
+			assert.Contains(t, im, "size_composition")
+			foundFeature = true
+		}
+	}
+	assert.True(t, foundFeature, "seeded feature not present in queue items: %s", queueText)
 }

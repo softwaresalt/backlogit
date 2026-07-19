@@ -70,9 +70,13 @@ Rules:
   accompanying `size_ruleset_version`. A source without a ruleset is rejected and
   the file is left unchanged. This presence rule is what the crash-audit harness
   pins; the ruleset value itself is not enum-validated.
-* Creating an artifact that already carries a reserved sizing key without
-  `size_source` provenance is refused, so an initial size is never recorded
-  off-seam and eventless.
+* Creating an artifact through the generic create path that carries any reserved
+  sizing key (`size`, `size_source`, or `size_ruleset_version`) is refused,
+  provenanced or not, so an initial size is never recorded off-seam, unvalidated,
+  and eventless. All initial sizing must route through the audited size seam. This
+  is fail-closed: no production path is affected because the backlog.md migration
+  adapter prefixes every imported frontmatter key with `backlog_md_`, so a migrated
+  `size` never arrives as the reserved key.
 
 ## Audit event durability
 

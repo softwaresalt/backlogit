@@ -200,20 +200,31 @@ func validateSizeMutation(ws *Workspace, artifactType string, m SizeMutation) er
 	return nil
 }
 
-// rejectUnprovenancedReservedSize enforces sole-writer integrity at the generic
-// create boundary (108-F SE-3a, Copilot G7): a create carrying a reserved `size`
-// without accompanying `size_source` provenance is refused so an initial size is
-// never recorded eventless and off-seam. A provenanced size (size + size_source)
-// is permitted so migration/import preserves an already-sized item.
-func rejectUnprovenancedReservedSize(fields map[string]any) error {
+// rejectReservedSizingKeysOnCreate enforces sole-writer integrity at the generic
+// create boundary (108-F SE-3a, Copilot G7): the generic create path may NEVER
+// author size or provenance. Any reserved sizing key (size, size_source,
+// size_ruleset_version) present on a generic create is refused so an initial size
+// is never recorded eventless, unvalidated, and off-seam. All initial sizing must
+// route through the audited SetArtifactSizeWithProvenance seam, which validates the
+// value + provenance completeness and appends the fail-closed estimate_history
+// event.
+//
+// A prior variant permitted a provenanced size (size + size_source) to ride through
+// for "migration/import", but that permit-branch bypassed validateSizeMutation
+// (allowing an invalid enum value or a source without a ruleset) and emitted no
+// audit event. No production caller is affected by the stricter fail-closed rule:
+// the backlog.md migration adapter prefixes every source frontmatter key with
+// `backlog_md_` (internal/parser/adapter.go), so a migrated `size` arrives as
+// `backlog_md_size`, never the reserved `size` key. The reserved keys therefore only
+// reach this boundary via a direct programmatic WithFields, which must use the seam.
+func rejectReservedSizingKeysOnCreate(fields map[string]any) error {
 	if fields == nil {
 		return nil
 	}
-	if _, hasSize := fields["size"]; !hasSize {
-		return nil
-	}
-	if _, hasSource := fields["size_source"]; !hasSource {
-		return fmt.Errorf("create carrying reserved size without size_source provenance must route through the size seam: %w", blerrors.ErrValidation)
+	for _, k := range reservedSizingKeys {
+		if _, ok := fields[k]; ok {
+			return fmt.Errorf("create carrying reserved sizing key %q must route through the audited size seam: %w", k, blerrors.ErrValidation)
+		}
 	}
 	return nil
 }
