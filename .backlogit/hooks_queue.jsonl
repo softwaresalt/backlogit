@@ -1509,3 +1509,4 @@
 {"seq":1510,"timestamp":"2026-07-19T02:08:41.6910179Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"108.001-T","schema_version":1}}
 {"seq":1511,"timestamp":"2026-07-19T02:09:22.4267028Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"108.002-T","schema_version":1}}
 {"seq":1512,"timestamp":"2026-07-19T02:10:07.7798618Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"108.004-T","schema_version":1}}
+{"seq":1513,"timestamp":"2026-07-19T02:59:33.43049Z","event_type":"archive_item","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status","archived"],"item_id":"108.011-T","schema_version":1,"status_delta":{"from":"queued","to":"archived"}}}

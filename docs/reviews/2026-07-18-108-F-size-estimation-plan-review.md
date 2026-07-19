@@ -308,3 +308,36 @@ are resolved; only P2/P3 advisories remain, tracked as residuals in the impl-pla
 ordering, containment choke-point confirmation, shared read-shaper, and assorted P3
 labeling/doc items). No unresolved P0/P1 remains. Shipment `099-S` remains `queued`
 (12 members).
+
+## Cycle-3 note (2026-07-18, Copilot PR #259 wave-3, H1-H6 — Option B2 descope)
+
+Operator selected **Option B2**: descope the crash-window exactly-once idempotency
+ambition at the root. This cycle is **strictly scope-reducing** — it removes task
+SE-3c (108.011-T), narrows the D4 durability invariant to best-effort process-crash
+audit (durable size is sole source of truth; orphan events ignored on read), and
+deletes the OpID/exactly-once/doctor machinery. No new capability, contract, or
+attack surface is added.
+
+**Disposition summary:** H1+H5 => remove SE-3c + narrow SE-3b to best-effort audit,
+file stash 9D5BB492 (099-S => 11 members); H3 => SE-5 (108.007-T) adds compat-wrapper
+retirement + core-test migration; H4 => SE-6 (108.008-T) reduced to one production
+file (MCP tools.go; CLI get JSON already carries custom_fields.size); H6 => SE-4
+(108.003-T) disambiguates existing-unsized (unsized+1) vs ErrNotFound (warn+skip,
+uncounted).
+
+**Cycle-3 multi-persona re-review of the FINAL descoped plan:**
+
+| Persona | Focus on the descoped plan | Verdict |
+|---|---|---|
+| Architecture / cohesion | 12-edge acyclic graph; SE-3b single cohesive online-seam unit; no dangling SE-3c reference | **PASS** |
+| Scope-boundary / YAGNI | SE-3b genuinely <=2h; SE-6 single production file; deferred ambition tracked (stash 9D5BB492) | **PASS** |
+| Standards / constitution | SE-2 expected-green (documented); SE-5 wrapper retirement one buildable commit; Constitution Check no longer references SE-3c; two documented bounded deviations unchanged | **PASS** |
+| Security / robustness | durability claim narrowed (no overclaim); masquerade + two-layer containment intact | **PASS** |
+
+**Cycle-3 gate: PASS.** No unresolved P0/P1. Because Option B2 only removes/narrows,
+the prior cycle-2 multi-persona PASS holds a fortiori over the smaller final surface.
+The following earlier residuals are now **MOOT** (targeted the removed OpID/exactly-once/
+doctor machinery): F4/F5, G2 applied-check re-upsert, G6 split, P2 OpID-uniqueness,
+P2 competing same-PrevOpID orphans, P3 size_op_id/doctor_target labeling. G3
+process-crash narrowing and power-loss stash 131CEAE4 remain valid. Shipment 099-S
+remains **queued** (11 members). This was the last allowed fix cycle (limit=3).

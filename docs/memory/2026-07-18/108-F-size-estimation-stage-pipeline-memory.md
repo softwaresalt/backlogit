@@ -296,3 +296,55 @@ shared read-shaper, P3 labeling/doc items).
 deviations" with an accurate statement — no task mixes skill domains; two bounded,
 single-domain cross-file deviations (SE-3a near-boundary, SE-5 wrapper retirement)
 are explicitly documented per the Governance Conflict-resolution clause.
+
+## Cycle-3 addendum (2026-07-18, Copilot PR #259 wave-3, H1-H6 — Option B2 descope)
+
+Operator chose **Option B2**: descope the crash-window exactly-once idempotency
+ambition at the ROOT (the recurring review magnet F4 => G3 => H1) rather than keep
+patching it. Planning/backlog artifacts only; no source/test/config touched; no git.
+**LAST allowed fix cycle** (limit=3) — any wave-4 finding banks as backlog.
+
+**Per-finding disposition (H1-H6):**
+- **H1 + H5 (descope):** SE-3b (108.006-T) narrowed to **best-effort append-before-write
+  audit** — append intent event before the durable write (append failure refuses the
+  write); durable `custom_fields.size` is the **sole source of truth**; **fail-closed on
+  read** (orphan crash-residue events IGNORED, never replayed). Dropped entirely: OpID
+  dedup, exactly-once, size_op_id, PrevOpID, client-retry-reuses-OpID, OpID transport
+  ingress. **SE-3c (108.011-T) removed from 099-S and archived** — its rationale
+  (reconciling orphans for exactly-once) is descoped, killing H2 (wrong entry point) and
+  H5 (two-orphan ordering) at the root. Deferred ambition filed as **stash 9D5BB492**.
+- **H3:** 108.007-T (SE-5) now explicitly includes **retiring the SetArtifactSize compat
+  wrapper + migrating core tests off it in the same buildable commit**.
+- **H4:** 108.008-T (SE-6) reconciled to **one production file** (MCP composition in
+  internal/mcp/tools.go). Verified: cli/get.go buildDetailMap copies the full frontmatter
+  map incl. custom_fields => get --json already carries custom_fields.size with NO code
+  change; cli/list.go/queue_cmd.go omit custom_fields (human-column gap, stash D5FA1EE9).
+- **H6:** 108.003-T (SE-4) disambiguated — existing artifact with no size => unsized+1;
+  unresolved manifest id (ErrNotFound) => warn+skip, NOT counted (optional separate
+  skipped/unresolved count). Acceptance test asserts both counts.
+
+**Backlog state after cycle-3:**
+- 099-S: **11 members** (108-F + 108.001-T..108.010-T), status **queued**.
+- 108.011-T (SE-3c): **archived**.
+- New stash **9D5BB492** (kind task, priority low): crash-window exactly-once deferred.
+- Dependency edges: removed 108.011<-108.006 and 108.004<-108.011 (14 => 12 edges).
+  Final 12 edges; roots {108.001 SE-1, 108.009 SE-7a}; leaves {108.004 SE-8, 108.005 SE-2}.
+  Topo-sort clean (acyclic).
+
+**Superseded (MOOT) earlier residuals:** F4/F5, G2 (applied-check re-upsert — no
+applied-check path remains; the normal-set index re-upsert is retained), G6 split,
+P2 OpID-uniqueness, P2 competing same-PrevOpID orphans, P3 size_op_id/doctor_target
+labeling. All concern OpID/exactly-once/doctor machinery that no longer exists.
+G3 process-crash narrowing + power-loss stash 131CEAE4 still stand.
+
+**Cycle-3 multi-persona re-review of the FINAL descoped plan: PASS.** Architecture/
+cohesion, Scope-boundary/YAGNI, Standards/constitution, Security/robustness lenses all
+PASS. Option B2 is strictly scope-reducing (removes a task, narrows an invariant,
+deletes the OpID surface), so the prior multi-persona PASS holds a fortiori. No P0/P1
+remains. Width-isolation claim now matches the task set (no cross-domain task; SE-3c
+gone).
+
+**Files changed this cycle:** impl-plan (docs/exec-plans/2026-07-18-108-F-size-estimation-impl-plan.md),
+this memory, plan-review (docs/reviews/2026-07-18-108-F-size-estimation-plan-review.md),
+.backlogit/queue/099-S.md, 108.006-T.md, 108.003-T.md, 108.007-T.md, 108.008-T.md,
+.backlogit/stash.jsonl (new 9D5BB492), 108.011-T archived to .backlogit/archive/.
