@@ -58,7 +58,15 @@ Copilot wave-7 findings F5, F6, and F7 deferred from PR #259 (099-S staging).
 - 108-F.md body contains authoritative reconciliation block recording 099-S membership
 - Historical narrative is preserved with superseded markers
 **Estimated effort**: <30 min
-**Execution posture**: direct backlog edit
+**Execution posture**: backlogit update mutation (NOT a raw file edit). IU-1 changes
+both the title (step 2) and the body (step 1), and both fields have first-class update
+paths, so route the change through the mutation surface:
+`backlogit update 108-F --title "<new title>" --description "<reconciled body>"`
+(or the equivalent MCP `backlogit_update_item`). This stamps `updated_at`, persists the
+index, and fires a truthful `update_artifact` audit event with
+`changed_fields:["title","description"]`. Do not hand-edit `108-F.md` directly — a raw
+edit would leave `updated_at` stale and emit no audit event, the exact defect corrected
+for 108.009-T during F5 staging review.
 
 ### IU-2: F6 — Add rollback/cleanup to CreateArtifact post-create failure boundary (core)
 
