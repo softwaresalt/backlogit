@@ -168,17 +168,41 @@ func TestSE3bCrashAuditRobustnessHarness(t *testing.T) {
 		before, err := os.ReadFile(path)
 		require.NoError(t, err)
 
+		// Simulate a process crash between the successful audit append and the
+		// durable write: the estimate-history event is persisted (orphan residue)
+		// but the frontmatter size is never updated.
+		previous := sizeSeamWriteFailureHook
+		sizeSeamWriteFailureHook = func() error {
+			return errors.New("injected durable write failure after append")
+		}
+		t.Cleanup(func() { sizeSeamWriteFailureHook = previous })
+
 		_, err = SetArtifactSizeWithProvenance(context.Background(), ws, "932.001-T", SizeMutation{
-			Size:   stringPtr("XL"),
-			Source: stringPtr("agent"),
-			Actor:  ActorContextAgent,
+			Size:           stringPtr("XL"),
+			Source:         stringPtr("agent"),
+			RulesetVersion: stringPtr("ruleset-alpha"),
+			Actor:          ActorContextAgent,
 		})
 		requireNoSizeEstimationTODO(t, err)
 		require.Error(t, err)
 
+		sizeSeamWriteFailureHook = nil
+
+		// The durable frontmatter is byte-identical: the orphan event never mutated it.
 		after, err := os.ReadFile(path)
 		require.NoError(t, err)
 		assert.Equal(t, before, after, "failed post-append write must leave durable size untouched")
+
+		// The estimate-history event WAS appended before the failed write (orphan residue).
+		logPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), "932.001-T")
+		logRaw, err := os.ReadFile(logPath)
+		require.NoError(t, err)
+		assert.Contains(t, string(logRaw), events.EventEstimateHistory, "audit event is appended before the durable write")
+
+		// Reads consult the durable size only; the orphan event is ignored/never replayed.
+		indexed, err := db.GetItem(context.Background(), ws.DB, "932.001-T")
+		require.NoError(t, err)
+		assert.Equal(t, "S", indexed.CustomFields["size"], "orphan audit event must not change the durable size on read")
 	})
 
 	t.Run("normal set re-upserts sqlite index", func(t *testing.T) {
@@ -203,47 +227,96 @@ func TestSE3bCrashAuditRobustnessHarness(t *testing.T) {
 }
 
 func TestSE4SizeCompositionHarness(t *testing.T) {
-	tests := []struct {
-		name     string
-		artifact *models.Artifact
-	}{
-		{
-			name: "feature counts existing unsized child and skips dangling manifest member",
-			artifact: &models.Artifact{
-				ID:           "940-F",
-				Title:        "Composition feature",
-				Status:       models.StatusActive,
-				ArtifactType: "feature",
-			},
-		},
-		{
-			name: "shipment expands feature-only manifest and dedups explicit child tasks",
-			artifact: &models.Artifact{
-				ID:           "941-S",
-				Title:        "Composition shipment",
-				Status:       models.StatusActive,
-				ArtifactType: "shipment",
-				CustomFields: map[string]any{"items": []any{"940-F", "940.001-T"}},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)
-			seedSizingHarnessArtifact(t, ws, backlogitDir, tt.artifact)
-			result, err := SizeComposition(context.Background(), ws, tt.artifact)
-			requireNoSizeEstimationTODO(t, err)
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			assert.NotNil(t, result.Histogram)
-			assert.Nil(t, result.RulesetVersion)
-
-			rawAfter, err := os.ReadFile(filepath.Join(backlogitDir, "queue", tt.artifact.ID+".md"))
-			require.NoError(t, err)
-			assert.NotContains(t, string(rawAfter), "size_composition", "composition must never be persisted")
+	t.Run("feature counts sized and unsized children and excludes dangling members", func(t *testing.T) {
+		ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)
+		feature := &models.Artifact{
+			ID:           "940-F",
+			Title:        "Composition feature",
+			Status:       models.StatusActive,
+			ArtifactType: "feature",
+		}
+		seedSizingHarnessArtifact(t, ws, backlogitDir, feature)
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "940.001-T",
+			Title:        "Sized child",
+			Status:       models.StatusActive,
+			ArtifactType: "task",
+			ParentID:     "940-F",
+			CustomFields: map[string]any{"size": "M"},
 		})
-	}
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "940.002-T",
+			Title:        "Unsized child",
+			Status:       models.StatusActive,
+			ArtifactType: "task",
+			ParentID:     "940-F",
+		})
+
+		result, err := SizeComposition(context.Background(), ws, feature)
+		requireNoSizeEstimationTODO(t, err)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, 1, result.Histogram["M"], "the sized child is counted in the M bucket")
+		assert.Equal(t, 1, result.Unsized, "the child without a size is counted as unsized")
+		assert.Len(t, result.Members, 2, "both direct children are members")
+		assert.Nil(t, result.RulesetVersion)
+
+		rawAfter, err := os.ReadFile(filepath.Join(backlogitDir, "queue", "940-F.md"))
+		require.NoError(t, err)
+		assert.NotContains(t, string(rawAfter), "size_composition", "composition must never be persisted")
+	})
+
+	t.Run("shipment expands feature-only manifest and dedups explicit child tasks", func(t *testing.T) {
+		ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "941-F",
+			Title:        "Shipment feature",
+			Status:       models.StatusActive,
+			ArtifactType: "feature",
+		})
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "941.001-T",
+			Title:        "Shipment child sized",
+			Status:       models.StatusActive,
+			ArtifactType: "task",
+			ParentID:     "941-F",
+			CustomFields: map[string]any{"size": "L"},
+		})
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "941.002-T",
+			Title:        "Shipment child unsized",
+			Status:       models.StatusActive,
+			ArtifactType: "task",
+			ParentID:     "941-F",
+		})
+		shipment := &models.Artifact{
+			ID:           "941-S",
+			Title:        "Composition shipment",
+			Status:       models.StatusActive,
+			ArtifactType: "shipment",
+			// Manifest lists the feature, one of its children explicitly (to prove
+			// de-duplication), and a dangling id (to prove warn-skip).
+			CustomFields: map[string]any{"items": []any{"941-F", "941.001-T", "999.404-T"}},
+		}
+		seedSizingHarnessArtifact(t, ws, backlogitDir, shipment)
+
+		result, err := SizeComposition(context.Background(), ws, shipment)
+		requireNoSizeEstimationTODO(t, err)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		// 941-F expands to 941.001-T + 941.002-T; the explicitly-listed 941.001-T
+		// is de-duplicated so the sized child is counted exactly once.
+		assert.Equal(t, 1, result.Histogram["L"], "sized child counted once despite explicit + expanded membership")
+		// Unsized members are the feature itself (no size) and 941.002-T.
+		assert.Equal(t, 2, result.Unsized, "the feature and the unsized child are both unsized")
+		assert.Len(t, result.Members, 3, "feature + two children, each counted once")
+		assert.Contains(t, result.Skipped, "999.404-T", "the dangling manifest id is warn-skipped")
+		assert.Nil(t, result.RulesetVersion)
+
+		rawAfter, err := os.ReadFile(filepath.Join(backlogitDir, "queue", "941-S.md"))
+		require.NoError(t, err)
+		assert.NotContains(t, string(rawAfter), "size_composition", "composition must never be persisted")
+	})
 }
 
 func TestSE7bLookupTimeContainmentHarness(t *testing.T) {

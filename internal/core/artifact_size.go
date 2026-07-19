@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/db"
@@ -45,6 +46,13 @@ type SizeMutation struct {
 func SetArtifactSize(ctx context.Context, ws *Workspace, id, size string) (*models.Artifact, error) {
 	return SetArtifactSizeWithProvenance(ctx, ws, id, SizeMutation{Size: &size, Actor: ActorContextHuman})
 }
+
+// sizeSeamWriteFailureHook, when non-nil, is invoked after the estimate-history
+// audit event append succeeds but before the durable frontmatter write. Tests use
+// it to simulate a process crash between the append and the durable write so the
+// orphan-crash-residue-event-ignored-on-read contract (108-F SE-3b, D4) can be
+// exercised. It is nil in production.
+var sizeSeamWriteFailureHook func() error
 
 // SetArtifactSizeWithProvenance is the SINGLE seam for size + provenance mutation
 // (108-F SE-3a). It deliberately bypasses the generic UpdateArtifact rebuild path.
@@ -118,6 +126,14 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 		return nil, fmt.Errorf("append estimate-history event for %s: %w", id, err)
 	}
 
+	// Test-only fault injection: simulate a crash between the successful audit
+	// append and the durable write, leaving an orphan crash-residue event.
+	if sizeSeamWriteFailureHook != nil {
+		if err := sizeSeamWriteFailureHook(); err != nil {
+			return nil, fmt.Errorf("write artifact %s: %w", id, err)
+		}
+	}
+
 	// Merge-not-replace: set only the reserved keys the caller supplied, leaving
 	// all other frontmatter keys and the entire body bytes untouched.
 	if m.Size != nil {
@@ -175,8 +191,10 @@ func validateSizeMutation(ws *Workspace, artifactType string, m SizeMutation) er
 		default:
 			return fmt.Errorf("invalid size_source %q: must be one of [human agent derived]: %w", *m.Source, blerrors.ErrValidation)
 		}
-		if m.RulesetVersion == nil {
-			return fmt.Errorf("size_source %q requires an accompanying size_ruleset_version: %w", *m.Source, blerrors.ErrValidation)
+		// Treat an empty/whitespace ruleset as missing so CLI (`--size-ruleset-version ""`)
+		// and MCP (omitted argument) enforce provenance completeness identically.
+		if m.RulesetVersion == nil || strings.TrimSpace(*m.RulesetVersion) == "" {
+			return fmt.Errorf("size_source %q requires an accompanying non-empty size_ruleset_version: %w", *m.Source, blerrors.ErrValidation)
 		}
 	}
 	return nil

@@ -76,7 +76,9 @@ Rules:
 
 ## Audit event durability
 
-Size mutations follow an event-before-write, best-effort audit policy:
+Size mutations follow an event-before-write audit policy. The audit-event append
+is required (fail-closed); only the downstream SQLite index refresh is
+best-effort:
 
 * Every size mutation appends an `estimate_history` event to the item log before
   the durable frontmatter write. The append is fail-closed: if it cannot be

@@ -404,18 +404,21 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 // rollbackCreatedArtifactAfterPostCreateFailure removes the freshly-created
 // artifact's Markdown file and SQLite index row so a post-create failure leaves
 // no half-created artifact behind and the sequence ID is freed for a retry
-// (108-F F6). It returns the first cleanup error, if any.
+// (108-F F6). It reuses the crash-safe DeleteArtifact ordering (rename -> DB
+// delete -> remove/restore) so a failure mid-cleanup never leaves a deleted file
+// with a live index row. It returns the first cleanup error, if any.
 func rollbackCreatedArtifactAfterPostCreateFailure(ctx context.Context, ws *Workspace, artifact *models.Artifact, filePath string) error {
-	var firstErr error
-	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-		firstErr = fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
-	}
-	if ws.DB != nil {
-		if err := db.DeleteItemCascade(ctx, ws.DB, artifact.ID); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("delete index row %s: %w", artifact.ID, err)
+	if ws.DB == nil {
+		// No index to reconcile; just remove the freshly-written file.
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
 		}
+		return nil
 	}
-	return firstErr
+	if err := DeleteArtifact(ctx, ws, artifact.ID); err != nil {
+		return fmt.Errorf("rollback created artifact %s: %w", artifact.ID, err)
+	}
+	return nil
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {
