@@ -78,8 +78,14 @@ failure orphans an unsized artifact and prevents retry due to ID collision.
    - Inject a size/event-append failure after CreateArtifact persists the file and index.
    - Assert no orphaned unsized artifact remains in the filesystem or DB index.
    - Assert retry with the same ID succeeds after cleanup.
-2. **Implement rollback/cleanup**: On post-create failure, remove the just-created file,
-   remove the DB index row, and invalidate the `canonicalCache` record so a retry does not
+2. **Implement rollback/cleanup via the crash-safe delete primitive**: On post-create
+   failure, do NOT remove the file first. Reuse `core.DeleteArtifact`
+   (`internal/core/delete_crashsafe_042.go:22-57`) — or an equivalent flow that renames the
+   just-created file to a `.deleting.md` temp path, runs `db.DeleteItemCascade`, restores the
+   file if the DB delete fails, and removes the temp file only after the DB delete succeeds.
+   Invalidate the `canonicalCache` record only **after** cleanup succeeds. This preserves the
+   rename → cascade-delete → remove/restore-on-failure invariant so a mid-rollback crash leaves
+   the artifact discoverable via rehydration (never an index-only orphan) and a retry does not
    collide on `ErrIDCollision` (:338-339).
 3. All errors wrapped with context per P-I.
 
