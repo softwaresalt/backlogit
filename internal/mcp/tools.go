@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -659,8 +660,14 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	// SE-6: project a never-persisted size_composition rollup onto feature and
 	// shipment read surfaces so agents can read the aggregate without a separate call.
 	if artifact.ArtifactType == "feature" || artifact.ArtifactType == "shipment" {
-		if composition, cErr := core.SizeComposition(ctx, s.Workspace, artifact); cErr == nil && composition != nil {
-			if payload, pErr := artifactWithSizeComposition(artifact, composition); pErr == nil {
+		composition, cErr := core.SizeComposition(ctx, s.Workspace, artifact)
+		if cErr != nil {
+			slog.WarnContext(ctx, "get_item: size composition failed; returning artifact without rollup", "id", id, "error", cErr)
+		} else if composition != nil {
+			payload, pErr := artifactWithSizeComposition(artifact, composition)
+			if pErr != nil {
+				slog.WarnContext(ctx, "get_item: size composition projection failed; returning plain artifact", "id", id, "error", pErr)
+			} else {
 				return toolResultJSON(payload)
 			}
 		}
@@ -801,7 +808,11 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 			}
 			artifact, err = core.SetArtifactSizeWithProvenance(ctx, s.Workspace, id, mutation)
 		} else {
-			artifact, err = core.SetArtifactSize(ctx, s.Workspace, id, size)
+			// Plain-size mutation over the MCP (agent) transport must attribute the
+			// agent actor in the estimate_history event. Routing through the
+			// human-hardcoded SetArtifactSize wrapper would forge human provenance
+			// into the audit stream, defeating the SE-5 trust boundary above.
+			artifact, err = core.SetArtifactSizeWithProvenance(ctx, s.Workspace, id, core.SizeMutation{Size: &size, Actor: core.ActorContextAgent})
 		}
 		if err != nil {
 			return domainError("set artifact size", err), nil

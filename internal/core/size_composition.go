@@ -37,6 +37,9 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	if artifact == nil {
 		return nil, fmt.Errorf("size composition: artifact is required")
 	}
+	if ws == nil {
+		return nil, fmt.Errorf("size composition: workspace is required")
+	}
 	result := &SizeCompositionResult{
 		Histogram: map[string]int{},
 		Members:   []SizeCompositionMember{},

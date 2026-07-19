@@ -200,18 +200,18 @@ func rejectUnprovenancedReservedSize(fields map[string]any) error {
 	return nil
 }
 
-// mergePreserveReservedSizingKeys carries the reserved sizing keys from the prior
-// custom_fields into an incoming replacement map when the incoming map omits them,
-// so a generic update never silently drops the size/provenance the size seam owns
-// (108-F SE-3a sole-writer integrity).
+// mergePreserveReservedSizingKeys enforces sole-writer integrity for the reserved
+// sizing keys on the generic update path (108-F SE-3a). The generic path may never
+// author size/provenance: any caller-supplied reserved key is dropped (an off-seam
+// write would bypass validateSizeMutation and the fail-closed estimate_history
+// event), and the prior seam-owned value is always carried forward so a generic
+// update never silently drops or overwrites the size the size seam owns.
 func mergePreserveReservedSizingKeys(prior, incoming map[string]any) map[string]any {
 	if incoming == nil {
 		incoming = map[string]any{}
 	}
 	for _, k := range reservedSizingKeys {
-		if _, ok := incoming[k]; ok {
-			continue
-		}
+		delete(incoming, k)
 		if v, ok := prior[k]; ok {
 			incoming[k] = v
 		}
@@ -223,7 +223,7 @@ func mergePreserveReservedSizingKeys(prior, incoming map[string]any) map[string]
 // enum. It is a targeted check used only by the size-mutation seam.
 func validateSizeValue(ws *Workspace, artifactType, size string) error {
 	if ws.HeaderDef == nil {
-		return fmt.Errorf("cannot validate size: header-def not loaded")
+		return fmt.Errorf("cannot validate size: header-def not loaded: %w", blerrors.ErrConfig)
 	}
 	schema, err := ws.HeaderDef.ResolveFieldSchema(artifactType)
 	if err != nil {

@@ -805,6 +805,11 @@ func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}
+			// SE-7b second-layer containment: reject a symlinked leaf that resolves
+			// outside the storage root before reading it, mirroring FindArtifactPath.
+			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+				return guardErr
+			}
 			a, _, parseErr := parseFile(path)
 			if parseErr != nil {
 				return nil
