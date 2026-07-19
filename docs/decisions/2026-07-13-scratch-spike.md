@@ -1,4 +1,5 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Scratch spike verifying reconciled findings-artifact frontmatter"
 source: docs/decisions/2026-07-13-scratch-spike.md
 doc_type: decision
@@ -14,6 +15,7 @@ docline:
     tags:
         - docline
         - spike
+schema_version: "1.0"
 ---
 
 ## Goal
