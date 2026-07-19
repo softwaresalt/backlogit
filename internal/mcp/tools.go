@@ -656,7 +656,32 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	if err != nil {
 		return domainError("get item", err), nil
 	}
+	// SE-6: project a never-persisted size_composition rollup onto feature and
+	// shipment read surfaces so agents can read the aggregate without a separate call.
+	if artifact.ArtifactType == "feature" || artifact.ArtifactType == "shipment" {
+		if composition, cErr := core.SizeComposition(ctx, s.Workspace, artifact); cErr == nil && composition != nil {
+			if payload, pErr := artifactWithSizeComposition(artifact, composition); pErr == nil {
+				return toolResultJSON(payload)
+			}
+		}
+	}
 	return toolResultJSON(artifact)
+}
+
+// artifactWithSizeComposition marshals an artifact into a generic map and attaches
+// the computed-on-read size_composition rollup without mutating or persisting the
+// artifact itself.
+func artifactWithSizeComposition(artifact *models.Artifact, composition *core.SizeCompositionResult) (map[string]any, error) {
+	raw, err := json.Marshal(artifact)
+	if err != nil {
+		return nil, fmt.Errorf("marshal artifact: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal artifact: %w", err)
+	}
+	payload["size_composition"] = composition
+	return payload, nil
 }
 
 func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -753,6 +778,12 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		size, _ := request.Params.Arguments["size"].(string)
 		source, _ := request.Params.Arguments["size_source"].(string)
 		rulesetVersion, _ := request.Params.Arguments["size_ruleset_version"].(string)
+		// SE-5 trust boundary: an agent transport must not claim human provenance.
+		// Reject an explicit size_source: human from the MCP surface regardless of
+		// ruleset so masquerade cannot survive the transport boundary.
+		if source == "human" {
+			return ValidationFailed("size_source: human cannot be set from the MCP (agent) transport"), nil
+		}
 		var artifact *models.Artifact
 		var err error
 		if source != "" || rulesetVersion != "" {
