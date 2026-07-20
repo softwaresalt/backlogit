@@ -68,11 +68,21 @@ permanent block, no operator recourse.
 
 ## Files modified
 
+Shipped in PR #263 / #264:
+
 - `internal/core/shipment_gate.go` (+`archivedFromNonTerminalStatus`, refined
   exemption)
 - `internal/core/shipment_gate_test.go` (2 new tests)
 - `.backlogit/archive/099-S.md` (queue→archive), `108-F` + 13 tasks stamped,
   `.backlogit/hooks_queue.jsonl`
+
+Closure follow-ups in PR #265 (this session):
+
+- `docs/memory/2026-07-20-ship-099-S-closure.md` (this file)
+- `docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`
+- `.backlogit/stash.jsonl` (files perf follow-up `47ED88ED`)
+- `.backlogit/archive/099-S.md` (materializes the `099-S supersedes 100-S` link
+  into frontmatter so it survives the next index rehydration)
 
 ## Compound learning
 
@@ -83,7 +93,9 @@ false-invariant-in-comment is a latent bug.
 
 ## Next steps / open items
 
-- Deferred perf follow-ups (get_queue N+1 and earlier perf defers) — file to
-  stash / backlog when picking up the next Ship cycle.
+- Deferred `get_queue` size-composition perf follow-up **filed to stash as
+  `47ED88ED`** (`O(aggregates × members × all-artifacts)` `WalkDir` scan;
+  108-F SE-4 / Copilot cycle-3 `SIEy9`). Earlier 099-S perf/parity defers are
+  already stashed (`D5FA1EE9`, `387DE4BF`, `131CEAE4`, `9D5BB492`).
 - Engram-first search policy honored where the daemon was reachable; a session
   note on engram usage lives in the session `files/`.
