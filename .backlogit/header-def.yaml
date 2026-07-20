@@ -69,6 +69,16 @@ types:
           - L
           - XL
         optional: true
+      size_source:
+        type: enum
+        values:
+          - human
+          - agent
+          - derived
+        optional: true
+      size_ruleset_version:
+        type: string
+        optional: true
   review:
     prefix: R
     suffix: "-R"

@@ -52,8 +52,37 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
+	// Config-load containment (108-F SE-7a): reject an absolute path or a lexical
+	// `..` escape in the queue search root. This is the first layer of the
+	// two-layer containment guard; lookup-time realpath re-containment (SE-7b)
+	// is enforced separately in the core lookup path. Mirrors the registry
+	// directory guard above.
+	if cfg.QueueLayout != nil {
+		if err := ensureContainedRelPath("queue_layout.root_dir", cfg.QueueLayout.RootDir); err != nil {
+			return nil, fmt.Errorf("validate config: %w", err)
+		}
+	}
+
 	logger.Info("config loaded", "workspace", workspacePath)
 	return &cfg, nil
+}
+
+// ensureContainedRelPath rejects an absolute path or a lexical `..` escape in a
+// workspace-relative configuration path. Backslash- and slash-style escapes are
+// both caught because a cleaned traversal path always begins with "..". This is
+// the config-load layer of the 108-F two-layer containment guard (SE-7a).
+func ensureContainedRelPath(label, p string) error {
+	if p == "" {
+		return nil
+	}
+	if filepath.IsAbs(p) {
+		return fmt.Errorf("%s %q must be workspace-relative; an absolute path resolves outside the workspace", label, p)
+	}
+	clean := filepath.Clean(p)
+	if len(clean) >= 2 && clean[:2] == ".." {
+		return fmt.Errorf("%s %q must not traverse outside the workspace", label, p)
+	}
+	return nil
 }
 
 // LoadRegistry reads registry.yaml from the workspace directory.

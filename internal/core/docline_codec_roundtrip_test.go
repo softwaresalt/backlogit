@@ -16,8 +16,8 @@ import (
 )
 
 // 109.004-T / 096-S ground-truth guard: these tests codify the architectural
-// premise behind the size-extension spike decision to store feature/shipment
-// `size` under custom_fields.size rather than a top-level docline map.
+// premise behind the size-estimation decision to store a task `size` under
+// custom_fields.size rather than a top-level docline map.
 //
 // The premise, proven here empirically, is that the GENERIC artifact codec
 // (ParseFrontmatter -> ArtifactFromFrontmatter -> WriteArtifactFile) DROPS an
@@ -158,4 +158,111 @@ func TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields(t *testing.T)
 	cf, ok := fmOut["custom_fields"].(map[string]any)
 	require.True(t, ok, "custom_fields must survive the ordinary UpdateArtifact path")
 	assert.Equal(t, "M", cf["size"], "custom_fields.size must survive UpdateArtifact")
+}
+
+func TestSE2TaskSizingCustomFieldsRoundTrip(t *testing.T) {
+	// Size estimation is task-only: the task artifact is the sole supported sizing
+	// carrier. These cases verify the generic codec round-trips a task's sizing
+	// custom_fields (size + provenance) and drops the unmodeled docline map.
+	tests := []struct {
+		name     string
+		id       string
+		parentID string
+		status   string
+	}{
+		{name: "active task", id: "920.001-T", parentID: "920-F", status: "active"},
+		{name: "queued task", id: "921.001-T", parentID: "921-F", status: "queued"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := sizingCarrierArtifactFile(tt.id, tt.parentID, tt.status)
+			fmIn, body, err := models.ParseFrontmatter(input)
+			require.NoError(t, err)
+			require.Contains(t, fmIn, "docline")
+
+			artifact, err := models.ArtifactFromFrontmatter(fmIn, body)
+			require.NoError(t, err)
+			path := filepath.Join(t.TempDir(), tt.id+".md")
+			require.NoError(t, core.WriteArtifactFile(artifact, path))
+
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			fmOut, _, err := models.ParseFrontmatter(string(raw))
+			require.NoError(t, err)
+
+			assert.NotContains(t, fmOut, "docline")
+			assertSizingCustomFields(t, fmOut)
+		})
+	}
+}
+
+func TestSE2UpdateArtifactPreservesTaskSizingCustomFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       string
+		parentID string
+		status   string
+		update   map[string]any
+	}{
+		{name: "active task", id: "922.001-T", parentID: "922-F", status: "active", update: map[string]any{"title": "Updated task"}},
+		{name: "queued task", id: "923.001-T", parentID: "923-F", status: "queued", update: map[string]any{"title": "Updated task"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			root := t.TempDir()
+			backlogitDir := filepath.Join(root, ".backlogit")
+			require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
+			require.NoError(t, config.WriteDefaults(backlogitDir))
+
+			ws, err := core.NewWorkspace(ctx, root)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = ws.Close() })
+
+			path := filepath.Join(backlogitDir, "queue", tt.id+".md")
+			require.NoError(t, os.WriteFile(path, []byte(sizingCarrierArtifactFile(tt.id, tt.parentID, tt.status)), 0o644))
+
+			_, err = core.UpdateArtifact(ctx, ws, tt.id, tt.update)
+			require.NoError(t, err)
+
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			fmOut, _, err := models.ParseFrontmatter(string(raw))
+			require.NoError(t, err)
+
+			assert.NotContains(t, fmOut, "docline")
+			assertSizingCustomFields(t, fmOut)
+		})
+	}
+}
+
+func sizingCarrierArtifactFile(id, parentID, status string) string {
+	return "---\n" +
+		"artifact_type: task\n" +
+		"created_at: 2026-07-18T00:00:00.000Z\n" +
+		"custom_fields:\n" +
+		"    size: M\n" +
+		"    size_source: agent\n" +
+		"    size_ruleset_version: ruleset-alpha\n" +
+		"docline:\n" +
+		"    backlogit:\n" +
+		"        size: L\n" +
+		"id: " + id + "\n" +
+		"parent_id: " + parentID + "\n" +
+		"priority: medium\n" +
+		"status: " + status + "\n" +
+		"title: Sizing carrier task\n" +
+		"updated_at: 2026-07-18T00:00:00.000Z\n" +
+		"---\n\nBody paragraph.\n"
+}
+
+func assertSizingCustomFields(t *testing.T, fm map[string]any) {
+	t.Helper()
+	cf, ok := fm["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must survive")
+	assert.Equal(t, "M", cf["size"])
+	assert.Equal(t, "agent", cf["size_source"])
+	assert.Equal(t, "ruleset-alpha", cf["size_ruleset_version"])
 }

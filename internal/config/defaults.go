@@ -16,6 +16,28 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected", "archived"},
 		Default: "queued",
 	}
+	// size + provenance schema (108-F). Size estimation is TASK-ONLY: only the
+	// task type carries these fields; features/shipments expose a computed-on-read
+	// rollup (SizeComposition) rather than a stored estimate. size is an optional
+	// T-shirt enum with no default so legacy tasks without it stay valid.
+	// size_source records who authored the estimate. size_ruleset_version is an
+	// opaque version identifier for the ruleset that produced an estimate — a
+	// stored (never executed) string whose provenance-completeness (a source
+	// requires a non-empty ruleset) is enforced at the audited size seam.
+	sizeField := &FieldDef{
+		Type:     "enum",
+		Values:   []string{"XS", "S", "M", "L", "XL"},
+		Optional: true,
+	}
+	sizeSourceField := &FieldDef{
+		Type:     "enum",
+		Values:   []string{"human", "agent", "derived"},
+		Optional: true,
+	}
+	sizeRulesetVersionField := &FieldDef{
+		Type:     "string",
+		Optional: true,
+	}
 	return &HeaderDefConfig{
 		Defaults: SystemDefaults{
 			ID:          FieldDef{Type: "string", Immutable: true},
@@ -61,11 +83,9 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Values:  []string{"low", "medium", "high", "critical"},
 						Default: "medium",
 					},
-					"size": {
-						Type:     "enum",
-						Values:   []string{"XS", "S", "M", "L", "XL"},
-						Optional: true,
-					},
+					"size":                 sizeField,
+					"size_source":          sizeSourceField,
+					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 			"review": {

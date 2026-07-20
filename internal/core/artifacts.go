@@ -133,6 +133,9 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if !ok {
 		return nil, fmt.Errorf("unknown artifact type: %s", artifactType)
 	}
+	if err := rejectReservedSizingKeysOnCreate(o.Fields); err != nil {
+		return nil, err
+	}
 	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {
 		return nil, err
 	}
@@ -367,7 +370,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
 		}
 	}
-
 	// Fire post-create hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
@@ -540,7 +542,7 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		artifact.ParentID = v
 	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
-		artifact.CustomFields = v
+		artifact.CustomFields = mergePreserveReservedSizingKeys(artifact.CustomFields, v)
 	}
 	if v, ok := updates["harness_status"].(string); ok {
 		if artifact.CustomFields == nil {
@@ -658,6 +660,9 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
 			}
+			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+				return guardErr
+			}
 			a, _, parseErr := parseFile(path)
 			if parseErr != nil {
 				return nil
@@ -676,6 +681,44 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 		}
 	}
 	return "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+}
+
+func ensureArtifactLookupContained(ws *Workspace, path string) error {
+	absTarget, inScope, err := confineToStorageRoot(ws, path)
+	if err != nil {
+		return fmt.Errorf("resolve artifact path containment: %w", err)
+	}
+	if !inScope {
+		return fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", absTarget, blerrors.ErrValidation)
+	}
+	return nil
+}
+
+// resolveContainedArtifactPath resolves filePath through symlinks and verifies the
+// resolved real path is contained within the (also symlink-resolved) workspace
+// storage root. Callers bind their read/write I/O to the returned resolved path so
+// containment validation applies to the object actually accessed, closing the
+// TOCTOU gap a pathname-only check leaves open. Both sides are resolved before the
+// containment test so a legitimately symlinked storage root (e.g. platform temp
+// dirs) is not rejected, while a leaf that escapes the root still is. The leaf must
+// already exist (callers use this immediately before reading the file).
+func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
+	realPath, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve real artifact path: %w", err)
+	}
+	absStorage, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve storage root: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(filepath.Clean(absStorage))
+	if err != nil {
+		realRoot = filepath.Clean(absStorage)
+	}
+	if !pathContained(realRoot, realPath) {
+		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", realPath, blerrors.ErrValidation)
+	}
+	return realPath, nil
 }
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
@@ -760,6 +803,11 @@ func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact
 		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 				return err
+			}
+			// SE-7b second-layer containment: reject a symlinked leaf that resolves
+			// outside the storage root before reading it, mirroring FindArtifactPath.
+			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+				return guardErr
 			}
 			a, _, parseErr := parseFile(path)
 			if parseErr != nil {

@@ -32,6 +32,8 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		labels        string
 		commit        string
 		size          string
+		sizeSource    string
+		sizeRuleset   string
 		gateBase      string
 		forceGates    bool
 		forceReason   string
@@ -94,13 +96,32 @@ replacing the rest of the document body.`,
 			// the generic UpdateArtifact -> WriteArtifactFile rebuild path; running
 			// both in one invocation would double-write and negate body
 			// preservation. The exclusion is checked BEFORE any write.
-			if cmd.Flags().Changed("size") {
+			if sizeMutationFlagsChanged(cmd) {
 				if conflicts := conflictingSizeFlags(cmd); len(conflicts) > 0 {
 					return fmt.Errorf(
 						"--size cannot be combined with %s: run the size mutation separately to preserve the body",
 						strings.Join(conflicts, ", "))
 				}
-				if _, sizeErr := core.SetArtifactSize(ctx, ws, id, size); sizeErr != nil {
+				var sizeErr error
+				if cmd.Flags().Changed("size-source") || cmd.Flags().Changed("size-ruleset-version") {
+					// Provenance-carrying mutations route through the typed seam
+					// (SE-3a/SE-5); implemented in the build phase.
+					mutation := core.SizeMutation{Actor: core.ActorContextHuman}
+					if cmd.Flags().Changed("size") {
+						mutation.Size = &size
+					}
+					if cmd.Flags().Changed("size-source") {
+						mutation.Source = &sizeSource
+					}
+					if cmd.Flags().Changed("size-ruleset-version") {
+						mutation.RulesetVersion = &sizeRuleset
+					}
+					_, sizeErr = core.SetArtifactSizeWithProvenance(ctx, ws, id, mutation)
+				} else {
+					// Plain size mutation preserves the existing body-preserving seam.
+					_, sizeErr = core.SetArtifactSize(ctx, ws, id, size)
+				}
+				if sizeErr != nil {
 					// A busy task lock surfaces the same non-zero exit code as the
 					// doctor --target table (4) instead of blocking, so the
 					// autoharness sizing hook sees deterministic contention.
@@ -291,6 +312,8 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&sizeSource, "size-source", "", "size provenance source (human, agent, derived)")
+	cmd.Flags().StringVar(&sizeRuleset, "size-ruleset-version", "", "size ruleset version")
 	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")
 	cmd.Flags().BoolVar(&forceGates, "force-gates", false, "operator-only: force completion past the gate (requires --force-reason)")
 	cmd.Flags().StringVar(&forceReason, "force-reason", "", "justification recorded in the forced-gate audit event")
@@ -304,7 +327,7 @@ func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
 	candidates := []string{
 		"title", "status", "priority", "harness-status", "description",
 		"sprint", "assigned-to", "owner", "labels", "commit", "section",
-		"size", "gate-base", "force-gates", "force-reason", "json",
+		"size", "size-source", "size-ruleset-version", "gate-base", "force-gates", "force-reason", "json",
 	}
 	var changed []string
 	for _, name := range candidates {
@@ -313,6 +336,12 @@ func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
 		}
 	}
 	return changed
+}
+
+func sizeMutationFlagsChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("size") ||
+		cmd.Flags().Changed("size-source") ||
+		cmd.Flags().Changed("size-ruleset-version")
 }
 
 // conflictingSizeFlags returns the set of frontmatter-mutating flags (rendered as

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -67,6 +68,8 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
 			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
+			mcplib.WithString("size_source", mcplib.Description("Size provenance source (human, agent, derived)")),
+			mcplib.WithString("size_ruleset_version", mcplib.Description("Size ruleset version")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
 		),
 		s.handleUpdateItem,
@@ -654,7 +657,39 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	if err != nil {
 		return domainError("get item", err), nil
 	}
+	// SE-6: project a never-persisted size_composition rollup onto feature and
+	// shipment read surfaces so agents can read the aggregate without a separate call.
+	if artifact.ArtifactType == "feature" || artifact.ArtifactType == "shipment" {
+		composition, cErr := core.SizeComposition(ctx, s.Workspace, artifact)
+		if cErr != nil {
+			slog.WarnContext(ctx, "get_item: size composition failed; returning artifact without rollup", "id", id, "error", cErr)
+		} else if composition != nil {
+			payload, pErr := withSizeComposition(artifact, composition)
+			if pErr != nil {
+				slog.WarnContext(ctx, "get_item: size composition projection failed; returning plain artifact", "id", id, "error", pErr)
+			} else {
+				return toolResultJSON(payload)
+			}
+		}
+	}
 	return toolResultJSON(artifact)
+}
+
+// withSizeComposition marshals any read-surface value into a generic map and
+// attaches the computed-on-read size_composition rollup without mutating or
+// persisting the underlying artifact. It is shared by the get_item, get_shipment,
+// and get_queue MCP read surfaces (108-F SE-6).
+func withSizeComposition(v any, composition *core.SizeCompositionResult) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("marshal for size composition: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal for size composition: %w", err)
+	}
+	payload["size_composition"] = composition
+	return payload, nil
 }
 
 func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -744,16 +779,48 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	// core.SetArtifactSize. It is mutually exclusive with generic field updates and
 	// section writes, which go through the rebuild path; combining them would
 	// double-write and negate body preservation.
-	if size, ok := request.Params.Arguments["size"].(string); ok && size != "" {
+	if hasSizeMutationArguments(request.Params.Arguments) {
 		if len(updates) > 0 || sections != nil {
 			return ValidationFailed("size cannot be combined with other field updates or sections"), nil
 		}
-		artifact, err := core.SetArtifactSize(ctx, s.Workspace, id, size)
+		size, _ := request.Params.Arguments["size"].(string)
+		source, _ := request.Params.Arguments["size_source"].(string)
+		rulesetVersion, _ := request.Params.Arguments["size_ruleset_version"].(string)
+		// SE-5 trust boundary: an agent transport must not claim human provenance.
+		// Reject an explicit size_source: human from the MCP surface regardless of
+		// ruleset so masquerade cannot survive the transport boundary.
+		if source == "human" {
+			return ValidationFailed("size_source: human cannot be set from the MCP (agent) transport"), nil
+		}
+		var artifact *models.Artifact
+		var err error
+		if source != "" || rulesetVersion != "" {
+			// Provenance-carrying mutations route through the typed seam
+			// (SE-3a/SE-5); implemented in the build phase.
+			mutation := core.SizeMutation{Actor: core.ActorContextAgent}
+			if size != "" {
+				mutation.Size = &size
+			}
+			if source != "" {
+				mutation.Source = &source
+			}
+			if rulesetVersion != "" {
+				mutation.RulesetVersion = &rulesetVersion
+			}
+			artifact, err = core.SetArtifactSizeWithProvenance(ctx, s.Workspace, id, mutation)
+		} else {
+			// Plain-size mutation over the MCP (agent) transport must attribute the
+			// agent actor in the estimate_history event. Routing through the
+			// human-hardcoded SetArtifactSize wrapper would forge human provenance
+			// into the audit stream, defeating the SE-5 trust boundary above.
+			artifact, err = core.SetArtifactSizeWithProvenance(ctx, s.Workspace, id, core.SizeMutation{Size: &size, Actor: core.ActorContextAgent})
+		}
 		if err != nil {
 			return domainError("set artifact size", err), nil
 		}
 		return toolResultJSON(artifact)
 	}
+
 	requestedStatus, _ := updates["status"].(string)
 	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
 	if err != nil {
@@ -775,6 +842,20 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return gatePassResult(artifact, outcome)
 	}
 	return toolResultJSON(artifact)
+}
+
+// hasSizeMutationArguments reports whether the request carries any reserved
+// sizing argument. It detects PRESENCE (the key was supplied), not non-emptiness,
+// so an explicit empty value (e.g. size="") still routes through the audited size
+// seam and is rejected with a validation error — matching the CLI — rather than
+// silently no-op'ing through the generic update path.
+func hasSizeMutationArguments(args map[string]any) bool {
+	for _, key := range []string{"size", "size_source", "size_ruleset_version"} {
+		if _, ok := args[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleQuerySQL(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1292,7 +1373,72 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 	if err != nil {
 		return InternalError(fmt.Sprintf("get queue: %v", err)), nil
 	}
-	return toolResultJSON(view)
+	// SE-6: project the never-persisted size_composition rollup onto feature and
+	// shipment queue items so agents can read aggregates inline. Nothing is
+	// persisted; non-aggregate items and the CLI queue shaper are left untouched.
+	projected, pErr := s.queueViewWithSizeComposition(ctx, view)
+	if pErr != nil {
+		slog.WarnContext(ctx, "get_queue: size composition projection failed; returning plain queue", "error", pErr)
+		return toolResultJSON(view)
+	}
+	return toolResultJSON(projected)
+}
+
+// queueViewWithSizeComposition marshals a queue view into a generic map and attaches
+// a computed-on-read size_composition rollup to each feature/shipment item, in both
+// the flat items list and any grouped items, preserving order (108-F SE-6).
+func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.QueueView) (any, error) {
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("marshal queue view: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal queue view: %w", err)
+	}
+	if items, ok := payload["items"].([]any); ok {
+		s.injectQueueSizeComposition(ctx, view.Items, items)
+	}
+	if groups, ok := payload["groups"].([]any); ok {
+		for gi, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok || gi >= len(view.Groups) {
+				continue
+			}
+			if gitems, ok := gm["items"].([]any); ok {
+				s.injectQueueSizeComposition(ctx, view.Groups[gi].Items, gitems)
+			}
+		}
+	}
+	return payload, nil
+}
+
+// injectQueueSizeComposition attaches a computed-on-read size_composition rollup to
+// each feature/shipment item map in a queue projection, matching the typed slice by
+// index so order is preserved. Non-aggregate types are left unprojected; a rollup
+// failure is logged and that item is left without a rollup rather than failing the
+// whole queue response.
+func (s *Server) injectQueueSizeComposition(ctx context.Context, artifacts []*models.Artifact, itemMaps []any) {
+	for i, art := range artifacts {
+		if i >= len(itemMaps) || art == nil {
+			continue
+		}
+		if art.ArtifactType != "feature" && art.ArtifactType != "shipment" {
+			continue
+		}
+		im, ok := itemMaps[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		composition, err := core.SizeComposition(ctx, s.Workspace, art)
+		if err != nil {
+			slog.WarnContext(ctx, "get_queue: size composition failed; item left without rollup", "id", art.ID, "error", err)
+			continue
+		}
+		if composition != nil {
+			im["size_composition"] = composition
+		}
+	}
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1537,7 +1683,21 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 	// render-time covering_feature projection (top-level sibling, omitted when
 	// absent). Purely additive: the shipment artifact is embedded unchanged and
 	// nothing is persisted.
-	return toolResultJSON(core.NewShipmentView(ctx, s.Workspace, shipment))
+	view := core.NewShipmentView(ctx, s.Workspace, shipment)
+	// SE-6: project the never-persisted size_composition rollup onto the shipment
+	// read surface so agents can read the aggregate without a separate call. The
+	// CLI shipment shaper deliberately omits this (MCP-only projection).
+	composition, cErr := core.SizeComposition(ctx, s.Workspace, shipment)
+	if cErr != nil {
+		slog.WarnContext(ctx, "get_shipment: size composition failed; returning shipment without rollup", "id", id, "error", cErr)
+	} else if composition != nil {
+		if payload, pErr := withSizeComposition(view, composition); pErr != nil {
+			slog.WarnContext(ctx, "get_shipment: size composition projection failed; returning plain shipment", "id", id, "error", pErr)
+		} else {
+			return toolResultJSON(payload)
+		}
+	}
+	return toolResultJSON(view)
 }
 
 func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1566,7 +1726,40 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 	}
 	// Share the same read-only shaper as get so list carries an identical
 	// covering_feature projection and both surfaces stay same-shape.
-	return toolResultJSON(core.NewShipmentViews(ctx, s.Workspace, shipments))
+	views := core.NewShipmentViews(ctx, s.Workspace, shipments)
+	// SE-6: project the never-persisted size_composition rollup onto each shipment
+	// so list_shipments stays same-shape with get_shipment. MCP-only; the CLI
+	// shipment shaper deliberately omits composition.
+	return toolResultJSON(s.shipmentViewsWithSizeComposition(ctx, shipments, views))
+}
+
+// shipmentViewsWithSizeComposition projects the never-persisted size_composition
+// rollup onto each shipment view so list_shipments stays same-shape with
+// get_shipment (108-F SE-6). Order is preserved; on any projection failure the
+// element falls back to the unprojected view.
+func (s *Server) shipmentViewsWithSizeComposition(ctx context.Context, shipments []*models.Artifact, views []core.ShipmentView) []any {
+	out := make([]any, len(views))
+	for i := range views {
+		out[i] = views[i]
+		if i >= len(shipments) || shipments[i] == nil {
+			continue
+		}
+		composition, err := core.SizeComposition(ctx, s.Workspace, shipments[i])
+		if err != nil {
+			slog.WarnContext(ctx, "list_shipments: size composition failed; shipment left without rollup", "id", shipments[i].ID, "error", err)
+			continue
+		}
+		if composition == nil {
+			continue
+		}
+		payload, pErr := withSizeComposition(views[i], composition)
+		if pErr != nil {
+			slog.WarnContext(ctx, "list_shipments: size composition projection failed; shipment left without rollup", "id", shipments[i].ID, "error", pErr)
+			continue
+		}
+		out[i] = payload
+	}
+	return out
 }
 
 func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
