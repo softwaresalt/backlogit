@@ -10,8 +10,8 @@ title: Ship 099-S — Local Review Readiness (108-F size estimation)
 
 # Ship 099-S — Local Review Readiness
 
-**Reviewed HEAD:** `eb38e2c` (branch `feat/108-F-size-estimation`)
-**Outcome:** READY_WITH_FOLLOWUPS
+**Initial reviewed HEAD:** `eb38e2c` · **Current HEAD:** `94fa3e9` (branch `feat/108-F-size-estimation`)
+**Outcome:** READY_WITH_FOLLOWUPS (initial); Copilot cycles 1–3 burned down and the task-only pivot applied — see "Cycle 1–3 burndown" below.
 **Gates:** `go build ./...` ✓ · `go test ./...` ✓ (incl. contract+integration) · `go vet ./...` ✓ · `gofmt -l` (changed files) clean · `golangci-lint run` ✓
 
 ## Reviewers (cross-model, parallel)
@@ -45,6 +45,21 @@ Harness safety verified before each change: no SE test pins plain-size event act
 - **[P3] F6 rollback canonicalCache** — frees file+DB row+seq id but not a shared `CanonicalCache` entry; bulk-create-continue edge (bulk callers typically abort on first error).
 
 Dismissed: remove `ErrSizeEstimationNotImplemented` (harness references it via `errors.Is` — keep); defaults.go "misleading comment" (no such comment at 34-37).
+
+## Cycle 1–3 Copilot burndown + task-only pivot
+
+- **Cycles 1–2 (`985218b`):** original 6 Copilot threads + WDc/WDh resolved (MCP actor, findArtifact containment, off-seam key injection, composition error logging, nil-ws guard, bare-error wrap).
+- **Cycle 3 (`94fa3e9`) — operator TASK-ONLY pivot:** stored/estimatable `size` is now task-only. Feature/shipment size fields removed from `defaults.go`; features/shipments expose computed-on-read rollup composition only. Composition counts task members (feature manifests expand to child tasks; the feature itself is not counted; non-task children excluded).
+- **Cycle-3 findings dispositions:**
+  - #1 estimate-event actor fidelity — FIXED (`appendItemEventWithActorErr`, actor stamped).
+  - #2 feature/subtask sizing scope — RESOLVED by narrowing to task-only.
+  - #3 `size_ruleset_version` enum-with-no-values — FIXED (enum→opaque string).
+  - #4 MCP empty-size routing — FIXED (presence detection; parity with CLI).
+  - #5 `findArtifact` O(N) per member — DEFER (perf backlog follow-up).
+  - #6 review children in rollup — FIXED (task-only query).
+  - #7 F6 rollback branch test-only — OPEN, escalated to operator (keep intentional fault-injection seam vs remove dead branch + drop F6 claim). Not resolved without operator decision.
+  - #8 this memo stale — FIXED (this update).
+- **Gates @ `94fa3e9`:** `go test ./...` ✓ · `go vet ./...` ✓ · `golangci-lint run` ✓ · `gofmt -l` (changed) clean.
 
 ## Next
 Push `feat/108-F-size-estimation` → pr-lifecycle (PR, Copilot review §1.3-1.7, CI, §1.9 P-014 gate) → operator-approved merge-commit (P-009) → runtime-verification + operational-closure → post-merge ship_shipment 099-S + shipment-reconcile + compound-refresh + compact-context (and create the deferred stash entries then).
