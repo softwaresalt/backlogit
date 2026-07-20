@@ -90,6 +90,14 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 	}
 	defer func() { _ = unlock() }()
 
+	// Re-validate path containment UNDER THE LOCK, immediately before the read, to
+	// close the TOCTOU window between FindArtifactPath's walk-time containment check
+	// and this locked read/write: a symlink at path could otherwise be swapped after
+	// lookup to resolve outside the workspace storage root.
+	if err := ensureArtifactLookupContained(ws, path); err != nil {
+		return nil, fmt.Errorf("revalidate containment for %s: %w", id, err)
+	}
+
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read artifact %s: %w", id, err)
