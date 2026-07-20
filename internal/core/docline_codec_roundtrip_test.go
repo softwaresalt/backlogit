@@ -160,20 +160,23 @@ func TestUpdateArtifact_DropsTopLevelDocline_PreservesCustomFields(t *testing.T)
 	assert.Equal(t, "M", cf["size"], "custom_fields.size must survive UpdateArtifact")
 }
 
-func TestSE2FeatureShipmentSizingCustomFieldsRoundTrip(t *testing.T) {
+func TestSE2TaskSizingCustomFieldsRoundTrip(t *testing.T) {
+	// Size estimation is task-only: the task artifact is the sole supported sizing
+	// carrier. These cases verify the generic codec round-trips a task's sizing
+	// custom_fields (size + provenance) and drops the unmodeled docline map.
 	tests := []struct {
-		name         string
-		id           string
-		artifactType string
-		status       string
+		name     string
+		id       string
+		parentID string
+		status   string
 	}{
-		{name: "feature", id: "920-F", artifactType: "feature", status: "active"},
-		{name: "shipment", id: "921-S", artifactType: "shipment", status: "queued"},
+		{name: "active task", id: "920.001-T", parentID: "920-F", status: "active"},
+		{name: "queued task", id: "921.001-T", parentID: "921-F", status: "queued"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			input := sizingCarrierArtifactFile(tt.id, tt.artifactType, tt.status)
+			input := sizingCarrierArtifactFile(tt.id, tt.parentID, tt.status)
 			fmIn, body, err := models.ParseFrontmatter(input)
 			require.NoError(t, err)
 			require.Contains(t, fmIn, "docline")
@@ -194,16 +197,16 @@ func TestSE2FeatureShipmentSizingCustomFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSE2UpdateArtifactPreservesFeatureShipmentSizingCustomFields(t *testing.T) {
+func TestSE2UpdateArtifactPreservesTaskSizingCustomFields(t *testing.T) {
 	tests := []struct {
-		name         string
-		id           string
-		artifactType string
-		status       string
-		update       map[string]any
+		name     string
+		id       string
+		parentID string
+		status   string
+		update   map[string]any
 	}{
-		{name: "feature", id: "922-F", artifactType: "feature", status: "active", update: map[string]any{"title": "Updated feature"}},
-		{name: "shipment", id: "923-S", artifactType: "shipment", status: "queued", update: map[string]any{"title": "Updated shipment"}},
+		{name: "active task", id: "922.001-T", parentID: "922-F", status: "active", update: map[string]any{"title": "Updated task"}},
+		{name: "queued task", id: "923.001-T", parentID: "923-F", status: "queued", update: map[string]any{"title": "Updated task"}},
 	}
 
 	for _, tt := range tests {
@@ -219,7 +222,7 @@ func TestSE2UpdateArtifactPreservesFeatureShipmentSizingCustomFields(t *testing.
 			t.Cleanup(func() { _ = ws.Close() })
 
 			path := filepath.Join(backlogitDir, "queue", tt.id+".md")
-			require.NoError(t, os.WriteFile(path, []byte(sizingCarrierArtifactFile(tt.id, tt.artifactType, tt.status)), 0o644))
+			require.NoError(t, os.WriteFile(path, []byte(sizingCarrierArtifactFile(tt.id, tt.parentID, tt.status)), 0o644))
 
 			_, err = core.UpdateArtifact(ctx, ws, tt.id, tt.update)
 			require.NoError(t, err)
@@ -235,9 +238,9 @@ func TestSE2UpdateArtifactPreservesFeatureShipmentSizingCustomFields(t *testing.
 	}
 }
 
-func sizingCarrierArtifactFile(id, artifactType, status string) string {
+func sizingCarrierArtifactFile(id, parentID, status string) string {
 	return "---\n" +
-		"artifact_type: " + artifactType + "\n" +
+		"artifact_type: task\n" +
 		"created_at: 2026-07-18T00:00:00.000Z\n" +
 		"custom_fields:\n" +
 		"    size: M\n" +
@@ -247,8 +250,10 @@ func sizingCarrierArtifactFile(id, artifactType, status string) string {
 		"    backlogit:\n" +
 		"        size: L\n" +
 		"id: " + id + "\n" +
+		"parent_id: " + parentID + "\n" +
+		"priority: medium\n" +
 		"status: " + status + "\n" +
-		"title: Sizing carrier " + artifactType + "\n" +
+		"title: Sizing carrier task\n" +
 		"updated_at: 2026-07-18T00:00:00.000Z\n" +
 		"---\n\nBody paragraph.\n"
 }

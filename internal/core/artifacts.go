@@ -694,6 +694,33 @@ func ensureArtifactLookupContained(ws *Workspace, path string) error {
 	return nil
 }
 
+// resolveContainedArtifactPath resolves filePath through symlinks and verifies the
+// resolved real path is contained within the (also symlink-resolved) workspace
+// storage root. Callers bind their read/write I/O to the returned resolved path so
+// containment validation applies to the object actually accessed, closing the
+// TOCTOU gap a pathname-only check leaves open. Both sides are resolved before the
+// containment test so a legitimately symlinked storage root (e.g. platform temp
+// dirs) is not rejected, while a leaf that escapes the root still is. The leaf must
+// already exist (callers use this immediately before reading the file).
+func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
+	realPath, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve real artifact path: %w", err)
+	}
+	absStorage, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve storage root: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(filepath.Clean(absStorage))
+	if err != nil {
+		realRoot = filepath.Clean(absStorage)
+	}
+	if !pathContained(realRoot, realPath) {
+		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", realPath, blerrors.ErrValidation)
+	}
+	return realPath, nil
+}
+
 // WriteArtifactFile atomically writes an artifact to the given file path.
 func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	fm := map[string]any{
