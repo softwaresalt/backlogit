@@ -684,7 +684,18 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 }
 
 func ensureArtifactLookupContained(ws *Workspace, path string) error {
-	absTarget, inScope, err := confineToStorageRoot(ws, path)
+	// path is WalkDir output: a real filesystem path relative to the process
+	// working directory that already embeds ws.RootPath (the walk root is
+	// WorkspaceStorageRoot(ws.RootPath)). Absolutize it here so confineToStorageRoot
+	// uses it as-is instead of re-joining ws.RootPath, which would double-prefix a
+	// named relative --cwd (e.g. "workspace/.backlogit/..." -> "workspace/workspace/...").
+	// The doctor --target caller still passes a workspace-root-relative path straight
+	// to confineToStorageRoot, so its documented join contract is unaffected.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve artifact lookup path: %w", err)
+	}
+	absTarget, inScope, err := confineToStorageRoot(ws, absPath)
 	if err != nil {
 		return fmt.Errorf("resolve artifact path containment: %w", err)
 	}
@@ -702,11 +713,12 @@ func ensureArtifactLookupContained(ws *Workspace, path string) error {
 // containment test so a legitimately symlinked storage root (e.g. platform temp
 // dirs) is not rejected, while a leaf that escapes the root still is.
 //
-// filePath may be absolute or relative to the workspace root (FindArtifactPath
-// yields a path relative to ws.RootPath when ws.RootPath is itself relative, which
-// is the default when the CLI runs with --cwd="."). A relative path is joined to
-// ws.RootPath and made absolute BEFORE resolution — mirroring confineToStorageRoot
-// — so containment never compares a relative target against an absolute root. The
+// filePath is the output of FindArtifactPath: a real filesystem path that is
+// relative to the process working directory (it already embeds ws.RootPath, since
+// the walk root is WorkspaceStorageRoot(ws.RootPath)) or absolute. It is resolved
+// with filepath.Abs against the same working directory the storage root is resolved
+// against, so ws.RootPath is NOT re-joined — doing so would double-prefix a named
+// relative --cwd (e.g. "workspace/.backlogit/..." -> "workspace/workspace/..."). The
 // leaf must already exist (callers use this immediately before reading the file).
 func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
 	absStorage, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
@@ -715,11 +727,7 @@ func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error
 	}
 	absStorage = filepath.Clean(absStorage)
 
-	target := filePath
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(ws.RootPath, filePath)
-	}
-	absTarget, err := filepath.Abs(target)
+	absTarget, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", fmt.Errorf("resolve target path: %w", err)
 	}

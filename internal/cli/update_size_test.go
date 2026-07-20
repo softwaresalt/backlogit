@@ -153,3 +153,26 @@ func TestUpdateSize_DefaultCWDRelativePath(t *testing.T) {
 	require.True(t, ok, "custom_fields must be present")
 	assert.Equal(t, "M", cf["size"])
 }
+
+func TestUpdateSize_NamedRelativeCWD(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	id := createSizeTask(t, root)
+	path := taskFilePath(root, id)
+
+	// Run from the workspace's PARENT with a NAMED relative --cwd (the workspace
+	// directory name). RootPath is then a non-dot relative path, so FindArtifactPath
+	// yields "<name>/.backlogit/..." — the case the "." test cannot expose because
+	// joining "." is a no-op. A helper that re-joins RootPath double-prefixes here.
+	t.Chdir(filepath.Dir(root))
+
+	out, err := runRootCommand(t, "--cwd", filepath.Base(root), "update", id, "--size", "L")
+	require.NoError(t, err, "update --size under a named relative cwd must succeed: %s", out)
+
+	rawAfter, err := os.ReadFile(path)
+	require.NoError(t, err)
+	mdAfter, err := mdfront.Decode(rawAfter)
+	require.NoError(t, err)
+	cf, ok := mdAfter.Frontmatter["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must be present")
+	assert.Equal(t, "L", cf["size"])
+}
