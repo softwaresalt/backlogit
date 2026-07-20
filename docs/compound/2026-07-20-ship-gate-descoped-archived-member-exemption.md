@@ -74,14 +74,26 @@ return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 ```
 
 `archivedFromNonTerminalStatus` reads `archived_status` from the **Markdown
-source**. A member is exempt only when its `archived_status` is a **recognized,
-non-terminal** status (a proven descope). A missing/empty `archived_status`
-fails closed (reported as NOT a descope), and — hardened in PR #266 — an
+source**. A member is exempt only when its `archived_status` is a **recognized**
+status (in the `isRecognizedReleaseStatus` allowlist) that is also **not
+terminal per `isTerminalReleaseStatus`** — precisely the set `{queued, active,
+blocked, review, shipped, abandoned}`. A missing/empty `archived_status` fails
+closed (reported as NOT a descope), and — hardened in PR #266 — an
 **unrecognized** value (typo/malformed) fails closed too: because
 `isTerminalReleaseStatus` returns `false` for any unknown value, keying the
 exemption on `!isTerminalReleaseStatus` alone would misclassify garbage
-provenance as a non-terminal descope and bypass the evidence requirement. The
-predicate is now gated behind an `isRecognizedReleaseStatus` allowlist.
+provenance as a non-terminal descope and bypass the evidence requirement.
+
+**Known imprecision (tracked in stash `A3C349DD`).** `isTerminalReleaseStatus` =
+`{done, accepted, rejected, archived}` omits `shipped` and `abandoned`, while the
+canonical `core.TerminalStatuses` (`blocking_cascade.go:14`) = `{done, accepted,
+archived, shipped, abandoned, rejected}` treats both as terminal. So a member
+archived from `shipped`/`abandoned` is still exempted today even though both are
+terminal end-states. The follow-up must decide the intended descope-eligible set
+(genuine in-flight statuses, plus a deliberate call on whether `abandoned`/
+`rejected` count as descopes) and introduce a dedicated descope predicate — the
+other five `isTerminalReleaseStatus` call sites (release progression) must stay
+unchanged. `shipped`/`done`/`accepted` are completions and must never be exempt.
 
 ## Two traps that shaped the fix
 

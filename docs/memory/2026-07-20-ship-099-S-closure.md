@@ -35,7 +35,15 @@ permanent block, no operator recourse.
   an **unrecognized** `archived_status` (typo/malformed) also fails closed —
   `isTerminalReleaseStatus` returns `false` for unknown values, so exempting on
   `!isTerminalReleaseStatus` alone would treat garbage provenance as a proven
-  descope. Only a **recognized, non-terminal** status is exempt.
+  descope. Precisely, the CURRENT exempt set is `recognized ∩
+  !isTerminalReleaseStatus` = `{queued, active, blocked, review, shipped,
+  abandoned}`. **Known imprecision (tracked in stash `A3C349DD`)**:
+  `isTerminalReleaseStatus` = `{done, accepted, rejected, archived}` omits
+  `shipped`/`abandoned`, whereas canonical `core.TerminalStatuses`
+  (`blocking_cascade.go:14`) treats both as terminal — so a member archived from
+  `shipped`/`abandoned` is still exempted today. Reconciling the descope-eligible
+  set (in-flight statuses, plus a deliberate call on `abandoned`/`rejected`) is a
+  follow-up; `shipped`/`done`/`accepted` are completions and must not be exempt.
 - Copilot review cycle-1 (VALID, HIGH quality): the first draft exempted EVERY
   archived member. `ArchiveItem` accepts terminal items and preserves the
   pre-archive status, and `validate_status_transition` is registered only for
