@@ -700,23 +700,41 @@ func ensureArtifactLookupContained(ws *Workspace, path string) error {
 // containment validation applies to the object actually accessed, closing the
 // TOCTOU gap a pathname-only check leaves open. Both sides are resolved before the
 // containment test so a legitimately symlinked storage root (e.g. platform temp
-// dirs) is not rejected, while a leaf that escapes the root still is. The leaf must
-// already exist (callers use this immediately before reading the file).
+// dirs) is not rejected, while a leaf that escapes the root still is.
+//
+// filePath may be absolute or relative to the workspace root (FindArtifactPath
+// yields a path relative to ws.RootPath when ws.RootPath is itself relative, which
+// is the default when the CLI runs with --cwd="."). A relative path is joined to
+// ws.RootPath and made absolute BEFORE resolution — mirroring confineToStorageRoot
+// — so containment never compares a relative target against an absolute root. The
+// leaf must already exist (callers use this immediately before reading the file).
 func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
-	realPath, err := filepath.EvalSymlinks(filePath)
-	if err != nil {
-		return "", fmt.Errorf("resolve real artifact path: %w", err)
-	}
 	absStorage, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
 	if err != nil {
 		return "", fmt.Errorf("resolve storage root: %w", err)
 	}
-	realRoot, err := filepath.EvalSymlinks(filepath.Clean(absStorage))
+	absStorage = filepath.Clean(absStorage)
+
+	target := filePath
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(ws.RootPath, filePath)
+	}
+	absTarget, err := filepath.Abs(target)
 	if err != nil {
-		realRoot = filepath.Clean(absStorage)
+		return "", fmt.Errorf("resolve target path: %w", err)
+	}
+	absTarget = filepath.Clean(absTarget)
+
+	realPath, err := filepath.EvalSymlinks(absTarget)
+	if err != nil {
+		return "", fmt.Errorf("resolve real artifact path: %w", err)
+	}
+	realRoot, rootErr := filepath.EvalSymlinks(absStorage)
+	if rootErr != nil {
+		realRoot = absStorage
 	}
 	if !pathContained(realRoot, realPath) {
-		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", realPath, blerrors.ErrValidation)
+		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", filePath, blerrors.ErrValidation)
 	}
 	return realPath, nil
 }
