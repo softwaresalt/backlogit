@@ -113,6 +113,14 @@ func TestSE3aSetArtifactSizeWithProvenanceHarness(t *testing.T) {
 			logRaw, err := os.ReadFile(logPath)
 			require.NoError(t, err)
 			assert.Contains(t, string(logRaw), events.EventEstimateHistory)
+
+			// #1: the estimate event records the mutation actor (not the default
+			// "backlogit") so item_log_entries.actor can distinguish authorship.
+			var loggedActor string
+			require.NoError(t, ws.DB.QueryRowContext(context.Background(),
+				`SELECT actor FROM item_log_entries WHERE item_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1`,
+				"930.001-T", events.EventEstimateHistory).Scan(&loggedActor))
+			assert.Equal(t, string(tt.mutation.Actor), loggedActor, "estimate event actor must match the mutation actor")
 		})
 	}
 }
@@ -266,6 +274,15 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 			ArtifactType: "task",
 			ParentID:     "940-F",
 		})
+		// A non-task child (review) must be excluded from the task-only rollup so
+		// it never skews the histogram as a spurious unsized member (#6).
+		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
+			ID:           "940.003-R",
+			Title:        "Review child (not sizable)",
+			Status:       models.StatusActive,
+			ArtifactType: "review",
+			ParentID:     "940-F",
+		})
 
 		result, err := SizeComposition(context.Background(), ws, feature)
 		requireNoSizeEstimationTODO(t, err)
@@ -273,7 +290,7 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 		require.NotNil(t, result)
 		assert.Equal(t, 1, result.Histogram["M"], "the sized child is counted in the M bucket")
 		assert.Equal(t, 1, result.Unsized, "the child without a size is counted as unsized")
-		assert.Len(t, result.Members, 2, "both direct children are members")
+		assert.Len(t, result.Members, 2, "only the two task children are members; the review child is excluded")
 		assert.Nil(t, result.RulesetVersion)
 
 		rawAfter, err := os.ReadFile(filepath.Join(backlogitDir, "queue", "940-F.md"))
@@ -322,9 +339,10 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 		// 941-F expands to 941.001-T + 941.002-T; the explicitly-listed 941.001-T
 		// is de-duplicated so the sized child is counted exactly once.
 		assert.Equal(t, 1, result.Histogram["L"], "sized child counted once despite explicit + expanded membership")
-		// Unsized members are the feature itself (no size) and 941.002-T.
-		assert.Equal(t, 2, result.Unsized, "the feature and the unsized child are both unsized")
-		assert.Len(t, result.Members, 3, "feature + two children, each counted once")
+		// Task-only sizing: the feature is a rollup parent (expanded, not counted);
+		// only the two child tasks are members, one of them unsized.
+		assert.Equal(t, 1, result.Unsized, "only the unsized child task is unsized")
+		assert.Len(t, result.Members, 2, "the two child tasks, each counted once (feature excluded)")
 		assert.Contains(t, result.Skipped, "999.404-T", "the dangling manifest id is warn-skipped")
 		assert.Nil(t, result.RulesetVersion)
 

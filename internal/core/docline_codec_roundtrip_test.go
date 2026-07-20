@@ -16,8 +16,8 @@ import (
 )
 
 // 109.004-T / 096-S ground-truth guard: these tests codify the architectural
-// premise behind the size-extension spike decision to store feature/shipment
-// `size` under custom_fields.size rather than a top-level docline map.
+// premise behind the size-estimation decision to store a task `size` under
+// custom_fields.size rather than a top-level docline map.
 //
 // The premise, proven here empirically, is that the GENERIC artifact codec
 // (ParseFrontmatter -> ArtifactFromFrontmatter -> WriteArtifactFile) DROPS an

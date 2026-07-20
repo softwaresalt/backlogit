@@ -79,18 +79,27 @@ func TestSE5MCPRejectsHumanMasqueradeHarness(t *testing.T) {
 func TestSE6MCPReadProjectionSizeCompositionHarness(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
+	// Task-only sizing: the feature carries NO stored size; its size surfaces on
+	// read purely as the computed-on-read composition of its child tasks.
 	feature := &models.Artifact{
 		ID:           "960-F",
 		Title:        "Read projection feature",
 		Status:       models.StatusActive,
 		ArtifactType: "feature",
+	}
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+		ID:           "960.001-T",
+		Title:        "Sized child task",
+		Status:       models.StatusActive,
+		ArtifactType: "task",
+		ParentID:     feature.ID,
 		CustomFields: map[string]any{
 			"size":                 "L",
 			"size_source":          "agent",
 			"size_ruleset_version": "ruleset-alpha",
 		},
-	}
-	require.NoError(t, db.UpsertItem(ctx, ws.DB, feature))
+	}))
 
 	result, err := s.handleGetItem(ctx, contractRequest(map[string]any{"id": feature.ID}))
 	require.NoError(t, err)
@@ -98,10 +107,11 @@ func TestSE6MCPReadProjectionSizeCompositionHarness(t *testing.T) {
 	requireNoSizingTODOMCP(t, text)
 	require.False(t, result.IsError, text)
 	data := extractResultJSON(t, result)
-	customFields, ok := data["custom_fields"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "L", customFields["size"])
-	assert.Contains(t, data, "size_composition")
+	assert.Contains(t, data, "size_composition", "feature read projection must expose the rollup composition")
+	if cf, ok := data["custom_fields"].(map[string]any); ok {
+		_, hasSize := cf["size"]
+		assert.False(t, hasSize, "task-only sizing: a feature must not carry a stored size")
+	}
 
 	// SE-6: get_shipment must also expose the never-persisted composition rollup.
 	shipment := &models.Artifact{

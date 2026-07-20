@@ -54,21 +54,26 @@ func TestArtifactSize_AbsentSizeStillValid(t *testing.T) {
 	assert.NoError(t, ValidateArtifactFields(task, hd))
 }
 
-func TestSE1ValidateSizeValueFeatureShipmentHarness(t *testing.T) {
+func TestSE1ValidateSizeValueTaskOnlyHarness(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
 	hd, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 	ws := &Workspace{HeaderDef: hd}
 
-	for _, artifactType := range []string{"feature", "shipment"} {
-		t.Run(artifactType, func(t *testing.T) {
-			err := validateSizeValue(ws, artifactType, "M")
-			if err != nil {
-				t.Fatalf("TODO: implement SE-1 size seam schema for %s: %v", artifactType, err)
-			}
-			assert.NoError(t, validateSizeValue(ws, artifactType, "M"))
-			assert.Error(t, validateSizeValue(ws, artifactType, "bogus"))
+	// Task is sizable: a valid enum value passes, an out-of-enum value is rejected.
+	t.Run("task", func(t *testing.T) {
+		assert.NoError(t, validateSizeValue(ws, "task", "M"))
+		assert.Error(t, validateSizeValue(ws, "task", "bogus"))
+	})
+
+	// Features and shipments are rollup parents: the seam refuses to size them
+	// because their schema defines no size field (task-only sizing).
+	for _, parentType := range []string{"feature", "shipment"} {
+		t.Run(parentType, func(t *testing.T) {
+			err := validateSizeValue(ws, parentType, "M")
+			require.Error(t, err, "%s must not be directly sizable", parentType)
+			assert.Contains(t, err.Error(), "does not define a size field")
 		})
 	}
 }

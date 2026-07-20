@@ -30,49 +30,44 @@ func TestWriteDefaults_TaskHasSizeEnum(t *testing.T) {
 	assert.Empty(t, sizeDef.Default, "size must have no default")
 }
 
-func TestSE1SizeSchemaFeatureShipmentHarness(t *testing.T) {
+func TestSE1SizeSchemaTaskOnlyHarness(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, config.WriteDefaults(dir))
 
 	cfg, err := config.LoadHeaderDef(dir)
 	require.NoError(t, err)
 
-	tests := []struct {
-		artifactType string
-		wantSize     bool
-	}{
-		{artifactType: "task", wantSize: true},
-		{artifactType: "feature", wantSize: true},
-		{artifactType: "shipment", wantSize: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.artifactType, func(t *testing.T) {
-			schema, err := cfg.ResolveFieldSchema(tt.artifactType)
+	// Task is the only sizable unit: it carries the full size + provenance schema.
+	t.Run("task", func(t *testing.T) {
+		schema, err := cfg.ResolveFieldSchema("task")
+		require.NoError(t, err)
+
+		sizeDef, ok := schema["size"]
+		require.True(t, ok, "task schema must define size")
+		assert.Equal(t, "enum", sizeDef.Type)
+		assert.Equal(t, []string{"XS", "S", "M", "L", "XL"}, sizeDef.Values)
+		assert.True(t, sizeDef.Optional)
+
+		sourceDef, ok := schema["size_source"]
+		require.True(t, ok, "task schema must define size_source")
+		assert.Equal(t, "enum", sourceDef.Type)
+		assert.Equal(t, []string{"human", "agent", "derived"}, sourceDef.Values)
+		assert.True(t, sourceDef.Optional)
+
+		rulesetDef, ok := schema["size_ruleset_version"]
+		require.True(t, ok, "task schema must define size_ruleset_version")
+		assert.True(t, rulesetDef.Optional)
+		assert.Equal(t, "string", rulesetDef.Type, "ruleset version is an opaque stored version string")
+	})
+
+	// Features and shipments are rollup parents, not sizable units: they must NOT
+	// define a stored size field (their size is a computed-on-read composition).
+	for _, parentType := range []string{"feature", "shipment"} {
+		t.Run(parentType, func(t *testing.T) {
+			schema, err := cfg.ResolveFieldSchema(parentType)
 			require.NoError(t, err)
-
-			sizeDef, ok := schema["size"]
-			if tt.wantSize && !ok {
-				t.Fatalf("TODO: implement SE-1 size schema for %s", tt.artifactType)
-			}
-			require.True(t, ok, "%s schema must define size", tt.artifactType)
-			assert.Equal(t, "enum", sizeDef.Type)
-			assert.Equal(t, []string{"XS", "S", "M", "L", "XL"}, sizeDef.Values)
-			assert.True(t, sizeDef.Optional)
-
-			sourceDef, ok := schema["size_source"]
-			if !ok {
-				t.Fatalf("TODO: implement SE-1 size_source schema for %s", tt.artifactType)
-			}
-			assert.Equal(t, "enum", sourceDef.Type)
-			assert.Equal(t, []string{"human", "agent", "derived"}, sourceDef.Values)
-			assert.True(t, sourceDef.Optional)
-
-			rulesetDef, ok := schema["size_ruleset_version"]
-			if !ok {
-				t.Fatalf("TODO: implement SE-1 bounded size_ruleset_version schema for %s", tt.artifactType)
-			}
-			assert.True(t, rulesetDef.Optional)
-			assert.NotEqual(t, "string", rulesetDef.Type, "ruleset version must not be unbounded free text")
+			_, ok := schema["size"]
+			assert.False(t, ok, "%s must not define a stored size field (task-only sizing)", parentType)
 		})
 	}
 }

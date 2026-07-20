@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Durable sizing contract for backlogit (shipped 099-S / feature 108-F) — the canonical custom_fields.size field across feature, task, subtask, and shipment; size and provenance enums and their defaulting and rejection rules; the event-before-write best-effort audit durability policy; the computed-on-read composition contract and comparator; CLI/MCP parity and transport-aware actor stamping; and the map-replacement and validated-once caveats'
+description: 'Durable sizing contract for backlogit (shipped 099-S / feature 108-F) — the canonical custom_fields.size field stored only on tasks (features/shipments/parents expose a computed-on-read rollup composition instead); size and provenance enums and their defaulting and rejection rules; the event-before-write best-effort audit durability policy; the computed-on-read composition contract and comparator; CLI/MCP parity and transport-aware actor stamping; and the map-replacement and validated-once caveats'
 doc_type: design
 docline:
     date: 2026-07-19T00:00:00Z
@@ -16,7 +16,7 @@ docline:
 ingested_at: "2026-07-19T00:00:00Z"
 schema_version: "1.0"
 source: docs/design-docs/2026-07-19-size-estimation-contract.md
-title: 'Size estimation contract (feature and shipment sizing)'
+title: 'Size estimation contract (task-only sizing with rollup composition)'
 ---
 
 ## Scope
@@ -34,10 +34,17 @@ and the implementation plan in
 
 ## Canonical size field
 
-Size is stored as `custom_fields.size` at every applicable level: feature, task,
-subtask, and shipment. There is no dedicated `models.Artifact` carrier and no
-migration — the value rides in the existing `custom_fields` map, which already
-round-trips through the frontmatter codec.
+Size is stored as `custom_fields.size` and is **task-only**: the stored,
+estimatable size lives exclusively on `task` artifacts. Features, shipments, and
+any other parent-of-tasks never carry a stored size — their size is delivered as
+a computed-on-read rollup composition (see below). There is no dedicated
+`models.Artifact` carrier and no migration — the value rides in the existing
+`custom_fields` map, which already round-trips through the frontmatter codec.
+
+Task is the single decomposition unit for estimable, composable work. Keeping
+the stored estimate on tasks alone keeps estimation measurable and consistent
+for agent hand-off, while feature and shipment rollups reveal how well work is
+composed.
 
 The size value set is a fixed ordered enum:
 
@@ -104,12 +111,13 @@ the result is always null until a canonical ruleset is owned.
 
 Membership resolution:
 
-* Feature membership is direct children by `parent_id`.
-* Shipment membership is the explicit `custom_fields.items` manifest. A manifest
-  member that is a feature is expanded into its child tasks, so a shipment that
-  lists only a feature still reflects its members' sizes.
+* Feature membership is its direct **task** children by `parent_id`. Non-task
+  children (for example reviews or subtasks) are excluded from the rollup.
+* Shipment membership is the explicit `custom_fields.items` manifest, resolved to
+  **tasks only**. A manifest member that is a feature is expanded into its child
+  tasks; the feature itself is never counted as a member.
 * Members are de-duplicated, so a manifest listing a feature and its explicit
-  child tasks counts each item once.
+  child tasks counts each task once.
 * An existing member with no size increments `unsized`.
 * An unresolved manifest id (or any other resolution error) is warn-skipped: it
   is recorded in `skipped` and counted in neither the histogram nor `unsized`.

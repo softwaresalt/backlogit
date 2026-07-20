@@ -16,11 +16,14 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Values:  []string{"queued", "active", "blocked", "review", "done", "accepted", "rejected", "archived"},
 		Default: "queued",
 	}
-	// size + provenance schema (108-F). size is an optional T-shirt enum with no
-	// default so legacy artifacts without it stay valid. size_source records who
-	// authored the estimate. size_ruleset_version is bounded — an enum with a
-	// currently-empty accepted set (only null/absent is valid until a canonical
-	// ruleset is owned), which forecloses the free-text injection vector.
+	// size + provenance schema (108-F). Size estimation is TASK-ONLY: only the
+	// task type carries these fields; features/shipments expose a computed-on-read
+	// rollup (SizeComposition) rather than a stored estimate. size is an optional
+	// T-shirt enum with no default so legacy tasks without it stay valid.
+	// size_source records who authored the estimate. size_ruleset_version is an
+	// opaque version identifier for the ruleset that produced an estimate — a
+	// stored (never executed) string whose provenance-completeness (a source
+	// requires a non-empty ruleset) is enforced at the audited size seam.
 	sizeField := &FieldDef{
 		Type:     "enum",
 		Values:   []string{"XS", "S", "M", "L", "XL"},
@@ -32,7 +35,7 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Optional: true,
 	}
 	sizeRulesetVersionField := &FieldDef{
-		Type:     "enum",
+		Type:     "string",
 		Optional: true,
 	}
 	return &HeaderDefConfig{
@@ -54,9 +57,6 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Default:  "pending",
 						Optional: true,
 					},
-					"size":                 sizeField,
-					"size_source":          sizeSourceField,
-					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 			"deliberation": {
@@ -139,9 +139,6 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Type:     "list",
 						Optional: true,
 					},
-					"size":                 sizeField,
-					"size_source":          sizeSourceField,
-					"size_ruleset_version": sizeRulesetVersionField,
 				},
 			},
 		},

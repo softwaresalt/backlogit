@@ -38,10 +38,21 @@ const (
 // into the read-model DB is best-effort (the durable JSONL is the source of
 // truth) and only warns on failure.
 func appendItemEventErr(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) error {
+	return appendItemEventWithActorErr(ctx, ws, itemID, "backlogit", eventType, delta)
+}
+
+// appendItemEventWithActorErr appends an item event stamped with the supplied
+// actor so actor-attributed events (e.g. estimate_history) record who authored
+// the change in item_log_entries.actor rather than the default "backlogit". A
+// blank actor falls back to "backlogit" so the column is never empty.
+func appendItemEventWithActorErr(ctx context.Context, ws *Workspace, itemID, actor, eventType string, delta map[string]any) error {
+	if actor == "" {
+		actor = "backlogit"
+	}
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
 		Timestamp: time.Now(),
-		Actor:     "backlogit",
+		Actor:     actor,
 		ItemID:    itemID,
 		EventType: eventType,
 		Delta:     delta,

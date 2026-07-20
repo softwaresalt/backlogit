@@ -844,9 +844,14 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	return toolResultJSON(artifact)
 }
 
+// hasSizeMutationArguments reports whether the request carries any reserved
+// sizing argument. It detects PRESENCE (the key was supplied), not non-emptiness,
+// so an explicit empty value (e.g. size="") still routes through the audited size
+// seam and is rejected with a validation error — matching the CLI — rather than
+// silently no-op'ing through the generic update path.
 func hasSizeMutationArguments(args map[string]any) bool {
 	for _, key := range []string{"size", "size_source", "size_ruleset_version"} {
-		if value, ok := args[key].(string); ok && value != "" {
+		if _, ok := args[key]; ok {
 			return true
 		}
 	}

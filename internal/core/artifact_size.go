@@ -122,7 +122,7 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 	if m.RulesetVersion != nil {
 		delta["size_ruleset_version"] = *m.RulesetVersion
 	}
-	if err := appendItemEventErr(ctx, ws, id, events.EventEstimateHistory, delta); err != nil {
+	if err := appendItemEventWithActorErr(ctx, ws, id, string(m.Actor), events.EventEstimateHistory, delta); err != nil {
 		return nil, fmt.Errorf("append estimate-history event for %s: %w", id, err)
 	}
 

@@ -25,14 +25,16 @@ type SizeCompositionResult struct {
 }
 
 // SizeComposition computes the never-persisted size rollup for a feature or
-// shipment (108-F SE-4). Feature membership is direct children by parent_id;
+// shipment (108-F SE-4). Size estimation is task-only, so the rollup counts only
+// TASK members: feature membership is its direct task children by parent_id, and
 // shipment membership is the explicit custom_fields.items manifest with each
-// feature member expanded into its child tasks. Members are de-duplicated so a
-// manifest listing a feature and its explicit child tasks counts each once. An
-// existing member with no size increments Unsized; an unresolved manifest id is
-// warn-skipped (counted in neither Histogram nor Unsized). The result is computed
-// on read and never written to disk. ruleset_version is always null until a
-// canonical ruleset is owned.
+// feature member expanded into its child tasks (the feature itself, a rollup
+// parent, is never counted). Members are de-duplicated so a manifest listing a
+// feature and its explicit child tasks counts each once. An existing task member
+// with no size increments Unsized; an unresolved manifest id is warn-skipped
+// (counted in neither Histogram nor Unsized). The result is computed on read and
+// never written to disk. ruleset_version is always null until a canonical ruleset
+// is owned.
 func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifact) (*SizeCompositionResult, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("size composition: artifact is required")
@@ -74,9 +76,11 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	return result, nil
 }
 
-// compositionMemberIDs resolves the canonical member IDs for a size rollup. For a
-// feature this is its direct children by parent_id; for a shipment it is the
-// explicit manifest with each feature member expanded into its child tasks.
+// compositionMemberIDs resolves the canonical member IDs for a size rollup. Size
+// estimation is task-only, so this yields only task members: for a feature, its
+// direct task children by parent_id; for a shipment, the explicit manifest with
+// directly-listed tasks kept and each feature member expanded into its child
+// tasks (rollup-parent types such as the feature itself are excluded).
 func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.Artifact) ([]string, error) {
 	switch artifact.ArtifactType {
 	case "feature":
@@ -84,18 +88,28 @@ func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.A
 	case "shipment":
 		var ids []string
 		for _, memberID := range NormalizeShipmentItems(artifact) {
-			ids = append(ids, memberID)
 			member, ferr := findArtifact(ctx, ws, memberID)
 			if ferr != nil {
-				// Dangling manifest id; the main loop records it as skipped.
+				// Dangling manifest id: keep it so the main loop records it as
+				// skipped (warn + counted in neither histogram nor unsized).
+				ids = append(ids, memberID)
 				continue
 			}
-			if member.ArtifactType == "feature" {
+			switch member.ArtifactType {
+			case "task":
+				// A directly-listed task is a sizable member.
+				ids = append(ids, memberID)
+			case "feature":
+				// A feature is a rollup parent, not a sizable unit: expand it into
+				// its child tasks and do NOT count the feature itself.
 				childIDs, cerr := childIDsByParent(ctx, ws, memberID)
 				if cerr != nil {
 					return nil, cerr
 				}
 				ids = append(ids, childIDs...)
+			default:
+				// Any other manifest member type (subtask, review, ...) is not a
+				// sizable unit and is excluded from the rollup.
 			}
 		}
 		return ids, nil
@@ -104,13 +118,14 @@ func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.A
 	}
 }
 
-// childIDsByParent returns the IDs of the direct children of parentID from the
-// SQLite index.
+// childIDsByParent returns the IDs of the direct TASK children (the only sizable
+// unit) of parentID from the SQLite index. Non-task children (e.g. review) are
+// excluded so they never skew the rollup as spurious unsized members.
 func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]string, error) {
 	if ws == nil || ws.DB == nil {
 		return nil, nil
 	}
-	rows, err := ws.DB.QueryContext(ctx, `SELECT id FROM items WHERE parent_id = ?`, parentID)
+	rows, err := ws.DB.QueryContext(ctx, `SELECT id FROM items WHERE parent_id = ? AND artifact_type = 'task'`, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("query children of %s: %w", parentID, err)
 	}
