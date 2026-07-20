@@ -371,6 +371,42 @@ func TestValidateMemberGateEvidence_DescopedArchivedMemberExempt(t *testing.T) {
 	assert.Contains(t, d2.Error(), "missing passing gate evidence")
 }
 
+// TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt pins the boundary of
+// the descoped-member exemption: the exemption must apply ONLY to members archived
+// from a non-terminal (in-flight) status, NOT to any archived member. ArchiveItem
+// accepts terminal items and preserves the pre-archive status in archived_status,
+// so a member driven to done with NO valid gate evidence (only a fail-open
+// EventGatePassed{ran:false}, rejected by the F4 predicate) and THEN archived must
+// still refuse. Exempting it on the bare archived status would bypass the F4
+// evidence predicate pinned by TestValidateMemberGateEvidence_FailOpenNoRunRejected.
+func TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	// Drive a member to done WITHOUT valid evidence: its only "pass" is a fail-open
+	// no-run (ran=false), which the F4 predicate rejects.
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome": "passed", "ran": false,
+	}))
+
+	// Now archive it. ArchiveItem preserves the pre-archive status ("done") in
+	// archived_status, so this is a completed-then-archived member, NOT a descope.
+	_, aerr := ArchiveItem(ctx, ws.DB, ws, id)
+	require.NoError(t, aerr)
+	require.Equal(t, "archived", statusOf(t, ws, id),
+		"the member must be archived for this scenario")
+
+	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, verr,
+		"an archived-from-done member with only fail-open evidence must NOT be exempt")
+	assert.Contains(t, verr.Error(), "missing passing gate evidence")
+}
+
 // TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed
 // member-evidence predicate: a member gate-pass event counts as valid evidence
 // only when it is an EventGateForced (unconditional break-glass) OR an
