@@ -12,19 +12,23 @@ branch: feat/108-F-size-estimation
 
 ## Status
 
-build-feature loop COMPLETE. All 9 code tasks + F6 + docs implemented, all harness
-tests green, full quality gates pass. Next: review skill → pr-lifecycle → merge → closure.
+build-feature loop COMPLETE. All 9 code tasks + docs implemented, all harness
+tests green, full quality gates pass. F6 (post-create rollback) was scaffolded
+here but subsequently DROPPED during PR #261 review (cycle-4) — no production
+`CreateArtifact` post-create rollback remains. Next: review skill → pr-lifecycle
+→ merge → closure.
 
 ## Tasks completed (all done, 108-F tree = 14 done + 1 archived)
 
 - SE-1 (108.001) config size+provenance schema — c041aab
 - SE-7a (108.009) config-load containment — 9654380
-- SE-7b (108.010) + F6 (108.013) lookup containment + post-create rollback — 1da188f
+- SE-7b (108.010) lookup containment — 1da188f (F6 post-create rollback was
+  scaffolded in this commit but later removed during PR #261 review; dropped/deferred)
 - SE-3a (108.002) + SE-3b (108.006) persist provenance + estimate_history event — da76ae8
 - SE-4 (108.003) computed-on-read composition rollups — 977d767
 - SE-5 (108.007) + SE-6 (108.008) MCP masquerade reject + size_composition projection — 113c91a
 - SE-8 (108.004) sizing-contract design doc — 6653a84
-- F6 lint fix DeleteItem→DeleteItemCascade — fbda4ac
+- F6 lint fix DeleteItem→DeleteItemCascade — fbda4ac (on the since-removed F6 branch)
 - backlog status updates (all done) — af66691
 - SE-2 (108.005) codec round-trip guard was already green from harness
 

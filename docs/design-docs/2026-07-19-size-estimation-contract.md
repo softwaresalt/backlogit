@@ -96,8 +96,11 @@ best-effort:
   written, the mutation is refused.
 * The durable `custom_fields.size` (with its provenance) is the single source of
   truth. The event stream is an advisory audit trail, not the authority.
-* Orphan crash-residue events (an event with no matching durable write, possible
-  only on a process crash between append and write) are ignored on read.
+* Orphan crash-residue events (an event with no matching durable write) are
+  ignored on read. Such an orphan can arise not only from a process crash between
+  append and write, but also from an ordinary post-append error — for example
+  `mdDoc.Encode` or `WriteFileAtomic` returning a disk-full or rename failure. An
+  orphan event therefore does not by itself prove a crash occurred.
 * The policy is process-crash-safe only. OS-level crash reconciliation,
   exactly-once semantics, operation IDs, and doctor reconciliation are out of
   scope.
