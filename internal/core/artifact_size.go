@@ -103,9 +103,10 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 	}
 
 	artifactType, _ := mdDoc.Frontmatter["artifact_type"].(string)
+	priorSize := decodedCustomField(mdDoc, "size")
 
 	// Targeted validation BEFORE any audit append or durable write.
-	if err := validateSizeMutation(ws, artifactType, m); err != nil {
+	if err := validateSizeMutation(ws, artifactType, priorSize, m); err != nil {
 		return nil, err
 	}
 
@@ -174,12 +175,14 @@ var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version"}
 
 // validateSizeMutation performs the targeted pre-write validation for the size
 // seam: the size value against the type's enum, size_source against the fixed
-// provenance set, and provenance completeness (an explicit size_source must be
+// provenance set, provenance completeness (an explicit size_source must be
 // accompanied by a size_ruleset_version so a recorded estimate always states the
-// ruleset it was produced under). All failures wrap ErrValidation so the MCP
-// layer surfaces them as validation_failed (422) rather than opaque internal
-// (500) errors.
-func validateSizeMutation(ws *Workspace, artifactType string, m SizeMutation) error {
+// ruleset it was produced under), and effective-size presence (any provenance
+// field requires an accompanying size — from this mutation or already stored — so
+// provenance is never recorded on an unsized artifact). All failures wrap
+// ErrValidation so the MCP layer surfaces them as validation_failed (422) rather
+// than opaque internal (500) errors.
+func validateSizeMutation(ws *Workspace, artifactType, priorSize string, m SizeMutation) error {
 	if m.Size != nil {
 		if err := validateSizeValue(ws, artifactType, *m.Size); err != nil {
 			return err
@@ -195,6 +198,19 @@ func validateSizeMutation(ws *Workspace, artifactType string, m SizeMutation) er
 		// and MCP (omitted argument) enforce provenance completeness identically.
 		if m.RulesetVersion == nil || strings.TrimSpace(*m.RulesetVersion) == "" {
 			return fmt.Errorf("size_source %q requires an accompanying non-empty size_ruleset_version: %w", *m.Source, blerrors.ErrValidation)
+		}
+	}
+	// Provenance accompanies a size: if any provenance field is being written, the
+	// effective post-mutation size (this mutation's size, else the already-stored
+	// size) must be non-empty. Otherwise provenance would be recorded on an unsized
+	// task, leaving meaningless reserved fields with no size they describe.
+	if m.Source != nil || m.RulesetVersion != nil {
+		effectiveSize := priorSize
+		if m.Size != nil {
+			effectiveSize = *m.Size
+		}
+		if strings.TrimSpace(effectiveSize) == "" {
+			return fmt.Errorf("size provenance (size_source/size_ruleset_version) requires an accompanying size: %w", blerrors.ErrValidation)
 		}
 	}
 	return nil
@@ -285,4 +301,17 @@ func setDecodedCustomField(mdDoc *mdfront.Markdown, key, value string) {
 	}
 	cf[key] = value
 	mdDoc.Frontmatter["custom_fields"] = cf
+}
+
+// decodedCustomField returns the string value of custom_fields[key] in the
+// decoded frontmatter, or "" when the map or key is absent or non-string.
+func decodedCustomField(mdDoc *mdfront.Markdown, key string) string {
+	cf, ok := mdDoc.Frontmatter["custom_fields"].(map[string]any)
+	if !ok || cf == nil {
+		return ""
+	}
+	if v, ok := cf[key].(string); ok {
+		return v
+	}
+	return ""
 }

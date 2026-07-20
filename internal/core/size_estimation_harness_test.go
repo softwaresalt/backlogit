@@ -369,29 +369,3 @@ func TestSE7bLookupTimeContainmentHarness(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "outside")
 }
-
-func TestF6CreateArtifactPostCreateFailureRollbackHarness(t *testing.T) {
-	ws, _ := newSizeEstimationHarnessWorkspace(t)
-	var firstID string
-	previousHook := createArtifactPostCreateFailureHook
-	createArtifactPostCreateFailureHook = func(_ context.Context, _ *Workspace, artifact *models.Artifact) error {
-		firstID = artifact.ID
-		return errors.New("injected post-create size event failure")
-	}
-	t.Cleanup(func() { createArtifactPostCreateFailureHook = previousHook })
-
-	_, err := CreateArtifact(context.Background(), ws, "Rollback boundary feature", "feature")
-	requireNoSizeEstimationTODO(t, err)
-	require.Error(t, err)
-	require.NotEmpty(t, firstID)
-
-	_, lookupErr := db.GetItem(context.Background(), ws.DB, firstID)
-	assert.Error(t, lookupErr, "post-create failure cleanup must remove the SQLite row")
-	_, pathErr := FindArtifactPath(context.Background(), ws, firstID)
-	assert.Error(t, pathErr, "post-create failure cleanup must remove the Markdown artifact")
-
-	createArtifactPostCreateFailureHook = nil
-	retried, err := CreateArtifact(context.Background(), ws, "Rollback boundary feature", "feature")
-	require.NoError(t, err)
-	assert.Equal(t, firstID, retried.ID, "cleanup must allow retry with the same ID")
-}

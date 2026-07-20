@@ -36,8 +36,6 @@ type createOptions struct {
 	canonicalCache *CanonicalCache
 }
 
-var createArtifactPostCreateFailureHook func(context.Context, *Workspace, *models.Artifact) error
-
 // WithParent sets the parent artifact ID.
 func WithParent(id string) Option {
 	return func(o *createOptions) { o.ParentID = id }
@@ -372,15 +370,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
 		}
 	}
-	if createArtifactPostCreateFailureHook != nil {
-		if postCreateErr := createArtifactPostCreateFailureHook(ctx, ws, artifact); postCreateErr != nil {
-			if rollbackErr := rollbackCreatedArtifactAfterPostCreateFailure(ctx, ws, artifact, filePath); rollbackErr != nil {
-				return nil, fmt.Errorf("rollback artifact %s after post-create failure: %w", artifact.ID, rollbackErr)
-			}
-			return nil, fmt.Errorf("post-create size/provenance for artifact %s: %w", artifact.ID, postCreateErr)
-		}
-	}
-
 	// Fire post-create hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
@@ -399,26 +388,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 
 	return artifact, nil
-}
-
-// rollbackCreatedArtifactAfterPostCreateFailure removes the freshly-created
-// artifact's Markdown file and SQLite index row so a post-create failure leaves
-// no half-created artifact behind and the sequence ID is freed for a retry
-// (108-F F6). It reuses the crash-safe DeleteArtifact ordering (rename -> DB
-// delete -> remove/restore) so a failure mid-cleanup never leaves a deleted file
-// with a live index row. It returns the first cleanup error, if any.
-func rollbackCreatedArtifactAfterPostCreateFailure(ctx context.Context, ws *Workspace, artifact *models.Artifact, filePath string) error {
-	if ws.DB == nil {
-		// No index to reconcile; just remove the freshly-written file.
-		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
-		}
-		return nil
-	}
-	if err := DeleteArtifact(ctx, ws, artifact.ID); err != nil {
-		return fmt.Errorf("rollback created artifact %s: %w", artifact.ID, err)
-	}
-	return nil
 }
 
 func validateArtifactParent(ctx context.Context, ws *Workspace, artifactType string, parentID string) error {

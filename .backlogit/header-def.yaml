@@ -35,25 +35,6 @@ types:
           - failing
         default: pending
         optional: true
-      size:
-        type: enum
-        values:
-          - XS
-          - S
-          - M
-          - L
-          - XL
-        optional: true
-      size_source:
-        type: enum
-        values:
-          - human
-          - agent
-          - derived
-        optional: true
-      size_ruleset_version:
-        type: enum
-        optional: true
   deliberation:
     prefix: DL
     suffix: "-DL"
@@ -96,7 +77,7 @@ types:
           - derived
         optional: true
       size_ruleset_version:
-        type: enum
+        type: string
         optional: true
   review:
     prefix: R
@@ -154,23 +135,4 @@ types:
         optional: true
       items:
         type: list
-        optional: true
-      size:
-        type: enum
-        values:
-          - XS
-          - S
-          - M
-          - L
-          - XL
-        optional: true
-      size_source:
-        type: enum
-        values:
-          - human
-          - agent
-          - derived
-        optional: true
-      size_ruleset_version:
-        type: enum
         optional: true
