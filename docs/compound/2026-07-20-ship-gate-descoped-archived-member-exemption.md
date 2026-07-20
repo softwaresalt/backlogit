@@ -74,8 +74,14 @@ return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 ```
 
 `archivedFromNonTerminalStatus` reads `archived_status` from the **Markdown
-source** and returns `!isTerminalReleaseStatus(archived_status)`; a missing/empty
-`archived_status` fails closed (reported as NOT a descope).
+source**. A member is exempt only when its `archived_status` is a **recognized,
+non-terminal** status (a proven descope). A missing/empty `archived_status`
+fails closed (reported as NOT a descope), and — hardened in PR #266 — an
+**unrecognized** value (typo/malformed) fails closed too: because
+`isTerminalReleaseStatus` returns `false` for any unknown value, keying the
+exemption on `!isTerminalReleaseStatus` alone would misclassify garbage
+provenance as a non-terminal descope and bypass the evidence requirement. The
+predicate is now gated behind an `isRecognizedReleaseStatus` allowlist.
 
 ## Two traps that shaped the fix
 
@@ -117,8 +123,11 @@ index does not carry MUST read the Markdown source directly (via
 - **Read fields the index does not project from the Markdown source.**
   Index-first loaders + partial `selectCols` silently return zero-valued fields;
   gate logic that depends on such a field must go to disk.
-- **Fail closed on missing provenance.** A missing `archived_status` is not a
-  proven descope; refuse rather than exempt.
+- **Fail closed on missing OR unrecognized provenance.** A missing
+  `archived_status` is not a proven descope; neither is a malformed/typo value.
+  Refuse rather than exempt, gated behind an `isRecognizedReleaseStatus`
+  allowlist (hardened in PR #266; boundary pinned by
+  `TestValidateMemberGateEvidence_ArchivedFromUnknownStatusNotExempt`).
 - **A false safety invariant in a comment is a latent bug.** The over-broad
   draft was "correct" only under an invariant that the archive path violates.
   State invariants precisely and test the boundary (added

@@ -31,7 +31,11 @@ permanent block, no operator recourse.
   NON-terminal status** (genuine descope), via new helper
   `archivedFromNonTerminalStatus` which reads `archived_status` from the
   Markdown source (the DB index projection omits it; `loadArtifact` is
-  index-first). Missing `archived_status` fails closed.
+  index-first). Missing `archived_status` fails closed. Hardened in PR #266:
+  an **unrecognized** `archived_status` (typo/malformed) also fails closed —
+  `isTerminalReleaseStatus` returns `false` for unknown values, so exempting on
+  `!isTerminalReleaseStatus` alone would treat garbage provenance as a proven
+  descope. Only a **recognized, non-terminal** status is exempt.
 - Copilot review cycle-1 (VALID, HIGH quality): the first draft exempted EVERY
   archived member. `ArchiveItem` accepts terminal items and preserves the
   pre-archive status, and `validate_status_transition` is registered only for
