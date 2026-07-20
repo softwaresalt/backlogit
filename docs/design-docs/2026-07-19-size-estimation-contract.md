@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Durable sizing contract for backlogit (shipped 099-S / feature 108-F) — the canonical custom_fields.size field stored only on tasks (features/shipments/parents expose a computed-on-read rollup composition instead); size and provenance enums and their defaulting and rejection rules; the event-before-write best-effort audit durability policy; the computed-on-read composition contract and comparator; CLI/MCP parity and transport-aware actor stamping; and the map-replacement and validated-once caveats'
+description: 'Durable sizing contract for backlogit (shipped 099-S / feature 108-F) — the canonical custom_fields.size field stored only on tasks (features/shipments/parents expose a computed-on-read rollup composition instead); size and provenance enums and their defaulting and rejection rules; the event-before-write best-effort audit durability policy; the computed-on-read composition contract; CLI/MCP parity and transport-aware actor stamping; and the map-replacement and validated-once caveats'
 doc_type: design
 docline:
     date: 2026-07-19T00:00:00Z
@@ -125,7 +125,10 @@ Membership resolution:
 * An unresolved manifest id (or any other resolution error) is warn-skipped: it
   is recorded in `skipped` and counted in neither the histogram nor `unsized`.
 
-The comparator mirrors the ordered enum above (XS < S < M < L < XL).
+The `Histogram` is an unordered count map keyed by size value. The size enum has
+a documented rank (XS < S < M < L < XL, see the table above), but no runtime
+comparator is implemented — a consumer that needs ordered presentation sorts by
+that documented rank itself.
 
 ## CLI and MCP parity
 
