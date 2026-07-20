@@ -223,6 +223,15 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if status == "" {
 		status = "queued"
 	}
+	// Reject "archived" as an initial creation status. A freshly created item
+	// carries no archive provenance and the create serializer emits none, so an
+	// item born archived is non-invertible: UnarchiveItem hard-fails on the
+	// missing archived_from. Archiving is a create-then-ArchiveItem operation,
+	// which stamps provenance via the raw frontmatter path.
+	if models.ArtifactStatus(status) == models.StatusArchived {
+		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted (create then archive): %w",
+			artifactID, status, blerrors.ErrValidation)
+	}
 
 	now := models.NowUTC()
 	artifact := &models.Artifact{
@@ -289,44 +298,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create directory: %w", err)
 	}
 
-	fm := map[string]any{
-		"id":            artifact.ID,
-		"title":         artifact.Title,
-		"status":        string(artifact.Status),
-		"artifact_type": artifact.ArtifactType,
-		"created_at":    artifact.CreatedAt,
-		"updated_at":    artifact.UpdatedAt,
-	}
-	if artifact.ParentID != "" {
-		fm["parent_id"] = artifact.ParentID
-	}
-	if artifact.Sprint != "" {
-		fm["sprint"] = artifact.Sprint
-	}
-	if artifact.Priority != "" {
-		fm["priority"] = artifact.Priority
-	}
-	if artifact.AssignedTo != "" {
-		fm["assigned_to"] = artifact.AssignedTo
-	}
-	if artifact.Owner != "" {
-		fm["owner"] = artifact.Owner
-	}
-	if len(artifact.Labels) > 0 {
-		fm["labels"] = artifact.Labels
-	}
-	if len(artifact.Dependencies) > 0 {
-		fm["dependencies"] = artifact.Dependencies
-	}
-	if len(artifact.References) > 0 {
-		fm["references"] = artifact.References
-	}
-	if artifact.Commit != "" {
-		fm["commit"] = artifact.Commit
-	}
-	if artifact.CustomFields != nil {
-		fm["custom_fields"] = artifact.CustomFields
-	}
+	fm := artifact.ToFrontmatterMap()
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	fileName := ResolveFileName(typeConfig, artifact.ID, title, ws.Config.MaxSlugLength)
 	filePath := filepath.Join(dirAbs, fileName+".md")
@@ -749,59 +721,7 @@ func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
 func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
-	fm := map[string]any{
-		"id":            artifact.ID,
-		"title":         artifact.Title,
-		"status":        string(artifact.Status),
-		"artifact_type": artifact.ArtifactType,
-		"created_at":    artifact.CreatedAt,
-		"updated_at":    artifact.UpdatedAt,
-	}
-	if artifact.ParentID != "" {
-		fm["parent_id"] = artifact.ParentID
-	}
-	if artifact.Sprint != "" {
-		fm["sprint"] = artifact.Sprint
-	}
-	if artifact.Priority != "" {
-		fm["priority"] = artifact.Priority
-	}
-	if artifact.AssignedTo != "" {
-		fm["assigned_to"] = artifact.AssignedTo
-	}
-	if artifact.Owner != "" {
-		fm["owner"] = artifact.Owner
-	}
-	if len(artifact.Labels) > 0 {
-		fm["labels"] = artifact.Labels
-	}
-	if len(artifact.Dependencies) > 0 {
-		fm["dependencies"] = artifact.Dependencies
-	}
-	if len(artifact.Links) > 0 {
-		fm["links"] = artifact.Links
-	}
-	if len(artifact.References) > 0 {
-		fm["references"] = artifact.References
-	}
-	if artifact.Commit != "" {
-		fm["commit"] = artifact.Commit
-	}
-	// Archive provenance is emitted only while the item is archived, keeping the
-	// invariant "archive provenance <=> archived status". This preserves the
-	// keys across an update round-trip on an archived item and omits stale keys
-	// on any non-archived item.
-	if artifact.Status == models.StatusArchived {
-		if artifact.ArchivedFrom != "" {
-			fm["archived_from"] = artifact.ArchivedFrom
-		}
-		if artifact.ArchivedStatus != "" {
-			fm["archived_status"] = artifact.ArchivedStatus
-		}
-	}
-	if artifact.CustomFields != nil {
-		fm["custom_fields"] = artifact.CustomFields
-	}
+	fm := artifact.ToFrontmatterMap()
 
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	tmp := filePath + ".tmp"

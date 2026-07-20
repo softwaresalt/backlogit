@@ -169,7 +169,11 @@ func TestMoveInQueue_RollsBackPersistedPositionsOnFailure(t *testing.T) {
 
 	err = core.MoveInQueue(ctx, ws, low.ID, 1, filter)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "persist queue position")
+	// The move reloads each reordered item from Markdown before persisting its
+	// new position (so archive provenance and other raw frontmatter survive the
+	// rewrite). Removing high's file surfaces as a reload failure that names the
+	// failing item and still triggers rollback of already-persisted items.
+	assert.Contains(t, err.Error(), high.ID)
 
 	lowPath, err := core.FindArtifactPath(ctx, ws, low.ID)
 	require.NoError(t, err)

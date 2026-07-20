@@ -281,10 +281,24 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		if currentQueuePosition(item) == desired {
 			continue
 		}
-		if _, exists := originals[item.ID]; !exists {
-			originals[item.ID] = cloneArtifact(item)
+		// Reload from Markdown before persisting the new position. QueryQueue
+		// returns DB-sourced artifacts, and the DB codec does not carry raw or
+		// unmodeled frontmatter such as archive provenance
+		// (archived_from/archived_status). Persisting the DB-sourced value
+		// directly would rewrite the Markdown with empty provenance, stranding an
+		// archived item reordered in an archived-inclusive queue view (same class
+		// as 111-F). Markdown is the source of truth, so reload it and mutate only
+		// the queue position and timestamp — mirroring BulkUpdateStatus.
+		updated, reloadErr := findArtifact(ctx, ws, item.ID)
+		if reloadErr != nil {
+			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
+				return fmt.Errorf("reload artifact %s for queue move: %w; rollback queue positions: %v", item.ID, reloadErr, rollbackErr)
+			}
+			return fmt.Errorf("reload artifact %s for queue move: %w", item.ID, reloadErr)
 		}
-		updated := cloneArtifact(item)
+		if _, exists := originals[item.ID]; !exists {
+			originals[item.ID] = cloneArtifact(updated)
+		}
 		if updated.CustomFields == nil {
 			updated.CustomFields = map[string]any{}
 		}
