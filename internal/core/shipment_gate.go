@@ -647,7 +647,11 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 // only "pass" is an EventGatePassed{ran:false} carries no valid evidence yet could
 // be archived after the fact). A missing/empty archived_status fails closed
 // (reported as NOT a descope) because the provenance cannot prove the member was
-// removed before completion.
+// removed before completion. An UNRECOGNIZED archived_status (a typo or a malformed
+// value a future serializer bug might emit) also fails closed: isTerminalReleaseStatus
+// returns false for any unknown value, so keying the exemption on !isTerminalReleaseStatus
+// alone would treat garbage provenance as a proven non-terminal descope and bypass the
+// evidence requirement. Only a RECOGNIZED, non-terminal status is a proven descope.
 func archivedFromNonTerminalStatus(ctx context.Context, ws *Workspace, id string) (bool, error) {
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
@@ -662,10 +666,14 @@ func archivedFromNonTerminalStatus(ctx context.Context, ws *Workspace, id string
 		return false, fmt.Errorf("parse archived member: %w", err)
 	}
 	archivedStatus, _ := fm["archived_status"].(string)
-	if archivedStatus == "" {
+	status := models.ArtifactStatus(archivedStatus)
+	// Fail closed on absent OR unrecognized provenance: an empty archived_status
+	// cannot prove a descope, and a malformed/typo value must not be misclassified as
+	// a non-terminal descope. Only a recognized, non-terminal status is exempt.
+	if archivedStatus == "" || !isRecognizedReleaseStatus(status) {
 		return false, nil
 	}
-	return !isTerminalReleaseStatus(models.ArtifactStatus(archivedStatus)), nil
+	return !isTerminalReleaseStatus(status), nil
 }
 
 // latestGatePassEvidence returns the most recent gate evidence event that
