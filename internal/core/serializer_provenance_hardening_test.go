@@ -88,6 +88,72 @@ func TestMoveInQueue_PreservesArchiveProvenance(t *testing.T) {
 	}
 }
 
+// TestUpdateArtifact_RejectsTransitionToArchived guards the write-path completion
+// of the archive-provenance invariant surfaced by adversarial review of PR for
+// 112-F. The default transition matrix allows done -> archived, but the generic
+// update path (CLI move, MCP move_item, UpdateArtifact) never stamps
+// archived_from/archived_status the way ArchiveItem does. Permitting the
+// transition would write status: archived with empty provenance — a
+// non-invertible artifact UnarchiveItem cannot restore. The supported path is
+// ArchiveItem; a generic update into archived must be rejected.
+func TestUpdateArtifact_RejectsTransitionToArchived(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Feature to archive via update", "feature")
+	require.NoError(t, err)
+
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "active"})
+	require.NoError(t, err)
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "done"})
+	require.NoError(t, err)
+
+	// done -> archived is allowed by the transition matrix, but the generic
+	// update path must refuse it because it cannot preserve provenance.
+	_, err = core.UpdateArtifact(ctx, ws, feature.ID, map[string]any{"status": "archived"})
+	require.Error(t, err, "transition to archived via generic update must be rejected")
+	assert.Contains(t, err.Error(), "archive", "error must reference the archive operation")
+
+	// The refused update must not have produced a non-invertible archived file.
+	path, findErr := core.FindArtifactPath(ctx, ws, feature.ID)
+	require.NoError(t, findErr)
+	raw, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	assert.Equal(t, "done", fm["status"], "status must remain done after the rejected archive update")
+	assert.NotContains(t, fm, "archived_from", "no empty archive provenance may be written")
+}
+
+// TestBulkUpdateStatus_RejectsArchivedTarget proves the bulk write path shares
+// the same guard: archiving must go through ArchiveItem so provenance is stamped.
+// BulkUpdateStatus fires no transition hook and stamps no provenance, so it must
+// refuse an archived target status outright rather than write non-invertible
+// artifacts.
+func TestBulkUpdateStatus_RejectsArchivedTarget(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Bulk archive parent", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Bulk archive task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	_, err = core.BulkUpdateStatus(ctx, ws.DB, ws, []string{task.ID}, "archived")
+	require.Error(t, err, "bulk update to archived must be rejected")
+	assert.Contains(t, err.Error(), "archive", "error must reference the archive operation")
+
+	// The task must be untouched (still queued, no provenance written).
+	path, findErr := core.FindArtifactPath(ctx, ws, task.ID)
+	require.NoError(t, findErr)
+	raw, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	assert.Equal(t, "queued", fm["status"], "status must be unchanged after the rejected bulk archive")
+	assert.NotContains(t, fm, "archived_from", "no empty archive provenance may be written")
+}
+
 func assertProvenancePresent(t *testing.T, ctx context.Context, ws *core.Workspace, id string) {
 	t.Helper()
 	path, err := core.FindArtifactPath(ctx, ws, id)

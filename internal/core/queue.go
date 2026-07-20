@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -394,6 +395,13 @@ type BulkUpdateResult struct {
 // BulkUpdateResult.Failed rather than aborting the entire batch. The SQLite
 // index is updated only after the Markdown file has been successfully written.
 func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (*BulkUpdateResult, error) {
+	// Archiving must go through ArchiveItem so archive provenance
+	// (archived_from/archived_status) is stamped. BulkUpdateStatus stamps none
+	// and fires no transition hook, so an archived target would write
+	// non-invertible artifacts. Refuse the whole batch.
+	if models.ArtifactStatus(newStatus) == models.StatusArchived {
+		return nil, fmt.Errorf("bulk update to archived is not supported; use the archive operation to preserve provenance: %w", blerrors.ErrValidation)
+	}
 	result := &BulkUpdateResult{}
 	for _, id := range itemIDs {
 		artifact, err := findArtifact(ctx, ws, id)

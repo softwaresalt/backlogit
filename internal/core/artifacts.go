@@ -525,6 +525,18 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	artifact.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(artifact, previousStatus)
 
+	// Completing the archive-provenance invariant surfaced by adversarial review:
+	// archiving MUST go through ArchiveItem, which stamps
+	// archived_from/archived_status. The default matrix allows done -> archived,
+	// but the generic update path sets no provenance, so this transition would
+	// write status: archived with empty provenance — a non-invertible artifact
+	// UnarchiveItem cannot restore. Reject any transition INTO archived from a
+	// non-archived status. An update on an already-archived item (provenance
+	// preserved by the status-gated serializer) is unaffected.
+	if artifact.Status == models.StatusArchived && previousStatus != models.StatusArchived {
+		return nil, fmt.Errorf("cannot transition %s to archived via update; use the archive operation to preserve provenance: %w", id, blerrors.ErrValidation)
+	}
+
 	// Fail closed when the workspace schema is absent (see requireHeaderDef). This
 	// check MUST precede ValidateArtifactFields, which dereferences the header-def
 	// via ResolveFieldSchema with no nil-guard.
