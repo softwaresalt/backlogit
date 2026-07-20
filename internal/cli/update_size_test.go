@@ -124,3 +124,55 @@ func TestUpdateSize_BusyReturnsExit4(t *testing.T) {
 	require.True(t, errors.As(err, &ee), "expected ExitError, got %T", err)
 	assert.Equal(t, 4, ee.Code, "busy task lock must map to exit 4")
 }
+
+// U8-regression (post-108-F): `backlogit update --size` must succeed under the
+// DEFAULT --cwd="." (running from inside the workspace). The size seam resolves
+// the artifact path for containment before performing I/O; under the default cwd
+// the resolved artifact path is RELATIVE. A prior implementation of the
+// containment resolver rejected relative paths as "outside the workspace storage
+// root" because it compared a relative target against an absolute root. This test
+// pins the fix so size mutations work with the default (non-absolute) --cwd, not
+// only when an absolute --cwd is injected.
+func TestUpdateSize_DefaultCWDRelativePath(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	id := createSizeTask(t, root)
+	path := taskFilePath(root, id)
+
+	// Run from inside the workspace with no --cwd flag, so RootPath defaults to
+	// "." and the resolved artifact path is relative to the process directory.
+	t.Chdir(root)
+
+	out, err := runRootCommand(t, "update", id, "--size", "M")
+	require.NoError(t, err, "update --size under default cwd must succeed: %s", out)
+
+	rawAfter, err := os.ReadFile(path)
+	require.NoError(t, err)
+	mdAfter, err := mdfront.Decode(rawAfter)
+	require.NoError(t, err)
+	cf, ok := mdAfter.Frontmatter["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must be present")
+	assert.Equal(t, "M", cf["size"])
+}
+
+func TestUpdateSize_NamedRelativeCWD(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	id := createSizeTask(t, root)
+	path := taskFilePath(root, id)
+
+	// Run from the workspace's PARENT with a NAMED relative --cwd (the workspace
+	// directory name). RootPath is then a non-dot relative path, so FindArtifactPath
+	// yields "<name>/.backlogit/..." — the case the "." test cannot expose because
+	// joining "." is a no-op. A helper that re-joins RootPath double-prefixes here.
+	t.Chdir(filepath.Dir(root))
+
+	out, err := runRootCommand(t, "--cwd", filepath.Base(root), "update", id, "--size", "L")
+	require.NoError(t, err, "update --size under a named relative cwd must succeed: %s", out)
+
+	rawAfter, err := os.ReadFile(path)
+	require.NoError(t, err)
+	mdAfter, err := mdfront.Decode(rawAfter)
+	require.NoError(t, err)
+	cf, ok := mdAfter.Frontmatter["custom_fields"].(map[string]any)
+	require.True(t, ok, "custom_fields must be present")
+	assert.Equal(t, "L", cf["size"])
+}

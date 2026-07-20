@@ -684,7 +684,18 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 }
 
 func ensureArtifactLookupContained(ws *Workspace, path string) error {
-	absTarget, inScope, err := confineToStorageRoot(ws, path)
+	// path is WalkDir output: a real filesystem path relative to the process
+	// working directory that already embeds ws.RootPath (the walk root is
+	// WorkspaceStorageRoot(ws.RootPath)). Absolutize it here so confineToStorageRoot
+	// uses it as-is instead of re-joining ws.RootPath, which would double-prefix a
+	// named relative --cwd (e.g. "workspace/.backlogit/..." -> "workspace/workspace/...").
+	// The doctor --target caller still passes a workspace-root-relative path straight
+	// to confineToStorageRoot, so its documented join contract is unaffected.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve artifact lookup path: %w", err)
+	}
+	absTarget, inScope, err := confineToStorageRoot(ws, absPath)
 	if err != nil {
 		return fmt.Errorf("resolve artifact path containment: %w", err)
 	}
@@ -700,23 +711,38 @@ func ensureArtifactLookupContained(ws *Workspace, path string) error {
 // containment validation applies to the object actually accessed, closing the
 // TOCTOU gap a pathname-only check leaves open. Both sides are resolved before the
 // containment test so a legitimately symlinked storage root (e.g. platform temp
-// dirs) is not rejected, while a leaf that escapes the root still is. The leaf must
-// already exist (callers use this immediately before reading the file).
+// dirs) is not rejected, while a leaf that escapes the root still is.
+//
+// filePath is the output of FindArtifactPath: a real filesystem path that is
+// relative to the process working directory (it already embeds ws.RootPath, since
+// the walk root is WorkspaceStorageRoot(ws.RootPath)) or absolute. It is resolved
+// with filepath.Abs against the same working directory the storage root is resolved
+// against, so ws.RootPath is NOT re-joined — doing so would double-prefix a named
+// relative --cwd (e.g. "workspace/.backlogit/..." -> "workspace/workspace/..."). The
+// leaf must already exist (callers use this immediately before reading the file).
 func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
-	realPath, err := filepath.EvalSymlinks(filePath)
-	if err != nil {
-		return "", fmt.Errorf("resolve real artifact path: %w", err)
-	}
 	absStorage, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
 	if err != nil {
 		return "", fmt.Errorf("resolve storage root: %w", err)
 	}
-	realRoot, err := filepath.EvalSymlinks(filepath.Clean(absStorage))
+	absStorage = filepath.Clean(absStorage)
+
+	absTarget, err := filepath.Abs(filePath)
 	if err != nil {
-		realRoot = filepath.Clean(absStorage)
+		return "", fmt.Errorf("resolve target path: %w", err)
+	}
+	absTarget = filepath.Clean(absTarget)
+
+	realPath, err := filepath.EvalSymlinks(absTarget)
+	if err != nil {
+		return "", fmt.Errorf("resolve real artifact path: %w", err)
+	}
+	realRoot, rootErr := filepath.EvalSymlinks(absStorage)
+	if rootErr != nil {
+		realRoot = absStorage
 	}
 	if !pathContained(realRoot, realPath) {
-		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", realPath, blerrors.ErrValidation)
+		return "", fmt.Errorf("artifact path %q resolves outside the workspace storage root: %w", filePath, blerrors.ErrValidation)
 	}
 	return realPath, nil
 }
