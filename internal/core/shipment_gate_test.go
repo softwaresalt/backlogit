@@ -324,6 +324,89 @@ func TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped(t *testing.T) {
 		"an empty member head under an empty (no-repo) shipment head must stay skipped")
 }
 
+// TestValidateMemberGateEvidence_DescopedArchivedMemberExempt pins the
+// descoped-member exemption: a feature descendant that was scaffolded then
+// removed from the release (archived directly from a non-terminal status, so it
+// never went through the completion gate and carries NO gate evidence) MUST NOT
+// block the shipment. releaseScopeItemIDs expands a feature to ALL descendants
+// (IncludeArchived: true), so such a descoped task lands in the release scope even
+// when the shipment manifest excludes it; demanding per-member gate evidence for
+// it would permanently block the parent feature's ship with no operator recourse
+// (archived is a terminal sink with no allowed transitions, so it cannot be
+// force-gated). The exemption is narrow and safe: archived-WITH-evidence members
+// still get full lineage validation, non-archived members are unchanged, and the
+// shipment-level aggregate diff gate still covers the full shipment diff.
+func TestValidateMemberGateEvidence_DescopedArchivedMemberExempt(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	// A member scaffolded then descoped: archived directly from a non-terminal
+	// status, so it never went through the gate and carries no gate evidence.
+	descoped := newActiveTask(t, ws)
+	_, err := ArchiveItem(ctx, ws.DB, ws, descoped)
+	require.NoError(t, err)
+	require.Equal(t, "archived", statusOf(t, ws, descoped),
+		"the descoped member must be archived for this scenario")
+
+	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{descoped}, ""),
+		"a descoped (archived, ungated) member must be exempt from the per-member evidence requirement")
+
+	// Safety guard 1: a NON-archived, non-terminal member that was never gated
+	// still refuses — the exemption must not weaken the live-member guarantee.
+	live := newActiveTask(t, ws)
+	lerr := validateMemberGateEvidence(ctx, ws, []string{live}, "")
+	require.Error(t, lerr, "a non-archived ungated member must still refuse")
+	assert.Contains(t, lerr.Error(), "not completed through the gate")
+
+	// Safety guard 2: a DONE (terminal, non-archived) member with no evidence
+	// still refuses — only archived (descoped) members are exempt, not
+	// completed-status members that skipped the gate.
+	doneID := newActiveTask(t, ws)
+	_, derr := updateArtifactUngated(ctx, ws, doneID, map[string]any{"status": "done"})
+	require.NoError(t, derr)
+	d2 := validateMemberGateEvidence(ctx, ws, []string{doneID}, "")
+	require.Error(t, d2, "a done member with no gate evidence must still refuse")
+	assert.Contains(t, d2.Error(), "missing passing gate evidence")
+}
+
+// TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt pins the boundary of
+// the descoped-member exemption: the exemption must apply ONLY to members archived
+// from a non-terminal (in-flight) status, NOT to any archived member. ArchiveItem
+// accepts terminal items and preserves the pre-archive status in archived_status,
+// so a member driven to done with NO valid gate evidence (only a fail-open
+// EventGatePassed{ran:false}, rejected by the F4 predicate) and THEN archived must
+// still refuse. Exempting it on the bare archived status would bypass the F4
+// evidence predicate pinned by TestValidateMemberGateEvidence_FailOpenNoRunRejected.
+func TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	// Drive a member to done WITHOUT valid evidence: its only "pass" is a fail-open
+	// no-run (ran=false), which the F4 predicate rejects.
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome": "passed", "ran": false,
+	}))
+
+	// Now archive it. ArchiveItem preserves the pre-archive status ("done") in
+	// archived_status, so this is a completed-then-archived member, NOT a descope.
+	_, aerr := ArchiveItem(ctx, ws.DB, ws, id)
+	require.NoError(t, aerr)
+	require.Equal(t, "archived", statusOf(t, ws, id),
+		"the member must be archived for this scenario")
+
+	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, verr,
+		"an archived-from-done member with only fail-open evidence must NOT be exempt")
+	assert.Contains(t, verr.Error(), "missing passing gate evidence")
+}
+
 // TestLatestGatePassEvidence_ComposedPredicate pins the F4 (083.002-T) composed
 // member-evidence predicate: a member gate-pass event counts as valid evidence
 // only when it is an EventGateForced (unconditional break-glass) OR an
