@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	stderrors "errors"
+	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -404,6 +406,44 @@ func TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt(t *testing.T) {
 	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
 	require.Error(t, verr,
 		"an archived-from-done member with only fail-open evidence must NOT be exempt")
+	assert.Contains(t, verr.Error(), "missing passing gate evidence")
+}
+
+// TestValidateMemberGateEvidence_ArchivedFromUnknownStatusNotExempt pins the
+// fail-closed boundary for MALFORMED archive provenance. archivedFromNonTerminalStatus
+// exempts a member only when archived_status is a RECOGNIZED non-terminal status. An
+// unrecognized/typo value (e.g. "dne") must NOT be treated as a proven descope: because
+// isTerminalReleaseStatus returns false for every unknown value, a bare
+// !isTerminalReleaseStatus check would exempt malformed provenance and bypass the
+// per-member F4 evidence requirement. Unknown provenance must fail closed.
+func TestValidateMemberGateEvidence_ArchivedFromUnknownStatusNotExempt(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	// Archive a member from active (archived_status becomes "active"), then corrupt
+	// the persisted archived_status to a malformed value on disk to simulate a typo
+	// or a future serializer bug emitting unrecognized provenance. archived_status is
+	// read from the Markdown source, so patching the file exercises the real path.
+	id := newActiveTask(t, ws)
+	_, err := ArchiveItem(ctx, ws.DB, ws, id)
+	require.NoError(t, err)
+	require.Equal(t, "archived", statusOf(t, ws, id),
+		"the member must be archived for this scenario")
+
+	path, ferr := FindArtifactPath(ctx, ws, id)
+	require.NoError(t, ferr)
+	raw, rerr := os.ReadFile(path)
+	require.NoError(t, rerr)
+	require.Contains(t, string(raw), "archived_status: active",
+		"precondition: a member archived from active carries archived_status: active")
+	corrupted := strings.Replace(string(raw), "archived_status: active", "archived_status: dne", 1)
+	require.NoError(t, os.WriteFile(path, []byte(corrupted), 0o644))
+
+	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, verr,
+		"an archived member with unrecognized archived_status must fail closed, not be exempted")
 	assert.Contains(t, verr.Error(), "missing passing gate evidence")
 }
 

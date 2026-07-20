@@ -903,6 +903,24 @@ func isTerminalReleaseStatus(status models.ArtifactStatus) bool {
 	}
 }
 
+// isRecognizedReleaseStatus reports whether status is one of the known artifact
+// lifecycle statuses. Unrecognized (malformed/typo) provenance must be treated as
+// unknown so safety-critical callers can fail closed rather than misclassify it:
+// isTerminalReleaseStatus returns false for any unknown value, so an exemption gated
+// only on !isTerminalReleaseStatus would wrongly treat garbage provenance as a
+// non-terminal descope.
+func isRecognizedReleaseStatus(status models.ArtifactStatus) bool {
+	switch status {
+	case models.StatusQueued, models.StatusActive, models.StatusBlocked,
+		models.StatusReview, models.StatusDone, models.StatusAccepted,
+		models.StatusRejected, models.StatusArchived, models.StatusShipped,
+		models.StatusAbandoned:
+		return true
+	default:
+		return false
+	}
+}
+
 func toIDSet(itemIDs []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(itemIDs))
 	for _, itemID := range uniqueNonEmptyStrings(itemIDs) {
