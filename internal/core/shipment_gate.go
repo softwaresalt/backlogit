@@ -543,6 +543,26 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		}
 		latest := latestGatePassEvidence(evs)
 		if latest == nil {
+			// A descoped/removed member (archived with no passing gate evidence) was
+			// taken out of the release rather than completed through the gate, so it
+			// carries no per-member evidence and MUST NOT block the shipment.
+			// releaseScopeItemIDs expands a feature to ALL descendants
+			// (IncludeArchived: true), so a task scaffolded-then-descoped lands in the
+			// release scope even when the shipment manifest excludes it; demanding
+			// evidence for it would permanently block the parent feature's ship with no
+			// operator recourse (archived is a terminal sink with no allowed status
+			// transitions, so it cannot be force-gated). This inference is safe and
+			// narrow: there is no production path to a done/accepted deliverable without
+			// emitting gate evidence (move-to-done runs the gate; --force-gates emits a
+			// forced-evidence event), so a completed-then-archived deliverable always
+			// retains its evidence and passes above — only a genuine descope reaches an
+			// archived status with nil evidence. Non-archived terminal members
+			// (done/accepted) with no evidence still refuse below, and the
+			// shipment-level aggregate diff gate still covers the full shipment diff, so
+			// exempting descoped members is not a code-quality bypass.
+			if item.Status == models.StatusArchived {
+				continue
+			}
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 		}
 		if shipmentHead != "" {
