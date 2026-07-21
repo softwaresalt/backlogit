@@ -275,6 +275,7 @@ func queryItemsInto(ctx context.Context, db *sql.DB, query string, args []any, d
 	}
 	return nil
 }
+
 // DeleteItem removes an artifact from the index together with all related rows
 // in a single atomic transaction. It delegates to DeleteItemCascade.
 //
