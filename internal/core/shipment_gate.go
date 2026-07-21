@@ -543,8 +543,9 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		}
 		latest := latestGatePassEvidence(evs)
 		if latest == nil {
-			// A GENUINELY DESCOPED member (archived directly from a NON-terminal,
-			// in-flight status) was taken out of the release rather than completed
+			// A GENUINELY DESCOPED member (archived directly from a
+			// DESCOPE-ELIGIBLE status — an in-flight status or a non-completion
+			// terminal) was taken out of the release rather than completed
 			// through the gate, so it carries no per-member evidence and MUST NOT block
 			// the shipment. releaseScopeItemIDs expands a feature to ALL descendants
 			// (IncludeArchived: true), so a task scaffolded-then-descoped lands in the

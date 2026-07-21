@@ -919,8 +919,9 @@ func isTerminalReleaseStatus(status models.ArtifactStatus) bool {
 // archived after the fact). The archived sink status is excluded because it is not a
 // pre-archive provenance value. This predicate is distinct from isTerminalReleaseStatus
 // (which governs relocation and lifecycle transitions and MUST NOT change): terminality
-// and descope-eligibility are orthogonal — rejected/abandoned are terminal yet
-// descope-eligible, while shipped is non-terminal yet a completion.
+// and descope-eligibility are orthogonal — rejected is terminal yet descope-eligible,
+// abandoned is non-terminal yet descope-eligible, and shipped is non-terminal yet a
+// completion (never descope-eligible).
 func isDescopeEligibleStatus(status models.ArtifactStatus) bool {
 	switch status {
 	case models.StatusQueued, models.StatusActive, models.StatusBlocked,
