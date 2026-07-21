@@ -363,9 +363,12 @@ func currentQueuePosition(item *models.Artifact) int {
 }
 
 func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]*models.Artifact, persistedIDs []string) error {
-	// Detach cancellation so cleanup completes even when the forward operation
-	// failed because the caller's context was canceled. Context values (e.g.,
-	// deadlines for tracing) are retained via WithoutCancel.
+	// Detach from the caller's context so cleanup completes even when the
+	// forward operation failed because that context was canceled or its deadline
+	// expired. WithoutCancel drops both the cancellation signal and the deadline
+	// while retaining context values (e.g., tracing metadata), so rollback is no
+	// longer bounded by the caller's deadline — an intentional trade to keep the
+	// queue consistent rather than leaving positions half-persisted.
 	ctx = context.WithoutCancel(ctx)
 	var rollbackErrs []error
 	for i := len(persistedIDs) - 1; i >= 0; i-- {
