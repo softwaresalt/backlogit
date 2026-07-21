@@ -903,6 +903,34 @@ func isTerminalReleaseStatus(status models.ArtifactStatus) bool {
 	}
 }
 
+// isDescopeEligibleStatus reports whether a member archived FROM the given status
+// is a GENUINE DESCOPE — scaffolded then removed from the release before shipping a
+// deliverable — and is therefore exempt from the per-member F4 gate-evidence
+// requirement. Two status classes qualify:
+//
+//   - In-flight statuses (queued, active, blocked, review) never reached completion.
+//   - Non-completion terminals (abandoned, rejected) ended the item WITHOUT shipping
+//     a deliverable, so there is no completion contract to gate.
+//
+// COMPLETION statuses (done, accepted, shipped) are NEVER descope-eligible: a member
+// driven to completion and then archived MUST still present valid gate evidence, or
+// the F4 fail-open evidence predicate would be bypassed (a completed member whose only
+// "pass" is an EventGatePassed{ran:false} carries no valid evidence yet could be
+// archived after the fact). The archived sink status is excluded because it is not a
+// pre-archive provenance value. This predicate is distinct from isTerminalReleaseStatus
+// (which governs relocation and lifecycle transitions and MUST NOT change): terminality
+// and descope-eligibility are orthogonal — rejected/abandoned are terminal yet
+// descope-eligible, while shipped is non-terminal yet a completion.
+func isDescopeEligibleStatus(status models.ArtifactStatus) bool {
+	switch status {
+	case models.StatusQueued, models.StatusActive, models.StatusBlocked,
+		models.StatusReview, models.StatusAbandoned, models.StatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // isRecognizedReleaseStatus reports whether status is one of the known artifact
 // lifecycle statuses. Unrecognized (malformed/typo) provenance must be treated as
 // unknown so safety-critical callers can fail closed rather than misclassify it:
