@@ -136,7 +136,10 @@ with a justification. Most implementation plans engage these principles:
 
 When a principle conflicts with a practical implementation need, document the
 conflict: name the specific principle, state the justification, and record the
-simpler alternative you rejected.
+simpler alternative you rejected. A NON-NEGOTIABLE principle cannot carry a
+documented deviation — a genuine conflict with one halts the plan under P-005
+instead of proceeding. Only MUST or SHOULD principles may take a documented
+deviation.
 
 Conclude with exactly one of these two lines:
 
