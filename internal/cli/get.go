@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -117,10 +118,13 @@ func buildDetailMap(ctx context.Context, ws *core.Workspace, fm map[string]any, 
 	// rollup is computed on read; a computation failure leaves the detail without
 	// a rollup rather than failing the whole command.
 	if at, _ := fm["artifact_type"].(string); core.IsSizeCompositionAggregate(at) {
-		if artifact, aerr := models.ArtifactFromFrontmatter(fm, body); aerr == nil {
-			if composition, cerr := core.SizeComposition(ctx, ws, artifact); cerr == nil && composition != nil {
-				detail[core.SizeCompositionKey] = composition
-			}
+		artifact, aerr := models.ArtifactFromFrontmatter(fm, body)
+		if aerr != nil {
+			slog.WarnContext(ctx, "get: build artifact for size composition failed; rollup omitted", "id", id, "error", aerr)
+		} else if composition, cerr := core.SizeComposition(ctx, ws, artifact); cerr != nil {
+			slog.WarnContext(ctx, "get: size composition failed; rollup omitted", "id", id, "error", cerr)
+		} else if composition != nil {
+			detail[core.SizeCompositionKey] = composition
 		}
 	}
 	return detail
