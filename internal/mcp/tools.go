@@ -1652,25 +1652,12 @@ func (s *Server) handleGetShipment(ctx context.Context, request mcplib.CallToolR
 	if err != nil {
 		return domainError("get shipment", err), nil
 	}
-	// Wrap in the shared read-only ShipmentView so the response carries the
-	// render-time covering_feature projection (top-level sibling, omitted when
-	// absent). Purely additive: the shipment artifact is embedded unchanged and
-	// nothing is persisted.
-	view := core.NewShipmentView(ctx, s.Workspace, shipment)
-	// SE-6: project the never-persisted size_composition rollup onto the shipment
-	// read surface so agents can read the aggregate without a separate call. The
-	// CLI shipment shaper deliberately omits this (MCP-only projection).
-	composition, cErr := core.SizeComposition(ctx, s.Workspace, shipment)
-	if cErr != nil {
-		slog.WarnContext(ctx, "get_shipment: size composition failed; returning shipment without rollup", "id", id, "error", cErr)
-	} else if composition != nil {
-		if payload, pErr := withSizeComposition(view, composition); pErr != nil {
-			slog.WarnContext(ctx, "get_shipment: size composition projection failed; returning plain shipment", "id", id, "error", pErr)
-		} else {
-			return toolResultJSON(payload)
-		}
-	}
-	return toolResultJSON(view)
+	// Wrap in the shared read-only shaper so the response carries the render-time
+	// covering_feature projection and the computed-on-read size_composition
+	// rollup. The CLI `shipment get` surface delegates to the same core shaper so
+	// the two transports cannot drift (114-F parity). Purely additive: nothing is
+	// persisted.
+	return toolResultJSON(core.ShipmentViewWithComposition(ctx, s.Workspace, shipment))
 }
 
 func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1697,42 +1684,10 @@ func (s *Server) handleListShipments(ctx context.Context, request mcplib.CallToo
 		}
 		shipment.CustomFields["items"] = core.NormalizeShipmentItems(shipment)
 	}
-	// Share the same read-only shaper as get so list carries an identical
-	// covering_feature projection and both surfaces stay same-shape.
-	views := core.NewShipmentViews(ctx, s.Workspace, shipments)
-	// SE-6: project the never-persisted size_composition rollup onto each shipment
-	// so list_shipments stays same-shape with get_shipment. MCP-only; the CLI
-	// shipment shaper deliberately omits composition.
-	return toolResultJSON(s.shipmentViewsWithSizeComposition(ctx, shipments, views))
-}
-
-// shipmentViewsWithSizeComposition projects the never-persisted size_composition
-// rollup onto each shipment view so list_shipments stays same-shape with
-// get_shipment (108-F SE-6). Order is preserved; on any projection failure the
-// element falls back to the unprojected view.
-func (s *Server) shipmentViewsWithSizeComposition(ctx context.Context, shipments []*models.Artifact, views []core.ShipmentView) []any {
-	out := make([]any, len(views))
-	for i := range views {
-		out[i] = views[i]
-		if i >= len(shipments) || shipments[i] == nil {
-			continue
-		}
-		composition, err := core.SizeComposition(ctx, s.Workspace, shipments[i])
-		if err != nil {
-			slog.WarnContext(ctx, "list_shipments: size composition failed; shipment left without rollup", "id", shipments[i].ID, "error", err)
-			continue
-		}
-		if composition == nil {
-			continue
-		}
-		payload, pErr := withSizeComposition(views[i], composition)
-		if pErr != nil {
-			slog.WarnContext(ctx, "list_shipments: size composition projection failed; shipment left without rollup", "id", shipments[i].ID, "error", pErr)
-			continue
-		}
-		out[i] = payload
-	}
-	return out
+	// Share the same read-only shaper as the CLI `shipment list` surface so both
+	// transports carry an identical covering_feature projection and
+	// size_composition rollup and cannot drift (114-F parity).
+	return toolResultJSON(core.ShipmentViewsWithComposition(ctx, s.Workspace, shipments))
 }
 
 func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

@@ -145,3 +145,102 @@ func TestQueueViewJSON_FeatureExposesSizeComposition(t *testing.T) {
 	}
 	require.True(t, found, "feature %s not present in queue view: %s", featID, out)
 }
+
+// setupSizedShipment creates a feature with one XL-sized task, wraps that task in
+// a shipment, rehydrates the index, and returns the shipment ID. Used to
+// exercise the size_composition rollup on the shipment-scoped CLI read surfaces.
+func setupSizedShipment(t *testing.T, root string) string {
+	t.Helper()
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	defer ws.Close()
+
+	feat, err := core.CreateArtifact(ctx, ws, "Ship feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Ship task", "task", core.WithParent(feat.ID))
+	require.NoError(t, err)
+	_, err = core.SetArtifactSize(ctx, ws, task.ID, "XL")
+	require.NoError(t, err)
+	ship, err := core.CreateShipment(ctx, ws, "Parity shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+	require.NoError(t, err)
+	return ship.ID
+}
+
+// TestShipmentGetJSON_ExposesSizeComposition asserts the shipment-scoped CLI
+// `shipment get <id>` surface carries the derived size_composition rollup, at
+// parity with the MCP get_shipment tool. Both transports delegate to the shared
+// core.ShipmentViewWithComposition shaper so they cannot drift (114-F).
+func TestShipmentGetJSON_ExposesSizeComposition(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	shipID := setupSizedShipment(t, root)
+
+	out, err := runRootCommand(t, "--cwd", root, "shipment", "get", shipID)
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &m), "shipment get must be valid JSON: %s", out)
+	comp, ok := m["size_composition"].(map[string]any)
+	require.True(t, ok, "shipment get must expose size_composition; got: %s", out)
+	hist, _ := comp["histogram"].(map[string]any)
+	assert.EqualValues(t, 1, hist["XL"], "histogram XL")
+}
+
+// TestShipmentListJSON_ExposesSizeComposition asserts the shipment-scoped CLI
+// `shipment list` JSON surface carries the derived size_composition rollup per
+// shipment, at parity with the MCP list_shipments tool. Both transports delegate
+// to the shared core.ShipmentViewsWithComposition shaper (114-F).
+func TestShipmentListJSON_ExposesSizeComposition(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	shipID := setupSizedShipment(t, root)
+
+	out, err := runRootCommand(t, "--cwd", root, "shipment", "list")
+	require.NoError(t, err)
+
+	var views []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &views), "shipment list must be valid JSON array: %s", out)
+
+	found := false
+	for _, v := range views {
+		if v["id"] == shipID {
+			found = true
+			comp, ok := v["size_composition"].(map[string]any)
+			require.True(t, ok, "shipment list item must carry size_composition; got: %s", out)
+			hist, _ := comp["histogram"].(map[string]any)
+			assert.EqualValues(t, 1, hist["XL"], "histogram XL")
+		}
+	}
+	require.True(t, found, "shipment %s not present in shipment list: %s", shipID, out)
+}
+
+// TestQueueViewJSON_ShipmentExposesSizeComposition asserts CLI `queue view --json`
+// injects size_composition into a shipment queue item (not just features), at
+// parity with MCP get_queue which projects the rollup onto every aggregate type.
+func TestQueueViewJSON_ShipmentExposesSizeComposition(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	shipID := setupSizedShipment(t, root)
+
+	out, err := runRootCommand(t, "--cwd", root, "queue", "view", "--format", "json")
+	require.NoError(t, err)
+
+	var view map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &view), "queue view --json must be valid JSON: %s", out)
+	items, ok := view["items"].([]any)
+	require.True(t, ok, "queue view must have items array: %s", out)
+
+	found := false
+	for _, it := range items {
+		im, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		if im["id"] == shipID {
+			found = true
+			_, hasComp := im["size_composition"]
+			assert.True(t, hasComp, "shipment queue item must carry size_composition; got: %s", out)
+		}
+	}
+	require.True(t, found, "shipment %s not present in queue view: %s", shipID, out)
+}

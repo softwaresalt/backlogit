@@ -67,7 +67,7 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 
 	memberIDs, err := compositionMemberIDs(ctx, ws, artifact)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("size composition members for %s: %w", artifact.ID, err)
 	}
 	unique := uniqueNonEmptyStrings(memberIDs)
 	// 114-F / 47ED88ED: resolve all members from the SQLite index in a single
@@ -76,7 +76,7 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	// artifacts, so index resolution is both faster and consistent.
 	resolved, err := resolveMembersFromIndex(ctx, ws, unique)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve size composition members for %s: %w", artifact.ID, err)
 	}
 	for _, id := range unique {
 		member, ok := resolved[id]
@@ -168,7 +168,7 @@ func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]st
 	if ws == nil || ws.DB == nil {
 		return nil, nil
 	}
-	rows, err := ws.DB.QueryContext(ctx, `SELECT id FROM items WHERE parent_id = ? AND artifact_type = 'task'`, parentID)
+	rows, err := ws.DB.QueryContext(ctx, `SELECT id FROM items WHERE parent_id = ? AND artifact_type = 'task' ORDER BY id`, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("query children of %s: %w", parentID, err)
 	}
@@ -204,7 +204,44 @@ func AttachSizeComposition(v any, composition *SizeCompositionResult) (map[strin
 	return payload, nil
 }
 
-// InjectSizeComposition attaches the computed-on-read size rollup to each
+// ShipmentViewWithComposition builds the read-only shipment view (carrying the
+// render-time covering_feature projection) and attaches the computed-on-read
+// size_composition rollup. On any rollup or projection failure it logs and
+// returns the plain view so a rollup error never fails the surface. It is shared
+// by the CLI `shipment get` and MCP get_shipment read surfaces so the two cannot
+// drift (114-F parity).
+func ShipmentViewWithComposition(ctx context.Context, ws *Workspace, shipment *models.Artifact) any {
+	view := NewShipmentView(ctx, ws, shipment)
+	if shipment == nil {
+		return view
+	}
+	composition, err := SizeComposition(ctx, ws, shipment)
+	if err != nil {
+		slog.WarnContext(ctx, "size composition: shipment left without rollup", "id", shipment.ID, "error", err)
+		return view
+	}
+	if composition == nil {
+		return view
+	}
+	payload, perr := AttachSizeComposition(view, composition)
+	if perr != nil {
+		slog.WarnContext(ctx, "size composition: shipment projection failed", "id", shipment.ID, "error", perr)
+		return view
+	}
+	return payload
+}
+
+// ShipmentViewsWithComposition maps ShipmentViewWithComposition over shipments,
+// preserving order. It is shared by the CLI `shipment list` and MCP
+// list_shipments read surfaces so the two cannot drift (114-F parity).
+func ShipmentViewsWithComposition(ctx context.Context, ws *Workspace, shipments []*models.Artifact) []any {
+	out := make([]any, len(shipments))
+	for i, shipment := range shipments {
+		out[i] = ShipmentViewWithComposition(ctx, ws, shipment)
+	}
+	return out
+}
+
 // aggregate (feature/shipment) item map, matching the typed artifact slice by
 // index so order is preserved. Non-aggregate types are left unprojected; a
 // rollup failure is logged and that item is left without a rollup rather than
