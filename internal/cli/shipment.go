@@ -235,7 +235,7 @@ func shipmentColumns() []format.Column {
 // artifactsToRows and appending the derived covering feature (rendered
 // "<id> — <title>", blank when absent). Derivation is read-only.
 func shipmentRows(ctx context.Context, ws *core.Workspace, shipments []*models.Artifact) []map[string]any {
-	rows := artifactsToRows(shipments)
+	rows := artifactsToRows(ctx, ws, shipments)
 	for i, shipment := range shipments {
 		if cf, ok := core.DeriveCoveringFeature(ctx, ws, shipment); ok {
 			rows[i]["covering_feature"] = fmt.Sprintf("%s — %s", cf.ID, cf.Title)

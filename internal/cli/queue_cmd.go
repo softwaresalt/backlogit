@@ -87,7 +87,7 @@ priority as the secondary sort after any manually assigned queue positions.`,
 			}
 			switch effectiveFormat {
 			case format.FormatTable, format.FormatTile:
-				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
+				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(ctx, ws, view.Items))
 			default: // json
 				// 114-F / 387DE4BF: project the never-persisted size_composition
 				// rollup onto each aggregate queue item, at parity with MCP
