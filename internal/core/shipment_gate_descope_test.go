@@ -119,6 +119,33 @@ func TestValidateMemberGateEvidence_ArchivedFromRejectedNotExemptWhenGateTermina
 	assert.Contains(t, verr.Error(), "missing passing gate evidence")
 }
 
+// TestValidateMemberGateEvidence_ArchivedFromActiveNotExemptWhenArchivedGateTerminal
+// pins the second config-aware guard raised in Copilot review of PR #268: the
+// `archived` SINK status is itself a valid terminal_statuses value (accepted by the
+// config schema's gateKnownStatuses). ArchiveItem writes status=archived directly
+// without routing through the gated-completion path, so when an operator configures
+// `archived` as a gate terminal status they intend archival to require valid F4
+// evidence. A member archived from a statically descope-eligible provenance (active)
+// must therefore NOT be exempt when `archived` is a configured gate terminal —
+// otherwise the descope exemption would convert missing evidence into a bypass of the
+// operator's gate contract. Under the DEFAULT terminal_statuses ([done]) `archived`
+// is not gate-terminal, so an archived-from-active descope stays exempt.
+func TestValidateMemberGateEvidence_ArchivedFromActiveNotExemptWhenArchivedGateTerminal(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	// Configure the gate to run at `archived`, so reaching the archived sink expects evidence.
+	ws.gateConfig.TerminalStatuses = []string{"done", "archived"}
+	ctx := context.Background()
+
+	id := archiveMemberFromStatus(t, ctx, ws, "active")
+
+	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, verr,
+		"a member archived while `archived` is a CONFIGURED gate terminal status must NOT be exempt")
+	assert.Contains(t, verr.Error(), "missing passing gate evidence")
+}
+
 // TestIsDescopeEligibleStatus pins the full per-status classification of the
 // descope-eligibility predicate. Descope-eligible = in-flight statuses (queued,
 // active, blocked, review) plus non-completion terminals (abandoned, rejected).
