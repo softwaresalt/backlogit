@@ -111,6 +111,18 @@ func buildDetailMap(ctx context.Context, ws *core.Workspace, fm map[string]any, 
 	if err == nil && len(commits) > 0 {
 		detail["commit_links"] = commits
 	}
+
+	// 114-F / 387DE4BF: project the never-persisted size_composition rollup onto
+	// feature and shipment JSON, at parity with MCP get_item / get_shipment. The
+	// rollup is computed on read; a computation failure leaves the detail without
+	// a rollup rather than failing the whole command.
+	if at, _ := fm["artifact_type"].(string); core.IsSizeCompositionAggregate(at) {
+		if artifact, aerr := models.ArtifactFromFrontmatter(fm, body); aerr == nil {
+			if composition, cerr := core.SizeComposition(ctx, ws, artifact); cerr == nil && composition != nil {
+				detail[core.SizeCompositionKey] = composition
+			}
+		}
+	}
 	return detail
 }
 

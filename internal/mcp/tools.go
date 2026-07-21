@@ -659,7 +659,7 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 	}
 	// SE-6: project a never-persisted size_composition rollup onto feature and
 	// shipment read surfaces so agents can read the aggregate without a separate call.
-	if artifact.ArtifactType == "feature" || artifact.ArtifactType == "shipment" {
+	if core.IsSizeCompositionAggregate(artifact.ArtifactType) {
 		composition, cErr := core.SizeComposition(ctx, s.Workspace, artifact)
 		if cErr != nil {
 			slog.WarnContext(ctx, "get_item: size composition failed; returning artifact without rollup", "id", id, "error", cErr)
@@ -678,18 +678,11 @@ func (s *Server) handleGetItem(ctx context.Context, request mcplib.CallToolReque
 // withSizeComposition marshals any read-surface value into a generic map and
 // attaches the computed-on-read size_composition rollup without mutating or
 // persisting the underlying artifact. It is shared by the get_item, get_shipment,
-// and get_queue MCP read surfaces (108-F SE-6).
+// and get_queue MCP read surfaces (108-F SE-6). It delegates to
+// core.AttachSizeComposition so the CLI and MCP transports cannot drift on the
+// projection shape (114-F).
 func withSizeComposition(v any, composition *core.SizeCompositionResult) (map[string]any, error) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("marshal for size composition: %w", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal for size composition: %w", err)
-	}
-	payload["size_composition"] = composition
-	return payload, nil
+	return core.AttachSizeComposition(v, composition)
 }
 
 func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1414,31 +1407,11 @@ func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.Qu
 }
 
 // injectQueueSizeComposition attaches a computed-on-read size_composition rollup to
-// each feature/shipment item map in a queue projection, matching the typed slice by
-// index so order is preserved. Non-aggregate types are left unprojected; a rollup
-// failure is logged and that item is left without a rollup rather than failing the
-// whole queue response.
+// each feature/shipment item map in a queue projection. It delegates to
+// core.InjectSizeComposition, the single shaper shared with the CLI queue view so
+// the two transports cannot drift (114-F).
 func (s *Server) injectQueueSizeComposition(ctx context.Context, artifacts []*models.Artifact, itemMaps []any) {
-	for i, art := range artifacts {
-		if i >= len(itemMaps) || art == nil {
-			continue
-		}
-		if art.ArtifactType != "feature" && art.ArtifactType != "shipment" {
-			continue
-		}
-		im, ok := itemMaps[i].(map[string]any)
-		if !ok {
-			continue
-		}
-		composition, err := core.SizeComposition(ctx, s.Workspace, art)
-		if err != nil {
-			slog.WarnContext(ctx, "get_queue: size composition failed; item left without rollup", "id", art.ID, "error", err)
-			continue
-		}
-		if composition != nil {
-			im["size_composition"] = composition
-		}
-	}
+	core.InjectSizeComposition(ctx, s.Workspace, artifacts, itemMaps)
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

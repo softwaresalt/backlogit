@@ -2,11 +2,27 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+// SizeCompositionKey is the read-surface JSON field under which the
+// computed-on-read size rollup is attached. Both the CLI and MCP transports
+// consume this constant so the two surfaces cannot drift on the field name
+// (108-F / 114-F parity).
+const SizeCompositionKey = "size_composition"
+
+// IsSizeCompositionAggregate reports whether an artifact type carries a
+// computed-on-read size rollup on read surfaces. Size estimation is task-only,
+// so only the rollup-parent types (feature, shipment) are projectable. The CLI
+// and MCP read surfaces share this predicate so they cannot drift on which
+// types expose the rollup.
+func IsSizeCompositionAggregate(artifactType string) bool {
+	return artifactType == "feature" || artifactType == "shipment"
+}
 
 // SizeCompositionMember describes one canonical member included in a size rollup.
 type SizeCompositionMember struct {
@@ -142,4 +158,50 @@ func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]st
 		return nil, fmt.Errorf("iterate children of %s: %w", parentID, err)
 	}
 	return ids, nil
+}
+
+// AttachSizeComposition marshals v into a generic map and attaches the
+// computed-on-read size rollup under SizeCompositionKey without mutating or
+// persisting v. It is shared by the CLI `get --json` and MCP get_item /
+// get_shipment read surfaces so the projection shape cannot drift.
+func AttachSizeComposition(v any, composition *SizeCompositionResult) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("marshal for size composition: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal for size composition: %w", err)
+	}
+	payload[SizeCompositionKey] = composition
+	return payload, nil
+}
+
+// InjectSizeComposition attaches the computed-on-read size rollup to each
+// aggregate (feature/shipment) item map, matching the typed artifact slice by
+// index so order is preserved. Non-aggregate types are left unprojected; a
+// rollup failure is logged and that item is left without a rollup rather than
+// failing the whole response. It is shared by the CLI `queue view --json` and
+// MCP get_queue read surfaces so the two surfaces cannot drift.
+func InjectSizeComposition(ctx context.Context, ws *Workspace, artifacts []*models.Artifact, itemMaps []any) {
+	for i, art := range artifacts {
+		if i >= len(itemMaps) || art == nil {
+			continue
+		}
+		if !IsSizeCompositionAggregate(art.ArtifactType) {
+			continue
+		}
+		im, ok := itemMaps[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		composition, err := SizeComposition(ctx, ws, art)
+		if err != nil {
+			slog.WarnContext(ctx, "size composition: item left without rollup", "id", art.ID, "error", err)
+			continue
+		}
+		if composition != nil {
+			im[SizeCompositionKey] = composition
+		}
+	}
 }
