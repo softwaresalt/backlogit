@@ -733,6 +733,17 @@ func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
 func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
+	// Enforce the archive-provenance invariant at the write boundary itself.
+	// WriteArtifactFile is exported and funnels every production rewrite, so it
+	// is the single choke point where "status archived <=> provenance present"
+	// can be guaranteed regardless of caller. An archived artifact missing
+	// archived_from/archived_status would serialize a non-invertible record;
+	// archiving must go through ArchiveItem, which stamps both fields first.
+	if artifact.Status == models.StatusArchived &&
+		(artifact.ArchivedFrom == "" || artifact.ArchivedStatus == "") {
+		return fmt.Errorf("refusing to write archived artifact %s without provenance (archived_from/archived_status); archive via the archive operation: %w", artifact.ID, blerrors.ErrValidation)
+	}
+
 	fm := artifact.ToFrontmatterMap()
 
 	content := models.SerializeFrontmatter(fm, artifact.Description)

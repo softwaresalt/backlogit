@@ -646,6 +646,8 @@ func TestAdoptItem_RejectsArchivedItem(t *testing.T) {
 	task, err := CreateArtifact(ctx, ws, "Archived task", "task", WithParent(feature.ID))
 	require.NoError(t, err)
 	task.Status = models.StatusArchived
+	task.ArchivedFrom = "queue"
+	task.ArchivedStatus = "done"
 	task.UpdatedAt = time.Now()
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 	require.NoError(t, WriteArtifactFile(task, findArtifactPathDirect(ws, task.ID)))

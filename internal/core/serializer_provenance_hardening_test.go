@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,6 +153,53 @@ func TestBulkUpdateStatus_RejectsArchivedTarget(t *testing.T) {
 	require.NoError(t, parseErr)
 	assert.Equal(t, "queued", fm["status"], "status must be unchanged after the rejected bulk archive")
 	assert.NotContains(t, fm, "archived_from", "no empty archive provenance may be written")
+}
+
+// TestWriteArtifactFile_RejectsArchivedWithoutProvenance guards the exported
+// write boundary (surfaced by Copilot review). WriteArtifactFile funnels every
+// production rewrite, so it is the single choke point that must reject an
+// archived artifact missing archived_from/archived_status rather than serialize
+// a non-invertible record. Archiving must go through the archive operation.
+func TestWriteArtifactFile_RejectsArchivedWithoutProvenance(t *testing.T) {
+	dir := t.TempDir()
+
+	cases := []struct {
+		name           string
+		archivedFrom   string
+		archivedStatus string
+	}{
+		{"both missing", "", ""},
+		{"missing archived_from", "", "done"},
+		{"missing archived_status", "done", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &models.Artifact{
+				ID:             "999-F",
+				Title:          "Archived without provenance",
+				Status:         models.StatusArchived,
+				ArtifactType:   "feature",
+				ArchivedFrom:   tc.archivedFrom,
+				ArchivedStatus: tc.archivedStatus,
+			}
+			err := core.WriteArtifactFile(a, filepath.Join(dir, "999-reject.md"))
+			require.Error(t, err, "archived artifact missing provenance must be rejected at the write boundary")
+			assert.Contains(t, err.Error(), "provenance", "error must explain the missing provenance")
+			assert.NoFileExists(t, filepath.Join(dir, "999-reject.md"), "no file may be written for a rejected archived artifact")
+		})
+	}
+
+	// A fully-provisioned archived artifact still writes successfully.
+	ok := &models.Artifact{
+		ID:             "999-F",
+		Title:          "Archived with provenance",
+		Status:         models.StatusArchived,
+		ArtifactType:   "feature",
+		ArchivedFrom:   "queue",
+		ArchivedStatus: "done",
+	}
+	require.NoError(t, core.WriteArtifactFile(ok, filepath.Join(dir, "999-ok.md")))
+	assert.FileExists(t, filepath.Join(dir, "999-ok.md"))
 }
 
 func assertProvenancePresent(t *testing.T, ctx context.Context, ws *core.Workspace, id string) {

@@ -293,7 +293,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		updated, reloadErr := findArtifact(ctx, ws, item.ID)
 		if reloadErr != nil {
 			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
-				return fmt.Errorf("reload artifact %s for queue move: %w; rollback queue positions: %v", item.ID, reloadErr, rollbackErr)
+				return fmt.Errorf("reload artifact %s for queue move: %w; rollback queue positions: %w", item.ID, reloadErr, rollbackErr)
 			}
 			return fmt.Errorf("reload artifact %s for queue move: %w", item.ID, reloadErr)
 		}
@@ -307,7 +307,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		updated.UpdatedAt = stamp
 		if err := persistArtifact(ctx, ws, updated, false); err != nil {
 			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
-				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %v", item.ID, err, rollbackErr)
+				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %w", item.ID, err, rollbackErr)
 			}
 			return fmt.Errorf("persist queue position for %s: %w", item.ID, err)
 		}
@@ -363,6 +363,10 @@ func currentQueuePosition(item *models.Artifact) int {
 }
 
 func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]*models.Artifact, persistedIDs []string) error {
+	// Detach cancellation so cleanup completes even when the forward operation
+	// failed because the caller's context was canceled. Context values (e.g.,
+	// deadlines for tracing) are retained via WithoutCancel.
+	ctx = context.WithoutCancel(ctx)
 	var rollbackErrs []error
 	for i := len(persistedIDs) - 1; i >= 0; i-- {
 		original := originals[persistedIDs[i]]
