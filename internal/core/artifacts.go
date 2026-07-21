@@ -223,6 +223,15 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if status == "" {
 		status = "queued"
 	}
+	// Reject "archived" as an initial creation status. A freshly created item
+	// carries no archive provenance and the create serializer emits none, so an
+	// item born archived is non-invertible: UnarchiveItem hard-fails on the
+	// missing archived_from. Archiving is a create-then-ArchiveItem operation,
+	// which stamps provenance via the raw frontmatter path.
+	if models.ArtifactStatus(status) == models.StatusArchived {
+		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted (create then archive): %w",
+			artifactID, status, blerrors.ErrValidation)
+	}
 
 	now := models.NowUTC()
 	artifact := &models.Artifact{
@@ -289,44 +298,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create directory: %w", err)
 	}
 
-	fm := map[string]any{
-		"id":            artifact.ID,
-		"title":         artifact.Title,
-		"status":        string(artifact.Status),
-		"artifact_type": artifact.ArtifactType,
-		"created_at":    artifact.CreatedAt,
-		"updated_at":    artifact.UpdatedAt,
-	}
-	if artifact.ParentID != "" {
-		fm["parent_id"] = artifact.ParentID
-	}
-	if artifact.Sprint != "" {
-		fm["sprint"] = artifact.Sprint
-	}
-	if artifact.Priority != "" {
-		fm["priority"] = artifact.Priority
-	}
-	if artifact.AssignedTo != "" {
-		fm["assigned_to"] = artifact.AssignedTo
-	}
-	if artifact.Owner != "" {
-		fm["owner"] = artifact.Owner
-	}
-	if len(artifact.Labels) > 0 {
-		fm["labels"] = artifact.Labels
-	}
-	if len(artifact.Dependencies) > 0 {
-		fm["dependencies"] = artifact.Dependencies
-	}
-	if len(artifact.References) > 0 {
-		fm["references"] = artifact.References
-	}
-	if artifact.Commit != "" {
-		fm["commit"] = artifact.Commit
-	}
-	if artifact.CustomFields != nil {
-		fm["custom_fields"] = artifact.CustomFields
-	}
+	fm := artifact.ToFrontmatterMap()
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	fileName := ResolveFileName(typeConfig, artifact.ID, title, ws.Config.MaxSlugLength)
 	filePath := filepath.Join(dirAbs, fileName+".md")
@@ -553,6 +525,18 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	artifact.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(artifact, previousStatus)
 
+	// Completing the archive-provenance invariant surfaced by adversarial review:
+	// archiving MUST go through ArchiveItem, which stamps
+	// archived_from/archived_status. The default matrix allows done -> archived,
+	// but the generic update path sets no provenance, so this transition would
+	// write status: archived with empty provenance — a non-invertible artifact
+	// UnarchiveItem cannot restore. Reject any transition INTO archived from a
+	// non-archived status. An update on an already-archived item (provenance
+	// preserved by the status-gated serializer) is unaffected.
+	if artifact.Status == models.StatusArchived && previousStatus != models.StatusArchived {
+		return nil, fmt.Errorf("cannot transition %s to archived via update; use the archive operation to preserve provenance: %w", id, blerrors.ErrValidation)
+	}
+
 	// Fail closed when the workspace schema is absent (see requireHeaderDef). This
 	// check MUST precede ValidateArtifactFields, which dereferences the header-def
 	// via ResolveFieldSchema with no nil-guard.
@@ -749,59 +733,18 @@ func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error
 
 // WriteArtifactFile atomically writes an artifact to the given file path.
 func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
-	fm := map[string]any{
-		"id":            artifact.ID,
-		"title":         artifact.Title,
-		"status":        string(artifact.Status),
-		"artifact_type": artifact.ArtifactType,
-		"created_at":    artifact.CreatedAt,
-		"updated_at":    artifact.UpdatedAt,
+	// Enforce the archive-provenance invariant at the write boundary itself.
+	// WriteArtifactFile is exported and funnels every production rewrite, so it
+	// is the single choke point where "status archived <=> provenance present"
+	// can be guaranteed regardless of caller. An archived artifact missing
+	// archived_from/archived_status would serialize a non-invertible record;
+	// archiving must go through ArchiveItem, which stamps both fields first.
+	if artifact.Status == models.StatusArchived &&
+		(artifact.ArchivedFrom == "" || artifact.ArchivedStatus == "") {
+		return fmt.Errorf("refusing to write archived artifact %s without provenance (archived_from/archived_status); archive via the archive operation: %w", artifact.ID, blerrors.ErrValidation)
 	}
-	if artifact.ParentID != "" {
-		fm["parent_id"] = artifact.ParentID
-	}
-	if artifact.Sprint != "" {
-		fm["sprint"] = artifact.Sprint
-	}
-	if artifact.Priority != "" {
-		fm["priority"] = artifact.Priority
-	}
-	if artifact.AssignedTo != "" {
-		fm["assigned_to"] = artifact.AssignedTo
-	}
-	if artifact.Owner != "" {
-		fm["owner"] = artifact.Owner
-	}
-	if len(artifact.Labels) > 0 {
-		fm["labels"] = artifact.Labels
-	}
-	if len(artifact.Dependencies) > 0 {
-		fm["dependencies"] = artifact.Dependencies
-	}
-	if len(artifact.Links) > 0 {
-		fm["links"] = artifact.Links
-	}
-	if len(artifact.References) > 0 {
-		fm["references"] = artifact.References
-	}
-	if artifact.Commit != "" {
-		fm["commit"] = artifact.Commit
-	}
-	// Archive provenance is emitted only while the item is archived, keeping the
-	// invariant "archive provenance <=> archived status". This preserves the
-	// keys across an update round-trip on an archived item and omits stale keys
-	// on any non-archived item.
-	if artifact.Status == models.StatusArchived {
-		if artifact.ArchivedFrom != "" {
-			fm["archived_from"] = artifact.ArchivedFrom
-		}
-		if artifact.ArchivedStatus != "" {
-			fm["archived_status"] = artifact.ArchivedStatus
-		}
-	}
-	if artifact.CustomFields != nil {
-		fm["custom_fields"] = artifact.CustomFields
-	}
+
+	fm := artifact.ToFrontmatterMap()
 
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	tmp := filePath + ".tmp"

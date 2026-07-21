@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/cli"
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 func TestMigrateCommand_ImportStructuredBacklogWorkspace_DryRun(t *testing.T) {
@@ -207,4 +209,281 @@ Imported body
 		return nil
 	}))
 	assert.Len(t, markdownFiles, 7, "expected config templates plus exactly one imported artifact markdown file")
+}
+
+// TestMigrateCommand_ImportArchivedItem_PreservesProvenance is a regression
+// guard for the archive-provenance hardening: source items under archive/ map to
+// status "archived", which CreateArtifact and the write boundary now reject. The
+// migration path must therefore import them in a restorable status and archive
+// them through ArchiveItem so the record lands in .backlogit/archive/ with intact
+// archived_from/archived_status (invertible), rather than being reported failed.
+func TestMigrateCommand_ImportArchivedItem_PreservesProvenance(t *testing.T) {
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	require.NoError(t, config.WriteMigrationDefaults(backlogitDir))
+
+	sourceDir := filepath.Join(root, "backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "archive"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "archive", "back-900 - Archived-task.md"), []byte(`---
+id: BACK-900
+title: Archived task
+status: Done
+labels: ["infra"]
+dependencies: []
+priority: medium
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Archived body
+<!-- SECTION:DESCRIPTION:END -->
+`), 0o644))
+
+	cmd := cli.NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--cwd", root, "migrate", "--source", sourceDir, "--adapter", "backlog-md"})
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.Contains(t, out, "Imported 1 artifacts, skipped 0, failed 0",
+		"archived source item must import successfully, not fail")
+
+	archiveDir := filepath.Join(root, ".backlogit", "archive")
+	require.DirExists(t, archiveDir, "archived import must create the archive directory")
+
+	var archivedFile string
+	require.NoError(t, filepath.WalkDir(archiveDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return err
+		}
+		data, readErr := os.ReadFile(path)
+		require.NoError(t, readErr)
+		if bytes.Contains(data, []byte("Archived task")) {
+			archivedFile = path
+		}
+		return nil
+	}))
+	require.NotEmpty(t, archivedFile, "archived source item must be imported into .backlogit/archive")
+
+	data, err := os.ReadFile(archivedFile)
+	require.NoError(t, err)
+	content := string(data)
+	assert.Contains(t, content, "status: archived", "imported item must be archived")
+	assert.Contains(t, content, "archived_from:", "imported archived item must carry archived_from provenance")
+	assert.Contains(t, content, "archived_status:", "imported archived item must carry archived_status provenance")
+}
+
+// TestMigrateCommand_ImportArchivedItem_ResumesAfterInterruptedArchive verifies
+// that an archived-source import whose ArchiveItem step was interrupted (create
+// succeeded, archive did not) is resumed on the next migration run instead of
+// being permanently skipped by buildExistingImportIndex.
+func TestMigrateCommand_ImportArchivedItem_ResumesAfterInterruptedArchive(t *testing.T) {
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	require.NoError(t, config.WriteMigrationDefaults(backlogitDir))
+
+	sourceDir := filepath.Join(root, "backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "archive"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "archive", "back-901 - Archived-task.md"), []byte(`---
+id: BACK-901
+title: Archived task resume
+status: Done
+labels: ["infra"]
+dependencies: []
+priority: medium
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Archived body
+<!-- SECTION:DESCRIPTION:END -->
+`), 0o644))
+
+	runMigrate := func() string {
+		cmd := cli.NewRootCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		cmd.SetArgs([]string{"--cwd", root, "migrate", "--source", sourceDir, "--adapter", "backlog-md"})
+		require.NoError(t, cmd.Execute())
+		return buf.String()
+	}
+
+	// First run imports and archives the source item, stamping provenance.
+	out := runMigrate()
+	require.Contains(t, out, "Imported 1 artifacts, skipped 0, failed 0")
+
+	archiveDir := filepath.Join(root, ".backlogit", "archive")
+	mintedID := findArtifactIDContaining(t, archiveDir, "Archived task resume")
+	require.NotEmpty(t, mintedID, "first import must archive the source item")
+
+	// Simulate an interrupted prior run: unarchive restores the item to its
+	// pre-archive status while retaining the backlog_md_source_path provenance
+	// that buildExistingImportIndex keys on — the exact state a create-succeeded
+	// / archive-failed run would leave behind.
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	require.NoError(t, core.UnarchiveItem(ctx, ws.DB, ws, mintedID))
+	require.NoError(t, ws.Close())
+
+	// Second run must resume ArchiveItem for the already-created source, not skip
+	// it. Skipping would strand the item in a non-archived status forever.
+	out = runMigrate()
+	require.Contains(t, out, "Imported 1 artifacts, skipped 0, failed 0",
+		"interrupted archived import must resume via ArchiveItem, not skip")
+
+	archivedFile := findArtifactFileContaining(t, archiveDir, "Archived task resume")
+	require.NotEmpty(t, archivedFile, "resumed item must be re-archived into .backlogit/archive")
+	resumedData, readErr := os.ReadFile(archivedFile)
+	require.NoError(t, readErr)
+	content := string(resumedData)
+	assert.Contains(t, content, "status: archived", "resumed item must be archived")
+	assert.Contains(t, content, "archived_from:", "resumed item must carry archived_from provenance")
+	assert.Contains(t, content, "archived_status:", "resumed item must carry archived_status provenance")
+}
+
+// TestMigrateCommand_ImportArchivedItem_SkipsWhenFileArchivedButIndexStale
+// covers the crash-after-file-move-before-DB-update interruption: the artifact
+// is already archived on disk (correct provenance) but the index still reports
+// the pre-archive status. Re-running ArchiveItem would derive
+// oldStatus=="archived" and overwrite archived_status, corrupting the restore
+// target. The import must detect the on-disk archive and skip instead.
+func TestMigrateCommand_ImportArchivedItem_SkipsWhenFileArchivedButIndexStale(t *testing.T) {
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	require.NoError(t, config.WriteMigrationDefaults(backlogitDir))
+
+	sourceDir := filepath.Join(root, "backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "archive"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "archive", "back-902 - Archived-task.md"), []byte(`---
+id: BACK-902
+title: Archived task stale
+status: Done
+labels: ["infra"]
+dependencies: []
+priority: medium
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Archived body
+<!-- SECTION:DESCRIPTION:END -->
+`), 0o644))
+
+	runMigrate := func() string {
+		cmd := cli.NewRootCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		cmd.SetArgs([]string{"--cwd", root, "migrate", "--source", sourceDir, "--adapter", "backlog-md"})
+		require.NoError(t, cmd.Execute())
+		return buf.String()
+	}
+
+	// First run imports and archives the source item, stamping archived_status=done.
+	out := runMigrate()
+	require.Contains(t, out, "Imported 1 artifacts, skipped 0, failed 0")
+
+	archiveDir := filepath.Join(root, ".backlogit", "archive")
+	mintedID := findArtifactIDContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, mintedID, "first import must archive the source item")
+
+	beforeFile := findArtifactFileContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, beforeFile)
+	beforeBytes, err := os.ReadFile(beforeFile)
+	require.NoError(t, err)
+	beforeStatus := frontmatterValue(string(beforeBytes), "archived_status")
+	require.Equal(t, "done", beforeStatus, "first archive must record the pre-archive status as done")
+
+	// Simulate crash-after-file-move-before-DB-update: the file stays archived on
+	// disk, but the index status is rolled back to the pre-archive value.
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	_, err = ws.DB.ExecContext(ctx, "UPDATE items SET status = 'done' WHERE id = ?", mintedID)
+	require.NoError(t, err)
+	require.NoError(t, ws.Close())
+
+	// Second run must NOT re-archive the already-archived file; it detects the
+	// on-disk archive and skips, preserving archived_status.
+	out = runMigrate()
+	require.Contains(t, out, "Imported 0 artifacts, skipped 1, failed 0",
+		"already-archived file with stale index must be skipped, not re-archived")
+
+	afterFile := findArtifactFileContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, afterFile, "item must remain archived")
+	afterBytes, err := os.ReadFile(afterFile)
+	require.NoError(t, err)
+	afterContent := string(afterBytes)
+	assert.Contains(t, afterContent, "status: archived", "item must remain archived")
+	afterStatus := frontmatterValue(afterContent, "archived_status")
+	assert.Equal(t, beforeStatus, afterStatus, "re-archive must not overwrite archived_status provenance")
+	assert.NotEqual(t, "archived", afterStatus, "archived_status must not be corrupted to 'archived'")
+}
+
+// findArtifactFileContaining returns the path of the first .md file under dir
+// whose contents include marker.
+func findArtifactFileContaining(t *testing.T, dir, marker string) string {
+	t.Helper()
+	var found string
+	require.NoError(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return err
+		}
+		fileData, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if bytes.Contains(fileData, []byte(marker)) {
+			found = path
+		}
+		return nil
+	}))
+	return found
+}
+
+// frontmatterValue returns the trimmed value of the first "key:" line in
+// content, or "" when the key is absent.
+func frontmatterValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, key+":") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, key+":"))
+		}
+	}
+	return ""
+}
+
+// findArtifactIDContaining returns the minted frontmatter id of the artifact
+// file under dir whose contents include marker.
+func findArtifactIDContaining(t *testing.T, dir, marker string) string {
+	t.Helper()
+	path := findArtifactFileContaining(t, dir, marker)
+	if path == "" {
+		return ""
+	}
+	fileData, err := os.ReadFile(path)
+	require.NoError(t, err)
+	for _, line := range strings.Split(string(fileData), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "id:") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "id:"))
+		}
+	}
+	return ""
 }

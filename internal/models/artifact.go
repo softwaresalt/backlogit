@@ -65,3 +65,65 @@ type Artifact struct {
 func (a Artifact) Validate() error {
 	return validate.Struct(a)
 }
+
+// ToFrontmatterMap builds the canonical frontmatter map for an artifact. It is
+// the single source of truth for which modeled fields are serialized and under
+// what conditions, so every write path (create and update) shares one builder
+// and no path can emit a field another path silently drops. Required keys are
+// always present; optional keys are emitted only when non-empty. Archive
+// provenance is status-gated to preserve the invariant "archive provenance <=>
+// archived status": the keys are emitted only while the item is archived, which
+// keeps them across an update round-trip on an archived item and omits stale
+// keys on any non-archived item.
+func (a *Artifact) ToFrontmatterMap() map[string]any {
+	fm := map[string]any{
+		"id":            a.ID,
+		"title":         a.Title,
+		"status":        string(a.Status),
+		"artifact_type": a.ArtifactType,
+		"created_at":    a.CreatedAt,
+		"updated_at":    a.UpdatedAt,
+	}
+	if a.ParentID != "" {
+		fm["parent_id"] = a.ParentID
+	}
+	if a.Sprint != "" {
+		fm["sprint"] = a.Sprint
+	}
+	if a.Priority != "" {
+		fm["priority"] = a.Priority
+	}
+	if a.AssignedTo != "" {
+		fm["assigned_to"] = a.AssignedTo
+	}
+	if a.Owner != "" {
+		fm["owner"] = a.Owner
+	}
+	if len(a.Labels) > 0 {
+		fm["labels"] = a.Labels
+	}
+	if len(a.Dependencies) > 0 {
+		fm["dependencies"] = a.Dependencies
+	}
+	if len(a.Links) > 0 {
+		fm["links"] = a.Links
+	}
+	if len(a.References) > 0 {
+		fm["references"] = a.References
+	}
+	if a.Commit != "" {
+		fm["commit"] = a.Commit
+	}
+	if a.Status == StatusArchived {
+		if a.ArchivedFrom != "" {
+			fm["archived_from"] = a.ArchivedFrom
+		}
+		if a.ArchivedStatus != "" {
+			fm["archived_status"] = a.ArchivedStatus
+		}
+	}
+	if a.CustomFields != nil {
+		fm["custom_fields"] = a.CustomFields
+	}
+	return fm
+}

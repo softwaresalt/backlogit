@@ -195,7 +195,16 @@ type migrationImportResult struct {
 	Errors   []string
 }
 
-type existingImportIndex map[string]string
+// importedArtifactRef records a previously imported artifact's minted ID along
+// with whether it is already archived. The archived flag lets the import loop
+// resume an interrupted archived-source import (create succeeded but ArchiveItem
+// failed on a prior run) instead of skipping it permanently.
+type importedArtifactRef struct {
+	id       string
+	archived bool
+}
+
+type existingImportIndex map[string]importedArtifactRef
 
 func applyValidation(ws *core.Workspace, report *parser.MigrationReport) {
 	for _, item := range report.Items {
@@ -267,8 +276,20 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			}
 		}
 
+		// Archived source items cannot be created directly: a born-archived
+		// artifact has no provenance and is non-invertible, which CreateArtifact
+		// and the WriteArtifactFile boundary now reject. Import archived items in
+		// a restorable terminal status ("done") and then route them through
+		// ArchiveItem below, which stamps archived_from/archived_status from the
+		// raw frontmatter and moves the file into archive/.
+		archivedImport := item.Status == "archived"
+		createStatus := item.Status
+		if archivedImport {
+			createStatus = "done"
+		}
+
 		opts := []core.Option{
-			core.WithStatus(item.Status),
+			core.WithStatus(createStatus),
 			core.WithDescription(item.Body),
 			core.WithFields(fields),
 		}
@@ -292,16 +313,53 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		}
 		if item.ParentRef != "" {
 			if mappedParent, ok := idMap[legacyImportIdentity("", item.ParentRef)]; ok {
-				opts = append(opts, core.WithParent(mappedParent))
+				opts = append(opts, core.WithParent(mappedParent.id))
 			} else {
 				result.Errors = append(result.Errors, fmt.Sprintf("parent %q for %s not imported yet; creating without parent link", item.ParentRef, item.SourcePath))
 			}
 		}
 
 		identity := importIdentity(item)
-		if existingID, ok := idMap[identity]; ok {
+		if existing, ok := idMap[identity]; ok {
 			if item.SourceID != "" {
-				idMap[legacyImportIdentity("", item.SourceID)] = existingID
+				idMap[legacyImportIdentity("", item.SourceID)] = existing
+			}
+			// Resume an interrupted archived-source import: a prior run created
+			// the artifact (durably writing backlog_md_source_path) but its
+			// ArchiveItem step failed, so buildExistingImportIndex now finds a
+			// non-archived artifact for an archived source. Skipping here would
+			// leave it permanently unarchived; instead re-run ArchiveItem so the
+			// import becomes idempotent and retryable after a transient failure.
+			if archivedImport && !existing.archived {
+				// The index can lag the filesystem: a prior run may have archived
+				// the file on disk (moving it into archive/ and stamping
+				// provenance) yet crashed before persisting status="archived" to
+				// the DB. Re-running ArchiveItem on an already-archived file would
+				// derive oldStatus=="archived" and overwrite archived_status,
+				// corrupting the restore target. Inspect the on-disk location and
+				// treat an already-archived file as complete; the trailing
+				// Rehydrate reconciles the stale index.
+				onDiskPath, pathErr := core.FindArtifactPath(ctx, ws, existing.id)
+				if pathErr != nil {
+					result.Failed++
+					result.Errors = append(result.Errors, fmt.Sprintf("locate imported item %s: %v", existing.id, pathErr))
+					continue
+				}
+				if isArchivedArtifactPath(ws, onDiskPath) {
+					result.Skipped++
+					continue
+				}
+				if _, archErr := core.ArchiveItem(ctx, ws.DB, ws, existing.id); archErr != nil {
+					result.Failed++
+					result.Errors = append(result.Errors, fmt.Sprintf("archive imported item %s: %v", existing.id, archErr))
+					continue
+				}
+				idMap[identity] = importedArtifactRef{id: existing.id, archived: true}
+				if item.SourceID != "" {
+					idMap[legacyImportIdentity("", item.SourceID)] = importedArtifactRef{id: existing.id, archived: true}
+				}
+				result.Imported++
+				continue
 			}
 			result.Skipped++
 			continue
@@ -313,11 +371,17 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			result.Errors = append(result.Errors, fmt.Sprintf("create artifact for %s: %v", item.SourcePath, err))
 			continue
 		}
-		if relocatedPath, relocateErr := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status)); relocateErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("relocate artifact %s: %v", artifact.ID, relocateErr))
-		} else if relocateErr == nil && relocatedPath != "" {
-			if writeErr := core.WriteArtifactFile(artifact, relocatedPath); writeErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("rewrite relocated artifact %s: %v", artifact.ID, writeErr))
+		// Skip status-directed relocation for archived imports: the item was
+		// created in a restorable status and ArchiveItem (below) performs the
+		// final move into archive/ while stamping provenance, so relocating here
+		// first would only add a redundant move and a non-canonical archived_from.
+		if !archivedImport {
+			if relocatedPath, relocateErr := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status)); relocateErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("relocate artifact %s: %v", artifact.ID, relocateErr))
+			} else if relocateErr == nil && relocatedPath != "" {
+				if writeErr := core.WriteArtifactFile(artifact, relocatedPath); writeErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("rewrite relocated artifact %s: %v", artifact.ID, writeErr))
+				}
 			}
 		}
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
@@ -325,11 +389,21 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			result.Errors = append(result.Errors, fmt.Sprintf("index artifact %s: %v", artifact.ID, err))
 			continue
 		}
+		// Archive imported archived items through ArchiveItem so archive
+		// provenance (archived_from/archived_status) is stamped and the record
+		// remains invertible via UnarchiveItem.
+		if archivedImport {
+			if _, archErr := core.ArchiveItem(ctx, ws.DB, ws, artifact.ID); archErr != nil {
+				result.Failed++
+				result.Errors = append(result.Errors, fmt.Sprintf("archive imported item %s: %v", artifact.ID, archErr))
+				continue
+			}
+		}
 
 		if item.SourceID != "" {
-			idMap[legacyImportIdentity("", item.SourceID)] = artifact.ID
+			idMap[legacyImportIdentity("", item.SourceID)] = importedArtifactRef{id: artifact.ID, archived: archivedImport}
 		}
-		idMap[identity] = artifact.ID
+		idMap[identity] = importedArtifactRef{id: artifact.ID, archived: archivedImport}
 		result.Imported++
 	}
 
@@ -337,15 +411,16 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		if len(item.Dependencies) == 0 || item.SourceID == "" {
 			continue
 		}
-		newID, ok := idMap[legacyImportIdentity("", item.SourceID)]
+		newRef, ok := idMap[legacyImportIdentity("", item.SourceID)]
 		if !ok {
 			continue
 		}
+		newID := newRef.id
 
 		mappedDeps := make([]string, 0, len(item.Dependencies))
 		for _, dep := range item.Dependencies {
 			if mapped, ok := idMap[legacyImportIdentity("", dep)]; ok {
-				mappedDeps = append(mappedDeps, mapped)
+				mappedDeps = append(mappedDeps, mapped.id)
 			}
 		}
 		if len(mappedDeps) == 0 {
@@ -392,9 +467,9 @@ func buildExistingImportIndex(ctx context.Context, ws *core.Workspace) (existing
 			continue
 		}
 
-		index[legacyImportIdentity(sourcePath, sourceID)] = item.ID
+		index[legacyImportIdentity(sourcePath, sourceID)] = importedArtifactRef{id: item.ID, archived: string(item.Status) == "archived"}
 		if sourceID != "" {
-			index[legacyImportIdentity("", sourceID)] = item.ID
+			index[legacyImportIdentity("", sourceID)] = importedArtifactRef{id: item.ID, archived: string(item.Status) == "archived"}
 		}
 	}
 	return index, nil
@@ -414,6 +489,24 @@ func stampMigrationProvenance(items []parser.MigrationItem) {
 
 func importIdentity(item parser.MigrationItem) string {
 	return legacyImportIdentity(filepath.ToSlash(item.SourcePath), item.SourceID)
+}
+
+// isArchivedArtifactPath reports whether path resolves inside the workspace
+// archive directory (.backlogit/archive). It is used to detect an artifact that
+// is already archived on disk even when the SQLite index still reports it as
+// non-archived, so an interrupted-archive resume does not re-archive a
+// completed file and corrupt its archived_status provenance.
+func isArchivedArtifactPath(ws *core.Workspace, path string) bool {
+	archiveDir := filepath.Clean(filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "archive"))
+	cleaned := filepath.Clean(path)
+	if cleaned == archiveDir {
+		return false
+	}
+	rel, err := filepath.Rel(archiveDir, cleaned)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func legacyImportIdentity(sourcePath, sourceID string) string {

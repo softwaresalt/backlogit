@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -281,10 +282,24 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		if currentQueuePosition(item) == desired {
 			continue
 		}
-		if _, exists := originals[item.ID]; !exists {
-			originals[item.ID] = cloneArtifact(item)
+		// Reload from Markdown before persisting the new position. QueryQueue
+		// returns DB-sourced artifacts, and the DB codec does not carry raw or
+		// unmodeled frontmatter such as archive provenance
+		// (archived_from/archived_status). Persisting the DB-sourced value
+		// directly would rewrite the Markdown with empty provenance, stranding an
+		// archived item reordered in an archived-inclusive queue view (same class
+		// as 111-F). Markdown is the source of truth, so reload it and mutate only
+		// the queue position and timestamp — mirroring BulkUpdateStatus.
+		updated, reloadErr := findArtifact(ctx, ws, item.ID)
+		if reloadErr != nil {
+			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
+				return fmt.Errorf("reload artifact %s for queue move: %w; rollback queue positions: %w", item.ID, reloadErr, rollbackErr)
+			}
+			return fmt.Errorf("reload artifact %s for queue move: %w", item.ID, reloadErr)
 		}
-		updated := cloneArtifact(item)
+		if _, exists := originals[item.ID]; !exists {
+			originals[item.ID] = cloneArtifact(updated)
+		}
 		if updated.CustomFields == nil {
 			updated.CustomFields = map[string]any{}
 		}
@@ -292,7 +307,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		updated.UpdatedAt = stamp
 		if err := persistArtifact(ctx, ws, updated, false); err != nil {
 			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
-				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %v", item.ID, err, rollbackErr)
+				return fmt.Errorf("persist queue position for %s: %w; rollback queue positions: %w", item.ID, err, rollbackErr)
 			}
 			return fmt.Errorf("persist queue position for %s: %w", item.ID, err)
 		}
@@ -348,6 +363,13 @@ func currentQueuePosition(item *models.Artifact) int {
 }
 
 func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]*models.Artifact, persistedIDs []string) error {
+	// Detach from the caller's context so cleanup completes even when the
+	// forward operation failed because that context was canceled or its deadline
+	// expired. WithoutCancel drops both the cancellation signal and the deadline
+	// while retaining context values (e.g., tracing metadata), so rollback is no
+	// longer bounded by the caller's deadline — an intentional trade to keep the
+	// queue consistent rather than leaving positions half-persisted.
+	ctx = context.WithoutCancel(ctx)
 	var rollbackErrs []error
 	for i := len(persistedIDs) - 1; i >= 0; i-- {
 		original := originals[persistedIDs[i]]
@@ -380,6 +402,13 @@ type BulkUpdateResult struct {
 // BulkUpdateResult.Failed rather than aborting the entire batch. The SQLite
 // index is updated only after the Markdown file has been successfully written.
 func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (*BulkUpdateResult, error) {
+	// Archiving must go through ArchiveItem so archive provenance
+	// (archived_from/archived_status) is stamped. BulkUpdateStatus stamps none
+	// and fires no transition hook, so an archived target would write
+	// non-invertible artifacts. Refuse the whole batch.
+	if models.ArtifactStatus(newStatus) == models.StatusArchived {
+		return nil, fmt.Errorf("bulk update to archived is not supported; use the archive operation to preserve provenance: %w", blerrors.ErrValidation)
+	}
 	result := &BulkUpdateResult{}
 	for _, id := range itemIDs {
 		artifact, err := findArtifact(ctx, ws, id)
