@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -68,12 +69,21 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range uniqueNonEmptyStrings(memberIDs) {
-		member, ferr := findArtifact(ctx, ws, id)
-		if ferr != nil {
-			// Unresolved manifest id (ErrNotFound) or any other resolution error:
-			// warn + skip; not counted in the histogram or unsized.
-			slog.WarnContext(ctx, "size composition: skipping unresolved member", "member_id", id, "error", ferr)
+	unique := uniqueNonEmptyStrings(memberIDs)
+	// 114-F / 47ED88ED: resolve all members from the SQLite index in a single
+	// batched query instead of a per-member filesystem WalkDir. The read
+	// surfaces already operate off the index, and the index includes archived
+	// artifacts, so index resolution is both faster and consistent.
+	resolved, err := resolveMembersFromIndex(ctx, ws, unique)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range unique {
+		member, ok := resolved[id]
+		if !ok {
+			// Unresolved manifest id: warn + skip; not counted in the histogram
+			// or unsized.
+			slog.WarnContext(ctx, "size composition: skipping unresolved member", "member_id", id)
 			result.Skipped = append(result.Skipped, id)
 			continue
 		}
@@ -92,6 +102,16 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	return result, nil
 }
 
+// resolveMembersFromIndex batch-resolves member artifacts from the SQLite index,
+// guarding a nil workspace/DB (in which case no members resolve, consistent with
+// childIDsByParent). It underpins the index-backed size rollup (114-F).
+func resolveMembersFromIndex(ctx context.Context, ws *Workspace, ids []string) (map[string]*models.Artifact, error) {
+	if ws == nil || ws.DB == nil {
+		return map[string]*models.Artifact{}, nil
+	}
+	return db.GetItemsByIDs(ctx, ws.DB, ids)
+}
+
 // compositionMemberIDs resolves the canonical member IDs for a size rollup. Size
 // estimation is task-only, so this yields only task members: for a feature, its
 // direct task children by parent_id; for a shipment, the explicit manifest with
@@ -102,10 +122,17 @@ func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.A
 	case "feature":
 		return childIDsByParent(ctx, ws, artifact.ID)
 	case "shipment":
+		manifest := NormalizeShipmentItems(artifact)
+		// 114-F / 47ED88ED: batch-resolve manifest member types from the index
+		// in one query instead of a per-member filesystem WalkDir.
+		resolved, err := resolveMembersFromIndex(ctx, ws, manifest)
+		if err != nil {
+			return nil, fmt.Errorf("resolve shipment manifest: %w", err)
+		}
 		var ids []string
-		for _, memberID := range NormalizeShipmentItems(artifact) {
-			member, ferr := findArtifact(ctx, ws, memberID)
-			if ferr != nil {
+		for _, memberID := range manifest {
+			member, ok := resolved[memberID]
+			if !ok {
 				// Dangling manifest id: keep it so the main loop records it as
 				// skipped (warn + counted in neither histogram nor unsized).
 				ids = append(ids, memberID)

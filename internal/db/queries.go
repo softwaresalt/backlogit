@@ -209,7 +209,72 @@ func GetItem(ctx context.Context, db *sql.DB, id string) (*models.Artifact, erro
 	return a, nil
 }
 
-// DeleteItem removes an artifact from the index.
+// GetItemsByIDs resolves multiple artifacts from the index in a single indexed
+// query per chunk (chunked to respect SQLite's bound-parameter limit), returning
+// a map keyed by artifact ID. Input IDs are de-duplicated and empties are
+// ignored; an ID with no indexed row is simply absent from the result map (a
+// miss is not an error). It is the batch resolver behind the size-composition
+// rollup, replacing per-member filesystem lookups (114-F / 47ED88ED).
+func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*models.Artifact, error) {
+	result := make(map[string]*models.Artifact, len(ids))
+	if db == nil || len(ids) == 0 {
+		return result, nil
+	}
+
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
+	for start := 0; start < len(unique); start += chunkSize {
+		end := start + chunkSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		chunk := unique[start:end]
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		query := `SELECT ` + selectCols + ` FROM items WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+		if err := queryItemsInto(ctx, db, query, args, result); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// queryItemsInto runs a SELECT that returns artifact rows and scans each into
+// dst keyed by ID. It isolates rows.Close handling so GetItemsByIDs stays flat.
+func queryItemsInto(ctx context.Context, db *sql.DB, query string, args []any, dst map[string]*models.Artifact) error {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("query items by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, scanErr := scanArtifactRow(rows)
+		if scanErr != nil {
+			return fmt.Errorf("scan item row: %w", scanErr)
+		}
+		dst[a.ID] = a
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate items by ids: %w", err)
+	}
+	return nil
+}
 // DeleteItem removes an artifact from the index together with all related rows
 // in a single atomic transaction. It delegates to DeleteItemCascade.
 //
