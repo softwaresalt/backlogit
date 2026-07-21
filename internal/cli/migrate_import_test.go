@@ -353,6 +353,89 @@ Archived body
 	assert.Contains(t, content, "archived_status:", "resumed item must carry archived_status provenance")
 }
 
+// TestMigrateCommand_ImportArchivedItem_SkipsWhenFileArchivedButIndexStale
+// covers the crash-after-file-move-before-DB-update interruption: the artifact
+// is already archived on disk (correct provenance) but the index still reports
+// the pre-archive status. Re-running ArchiveItem would derive
+// oldStatus=="archived" and overwrite archived_status, corrupting the restore
+// target. The import must detect the on-disk archive and skip instead.
+func TestMigrateCommand_ImportArchivedItem_SkipsWhenFileArchivedButIndexStale(t *testing.T) {
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	require.NoError(t, config.WriteMigrationDefaults(backlogitDir))
+
+	sourceDir := filepath.Join(root, "backlog")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "archive"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.yml"), []byte("project_name: Test\ndefault_status: To Do\nstatuses: [\"To Do\", \"In Progress\", \"Done\"]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "archive", "back-902 - Archived-task.md"), []byte(`---
+id: BACK-902
+title: Archived task stale
+status: Done
+labels: ["infra"]
+dependencies: []
+priority: medium
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Archived body
+<!-- SECTION:DESCRIPTION:END -->
+`), 0o644))
+
+	runMigrate := func() string {
+		cmd := cli.NewRootCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		cmd.SetArgs([]string{"--cwd", root, "migrate", "--source", sourceDir, "--adapter", "backlog-md"})
+		require.NoError(t, cmd.Execute())
+		return buf.String()
+	}
+
+	// First run imports and archives the source item, stamping archived_status=done.
+	out := runMigrate()
+	require.Contains(t, out, "Imported 1 artifacts, skipped 0, failed 0")
+
+	archiveDir := filepath.Join(root, ".backlogit", "archive")
+	mintedID := findArtifactIDContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, mintedID, "first import must archive the source item")
+
+	beforeFile := findArtifactFileContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, beforeFile)
+	beforeBytes, err := os.ReadFile(beforeFile)
+	require.NoError(t, err)
+	beforeStatus := frontmatterValue(string(beforeBytes), "archived_status")
+	require.Equal(t, "done", beforeStatus, "first archive must record the pre-archive status as done")
+
+	// Simulate crash-after-file-move-before-DB-update: the file stays archived on
+	// disk, but the index status is rolled back to the pre-archive value.
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	_, err = ws.DB.ExecContext(ctx, "UPDATE items SET status = 'done' WHERE id = ?", mintedID)
+	require.NoError(t, err)
+	require.NoError(t, ws.Close())
+
+	// Second run must NOT re-archive the already-archived file; it detects the
+	// on-disk archive and skips, preserving archived_status.
+	out = runMigrate()
+	require.Contains(t, out, "Imported 0 artifacts, skipped 1, failed 0",
+		"already-archived file with stale index must be skipped, not re-archived")
+
+	afterFile := findArtifactFileContaining(t, archiveDir, "Archived task stale")
+	require.NotEmpty(t, afterFile, "item must remain archived")
+	afterBytes, err := os.ReadFile(afterFile)
+	require.NoError(t, err)
+	afterContent := string(afterBytes)
+	assert.Contains(t, afterContent, "status: archived", "item must remain archived")
+	afterStatus := frontmatterValue(afterContent, "archived_status")
+	assert.Equal(t, beforeStatus, afterStatus, "re-archive must not overwrite archived_status provenance")
+	assert.NotEqual(t, "archived", afterStatus, "archived_status must not be corrupted to 'archived'")
+}
+
 // findArtifactFileContaining returns the path of the first .md file under dir
 // whose contents include marker.
 func findArtifactFileContaining(t *testing.T, dir, marker string) string {
@@ -372,6 +455,18 @@ func findArtifactFileContaining(t *testing.T, dir, marker string) string {
 		return nil
 	}))
 	return found
+}
+
+// frontmatterValue returns the trimmed value of the first "key:" line in
+// content, or "" when the key is absent.
+func frontmatterValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, key+":") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, key+":"))
+		}
+	}
+	return ""
 }
 
 // findArtifactIDContaining returns the minted frontmatter id of the artifact

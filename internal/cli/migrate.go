@@ -331,6 +331,24 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			// leave it permanently unarchived; instead re-run ArchiveItem so the
 			// import becomes idempotent and retryable after a transient failure.
 			if archivedImport && !existing.archived {
+				// The index can lag the filesystem: a prior run may have archived
+				// the file on disk (moving it into archive/ and stamping
+				// provenance) yet crashed before persisting status="archived" to
+				// the DB. Re-running ArchiveItem on an already-archived file would
+				// derive oldStatus=="archived" and overwrite archived_status,
+				// corrupting the restore target. Inspect the on-disk location and
+				// treat an already-archived file as complete; the trailing
+				// Rehydrate reconciles the stale index.
+				onDiskPath, pathErr := core.FindArtifactPath(ctx, ws, existing.id)
+				if pathErr != nil {
+					result.Failed++
+					result.Errors = append(result.Errors, fmt.Sprintf("locate imported item %s: %v", existing.id, pathErr))
+					continue
+				}
+				if isArchivedArtifactPath(ws, onDiskPath) {
+					result.Skipped++
+					continue
+				}
 				if _, archErr := core.ArchiveItem(ctx, ws.DB, ws, existing.id); archErr != nil {
 					result.Failed++
 					result.Errors = append(result.Errors, fmt.Sprintf("archive imported item %s: %v", existing.id, archErr))
@@ -471,6 +489,24 @@ func stampMigrationProvenance(items []parser.MigrationItem) {
 
 func importIdentity(item parser.MigrationItem) string {
 	return legacyImportIdentity(filepath.ToSlash(item.SourcePath), item.SourceID)
+}
+
+// isArchivedArtifactPath reports whether path resolves inside the workspace
+// archive directory (.backlogit/archive). It is used to detect an artifact that
+// is already archived on disk even when the SQLite index still reports it as
+// non-archived, so an interrupted-archive resume does not re-archive a
+// completed file and corrupt its archived_status provenance.
+func isArchivedArtifactPath(ws *core.Workspace, path string) bool {
+	archiveDir := filepath.Clean(filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "archive"))
+	cleaned := filepath.Clean(path)
+	if cleaned == archiveDir {
+		return false
+	}
+	rel, err := filepath.Rel(archiveDir, cleaned)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func legacyImportIdentity(sourcePath, sourceID string) string {
