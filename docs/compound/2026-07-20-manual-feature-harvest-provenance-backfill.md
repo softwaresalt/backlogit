@@ -62,16 +62,18 @@ For each manually-created, stash-originated artifact:
    (4-space indent under `custom_fields:`):
    `source_stash_id`, `source_stash_kind`, `source_stash_priority`,
    `source_stash_path` (`stash.jsonl`), and `source_stash_text` (the full
-   original stash text). **Prefer a YAML-aware serializer for
-   `source_stash_text`** — route the write through the artifact codec (or any
-   emitter that quotes/escapes per the YAML spec) rather than hand-typing the
-   value. Hand-editing is safe only for simple single-line text: even a
+   original stash text). `custom_fields` has no `backlogit` mutation — the
+   `update` command only accepts modeled flags, so this backfill is inherently a
+   **direct Markdown edit** followed by `backlogit sync`. Produce the
+   `source_stash_text` value with a YAML-aware editor or a small codec-based
+   utility (anything that quotes/escapes per the YAML spec) rather than
+   hand-typing it. Hand-editing is safe only for simple single-line text: even a
    double-quoted scalar must additionally escape embedded `"` and `\`, and text
    with newlines or control characters needs a block scalar (`|`/`>`) or full
    escaping. Plain (unquoted) scalars are unsafe here because stash text
    frequently contains ` #` (issue refs → comment), `: ` (mapping), and `{}`
-   (flow indicators). When in doubt, write via `backlogit` and re-read to confirm
-   the value round-trips unchanged.
+   (flow indicators). After `sync`, re-read the value (see step 3) to confirm it
+   round-trips unchanged.
 2. Update the durable archive record for the stash id in
    `.backlogit/archive/stash.jsonl`: `reason: harvested` and
    `harvested_artifact_id: <item-id>`.
