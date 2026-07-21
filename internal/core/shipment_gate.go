@@ -543,8 +543,9 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		}
 		latest := latestGatePassEvidence(evs)
 		if latest == nil {
-			// A GENUINELY DESCOPED member (archived directly from a NON-terminal,
-			// in-flight status) was taken out of the release rather than completed
+			// A GENUINELY DESCOPED member (archived directly from a
+			// DESCOPE-ELIGIBLE status — an in-flight status or a non-completion
+			// terminal) was taken out of the release rather than completed
 			// through the gate, so it carries no per-member evidence and MUST NOT block
 			// the shipment. releaseScopeItemIDs expands a feature to ALL descendants
 			// (IncludeArchived: true), so a task scaffolded-then-descoped lands in the
@@ -554,17 +555,19 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			// transitions, so it cannot be force-gated).
 			//
 			// The exemption is deliberately narrow: it applies ONLY when the member was
-			// archived from a non-terminal status. ArchiveItem accepts terminal items
-			// too and preserves the pre-archive status in archived_status, so a member
-			// driven to a COMPLETED status (done/accepted) with NO valid evidence — e.g.
-			// whose only "pass" is a fail-open EventGatePassed{ran:false} rejected by the
-			// F4 predicate — and then archived MUST still refuse; exempting it on the
-			// bare archived status would bypass that predicate. archived_status is read
-			// from the Markdown source because the DB-backed loadArtifact omits it; a
+			// archived from a DESCOPE-ELIGIBLE status — an in-flight status (queued,
+			// active, blocked, review) or a non-completion terminal (abandoned,
+			// rejected). ArchiveItem accepts completed items too and preserves the
+			// pre-archive status in archived_status, so a member driven to a COMPLETION
+			// status (done/accepted/shipped) with NO valid evidence — e.g. whose only
+			// "pass" is a fail-open EventGatePassed{ran:false} rejected by the F4
+			// predicate — and then archived MUST still refuse; exempting it on the bare
+			// archived status would bypass that predicate. archived_status is read from
+			// the Markdown source because the DB-backed loadArtifact omits it; a
 			// missing/empty archived_status fails closed (not a proven descope). The
 			// shipment-level aggregate diff gate still covers the full shipment diff.
 			if item.Status == models.StatusArchived {
-				descoped, derr := archivedFromNonTerminalStatus(ctx, ws, id)
+				descoped, derr := archivedFromDescopeEligibleStatus(ctx, ws, id)
 				if derr != nil {
 					return fmt.Errorf("validate member evidence: %s: %w", id, derr)
 				}
@@ -635,24 +638,33 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 	return nil
 }
 
-// archivedFromNonTerminalStatus reports whether the artifact identified by id was
-// archived from a NON-terminal, in-flight status — i.e. it is a GENUINE DESCOPE
-// (scaffolded then removed from the release before completion) rather than a
+// archivedFromDescopeEligibleStatus reports whether the artifact identified by id was
+// archived from a DESCOPE-ELIGIBLE status — an in-flight status (queued/active/blocked/
+// review) or a non-completion terminal (abandoned/rejected) — i.e. it is a GENUINE
+// DESCOPE (removed from the release before shipping a deliverable) rather than a
 // completed-then-archived deliverable. It reads archived_status directly from the
 // Markdown source because the DB-backed loadArtifact projection omits that field.
 //
-// A member archived from a terminal status (done/accepted/rejected/archived) is
-// NOT a descope: exempting such a member from the per-member gate-evidence
-// requirement would bypass the F4 fail-open evidence predicate (a done member whose
-// only "pass" is an EventGatePassed{ran:false} carries no valid evidence yet could
-// be archived after the fact). A missing/empty archived_status fails closed
-// (reported as NOT a descope) because the provenance cannot prove the member was
-// removed before completion. An UNRECOGNIZED archived_status (a typo or a malformed
-// value a future serializer bug might emit) also fails closed: isTerminalReleaseStatus
-// returns false for any unknown value, so keying the exemption on !isTerminalReleaseStatus
-// alone would treat garbage provenance as a proven non-terminal descope and bypass the
-// evidence requirement. Only a RECOGNIZED, non-terminal status is a proven descope.
-func archivedFromNonTerminalStatus(ctx context.Context, ws *Workspace, id string) (bool, error) {
+// A member archived from a COMPLETION status (done/accepted/shipped) is NOT a descope:
+// exempting such a member from the per-member gate-evidence requirement would bypass
+// the F4 fail-open evidence predicate (a completed member whose only "pass" is an
+// EventGatePassed{ran:false} carries no valid evidence yet could be archived after the
+// fact). A member archived from a status that the gate is CONFIGURED to run at
+// (terminal_statuses, consulted via isGateTerminalStatus) is likewise NOT a descope —
+// reaching a configured gate terminal status means valid evidence is expected, so the
+// exemption is disabled for it even when it is statically descope-eligible (e.g. a
+// workspace that lists "rejected" in terminal_statuses). The `archived` sink is itself
+// an accepted terminal_statuses value, and ArchiveItem writes it without the gated path,
+// so when `archived` is configured as a gate terminal the exemption is disabled for ALL
+// provenance statuses (archival is expected to carry evidence). A missing/empty archived_status
+// fails closed (reported as NOT a descope) because the provenance cannot prove the member
+// was removed before completion. An UNRECOGNIZED archived_status (a typo or a malformed
+// value a future serializer bug might emit) also fails closed: isDescopeEligibleStatus
+// returns false for any unknown value, and the explicit isRecognizedReleaseStatus guard
+// rejects garbage provenance so it cannot be misclassified as a proven descope. Only a
+// RECOGNIZED, descope-eligible status that is NOT a configured gate terminal status (and
+// only when `archived` itself is not gate-terminal) is a proven descope.
+func archivedFromDescopeEligibleStatus(ctx context.Context, ws *Workspace, id string) (bool, error) {
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return false, fmt.Errorf("resolve archived member: %w", err)
@@ -669,11 +681,36 @@ func archivedFromNonTerminalStatus(ctx context.Context, ws *Workspace, id string
 	status := models.ArtifactStatus(archivedStatus)
 	// Fail closed on absent OR unrecognized provenance: an empty archived_status
 	// cannot prove a descope, and a malformed/typo value must not be misclassified as
-	// a non-terminal descope. Only a recognized, non-terminal status is exempt.
+	// a descope. Only a recognized, descope-eligible status is exempt.
 	if archivedStatus == "" || !isRecognizedReleaseStatus(status) {
 		return false, nil
 	}
-	return !isTerminalReleaseStatus(status), nil
+	if !isDescopeEligibleStatus(status) {
+		return false, nil
+	}
+	// Config-aware guard: a status the gate is CONFIGURED to run at (terminal_statuses)
+	// is NOT a descope even when it is statically descope-eligible. gateApplies runs the
+	// pre-task-completion gate whenever a task enters a configured terminal status, so
+	// reaching such a status means valid F4 evidence is expected. A member archived from
+	// a configured gate terminal status without evidence must still refuse — otherwise a
+	// workspace that lists e.g. "rejected" in terminal_statuses could turn missing F4
+	// evidence into an exemption and bypass the gate.
+	//
+	// The `archived` SINK status is itself a valid terminal_statuses value (the config
+	// schema's gateKnownStatuses accepts it). ArchiveItem writes status=archived directly
+	// without routing through the gated-completion path, so when an operator configures
+	// `archived` as a gate terminal status they intend archival to require valid evidence.
+	// The exemption must therefore also be suppressed whenever `archived` is a configured
+	// gate terminal status, independent of the provenance status — otherwise archiving a
+	// descope-eligible member would bypass that configured archival gate contract.
+	//
+	// Under the default terminal_statuses (["done"]) neither any descope-eligible status
+	// nor the `archived` sink is a gate terminal status, so the common-case exemption is
+	// unchanged.
+	if ws.isGateTerminalStatus(string(status)) || ws.isGateTerminalStatus(string(models.StatusArchived)) {
+		return false, nil
+	}
+	return true, nil
 }
 
 // latestGatePassEvidence returns the most recent gate evidence event that

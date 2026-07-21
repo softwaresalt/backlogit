@@ -328,7 +328,7 @@ func TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped(t *testing.T) {
 
 // TestValidateMemberGateEvidence_DescopedArchivedMemberExempt pins the
 // descoped-member exemption: a feature descendant that was scaffolded then
-// removed from the release (archived directly from a non-terminal status, so it
+// removed from the release (archived directly from a descope-eligible status, so it
 // never went through the completion gate and carries NO gate evidence) MUST NOT
 // block the shipment. releaseScopeItemIDs expands a feature to ALL descendants
 // (IncludeArchived: true), so such a descoped task lands in the release scope even
@@ -375,8 +375,9 @@ func TestValidateMemberGateEvidence_DescopedArchivedMemberExempt(t *testing.T) {
 
 // TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt pins the boundary of
 // the descoped-member exemption: the exemption must apply ONLY to members archived
-// from a non-terminal (in-flight) status, NOT to any archived member. ArchiveItem
-// accepts terminal items and preserves the pre-archive status in archived_status,
+// from a descope-eligible status (in-flight or a non-completion terminal), NOT to a
+// member archived from a COMPLETION status. ArchiveItem
+// accepts completed items and preserves the pre-archive status in archived_status,
 // so a member driven to done with NO valid gate evidence (only a fail-open
 // EventGatePassed{ran:false}, rejected by the F4 predicate) and THEN archived must
 // still refuse. Exempting it on the bare archived status would bypass the F4
@@ -410,12 +411,12 @@ func TestValidateMemberGateEvidence_ArchivedFromDoneNotExempt(t *testing.T) {
 }
 
 // TestValidateMemberGateEvidence_ArchivedFromUnknownStatusNotExempt pins the
-// fail-closed boundary for MALFORMED archive provenance. archivedFromNonTerminalStatus
-// exempts a member only when archived_status is a RECOGNIZED non-terminal status. An
+// fail-closed boundary for MALFORMED archive provenance. archivedFromDescopeEligibleStatus
+// exempts a member only when archived_status is a RECOGNIZED descope-eligible status. An
 // unrecognized/typo value (e.g. "dne") must NOT be treated as a proven descope: because
-// isTerminalReleaseStatus returns false for every unknown value, a bare
-// !isTerminalReleaseStatus check would exempt malformed provenance and bypass the
-// per-member F4 evidence requirement. Unknown provenance must fail closed.
+// isDescopeEligibleStatus returns false for every unknown value, and the explicit
+// isRecognizedReleaseStatus guard rejects garbage provenance, malformed provenance cannot
+// bypass the per-member F4 evidence requirement. Unknown provenance must fail closed.
 func TestValidateMemberGateEvidence_ArchivedFromUnknownStatusNotExempt(t *testing.T) {
 	ws := newGateTestWorkspace(t)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
