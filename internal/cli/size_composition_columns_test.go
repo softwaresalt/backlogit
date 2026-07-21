@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,6 +27,37 @@ func TestListTable_ShowsSizeAndCompositionColumns(t *testing.T) {
 	assert.Contains(t, out, "COMPOSITION", "list table must include a COMPOSITION column header; got: %s", out)
 	assert.Contains(t, out, "L:1", "feature row must summarize composition (L:1); got: %s", out)
 	assert.Contains(t, out, "M:1", "feature row must summarize composition (M:1); got: %s", out)
+
+	// Cover the SIZE projection independently of COMPOSITION: a seeded task row
+	// must carry its standalone stored size in the SIZE column. Without this an
+	// always-empty `size` cell would still pass the header/composition asserts
+	// above (the "L"/"M" tokens there come from the feature's composition rollup).
+	assertTaskSizeCell(t, out, "Sized task L", "L")
+	assertTaskSizeCell(t, out, "Sized task M", "M")
+}
+
+// assertTaskSizeCell asserts the table row whose TITLE matches taskTitle carries
+// wantSize as a standalone SIZE column cell — an exact field, not a substring of
+// the title or of the aggregate composition summary. The table renderer
+// separates columns with runs of two or more spaces, so splitting a data row on
+// that boundary isolates each cell; the multi-word title stays a single field
+// and can never equal a one-letter size, so an exact field match uniquely
+// identifies the SIZE cell.
+func assertTaskSizeCell(t *testing.T, out, taskTitle, wantSize string) {
+	t.Helper()
+	sep := regexp.MustCompile(`\s{2,}`)
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, taskTitle) {
+			continue
+		}
+		for _, f := range sep.Split(strings.TrimRight(line, " \t"), -1) {
+			if f == wantSize {
+				return
+			}
+		}
+		t.Fatalf("task row %q missing standalone SIZE cell %q; line=%q", taskTitle, wantSize, line)
+	}
+	t.Fatalf("no table row found for task title %q in output:\n%s", taskTitle, out)
 }
 
 // TestQueueViewTable_ShowsCompositionColumn asserts the human `queue view` table
