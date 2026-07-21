@@ -235,6 +235,17 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
+	// Pin every chunk to one consistent read snapshot: without a wrapping
+	// read transaction each chunk query opens its own implicit transaction, so a
+	// concurrent write committed mid-batch could make later chunks observe a
+	// different WAL snapshot than earlier ones. A read-only transaction gives the
+	// whole batch snapshot isolation.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin read transaction for batch item lookup: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // read-only: rollback is a no-op close
+
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
@@ -248,17 +259,23 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 			args[i] = id
 		}
 		query := `SELECT ` + selectCols + ` FROM items WHERE id IN (` + strings.Join(placeholders, ",") + `)`
-		if err := queryItemsInto(ctx, db, query, args, result); err != nil {
-			return nil, err
+		if err := queryItemsInto(ctx, tx, query, args, result); err != nil {
+			return nil, fmt.Errorf("batch item lookup chunk %d:%d: %w", start, end, err)
 		}
 	}
 	return result, nil
 }
 
+// rowQuerier is the read subset of *sql.DB / *sql.Tx used by queryItemsInto so it
+// can run either directly or inside a snapshot-pinned read transaction.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // queryItemsInto runs a SELECT that returns artifact rows and scans each into
 // dst keyed by ID. It isolates rows.Close handling so GetItemsByIDs stays flat.
-func queryItemsInto(ctx context.Context, db *sql.DB, query string, args []any, dst map[string]*models.Artifact) error {
-	rows, err := db.QueryContext(ctx, query, args...)
+func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string]*models.Artifact) error {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query items by ids: %w", err)
 	}
