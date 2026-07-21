@@ -138,11 +138,14 @@ When a principle conflicts with a practical implementation need, document the
 conflict: name the specific principle, state the justification, and record the
 simpler alternative you rejected.
 
-Conclude with `Constitution Check: pass|documented-deviations`, written exactly
-as shown. Use `pass` when every entry is `pass` or `N/A`; use
-`documented-deviations` when any entry is a deviation. This conclusion is
-mandatory: a plan that omits the Constitution Check or its verdict has an
-unresolved governance gap that `plan-review`'s Constitution Reviewer flags.
+Conclude with exactly one of these two lines:
+
+* `Constitution Check: pass` — when every entry is `pass` or `N/A`
+* `Constitution Check: documented-deviations` — when any entry is a deviation
+
+This conclusion is mandatory: a plan that omits the Constitution Check or its
+verdict has an unresolved governance gap that `plan-review`'s Constitution
+Reviewer flags.
 
 #### Plan Hardening Signals (REQUIRED)
 
@@ -200,7 +203,7 @@ while CI fails.
 * Risks identify mitigations
 * Relevant prior learnings are surfaced before planning concludes
 * Plans record whether `plan-harden` is required before review — this field is mandatory, not optional
-* Plans include a labeled Constitution Check section mapping the work against constitutional principles, concluding with `Constitution Check: pass|documented-deviations`
+* Plans include a labeled Constitution Check section mapping the work against constitutional principles, concluding with either `Constitution Check: pass` or `Constitution Check: documented-deviations`
 * Plans include runtime verification and closure expectations for changed runtime surfaces
 * The plan file opens with a docline frontmatter block setting `doc_type: plan` plus top-level `title` and `source` (the gate-required contract for `docs/exec-plans/**`)
 * The authored plan passes `backlogit docs lint` (`make docs-lint`) with 0 violations before it is handed off to review or harvest
