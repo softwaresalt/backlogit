@@ -195,7 +195,16 @@ type migrationImportResult struct {
 	Errors   []string
 }
 
-type existingImportIndex map[string]string
+// importedArtifactRef records a previously imported artifact's minted ID along
+// with whether it is already archived. The archived flag lets the import loop
+// resume an interrupted archived-source import (create succeeded but ArchiveItem
+// failed on a prior run) instead of skipping it permanently.
+type importedArtifactRef struct {
+	id       string
+	archived bool
+}
+
+type existingImportIndex map[string]importedArtifactRef
 
 func applyValidation(ws *core.Workspace, report *parser.MigrationReport) {
 	for _, item := range report.Items {
@@ -304,16 +313,35 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		}
 		if item.ParentRef != "" {
 			if mappedParent, ok := idMap[legacyImportIdentity("", item.ParentRef)]; ok {
-				opts = append(opts, core.WithParent(mappedParent))
+				opts = append(opts, core.WithParent(mappedParent.id))
 			} else {
 				result.Errors = append(result.Errors, fmt.Sprintf("parent %q for %s not imported yet; creating without parent link", item.ParentRef, item.SourcePath))
 			}
 		}
 
 		identity := importIdentity(item)
-		if existingID, ok := idMap[identity]; ok {
+		if existing, ok := idMap[identity]; ok {
 			if item.SourceID != "" {
-				idMap[legacyImportIdentity("", item.SourceID)] = existingID
+				idMap[legacyImportIdentity("", item.SourceID)] = existing
+			}
+			// Resume an interrupted archived-source import: a prior run created
+			// the artifact (durably writing backlog_md_source_path) but its
+			// ArchiveItem step failed, so buildExistingImportIndex now finds a
+			// non-archived artifact for an archived source. Skipping here would
+			// leave it permanently unarchived; instead re-run ArchiveItem so the
+			// import becomes idempotent and retryable after a transient failure.
+			if archivedImport && !existing.archived {
+				if _, archErr := core.ArchiveItem(ctx, ws.DB, ws, existing.id); archErr != nil {
+					result.Failed++
+					result.Errors = append(result.Errors, fmt.Sprintf("archive imported item %s: %v", existing.id, archErr))
+					continue
+				}
+				idMap[identity] = importedArtifactRef{id: existing.id, archived: true}
+				if item.SourceID != "" {
+					idMap[legacyImportIdentity("", item.SourceID)] = importedArtifactRef{id: existing.id, archived: true}
+				}
+				result.Imported++
+				continue
 			}
 			result.Skipped++
 			continue
@@ -355,9 +383,9 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		}
 
 		if item.SourceID != "" {
-			idMap[legacyImportIdentity("", item.SourceID)] = artifact.ID
+			idMap[legacyImportIdentity("", item.SourceID)] = importedArtifactRef{id: artifact.ID, archived: archivedImport}
 		}
-		idMap[identity] = artifact.ID
+		idMap[identity] = importedArtifactRef{id: artifact.ID, archived: archivedImport}
 		result.Imported++
 	}
 
@@ -365,15 +393,16 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		if len(item.Dependencies) == 0 || item.SourceID == "" {
 			continue
 		}
-		newID, ok := idMap[legacyImportIdentity("", item.SourceID)]
+		newRef, ok := idMap[legacyImportIdentity("", item.SourceID)]
 		if !ok {
 			continue
 		}
+		newID := newRef.id
 
 		mappedDeps := make([]string, 0, len(item.Dependencies))
 		for _, dep := range item.Dependencies {
 			if mapped, ok := idMap[legacyImportIdentity("", dep)]; ok {
-				mappedDeps = append(mappedDeps, mapped)
+				mappedDeps = append(mappedDeps, mapped.id)
 			}
 		}
 		if len(mappedDeps) == 0 {
@@ -420,9 +449,9 @@ func buildExistingImportIndex(ctx context.Context, ws *core.Workspace) (existing
 			continue
 		}
 
-		index[legacyImportIdentity(sourcePath, sourceID)] = item.ID
+		index[legacyImportIdentity(sourcePath, sourceID)] = importedArtifactRef{id: item.ID, archived: string(item.Status) == "archived"}
 		if sourceID != "" {
-			index[legacyImportIdentity("", sourceID)] = item.ID
+			index[legacyImportIdentity("", sourceID)] = importedArtifactRef{id: item.ID, archived: string(item.Status) == "archived"}
 		}
 	}
 	return index, nil
