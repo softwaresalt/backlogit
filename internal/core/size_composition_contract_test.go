@@ -79,3 +79,21 @@ func TestAttachSizeComposition_MarshalError(t *testing.T) {
 	_, err := core.AttachSizeComposition(make(chan int), &core.SizeCompositionResult{})
 	require.Error(t, err)
 }
+
+// TestAttachSizeComposition_NilPayload asserts a value that marshals to a JSON
+// null (an untyped nil or a typed nil pointer) is rejected with an error rather
+// than panicking on assignment to a nil map. The exported helper accepts any and
+// must not crash a caller that hands it a nil value.
+func TestAttachSizeComposition_NilPayload(t *testing.T) {
+	comp := &core.SizeCompositionResult{}
+
+	_, err := core.AttachSizeComposition(nil, comp)
+	require.Error(t, err, "untyped nil must be rejected, not panic")
+
+	type envelope struct {
+		ID string `json:"id"`
+	}
+	var typedNil *envelope
+	_, err = core.AttachSizeComposition(typedNil, comp)
+	require.Error(t, err, "typed nil pointer marshaling to JSON null must be rejected, not panic")
+}

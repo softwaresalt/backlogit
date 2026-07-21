@@ -190,7 +190,10 @@ func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]st
 // AttachSizeComposition marshals v into a generic map and attaches the
 // computed-on-read size rollup under SizeCompositionKey without mutating or
 // persisting v. It is shared by the CLI `get --json` and MCP get_item /
-// get_shipment read surfaces so the projection shape cannot drift.
+// get_shipment read surfaces so the projection shape cannot drift. A payload
+// that marshals to a JSON null (an untyped nil or a typed nil pointer) or to a
+// non-object is rejected with an error rather than panicking on assignment to a
+// nil map.
 func AttachSizeComposition(v any, composition *SizeCompositionResult) (map[string]any, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -199,6 +202,9 @@ func AttachSizeComposition(v any, composition *SizeCompositionResult) (map[strin
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal for size composition: %w", err)
+	}
+	if payload == nil {
+		return nil, fmt.Errorf("size composition: cannot attach rollup to a nil or non-object payload")
 	}
 	payload[SizeCompositionKey] = composition
 	return payload, nil

@@ -41,6 +41,22 @@ func TestQueueViewTable_ShowsCompositionColumn(t *testing.T) {
 	assert.Contains(t, out, "M:1", "feature queue row must summarize composition (M:1); got: %s", out)
 }
 
+// TestListGroupedView_ShowsComposition asserts the human `list --group-by`
+// surface also carries the computed-on-read composition summary for aggregate
+// rows, at parity with the ungrouped table surface (114-F). The grouped renderer
+// previously returned early through FormatGroupedView, whose row shape omitted
+// both the size and composition projections.
+func TestListGroupedView_ShowsComposition(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	setupSizedFeature(t, root)
+
+	out, err := runRootCommand(t, "--cwd", root, "list", "--group-by", "type")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "L:1", "grouped feature row must summarize composition (L:1); got: %s", out)
+	assert.Contains(t, out, "M:1", "grouped feature row must summarize composition (M:1); got: %s", out)
+}
+
 // TestShipmentListTable_ShowsSizeAndComposition asserts the human `shipment list`
 // table surface exposes SIZE and COMPOSITION columns for shipments.
 func TestShipmentListTable_ShowsSizeAndComposition(t *testing.T) {

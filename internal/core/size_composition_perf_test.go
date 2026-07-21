@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,4 +146,49 @@ func TestGetItemsByIDsConcurrentWithWrites(t *testing.T) {
 	for err := range writeErrs {
 		require.NoError(t, err, "concurrent writer must not error")
 	}
+}
+
+// TestGetItemsByIDsReadsProceedUnderOpenWriteTx is a deterministic regression
+// guard against reintroducing an explicit BEGIN IMMEDIATE read transaction in
+// GetItemsByIDs. The DB DSN sets _txlock=immediate, so any explicit BeginTx —
+// even a read-only one — acquires the write lock at BEGIN and would serialize
+// behind an open writer up to the 30s busy_timeout. WAL mode lets a deferred
+// (implicit) pooled read proceed against the last committed snapshot while a
+// writer transaction is still open. Holding a write transaction open and giving
+// the batch read a deadline far shorter than busy_timeout converts a serializing
+// regression into a hard failure: the deferred implementation returns promptly;
+// an immediate-lock implementation blocks past the deadline and errors.
+func TestGetItemsByIDsReadsProceedUnderOpenWriteTx(t *testing.T) {
+	ctx := context.Background()
+	ws, _ := newSizeEstimationHarnessWorkspace(t)
+
+	ids := []string{"982.001-T", "982.002-T", "982.003-T"}
+	for _, id := range ids {
+		require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+			ID: id, Title: "row " + id, Status: models.StatusActive, ArtifactType: "task",
+			CustomFields: map[string]any{"size": "M"},
+		}))
+	}
+
+	// Open and hold a write transaction. BEGIN IMMEDIATE (via _txlock=immediate)
+	// acquires the write lock at BEGIN; the explicit UPDATE guarantees the lock
+	// is held for the duration of the concurrent read below.
+	writeTx, err := ws.DB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = writeTx.Rollback() }()
+	_, err = writeTx.ExecContext(ctx, `UPDATE items SET title = title WHERE id = ?`, ids[0])
+	require.NoError(t, err)
+
+	// The batch read must complete well within a deadline far shorter than the
+	// 30s busy_timeout while the writer lock is still held.
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	resolved, err := db.GetItemsByIDs(readCtx, ws.DB, ids)
+	require.NoError(t, err, "deferred batch read must proceed while a write transaction is open (WAL)")
+	require.Len(t, resolved, len(ids), "all IDs must resolve from the last committed snapshot")
+	require.Less(t, time.Since(start), 3*time.Second, "read must not block on the held write lock")
+
+	require.NoError(t, writeTx.Rollback())
 }

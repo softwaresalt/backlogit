@@ -67,6 +67,24 @@ func formatCompositionSummary(c *core.SizeCompositionResult) string {
 	return strings.Join(parts, " ")
 }
 
+// artifactSizeAndComposition returns the stored per-artifact size and, for
+// aggregate types (feature/shipment), the computed-on-read one-line composition
+// summary. It centralizes the read-only rollup derivation shared by the
+// ungrouped table/tile rows and the grouped human view so the human list
+// surfaces cannot drift on composition parity (114-F). Derivation is read-only
+// and warn-skips on error so a rollup failure never aborts the listing.
+func artifactSizeAndComposition(ctx context.Context, ws *core.Workspace, a *models.Artifact) (size, composition string) {
+	size, _ = a.CustomFields["size"].(string)
+	if core.IsSizeCompositionAggregate(a.ArtifactType) {
+		if result, err := core.SizeComposition(ctx, ws, a); err != nil {
+			slog.WarnContext(ctx, "list: skipping size composition summary", "artifact_id", a.ID, "error", err)
+		} else {
+			composition = formatCompositionSummary(result)
+		}
+	}
+	return size, composition
+}
+
 // artifactsToRows converts a slice of artifacts to the row maps consumed by format.Renderer.
 // It projects the stored per-artifact size and, for aggregate types
 // (feature/shipment), a computed-on-read composition summary — keeping the human
@@ -76,15 +94,7 @@ func formatCompositionSummary(c *core.SizeCompositionResult) string {
 func artifactsToRows(ctx context.Context, ws *core.Workspace, artifacts []*models.Artifact) []map[string]any {
 	rows := make([]map[string]any, len(artifacts))
 	for i, a := range artifacts {
-		size, _ := a.CustomFields["size"].(string)
-		composition := ""
-		if core.IsSizeCompositionAggregate(a.ArtifactType) {
-			if result, err := core.SizeComposition(ctx, ws, a); err != nil {
-				slog.WarnContext(ctx, "list: skipping size composition summary", "artifact_id", a.ID, "error", err)
-			} else {
-				composition = formatCompositionSummary(result)
-			}
-		}
+		size, composition := artifactSizeAndComposition(ctx, ws, a)
 		rows[i] = map[string]any{
 			"id":          a.ID,
 			"title":       a.Title,
@@ -195,13 +205,16 @@ that can be piped into other tooling.`,
 			if groupBy != "" {
 				items := make([]ListItem, len(artifacts))
 				for i, a := range artifacts {
+					size, composition := artifactSizeAndComposition(ctx, ws, a)
 					items[i] = ListItem{
-						ID:       a.ID,
-						Title:    a.Title,
-						Status:   string(a.Status),
-						Type:     a.ArtifactType,
-						ParentID: a.ParentID,
-						Priority: a.Priority,
+						ID:          a.ID,
+						Title:       a.Title,
+						Status:      string(a.Status),
+						Type:        a.ArtifactType,
+						ParentID:    a.ParentID,
+						Priority:    a.Priority,
+						Size:        size,
+						Composition: composition,
 					}
 				}
 				fmt.Fprint(cmd.OutOrStdout(), FormatGroupedView(items, groupBy))
