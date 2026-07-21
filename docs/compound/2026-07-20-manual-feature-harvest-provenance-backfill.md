@@ -62,9 +62,16 @@ For each manually-created, stash-originated artifact:
    (4-space indent under `custom_fields:`):
    `source_stash_id`, `source_stash_kind`, `source_stash_priority`,
    `source_stash_path` (`stash.jsonl`), and `source_stash_text` (the full
-   original stash text). **Double-quote `source_stash_text` in YAML** — stash
-   text frequently contains ` #` (issue refs) which YAML treats as a comment in
-   a plain scalar, and `: ` / `{}` which are flow indicators.
+   original stash text). **Prefer a YAML-aware serializer for
+   `source_stash_text`** — route the write through the artifact codec (or any
+   emitter that quotes/escapes per the YAML spec) rather than hand-typing the
+   value. Hand-editing is safe only for simple single-line text: even a
+   double-quoted scalar must additionally escape embedded `"` and `\`, and text
+   with newlines or control characters needs a block scalar (`|`/`>`) or full
+   escaping. Plain (unquoted) scalars are unsafe here because stash text
+   frequently contains ` #` (issue refs → comment), `: ` (mapping), and `{}`
+   (flow indicators). When in doubt, write via `backlogit` and re-read to confirm
+   the value round-trips unchanged.
 2. Update the durable archive record for the stash id in
    `.backlogit/archive/stash.jsonl`: `reason: harvested` and
    `harvested_artifact_id: <item-id>`.
@@ -74,9 +81,17 @@ For each manually-created, stash-originated artifact:
 
 ## Prevention
 
-Promote stash-originated work through `harvest_stash` (which writes both records
-atomically) instead of creating the feature/task directly. Reserve the manual
-path for genuinely non-stash work.
+Promote stash-originated work through `harvest_stash` instead of creating the
+feature/task directly. Reserve the manual path for genuinely non-stash work.
+
+Note that `harvest_stash` is **not fully atomic** across the two records, so a
+successful-looking harvest does not guarantee consistent provenance: the archive
+append (`appendToStashArchive`) is best-effort and only logged on failure
+(`internal/core/stash.go:387-389`), and a later DB or JSONL failure rolls back
+the created artifact **without** removing the already-appended archive entry.
+After any harvest, verify the stash entry is `state=harvested` with populated
+`kind`/`text` and a `stash_links` row; backfill per the fix above if provenance
+is incomplete.
 
 ## Note on false positives when auditing
 
