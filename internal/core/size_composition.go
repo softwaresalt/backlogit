@@ -242,6 +242,7 @@ func ShipmentViewsWithComposition(ctx context.Context, ws *Workspace, shipments 
 	return out
 }
 
+// InjectSizeComposition projects the computed-on-read size rollup onto each
 // aggregate (feature/shipment) item map, matching the typed artifact slice by
 // index so order is preserved. Non-aggregate types are left unprojected; a
 // rollup failure is logged and that item is left without a rollup rather than

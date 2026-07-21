@@ -235,17 +235,15 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Pin every chunk to one consistent read snapshot: without a wrapping
-	// read transaction each chunk query opens its own implicit transaction, so a
-	// concurrent write committed mid-batch could make later chunks observe a
-	// different WAL snapshot than earlier ones. A read-only transaction gives the
-	// whole batch snapshot isolation.
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return nil, fmt.Errorf("begin read transaction for batch item lookup: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }() // read-only: rollback is a no-op close
-
+	// Run each chunk as an implicit (deferred) read against the pooled handle
+	// rather than wrapping the batch in an explicit BeginTx. db.Open configures
+	// _txlock=immediate (connection.go), so an explicit ReadOnly transaction would
+	// still acquire the write lock up front and serialize every composition read
+	// behind writers (up to the busy timeout), defeating WAL reader/writer
+	// concurrency. Implicit single-statement SELECTs use SQLite's deferred read
+	// locking and keep that concurrency. size_composition is a best-effort,
+	// computed-on-read rollup that already tolerates a staleness window, so
+	// cross-chunk snapshot atomicity is not required here.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
@@ -259,7 +257,7 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 			args[i] = id
 		}
 		query := `SELECT ` + selectCols + ` FROM items WHERE id IN (` + strings.Join(placeholders, ",") + `)`
-		if err := queryItemsInto(ctx, tx, query, args, result); err != nil {
+		if err := queryItemsInto(ctx, db, query, args, result); err != nil {
 			return nil, fmt.Errorf("batch item lookup chunk %d:%d: %w", start, end, err)
 		}
 	}
@@ -267,7 +265,7 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 }
 
 // rowQuerier is the read subset of *sql.DB / *sql.Tx used by queryItemsInto so it
-// can run either directly or inside a snapshot-pinned read transaction.
+// can run either directly on the pooled handle or inside a read transaction.
 type rowQuerier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }

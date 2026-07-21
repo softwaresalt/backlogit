@@ -85,3 +85,64 @@ func TestGetItemsByIDsBatchResolvesAndOmitsMissing(t *testing.T) {
 	require.Contains(t, resolved, "972.002-T")
 	assert.NotContains(t, resolved, "999.404-T")
 }
+
+// TestGetItemsByIDsConcurrentWithWrites exercises the batch resolver's read path
+// while a writer concurrently upserts to the same index. The resolver runs each
+// chunk as an implicit deferred read on the pooled handle (never an explicit
+// immediate-lock transaction), so it must coexist with writers and always return
+// the stable indexed rows without error. This guards against reintroducing an
+// explicit ReadOnly transaction, which — because db.Open sets _txlock=immediate —
+// would acquire the write lock and serialize every composition read behind
+// writers.
+func TestGetItemsByIDsConcurrentWithWrites(t *testing.T) {
+	ws, _ := newSizeEstimationHarnessWorkspace(t)
+	ctx := context.Background()
+
+	stableIDs := []string{"973.001-T", "973.002-T", "973.003-T"}
+	for _, id := range stableIDs {
+		require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
+			ID: id, Title: "stable " + id, Status: models.StatusActive, ArtifactType: "task",
+			CustomFields: map[string]any{"size": "M"},
+		}))
+	}
+
+	const iterations = 100
+	writeErrs := make(chan error, iterations)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < iterations; i++ {
+			// Rewrite a churn row plus toggle a stable row's status so a writer is
+			// consistently contending for the WAL while reads run.
+			if err := db.UpsertItem(ctx, ws.DB, &models.Artifact{
+				ID: "973.900-T", Title: "churn", Status: models.StatusActive, ArtifactType: "task",
+			}); err != nil {
+				writeErrs <- err
+				return
+			}
+			status := models.StatusActive
+			if i%2 == 0 {
+				status = models.StatusBlocked
+			}
+			if err := db.UpsertItem(ctx, ws.DB, &models.Artifact{
+				ID: "973.001-T", Title: "stable 973.001-T", Status: status, ArtifactType: "task",
+				CustomFields: map[string]any{"size": "M"},
+			}); err != nil {
+				writeErrs <- err
+				return
+			}
+		}
+	}()
+
+	for i := 0; i < iterations; i++ {
+		resolved, err := db.GetItemsByIDs(ctx, ws.DB, stableIDs)
+		require.NoError(t, err, "batch read must not error under concurrent writes")
+		require.Len(t, resolved, len(stableIDs), "all stable IDs must resolve on every read")
+	}
+
+	<-done
+	close(writeErrs)
+	for err := range writeErrs {
+		require.NoError(t, err, "concurrent writer must not error")
+	}
+}
