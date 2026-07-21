@@ -93,6 +93,32 @@ func TestValidateMemberGateEvidence_ArchivedFromAbandonedExempt(t *testing.T) {
 		"an archived-from-abandoned member (a non-completion terminal) must be exempt")
 }
 
+// TestValidateMemberGateEvidence_ArchivedFromRejectedNotExemptWhenGateTerminal pins
+// the config-aware guard raised in Copilot review of PR #268: the descope exemption
+// must be disabled for a provenance status that the workspace CONFIGURES as a gate
+// terminal status. gateApplies runs the pre-task-completion gate whenever a task enters
+// a configured terminal status, so with terminal_statuses = [done, rejected] a task
+// driven to `rejected` is gated and valid F4 evidence is expected. Archiving such a
+// member without evidence must still refuse — otherwise the exemption would convert
+// missing gate evidence into a bypass. This complements
+// TestValidateMemberGateEvidence_ArchivedFromRejectedExempt, which pins that under the
+// DEFAULT terminal_statuses ([done]) a rejected descope IS exempt.
+func TestValidateMemberGateEvidence_ArchivedFromRejectedNotExemptWhenGateTerminal(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	// Configure the gate to run at `rejected`, so reaching it expects evidence.
+	ws.gateConfig.TerminalStatuses = []string{"done", "rejected"}
+	ctx := context.Background()
+
+	id := archiveMemberFromStatus(t, ctx, ws, "rejected")
+
+	verr := validateMemberGateEvidence(ctx, ws, []string{id}, "")
+	require.Error(t, verr,
+		"a member archived from a CONFIGURED gate terminal status (rejected) must NOT be exempt")
+	assert.Contains(t, verr.Error(), "missing passing gate evidence")
+}
+
 // TestIsDescopeEligibleStatus pins the full per-status classification of the
 // descope-eligibility predicate. Descope-eligible = in-flight statuses (queued,
 // active, blocked, review) plus non-completion terminals (abandoned, rejected).

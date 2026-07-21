@@ -649,13 +649,18 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 // exempting such a member from the per-member gate-evidence requirement would bypass
 // the F4 fail-open evidence predicate (a completed member whose only "pass" is an
 // EventGatePassed{ran:false} carries no valid evidence yet could be archived after the
-// fact). A missing/empty archived_status fails closed (reported as NOT a descope)
-// because the provenance cannot prove the member was removed before completion. An
-// UNRECOGNIZED archived_status (a typo or a malformed value a future serializer bug
-// might emit) also fails closed: isDescopeEligibleStatus returns false for any unknown
-// value, and the explicit isRecognizedReleaseStatus guard rejects garbage provenance so
-// it cannot be misclassified as a proven descope. Only a RECOGNIZED, descope-eligible
-// status is a proven descope.
+// fact). A member archived from a status that the gate is CONFIGURED to run at
+// (terminal_statuses, consulted via isGateTerminalStatus) is likewise NOT a descope —
+// reaching a configured gate terminal status means valid evidence is expected, so the
+// exemption is disabled for it even when it is statically descope-eligible (e.g. a
+// workspace that lists "rejected" in terminal_statuses). A missing/empty archived_status
+// fails closed (reported as NOT a descope) because the provenance cannot prove the member
+// was removed before completion. An UNRECOGNIZED archived_status (a typo or a malformed
+// value a future serializer bug might emit) also fails closed: isDescopeEligibleStatus
+// returns false for any unknown value, and the explicit isRecognizedReleaseStatus guard
+// rejects garbage provenance so it cannot be misclassified as a proven descope. Only a
+// RECOGNIZED, descope-eligible status that is NOT a configured gate terminal status is a
+// proven descope.
 func archivedFromDescopeEligibleStatus(ctx context.Context, ws *Workspace, id string) (bool, error) {
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
@@ -677,7 +682,22 @@ func archivedFromDescopeEligibleStatus(ctx context.Context, ws *Workspace, id st
 	if archivedStatus == "" || !isRecognizedReleaseStatus(status) {
 		return false, nil
 	}
-	return isDescopeEligibleStatus(status), nil
+	if !isDescopeEligibleStatus(status) {
+		return false, nil
+	}
+	// Config-aware guard: a status the gate is CONFIGURED to run at (terminal_statuses)
+	// is NOT a descope even when it is statically descope-eligible. gateApplies runs the
+	// pre-task-completion gate whenever a task enters a configured terminal status, so
+	// reaching such a status means valid F4 evidence is expected. A member archived from
+	// a configured gate terminal status without evidence must still refuse — otherwise a
+	// workspace that lists e.g. "rejected" in terminal_statuses could turn missing F4
+	// evidence into an exemption and bypass the gate. Under the default terminal_statuses
+	// (["done"]) no descope-eligible status is a gate terminal status, so the common-case
+	// exemption is unchanged.
+	if ws.isGateTerminalStatus(string(status)) {
+		return false, nil
+	}
+	return true, nil
 }
 
 // latestGatePassEvidence returns the most recent gate evidence event that
