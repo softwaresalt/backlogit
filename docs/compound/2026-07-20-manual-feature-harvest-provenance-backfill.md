@@ -62,7 +62,11 @@ For each manually-created, stash-originated artifact:
    (4-space indent under `custom_fields:`):
    `source_stash_id`, `source_stash_kind`, `source_stash_priority`,
    `source_stash_path` (`stash.jsonl`), and `source_stash_text` (the full
-   original stash text). `custom_fields` has no `backlogit` mutation — the
+   original stash text). If the stash entry had a deliberation, also copy
+   `source_deliberation_id` — the canonical harvest path writes it whenever the
+   entry has a deliberation ID (`internal/core/stash.go:351-352`) and rehydration
+   reads it, so omitting it loses that provenance for deliberated stashes.
+   `custom_fields` has no `backlogit` mutation — the
    `update` command only accepts modeled flags, so this backfill is inherently a
    **direct Markdown edit** followed by `backlogit sync`. Produce the
    `source_stash_text` value with a YAML-aware editor or a small codec-based
@@ -72,14 +76,23 @@ For each manually-created, stash-originated artifact:
    with newlines or control characters needs a block scalar (`|`/`>`) or full
    escaping. Plain (unquoted) scalars are unsafe here because stash text
    frequently contains ` #` (issue refs → comment), `: ` (mapping), and `{}`
-   (flow indicators). After `sync`, re-read the value (see step 3) to confirm it
+   (flow indicators). After `sync`, re-read the value (see step 4) to confirm it
    round-trips unchanged.
-2. Update the durable archive record for the stash id in
-   `.backlogit/archive/stash.jsonl`: `reason: harvested` and
-   `harvested_artifact_id: <item-id>`.
-3. Run `backlogit sync`. Verify with a query that the stash entry is
-   `state=harvested` with populated `kind`, `priority`, and `text`, and that
-   `stash_links` maps the stash to the item.
+2. If the stash entry is still `active`, first run `backlogit stash archive
+   <stash-id>` to move it out of the active store. `backlogit sync` alone does
+   **not** remove an entry from `.backlogit/stash.jsonl`, and `FetchStash` reads
+   that active file directly (`internal/core/stash.go:174`), so a merely
+   index-rebuilt entry stays in the active stash. `stash archive` writes an
+   archive record with `reason: archived` and flips the DB state to `removed`
+   (`stash.go:723-758`); this is the step PR #272 performed for `A3C349DD`.
+3. Update the durable archive record for the stash id in
+   `.backlogit/archive/stash.jsonl` to canonical harvested form: `reason:
+   harvested` and `harvested_artifact_id: <item-id>` (the `stash archive`
+   shortcut leaves `reason: archived` with no `harvested_artifact_id`).
+4. Run `backlogit sync`. Verify with a query that the stash entry is
+   `state=harvested` with populated `kind`, `priority`, and `text` (plus
+   `source_deliberation_id` when applicable), and that `stash_links` maps the
+   stash to the item.
 
 ## Prevention
 
