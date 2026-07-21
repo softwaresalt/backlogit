@@ -21,6 +21,9 @@ the shipment manifest contains a root covering feature. This field is a
 read-only, render-time derivation from the manifest — it is never stored on the
 shipment and is omitted entirely when the shipment has no covering feature.
 
+The response also carries a computed-on-read "size_composition" rollup, at
+parity with the MCP get_shipment tool.
+
 ```text
 backlogit shipment get <id> [flags]
 ```

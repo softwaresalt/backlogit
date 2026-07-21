@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -24,18 +26,83 @@ var artifactColumns = []format.Column{
 	{Key: "status", Header: "STATUS"},
 	{Key: "type", Header: "TYPE"},
 	{Key: "priority", Header: "PRIORITY"},
+	{Key: "size", Header: "SIZE"},
+	{Key: "composition", Header: "COMPOSITION"},
+}
+
+// sizeBucketOrder is the canonical display order for the size histogram in the
+// human-readable composition summary. Any bucket outside this set is appended in
+// deterministic (sorted) order so the summary never depends on map iteration.
+var sizeBucketOrder = []string{"XS", "S", "M", "L", "XL"}
+
+// formatCompositionSummary renders a size-composition rollup as a compact,
+// deterministic one-line summary (e.g. "L:1 M:1 unsized:2") for human table and
+// tile surfaces. It returns an empty string for a nil result or an empty rollup.
+func formatCompositionSummary(c *core.SizeCompositionResult) string {
+	if c == nil {
+		return ""
+	}
+	var parts []string
+	seen := make(map[string]bool, len(c.Histogram))
+	for _, bucket := range sizeBucketOrder {
+		if n := c.Histogram[bucket]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d", bucket, n))
+			seen[bucket] = true
+		}
+	}
+	// Append any non-canonical buckets in sorted order for determinism.
+	extra := make([]string, 0, len(c.Histogram))
+	for bucket, n := range c.Histogram {
+		if n > 0 && !seen[bucket] {
+			extra = append(extra, bucket)
+		}
+	}
+	sort.Strings(extra)
+	for _, bucket := range extra {
+		parts = append(parts, fmt.Sprintf("%s:%d", bucket, c.Histogram[bucket]))
+	}
+	if c.Unsized > 0 {
+		parts = append(parts, fmt.Sprintf("unsized:%d", c.Unsized))
+	}
+	return strings.Join(parts, " ")
+}
+
+// artifactSizeAndComposition returns the stored per-artifact size and, for
+// aggregate types (feature/shipment), the computed-on-read one-line composition
+// summary. It centralizes the read-only rollup derivation shared by the
+// ungrouped table/tile rows and the grouped human view so the human list
+// surfaces cannot drift on composition parity (114-F). Derivation is read-only
+// and warn-skips on error so a rollup failure never aborts the listing.
+func artifactSizeAndComposition(ctx context.Context, ws *core.Workspace, a *models.Artifact) (size, composition string) {
+	size, _ = a.CustomFields["size"].(string)
+	if core.IsSizeCompositionAggregate(a.ArtifactType) {
+		if result, err := core.SizeComposition(ctx, ws, a); err != nil {
+			slog.WarnContext(ctx, "list: skipping size composition summary", "artifact_id", a.ID, "error", err)
+		} else {
+			composition = formatCompositionSummary(result)
+		}
+	}
+	return size, composition
 }
 
 // artifactsToRows converts a slice of artifacts to the row maps consumed by format.Renderer.
-func artifactsToRows(artifacts []*models.Artifact) []map[string]any {
+// It projects the stored per-artifact size and, for aggregate types
+// (feature/shipment), a computed-on-read composition summary — keeping the human
+// table/tile surfaces at parity with the JSON read surfaces (114-F). Composition
+// derivation is read-only and warn-skips on error so a rollup failure never
+// aborts the listing.
+func artifactsToRows(ctx context.Context, ws *core.Workspace, artifacts []*models.Artifact) []map[string]any {
 	rows := make([]map[string]any, len(artifacts))
 	for i, a := range artifacts {
+		size, composition := artifactSizeAndComposition(ctx, ws, a)
 		rows[i] = map[string]any{
-			"id":       a.ID,
-			"title":    a.Title,
-			"status":   string(a.Status),
-			"type":     a.ArtifactType,
-			"priority": a.Priority,
+			"id":          a.ID,
+			"title":       a.Title,
+			"status":      string(a.Status),
+			"type":        a.ArtifactType,
+			"priority":    a.Priority,
+			"size":        size,
+			"composition": composition,
 		}
 	}
 	return rows
@@ -138,20 +205,23 @@ that can be piped into other tooling.`,
 			if groupBy != "" {
 				items := make([]ListItem, len(artifacts))
 				for i, a := range artifacts {
+					size, composition := artifactSizeAndComposition(ctx, ws, a)
 					items[i] = ListItem{
-						ID:       a.ID,
-						Title:    a.Title,
-						Status:   string(a.Status),
-						Type:     a.ArtifactType,
-						ParentID: a.ParentID,
-						Priority: a.Priority,
+						ID:          a.ID,
+						Title:       a.Title,
+						Status:      string(a.Status),
+						Type:        a.ArtifactType,
+						ParentID:    a.ParentID,
+						Priority:    a.Priority,
+						Size:        size,
+						Composition: composition,
 					}
 				}
 				fmt.Fprint(cmd.OutOrStdout(), FormatGroupedView(items, groupBy))
 				return nil
 			}
 
-			return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(artifacts))
+			return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(ctx, ws, artifacts))
 		},
 	}
 

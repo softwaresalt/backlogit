@@ -209,7 +209,88 @@ func GetItem(ctx context.Context, db *sql.DB, id string) (*models.Artifact, erro
 	return a, nil
 }
 
-// DeleteItem removes an artifact from the index.
+// GetItemsByIDs resolves multiple artifacts from the index in a single indexed
+// query per chunk (chunked to respect SQLite's bound-parameter limit), returning
+// a map keyed by artifact ID. Input IDs are de-duplicated and empties are
+// ignored; an ID with no indexed row is simply absent from the result map (a
+// miss is not an error). It is the batch resolver behind the size-composition
+// rollup, replacing per-member filesystem lookups (114-F / 47ED88ED).
+func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*models.Artifact, error) {
+	result := make(map[string]*models.Artifact, len(ids))
+	if db == nil || len(ids) == 0 {
+		return result, nil
+	}
+
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
+	// Run each chunk as an implicit (deferred) read against the pooled handle
+	// rather than wrapping the batch in an explicit BeginTx. db.Open configures
+	// _txlock=immediate (connection.go), so an explicit ReadOnly transaction would
+	// still acquire the write lock up front and serialize every composition read
+	// behind writers (up to the busy timeout), defeating WAL reader/writer
+	// concurrency. Implicit single-statement SELECTs use SQLite's deferred read
+	// locking and keep that concurrency. size_composition is a best-effort,
+	// computed-on-read rollup that already tolerates a staleness window, so
+	// cross-chunk snapshot atomicity is not required here.
+	for start := 0; start < len(unique); start += chunkSize {
+		end := start + chunkSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		chunk := unique[start:end]
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		query := `SELECT ` + selectCols + ` FROM items WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+		if err := queryItemsInto(ctx, db, query, args, result); err != nil {
+			return nil, fmt.Errorf("batch item lookup chunk %d:%d: %w", start, end, err)
+		}
+	}
+	return result, nil
+}
+
+// rowQuerier is the read subset of *sql.DB / *sql.Tx used by queryItemsInto so it
+// can run either directly on the pooled handle or inside a read transaction.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// queryItemsInto runs a SELECT that returns artifact rows and scans each into
+// dst keyed by ID. It isolates rows.Close handling so GetItemsByIDs stays flat.
+func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string]*models.Artifact) error {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("query items by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, scanErr := scanArtifactRow(rows)
+		if scanErr != nil {
+			return fmt.Errorf("scan item row: %w", scanErr)
+		}
+		dst[a.ID] = a
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate items by ids: %w", err)
+	}
+	return nil
+}
+
 // DeleteItem removes an artifact from the index together with all related rows
 // in a single atomic transaction. It delegates to DeleteItemCascade.
 //

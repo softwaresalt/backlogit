@@ -87,11 +87,18 @@ priority as the secondary sort after any manually assigned queue positions.`,
 			}
 			switch effectiveFormat {
 			case format.FormatTable, format.FormatTile:
-				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(view.Items))
+				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(ctx, ws, view.Items))
 			default: // json
+				// 114-F / 387DE4BF: project the never-persisted size_composition
+				// rollup onto each aggregate queue item, at parity with MCP
+				// get_queue.
+				payload, err := queueViewJSON(ctx, ws, view)
+				if err != nil {
+					return err
+				}
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(view)
+				return enc.Encode(payload)
 			}
 		},
 	}
@@ -101,6 +108,37 @@ priority as the secondary sort after any manually assigned queue positions.`,
 	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
 	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
+}
+
+// queueViewJSON marshals a queue view into a generic map and injects the
+// computed-on-read size_composition rollup into each aggregate (feature/shipment)
+// item, in both the flat item list and any grouped items. It shares
+// core.InjectSizeComposition with MCP get_queue so the two transports cannot
+// drift on the projection (114-F / 387DE4BF).
+func queueViewJSON(ctx context.Context, ws *core.Workspace, view *core.QueueView) (map[string]any, error) {
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("marshal queue view: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal queue view: %w", err)
+	}
+	if items, ok := payload["items"].([]any); ok {
+		core.InjectSizeComposition(ctx, ws, view.Items, items)
+	}
+	if groups, ok := payload["groups"].([]any); ok {
+		for gi, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok || gi >= len(view.Groups) {
+				continue
+			}
+			if gitems, ok := gm["items"].([]any); ok {
+				core.InjectSizeComposition(ctx, ws, view.Groups[gi].Items, gitems)
+			}
+		}
+	}
+	return payload, nil
 }
 
 // NewQueueMoveCmd creates `backlogit queue move <item-id> --position <N>`.

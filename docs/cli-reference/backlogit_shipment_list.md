@@ -20,7 +20,8 @@ Table and tile output include a COVERING FEATURE column, and JSON output
 includes a top-level "covering_feature" object ({id, title}) per shipment. The
 covering feature is a read-only, render-time derivation from each shipment
 manifest (never stored) and is blank/omitted when a shipment has no covering
-feature.
+feature. JSON output also carries a computed-on-read "size_composition" rollup
+per shipment, at parity with the MCP list_shipments tool.
 
 ```text
 backlogit shipment list [flags]

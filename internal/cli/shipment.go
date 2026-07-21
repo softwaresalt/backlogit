@@ -130,7 +130,10 @@ func newShipmentGetCmd() *cobra.Command {
 The response includes a top-level "covering_feature" object ({id, title}) when
 the shipment manifest contains a root covering feature. This field is a
 read-only, render-time derivation from the manifest — it is never stored on the
-shipment and is omitted entirely when the shipment has no covering feature.`,
+shipment and is omitted entirely when the shipment has no covering feature.
+
+The response also carries a computed-on-read "size_composition" rollup, at
+parity with the MCP get_shipment tool.`,
 		Example: `  backlogit shipment get 001-S`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -151,7 +154,7 @@ shipment and is omitted entirely when the shipment has no covering feature.`,
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(core.NewShipmentView(ctx, ws, shipment))
+			return enc.Encode(core.ShipmentViewWithComposition(ctx, ws, shipment))
 		},
 	}
 }
@@ -169,7 +172,8 @@ Table and tile output include a COVERING FEATURE column, and JSON output
 includes a top-level "covering_feature" object ({id, title}) per shipment. The
 covering feature is a read-only, render-time derivation from each shipment
 manifest (never stored) and is blank/omitted when a shipment has no covering
-feature.`,
+feature. JSON output also carries a computed-on-read "size_composition" rollup
+per shipment, at parity with the MCP list_shipments tool.`,
 		Example: `  backlogit shipment list --status active`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
@@ -212,7 +216,7 @@ feature.`,
 			default: // json
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(core.NewShipmentViews(ctx, ws, shipments))
+				return enc.Encode(core.ShipmentViewsWithComposition(ctx, ws, shipments))
 			}
 		},
 	}
@@ -235,7 +239,7 @@ func shipmentColumns() []format.Column {
 // artifactsToRows and appending the derived covering feature (rendered
 // "<id> — <title>", blank when absent). Derivation is read-only.
 func shipmentRows(ctx context.Context, ws *core.Workspace, shipments []*models.Artifact) []map[string]any {
-	rows := artifactsToRows(shipments)
+	rows := artifactsToRows(ctx, ws, shipments)
 	for i, shipment := range shipments {
 		if cf, ok := core.DeriveCoveringFeature(ctx, ws, shipment); ok {
 			rows[i]["covering_feature"] = fmt.Sprintf("%s — %s", cf.ID, cf.Title)

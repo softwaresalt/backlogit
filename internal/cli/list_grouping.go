@@ -7,13 +7,15 @@ import (
 
 // ListItem represents a single item in the list output.
 type ListItem struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	Type     string `json:"type"`
-	ParentID string `json:"parent_id"`
-	Priority string `json:"priority"`
-	Depth    int    `json:"depth"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	Type        string `json:"type"`
+	ParentID    string `json:"parent_id"`
+	Priority    string `json:"priority"`
+	Depth       int    `json:"depth"`
+	Size        string `json:"size,omitempty"`
+	Composition string `json:"composition,omitempty"`
 }
 
 // FormatTreeView renders artifacts as an indented tree based on parent-child relationships.
@@ -51,7 +53,18 @@ func FormatGroupedView(items []ListItem, groupBy string) string {
 		grp := groups[key]
 		fmt.Fprintf(&sb, "── %s (%d items) ──\n", key, len(grp))
 		for _, item := range grp {
-			fmt.Fprintf(&sb, "  %s  %s  [%s]\n", item.ID, item.Title, item.Status)
+			line := fmt.Sprintf("  %s  %s  [%s]", item.ID, item.Title, item.Status)
+			// Aggregate rows (feature/shipment) carry a size and a composition
+			// summary so the grouped human surface stays at parity with the
+			// ungrouped table (114-F). Both are omitted when empty to keep
+			// non-aggregate rows uncluttered.
+			if item.Size != "" {
+				line += "  " + item.Size
+			}
+			if item.Composition != "" {
+				line += "  " + item.Composition
+			}
+			fmt.Fprintf(&sb, "%s\n", line)
 		}
 	}
 	return sb.String()
