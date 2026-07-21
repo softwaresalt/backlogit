@@ -267,8 +267,20 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			}
 		}
 
+		// Archived source items cannot be created directly: a born-archived
+		// artifact has no provenance and is non-invertible, which CreateArtifact
+		// and the WriteArtifactFile boundary now reject. Import archived items in
+		// a restorable terminal status ("done") and then route them through
+		// ArchiveItem below, which stamps archived_from/archived_status from the
+		// raw frontmatter and moves the file into archive/.
+		archivedImport := item.Status == "archived"
+		createStatus := item.Status
+		if archivedImport {
+			createStatus = "done"
+		}
+
 		opts := []core.Option{
-			core.WithStatus(item.Status),
+			core.WithStatus(createStatus),
 			core.WithDescription(item.Body),
 			core.WithFields(fields),
 		}
@@ -313,17 +325,33 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 			result.Errors = append(result.Errors, fmt.Sprintf("create artifact for %s: %v", item.SourcePath, err))
 			continue
 		}
-		if relocatedPath, relocateErr := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status)); relocateErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("relocate artifact %s: %v", artifact.ID, relocateErr))
-		} else if relocateErr == nil && relocatedPath != "" {
-			if writeErr := core.WriteArtifactFile(artifact, relocatedPath); writeErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("rewrite relocated artifact %s: %v", artifact.ID, writeErr))
+		// Skip status-directed relocation for archived imports: the item was
+		// created in a restorable status and ArchiveItem (below) performs the
+		// final move into archive/ while stamping provenance, so relocating here
+		// first would only add a redundant move and a non-canonical archived_from.
+		if !archivedImport {
+			if relocatedPath, relocateErr := core.RelocateArtifactFile(ctx, ws, artifact.ArtifactType, artifact.ID, string(artifact.Status)); relocateErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("relocate artifact %s: %v", artifact.ID, relocateErr))
+			} else if relocateErr == nil && relocatedPath != "" {
+				if writeErr := core.WriteArtifactFile(artifact, relocatedPath); writeErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("rewrite relocated artifact %s: %v", artifact.ID, writeErr))
+				}
 			}
 		}
 		if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("index artifact %s: %v", artifact.ID, err))
 			continue
+		}
+		// Archive imported archived items through ArchiveItem so archive
+		// provenance (archived_from/archived_status) is stamped and the record
+		// remains invertible via UnarchiveItem.
+		if archivedImport {
+			if _, archErr := core.ArchiveItem(ctx, ws.DB, ws, artifact.ID); archErr != nil {
+				result.Failed++
+				result.Errors = append(result.Errors, fmt.Sprintf("archive imported item %s: %v", artifact.ID, archErr))
+				continue
+			}
 		}
 
 		if item.SourceID != "" {
