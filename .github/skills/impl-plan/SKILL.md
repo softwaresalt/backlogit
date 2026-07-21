@@ -116,6 +116,34 @@ Document key technical decisions with the reasoning behind each choice.
 
 Identify potential issues, unknowns, and mitigation strategies.
 
+#### Constitution Check (REQUIRED)
+
+Every plan MUST include this section. Map the proposed work against the
+constitutional principles in `.github/instructions/constitution.instructions.md`
+and record how the plan complies with each principle it touches. Even pure-docs
+or configuration-only plans include this section.
+
+Cover every principle the plan touches, and call out each NON-NEGOTIABLE
+principle explicitly. Mark each one `pass`, `N/A` with a reason, or `deviation`
+with a justification. Most implementation plans engage these principles:
+
+* **Safety-First Go** — production code stays in Go, errors wrap with `%w`, and no `unsafe` usage lands without a justified comment
+* **Test-First Development** — each implementation unit lands a failing harness before its production code
+* **Workspace Isolation and Security Boundaries** — file operations resolve within the workspace root, path traversal is rejected, and no secrets land in committed files
+* **CLI Workspace Containment** — in CLI mode, nothing is created, modified, or deleted outside the current working tree, apart from reading user-provided context
+* **Destructive Command Approval** — any destructive step routes through operator approval before it runs
+* **Merge Commit History Preservation** — the work ships through a merge commit, never a squash or rebase merge
+
+When a principle conflicts with a practical implementation need, document the
+conflict: name the specific principle, state the justification, and record the
+simpler alternative you rejected.
+
+Conclude with `Constitution Check: pass|documented-deviations`, written exactly
+as shown. Use `pass` when every entry is `pass` or `N/A`; use
+`documented-deviations` when any entry is a deviation. This conclusion is
+mandatory: a plan that omits the Constitution Check or its verdict has an
+unresolved governance gap that `plan-review`'s Constitution Reviewer flags.
+
 #### Plan Hardening Signals (REQUIRED)
 
 Every plan MUST include this section. Explicitly record whether the plan needs
@@ -172,6 +200,7 @@ while CI fails.
 * Risks identify mitigations
 * Relevant prior learnings are surfaced before planning concludes
 * Plans record whether `plan-harden` is required before review — this field is mandatory, not optional
+* Plans include a labeled Constitution Check section mapping the work against constitutional principles, concluding with `Constitution Check: pass|documented-deviations`
 * Plans include runtime verification and closure expectations for changed runtime surfaces
 * The plan file opens with a docline frontmatter block setting `doc_type: plan` plus top-level `title` and `source` (the gate-required contract for `docs/exec-plans/**`)
 * The authored plan passes `backlogit docs lint` (`make docs-lint`) with 0 violations before it is handed off to review or harvest
