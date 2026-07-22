@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Session memory — DARK_MODE p1 index bundle: shipped 118-F (composite SQLite index idx_items_parent_type_id serving the batched task-children rollup + read-path comment accuracy fix). Operator-routed p1 bundle 0FA55F47 + FD8C4094. Impl PR #281 merge 63827213 (Copilot clean first round), closure PR #282 merge a9ba323a; 118-F + tasks + shipment 101-S archived on main. Records the 4-persona adversarial panel (Constitution scope P1 = verified false positive from a gitignored diff.txt; SQLite idx_items_parent retention MEASURED, not dropped), the queued->active->done transition-graph requirement, and the remaining 5 operator-gated stash entries left out of scope.'
+description: 'Session memory — DARK_MODE p1 index bundle: shipped 118-F (composite SQLite index idx_items_parent_type_id serving the batched task-children rollup + read-path comment accuracy fix). Operator-routed p1 bundle 0FA55F47 + FD8C4094. Impl PR #281 merge 63827213 (Copilot clean first round), closure PR #282 merge a9ba323a; 118-F + tasks + shipment 101-S archived on main. Records the 4-persona adversarial panel (Constitution scope P1 = verified false positive from a gitignored diff.txt; SQLite idx_items_parent retained as a conservative default — planner preference while both indexes exist is not proof of non-redundancy, so the narrow index was kept rather than dropped without a post-removal benchmark), the queued->active->done transition-graph requirement, and the remaining 5 operator-gated stash entries left out of scope.'
 doc_type: memory
 schema_version: "1.0"
 source: docs/memory/2026-07-22/118-F-p1-index-bundle-memory.md
@@ -41,14 +41,18 @@ shipment **101-S**.
 - Tests: NEW `internal/db/task_children_index_test.go` (EXPLAIN QUERY PLAN,
   3 subtests) + `schema_gen_test.go` column-order assertion.
 
-Query-plan measurement (recorded in 118.001-T):
+Query-plan measurement (recorded in 118.001-T) — sort-elision is `IN`-arity-
+sensitive, so shapes are labelled by arity:
 
-- BEFORE: `SEARCH items USING INDEX idx_items_type (artifact_type=?)` +
+- BEFORE (single-parent `IN (?)`): `SEARCH items USING INDEX idx_items_type (artifact_type=?)` +
   `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`.
-- AFTER: `SEARCH items USING INDEX idx_items_parent_type_id (parent_id=? AND artifact_type=?)`,
-  no temp b-tree.
-- parent-only: `SEARCH items USING INDEX idx_items_parent (parent_id=?)` —
-  narrow index retained (planner prefers it for bare `parent_id=?`).
+- AFTER (single-parent `IN (?)`): `SEARCH items USING INDEX idx_items_parent_type_id (parent_id=? AND artifact_type=?)`,
+  no temp b-tree (the index supplies the ordering).
+- multi-parent `IN (?,?,...)`: composite index SELECTED; temp-b-tree elision is
+  planner-version-sensitive at multi-row arity, so only index selection is asserted.
+- parent-only `parent_id=?`: `SEARCH items USING INDEX idx_items_parent (parent_id=?)`
+  — planner prefers the narrow index while both exist (the composite could also
+  serve this via its leading column; see the compound learning).
 
 ## Review
 
@@ -60,9 +64,10 @@ Zero P0. Findings adjudicated:
   changes. Verification: `diff.txt` is UNTRACKED and gitignored (not on the
   branch); `git diff origin/main...HEAD -- internal/core/` is EMPTY. Branch
   scope is `internal/db/` + `.backlogit/` only.
-- **SQLite**: added multi-parent IN test; `idx_items_parent` retention
-  empirically MEASURED and JUSTIFIED (not dropped) — see the compound learning;
-  "deferred read lock" terminology corrected.
+- **SQLite**: added multi-parent IN test; `idx_items_parent` retained as a
+  conservative default (planner preference with both indexes present is not
+  proof of non-redundancy — see the compound learning); "deferred read lock"
+  terminology corrected.
 - **Go**: int64 EXPLAIN scans, idiomatic map assertion, coverage expansion.
   Bare `Close()` nits declined (matches the db package convention; lint-clean).
 - **Scope P2**: before/after EXPLAIN plan recorded in the 118.001-T artifact.
