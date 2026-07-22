@@ -1,10 +1,10 @@
 ---
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
-title: "json omitempty on a slice field silently defeats an arrays-always-[] contract, and a populated-only test fixture will not catch it"
+title: "json omitempty on a slice field silently defeats an arrays-always-[] contract, and asserting sibling fields while never inspecting the empty collection lets it pass green"
 source: docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md
 doc_type: learning
-description: "When an API advertises that a collection field is always present as a JSON array (never null, never absent), a `json:\"field,omitempty\"` struct tag breaks that contract for the empty case: encoding/json omits ANY length-0 slice under omitempty regardless of whether the Go value is a non-nil empty slice (`[]string{}`) or nil. So a rollup that carefully initializes `Skipped: []string{}` in its constructor still serializes to a MISSING `skipped` key, not `\"skipped\": []`, when there are no skipped members. The trap is that the sibling collection fields (`histogram`, `members`) had NO omitempty and correctly emitted `{}` / `[]`, making the one field with omitempty an easy-to-miss inconsistency. Worse, the canonical-shape parity tests only used a fixture WITH populated members, so they exercised the present-and-non-empty path and passed green while the advertised empty-case shape was absent on every surface (CLI list --json, MCP list_items, get/queue). Fix: drop omitempty from any collection field that is part of an always-an-array contract, and add an explicit empty-case assertion on EVERY transport that requires the key to be present as a JSON array (type-assert to []any and assert len 0), not just the populated case."
+description: "When an API advertises that a collection field is always present as a JSON array (never null, never absent), a `json:\"field,omitempty\"` struct tag breaks that contract for the empty case: encoding/json omits ANY length-0 slice under omitempty regardless of whether the Go value is a non-nil empty slice (`[]string{}`) or nil. So a rollup that carefully initializes `Skipped: []string{}` in its constructor still serializes to a MISSING `skipped` key, not `\"skipped\": []`, when there are no skipped members. The trap is that the sibling collection fields (`histogram`, `members`) had NO omitempty and correctly emitted `{}` / `[]`, making the one field with omitempty an easy-to-miss inconsistency. The test gap was NOT a populated-only fixture: the parity fixtures already had zero skipped members, so `skipped` was already empty — the tests simply asserted the populated `histogram` and never inspected `skipped`, and the canonical DeepEqual guard could not catch it because the canonical value is built from the same omitempty struct (both sides omit the key identically and compare equal). Fix: drop omitempty from any collection field that is part of an always-an-array contract, and assert the empty case (type-assert to []any, assert len 0) so a missing/null key fails. Commit `b2a3d1f9` added that assertion to the two new flat-list surfaces (CLI `list --json` and MCP `list_items`); the get/queue transports share the same struct and are fixed by the tag change but were not given their own empty-case assertions."
 docline:
     date: 2026-07-21T00:00:00Z
     severity: medium
@@ -26,10 +26,10 @@ docline:
 ## Context
 
 `SizeCompositionResult` is the computed-on-read size rollup projected onto
-feature/shipment aggregates across four read surfaces: CLI `get` / `list --json`
-/ `queue view --json` and MCP `get_item` / `list_items` / `get_queue`. The
-compound "arrays always `[]`, never `null`" rule (Rule 3) is meant to give agent
-consumers a stable shape.
+feature/shipment aggregates across six read surfaces — three CLI commands
+(`get`, `list --json`, `queue view --json`) and three MCP tools (`get_item`,
+`list_items`, `get_queue`). The compound "arrays always `[]`, never `null`"
+rule (Rule 3) is meant to give agent consumers a stable shape.
 
 ## The bug
 
@@ -52,17 +52,24 @@ vanished, breaking the always-an-array promise for the common case.
 
 ## Why the tests missed it
 
-The canonical-shape parity tests seeded a fixture WITH members and asserted the
-populated histogram. No test seeded an aggregate with zero skipped members and
-asserted `skipped == []`. A populated-only fixture exercises the present path and
-stays green while the empty-case shape is silently absent on every surface.
+The parity fixtures already seeded aggregates with zero skipped members (no
+dangling member), so `skipped` was already empty in the fixture. The bug escaped
+because the tests asserted the populated `histogram` but never inspected
+`skipped`. The canonical-shape DeepEqual guard could not catch it either: the
+canonical value is produced from the same omitempty struct, so both sides omitted
+the key identically and compared equal. The same fixtures now catch the
+regression once an explicit `skipped` array assertion is added — the gap was the
+missing assertion, not a missing empty-case fixture.
 
 ## The fix
 
 1. Drop `omitempty` from the collection field:
    `Skipped []string \`json:"skipped"\`` — now emits `[]` when empty, matching
    `histogram` / `members`.
-2. Add an explicit empty-case assertion on EVERY transport, not just one:
+2. Assert the empty case so a missing/`null` key fails. Commit `b2a3d1f9` added
+   this to the two new flat-list surfaces (CLI `list --json` and MCP
+   `list_items`); the `get` and `queue` transports share the same struct and are
+   fixed by the tag change, but were not given their own empty-case assertions:
 
    ```go
    skipped, isArr := comp["skipped"].([]any)
@@ -80,8 +87,10 @@ stays green while the empty-case shape is silently absent on every surface.
   — `omitempty` still elides it.
 - Audit sibling collection fields for tag consistency; one field with `omitempty`
   among several without it is a red flag.
-- Lock the EMPTY case in tests on every surface that advertises the contract. A
-  populated-only fixture is a false-green; the empty case is where shape contracts
-  break.
+- Lock the EMPTY case in tests: assert the collection field itself, not just its
+  siblings. Asserting a populated `histogram` while never inspecting `skipped` is
+  a false-green, and a DeepEqual against a canonical value built from the same
+  struct will not catch an omitempty break because both sides elide the key
+  identically.
 - This is agent-facing (MCP) parity, so an absent-vs-`[]` drift directly degrades
   agent consumers that expect a stable key.
