@@ -264,6 +264,19 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	return result, nil
 }
 
+// GetTaskChildrenByParentIDs resolves the direct TASK children of many parents in
+// a single batched, chunked indexed query, returning a map keyed by parent ID
+// whose values are the parent's task children ordered by ID. Non-task children
+// are excluded, empty and duplicate parent IDs are ignored, and a parent with no
+// task children is absent from the result map. It is the batched counterpart to
+// the per-aggregate childIDsByParent lookup behind the size-composition rollup,
+// removing the per-aggregate query fan-out on grouped queue/list renders
+// (117-F / A6A1B47E).
+func GetTaskChildrenByParentIDs(ctx context.Context, db *sql.DB, parentIDs []string) (map[string][]*models.Artifact, error) {
+	// Stub (117.001-T harness red phase): real batched implementation follows.
+	return map[string][]*models.Artifact{}, nil
+}
+
 // rowQuerier is the read subset of *sql.DB / *sql.Tx used by queryItemsInto so it
 // can run either directly on the pooled handle or inside a read transaction.
 type rowQuerier interface {

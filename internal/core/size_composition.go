@@ -102,6 +102,19 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	return result, nil
 }
 
+// SizeCompositions computes the never-persisted size rollup for many aggregates
+// (feature/shipment) in a bounded, constant number of batched index round-trips
+// instead of one SizeComposition call per aggregate, returning a map keyed by
+// aggregate ID. Non-aggregate artifacts and nil entries are skipped (absent from
+// the map). Every rollup is identical to the per-artifact SizeComposition, so
+// this batched shaper can back the grouped queue/list read surfaces without
+// changing output (117-F / A6A1B47E). Like SizeComposition, resolution is
+// computed on read off the SQLite index and is never written to disk.
+func SizeCompositions(ctx context.Context, ws *Workspace, artifacts []*models.Artifact) (map[string]*SizeCompositionResult, error) {
+	// Stub (117.001-T harness red phase): real batched implementation follows.
+	return map[string]*SizeCompositionResult{}, nil
+}
+
 // resolveMembersFromIndex batch-resolves member artifacts from the SQLite index,
 // guarding a nil workspace/DB (in which case no members resolve, consistent with
 // childIDsByParent). It underpins the index-backed size rollup (114-F).
