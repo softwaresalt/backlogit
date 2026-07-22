@@ -181,8 +181,9 @@ stamps `human` because it represents a trusted human-authored mutation.
 * Validated-once: the size seam validates the value, source, and provenance
   completeness at mutation time. Downstream readers trust the persisted value and
   do not re-validate.
-* Best-effort freshness: composition is a point-in-time snapshot derived from the
-  index cache and may reflect slightly stale sizes or membership until the next
+* Best-effort freshness: composition is a best-effort multi-read view derived from
+  the index cache — assembled from several reads without a cross-chunk transaction,
+  so it may reflect slightly stale or mixed-snapshot sizes/membership until the next
   sync; it never fails the read and never persists a correction (see
   Read-time freshness above).
 * Two-layer path containment guards artifact lookup: config-load rejects `..` and
