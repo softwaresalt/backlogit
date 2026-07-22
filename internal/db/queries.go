@@ -235,13 +235,14 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Each chunk runs as an implicit single-statement read on the pooled WAL
-	// connection; this path deliberately opens no explicit transaction. A bare
-	// SELECT takes only SQLite's deferred read lock, so under WAL these reads run
-	// concurrently with a writer instead of serializing behind it. There is also
-	// no correctness need to wrap the chunks in one transaction: size_composition
-	// is a best-effort, computed-on-read rollup that already tolerates a staleness
-	// window, so cross-chunk snapshot atomicity is not required.
+	// Each chunk is a bare autocommit SELECT on the pooled WAL connection; this
+	// path deliberately opens no explicit transaction. Each such SELECT runs in
+	// its own implicit read transaction, so under WAL it reads from a committed
+	// snapshot and neither takes the writer lock nor blocks concurrent writers.
+	// There is also no correctness need to wrap the chunks in one transaction:
+	// size_composition is a best-effort, computed-on-read rollup that already
+	// tolerates a staleness window, so cross-chunk snapshot atomicity is not
+	// required.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
@@ -290,10 +291,10 @@ func GetTaskChildrenByParentIDs(ctx context.Context, db *sql.DB, parentIDs []str
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Each chunk runs as an implicit deferred read for the same WAL
-	// reader/writer concurrency reasoning documented on GetItemsByIDs; the
-	// rollup tolerates a staleness window so cross-chunk snapshot atomicity is
-	// not required.
+	// Each chunk is a bare autocommit SELECT (implicit read transaction) for the
+	// same WAL reader/writer concurrency reasoning documented on GetItemsByIDs;
+	// the rollup tolerates a staleness window so cross-chunk snapshot atomicity
+	// is not required.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
