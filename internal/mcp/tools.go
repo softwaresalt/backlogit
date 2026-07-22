@@ -76,7 +76,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_list_items",
-			mcplib.WithDescription("List artifacts with optional filters"),
+			mcplib.WithDescription("List artifacts with optional filters. Feature and shipment items include a computed-on-read size_composition rollup (size histogram, unsized count, and de-duplicated members)."),
 			mcplib.WithString("type", mcplib.Description("Filter by artifact type")),
 			mcplib.WithString("status", mcplib.Description("Filter by status")),
 			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
@@ -490,7 +490,10 @@ func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolReq
 	if err != nil {
 		return InternalError(fmt.Sprintf("list items: %v", err)), nil
 	}
-	return toolResultJSON(artifacts)
+	// Route through the shared core shaper so list_items attaches the
+	// computed-on-read size_composition rollup to aggregate rows at parity with
+	// the CLI `list --json` surface (117-F / 60336CC0).
+	return toolResultJSON(core.ListWithSizeComposition(ctx, s.Workspace, artifacts))
 }
 
 func (s *Server) handleSearchItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1368,50 +1371,14 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 	}
 	// SE-6: project the never-persisted size_composition rollup onto feature and
 	// shipment queue items so agents can read aggregates inline. Nothing is
-	// persisted; non-aggregate items and the CLI queue shaper are left untouched.
-	projected, pErr := s.queueViewWithSizeComposition(ctx, view)
+	// persisted; non-aggregate items are left untouched. Shares the core shaper
+	// with the CLI `queue view --json` surface so the two cannot drift.
+	projected, pErr := core.QueueViewWithSizeComposition(ctx, s.Workspace, view)
 	if pErr != nil {
 		slog.WarnContext(ctx, "get_queue: size composition projection failed; returning plain queue", "error", pErr)
 		return toolResultJSON(view)
 	}
 	return toolResultJSON(projected)
-}
-
-// queueViewWithSizeComposition marshals a queue view into a generic map and attaches
-// a computed-on-read size_composition rollup to each feature/shipment item, in both
-// the flat items list and any grouped items, preserving order (108-F SE-6).
-func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.QueueView) (any, error) {
-	raw, err := json.Marshal(view)
-	if err != nil {
-		return nil, fmt.Errorf("marshal queue view: %w", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal queue view: %w", err)
-	}
-	if items, ok := payload["items"].([]any); ok {
-		s.injectQueueSizeComposition(ctx, view.Items, items)
-	}
-	if groups, ok := payload["groups"].([]any); ok {
-		for gi, g := range groups {
-			gm, ok := g.(map[string]any)
-			if !ok || gi >= len(view.Groups) {
-				continue
-			}
-			if gitems, ok := gm["items"].([]any); ok {
-				s.injectQueueSizeComposition(ctx, view.Groups[gi].Items, gitems)
-			}
-		}
-	}
-	return payload, nil
-}
-
-// injectQueueSizeComposition attaches a computed-on-read size_composition rollup to
-// each feature/shipment item map in a queue projection. It delegates to
-// core.InjectSizeComposition, the single shaper shared with the CLI queue view so
-// the two transports cannot drift (114-F).
-func (s *Server) injectQueueSizeComposition(ctx context.Context, artifacts []*models.Artifact, itemMaps []any) {
-	core.InjectSizeComposition(ctx, s.Workspace, artifacts, itemMaps)
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

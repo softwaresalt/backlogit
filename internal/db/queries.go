@@ -264,6 +264,58 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	return result, nil
 }
 
+// GetTaskChildrenByParentIDs resolves the direct TASK children of many parents in
+// a single batched, chunked indexed query, returning a map keyed by parent ID
+// whose values are the parent's task children ordered by ID. Non-task children
+// are excluded, empty and duplicate parent IDs are ignored, and a parent with no
+// task children is absent from the result map. It is the batched counterpart to
+// the per-aggregate childIDsByParent lookup behind the size-composition rollup,
+// removing the per-aggregate query fan-out on grouped queue/list renders
+// (117-F / A6A1B47E).
+func GetTaskChildrenByParentIDs(ctx context.Context, db *sql.DB, parentIDs []string) (map[string][]*models.Artifact, error) {
+	result := make(map[string][]*models.Artifact)
+	if db == nil || len(parentIDs) == 0 {
+		return result, nil
+	}
+
+	seen := make(map[string]struct{}, len(parentIDs))
+	unique := make([]string, 0, len(parentIDs))
+	for _, id := range parentIDs {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
+	// Each chunk runs as an implicit deferred read for the same WAL
+	// reader/writer concurrency reasoning documented on GetItemsByIDs; the
+	// rollup tolerates a staleness window so cross-chunk snapshot atomicity is
+	// not required.
+	for start := 0; start < len(unique); start += chunkSize {
+		end := start + chunkSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		chunk := unique[start:end]
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		query := `SELECT ` + selectCols + ` FROM items WHERE parent_id IN (` + strings.Join(placeholders, ",") + `) AND artifact_type = 'task' ORDER BY parent_id, id`
+		if err := queryChildrenInto(ctx, db, query, args, result); err != nil {
+			return nil, fmt.Errorf("batch task-children lookup chunk %d:%d: %w", start, end, err)
+		}
+	}
+	return result, nil
+}
+
 // rowQuerier is the read subset of *sql.DB / *sql.Tx used by queryItemsInto so it
 // can run either directly on the pooled handle or inside a read transaction.
 type rowQuerier interface {
@@ -287,6 +339,28 @@ func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any,
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate items by ids: %w", err)
+	}
+	return nil
+}
+
+// queryChildrenInto runs a SELECT returning artifact rows and appends each into
+// dst grouped by the row's ParentID. It isolates rows.Close handling so
+// GetTaskChildrenByParentIDs stays flat.
+func queryChildrenInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string][]*models.Artifact) error {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("query task children by parent ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, scanErr := scanArtifactRow(rows)
+		if scanErr != nil {
+			return fmt.Errorf("scan task-child row: %w", scanErr)
+		}
+		dst[a.ParentID] = append(dst[a.ParentID], a)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate task children by parent ids: %w", err)
 	}
 	return nil
 }

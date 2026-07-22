@@ -130,6 +130,30 @@ a documented rank (XS < S < M < L < XL, see the table above), but no runtime
 comparator is implemented — a consumer that needs ordered presentation sorts by
 that documented rank itself.
 
+### Read-time freshness (best-effort)
+
+Composition is derived at read time from the SQLite index, which is a derived
+cache of the canonical Markdown files. A composition result is therefore a
+best-effort multi-read view: it is assembled from several index reads (chunked at
+~900 IDs per query, without a cross-chunk transaction), so under concurrent writes
+different parts of a single rollup can reflect different index snapshots rather
+than one point-in-time snapshot. If member sizes or membership changed after
+the index was last synced (for example an out-of-band edit not yet rehydrated),
+the rollup can reflect slightly stale sizes or membership. Reads never fail on
+this account and never persist a correction — the canonical files remain the
+source of truth, and a subsequent sync reconciles the rollup. A consumer that
+needs strict freshness syncs the index before reading.
+
+Flat read surfaces (`list` / `list_items` and `queue view` / `get_queue`) compute
+the rollup for every aggregate via chunked batch lookups (`SizeCompositions`, each
+resolver chunking at ~900 IDs per query) rather than per row, eliminating the
+per-aggregate query fan-out. The query count grows with the number of members
+rather than staying constant, but no longer scales with the number of aggregates.
+The batched result is identical to the per-artifact `SizeComposition`. When the
+batched rollup fails, these surfaces degrade to unprojected rows (a warning is
+logged) rather than aborting the listing, and both the CLI and MCP transports
+share the one core shaper so they degrade identically.
+
 ## CLI and MCP parity
 
 Both transports construct the same typed `SizeMutation` and route through the
@@ -157,6 +181,10 @@ stamps `human` because it represents a trusted human-authored mutation.
 * Validated-once: the size seam validates the value, source, and provenance
   completeness at mutation time. Downstream readers trust the persisted value and
   do not re-validate.
+* Best-effort freshness: composition is a point-in-time snapshot derived from the
+  index cache and may reflect slightly stale sizes or membership until the next
+  sync; it never fails the read and never persists a correction (see
+  Read-time freshness above).
 * Two-layer path containment guards artifact lookup: config-load rejects `..` and
   absolute paths in the root and search directories, and a realpath
   re-containment check runs at lookup so a symlink cannot escape the storage root.

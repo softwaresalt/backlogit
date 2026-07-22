@@ -37,7 +37,7 @@ type SizeCompositionResult struct {
 	Histogram      map[string]int          `json:"histogram"`
 	Unsized        int                     `json:"unsized"`
 	Members        []SizeCompositionMember `json:"members"`
-	Skipped        []string                `json:"skipped,omitempty"`
+	Skipped        []string                `json:"skipped"`
 	RulesetVersion *string                 `json:"ruleset_version"`
 }
 
@@ -52,6 +52,14 @@ type SizeCompositionResult struct {
 // (counted in neither Histogram nor Unsized). The result is computed on read and
 // never written to disk. ruleset_version is always null until a canonical ruleset
 // is owned.
+//
+// Staleness window: the rollup is computed from the SQLite index, which is a
+// disposable cache rebuilt from the Markdown source of truth on sync. Between an
+// out-of-band on-disk mutation and the next index sync/rehydrate, a rollup can
+// reflect slightly stale sizes or membership. This is an accepted, best-effort
+// read contract (the read surfaces already tolerate it); callers that need
+// guaranteed freshness must sync the index first. No freshness/version API is
+// exposed here by design (YAGNI) until a concrete consumer requires one.
 func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifact) (*SizeCompositionResult, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("size composition: artifact is required")
@@ -59,13 +67,9 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	if ws == nil {
 		return nil, fmt.Errorf("size composition: workspace is required")
 	}
-	result := &SizeCompositionResult{
-		Histogram: map[string]int{},
-		Members:   []SizeCompositionMember{},
-		Skipped:   []string{},
-	}
 
-	memberIDs, err := compositionMemberIDs(ctx, ws, artifact)
+	deps := indexMemberDeps(ws)
+	memberIDs, err := compositionMemberIDs(ctx, artifact, deps)
 	if err != nil {
 		return nil, fmt.Errorf("size composition members for %s: %w", artifact.ID, err)
 	}
@@ -74,11 +78,171 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	// batched query instead of a per-member filesystem WalkDir. The read
 	// surfaces already operate off the index, and the index includes archived
 	// artifacts, so index resolution is both faster and consistent.
-	resolved, err := resolveMembersFromIndex(ctx, ws, unique)
+	resolved, err := deps.resolve(ctx, unique)
 	if err != nil {
 		return nil, fmt.Errorf("resolve size composition members for %s: %w", artifact.ID, err)
 	}
-	for _, id := range unique {
+	return rollupFromMembers(ctx, unique, resolved), nil
+}
+
+// SizeCompositions computes the never-persisted size rollup for many aggregates
+// (feature/shipment) using chunked batch index lookups (each resolver issues one
+// query per ~900 IDs to stay under SQLite's bound-parameter limit) instead of one
+// SizeComposition call per aggregate, returning a map keyed by aggregate ID. This
+// eliminates the per-aggregate query fan-out; it does not promise a constant query
+// count, since the number of statements grows with the number of members. Non-aggregate artifacts and nil entries are skipped (absent from
+// the map) and duplicate aggregate IDs are computed once. Every rollup is
+// byte-identical to the per-artifact SizeComposition because both share
+// compositionMemberIDs and rollupFromMembers over the same index rows, so this
+// batched shaper can back the grouped queue/list read surfaces without changing
+// output (117-F / A6A1B47E). Like SizeComposition, resolution is computed on read
+// off the SQLite index and is never written to disk, and shares the same
+// index-staleness read contract documented on SizeComposition.
+func SizeCompositions(ctx context.Context, ws *Workspace, artifacts []*models.Artifact) (map[string]*SizeCompositionResult, error) {
+	out := make(map[string]*SizeCompositionResult)
+	if ws == nil {
+		return out, nil
+	}
+
+	// Collect the aggregate artifacts, de-duplicated by ID (first occurrence
+	// wins) so a member listed under several groups is computed once.
+	seen := make(map[string]struct{}, len(artifacts))
+	aggregates := make([]*models.Artifact, 0, len(artifacts))
+	for _, a := range artifacts {
+		if a == nil || !IsSizeCompositionAggregate(a.ArtifactType) {
+			continue
+		}
+		if _, ok := seen[a.ID]; ok {
+			continue
+		}
+		seen[a.ID] = struct{}{}
+		aggregates = append(aggregates, a)
+	}
+	if len(aggregates) == 0 {
+		return out, nil
+	}
+
+	// Prefetch phase: a bounded, constant number of batched index queries that
+	// remove the per-aggregate query fan-out (the N+1 the single path incurs).
+
+	// 1) Resolve every shipment manifest member once to learn its type.
+	manifestUnion := make([]string, 0)
+	for _, a := range aggregates {
+		if a.ArtifactType == "shipment" {
+			manifestUnion = append(manifestUnion, NormalizeShipmentItems(a)...)
+		}
+	}
+	manifestResolved, err := resolveMembersFromIndex(ctx, ws, uniqueNonEmptyStrings(manifestUnion))
+	if err != nil {
+		return nil, fmt.Errorf("batch resolve shipment manifests: %w", err)
+	}
+
+	// 2) Resolve the task children of every feature parent once: input features
+	//    plus any feature referenced by a shipment manifest (expanded into its
+	//    tasks, never counted itself).
+	parentIDs := make([]string, 0, len(aggregates))
+	for _, a := range aggregates {
+		if a.ArtifactType == "feature" {
+			parentIDs = append(parentIDs, a.ID)
+		}
+	}
+	for _, m := range manifestResolved {
+		if m.ArtifactType == "feature" {
+			parentIDs = append(parentIDs, m.ID)
+		}
+	}
+	childrenMap, err := db.GetTaskChildrenByParentIDs(ctx, ws.DB, uniqueNonEmptyStrings(parentIDs))
+	if err != nil {
+		return nil, fmt.Errorf("batch resolve task children: %w", err)
+	}
+
+	// 3) Combined resolution map for the final rollup: manifest members plus
+	//    every prefetched child artifact.
+	batchResolved := make(map[string]*models.Artifact, len(manifestResolved))
+	for id, a := range manifestResolved {
+		batchResolved[id] = a
+	}
+	for _, children := range childrenMap {
+		for _, c := range children {
+			batchResolved[c.ID] = c
+		}
+	}
+
+	// Compute phase: pure projection over the prefetched maps, no further index
+	// round-trips.
+	deps := prefetchedMemberDeps(childrenMap, batchResolved)
+	for _, a := range aggregates {
+		memberIDs, err := compositionMemberIDs(ctx, a, deps)
+		if err != nil {
+			return nil, fmt.Errorf("size composition members for %s: %w", a.ID, err)
+		}
+		unique := uniqueNonEmptyStrings(memberIDs)
+		out[a.ID] = rollupFromMembers(ctx, unique, batchResolved)
+	}
+	return out, nil
+}
+
+// memberDeps abstracts the two index round-trips a size rollup needs — resolving
+// a set of member IDs and listing a parent's task-child IDs — so the per-artifact
+// and batched paths share compositionMemberIDs. The single path binds these to
+// direct index queries; the batched path binds them to prefetched-map reads,
+// guaranteeing identical output (117-F / A6A1B47E).
+type memberDeps struct {
+	childIDs func(ctx context.Context, parentID string) ([]string, error)
+	resolve  func(ctx context.Context, ids []string) (map[string]*models.Artifact, error)
+}
+
+// indexMemberDeps binds memberDeps to direct SQLite-index queries for the
+// per-artifact SizeComposition path.
+func indexMemberDeps(ws *Workspace) memberDeps {
+	return memberDeps{
+		childIDs: func(ctx context.Context, parentID string) ([]string, error) {
+			return childIDsByParent(ctx, ws, parentID)
+		},
+		resolve: func(ctx context.Context, ids []string) (map[string]*models.Artifact, error) {
+			return resolveMembersFromIndex(ctx, ws, ids)
+		},
+	}
+}
+
+// prefetchedMemberDeps binds memberDeps to already-prefetched maps for the
+// batched SizeCompositions path: child IDs come from childrenMap (ordered by ID,
+// matching childIDsByParent) and member resolution is a subset lookup of the
+// combined resolved map.
+func prefetchedMemberDeps(childrenMap map[string][]*models.Artifact, resolved map[string]*models.Artifact) memberDeps {
+	return memberDeps{
+		childIDs: func(_ context.Context, parentID string) ([]string, error) {
+			children := childrenMap[parentID]
+			ids := make([]string, len(children))
+			for i, c := range children {
+				ids[i] = c.ID
+			}
+			return ids, nil
+		},
+		resolve: func(_ context.Context, ids []string) (map[string]*models.Artifact, error) {
+			out := make(map[string]*models.Artifact, len(ids))
+			for _, id := range ids {
+				if a, ok := resolved[id]; ok {
+					out[id] = a
+				}
+			}
+			return out, nil
+		},
+	}
+}
+
+// rollupFromMembers builds the size rollup from an ordered, de-duplicated set of
+// member IDs and their resolved artifacts. An id absent from resolved is
+// warn-skipped (counted in neither Histogram nor Unsized); a resolved member with
+// no size increments Unsized. It is the shared tail of both the per-artifact and
+// batched rollup paths so the two cannot drift.
+func rollupFromMembers(ctx context.Context, orderedUnique []string, resolved map[string]*models.Artifact) *SizeCompositionResult {
+	result := &SizeCompositionResult{
+		Histogram: map[string]int{},
+		Members:   []SizeCompositionMember{},
+		Skipped:   []string{},
+	}
+	for _, id := range orderedUnique {
 		member, ok := resolved[id]
 		if !ok {
 			// Unresolved manifest id: warn + skip; not counted in the histogram
@@ -99,7 +263,7 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 			result.Histogram[size]++
 		}
 	}
-	return result, nil
+	return result
 }
 
 // resolveMembersFromIndex batch-resolves member artifacts from the SQLite index,
@@ -116,16 +280,18 @@ func resolveMembersFromIndex(ctx context.Context, ws *Workspace, ids []string) (
 // estimation is task-only, so this yields only task members: for a feature, its
 // direct task children by parent_id; for a shipment, the explicit manifest with
 // directly-listed tasks kept and each feature member expanded into its child
-// tasks (rollup-parent types such as the feature itself are excluded).
-func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.Artifact) ([]string, error) {
+// tasks (rollup-parent types such as the feature itself are excluded). Index
+// access is routed through deps so the per-artifact and batched paths share this
+// resolution logic and cannot drift.
+func compositionMemberIDs(ctx context.Context, artifact *models.Artifact, deps memberDeps) ([]string, error) {
 	switch artifact.ArtifactType {
 	case "feature":
-		return childIDsByParent(ctx, ws, artifact.ID)
+		return deps.childIDs(ctx, artifact.ID)
 	case "shipment":
 		manifest := NormalizeShipmentItems(artifact)
 		// 114-F / 47ED88ED: batch-resolve manifest member types from the index
 		// in one query instead of a per-member filesystem WalkDir.
-		resolved, err := resolveMembersFromIndex(ctx, ws, manifest)
+		resolved, err := deps.resolve(ctx, manifest)
 		if err != nil {
 			return nil, fmt.Errorf("resolve shipment manifest: %w", err)
 		}
@@ -145,7 +311,7 @@ func compositionMemberIDs(ctx context.Context, ws *Workspace, artifact *models.A
 			case "feature":
 				// A feature is a rollup parent, not a sizable unit: expand it into
 				// its child tasks and do NOT count the feature itself.
-				childIDs, cerr := childIDsByParent(ctx, ws, memberID)
+				childIDs, cerr := deps.childIDs(ctx, memberID)
 				if cerr != nil {
 					return nil, cerr
 				}
@@ -248,13 +414,13 @@ func ShipmentViewsWithComposition(ctx context.Context, ws *Workspace, shipments 
 	return out
 }
 
-// InjectSizeComposition projects the computed-on-read size rollup onto each
-// aggregate (feature/shipment) item map, matching the typed artifact slice by
-// index so order is preserved. Non-aggregate types are left unprojected; a
-// rollup failure is logged and that item is left without a rollup rather than
-// failing the whole response. It is shared by the CLI `queue view --json` and
-// MCP get_queue read surfaces so the two surfaces cannot drift.
-func InjectSizeComposition(ctx context.Context, ws *Workspace, artifacts []*models.Artifact, itemMaps []any) {
+// InjectSizeCompositionFromMap projects precomputed rollups onto each aggregate
+// (feature/shipment) item map, matching the typed artifact slice by index so
+// order is preserved. Non-aggregate types and artifacts absent from comps are
+// left unprojected. Callers compute rollups once via SizeCompositions and inject
+// them onto several views (e.g. a flat queue and each of its groups) without
+// recomputing (117-F / A6A1B47E).
+func InjectSizeCompositionFromMap(artifacts []*models.Artifact, itemMaps []any, comps map[string]*SizeCompositionResult) {
 	for i, art := range artifacts {
 		if i >= len(itemMaps) || art == nil {
 			continue
@@ -266,13 +432,97 @@ func InjectSizeComposition(ctx context.Context, ws *Workspace, artifacts []*mode
 		if !ok {
 			continue
 		}
-		composition, err := SizeComposition(ctx, ws, art)
-		if err != nil {
-			slog.WarnContext(ctx, "size composition: item left without rollup", "id", art.ID, "error", err)
-			continue
-		}
-		if composition != nil {
-			im[SizeCompositionKey] = composition
+		if comp, ok := comps[art.ID]; ok && comp != nil {
+			im[SizeCompositionKey] = comp
 		}
 	}
+}
+
+// ListWithSizeComposition projects the computed-on-read size rollup onto the
+// aggregate (feature/shipment) artifacts in a flat list and returns a slice ready
+// for JSON encoding: each aggregate becomes a map carrying size_composition and
+// every non-aggregate stays the raw *models.Artifact (so it carries no rollup).
+// Order is preserved. Rollups are computed once via SizeCompositions; on a batch
+// error it warns and returns the raw artifacts so the list surface degrades
+// rather than failing. It is shared by the CLI `list --json` and MCP list_items
+// read surfaces so the two cannot drift (117-F / 60336CC0).
+func ListWithSizeComposition(ctx context.Context, ws *Workspace, artifacts []*models.Artifact) []any {
+	out := make([]any, len(artifacts))
+	comps, err := SizeCompositions(ctx, ws, artifacts)
+	if err != nil {
+		slog.WarnContext(ctx, "size composition: list left without rollups", "error", err)
+		for i, art := range artifacts {
+			out[i] = art
+		}
+		return out
+	}
+	for i, art := range artifacts {
+		if art == nil {
+			out[i] = art
+			continue
+		}
+		comp, ok := comps[art.ID]
+		if !ok || comp == nil {
+			out[i] = art
+			continue
+		}
+		payload, perr := AttachSizeComposition(art, comp)
+		if perr != nil {
+			slog.WarnContext(ctx, "size composition: list projection failed", "id", art.ID, "error", perr)
+			out[i] = art
+			continue
+		}
+		out[i] = payload
+	}
+	return out
+}
+
+// QueueViewWithSizeComposition marshals a queue view into a generic map and
+// projects the computed-on-read size_composition rollup onto every aggregate
+// (feature/shipment) item, in both the flat item list and any grouped items.
+// The rollups for every aggregate across the flat list and all groups are
+// computed exactly once via SizeCompositions and projected from that shared map,
+// so a feature that appears in both the flat list and a group is not recomputed
+// (117-F / A6A1B47E). On a rollup batch error it warns and returns the
+// unprojected payload so the queue surface degrades rather than failing; it
+// returns an error only when the view itself cannot be marshaled. It is shared
+// by the CLI `queue view --json` and MCP get_queue read surfaces so the two
+// transports cannot drift on either the projection or the degradation behavior
+// (114-F / 387DE4BF; 117-F / A6A1B47E).
+func QueueViewWithSizeComposition(ctx context.Context, ws *Workspace, view *QueueView) (map[string]any, error) {
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("marshal queue view: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal queue view: %w", err)
+	}
+
+	union := make([]*models.Artifact, 0, len(view.Items))
+	union = append(union, view.Items...)
+	for _, g := range view.Groups {
+		union = append(union, g.Items...)
+	}
+	comps, err := SizeCompositions(ctx, ws, union)
+	if err != nil {
+		slog.WarnContext(ctx, "size composition: queue left without rollups", "error", err)
+		return payload, nil
+	}
+
+	if items, ok := payload["items"].([]any); ok {
+		InjectSizeCompositionFromMap(view.Items, items, comps)
+	}
+	if groups, ok := payload["groups"].([]any); ok {
+		for gi, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok || gi >= len(view.Groups) {
+				continue
+			}
+			if gitems, ok := gm["items"].([]any); ok {
+				InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
+			}
+		}
+	}
+	return payload, nil
 }
