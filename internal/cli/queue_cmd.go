@@ -10,6 +10,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 const defaultQueueSort = "priority"
@@ -112,9 +113,12 @@ priority as the secondary sort after any manually assigned queue positions.`,
 
 // queueViewJSON marshals a queue view into a generic map and injects the
 // computed-on-read size_composition rollup into each aggregate (feature/shipment)
-// item, in both the flat item list and any grouped items. It shares
-// core.InjectSizeComposition with MCP get_queue so the two transports cannot
-// drift on the projection (114-F / 387DE4BF).
+// item, in both the flat item list and any grouped items. The rollups for every
+// aggregate across the flat list and all groups are computed exactly once via
+// core.SizeCompositions and projected from that shared map, so a feature that
+// appears in both the flat list and a group is not recomputed. It shares the
+// core shapers with MCP get_queue so the two transports cannot drift on the
+// projection (114-F / 387DE4BF; 117-F / A6A1B47E).
 func queueViewJSON(ctx context.Context, ws *core.Workspace, view *core.QueueView) (map[string]any, error) {
 	raw, err := json.Marshal(view)
 	if err != nil {
@@ -124,8 +128,19 @@ func queueViewJSON(ctx context.Context, ws *core.Workspace, view *core.QueueView
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal queue view: %w", err)
 	}
+
+	union := make([]*models.Artifact, 0, len(view.Items))
+	union = append(union, view.Items...)
+	for _, g := range view.Groups {
+		union = append(union, g.Items...)
+	}
+	comps, err := core.SizeCompositions(ctx, ws, union)
+	if err != nil {
+		return nil, fmt.Errorf("size compositions for queue: %w", err)
+	}
+
 	if items, ok := payload["items"].([]any); ok {
-		core.InjectSizeComposition(ctx, ws, view.Items, items)
+		core.InjectSizeCompositionFromMap(view.Items, items, comps)
 	}
 	if groups, ok := payload["groups"].([]any); ok {
 		for gi, g := range groups {
@@ -134,7 +149,7 @@ func queueViewJSON(ctx context.Context, ws *core.Workspace, view *core.QueueView
 				continue
 			}
 			if gitems, ok := gm["items"].([]any); ok {
-				core.InjectSizeComposition(ctx, ws, view.Groups[gi].Items, gitems)
+				core.InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
 			}
 		}
 	}

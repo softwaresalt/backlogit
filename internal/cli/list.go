@@ -199,7 +199,10 @@ that can be piped into other tooling.`,
 			if effectiveFormat == format.FormatJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(artifacts)
+				// Route through the shared core shaper so `list --json` attaches
+				// the computed-on-read size_composition rollup to aggregate rows
+				// at parity with the MCP list_items surface (117-F / 60336CC0).
+				return enc.Encode(core.ListWithSizeComposition(ctx, ws, artifacts))
 			}
 
 			if groupBy != "" {

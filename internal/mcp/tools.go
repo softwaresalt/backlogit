@@ -490,7 +490,10 @@ func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolReq
 	if err != nil {
 		return InternalError(fmt.Sprintf("list items: %v", err)), nil
 	}
-	return toolResultJSON(artifacts)
+	// Route through the shared core shaper so list_items attaches the
+	// computed-on-read size_composition rollup to aggregate rows at parity with
+	// the CLI `list --json` surface (117-F / 60336CC0).
+	return toolResultJSON(core.ListWithSizeComposition(ctx, s.Workspace, artifacts))
 }
 
 func (s *Server) handleSearchItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -1379,7 +1382,11 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 
 // queueViewWithSizeComposition marshals a queue view into a generic map and attaches
 // a computed-on-read size_composition rollup to each feature/shipment item, in both
-// the flat items list and any grouped items, preserving order (108-F SE-6).
+// the flat items list and any grouped items, preserving order (108-F SE-6). The
+// rollups for every aggregate across the flat list and all groups are computed
+// exactly once via core.SizeCompositions and then projected from that shared map,
+// so a feature that appears in both the flat list and a group is not recomputed
+// (117-F / A6A1B47E).
 func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.QueueView) (any, error) {
 	raw, err := json.Marshal(view)
 	if err != nil {
@@ -1389,8 +1396,19 @@ func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.Qu
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal queue view: %w", err)
 	}
+
+	union := make([]*models.Artifact, 0, len(view.Items))
+	union = append(union, view.Items...)
+	for _, g := range view.Groups {
+		union = append(union, g.Items...)
+	}
+	comps, err := core.SizeCompositions(ctx, s.Workspace, union)
+	if err != nil {
+		return nil, fmt.Errorf("size compositions for queue: %w", err)
+	}
+
 	if items, ok := payload["items"].([]any); ok {
-		s.injectQueueSizeComposition(ctx, view.Items, items)
+		core.InjectSizeCompositionFromMap(view.Items, items, comps)
 	}
 	if groups, ok := payload["groups"].([]any); ok {
 		for gi, g := range groups {
@@ -1399,19 +1417,11 @@ func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.Qu
 				continue
 			}
 			if gitems, ok := gm["items"].([]any); ok {
-				s.injectQueueSizeComposition(ctx, view.Groups[gi].Items, gitems)
+				core.InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
 			}
 		}
 	}
 	return payload, nil
-}
-
-// injectQueueSizeComposition attaches a computed-on-read size_composition rollup to
-// each feature/shipment item map in a queue projection. It delegates to
-// core.InjectSizeComposition, the single shaper shared with the CLI queue view so
-// the two transports cannot drift (114-F).
-func (s *Server) injectQueueSizeComposition(ctx context.Context, artifacts []*models.Artifact, itemMaps []any) {
-	core.InjectSizeComposition(ctx, s.Workspace, artifacts, itemMaps)
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
