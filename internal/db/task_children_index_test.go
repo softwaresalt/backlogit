@@ -43,8 +43,10 @@ func batchChildrenQuery(placeholders string) string {
 
 // TestTaskChildrenQueryPlans asserts the batched task-children query is served
 // by the composite idx_items_parent_type_id and that the narrower
-// idx_items_parent is still preferred for pure parent_id lookups, which is why
-// both indexes are retained (118.001-T / 0FA55F47).
+// idx_items_parent is still the planner's preference for pure parent_id lookups
+// while both indexes exist. That preference is not proof of non-redundancy (the
+// composite could serve the bare lookup via its leading column); idx_items_parent
+// is retained as a conservative default (118.001-T / 0FA55F47).
 func TestTaskChildrenQueryPlans(t *testing.T) {
 	database := setupTestDB(t)
 	ctx := context.Background()
@@ -83,9 +85,11 @@ func TestTaskChildrenQueryPlans(t *testing.T) {
 	})
 
 	t.Run("parent-only lookup keeps the narrower idx_items_parent", func(t *testing.T) {
-		// Justifies retaining idx_items_parent alongside the composite: the
-		// planner prefers the narrower index for a bare parent_id equality
-		// (e.g. the ListItems parent filter), so it is not dead weight.
+		// The planner prefers the narrower index for a bare parent_id equality
+		// (e.g. the ListItems parent filter) while both indexes exist. This
+		// preference is why idx_items_parent is retained as a conservative
+		// default; it is not proof of non-redundancy, since the composite could
+		// also serve this lookup via its leading parent_id column.
 		plan := explainPlan(t, database, "SELECT "+db.SelectCols+" FROM items WHERE parent_id = ?", "F1")
 		assert.Contains(t, plan, "idx_items_parent (",
 			"parent-only lookup should use the narrow idx_items_parent:\n%s", plan)
