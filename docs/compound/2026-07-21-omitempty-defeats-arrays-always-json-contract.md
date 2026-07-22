@@ -4,7 +4,7 @@ schema_version: "1.0"
 title: "json omitempty on a slice field silently defeats an arrays-always-[] contract, and asserting sibling fields while never inspecting the empty collection lets it pass green"
 source: docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md
 doc_type: learning
-description: "When an API advertises that a collection field is always present as a JSON array (never null, never absent), a `json:\"field,omitempty\"` struct tag breaks that contract for the empty case: encoding/json omits ANY length-0 slice under omitempty regardless of whether the Go value is a non-nil empty slice (`[]string{}`) or nil. So a rollup that carefully initializes `Skipped: []string{}` in its constructor still serializes to a MISSING `skipped` key, not `\"skipped\": []`, when there are no skipped members. The trap is that the sibling collection fields (`histogram`, `members`) had NO omitempty and correctly emitted `{}` / `[]`, making the one field with omitempty an easy-to-miss inconsistency. The test gap was NOT a populated-only fixture: the parity fixtures already had zero skipped members, so `skipped` was already empty — the tests simply asserted the populated `histogram` and never inspected `skipped`, and the canonical DeepEqual guard could not catch it because the canonical value is built from the same omitempty struct (both sides omit the key identically and compare equal). Fix: drop omitempty from any collection field that is part of an always-an-array contract, and assert the empty case (type-assert to []any, assert len 0) so a missing/null key fails. Commit `b2a3d1f9` added that assertion to the two new flat-list surfaces (CLI `list --json` and MCP `list_items`); the get/queue transports share the same struct and are fixed by the tag change but were not given their own empty-case assertions."
+description: "When an API advertises that a collection field is always present as a JSON array (never null, never absent), a `json:\"field,omitempty\"` struct tag breaks that contract for the empty case: encoding/json omits ANY length-0 slice under omitempty regardless of whether the Go value is a non-nil empty slice (`[]string{}`) or nil. So a rollup that carefully initializes `Skipped: []string{}` in its constructor still serializes to a MISSING `skipped` key, not `\"skipped\": []`, when there are no skipped members. The trap is that the sibling collection fields (`histogram`, `members`) had NO omitempty and correctly emitted `{}` / `[]`, making the one field with omitempty an easy-to-miss inconsistency. The test gap was NOT a populated-only fixture: the parity fixtures already had zero skipped members, so `skipped` was already empty — the tests simply asserted the populated `histogram` and never inspected `skipped`, and the canonical DeepEqual guard could not catch it because the canonical value is built from the same omitempty struct (both sides omit the key identically and compare equal). Fix: drop omitempty from any collection field that is part of an always-an-array contract, and assert the empty case (type-assert to []any, assert len 0) so a missing/null key fails. Commit `b2a3d1f9` added that assertion to the two new flat-list surfaces (CLI `list --json` and MCP `list_items`); the remaining transports (get / get_item, queue view / get_queue, and the shipment pairs shipment get / get_shipment and shipment list / list_shipments) share the same struct and are fixed by the tag change but were not given their own empty-case assertions."
 docline:
     date: 2026-07-21T00:00:00Z
     severity: medium
@@ -26,10 +26,13 @@ docline:
 ## Context
 
 `SizeCompositionResult` is the computed-on-read size rollup projected onto
-feature/shipment aggregates across six read surfaces — three CLI commands
-(`get`, `list --json`, `queue view --json`) and three MCP tools (`get_item`,
-`list_items`, `get_queue`). The compound "arrays always `[]`, never `null`"
-rule (Rule 3) is meant to give agent consumers a stable shape.
+feature/shipment aggregates across five CLI/MCP surface pairs (ten read
+surfaces): `get` / `get_item`, `list --json` / `list_items`,
+`queue view --json` / `get_queue`, `shipment get` / `get_shipment`, and
+`shipment list` / `list_shipments` (the shipment pairs flow through
+`ShipmentViewWithComposition` / `ShipmentViewsWithComposition`). The compound
+"arrays always `[]`, never `null`" rule (Rule 3) is meant to give agent
+consumers a stable shape.
 
 ## The bug
 

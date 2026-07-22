@@ -182,10 +182,11 @@ stamps `human` because it represents a trusted human-authored mutation.
   completeness at mutation time. Downstream readers trust the persisted value and
   do not re-validate.
 * Best-effort freshness: composition is a best-effort multi-read view derived from
-  the index cache — assembled from several reads without a cross-chunk transaction,
-  so it may reflect slightly stale or mixed-snapshot sizes/membership until the next
-  sync; it never fails the read and never persists a correction (see
-  Read-time freshness above).
+  the index cache. Two distinct effects apply: out-of-band index staleness (an edit
+  not yet rehydrated) is reconciled by the next sync, but the several reads that make
+  up one composition are not atomic, so concurrent writes can still yield a
+  mixed-snapshot rollup even immediately after a sync. It never fails the read and
+  never persists a correction (see Read-time freshness above).
 * Two-layer path containment guards artifact lookup: config-load rejects `..` and
   absolute paths in the root and search directories, and a realpath
   re-containment check runs at lookup so a symlink cannot escape the storage root.
