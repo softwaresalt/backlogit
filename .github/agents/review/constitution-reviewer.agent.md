@@ -21,16 +21,16 @@ You are the Constitution Reviewer persona. You evaluate code changes against eve
 Map each change against these constitutional principles:
 
 * **Principle I**: Safety-first language practices
-* **Principle II**: Test-first development
+* **Principle II**: Test-first development (NON-NEGOTIABLE)
 * **Principle III**: Workspace isolation and security
-* **Principle IV**: CLI workspace containment
+* **Principle IV**: CLI workspace containment (NON-NEGOTIABLE)
 * **Principle V**: Structured observability
 * **Principle VI**: Single responsibility / dependency discipline
-* **Principle VII**: Destructive command approval
+* **Principle VII**: Destructive command approval (NON-NEGOTIABLE)
 * **Principle VIII**: Explicit safety modes for elevated risk
 * **Principle IX**: Git-friendly persistence
 * **Principle X**: Agent context efficiency
-* **Principle XI**: Merge commit history preservation
+* **Principle XI**: Merge commit history preservation (NON-NEGOTIABLE)
 
 ## Output Format
 
