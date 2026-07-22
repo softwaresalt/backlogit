@@ -142,8 +142,10 @@ source of truth, and a subsequent sync reconciles the rollup. A consumer that
 needs strict freshness syncs the index before reading.
 
 Flat read surfaces (`list` / `list_items` and `queue view` / `get_queue`) compute
-the rollup for every aggregate in one batched pass (`SizeCompositions`) rather
-than per row, so a grouped or long listing incurs no per-aggregate query fan-out.
+the rollup for every aggregate via chunked batch lookups (`SizeCompositions`, each
+resolver chunking at ~900 IDs per query) rather than per row, eliminating the
+per-aggregate query fan-out. The query count grows with the number of members
+rather than staying constant, but no longer scales with the number of aggregates.
 The batched result is identical to the per-artifact `SizeComposition`. When the
 batched rollup fails, these surfaces degrade to unprojected rows (a warning is
 logged) rather than aborting the listing, and both the CLI and MCP transports

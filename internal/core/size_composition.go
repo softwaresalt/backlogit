@@ -86,9 +86,11 @@ func SizeComposition(ctx context.Context, ws *Workspace, artifact *models.Artifa
 }
 
 // SizeCompositions computes the never-persisted size rollup for many aggregates
-// (feature/shipment) in a bounded, constant number of batched index round-trips
-// instead of one SizeComposition call per aggregate, returning a map keyed by
-// aggregate ID. Non-aggregate artifacts and nil entries are skipped (absent from
+// (feature/shipment) using chunked batch index lookups (each resolver issues one
+// query per ~900 IDs to stay under SQLite's bound-parameter limit) instead of one
+// SizeComposition call per aggregate, returning a map keyed by aggregate ID. This
+// eliminates the per-aggregate query fan-out; it does not promise a constant query
+// count, since the number of statements grows with the number of members. Non-aggregate artifacts and nil entries are skipped (absent from
 // the map) and duplicate aggregate IDs are computed once. Every rollup is
 // byte-identical to the per-artifact SizeComposition because both share
 // compositionMemberIDs and rollupFromMembers over the same index rows, so this
