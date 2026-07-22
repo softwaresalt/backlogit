@@ -236,6 +236,18 @@ func TestIntrospectSchema_ColumnsAndIndexes(t *testing.T) {
 	}
 	assert.True(t, idxNames["idx_items_status"], "items should have idx_items_status index")
 	assert.True(t, idxNames["idx_items_type"], "items should have idx_items_type index")
+	assert.True(t, idxNames["idx_items_parent_type_id"],
+		"items should have composite idx_items_parent_type_id index for the batched task-children query")
+
+	// The composite index must be ordered (parent_id, artifact_type, id) so it
+	// serves the parent_id IN (...) AND artifact_type='task' filter and the
+	// ORDER BY parent_id, id of GetTaskChildrenByParentIDs without a temp b-tree.
+	for _, idx := range itemsTable.Indexes {
+		if idx.Name == "idx_items_parent_type_id" {
+			assert.Equal(t, []string{"parent_id", "artifact_type", "id"}, idx.Columns,
+				"idx_items_parent_type_id column order")
+		}
+	}
 
 	// Each index should have at least one column.
 	for _, idx := range itemsTable.Indexes {

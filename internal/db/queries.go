@@ -235,15 +235,13 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Run each chunk as an implicit (deferred) read against the pooled handle
-	// rather than wrapping the batch in an explicit BeginTx. db.Open configures
-	// _txlock=immediate (connection.go), so an explicit ReadOnly transaction would
-	// still acquire the write lock up front and serialize every composition read
-	// behind writers (up to the busy timeout), defeating WAL reader/writer
-	// concurrency. Implicit single-statement SELECTs use SQLite's deferred read
-	// locking and keep that concurrency. size_composition is a best-effort,
-	// computed-on-read rollup that already tolerates a staleness window, so
-	// cross-chunk snapshot atomicity is not required here.
+	// Each chunk runs as an implicit single-statement read on the pooled WAL
+	// connection; this path deliberately opens no explicit transaction. A bare
+	// SELECT takes only SQLite's deferred read lock, so under WAL these reads run
+	// concurrently with a writer instead of serializing behind it. There is also
+	// no correctness need to wrap the chunks in one transaction: size_composition
+	// is a best-effort, computed-on-read rollup that already tolerates a staleness
+	// window, so cross-chunk snapshot atomicity is not required.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
