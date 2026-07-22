@@ -81,9 +81,10 @@ If cross-model invocation is not available, run all personas with the caller's m
 
 1. Read the plan file from `docs/exec-plans/`.
 2. Extract implementation units, dependency graph, decisions, risks, hardening signals, and whether a `## Plan Hardening` section is present.
-3. When `strict-safety` is enabled and the plan contains a `## Plan Hardening` section, also extract any `ProposedAction` / `ActionRisk` entries.
-4. If the plan references an origin document, read that too for context.
-5. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
+3. Extract the `## Constitution Check` section and its concluding verdict. A conforming plan ends the section with exactly `Constitution Check: pass` or `Constitution Check: documented-deviations`. Treat a missing section or a missing/unrecognized verdict as a governance gap (see the Step 4 gate row): the absence is fail-safe, mirroring how P-006 treats a missing `Requires plan hardening` field as `yes`.
+4. When `strict-safety` is enabled and the plan contains a `## Plan Hardening` section, also extract any `ProposedAction` / `ActionRisk` entries.
+5. If the plan references an origin document, read that too for context.
+6. Broadcast: `[PLAN-REVIEW] Starting review of: {plan_path}`
 
 ### Step 2: Spawn Reviewer Subagents
 
@@ -117,6 +118,7 @@ As each persona returns:
 |---|---|---|
 | Plan shows hardening signals but lacks plan hardening or equivalent high-risk detail | **FAIL** | Return the plan to `plan-harden` or manual revision before `harvest`. |
 | Strict-safety enabled, hardening present, but risky actions lack `ProposedAction` / `ActionRisk` classification | **FAIL** | Plans with hardening signals must classify risky actions explicitly when strict-safety is active. |
+| `## Constitution Check` section or its verdict is missing or unrecognized (not `Constitution Check: pass` or `Constitution Check: documented-deviations`) | **FAIL** | Return the plan to the planner to add or correct the Constitution Check verdict before `harvest`. Absence is fail-safe, mirroring the P-006 plan-hardening default. |
 | Any P0 or P1 findings | **FAIL** | Present findings to user. Plan must be revised before proceeding to `harvest`. |
 | P2 findings only | **ADVISORY** | Present findings to user. User decides: revise or proceed. |
 | P3 findings only or none | **PASS** | Log findings as advisory. Proceed to `harvest`. |
@@ -145,6 +147,7 @@ consolidates this into a decided-plan.
 * Findings include actionable recommendations
 * The review is appended to the plan before the gate decision is communicated
 * Plans with hardening signals are failed when hardening is missing or materially incomplete
+* Plans missing a recognized Constitution Check verdict are failed structurally at the gate, independent of persona findings
 * Plans that touch runtime surfaces are checked for verification and closure readiness
 
 

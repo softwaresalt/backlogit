@@ -29,6 +29,8 @@ Map each change against these constitutional principles:
 * **Principle VII**: Destructive command approval
 * **Principle VIII**: Explicit safety modes for elevated risk
 * **Principle IX**: Git-friendly persistence
+* **Principle X**: Agent context efficiency
+* **Principle XI**: Merge commit history preservation
 
 ## Output Format
 
