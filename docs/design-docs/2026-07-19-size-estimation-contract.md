@@ -134,7 +134,10 @@ that documented rank itself.
 
 Composition is derived at read time from the SQLite index, which is a derived
 cache of the canonical Markdown files. A composition result is therefore a
-best-effort, point-in-time snapshot: if member sizes or membership changed after
+best-effort multi-read view: it is assembled from several index reads (chunked at
+~900 IDs per query, without a cross-chunk transaction), so under concurrent writes
+different parts of a single rollup can reflect different index snapshots rather
+than one point-in-time snapshot. If member sizes or membership changed after
 the index was last synced (for example an out-of-band edit not yet rehydrated),
 the rollup can reflect slightly stale sizes or membership. Reads never fail on
 this account and never persist a correction — the canonical files remain the

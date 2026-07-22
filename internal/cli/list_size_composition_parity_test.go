@@ -47,6 +47,9 @@ func TestListJSON_FeatureExposesSizeComposition(t *testing.T) {
 	hist, _ := comp["histogram"].(map[string]any)
 	assert.EqualValues(t, 1, hist["L"], "histogram L")
 	assert.EqualValues(t, 1, hist["M"], "histogram M")
+	skipped, isArr := comp["skipped"].([]any)
+	require.True(t, isArr, "size_composition.skipped must always be present as a JSON array (never omitted/null); got: %s", out)
+	assert.Empty(t, skipped, "feature with no dangling members must emit skipped as an empty array")
 	assert.GreaterOrEqual(t, tasksSeen, 2, "both child tasks present in listing")
 }
 

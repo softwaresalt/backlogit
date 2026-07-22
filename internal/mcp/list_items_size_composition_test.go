@@ -54,6 +54,9 @@ func TestListItemsExposesSizeComposition(t *testing.T) {
 			require.True(t, ok, "feature list_items row must carry size_composition; got: %s", text)
 			hist, _ := comp["histogram"].(map[string]any)
 			assert.EqualValues(t, 1, hist["L"], "list_items feature histogram L must match the canonical rollup")
+			skipped, isArr := comp["skipped"].([]any)
+			require.True(t, isArr, "size_composition.skipped must always be present as a JSON array (never omitted/null); got: %s", text)
+			assert.Empty(t, skipped, "feature with no dangling members must emit skipped as an empty array")
 		case "970.001-T":
 			foundTask = true
 			_, hasComp := r["size_composition"]

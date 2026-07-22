@@ -37,7 +37,7 @@ type SizeCompositionResult struct {
 	Histogram      map[string]int          `json:"histogram"`
 	Unsized        int                     `json:"unsized"`
 	Members        []SizeCompositionMember `json:"members"`
-	Skipped        []string                `json:"skipped,omitempty"`
+	Skipped        []string                `json:"skipped"`
 	RulesetVersion *string                 `json:"ruleset_version"`
 }
 
