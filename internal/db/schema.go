@@ -297,11 +297,14 @@ func EnsureSchema(db *sql.DB) error {
 		// columns filter directly and the trailing id supplies the ordering,
 		// avoiding the artifact_type-wide scan and temp b-tree sort the
 		// single-column idx_items_parent would otherwise incur (118-F / 0FA55F47).
-		// idx_items_parent is retained as the narrower index for pure
-		// parent_id-only lookups (e.g. the ListItems parent filter): EXPLAIN
-		// QUERY PLAN confirms the planner prefers idx_items_parent for a bare
-		// parent_id equality and this composite for the type-filtered rollup, so
-		// the narrow index is not redundant despite being a prefix of this one.
+		// idx_items_parent is RETAINED as a conservative default: for a bare
+		// parent_id-only lookup (e.g. the ListItems parent filter) the planner
+		// prefers the narrower single-column index while both indexes exist.
+		// That preference is not proof of non-redundancy — parent_id is this
+		// composite's leading column, so dropping idx_items_parent would fall
+		// back to this composite (still an index seek, just a wider b-tree), not
+		// a table scan. Deciding retain-vs-drop would need a benchmark plus a
+		// post-removal EXPLAIN QUERY PLAN; retention is the lower-risk default.
 		`CREATE INDEX IF NOT EXISTS idx_items_parent_type_id ON items(parent_id, artifact_type, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(sprint)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_hierarchy ON items(hierarchy_path)`,
