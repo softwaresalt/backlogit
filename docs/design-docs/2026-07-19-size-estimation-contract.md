@@ -181,10 +181,12 @@ stamps `human` because it represents a trusted human-authored mutation.
 * Validated-once: the size seam validates the value, source, and provenance
   completeness at mutation time. Downstream readers trust the persisted value and
   do not re-validate.
-* Best-effort freshness: composition is a point-in-time snapshot derived from the
-  index cache and may reflect slightly stale sizes or membership until the next
-  sync; it never fails the read and never persists a correction (see
-  Read-time freshness above).
+* Best-effort freshness: composition is a best-effort multi-read view derived from
+  the index cache. Two distinct effects apply: out-of-band index staleness (an edit
+  not yet rehydrated) is reconciled by the next sync, but the several reads that make
+  up one composition are not atomic, so concurrent writes can still yield a
+  mixed-snapshot rollup even immediately after a sync. It never fails the read and
+  never persists a correction (see Read-time freshness above).
 * Two-layer path containment guards artifact lookup: config-load rejects `..` and
   absolute paths in the root and search directories, and a realpath
   re-containment check runs at lookup so a symlink cannot escape the storage root.
