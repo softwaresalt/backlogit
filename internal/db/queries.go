@@ -235,15 +235,14 @@ func GetItemsByIDs(ctx context.Context, db *sql.DB, ids []string) (map[string]*m
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Run each chunk as an implicit (deferred) read against the pooled handle
-	// rather than wrapping the batch in an explicit BeginTx. db.Open configures
-	// _txlock=immediate (connection.go), so an explicit ReadOnly transaction would
-	// still acquire the write lock up front and serialize every composition read
-	// behind writers (up to the busy timeout), defeating WAL reader/writer
-	// concurrency. Implicit single-statement SELECTs use SQLite's deferred read
-	// locking and keep that concurrency. size_composition is a best-effort,
-	// computed-on-read rollup that already tolerates a staleness window, so
-	// cross-chunk snapshot atomicity is not required here.
+	// Each chunk is a bare autocommit SELECT on the pooled WAL connection; this
+	// path deliberately opens no explicit transaction. Each such SELECT runs in
+	// its own implicit read transaction, so under WAL it reads from a committed
+	// snapshot and neither takes the writer lock nor blocks concurrent writers.
+	// There is also no correctness need to wrap the chunks in one transaction:
+	// size_composition is a best-effort, computed-on-read rollup that already
+	// tolerates a staleness window, so cross-chunk snapshot atomicity is not
+	// required.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {
@@ -292,10 +291,10 @@ func GetTaskChildrenByParentIDs(ctx context.Context, db *sql.DB, parentIDs []str
 	}
 
 	const chunkSize = 900 // stay below SQLite's default 999 bound-parameter limit
-	// Each chunk runs as an implicit deferred read for the same WAL
-	// reader/writer concurrency reasoning documented on GetItemsByIDs; the
-	// rollup tolerates a staleness window so cross-chunk snapshot atomicity is
-	// not required.
+	// Each chunk is a bare autocommit SELECT (implicit read transaction) for the
+	// same WAL reader/writer concurrency reasoning documented on GetItemsByIDs;
+	// the rollup tolerates a staleness window so cross-chunk snapshot atomicity
+	// is not required.
 	for start := 0; start < len(unique); start += chunkSize {
 		end := start + chunkSize
 		if end > len(unique) {

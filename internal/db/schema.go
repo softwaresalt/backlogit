@@ -291,6 +291,18 @@ func EnsureSchema(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_type   ON items(artifact_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`,
+		// Composite index serving the batched task-children rollup query
+		// (GetTaskChildrenByParentIDs): parent_id IN (...) AND artifact_type='task'
+		// ORDER BY parent_id, id. The leading parent_id + artifact_type equality
+		// columns filter directly and the trailing id supplies the ordering,
+		// avoiding the artifact_type-wide scan and temp b-tree sort the
+		// single-column idx_items_parent would otherwise incur (118-F / 0FA55F47).
+		// idx_items_parent is retained as the narrower index for pure
+		// parent_id-only lookups (e.g. the ListItems parent filter): EXPLAIN
+		// QUERY PLAN confirms the planner prefers idx_items_parent for a bare
+		// parent_id equality and this composite for the type-filtered rollup, so
+		// the narrow index is not redundant despite being a prefix of this one.
+		`CREATE INDEX IF NOT EXISTS idx_items_parent_type_id ON items(parent_id, artifact_type, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(sprint)`,
 		`CREATE INDEX IF NOT EXISTS idx_items_hierarchy ON items(hierarchy_path)`,
 		`CREATE TABLE IF NOT EXISTS commit_links (
