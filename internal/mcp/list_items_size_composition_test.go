@@ -50,7 +50,10 @@ func TestListItemsExposesSizeComposition(t *testing.T) {
 		switch r["id"] {
 		case feature.ID:
 			foundFeature = true
-			assert.Contains(t, r, "size_composition", "feature list_items row must carry size_composition")
+			comp, ok := r["size_composition"].(map[string]any)
+			require.True(t, ok, "feature list_items row must carry size_composition; got: %s", text)
+			hist, _ := comp["histogram"].(map[string]any)
+			assert.EqualValues(t, 1, hist["L"], "list_items feature histogram L must match the canonical rollup")
 		case "970.001-T":
 			foundTask = true
 			_, hasComp := r["size_composition"]

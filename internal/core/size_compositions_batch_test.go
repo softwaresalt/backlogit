@@ -42,6 +42,11 @@ func setupBatchComposition(t *testing.T, root string) (f1, f2, ship, task *model
 	require.NoError(t, err)
 	tM, err := core.CreateArtifact(ctx, ws, "Task M", "task", core.WithParent(f1.ID))
 	require.NoError(t, err)
+	// tU is left unsized on purpose: an existing-but-unsized member must
+	// increment Unsized (never a histogram bucket) identically on the batched and
+	// per-artifact paths (117-F / A6A1B47E).
+	_, err = core.CreateArtifact(ctx, ws, "Task unsized", "task", core.WithParent(f1.ID))
+	require.NoError(t, err)
 	_, err = core.SetArtifactSize(ctx, ws, tL.ID, "L")
 	require.NoError(t, err)
 	_, err = core.SetArtifactSize(ctx, ws, tM.ID, "M")
@@ -54,7 +59,10 @@ func setupBatchComposition(t *testing.T, root string) (f1, f2, ship, task *model
 	_, err = core.SetArtifactSize(ctx, ws, tS.ID, "S")
 	require.NoError(t, err)
 
-	ship, err = core.CreateShipment(ctx, ws, "Batch shipment", []string{tL.ID, tM.ID})
+	// The shipment references two direct tasks plus a FEATURE (f2), which must be
+	// expanded into its child tasks and never counted itself. This exercises the
+	// shipment feature-expansion path on both rollup paths.
+	ship, err = core.CreateShipment(ctx, ws, "Batch shipment", []string{tL.ID, tM.ID, f2.ID})
 	require.NoError(t, err)
 
 	task = tL
@@ -104,4 +112,92 @@ func TestSizeCompositions_EmptyInput(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, comps)
 	assert.Empty(t, comps)
+}
+
+// TestSizeCompositions_ShipmentDanglingAndFeatureMember asserts the batched
+// rollup matches the per-artifact rollup for a shipment whose manifest mixes a
+// directly-listed task, a feature (expanded into its child tasks and never
+// counted itself), and a dangling id (warn-skipped: counted in neither the
+// histogram nor the unsized total, but surfaced under Skipped). The shipment is
+// upserted directly to bypass CreateShipment manifest validation so the
+// dangling-member semantics can be exercised on both paths (117-F / A6A1B47E;
+// ratified composition semantics).
+func TestSizeCompositions_ShipmentDanglingAndFeatureMember(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	initBatchWorkspace(t, root)
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	defer ws.Close()
+
+	featA, err := core.CreateArtifact(ctx, ws, "Expanded feature", "feature")
+	require.NoError(t, err)
+	childA, err := core.CreateArtifact(ctx, ws, "Child M", "task", core.WithParent(featA.ID))
+	require.NoError(t, err)
+	_, err = core.SetArtifactSize(ctx, ws, childA.ID, "M")
+	require.NoError(t, err)
+
+	featB, err := core.CreateArtifact(ctx, ws, "Direct owner", "feature")
+	require.NoError(t, err)
+	directTask, err := core.CreateArtifact(ctx, ws, "Direct S", "task", core.WithParent(featB.ID))
+	require.NoError(t, err)
+	_, err = core.SetArtifactSize(ctx, ws, directTask.ID, "S")
+	require.NoError(t, err)
+
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+	require.NoError(t, err)
+
+	ship := &models.Artifact{
+		ID:           "998-S",
+		Title:        "Dangling manifest shipment",
+		Status:       models.StatusActive,
+		ArtifactType: "shipment",
+		CustomFields: map[string]any{"items": []string{directTask.ID, featA.ID, "999.999-T"}},
+	}
+	require.NoError(t, db.UpsertItem(ctx, ws.DB, ship))
+
+	single, err := core.SizeComposition(ctx, ws, ship)
+	require.NoError(t, err)
+	comps, err := core.SizeCompositions(ctx, ws, []*models.Artifact{ship})
+	require.NoError(t, err)
+	require.Contains(t, comps, ship.ID)
+	assert.Equal(t, single, comps[ship.ID], "batched rollup must equal per-artifact for a dangling+feature manifest")
+
+	assert.EqualValues(t, 1, single.Histogram["S"], "directly-listed task S must be counted")
+	assert.EqualValues(t, 1, single.Histogram["M"], "expanded feature child M must be counted")
+	assert.Equal(t, 0, single.Unsized, "a dangling id must not increment unsized")
+	assert.Contains(t, single.Skipped, "999.999-T", "a dangling manifest id must be surfaced as skipped")
+}
+
+// TestQueueViewWithSizeComposition_DegradesOnRollupError asserts the shared queue
+// shaper returns the unprojected payload (rather than an error) when the rollup
+// batch fails, so the CLI `queue view --json` and MCP get_queue surfaces degrade
+// identically instead of aborting. This locks the consolidated degradation
+// contract that replaced the CLI abort / MCP degrade asymmetry (117-F review:
+// Arch-P1 + Go/Parity-P2).
+func TestQueueViewWithSizeComposition_DegradesOnRollupError(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	initBatchWorkspace(t, root)
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+
+	feat, err := core.CreateArtifact(ctx, ws, "Queue feature", "feature")
+	require.NoError(t, err)
+	view := &core.QueueView{Items: []*models.Artifact{feat}}
+
+	// Force a rollup failure by closing the DB the batched resolver queries; the
+	// in-memory view still marshals, so the shaper must degrade, not error.
+	require.NoError(t, ws.Close())
+
+	payload, err := core.QueueViewWithSizeComposition(ctx, ws, view)
+	require.NoError(t, err, "queue shaper must degrade gracefully, not error, on rollup failure")
+	require.NotNil(t, payload)
+	items, ok := payload["items"].([]any)
+	require.True(t, ok, "degraded payload must still carry the queue items")
+	require.Len(t, items, 1)
+	im, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	_, hasComp := im[core.SizeCompositionKey]
+	assert.False(t, hasComp, "on rollup failure the aggregate must be left unprojected")
 }

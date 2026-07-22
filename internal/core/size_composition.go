@@ -474,3 +474,53 @@ func ListWithSizeComposition(ctx context.Context, ws *Workspace, artifacts []*mo
 	}
 	return out
 }
+
+// QueueViewWithSizeComposition marshals a queue view into a generic map and
+// projects the computed-on-read size_composition rollup onto every aggregate
+// (feature/shipment) item, in both the flat item list and any grouped items.
+// The rollups for every aggregate across the flat list and all groups are
+// computed exactly once via SizeCompositions and projected from that shared map,
+// so a feature that appears in both the flat list and a group is not recomputed
+// (117-F / A6A1B47E). On a rollup batch error it warns and returns the
+// unprojected payload so the queue surface degrades rather than failing; it
+// returns an error only when the view itself cannot be marshaled. It is shared
+// by the CLI `queue view --json` and MCP get_queue read surfaces so the two
+// transports cannot drift on either the projection or the degradation behavior
+// (114-F / 387DE4BF; 117-F / A6A1B47E).
+func QueueViewWithSizeComposition(ctx context.Context, ws *Workspace, view *QueueView) (map[string]any, error) {
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("marshal queue view: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("unmarshal queue view: %w", err)
+	}
+
+	union := make([]*models.Artifact, 0, len(view.Items))
+	union = append(union, view.Items...)
+	for _, g := range view.Groups {
+		union = append(union, g.Items...)
+	}
+	comps, err := SizeCompositions(ctx, ws, union)
+	if err != nil {
+		slog.WarnContext(ctx, "size composition: queue left without rollups", "error", err)
+		return payload, nil
+	}
+
+	if items, ok := payload["items"].([]any); ok {
+		InjectSizeCompositionFromMap(view.Items, items, comps)
+	}
+	if groups, ok := payload["groups"].([]any); ok {
+		for gi, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok || gi >= len(view.Groups) {
+				continue
+			}
+			if gitems, ok := gm["items"].([]any); ok {
+				InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
+			}
+		}
+	}
+	return payload, nil
+}

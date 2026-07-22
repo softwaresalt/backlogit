@@ -67,18 +67,32 @@ func formatCompositionSummary(c *core.SizeCompositionResult) string {
 	return strings.Join(parts, " ")
 }
 
+// batchCompositions computes the size_composition rollups for every aggregate
+// (feature/shipment) in artifacts exactly once, removing the per-row N+1 that a
+// per-artifact rollup would otherwise incur on the human list/queue table, tile,
+// and grouped renders (117-F / A6A1B47E). On a batch failure it warns and returns
+// nil so the human surfaces degrade to size-only rows rather than aborting.
+func batchCompositions(ctx context.Context, ws *core.Workspace, artifacts []*models.Artifact) map[string]*core.SizeCompositionResult {
+	comps, err := core.SizeCompositions(ctx, ws, artifacts)
+	if err != nil {
+		slog.WarnContext(ctx, "list: size compositions batch failed; rows left without composition", "error", err)
+		return nil
+	}
+	return comps
+}
+
 // artifactSizeAndComposition returns the stored per-artifact size and, for
 // aggregate types (feature/shipment), the computed-on-read one-line composition
-// summary. It centralizes the read-only rollup derivation shared by the
-// ungrouped table/tile rows and the grouped human view so the human list
-// surfaces cannot drift on composition parity (114-F). Derivation is read-only
-// and warn-skips on error so a rollup failure never aborts the listing.
-func artifactSizeAndComposition(ctx context.Context, ws *core.Workspace, a *models.Artifact) (size, composition string) {
+// summary projected from the precomputed batch map. It centralizes the read-only
+// projection shared by the ungrouped table/tile rows and the grouped human view
+// so the human list surfaces cannot drift on composition parity (114-F), and it
+// reads from the shared batch (built once via batchCompositions) so those renders
+// incur no per-row N+1 (117-F / A6A1B47E). A missing or nil entry yields an empty
+// composition, matching the warn-skip degradation of the batch build.
+func artifactSizeAndComposition(a *models.Artifact, comps map[string]*core.SizeCompositionResult) (size, composition string) {
 	size, _ = a.CustomFields["size"].(string)
 	if core.IsSizeCompositionAggregate(a.ArtifactType) {
-		if result, err := core.SizeComposition(ctx, ws, a); err != nil {
-			slog.WarnContext(ctx, "list: skipping size composition summary", "artifact_id", a.ID, "error", err)
-		} else {
+		if result, ok := comps[a.ID]; ok && result != nil {
 			composition = formatCompositionSummary(result)
 		}
 	}
@@ -88,13 +102,15 @@ func artifactSizeAndComposition(ctx context.Context, ws *core.Workspace, a *mode
 // artifactsToRows converts a slice of artifacts to the row maps consumed by format.Renderer.
 // It projects the stored per-artifact size and, for aggregate types
 // (feature/shipment), a computed-on-read composition summary — keeping the human
-// table/tile surfaces at parity with the JSON read surfaces (114-F). Composition
-// derivation is read-only and warn-skips on error so a rollup failure never
-// aborts the listing.
+// table/tile surfaces at parity with the JSON read surfaces (114-F). The rollups
+// for every aggregate are computed once via batchCompositions so the render incurs
+// no per-row N+1, and derivation is read-only and warn-skips on error so a rollup
+// failure never aborts the listing (117-F / A6A1B47E).
 func artifactsToRows(ctx context.Context, ws *core.Workspace, artifacts []*models.Artifact) []map[string]any {
+	comps := batchCompositions(ctx, ws, artifacts)
 	rows := make([]map[string]any, len(artifacts))
 	for i, a := range artifacts {
-		size, composition := artifactSizeAndComposition(ctx, ws, a)
+		size, composition := artifactSizeAndComposition(a, comps)
 		rows[i] = map[string]any{
 			"id":          a.ID,
 			"title":       a.Title,
@@ -206,9 +222,10 @@ that can be piped into other tooling.`,
 			}
 
 			if groupBy != "" {
+				comps := batchCompositions(ctx, ws, artifacts)
 				items := make([]ListItem, len(artifacts))
 				for i, a := range artifacts {
-					size, composition := artifactSizeAndComposition(ctx, ws, a)
+					size, composition := artifactSizeAndComposition(a, comps)
 					items[i] = ListItem{
 						ID:          a.ID,
 						Title:       a.Title,

@@ -10,7 +10,6 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/core"
-	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 const defaultQueueSort = "priority"
@@ -90,10 +89,12 @@ priority as the secondary sort after any manually assigned queue positions.`,
 			case format.FormatTable, format.FormatTile:
 				return newRenderer(effectiveFormat, cmd.OutOrStdout()).Render(cmd.OutOrStdout(), artifactColumns, artifactsToRows(ctx, ws, view.Items))
 			default: // json
-				// 114-F / 387DE4BF: project the never-persisted size_composition
-				// rollup onto each aggregate queue item, at parity with MCP
-				// get_queue.
-				payload, err := queueViewJSON(ctx, ws, view)
+				// Route through the shared core shaper so `queue view --json`
+				// projects the computed-on-read size_composition rollup onto each
+				// aggregate at parity with MCP get_queue, and degrades to an
+				// unprojected payload on rollup error rather than aborting
+				// (114-F / 387DE4BF; 117-F / A6A1B47E).
+				payload, err := core.QueueViewWithSizeComposition(ctx, ws, view)
 				if err != nil {
 					return err
 				}
@@ -109,51 +110,6 @@ priority as the secondary sort after any manually assigned queue positions.`,
 	cmd.Flags().StringVar(&sortBy, "sort", "priority", "sort by field")
 	cmd.Flags().StringVar(&formatOutput, "format", "table", "output format: table, json, tile")
 	return cmd
-}
-
-// queueViewJSON marshals a queue view into a generic map and injects the
-// computed-on-read size_composition rollup into each aggregate (feature/shipment)
-// item, in both the flat item list and any grouped items. The rollups for every
-// aggregate across the flat list and all groups are computed exactly once via
-// core.SizeCompositions and projected from that shared map, so a feature that
-// appears in both the flat list and a group is not recomputed. It shares the
-// core shapers with MCP get_queue so the two transports cannot drift on the
-// projection (114-F / 387DE4BF; 117-F / A6A1B47E).
-func queueViewJSON(ctx context.Context, ws *core.Workspace, view *core.QueueView) (map[string]any, error) {
-	raw, err := json.Marshal(view)
-	if err != nil {
-		return nil, fmt.Errorf("marshal queue view: %w", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal queue view: %w", err)
-	}
-
-	union := make([]*models.Artifact, 0, len(view.Items))
-	union = append(union, view.Items...)
-	for _, g := range view.Groups {
-		union = append(union, g.Items...)
-	}
-	comps, err := core.SizeCompositions(ctx, ws, union)
-	if err != nil {
-		return nil, fmt.Errorf("size compositions for queue: %w", err)
-	}
-
-	if items, ok := payload["items"].([]any); ok {
-		core.InjectSizeCompositionFromMap(view.Items, items, comps)
-	}
-	if groups, ok := payload["groups"].([]any); ok {
-		for gi, g := range groups {
-			gm, ok := g.(map[string]any)
-			if !ok || gi >= len(view.Groups) {
-				continue
-			}
-			if gitems, ok := gm["items"].([]any); ok {
-				core.InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
-			}
-		}
-	}
-	return payload, nil
 }
 
 // NewQueueMoveCmd creates `backlogit queue move <item-id> --position <N>`.

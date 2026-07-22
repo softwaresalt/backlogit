@@ -76,7 +76,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_list_items",
-			mcplib.WithDescription("List artifacts with optional filters"),
+			mcplib.WithDescription("List artifacts with optional filters. Feature and shipment items include a computed-on-read size_composition rollup (size histogram, unsized count, and de-duplicated members)."),
 			mcplib.WithString("type", mcplib.Description("Filter by artifact type")),
 			mcplib.WithString("status", mcplib.Description("Filter by status")),
 			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
@@ -1371,57 +1371,14 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 	}
 	// SE-6: project the never-persisted size_composition rollup onto feature and
 	// shipment queue items so agents can read aggregates inline. Nothing is
-	// persisted; non-aggregate items and the CLI queue shaper are left untouched.
-	projected, pErr := s.queueViewWithSizeComposition(ctx, view)
+	// persisted; non-aggregate items are left untouched. Shares the core shaper
+	// with the CLI `queue view --json` surface so the two cannot drift.
+	projected, pErr := core.QueueViewWithSizeComposition(ctx, s.Workspace, view)
 	if pErr != nil {
 		slog.WarnContext(ctx, "get_queue: size composition projection failed; returning plain queue", "error", pErr)
 		return toolResultJSON(view)
 	}
 	return toolResultJSON(projected)
-}
-
-// queueViewWithSizeComposition marshals a queue view into a generic map and attaches
-// a computed-on-read size_composition rollup to each feature/shipment item, in both
-// the flat items list and any grouped items, preserving order (108-F SE-6). The
-// rollups for every aggregate across the flat list and all groups are computed
-// exactly once via core.SizeCompositions and then projected from that shared map,
-// so a feature that appears in both the flat list and a group is not recomputed
-// (117-F / A6A1B47E).
-func (s *Server) queueViewWithSizeComposition(ctx context.Context, view *core.QueueView) (any, error) {
-	raw, err := json.Marshal(view)
-	if err != nil {
-		return nil, fmt.Errorf("marshal queue view: %w", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal queue view: %w", err)
-	}
-
-	union := make([]*models.Artifact, 0, len(view.Items))
-	union = append(union, view.Items...)
-	for _, g := range view.Groups {
-		union = append(union, g.Items...)
-	}
-	comps, err := core.SizeCompositions(ctx, s.Workspace, union)
-	if err != nil {
-		return nil, fmt.Errorf("size compositions for queue: %w", err)
-	}
-
-	if items, ok := payload["items"].([]any); ok {
-		core.InjectSizeCompositionFromMap(view.Items, items, comps)
-	}
-	if groups, ok := payload["groups"].([]any); ok {
-		for gi, g := range groups {
-			gm, ok := g.(map[string]any)
-			if !ok || gi >= len(view.Groups) {
-				continue
-			}
-			if gitems, ok := gm["items"].([]any); ok {
-				core.InjectSizeCompositionFromMap(view.Groups[gi].Items, gitems, comps)
-			}
-		}
-	}
-	return payload, nil
 }
 
 func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
