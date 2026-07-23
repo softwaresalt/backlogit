@@ -321,13 +321,30 @@ first design gates.
 
 ### RELEASE-GATING VERDICT (v1.7.0)
 
-**Do NOT hold v1.7.0. No release blocker.** The currently-merged 108.x size feature
-has **no known** crash-window data-loss, corruption, or incorrect-size defect. Under
-the shipped model a crash at worst leaves an **orphan `estimate_history` audit event
-that is ignored on read**, while the durable `custom_fields.size` field remains
-authoritative and correct. This is a **future enhancement gated on a non-existent
-product requirement, not a correctness gap**. Exactly-once crash-window mutation can
-ship in a later release if and when it is actually required.
+**Do NOT hold v1.7.0. No NEW release blocker introduced by this work.** Scope of
+this verdict: the **exactly-once size-*value* question**. On that axis the
+currently-merged 108.x size feature has **no known incorrect-size or
+size-value-corruption defect** — a crash at worst leaves an **orphan
+`estimate_history` audit event that is ignored on read**, while the durable
+`custom_fields.size` field remains authoritative and correct. Exactly-once is a
+**future enhancement gated on a non-existent product requirement, not a
+correctness gap**, and can ship later if actually required.
+
+**Accuracy correction — a separate, pre-existing Windows data-loss window DOES
+exist (do not over-claim "no data loss").** The shared `atomicfile.WriteFileAtomic`
+removes the destination before retrying the rename on Windows
+(`internal/atomicfile/atomicfile.go:52-60`): a process crash between the
+`os.Remove(path)` and the successful retry can leave the canonical artifact
+**missing**. `SetArtifactSizeWithProvenance` calls `WriteFileAtomic` directly, so
+this affects the size seam and every canonical write. This is **pre-existing
+shared-writer behavior, NOT introduced or worsened by v1.7.0 or the 053-DL MCP
+change**, so v1.7.0 is no riskier than v1.6.0 on this axis and remains
+**unblocked** — but the "no crash-window data-loss defect" phrasing is corrected:
+the durable size *value* is safe from *this* spike's exactly-once concern, while
+the atomicfile Windows remove-before-rename data-loss window is a real,
+pre-existing defect tracked separately by feature **`123-F` (raised to priority
+medium)**, whose scope now explicitly includes replacing that fallback with a
+Windows atomic-replace / fail-closed strategy.
 
 ## Next Steps
 
@@ -345,7 +362,7 @@ ship in a later release if and when it is actually required.
 
 ## References
 
-* `.backlogit/queue/121-F.md` — this spike's parent work item and deferral text.
+* `.backlogit/archive/121-F.md` — this spike's parent work item and deferral text.
 * `docs/design-docs/2026-07-19-size-estimation-contract.md:89-106` — shipped audit
   durability policy (durable-field-as-truth; exactly-once explicitly out of scope).
 * `docs/exec-plans/2026-07-18-108-F-size-estimation-impl-plan.md:1012-1048` — Option B2

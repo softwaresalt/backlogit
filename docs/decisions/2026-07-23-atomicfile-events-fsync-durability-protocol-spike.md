@@ -296,26 +296,51 @@ Apply this pre-commit-vs-post-commit distinction on the critical single-item
 mutation paths (size seam, status transitions); bulk regeneration may stay
 best-effort.
 
-**Release-gating verdict (v1.7.0): DO NOT hold the release.** The sync-free
-behavior is a **pre-existing, documented durability *limitation* shared by the
-entire repo write path**, not a *defect* introduced by the size feature:
+**Release-gating verdict (v1.7.0): DO NOT hold the release — but a real,
+pre-existing Windows data-loss window DOES exist.** Correction to earlier framing:
+this is **not merely an OS-crash/power-loss durability limitation**. The shared
+`atomicfile.WriteFileAtomic` itself has a **known, pre-existing Windows
+process-crash data-loss window**: on a Windows `os.Rename` failure it
+`os.Remove(path)` and then retries the rename
+(`internal/atomicfile/atomicfile.go:52-60`). A process crash — or a second rename
+failure — **between the remove and the successful retry leaves the canonical
+artifact MISSING**. `SetArtifactSizeWithProvenance` calls `WriteFileAtomic`
+directly (`internal/core/artifact_size.go:165`), so the size seam and **every
+canonical artifact write** inherit this window. The earlier claims that there is
+"no crash-window data-loss defect" or "only an OS-crash durability limitation" are
+**inaccurate and are corrected here**.
+
+The release verdict is unchanged but **re-grounded on the correct reason**: this
+window is **pre-existing shared-writer behavior** (present since the Windows
+remove-before-rename fallback was added) and is **NOT introduced or worsened by
+v1.7.0 or the 053-DL MCP `list_items` change** (which does not touch `atomicfile`
+at all). v1.7.0 is therefore **no riskier than v1.6.0 on this axis**, so it should
+**not block v1.7.0** — for the corrected reason (pre-existing + unchanged), not
+because "no defect exists":
 
 * The sync-free design predates 108-F and is deliberate and documented
-  (`atomicfile/doc.go:36-42`).
+  (`atomicfile/doc.go:36-42`); the Windows remove-before-rename fallback is
+  likewise pre-existing shared behavior.
 * 108-F's own shipped contract explicitly declares the seam "process-crash-safe
   only" with OS-level crash handling "out of scope"
   (`size-estimation-contract.md:104-106`).
-* The size seam adds **no new** corruption vector: its event stream is advisory,
-  the durable frontmatter value is the single source of truth, and orphan
-  crash-residue events are already ignored on read
-  (`size-estimation-contract.md:97-103`).
+* The size seam adds **no new** corruption vector *beyond this shared pre-existing
+  window*: its event stream is advisory, the durable frontmatter value is the
+  single source of truth, and orphan crash-residue events are already ignored on
+  read (`size-estimation-contract.md:97-103`).
 * Recovery for a lost `.backlogit/` write is git (Principle IX; the workspace is
-  git-tracked), consistent with the atomicfile durability rationale.
+  git-tracked), consistent with the atomicfile durability rationale — but git
+  recovery is a mitigation, not a substitute for fixing the write path.
 
-The size feature is **safe to ship as-is** provided the OS-crash limitation stays
-documented (it already is). This spike is the follow-up already promised in
-099-S / Copilot G3, and it should be scheduled as an independent, de-prioritized
-(120-F priority: low) release unit.
+The size feature is **safe to ship as-is** for v1.7.0 provided the follow-up is
+scheduled. Because the Windows remove-before-rename fallback is a **real data-loss
+window (not just durability polish)**, the follow-up feature **`123-F` is raised
+from priority low to priority medium**, and its scope MUST explicitly include
+**replacing the Windows remove-before-rename fallback in
+`atomicfile.WriteFileAtomic` with a real Windows atomic replace
+(`ReplaceFile`/`MoveFileEx`-style) or a fail-closed strategy for canonical
+writes** that never leaves the destination missing. This spike is the follow-up
+already promised in 099-S / Copilot G3.
 
 ## Next Steps
 
@@ -369,7 +394,7 @@ Prior work:
   shared writers).
 * `docs/exec-plans/2026-04-22-write-durability-hook-reliability-plan.md` — 040-F
   plan.
-* `.backlogit/queue/120-F.md` — this spike's work item and routing note.
+* `.backlogit/archive/120-F.md` — this spike's work item and routing note.
 
 External (Windows directory fsync):
 

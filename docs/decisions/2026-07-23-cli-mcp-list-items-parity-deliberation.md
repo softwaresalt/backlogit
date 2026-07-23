@@ -11,7 +11,7 @@ decision_status: decided
 promoted_to: plan
 linked_artifacts:
   - "docs/exec-plans/2026-07-23-mcp-list-items-parity-plan.md"
-  - ".backlogit/queue/053-DL.md"
+  - ".backlogit/archive/053-DL.md"
 tags:
   - "mcp"
   - "cli-mcp-parity"

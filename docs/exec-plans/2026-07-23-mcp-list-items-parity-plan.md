@@ -62,21 +62,25 @@ MCP request contract. Closing it brings MCP to parity with the CLI.
   4. **Parity-lock test (regression guard) — correct seam:** the test lives in
      **`internal/cli`**, which is the correct dependency direction — `internal/cli`
      **already imports** `internal/mcp`, so there is **no import cycle** and **no
-     new exported API is needed**. The test inspects the real `newListCommand`
-     flag set directly (same package), normalizes the CLI kebab-case flag names to
-     snake_case (replace `-` with `_`, e.g. `assigned-to` → `assigned_to`), and
-     compares that set against the `backlogit_list_items` parameter names extracted
-     from the **existing** `(*mcp.Server).ToolDefs()` accessor
+     new exported API is needed**. `newListCommand` (`internal/cli/list.go:248-256`)
+     declares **nine** local flags: **six filter flags** (`type`, `status`,
+     `priority`, `assigned-to`, `owner`, `sprint`) plus **three output-only flags**
+     (`group-by`, `json`, `format`) that have **no** MCP request-param equivalent.
+     A naive all-flags set-equality would therefore fail permanently. The test MUST
+     derive the CLI **filter** set = *all* `newListCommand` flags **MINUS** a
+     documented **output-only denylist** `{group-by, json, format}`, then normalize
+     kebab-case to snake_case (replace `-` with `_`, e.g. `assigned-to` →
+     `assigned_to`) and assert that set equals the `backlogit_list_items` parameter
+     names extracted from the **existing** `(*mcp.Server).ToolDefs()` accessor
      (`internal/mcp/server.go:101-106`), which already returns the registered tool
-     definitions including param schemas. The canonical (snake_case) filter
-     contract is: `type`, `status`, `assigned_to`, `sprint`, `priority`, `owner`.
-     Deriving the CLI side from the live `newListCommand` flags (rather than a
-     hard-coded constant list) is what makes this real drift protection: a future
-     CLI-only filter addition FAILS the test instead of silently re-diverging — the
-     "close the gap AND lock it with a drift test" idiom from the compound learnings
-     above. Confirm the priority/owner reads exist on both surfaces (both-surfaces
-     checklist). No new `internal/mcp` accessor is created (planning only here — no
-     Go is written in this Stage step).
+     definitions including param schemas. Using a **denylist of output flags** (not
+     an allowlist of filters) preserves drift protection: a **future CLI-only
+     *filter* flag** automatically enters the derived set and **fails the test**
+     unless MCP also gains it — whereas an allowlist would silently ignore new
+     filters. The canonical (snake_case) filter contract is: `type`, `status`,
+     `assigned_to`, `sprint`, `priority`, `owner`. Confirm the priority/owner reads
+     exist on both surfaces (both-surfaces checklist). No new `internal/mcp`
+     accessor is created (planning only here — no Go is written in this Stage step).
   5. **Docs/drift:** regenerate any generated MCP tool-reference doc and confirm
      docline frontmatter validity, so the "CLI Reference Drift" and "Docline
      frontmatter gate" CI jobs stay green. (Ship regenerates during build; call
@@ -179,8 +183,9 @@ Requires plan hardening: no
 
 ## Verification
 
-* `go test ./internal/mcp/...` — new MCP-handler test AND CLI/MCP filter-set
-  parity-lock test pass (both were red).
+* `go test ./internal/mcp/... ./internal/cli/...` — new MCP-handler test (under
+  `internal/mcp`) AND the CLI/MCP filter-set parity-lock test (under
+  `internal/cli`) pass (both were red).
 * `go build ./cmd/backlogit` — builds.
 * `go vet ./...`, `golangci-lint run`, `gofmt -l .` — clean.
 * CI gates: "CLI Reference Drift" and "Docline frontmatter gate" green after any
