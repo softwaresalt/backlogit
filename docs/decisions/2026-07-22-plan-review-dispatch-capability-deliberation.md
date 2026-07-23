@@ -209,7 +209,10 @@ Concretely, amend `.github/skills/plan-review/SKILL.md` to:
    multi-agent-dispatch` or `dispatch_mode: single-agent-declared-degradation`
    plus, in the degraded case, a `TOOL_DEGRADED: reviewer-subagent-dispatch —
    single-agent persona pass` line. A silently skipped gate (no dispatch_mode
-   record) remains a P-012 declared-degradation-principle violation.
+   record) remains a plan-review gate-integrity (contract) violation. Because
+   P-012's mechanism does not yet model sub-agent dispatch, this is surfaced as a
+   local plan-review contract violation rather than a `POLICY_VIOLATION: P-012`
+   P-005 event, until P-012 is generalized to capabilities (see follow-up).
 4. **Enforce full-coverage terminal states**: a `multi-agent-dispatch` result is
    valid only when every selected persona completes; a mid-gate dispatch failure
    forces a complete sequential rubric pass emitting
@@ -217,8 +220,12 @@ Concretely, amend `.github/skills/plan-review/SKILL.md` to:
    complete rubric pass can run, halt with `TOOL_UNAVAILABLE` rather than deciding
    on partial coverage.
 
-This makes the gate **satisfiable and never silently skipped in any
-environment**, resolving `8CD8F46A`.
+This makes the **plan-review gate itself** satisfiable in every environment and
+self-declaring — it can no longer silently skip its own dispatch step — which
+establishes the persona-dispatch path and declared fallback that `8CD8F46A` asks
+for. End-to-end enforcement that a plan can never *reach* `harvest` without a
+valid review record (tightening Stage `skip_review` and `harvest` acceptance) is
+out of scope here and tracked as the end-to-end enforcement follow-up.
 
 ## Rejected Alternatives
 

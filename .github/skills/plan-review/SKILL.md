@@ -80,8 +80,11 @@ If cross-model invocation is not available, run all personas with the caller's m
 Reviewer personas are normally dispatched as independent sub-agents. Sub-agent
 dispatch capability varies by environment (available via the Copilot CLI `task`
 tool and VS Code Copilot agents; absent in some others). This gate is
-**capability-aware** so it is satisfiable in every environment and is never
-silently skipped.
+**capability-aware** so it is satisfiable in every environment and never silently
+skips its own dispatch step. (Enforcing that a plan can never *reach* `harvest`
+without a valid review record — tightening Stage `skip_review` and `harvest`
+acceptance — is a separate downstream concern; see the decision artifact's
+end-to-end enforcement follow-up.)
 
 **Relationship to P-012.** P-012 ("Tool Availability and Declared Degradation",
 `.github/policies/workflow-policies.md`) governs *backlog-registry* tools and
@@ -93,12 +96,23 @@ never fall back silently — to sub-agent dispatch, and defines the permitted
 fallback and terminal states locally. Formalizing this as an explicit P-012
 capability clause is a recommended follow-up (see the decision artifact).
 
-**Persona → definition manifest.** Both dispatch modes resolve the same persona
-definitions. All personas live under `.github/agents/review/` **except** the
-Learnings Researcher, whose definition is
-`.github/agents/research/learnings-researcher.agent.md`. Use this single manifest
-for both real dispatch and the sequential rubric pass so no required lens is
-dropped.
+**Persona → definition manifest.** Both dispatch modes resolve the **same**
+persona definitions from these exact paths, so the degraded rubric pass and real
+dispatch load identical rubrics (display names do not always match filenames —
+e.g. *Go Reviewer* is `go-quality-reviewer.agent.md`):
+
+| Persona | Definition file | Trigger |
+|---|---|---|
+| Constitution Reviewer | `.github/agents/review/constitution-reviewer.agent.md` | always-on |
+| Go Reviewer | `.github/agents/review/go-quality-reviewer.agent.md` | always-on |
+| Scope Boundary Auditor | `.github/agents/review/scope-boundary-auditor.agent.md` | always-on |
+| Learnings Researcher | `.github/agents/research/learnings-researcher.agent.md` | always-on |
+| Architecture Strategist | `.github/agents/review/architecture-strategist.agent.md` | cross-model, always triggered |
+| Agent-Native Parity Reviewer | `.github/agents/review/agent-native-parity-reviewer.agent.md` | cross-model, when the plan exposes MCP tools / agent-facing actions / parity-sensitive workflows |
+| Security Lens Reviewer | `.github/agents/review/security-lens-reviewer.agent.md` | cross-model, when the plan touches auth/authz, API surfaces, sensitive data stores, external integrations, or secrets |
+
+Use this manifest for both real dispatch and the sequential rubric pass so no
+required lens is dropped.
 
 **Probe.** Before spawning any reviewer (at the start of Step 2, before the plan
 is dispatched to personas), determine whether sub-agent dispatch is available and
@@ -134,9 +148,14 @@ Rules:
   a stronger degradation than the "multi-model preferred but not blocking" axis —
   so the `dispatch_mode` record makes that fidelity level explicit.
 * **Silently skipping the gate — issuing a gate decision with no `dispatch_mode`
-  record — is a policy violation** of P-012's declared-degradation principle (log
-  `POLICY_VIOLATION: P-012` via P-005 telemetry). The honesty of the degradation
-  record is the gate's integrity guarantee.
+  record — is a plan-review gate-integrity violation**: the gate FAILs and the
+  omission is surfaced explicitly. Because P-012's *mechanism* does not yet model
+  sub-agent dispatch, do **not** emit a `POLICY_VIOLATION: P-012` / P-005 event
+  for this today — that would be inaccurate telemetry. Classify it as a **local
+  plan-review contract violation**. Once P-012 is generalized to capabilities
+  (recommended follow-up), a missing `dispatch_mode` can be reclassified as a
+  P-012 declared-degradation violation. The honesty of the degradation record is
+  the gate's integrity guarantee.
 * P0/P1 blocking semantics are identical in both modes.
 
 ## Workflow
@@ -209,7 +228,7 @@ Append a `## Plan Review` section to the plan file with:
   `single-agent-declared-degradation`) and, in the degraded case, the
   `TOOL_DEGRADED: reviewer-subagent-dispatch` declaration (P-012
   declared-degradation principle). A gate decision recorded with no
-  `dispatch_mode` is a policy violation.
+  `dispatch_mode` is a plan-review gate-integrity (contract) violation.
 * Gate decision and rationale
 * Whether plan hardening was required and whether that requirement was satisfied
 * All findings organized by severity
