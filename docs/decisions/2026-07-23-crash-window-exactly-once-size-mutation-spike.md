@@ -149,13 +149,19 @@ none and no caller carries one") is **verified true**.
   **There is no sequence number, no monotonic counter, and no OpID / `PrevOpID`
   causal-chain key.**
 * `AppendEvent` (`internal/events/stream.go:43-67`) appends one JSON line per event
-  under a mutex; `ReadAllEvents` (`internal/events/reader.go:26-55`) returns events
+  guarded by a **per-`EventWriter`-instance mutex** (`internal/events/stream.go:26-34`);
+  `ReadAllEvents` (`internal/events/reader.go:26-55`) returns events
   in **file append order only** — no sort by timestamp, no de-dup, no causal
   reconstruction.
 * Consequently:
-  * Within one process, append order is a deterministic total order of a single
-    file — but that is *insertion* order, not a *causal* order that identifies which
-    orphan reflects the intended final durable state.
+  * The per-instance lock only serializes appends made through **one shared writer
+    instance**. Core paths construct a **fresh `EventWriter` per append** (e.g.
+    `appendItemEventWithActorErr`, `internal/core/gate_evidence.go:48-61`), so
+    concurrent in-process appends are **NOT serialized** by this lock and there is
+    **no process-wide, deterministic append order**. The on-disk order is whatever
+    the OS interleaves; even within a single writer the recorded order is
+    *insertion* order, not a *causal* order that identifies which orphan reflects
+    the intended final durable state.
   * Wall-clock `Timestamp` is non-monotonic (clock skew/adjustment) and can collide
     at equal values, so it cannot serve as a reliable tie-breaking total order across
     a crash window.
@@ -221,12 +227,17 @@ orphan-ignored-read**:
 In every crash position the durable field is authoritative and internally consistent.
 The only thing the system does **not** provide is automatic *replay* of an
 un-committed intended mutation — i.e., a client that crashed mid-mutation must
-**re-issue** the mutation (which is naturally idempotent: re-setting the same size
-yields the same durable state, per `TestSetArtifactSize_Idempotent`,
-`internal/core/artifact_size_test.go:146`). That is a *retry-visibility* property, not
-a *correctness* property. Size estimation is an advisory planning signal, not
-transactional financial state, so at-least-once-with-idempotent-retry is the
-appropriate and sufficient semantics.
+**re-issue** the mutation. That re-issue is **state-idempotent** (re-setting the
+same size converges to the same durable size/bytes value, per
+`TestSetArtifactSize_Idempotent`, `internal/core/artifact_size_test.go:146`) **but
+produces at-least-once audit records**: `SetArtifactSizeWithProvenance` appends an
+`estimate_history` entry before **every** write, including a same-size retry
+(`internal/core/artifact_size.go:124-139`), so a retry **duplicates** the
+`estimate_history` audit record. The durable *state* is safe; only the audit trail
+is at-least-once. That is a *retry-visibility* property, not a *correctness*
+property. Size estimation is an advisory planning signal, not
+transactional financial state, so **state-idempotent-with-at-least-once-audit** is
+the appropriate and sufficient semantics.
 
 ### Feasibility: achievable, but it is a multi-part build with real risk
 

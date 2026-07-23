@@ -138,7 +138,16 @@ not just the size seam.
 
 *Append writer (`AppendEvent`):* `OpenFile(O_APPEND|O_CREATE|O_WRONLY)` -> write
 (retain the short-write guard already present in `writeAll`/`syncAppendLine`) ->
-**`f.Sync()`** -> `Close`, surfacing any sync error fail-closed. **Critical
+**`f.Sync()`** -> `Close`. **Append-path failure classes (same pre-commit vs
+post-commit / indeterminate contract defined for the atomic writer below):** the
+successful `Write` is the commit point — after it returns, the appended line may
+already be visible and even durable, so a subsequent `f.Sync()`/`Close()` error is
+**post-commit (indeterminate / possibly-applied)**, NOT safe-retryable. Only
+failures **before** a successful `Write` (open, or a short/failed write that wrote
+nothing) are **pre-commit** and safe to retry. A blind retry after a successful
+`Write` can append a **duplicate event**; callers MUST NOT blindly retry a
+post-`Write` failure — treat it as at-least-once and reconcile on next open rather
+than re-appending. **Critical
 first-create correction:** `AppendEvent` first runs `os.MkdirAll(logsDir)`
 (`internal/events/stream.go:56`) and opens each per-item log with `O_CREATE`
 (`:60`), so the **first** append to a not-yet-existing log creates a **new
