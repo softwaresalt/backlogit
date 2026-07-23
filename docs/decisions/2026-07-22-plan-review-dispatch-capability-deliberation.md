@@ -22,8 +22,6 @@ tags:
   - "portability"
 ---
 
-# Plan-review Dispatch Capability — Deliberation and Decision
-
 ## Problem Frame
 
 The Stage pipeline orders `impl-plan → plan-harden → plan-review → harvest`
@@ -69,9 +67,10 @@ silently skipped.**
 
 ### Out of scope
 
-- Retroactively re-running plan-review for the already-shipped 091-S/092-S/093-S
-  (their honest self-assessments are legitimized retroactively by this decision;
-  see Risks).
+- Retroactively re-running plan-review for the already-shipped 091-S/092-S/093-S.
+  This decision does **not** reclassify their honest self-assessments as passed
+  plan-review gates; it grants a one-time, explicitly-scoped **pre-policy
+  grandfather exception** that preserves their nonconformant status (see Risks).
 - Building a per-plan waiver/reservation/session contract (already rejected —
   see Research).
 - Writing to the external autoharness template repository (Principle IV
@@ -84,13 +83,20 @@ silently skipped.**
 `plan-review` before `harvest`; the deprecated-agents table records that
 plan-review "dispatches persona subagents from `.github/agents/review/`".
 
-**No policy waives the formal persona gate.** `.github/policies/workflow-policies.md`
+**P-012 is the principle anchor, not the mechanism.** `.github/policies/workflow-policies.md`
 has no policy authorizing a skip when persona sub-agents cannot be dispatched.
 The nearest governing policy is **P-012 (Tool Availability and Declared
 Degradation)**: "Agents must probe configured tools before relying on them and
 must explicitly declare degraded mode when a configured tool is unavailable.
-Silent fallback … is a policy violation." P-012 prescribes the pattern
-(`TOOL_OK` / `TOOL_DEGRADED` / `TOOL_UNAVAILABLE`).
+Silent fallback … is a policy violation." Note, however, that P-012's *mechanism*
+is scoped to **backlog-registry** tools and their registry-declared `cli_command`
+fallbacks (`.github/policies/workflow-policies.md:277-299`); reviewer sub-agent
+dispatch is not a backlog-registry tool, so P-012 does not model it directly. This
+decision therefore applies P-012's **declared-degradation principle** (probe /
+declare / never-silent, `TOOL_OK` / `TOOL_DEGRADED` / `TOOL_UNAVAILABLE`) to a
+non-registry capability and defines the permitted fallback and terminal states in
+the skill itself. Generalizing P-012 into an explicit capability clause is a
+recommended follow-up (see Unresolved Questions).
 
 **The only existing fallback is model-diversity, not dispatch.** Both
 `.github/skills/review/SKILL.md` and `.github/skills/plan-review/SKILL.md` say
@@ -105,9 +111,10 @@ machinery" and decided "not to reintroduce a plan-digest + waiver contract".
 
 **Persona definitions exist and are dispatchable where supported.** The reviewer
 personas are real, committed agent definitions under `.github/agents/review/`
-(constitution-reviewer, go-reviewer, scope-boundary-auditor,
+(constitution-reviewer, go-quality-reviewer, scope-boundary-auditor,
 architecture-strategist, security-lens-reviewer, template-integrity-reviewer,
-concurrency-reviewer) and `.github/agents/research/learnings-researcher.agent.md`.
+concurrency-reviewer) and `.github/agents/research/learnings-researcher.agent.md`
+(the Learnings Researcher lives under `research/`, not `review/`).
 In dispatch-capable environments (e.g. the Copilot CLI `task` tool, VS Code
 Copilot agents) these can be spawned today; the "cannot dispatch" premise is
 **environment-specific, not a universal repo limitation**.
@@ -131,22 +138,27 @@ satisfied only by a genuine multi-persona sub-agent run.
 Probe sub-agent dispatch capability at gate start. **Prefer** real persona
 sub-agent dispatch when supported (this is Option A's strength). **When dispatch
 is unavailable**, run a sanctioned **single-agent persona pass** — the caller
-sequentially adopts each persona's lens using the same
-`.github/agents/review/` definitions as rubrics — and **record the degradation
-explicitly** in the appended `## Plan Review` section with a
-`dispatch_mode` marker and a `TOOL_DEGRADED: reviewer-subagent-dispatch` line,
-per P-012. The single-agent pass is a *legitimate, auditable* gate outcome, not
-a silent skip and not a per-plan operator waiver.
+sequentially adopts each persona's lens using the same manifest definitions
+(`.github/agents/review/`, plus `.github/agents/research/learnings-researcher.agent.md`)
+as rubrics — and **record the degradation explicitly** in the appended
+`## Plan Review` section with a `dispatch_mode` marker and a
+`TOOL_DEGRADED: reviewer-subagent-dispatch` line, applying P-012's
+declared-degradation principle. Coverage of every selected persona is mandatory
+in both modes; a partial dispatch failure forces a complete rubric pass, and if
+neither a complete dispatch nor a complete rubric pass can run the gate halts
+(`TOOL_UNAVAILABLE`) rather than deciding on partial coverage. The single-agent
+pass is a *legitimate, auditable* gate outcome, not a silent skip and not a
+per-plan operator waiver.
 
 - **Pros**: Portable across all environments; gate is always satisfiable;
-  honest and auditable (P-012 aligned); lightweight (skill-doc only, no new
-  machinery); DARK_MODE/AFK compatible; consistent with the review skill's
-  existing "preferred but not blocking" precedent; retroactively legitimizes the
-  honest 091-S/092-S/093-S self-assessments.
-- **Cons**: A single-agent persona pass has less genuine adversarial diversity
-  than true multi-agent (multi-model) dispatch — an accepted, *declared*
-  limitation (the same tradeoff the review skill already accepts for
-  cross-model).
+  honest and auditable (P-012 declared-degradation principle); lightweight
+  (skill-doc only, no new machinery); DARK_MODE/AFK compatible; analogous in
+  principle to the review skill's "preferred but not blocking" stance; and it
+  removes the silent-skip path that 091-S/092-S/093-S fell into.
+- **Cons**: A single-agent persona pass loses independent-agent (and any
+  cross-model) execution, a *stronger* degradation than the review skill's
+  same-model persona spawn — an accepted limitation, made explicit by the
+  `dispatch_mode` record so a degraded PASS is honestly interpretable.
 - **Effort**: low. **Fit**: satisfies all five success criteria.
 
 ### Option C: Per-plan documented operator waiver
@@ -167,7 +179,7 @@ cannot run.
 |---|---|---|---|
 | Gate always satisfiable | No (blocks Stage) | **Yes** | Yes |
 | Portable / environment-agnostic | No | **Yes** | Partial |
-| Degradation declared, not silent | n/a | **Yes (P-012)** | Yes |
+| Degradation declared, not silent | n/a | **Yes (P-012 principle)** | Yes |
 | DARK_MODE / AFK compatible | Yes | **Yes** | No |
 | Review fidelity when dispatch is available | Highest | **Highest (prefers dispatch)** | Highest |
 | Consistency with prior decisions | Neutral | **Consistent** | Contradicts 2026-07-17 spike |
@@ -183,9 +195,11 @@ waiver").
 
 Concretely, amend `.github/skills/plan-review/SKILL.md` to:
 
-1. **Probe dispatch capability** at the start of the gate (a Step-0 style check),
-   logging `TOOL_OK` / `TOOL_DEGRADED` per P-012.
-2. **Prefer real persona sub-agent dispatch** from `.github/agents/review/` when
+1. **Probe dispatch capability** before spawning any reviewer (at the start of
+   Step 2), logging `TOOL_OK` / `TOOL_DEGRADED` per P-012's declared-degradation
+   principle. Because P-012's registry mechanism does not model sub-agent
+   dispatch, the skill defines the permitted fallback and terminal states locally.
+2. **Prefer real persona sub-agent dispatch** from the manifest when
    the environment supports it — this is the "real persona-dispatch path" the
    stash asks for, and it is exercised natively wherever sub-agent tooling
    exists (e.g. Copilot CLI, VS Code Copilot agents).
@@ -195,7 +209,13 @@ Concretely, amend `.github/skills/plan-review/SKILL.md` to:
    multi-agent-dispatch` or `dispatch_mode: single-agent-declared-degradation`
    plus, in the degraded case, a `TOOL_DEGRADED: reviewer-subagent-dispatch —
    single-agent persona pass` line. A silently skipped gate (no dispatch_mode
-   record) remains a P-012 violation.
+   record) remains a P-012 declared-degradation-principle violation.
+4. **Enforce full-coverage terminal states**: a `multi-agent-dispatch` result is
+   valid only when every selected persona completes; a mid-gate dispatch failure
+   forces a complete sequential rubric pass emitting
+   `single-agent-declared-degradation`; if neither a complete dispatch nor a
+   complete rubric pass can run, halt with `TOOL_UNAVAILABLE` rather than deciding
+   on partial coverage.
 
 This makes the gate **satisfiable and never silently skipped in any
 environment**, resolving `8CD8F46A`.
@@ -212,6 +232,19 @@ environment**, resolving `8CD8F46A`.
 
 ## Unresolved Questions
 
+- **P-012 capability clause (recommended follow-up)**: P-012's mechanism is
+  scoped to backlog-registry tools with `cli_command` fallbacks. This decision
+  applies P-012's *principle* to sub-agent dispatch and defines the fallback in
+  the skill. Formalizing a general "capability with declared fallback" clause in
+  P-012 (or a referenced sub-policy) would give this and future non-registry
+  capabilities a policy-level home. Deferred to a governance work item.
+- **End-to-end gate enforcement (recommended follow-up)**: the `dispatch_mode`
+  record is currently a skill-level contract; it is not yet enforced downstream.
+  Stage still permits `skip_review: true`, and `harvest` accepts a plan described
+  as reviewed without validating a `dispatch_mode` record. A follow-up should wire
+  the hand-off contract (reject `skip_review` without a valid prior review record;
+  have `harvest` halt on a missing/invalid `dispatch_mode`). Tracked as a
+  follow-up stash entry.
 - **Automated dispatch-capability probe**: this decision specifies a
   behavioral/self-declared probe in the skill, not a programmatic capability
   API. A future enhancement could expose an environment capability signal the
@@ -229,11 +262,16 @@ environment**, resolving `8CD8F46A`.
   an explicit `dispatch_mode` record; a `single-agent-declared-degradation`
   marker in an environment known to support dispatch is a visible review signal.
 - **Risk**: single-agent persona passes miss issues a diverse panel would catch.
-  **Mitigation**: this is the same accepted tradeoff the review skill already
-  documents for cross-model; the degradation is declared so reviewers know the
-  fidelity level; P0/P1 blocking semantics are unchanged.
-- **Risk (retroactive)**: 091-S/092-S/093-S shipped without the formal gate.
-  **Mitigation**: their closure records already declared the single-agent
-  self-assessment; under this decision that is a *sanctioned* gate outcome, so no
-  rework is required — the decision legitimizes the existing honest record rather
-  than demanding retroactive re-review.
+  **Mitigation**: the degradation is *declared* so reviewers know the fidelity
+  level (a stronger degradation than the review skill's same-model spawn, and
+  called out as such); full-coverage terminal states forbid a partial-coverage
+  PASS; P0/P1 blocking semantics are unchanged.
+- **Risk (retroactive)**: 091-S/092-S/093-S shipped without the formal gate and
+  without a `dispatch_mode` / `TOOL_DEGRADED` record.
+  **Mitigation**: this decision does **not** reclassify their self-assessments as
+  passed plan-review gates — doing so would contradict the new "no dispatch_mode =
+  violation" rule. Instead it grants a one-time, explicitly-scoped **pre-policy
+  grandfather exception**: those shipments predate this contract, their
+  nonconformant status is preserved in their closure records, and the exception
+  **cannot** satisfy the gate for any future plan. No rework is required precisely
+  because they are grandfathered, not certified.
