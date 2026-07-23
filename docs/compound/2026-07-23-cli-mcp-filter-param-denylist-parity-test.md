@@ -57,7 +57,8 @@ var listOutputOnlyDenylist = map[string]bool{
 func TestListCLIMCPFilterParityLock(t *testing.T) {
     // Derive CLI filter set dynamically — no hard-coded list of filter names.
     cliFilters := map[string]bool{}
-    cmd := newListCommand(nil)
+    cwd := ""
+    cmd := newListCommand(&cwd) // newListCommand takes *string, not nil
     cmd.Flags().VisitAll(func(f *pflag.Flag) {
         if !listOutputOnlyDenylist[f.Name] {
             cliFilters[strings.ReplaceAll(f.Name, "-", "_")] = true
@@ -65,18 +66,25 @@ func TestListCLIMCPFilterParityLock(t *testing.T) {
     })
 
     // Derive MCP param set from live ToolDefs().
-    srv := mcp.New(nil, nil)
-    var mcpParams map[string]bool
+    // NewServer requires a real *core.Workspace — spin up a temp workspace.
+    root := t.TempDir()
+    require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+    require.NoError(t, config.WriteDefaults(filepath.Join(root, ".backlogit")))
+    ws, err := core.NewWorkspace(context.Background(), root)
+    require.NoError(t, err)
+    t.Cleanup(func() { _ = ws.Close() })
+
+    srv := mcpinternal.NewServer(ws)
+    mcpParams := make(map[string]bool)
     for _, tool := range srv.ToolDefs() {
         if tool.Name == "backlogit_list_items" {
-            mcpParams = map[string]bool{}
             for name := range tool.InputSchema.Properties {
                 mcpParams[name] = true
             }
             break
         }
     }
-    require.NotNil(t, mcpParams, "backlogit_list_items tool not found in ToolDefs")
+    require.NotEmpty(t, mcpParams, "backlogit_list_items tool not found in ToolDefs")
     assert.Equal(t, sortedBoolMapKeys(cliFilters), sortedBoolMapKeys(mcpParams))
 }
 ```
