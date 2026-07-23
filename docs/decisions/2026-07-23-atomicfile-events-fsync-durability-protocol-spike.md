@@ -12,7 +12,7 @@ docline:
     conclusion: "proceed"
     confidence: "high"
     linked_parent_work_item: "120-F"
-    promoted_to: ["none"]
+    promoted_to: ["123-F"]
     tags:
         - "durability"
         - "filesystem"
@@ -138,9 +138,20 @@ not just the size seam.
 
 *Append writer (`AppendEvent`):* `OpenFile(O_APPEND|O_CREATE|O_WRONLY)` -> write
 (retain the short-write guard already present in `writeAll`/`syncAppendLine`) ->
-**`f.Sync()`** -> `Close`, surfacing any sync error fail-closed. This mirrors
-`syncAppendLine` exactly; the append target already exists on disk (no new
-dirent), so a parent-dir fsync is only needed on first file creation.
+**`f.Sync()`** -> `Close`, surfacing any sync error fail-closed. **Critical
+first-create correction:** `AppendEvent` first runs `os.MkdirAll(logsDir)`
+(`internal/events/stream.go:56`) and opens each per-item log with `O_CREATE`
+(`:60`), so the **first** append to a not-yet-existing log creates a **new
+directory entry** (and possibly the `logs/` directory itself). Fsync-ing only the
+file does **not** persist that new dirent, so a file-only sync is *not* durable
+for an item's first event. Therefore, on first creation the protocol MUST, on
+POSIX, **fsync the containing `logs/` directory (and any parent directory
+`MkdirAll` just created) BEFORE reporting success**; on subsequent appends the
+dirent already exists and only the file fsync is required. On Windows, directory
+fsync is unavailable (see Windows finding), so first-create dirent durability is
+explicitly **best-effort** (file-content durability only). `syncAppendLine`
+supplies only the file-content fsync, so the append writer needs this additional
+first-create directory-fsync step beyond a straight `syncAppendLine` reuse.
 
 *Atomic writer (`WriteFileAtomic`):* create temp -> write (short-write guard) ->
 **`Sync()` temp** -> `Close` -> `Rename` -> **`Sync()` parent directory** (POSIX
@@ -150,11 +161,18 @@ parent-dir fsync that makes the *rename itself* durable.
 *Cross-writer ordering (the 099-S invariant under power loss):* the size seam's
 event-before-write ordering only holds across an OS crash if the event append is
 made durable **before** the durable frontmatter write returns. Sequence:
-`AppendEvent`(sync) returns durably -> then `WriteFileAtomic`(sync temp + sync
-dir). With both writers synced, the only power-loss outcomes are "event only"
+`AppendEvent`(sync file **+ fsync `logs/` dir on first create**) returns durably
+-> then `WriteFileAtomic`(sync temp + sync parent dir). With both writers fully
+synced — **including the first-create directory fsync for a new per-item log** —
+the only power-loss outcomes are "event only"
 (a harmless orphan, already ignored on read) or "event + write" (consistent).
 The forbidden "write without event" outcome is prevented, preserving the
-event-before-write guarantee across power loss — which today's sync-free code
+event-before-write guarantee across power loss **only when the append writer's
+first-create directory fsync is included**; a file-only append sync would let the
+OS persist the frontmatter rename while dropping a brand-new event dirent,
+reintroducing the forbidden outcome. On Windows this guarantee degrades to
+best-effort for a new log's first event (no directory fsync). This is what
+today's sync-free code
 does **not** do (the OS may persist the rename but drop the buffered append).
 
 **6. Windows directory fsync is the hard, partially-unsolvable part.** On POSIX,
@@ -228,8 +246,18 @@ needed and rollback is a plain revert.
 The design is feasible and the premise is fully verified against current code.
 Proceed with the protocol **as its own future release unit** (not part of
 v1.7.0), implemented by promoting the existing `internal/events/fsutil.go`
-patterns into the two shared primitives, adding the missing POSIX parent-dir
-fsync, and gating directory fsync on `runtime.GOOS != "windows"`. Ship it behind
+file-content fsync patterns into the two shared primitives, adding the missing
+POSIX parent-directory fsync **for both writers** — for `WriteFileAtomic` after
+rename, and for `AppendEvent` on **first creation** of a per-item log (its
+`os.MkdirAll` + `O_CREATE` make a new dirent that a file-only fsync does not
+persist) — and gating directory fsync on `runtime.GOOS != "windows"` (Windows
+first-create dirent durability stays best-effort). **Do NOT reuse `fsutil.go`'s
+`syncWriteFileAtomic` verbatim for canonical artifacts:** its Windows path
+pre-removes the destination before rename (`internal/events/fsutil.go:63-68`,
+"acceptable for regenerable files"), so a crash in that removal window could
+delete a canonical file; a canonical-write path needs a real Windows
+atomic-replace / fail-closed strategy that never leaves the destination missing.
+Ship it behind
 an **opt-in `durable_writes` mode** (default off) so bulk paths keep their
 current performance, and document the **platform-asymmetric guarantee** (full
 POSIX power-loss durability; Windows file-content durability with best-effort
@@ -259,7 +287,9 @@ documented (it already is). This spike is the follow-up already promised in
 
 ## Next Steps
 
-1. Leave 120-F queued as its own release unit; do not fold it into v1.7.0.
+1. 120-F (this spike) is **complete**; the deferred implementation is tracked as
+   queued follow-up feature `123-F` (`promoted_to: ["123-F"]`). Do not fold
+   `123-F` into v1.7.0.
 2. When scheduled, promote to `impl-plan`: (a) refactor `AppendEvent` and
    `WriteFileAtomic` to the synced sequences, reusing `fsutil.go`; (b) add POSIX
    parent-dir fsync with the `runtime.GOOS != "windows"` gate; (c) add a

@@ -320,14 +320,17 @@ ship in a later release if and when it is actually required.
 
 ## Next Steps
 
-* Leave `121-F` / stash `9D5BB492` queued (low priority). No implementation this cycle.
+* `121-F` is **complete** (spike concluded `defer`) and has been moved to `done`
+  and archived; **no** follow-up work item was created (nothing to implement this
+  cycle). `promoted_to: ["none"]` is therefore correct for this artifact.
 * Cut v1.7.0 without waiting on exactly-once; this spike is the traceable evidence
   that 108.x is safe-to-ship as-is.
-* If exactly-once is later prioritized, promote this artifact to `impl-plan` and
-  design the durable global event ordering (piece 3) and the OpID transport contract
-  (piece 1) first, since they gate the other two and carry the dominant risk.
-* `promoted_to: none` — this artifact stays in `docs/decisions/` for reference; no
-  backlog mutation performed (per spike constraints).
+* **Trigger for any future work:** exactly-once crash-window mutation becomes a
+  work item only if and when it is an explicit **product requirement**. At that
+  point, open a NEW feature (do not reopen the archived `121-F`), promote this
+  artifact to `impl-plan`, and design the durable global event ordering (piece 3)
+  and the OpID transport contract (piece 1) first, since they gate the other two
+  and carry the dominant risk.
 
 ## References
 

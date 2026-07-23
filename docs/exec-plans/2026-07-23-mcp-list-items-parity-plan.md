@@ -7,8 +7,6 @@ source: docs/exec-plans/2026-07-23-mcp-list-items-parity-plan.md
 title: 'MCP list_items priority/owner filter parity'
 ---
 
-# MCP list_items priority/owner filter parity
-
 Source decision: `docs/decisions/2026-07-23-cli-mcp-list-items-parity-deliberation.md`
 (Option A, promoted to plan; target release v1.7.0).
 
@@ -61,21 +59,39 @@ MCP request contract. Closing it brings MCP to parity with the CLI.
      `WithString` descriptions, note that `owner` filters the owner field and is
      **distinct from `assigned_to`** (mirroring the CLI's separate `--owner` /
      `--assigned-to` flags) to prevent agent misuse.
-  4. **Parity-lock test (regression guard):** add or extend a CLI/MCP
-     request-contract parity test that enumerates the CLI `list` filter flags and
-     the MCP `list_items` schema params and asserts the two filter sets are
-     equivalent. This locks the closed asymmetry so a future CLI-only filter
-     addition fails CI rather than silently re-diverging — the "close the gap AND
-     lock it with a drift test" idiom from the compound learnings above. Confirm
-     the priority/owner reads exist on both surfaces (both-surfaces checklist).
+  4. **Parity-lock test (regression guard) — concrete seam required:** a naive
+     test cannot simply import both surfaces. `internal/cli` already imports
+     `internal/mcp`, so a parity test living in `internal/mcp` **cannot** import
+     `internal/cli` (import cycle); and the raw material is unexported on both
+     sides (`newListCommand` is unexported; the MCP param schemas live in the
+     unexported `Server.toolDefs`). Ship must therefore add a **read-only,
+     exported schema-introspection seam in `internal/mcp`** — e.g. an exported
+     accessor that returns the `backlogit_list_items` parameter-name set (derived
+     from the tool's registered schema) — and the parity test (in `internal/mcp`)
+     asserts that set equals the CLI's known `list` filter-flag names (a small
+     declared constant/list the test carries, kept in step with
+     `internal/cli/list.go`), OR both surfaces derive their filter set from one
+     **shared declarative filter contract**. This locks the closed asymmetry so a
+     future CLI-only filter addition fails CI rather than silently re-diverging —
+     the "close the gap AND lock it with a drift test" idiom from the compound
+     learnings above. Confirm the priority/owner reads exist on both surfaces
+     (both-surfaces checklist). The exported accessor is a NEW source-file change
+     owned by Ship at implementation time (planning only here — no Go is written
+     in this Stage step).
   5. **Docs/drift:** regenerate any generated MCP tool-reference doc and confirm
      docline frontmatter validity, so the "CLI Reference Drift" and "Docline
      frontmatter gate" CI jobs stay green. (Ship regenerates during build; call
      it out so it is not missed.)
-* **Files affected (<3 source files):** `internal/mcp/tools.go`, one
+* **Files affected:** `internal/mcp/tools.go` (two schema params + two handler
+  reads); a small **new exported schema-introspection accessor** in `internal/mcp`
+  (its own file or appended to an existing non-test file — required by the
+  parity-lock test per Unit 1 step 4 to give it a cycle-free seam); one
   `internal/mcp/*_test.go` (functional MCP-handler test + the parity-lock test;
-  extend an existing parity test if one exists rather than adding a file), and
-  (if a drift/docline gate requires it) a generated MCP tool-reference doc.
+  extend an existing parity test if one exists rather than adding a file); and
+  (if a drift/docline gate requires it) a generated MCP tool-reference doc. The
+  accessor pushes this slightly past the <3-file heuristic but stays within the
+  single Go/MCP skill domain and ~2h envelope; it is required for a viable,
+  import-cycle-free parity test.
 * **Tests:** the new MCP-handler test (priority filter applied; owner filter
   applied; omitted params preserve prior behavior) plus the CLI/MCP filter-set
   parity-lock test.
