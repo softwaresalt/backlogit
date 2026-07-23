@@ -91,7 +91,7 @@ A related pattern from the same shipment: when a new gate validates unconditiona
 check all documented bypass paths in the same agent/skill definition. Step 3.0 of
 Stage documents a triple override (`skip_plan: true` + `skip_review: true` +
 `force_harvest_no_gates: true`) that bypasses all planning and review gates. The
-new skip_review gate contradict that without an explicit bypass note.
+new skip_review gate contradicted that without an explicit bypass note.
 
 Fix: add a bypass block at the top of the new gate specifying which override paths
 are exempt, and verify it is consistent with the published event table and all other

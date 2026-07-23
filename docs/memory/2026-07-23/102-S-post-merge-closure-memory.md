@@ -90,7 +90,7 @@ operator_authorization: approved        # only for ADVISORY to satisfy the gate
 ## Compact-Context Summary
 
 - Ran compact-context: docs/memory file count reduced from 43 → 24.
-- Compacted 15 verbose originals (2026-07-10 through 2026-07-22 dated dirs + root 099-S files)
+- Compacted 20 verbose originals (2026-07-10 through 2026-07-22 dated dirs + root 099-S files)
   → `docs/memory/compacted/2026-07-23-ship-batch-102S-and-prior-compacted.md`.
 - Verbose originals moved to `docs/archive/memory/`.
 

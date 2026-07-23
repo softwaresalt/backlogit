@@ -12,7 +12,7 @@ title: "Compacted: 2026-07-10 through 2026-07-22 ship/stage sessions"
 
 # Compacted Session Memory: 2026-07-10 through 2026-07-22
 
-Compacted from 15 verbose originals (moved to `docs/archive/memory/`).
+Compacted from 20 verbose originals (moved to `docs/archive/memory/`).
 Compaction date: 2026-07-23. Threshold: 43 files > 40 file limit.
 
 ---
