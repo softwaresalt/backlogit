@@ -3,6 +3,8 @@ title: "CLI/MCP list_items request-contract parity for priority/owner filters"
 description: "Decision to add priority and owner filter parameters to the MCP tool backlogit_list_items to reach CLI/MCP request-contract parity (053-DL)."
 source: docs/decisions/2026-07-23-cli-mcp-list-items-parity-deliberation.md
 doc_type: decision
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 topic: "MCP list_items priority/owner filter parity with CLI list"
 depth: lightweight
 decision_status: decided

@@ -2,6 +2,8 @@
 title: "Repo-wide fsync durability protocol for atomicfile + events"
 source: docs/decisions/2026-07-23-atomicfile-events-fsync-durability-protocol-spike.md
 doc_type: decision
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 description: "Design-only spike for an OS-crash/power-loss durability protocol across backlogit's two shared write primitives (atomicfile.WriteFileAtomic and events.AppendEvent)."
 docline:
     type: spike

@@ -2,6 +2,8 @@
 title: "Is crash-window exactly-once size mutation feasible for backlogit's size feature?"
 source: docs/decisions/2026-07-23-crash-window-exactly-once-size-mutation-spike.md
 doc_type: decision
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 description: "Feasibility spike (121-F) for crash-window exactly-once size mutation deferred from 099-S (Option B2): confirms none of the three prerequisites exist today, that exactly-once is achievable only by building substantial new machinery, and that it is NOT needed for correctness because the shipped durable-field-as-truth + fail-closed-read model is already safe — so v1.7.0 is not release-blocked."
 docline:
     type: spike
