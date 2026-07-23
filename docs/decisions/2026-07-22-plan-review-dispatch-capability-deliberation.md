@@ -253,16 +253,20 @@ out of scope here and tracked as the end-to-end enforcement follow-up.
   Stage still permits `skip_review: true`, and `harvest` accepts a plan described
   as reviewed without validating a `dispatch_mode` record. A follow-up should wire
   the hand-off contract (reject `skip_review` without a valid prior review record;
-  have `harvest` halt on a missing/invalid `dispatch_mode`). Tracked as a
-  follow-up stash entry.
+  have `harvest` halt on a missing/invalid `dispatch_mode`). Tracked as follow-up
+  stash entry **`4CECCEAA`** (medium).
 - **Automated dispatch-capability probe**: this decision specifies a
   behavioral/self-declared probe in the skill, not a programmatic capability
   API. A future enhancement could expose an environment capability signal the
   skill can query deterministically. Deferred; not required to satisfy the gate.
 - **Upstream template parity**: the amendment lands on the committed runtime
-  `SKILL.md`. Propagating the same change into the external autoharness template
-  (`plan-review/SKILL.md.tmpl`) is out of scope here under Principle IV and is a
-  separate upstream concern.
+  `SKILL.md`, which is generated from the external autoharness template
+  (`plan-review/SKILL.md.tmpl`). Under Principle IV this workspace cannot write
+  the upstream template, so — per the established generated-artifact rule
+  (`docs/compound/2026-06-26-docline-frontmatter-contract.md`, which tracked the
+  spike-skill precedent as stash `7F0A6E89`) — the source-template propagation is
+  tracked as a concrete follow-up: stash entry **`6FA0829B`** (low). Without it,
+  the next regeneration would overwrite this fix.
 
 ## Risks and Mitigations
 
