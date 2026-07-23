@@ -54,8 +54,25 @@ warn the operator that visibility is degraded and continue locally.
 
 1. Read `${input:plan}` in full.
 2. Confirm the file exists and represents an implementation plan.
-3. Confirm the plan has already cleared the review gate or is explicitly
-   marked ready for harvesting.
+3. Validate the plan's review record against the review-record contract (same contract
+   as Stage Step 4). When multiple `## Plan Review` sections exist (plans with multiple
+   review attempts), validate only the **final section in document order** — earlier records
+   are superseded and an earlier PASS does not satisfy the gate if the final record is FAIL.
+   Check the final section for BOTH:
+   * `dispatch_mode` — must be `multi-agent-dispatch` or
+     `single-agent-declared-degradation`. A `dispatch_mode` record alone is NOT sufficient:
+     PASS, FAIL, and ADVISORY share the same `dispatch_mode` values and cannot be
+     distinguished without the `decision` field.
+   * gate `decision` — must be `PASS`, or `ADVISORY` with `operator_authorization: approved`
+     present in the section.
+
+   Accept ONLY when `decision == PASS`, or `decision == ADVISORY` with
+   `operator_authorization: approved` present in the final section. **HALT** when:
+   * `decision == FAIL` — the review gate was not satisfied; recommend re-running
+     `plan-review` and do not proceed with decomposition.
+   * `dispatch_mode` is absent or unrecognized — plan-review contract violation; halt.
+   * `decision` is absent or unrecognized — gate integrity violation; halt.
+   * The `## Plan Review` section is absent — treat as a missing review record; halt.
 4. Broadcast the accepted plan path.
 5. Halt if the plan is missing, unreadable, or clearly not ready for
    backlog creation. Recommend running `plan-review` first when the

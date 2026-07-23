@@ -242,17 +242,24 @@ Broadcast the gate decision.
 
 Append a `## Plan Review` section to the plan file with:
 
-* The `dispatch_mode` (`multi-agent-dispatch` or
-  `single-agent-declared-degradation`) and, in the degraded case, the
-  `TOOL_DEGRADED: reviewer-subagent-dispatch` declaration (P-012
-  declared-degradation principle). A gate decision recorded with no
-  `dispatch_mode` is a plan-review gate-integrity (contract) violation.
-* Gate decision and rationale
+* `dispatch_mode: multi-agent-dispatch` or `dispatch_mode: single-agent-declared-degradation`
+  (write as a labeled field exactly, not as free-form prose). In the degraded case, also
+  append `TOOL_DEGRADED: reviewer-subagent-dispatch` (P-012 declared-degradation principle).
+  A gate decision recorded with no `dispatch_mode` field is a plan-review gate-integrity
+  (contract) violation.
+* `decision: PASS`, `decision: ADVISORY`, or `decision: FAIL` (write as a labeled field
+  exactly, so that Stage Step 4 and the harvest skill can match the literal field). Free-form
+  prose with no literal `decision:` marker is insufficient.
+* Gate rationale and reasoning to accompany the decision
 * Whether plan hardening was required and whether that requirement was satisfied
 * All findings organized by severity
 * Specific recommendations for addressing P0/P1 issues
 * Acknowledgment of P2/P3 items for awareness
 * Runtime verification and operational closure gaps called out explicitly when missing
+* For `ADVISORY` decisions where the user has explicitly confirmed they want to proceed:
+  append `operator_authorization: approved` (as a labeled field). This is the machine-readable
+  marker that Stage Step 4 and the harvest skill use to distinguish an authorized ADVISORY
+  from an unauthorized one.
 
 The review is appended (not written as a separate file) so that the plan and its
 review travel together as a single artifact. The compact-context skill later
