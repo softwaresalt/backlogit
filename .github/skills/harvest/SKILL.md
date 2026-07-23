@@ -63,10 +63,11 @@ warn the operator that visibility is degraded and continue locally.
      `single-agent-declared-degradation`. A `dispatch_mode` record alone is NOT sufficient:
      PASS, FAIL, and ADVISORY share the same `dispatch_mode` values and cannot be
      distinguished without the `decision` field.
-   * gate `decision` — must be `PASS`, or `ADVISORY` with an explicit recorded authorization.
+   * gate `decision` — must be `PASS`, or `ADVISORY` with `operator_authorization: approved`
+     present in the section.
 
-   Accept ONLY when `decision == PASS`, or `decision == ADVISORY` with an explicit
-   recorded authorization. **HALT** when:
+   Accept ONLY when `decision == PASS`, or `decision == ADVISORY` with
+   `operator_authorization: approved` present in the final section. **HALT** when:
    * `decision == FAIL` — the review gate was not satisfied; recommend re-running
      `plan-review` and do not proceed with decomposition.
    * `dispatch_mode` is absent or unrecognized — plan-review contract violation; halt.

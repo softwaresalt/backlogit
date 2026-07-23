@@ -253,6 +253,10 @@ Append a `## Plan Review` section to the plan file with:
 * Specific recommendations for addressing P0/P1 issues
 * Acknowledgment of P2/P3 items for awareness
 * Runtime verification and operational closure gaps called out explicitly when missing
+* For `ADVISORY` decisions where the user has explicitly confirmed they want to proceed:
+  append `operator_authorization: approved` to the section. This is the machine-readable
+  marker that Stage Step 4 and the harvest skill use to distinguish an authorized ADVISORY
+  from an unauthorized one.
 
 The review is appended (not written as a separate file) so that the plan and its
 review travel together as a single artifact. The compact-context skill later
