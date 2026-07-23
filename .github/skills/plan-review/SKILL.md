@@ -96,23 +96,41 @@ never fall back silently — to sub-agent dispatch, and defines the permitted
 fallback and terminal states locally. Formalizing this as an explicit P-012
 capability clause is a recommended follow-up (see the decision artifact).
 
-**Persona → definition manifest.** Both dispatch modes resolve the **same**
-persona definitions from these exact paths, so the degraded rubric pass and real
-dispatch load identical rubrics (display names do not always match filenames —
-e.g. *Go Reviewer* is `go-quality-reviewer.agent.md`):
+**Persona rubric adapter (authoritative plan-review lens).** The authoritative
+rubric for each persona is the **Focus column of the Reviewer Personas tables
+above** — those encode the *plan-specific* lens (evaluate plan units, declared
+scope, verification steps, constitutional mapping). That lens differs from the
+*code-review* criteria baked into the shared `.agent.md` identity files (e.g.
+`go-quality-reviewer.agent.md` reviews concrete code such as `rows.Close()` and
+SQL construction; the Learnings Researcher natively emits a `relevant_solutions`
+object rather than P0–P3 findings). Each persona is therefore applied as an
+**adapter**, never as the raw agent file:
 
-| Persona | Definition file | Trigger |
-|---|---|---|
-| Constitution Reviewer | `.github/agents/review/constitution-reviewer.agent.md` | always-on |
-| Go Reviewer | `.github/agents/review/go-quality-reviewer.agent.md` | always-on |
-| Scope Boundary Auditor | `.github/agents/review/scope-boundary-auditor.agent.md` | always-on |
-| Learnings Researcher | `.github/agents/research/learnings-researcher.agent.md` | always-on |
-| Architecture Strategist | `.github/agents/review/architecture-strategist.agent.md` | cross-model, always triggered |
-| Agent-Native Parity Reviewer | `.github/agents/review/agent-native-parity-reviewer.agent.md` | cross-model, when the plan exposes MCP tools / agent-facing actions / parity-sensitive workflows |
-| Security Lens Reviewer | `.github/agents/review/security-lens-reviewer.agent.md` | cross-model, when the plan touches auth/authz, API surfaces, sensitive data stores, external integrations, or secrets |
+> persona identity file (below) **+** that persona's plan-focused Focus criteria
+> (from the Reviewer Personas tables) **→ normalized to mergeable P0–P3
+> plan-review findings.**
 
-Use this manifest for both real dispatch and the sequential rubric pass so no
-required lens is dropped.
+Both dispatch modes MUST apply this same adapter — the identity file supplies the
+persona's domain expertise, the Focus column supplies the plan lens, and every
+persona's output (including the Learnings Researcher's `relevant_solutions`) is
+normalized to P0–P3 findings before it can satisfy the gate. This is what makes
+the two modes resolve **identical rubrics** rather than diverging into
+code-review vs plan-review behavior. Display names do not always match filenames
+(e.g. *Go Reviewer* is `go-quality-reviewer.agent.md`).
+
+| Persona | Identity file | Plan lens (rubric source) | Trigger |
+|---|---|---|---|
+| Constitution Reviewer | `.github/agents/review/constitution-reviewer.agent.md` | §Always-On Focus | always-on |
+| Go Reviewer | `.github/agents/review/go-quality-reviewer.agent.md` | §Always-On Focus | always-on |
+| Scope Boundary Auditor | `.github/agents/review/scope-boundary-auditor.agent.md` | §Always-On Focus | always-on |
+| Learnings Researcher | `.github/agents/research/learnings-researcher.agent.md` | §Always-On Focus (normalize `relevant_solutions` → P0/P1) | always-on |
+| Architecture Strategist | `.github/agents/review/architecture-strategist.agent.md` | §Cross-Model Focus | cross-model, always triggered |
+| Agent-Native Parity Reviewer | `.github/agents/review/agent-native-parity-reviewer.agent.md` | §Cross-Model Focus | cross-model, when the plan exposes MCP tools / agent-facing actions / parity-sensitive workflows |
+| Security Lens Reviewer | `.github/agents/review/security-lens-reviewer.agent.md` | §Cross-Model Focus | cross-model, when the plan touches auth/authz, API surfaces, sensitive data stores, external integrations, or secrets |
+
+Use this adapter for both real dispatch and the sequential rubric pass so no
+required lens is dropped and no persona silently applies its code-review criteria
+in place of the plan lens.
 
 **Probe.** Before spawning any reviewer (at the start of Step 2, before the plan
 is dispatched to personas), determine whether sub-agent dispatch is available and
@@ -121,7 +139,7 @@ record `dispatch_mode`:
 | Capability | `dispatch_mode` | Action |
 |---|---|---|
 | Sub-agent dispatch available | `multi-agent-dispatch` | Dispatch the real persona sub-agents from the manifest. Log `TOOL_OK: reviewer-subagent-dispatch`. Preferred, full-fidelity path. |
-| Sub-agent dispatch unavailable | `single-agent-declared-degradation` | Run a **single-agent persona pass**: sequentially apply each manifest persona's definition as a review rubric, one lens at a time, over the full plan. Log `TOOL_DEGRADED: reviewer-subagent-dispatch — single-agent persona pass`. |
+| Sub-agent dispatch unavailable | `single-agent-declared-degradation` | Run a **single-agent persona pass**: sequentially apply each manifest persona's **adapter** (identity file + plan-focused Focus criteria, normalized to P0–P3 findings), one lens at a time, over the full plan. Log `TOOL_DEGRADED: reviewer-subagent-dispatch — single-agent persona pass`. |
 
 **Terminal states (no partial gate).** Coverage of every *selected* persona is
 mandatory in both modes:

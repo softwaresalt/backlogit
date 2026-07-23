@@ -204,8 +204,11 @@ Concretely, amend `.github/skills/plan-review/SKILL.md` to:
    stash asks for, and it is exercised natively wherever sub-agent tooling
    exists (e.g. Copilot CLI, VS Code Copilot agents).
 3. **Sanction a single-agent persona-pass fallback** when dispatch is
-   unavailable: the caller sequentially applies each persona's rubric, and the
-   appended `## Plan Review` section MUST record `dispatch_mode:
+   unavailable: the caller sequentially applies each persona's **adapter** — the
+   persona's plan-focused Focus lens from the SKILL's Reviewer Personas tables,
+   applied over the identity file and normalized to P0–P3 findings, not the raw
+   code-review agent definition — and the appended `## Plan Review` section MUST
+   record `dispatch_mode:
    multi-agent-dispatch` or `dispatch_mode: single-agent-declared-degradation`
    plus, in the degraded case, a `TOOL_DEGRADED: reviewer-subagent-dispatch —
    single-agent persona pass` line. A silently skipped gate (no dispatch_mode
