@@ -58,7 +58,7 @@ The mismatch means:
 
 In plan-review/SKILL.md Step 5 (the producer contract), specify:
 
-```
+```text
 decision: PASS         # or ADVISORY or FAIL — write as a labeled field, not prose
 dispatch_mode: multi-agent-dispatch   # or single-agent-declared-degradation
 operator_authorization: approved      # for ADVISORY+confirmed only

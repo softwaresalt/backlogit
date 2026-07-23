@@ -47,7 +47,7 @@ title: "102-S Post-Merge Closure — Ship Session Memory"
 
 A plan's `## Plan Review` section MUST contain ALL of the following as literal labeled fields:
 
-```
+```text
 dispatch_mode: multi-agent-dispatch     # or single-agent-declared-degradation
 decision: PASS                          # or ADVISORY or FAIL
 operator_authorization: approved        # only for ADVISORY to satisfy the gate
@@ -99,7 +99,7 @@ operator_authorization: approved        # only for ADVISORY to satisfy the gate
 | Item | Type | Status | Notes |
 |---|---|---|---|
 | Stash 6FA0829B | upstream template | BLOCKED | `plan-review/SKILL.md.tmpl` template parity (Principle IV — cannot write outside workspace) |
-| Stash 7F0A6E89 | upstream template | BLOCKED | Related to 6FA0829B — check if still active or absorbed by 102-S |
+| Stash 7F0A6E89 | upstream template | ACTIVE | `spike/SKILL.md.tmpl` template update — separate from 6FA0829B and NOT absorbed by 102-S |
 | 120-F | spike/feature | queued | Active investigation — check queue |
 | 121-F | spike/feature | queued | Active investigation — check queue |
 | 053-DL | deliberation | active | In-progress deliberation — check queue |
