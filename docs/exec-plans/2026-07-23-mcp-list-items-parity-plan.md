@@ -71,13 +71,20 @@ MCP request contract. Closing it brings MCP to parity with the CLI.
      asserts that set equals the CLI's known `list` filter-flag names (a small
      declared constant/list the test carries, kept in step with
      `internal/cli/list.go`), OR both surfaces derive their filter set from one
-     **shared declarative filter contract**. This locks the closed asymmetry so a
-     future CLI-only filter addition fails CI rather than silently re-diverging —
-     the "close the gap AND lock it with a drift test" idiom from the compound
-     learnings above. Confirm the priority/owner reads exist on both surfaces
-     (both-surfaces checklist). The exported accessor is a NEW source-file change
-     owned by Ship at implementation time (planning only here — no Go is written
-     in this Stage step).
+     **shared declarative filter contract**. **Name normalization (required
+     before asserting set equivalence):** the CLI flag names are kebab-case
+     (`assigned-to`) while the MCP param names are snake_case (`assigned_to`), so
+     literal set equality fails even after priority/owner are added. The test MUST
+     canonicalize CLI flag names from kebab-case to snake_case (replace `-` with
+     `_`, e.g. `assigned-to` → `assigned_to`) before comparing the two sets. The
+     canonical filter contract is the snake_case name set: `type`, `status`,
+     `assigned_to`, `sprint`, `priority`, `owner`. This locks the closed asymmetry
+     so a future CLI-only filter addition fails CI rather than silently
+     re-diverging — the "close the gap AND lock it with a drift test" idiom from
+     the compound learnings above. Confirm the priority/owner reads exist on both
+     surfaces (both-surfaces checklist). The exported accessor is a NEW source-file
+     change owned by Ship at implementation time (planning only here — no Go is
+     written in this Stage step).
   5. **Docs/drift:** regenerate any generated MCP tool-reference doc and confirm
      docline frontmatter validity, so the "CLI Reference Drift" and "Docline
      frontmatter gate" CI jobs stay green. (Ship regenerates during build; call
