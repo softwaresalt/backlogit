@@ -75,6 +75,107 @@ models when available to force genuine diversity of critique.
 
 If cross-model invocation is not available, run all personas with the caller's model. Multi-model is preferred but not blocking.
 
+## Dispatch Capability and Declared Degradation
+
+Reviewer personas are normally dispatched as independent sub-agents. Sub-agent
+dispatch capability varies by environment (available via the Copilot CLI `task`
+tool and VS Code Copilot agents; absent in some others). This gate is
+**capability-aware** so it is satisfiable in every environment and never silently
+skips its own dispatch step. (Enforcing that a plan can never *reach* `harvest`
+without a valid review record — tightening Stage `skip_review` and `harvest`
+acceptance — is a separate downstream concern; see the decision artifact's
+end-to-end enforcement follow-up.)
+
+**Relationship to P-012.** P-012 ("Tool Availability and Declared Degradation",
+`.github/policies/workflow-policies.md`) governs *backlog-registry* tools and
+their registry-declared `cli_command` fallbacks. Reviewer sub-agent dispatch is
+**not** a backlog-registry tool, so P-012's registry mechanism does not model it
+directly. This section applies P-012's **declared-degradation principle** —
+probe before relying on a capability, declare any degraded mode explicitly, and
+never fall back silently — to sub-agent dispatch, and defines the permitted
+fallback and terminal states locally. Formalizing this as an explicit P-012
+capability clause is a recommended follow-up (see the decision artifact).
+
+**Persona rubric adapter (authoritative plan-review lens).** The authoritative
+rubric for each persona is the **Focus column of the Reviewer Personas tables
+above** — those encode the *plan-specific* lens (evaluate plan units, declared
+scope, verification steps, constitutional mapping). That lens differs from the
+*code-review* criteria baked into the shared `.agent.md` identity files (e.g.
+`go-quality-reviewer.agent.md` reviews concrete code such as `rows.Close()` and
+SQL construction; the Learnings Researcher natively emits a `relevant_solutions`
+object rather than P0–P3 findings). Each persona is therefore applied as an
+**adapter**, never as the raw agent file:
+
+> persona identity file (below) **+** that persona's plan-focused Focus criteria
+> (from the Reviewer Personas tables) **→ normalized to mergeable P0–P3
+> plan-review findings.**
+
+Both dispatch modes MUST apply this same adapter — the identity file supplies the
+persona's domain expertise, the Focus column supplies the plan lens, and every
+persona's output (including the Learnings Researcher's `relevant_solutions`) is
+normalized to P0–P3 findings before it can satisfy the gate. This is what makes
+the two modes resolve **identical rubrics** rather than diverging into
+code-review vs plan-review behavior. Display names do not always match filenames
+(e.g. *Go Reviewer* is `go-quality-reviewer.agent.md`).
+
+| Persona | Identity file | Plan lens (rubric source) | Trigger |
+|---|---|---|---|
+| Constitution Reviewer | `.github/agents/review/constitution-reviewer.agent.md` | §Always-On Focus | always-on |
+| Go Reviewer | `.github/agents/review/go-quality-reviewer.agent.md` | §Always-On Focus | always-on |
+| Scope Boundary Auditor | `.github/agents/review/scope-boundary-auditor.agent.md` | §Always-On Focus | always-on |
+| Learnings Researcher | `.github/agents/research/learnings-researcher.agent.md` | §Always-On Focus (normalize `relevant_solutions` → P0/P1) | always-on |
+| Architecture Strategist | `.github/agents/review/architecture-strategist.agent.md` | §Cross-Model Focus | cross-model, always triggered |
+| Agent-Native Parity Reviewer | `.github/agents/review/agent-native-parity-reviewer.agent.md` | §Cross-Model Focus | cross-model, when the plan exposes MCP tools / agent-facing actions / parity-sensitive workflows |
+| Security Lens Reviewer | `.github/agents/review/security-lens-reviewer.agent.md` | §Cross-Model Focus | cross-model, when the plan touches auth/authz, API surfaces, sensitive data stores, external integrations, or secrets |
+
+Use this adapter for both real dispatch and the sequential rubric pass so no
+required lens is dropped and no persona silently applies its code-review criteria
+in place of the plan lens.
+
+**Probe.** Before spawning any reviewer (at the start of Step 2, before the plan
+is dispatched to personas), determine whether sub-agent dispatch is available and
+record `dispatch_mode`:
+
+| Capability | `dispatch_mode` | Action |
+|---|---|---|
+| Sub-agent dispatch available | `multi-agent-dispatch` | Dispatch the real persona sub-agents from the manifest. Log `TOOL_OK: reviewer-subagent-dispatch`. Preferred, full-fidelity path. |
+| Sub-agent dispatch unavailable | `single-agent-declared-degradation` | Run a **single-agent persona pass**: sequentially apply each manifest persona's **adapter** (identity file + plan-focused Focus criteria, normalized to P0–P3 findings), one lens at a time, over the full plan. Log `TOOL_DEGRADED: reviewer-subagent-dispatch — single-agent persona pass`. |
+
+**Terminal states (no partial gate).** Coverage of every *selected* persona is
+mandatory in both modes:
+
+* `multi-agent-dispatch` yields a valid gate result **only when every selected
+  persona completes and returns findings.** If any dispatched persona fails to
+  start or return mid-gate, do **not** issue a PASS/ADVISORY on partial coverage
+  and do **not** keep the `multi-agent-dispatch` label. Record the dispatch
+  failure, then run a **complete** sequential rubric pass over **all** selected
+  personas and emit `single-agent-declared-degradation`.
+* `single-agent-declared-degradation` yields a valid gate result **only when the
+  rubric pass covers every selected persona.**
+* If neither a complete dispatch nor a complete rubric pass can be performed,
+  **halt** with `TOOL_UNAVAILABLE: reviewer-subagent-dispatch` rather than
+  issuing a gate decision on incomplete coverage.
+
+Rules:
+
+* **Prefer real dispatch** wherever the environment supports it — the
+  single-agent persona pass is a fallback, not a default.
+* The single-agent persona pass is a **legitimate, sanctioned** gate outcome
+  when declared and complete. It is neither a silent skip nor a per-plan operator
+  waiver. It trades away independent-agent execution (and any model diversity) —
+  a stronger degradation than the "multi-model preferred but not blocking" axis —
+  so the `dispatch_mode` record makes that fidelity level explicit.
+* **Silently skipping the gate — issuing a gate decision with no `dispatch_mode`
+  record — is a plan-review gate-integrity violation**: the gate FAILs and the
+  omission is surfaced explicitly. Because P-012's *mechanism* does not yet model
+  sub-agent dispatch, do **not** emit a `POLICY_VIOLATION: P-012` / P-005 event
+  for this today — that would be inaccurate telemetry. Classify it as a **local
+  plan-review contract violation**. Once P-012 is generalized to capabilities
+  (recommended follow-up), a missing `dispatch_mode` can be reclassified as a
+  P-012 declared-degradation violation. The honesty of the degradation record is
+  the gate's integrity guarantee.
+* P0/P1 blocking semantics are identical in both modes.
+
 ## Workflow
 
 ### Step 1: Load and Parse Plan
@@ -88,8 +189,17 @@ If cross-model invocation is not available, run all personas with the caller's m
 
 ### Step 2: Spawn Reviewer Subagents
 
-Spawn all always-on personas plus the cross-model personas whose trigger
-conditions are met. Each receives:
+First determine `dispatch_mode` per the **Dispatch Capability and Declared
+Degradation** section above (probe before spawning) and log the corresponding
+`TOOL_OK` / `TOOL_DEGRADED` line. In `multi-agent-dispatch` mode, spawn the
+manifest personas as sub-agents. In `single-agent-declared-degradation` mode,
+apply the same manifest definitions as sequential single-agent rubric passes over
+the plan. Coverage of every selected persona is mandatory; on a mid-gate dispatch
+failure, fall back to a complete rubric pass per the terminal-states rule (do not
+merge partial dispatch coverage into a full-fidelity decision).
+
+Spawn (or apply) all always-on personas plus the cross-model personas whose
+trigger conditions are met. Each receives:
 
 - The full plan content
 - The origin requirements doc (if any)
@@ -101,11 +211,14 @@ Trigger conditions for cross-model personas:
 * **Agent-Native Parity Reviewer**: triggered when the plan exposes MCP tools, agent-facing actions, or user/agent parity-sensitive workflows
 * **Security Lens Reviewer**: triggered when the plan touches authentication or authorization systems, API surfaces, sensitive data stores, external integrations crossing trust boundaries, or secrets and credentials management
 
-Broadcast each spawn.
+Broadcast each spawn in `multi-agent-dispatch` mode. In
+`single-agent-declared-degradation` mode no sub-agents are spawned, so emit
+persona-pass start/complete events (e.g. `[PERSONA-PASS] {persona}` /
+`[PERSONA-DONE] {persona}`) instead of `[SPAWN]` / `[RETURN]`.
 
 ### Step 3: Collect and Merge Findings
 
-As each persona returns:
+As each persona returns (or each rubric pass completes):
 
 1. Broadcast the return with finding count
 2. Collect all findings into a unified list
@@ -129,6 +242,11 @@ Broadcast the gate decision.
 
 Append a `## Plan Review` section to the plan file with:
 
+* The `dispatch_mode` (`multi-agent-dispatch` or
+  `single-agent-declared-degradation`) and, in the degraded case, the
+  `TOOL_DEGRADED: reviewer-subagent-dispatch` declaration (P-012
+  declared-degradation principle). A gate decision recorded with no
+  `dispatch_mode` is a plan-review gate-integrity (contract) violation.
 * Gate decision and rationale
 * Whether plan hardening was required and whether that requirement was satisfied
 * All findings organized by severity
@@ -143,6 +261,9 @@ consolidates this into a decided-plan.
 ## Quality Criteria
 
 * Every implementation unit is reviewed by at least the always-on personas
+* The `dispatch_mode` is probed and recorded, every selected persona is covered,
+  and any degraded mode is declared per P-012's declared-degradation principle and
+  never silently skipped
 * The gate decision correctly reflects finding severities
 * Findings include actionable recommendations
 * The review is appended to the plan before the gate decision is communicated
