@@ -75,6 +75,35 @@ models when available to force genuine diversity of critique.
 
 If cross-model invocation is not available, run all personas with the caller's model. Multi-model is preferred but not blocking.
 
+## Dispatch Capability and Declared Degradation (P-012)
+
+Reviewer personas are dispatched as sub-agents. Sub-agent dispatch capability
+varies by environment (available via the Copilot CLI `task` tool and VS Code
+Copilot agents; absent in some others). This gate is **capability-aware** so it
+is satisfiable in every environment and is never silently skipped.
+
+At the start of the gate, probe dispatch capability and record the outcome per
+**P-012** (`.github/policies/workflow-policies.md`):
+
+| Capability | `dispatch_mode` | Action |
+|---|---|---|
+| Sub-agent dispatch available | `multi-agent-dispatch` | Dispatch the real persona sub-agents from `.github/agents/review/`. Log `TOOL_OK: reviewer-subagent-dispatch`. Preferred, full-fidelity path. |
+| Sub-agent dispatch unavailable | `single-agent-declared-degradation` | Run a **single-agent persona pass**: sequentially apply each persona's `.github/agents/review/` definition as a review rubric, one lens at a time, over the full plan. Log `TOOL_DEGRADED: reviewer-subagent-dispatch — single-agent persona pass`. |
+
+Rules:
+
+* **Prefer real dispatch** wherever the environment supports it — the
+  single-agent persona pass is a fallback, not a default.
+* The single-agent persona pass is a **legitimate, sanctioned** gate outcome
+  when declared. It is neither a silent skip nor a per-plan operator waiver.
+* **Silently skipping the gate — producing a gate decision with no
+  `dispatch_mode` record — is a P-012 violation** (log
+  `POLICY_VIOLATION: P-012` via P-005 telemetry). The honesty of the degradation
+  record is the gate's integrity guarantee.
+* P0/P1 blocking semantics are identical in both modes. Model diversity
+  ("multi-model preferred but not blocking") is an independent axis from dispatch
+  capability.
+
 ## Workflow
 
 ### Step 1: Load and Parse Plan
@@ -88,8 +117,14 @@ If cross-model invocation is not available, run all personas with the caller's m
 
 ### Step 2: Spawn Reviewer Subagents
 
-Spawn all always-on personas plus the cross-model personas whose trigger
-conditions are met. Each receives:
+First determine `dispatch_mode` per the **Dispatch Capability and Declared
+Degradation** section above and log the corresponding `TOOL_OK` / `TOOL_DEGRADED`
+line. In `multi-agent-dispatch` mode, spawn the personas as sub-agents. In
+`single-agent-declared-degradation` mode, apply the same persona definitions as
+sequential single-agent rubric passes over the plan.
+
+Spawn (or apply) all always-on personas plus the cross-model personas whose
+trigger conditions are met. Each receives:
 
 - The full plan content
 - The origin requirements doc (if any)
@@ -129,6 +164,10 @@ Broadcast the gate decision.
 
 Append a `## Plan Review` section to the plan file with:
 
+* The `dispatch_mode` (`multi-agent-dispatch` or
+  `single-agent-declared-degradation`) and, in the degraded case, the
+  `TOOL_DEGRADED: reviewer-subagent-dispatch` declaration (P-012). A gate
+  decision recorded with no `dispatch_mode` is a P-012 violation.
 * Gate decision and rationale
 * Whether plan hardening was required and whether that requirement was satisfied
 * All findings organized by severity
@@ -143,6 +182,8 @@ consolidates this into a decided-plan.
 ## Quality Criteria
 
 * Every implementation unit is reviewed by at least the always-on personas
+* The `dispatch_mode` is probed and recorded; degraded mode is declared per
+  P-012 and never silently skipped
 * The gate decision correctly reflects finding severities
 * Findings include actionable recommendations
 * The review is appended to the plan before the gate decision is communicated
