@@ -1,11 +1,11 @@
 package mcp
 
-// 122.001-T: Add priority/owner filter params to backlogit_list_items.
+// 122.001-T: Regression tests for priority/owner filter params in handleListItems.
 //
-// This file contains the TDD handler test (red phase): asserts that
-// handleListItems filters by priority and owner before those params are
-// wired into the schema and handler. Run these tests first to confirm they
-// fail (params currently ignored), then implement to make them pass (green).
+// These tests verify that handleListItems correctly applies priority and owner
+// filters when they are present in the MCP request arguments, and that omitting
+// them preserves the existing unfiltered behavior. They serve as the permanent
+// regression guard for the CLI/MCP filter parity established in 122.001-T.
 
 import (
 	"context"
