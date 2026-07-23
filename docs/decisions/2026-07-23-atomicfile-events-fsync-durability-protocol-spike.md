@@ -261,8 +261,31 @@ Ship it behind
 an **opt-in `durable_writes` mode** (default off) so bulk paths keep their
 current performance, and document the **platform-asymmetric guarantee** (full
 POSIX power-loss durability; Windows file-content durability with best-effort
-dirent). Handle fsync errors **fail-closed** on the critical single-item mutation
-paths (size seam, status transitions) and best-effort on bulk regeneration.
+dirent).
+
+**Error-handling contract — two distinct failure classes** (a blanket
+"fail-closed" is *not* achievable once the rename commits, because the canonical
+file is already visibly replaced):
+
+1. **Pre-commit (unchanged) failure** — any error *before* the rename commits
+   (temp-file write, temp-file fsync, or the rename call itself not yet having
+   succeeded). The canonical file is untouched, so the operation **definitely did
+   not apply**. Return a **fail-closed error that is safe to retry**; callers may
+   retry the whole operation without risk of duplication.
+2. **Post-commit (indeterminate) failure** — the rename **succeeded** but a
+   subsequent parent/`logs`-directory fsync (or dirent-durability step) fails. The
+   canonical replacement is **already visible**, so the operation is
+   **possibly-applied**. Return a **distinct indeterminate / "possibly-applied"
+   error** — NOT an ordinary retryable failure. Callers **MUST NOT blindly retry**
+   (a retry may double-apply a status transition or emit duplicate audit events).
+   The correct recovery is a **durability re-verification / reconciliation on next
+   open** (an idempotent re-sync of the already-visible file), and audit-event and
+   status-transition writers must treat the operation as **possibly-committed** so
+   they do not emit duplicate events.
+
+Apply this pre-commit-vs-post-commit distinction on the critical single-item
+mutation paths (size seam, status transitions); bulk regeneration may stay
+best-effort.
 
 **Release-gating verdict (v1.7.0): DO NOT hold the release.** The sync-free
 behavior is a **pre-existing, documented durability *limitation* shared by the
