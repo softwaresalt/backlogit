@@ -132,9 +132,14 @@ sources above, then edit prose to match.
   - **Mechanical command check:** run each documented command with `--help` (or in a scratch
     workspace) against the v1.7.0 binary to confirm command/flag existence, rather than relying
     only on a subjective read-through.
-  - **Markdown-structure lint:** run the repo's Markdown lint (markdownlint) over the edited
-    `README.md` + `docs/**` files so a restructure/prose regression (unlabeled code fence, skipped
-    heading level, malformed table) is caught here rather than in CI.
+  - **Markdown-structure lint (P-008):** run `markdownlint "**/*.md"` restricted to the edited
+    `README.md` + `docs/**` files under the repo's **declared P-008 rule set — MD001, MD025, MD041**
+    (`.github/policies/workflow-policies.md`) so a heading-hierarchy regression (skipped heading
+    level, multiple H1, missing top-level heading) is caught here rather than in CI. **Prerequisite:**
+    the repo does not yet ship a `.markdownlint.json`; U6 MUST provision one enabling exactly
+    MD001/MD025/MD041 per P-008 before running the gate — pinning the rule set makes the check
+    deterministic instead of relying on markdownlint's environment defaults. If provisioning is
+    deferred, treat it as a blocking follow-up and apply the P-008 heading-hierarchy rules manually.
   - Run the quality gates (`gofmt -l .`, `go vet ./...`, `make test` / `go test ./...`,
     `golangci-lint run`) to confirm docs-only edits kept the build green.
 - **Accepted residual risk:** No mechanical gate proves README/installation/etc. **prose** matches
@@ -147,7 +152,8 @@ sources above, then edit prose to match.
   Cobra `Long`/`Short` doc bug — record it as a **separate follow-up** (out of this feature's
   docs scope); do not hand-edit `docs/cli-reference/`.
 - **Verify:** clean `make docs` diff; 0 docline violations; enumerated tool-name/version set
-  matches across all edited docs; Markdown lint clean; quality gates green.
+  matches across all edited docs; markdownlint clean under the pinned P-008 rule set
+  (MD001/MD025/MD041); quality gates green.
 - **Posture:** verification.
 
 ## Dependency Graph
@@ -197,6 +203,10 @@ order), then U6 terminal verification.
   `#`/`:`; U3–U5 each self-lint; U6 runs the repo-wide gate.
 - **Hidden generated-reference drift surfaced by `make docs`.** Treated as an out-of-scope
   follow-up, not silently hand-patched.
+- **Markdown lint not yet repo-provisioned.** P-008 (`workflow-policies.md`) declares a
+  `.markdownlint.json` (MD001/MD025/MD041) precondition the repo does not actually ship. U6 pins that
+  rule set and provisions the config per P-008 before linting; the broader tooling gap (config +
+  Makefile target + CI wiring) is captured as a separate follow-up, out of this docs feature's scope.
 
 ## Constitution Check
 
