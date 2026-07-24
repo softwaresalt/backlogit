@@ -58,6 +58,11 @@ sources above, then edit prose to match.
 
 ### U1 — README brochure restructure
 
+- **Preparation (one-time, up front — U1 is the first runnable unit, no dependencies):** Run
+  `make docs` once to confirm the generated `docs/cli-reference/` mirror is drift-free before the
+  drift-fix units (U3–U5) reconcile prose against it. If the mirror is stale, treat Cobra
+  `--help`/source as the primary authority and record the generated-reference drift as a
+  **separate follow-up** (do not hand-edit `docs/cli-reference/`).
 - **Changes:** Add a hero value-proposition block after the H1 (what backlogit is, who it's for,
   the core value proposition), add an "at a glance" summary table, and relocate the existing
   CQRS/`## Overview` technical explanation lower in the document (below the brochure + Features).
@@ -114,11 +119,9 @@ sources above, then edit prose to match.
 
 ### U6 — Consistency verification and reconciliation
 
-- **Preparation (do first, before U3–U5 authoring):** Run `make docs` once up front so the
-  generated `docs/cli-reference/` mirror is confirmed drift-free; authors then reconcile prose
-  against a trustworthy mirror. If the mirror is stale, authors MUST treat Cobra `--help`/source as
-  primary over the generated pages.
-- **Changes:** No new prose. Run the source-entrypoint verification:
+- **Changes:** No new prose. Run the source-entrypoint verification (the one-time `make docs`
+  baseline moved to U1, the first runnable unit, so this terminal gate has no "do first" step that
+  the dependency-aware queue would hide):
   - `make docs` (regenerate `docs/cli-reference/`) MUST yield no git diff.
   - `backlogit docs lint` (repo-wide, `make docs-lint`) MUST report 0 violations.
   - **Enumerate the canonical fact set once** — the shipped MCP tool names (`srv.ToolDefs()`), the
@@ -160,12 +163,13 @@ U6 (verification) depends on: U1, U2, U3, U4, U5
 
 - U2 → depends on U1 (both edit `README.md`; do the layout move first, then reconcile facts).
 - U3, U4, U5 are mutually independent and independent of U1/U2 (disjoint files) — parallelizable.
-- U6 is the terminal gate; it depends on all authoring units. Its `make docs` mirror-refresh
-  **preparation** runs up front (before U3–U5) so authors reconcile against a drift-free generated
-  reference; U6's terminal verification still depends on U1–U5.
+- U6 is the terminal gate; it depends on all authoring units. The one-time `make docs`
+  mirror-refresh **baseline lives in U1** (the first runnable unit, no dependencies) — not in
+  terminal U6 — because the dependency-aware queue hides U6 until U1–U5 are done, so a "do first"
+  step on U6 would be unreachable. U6's terminal `make docs` drift check still depends on U1–U5.
 
-No cycles. Suggested execution order: U6 `make docs` prep → U1 → U2, then U3/U4/U5 (any order),
-then U6 terminal verification.
+No cycles. Suggested execution order: U1 (incl. `make docs` baseline) → U2, then U3/U4/U5 (any
+order), then U6 terminal verification.
 
 ## Decisions and Rationale
 
@@ -275,8 +279,10 @@ Requires plan hardening: no
 3. **[Go Reviewer] No Markdown-structure lint in U6.** → **Resolved:** U6 adds markdownlint over the
    edited README + `docs/**`.
 4. **[Go Reviewer] Sequencing** — authors reconcile against `docs/cli-reference/` before it is
-   confirmed drift-free. → **Resolved:** U6 preparation runs `make docs` up front (before U3–U5);
-   dependency graph and execution order updated.
+   confirmed drift-free. → **Resolved:** the one-time `make docs` baseline runs in **U1** (the first
+   runnable unit, no dependencies) up front, not in terminal U6 — the dependency-aware queue hides
+   U6 until U1–U5 finish, so a "do first" step there is unreachable; dependency graph and execution
+   order updated. *(Refined after PR #297 Copilot review flagged the blocked-terminal-U6 prep.)*
 5. **[Architecture Strategist] No cross-unit fact-consistency mechanism across U2–U5; U6 too
    README-narrow.** → **Resolved:** U6's enumerated-fact cross-check now spans all edited docs (same
    fix as #2).

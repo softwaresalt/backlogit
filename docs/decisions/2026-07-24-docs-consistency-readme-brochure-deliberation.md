@@ -99,8 +99,10 @@ architecture/reference-only docs not named below (`ARCHITECTURE.md`, `rationale.
   (a.k.a. `make docs`) and guarded by a CI "CLI Reference Drift Check" (since 089-S).
   **Never hand-edit `docs/cli-reference/`.**
   Ref: `docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md`.
-- Shipped MCP tool names: `s.addTool(mcplib.NewTool("backlogit_...", ...))` registrations in
-  `internal/mcp/tools.go`; live introspection via `srv.ToolDefs()`.
+- Shipped MCP tool names: live introspection via `srv.ToolDefs()` is the **primary, complete
+  authority**. Any static sweep MUST cover the **whole `internal/mcp/` package** — registrations
+  live in `tools.go` *and* `dynamic.go`, `docs_tools.go`, `hook_tools.go`, `version_tool.go`, etc.,
+  so grepping `tools.go` alone under-counts the shipped tool surface.
   Ref: `docs/compound/workflow-issues/unstaged-mcp-tool-registrations-caused-ci-only-failure-2026-04-07.md`,
   `docs/compound/2026-07-23-cli-mcp-filter-param-denylist-parity-test.md`.
 - Honest MCP→CLI map: `.autoharness/backlog-registry.yaml`, locked by
