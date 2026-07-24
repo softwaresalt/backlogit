@@ -281,7 +281,10 @@ integration, no destructive operation, and no security/auth impact.
 - Changing the gate broker's validator-bypass design (it remains correct).
 - Adding any other transitions (e.g. `review -> queued`, `done -> queued`) — not
   requested and not blessed by any prior decision.
-- Config-file / schema surface changes beyond the in-code default map.
+- Changing the `hooks.yaml` on-disk schema or file format itself (no new
+  fields, no structural/format changes). Load-time normalization of the
+  *already-persisted* transition map is explicitly IN scope as task
+  `124.004-T`; this exclusion covers only schema/on-disk-format changes.
 - Option B (docs-only) — rejected in the decision; retained only as the
   operator's course-correction path at PR review.
 
