@@ -263,8 +263,12 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 
 // redirectGate performs an authoritative requeue/escalate: the item moves to the
 // redirect target (queued or blocked) and the caller receives a *GateBlockedError.
-// The redirect write bypasses the user-facing transition validator because the
-// gate is the completion authority deciding this backward move.
+// The direct write is used here for three reasons: to record gate evidence before
+// the status write (appendGateEvidence must precede writeStatusDirect),
+// to return a GateBlockedError even when the transition is permitted by the
+// validator, and to avoid re-entering the hook pipeline during gate requeue.
+// active->queued is also a validated transition post-124.002-T, so this path
+// is consistent with the validator — not a bypass of a forbidden transition.
 func (ws *Workspace) redirectGate(ctx context.Context, id string, current *models.Artifact, oldStatus, target, outcomeName, eventType string, ev gate.Evaluation) (*models.Artifact, *GateOutcome, error) {
 	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev)
 

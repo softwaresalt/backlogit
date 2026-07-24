@@ -16,8 +16,8 @@ import (
 func DefaultTransitions() map[string][]string {
 	return map[string][]string{
 		"queued":  {"active", "blocked"},
-		"active":  {"done", "blocked", "review", "shipped", "abandoned"},
-		"blocked": {"active"},
+		"active":  {"done", "blocked", "review", "shipped", "abandoned", "queued"},
+		"blocked": {"active", "queued"},
 		"review":  {"done", "accepted", "rejected"},
 		"done":    {"archived"},
 	}

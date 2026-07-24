@@ -507,8 +507,8 @@ func DefaultHooksConfig() *HooksConfig {
 			EmitEvents:         true,
 			Transitions: map[string][]string{
 				"queued":  {"active", "blocked"},
-				"active":  {"done", "blocked", "review", "shipped", "abandoned"},
-				"blocked": {"active"},
+				"active":  {"done", "blocked", "review", "shipped", "abandoned", "queued"},
+				"blocked": {"active", "queued"},
 				"review":  {"done", "accepted", "rejected"},
 				"done":    {"archived"},
 			},
