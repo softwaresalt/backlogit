@@ -46,7 +46,7 @@ final HEAD.
 | `internal/hooks/builtin_pre.go` | `DefaultTransitions()`: identical edit (empty-map fallback) |
 | `internal/hooks/builtin_pre_test.go` | 2 new rows in `AllDefaultTransitions` |
 | `internal/config/transitions_sync_test.go` | NEW — `reflect.DeepEqual` sync-guard between the two default sites |
-| `internal/config/loader.go` | `priorGeneratedDefaultTransitions` frozen constant + `upgradeLegacyTransitions` in `LoadHooks` |
+| `internal/config/loader.go` | `priorGeneratedDefaultTransitions` frozen package-level `var` + `upgradeLegacyTransitions` in `LoadHooks` |
 | `internal/config/hooks_normalize_test.go` | NEW — legacy→upgraded, custom→preserved, absent→fallback |
 | `internal/core/shipment_state_integrity_test.go` | Stale comment updated |
 | `internal/core/gate_transition.go` | `redirectGate` bypass rationale reworded |
@@ -71,13 +71,16 @@ session-completion PR (they are NOT in merge commit `369e862a`).
 
 ## Key Decisions & Rationale
 
-- **Option A (add both edges to the validated map)** chosen over relaxing the
-  gate at the enforcement layer — keeps enforcement centralized in
-  `hooks.ValidateStatusTransition`.
+- **Option A (widen the validated transition map)** chosen over Option B (a
+  docs-only correction that would have changed the doctor doc to prescribe the
+  supported `--status` resume path instead of changing code). Option A itself
+  widens `hooks.ValidateStatusTransition`'s validated map to add the return-to-
+  `queued` edges, resolving the code↔doc contradiction at the enforcement layer.
 - **Persisted-config gap (124.004-T):** absent transition maps inherit the new
   default via the empty-map fallback; only PERSISTED explicit maps need the
   load-time `upgradeLegacyTransitions` normalizer. Deep-equal against a frozen
-  prior-default constant; upgrade only on exact match, preserve customized maps.
+  prior-default snapshot (a package-level `var`, since Go maps cannot be `const`);
+  upgrade only on exact match, preserve customized maps.
   Mirrors `PreTaskCompletionGate.Normalize()` (082-F).
 
 ## Gotchas Encountered
