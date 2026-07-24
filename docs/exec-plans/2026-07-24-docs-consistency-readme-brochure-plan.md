@@ -130,14 +130,17 @@ sources above, then edit prose to match.
   - **Mechanical command check:** run each documented command with `--help` (or in a scratch
     workspace) against the v1.7.0 binary to confirm command/flag existence, rather than relying
     only on a subjective read-through.
-  - **Markdown-structure lint (P-008):** run `markdownlint "**/*.md"` restricted to the edited
-    `README.md` + `docs/**` files under the repo's **declared P-008 rule set — MD001, MD025, MD041**
-    (`.github/policies/workflow-policies.md`) so a heading-hierarchy regression (skipped heading
-    level, multiple H1, missing top-level heading) is caught here rather than in CI. **Prerequisite:**
-    the repo does not yet ship a `.markdownlint.json`; U6 MUST provision one enabling exactly
-    MD001/MD025/MD041 per P-008 before running the gate — pinning the rule set makes the check
-    deterministic instead of relying on markdownlint's environment defaults. If provisioning is
-    deferred, treat it as a blocking follow-up and apply the P-008 heading-hierarchy rules manually.
+  - **Markdown-structure lint (P-008):** run the **repo-wide** P-008 gate — `markdownlint "**/*.md"`
+    exits 0 for **every staged/committed Markdown file** (not just the seven edited docs) — under the
+    repo's declared P-008 rule set **MD001, MD025, MD041** (`.github/policies/workflow-policies.md`),
+    so a heading-hierarchy regression (skipped heading level, multiple H1, missing top-level heading)
+    in any changed Markdown (including backlog lifecycle artifacts) is caught here rather than in CI.
+    The edited-file list (README + U3–U5 docs) scopes only the factual prose cross-check above, not
+    this structure gate. **Prerequisite:** the repo does not yet ship a `.markdownlint.json`; U6 MUST
+    provision one enabling exactly MD001/MD025/MD041 per P-008 before running the gate — pinning the
+    rule set makes the check deterministic instead of relying on markdownlint's environment defaults.
+    If provisioning is deferred, treat it as a blocking follow-up and apply the P-008 heading-hierarchy
+    rules manually.
   - Run the quality gates (`gofmt -l .`, `go vet ./...`, `make test` / `go test ./...`,
     `golangci-lint run`) to confirm docs-only edits kept the build green.
 - **Accepted residual risk:** No mechanical gate proves README/installation/etc. **prose** matches
@@ -150,8 +153,8 @@ sources above, then edit prose to match.
   Cobra `Long`/`Short` doc bug — record it as a **separate follow-up** (out of this feature's
   docs scope); do not hand-edit `docs/cli-reference/`.
 - **Verify:** clean `make docs` diff; 0 docline violations; enumerated tool-name/version set
-  matches across all edited docs; markdownlint clean under the pinned P-008 rule set
-  (MD001/MD025/MD041); quality gates green.
+  matches across all edited docs; markdownlint clean **repo-wide** under the pinned P-008 rule set
+  (MD001/MD025/MD041 — 0 violations across all staged/committed Markdown); quality gates green.
 - **Posture:** verification.
 
 ## Dependency Graph
