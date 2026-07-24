@@ -54,15 +54,16 @@ Plan: `docs/exec-plans/2026-07-23-return-to-queued-transition-plan.md`.
 |---|---|---|
 | Transition-map widening | 124.002-T | `internal/config/defaults.go` (`DefaultHooksConfig().Lifecycle.Transitions`, the production-wired map) and `internal/hooks/builtin_pre.go` (`DefaultTransitions()`, the empty-map fallback) — both gain `queued` on the `active` and `blocked` entries. Additive; no previously-valid transition removed. |
 | Sync-guard test | 124.002-T | `internal/config/transitions_sync_test.go` (new) — mandatory `reflect.DeepEqual` pinning `hooks.DefaultTransitions() == config.DefaultHooksConfig().Lifecycle.Transitions`, plus positive/negative coverage feeding the production map into `ValidateStatusTransition`. |
-| Persisted-config legacy upgrade | 124.004-T | `internal/config/loader.go` — `priorGeneratedDefaultTransitions` frozen constant + `upgradeLegacyTransitions` helper invoked from `LoadHooks`. Deep-equals the persisted `lifecycle.transitions` map against the known prior generated default: upgrades ONLY on an exact match (legacy generated map); any operator-customized map is left byte-for-byte untouched (never blind-inject `queued`). Mirrors the `PreTaskCompletionGate.Normalize()` precedent (082-F). |
+| Persisted-config legacy upgrade | 124.004-T | `internal/config/loader.go` — `priorGeneratedDefaultTransitions` frozen constant + `upgradeLegacyTransitions` helper invoked from `LoadHooks`. Deep-equals the persisted `lifecycle.transitions` map against the known prior generated default: upgrades ONLY on an exact match; any operator-customized map that differs from the prior default is left byte-for-byte untouched (never blind-inject `queued`). The discriminator is value equality, not provenance — a customized map that exactly reproduces the prior default is indistinguishable from a legacy generated map and is upgraded too. That is an accepted ambiguity: such a map already carried the restrictive default set and only gains the two additive `queued` transitions. Mirrors the `PreTaskCompletionGate.Normalize()` precedent (082-F). |
 | Loader tests | 124.004-T | `internal/config/hooks_normalize_test.go` (new) — legacy-map upgraded, operator-restricted map preserved, absent block resolves via existing fallback. |
 | Comment/doc alignment | 124.003-T | `internal/core/shipment_state_integrity_test.go` stale comment updated; `internal/core/gate_transition.go` `redirectGate` bypass rationale reworded (the direct write is for gate-evidence ordering / `GateBlockedError` semantics / hook-reentry avoidance — no longer "the validator would reject it", since `active -> queued` is now validator-consistent). Doctor long-help and generated cli-reference verified accurate under Option A; no text change required. |
 
 ## The persisted-config gap (why 124.004-T exists)
 
-`LoadHooks` (`internal/config/loader.go:120-151`) unmarshals `hooks.yaml` and
-normalizes ONLY the `PreTaskCompletionGate` block — it does not merge
-newly-added default transitions. `WriteDefaults` persists a full
+Before this fix, `LoadHooks` unmarshaled `hooks.yaml` and normalized ONLY the
+`PreTaskCompletionGate` block — it did not merge newly-added default
+transitions (this section describes the historical gap; post-fix `LoadHooks`
+also calls `upgradeLegacyTransitions` to close it). `WriteDefaults` persists a full
 `lifecycle.transitions:` map at init, and `internal/core/workspace.go:114-118`
 wires THAT persisted map. So the `defaults.go` edit alone reaches only
 newly-initialized workspaces; existing consumer workspaces (like the BD8DBB85
@@ -113,7 +114,8 @@ transition is removed, and the sync-guard test pins the two map copies in
 lockstep so they cannot drift. The gate broker's validator-bypass write is
 unchanged in behavior (it already produced `active -> queued`); only its
 rationale comment was corrected. The loader upgrade is a one-way legacy-match
-gate that never mutates a customized map, so no operator policy is silently
+gate: it mutates a persisted map only when that map exactly equals the prior
+generated default, so a genuinely customized (differing) policy is never
 altered.
 
 ## Release-observability (operational evidence)
@@ -123,10 +125,10 @@ The shipped change modifies the status-transition validation surface and the
 
 | Item | Value |
 |---|---|
-| Monitoring signal | **Manual** — no runtime metrics system for the local backlogit index. Health signal: `backlogit move {id} --status queued` from a `blocked` or `active` item succeeds; existing consumer workspaces honor the new transitions after the next `LoadHooks`. Automated guard: the sync-guard test + the three loader tests. |
+| Monitoring signal | **Manual** — no runtime metrics system for the local backlogit index. Health signal: `backlogit move {id} --status queued` from a `blocked` or `active` item succeeds; consumer workspaces whose persisted map matches the prior generated default are upgraded on the next `LoadHooks` (intentionally customized maps are left unchanged). Automated guard: the sync-guard test + the three loader tests. |
 | Owner | Ship agent (session); operator on return. |
 | Observation window | Next requeue attempt (`--status queued`) in any workspace, and the first `LoadHooks` of a legacy consumer workspace. Surfaced by `go test ./internal/config/... ./internal/hooks/...` on every run. |
-| Baseline | Pre-fix: `blocked`/`active` -> `queued` rejected by `ValidateStatusTransition`; doctor `--status queued` resume contradicted enforcement. Post-fix: both transitions accepted; legacy persisted maps upgraded on load; customized maps preserved. |
+| Baseline | Pre-fix: `blocked`/`active` -> `queued` rejected by `ValidateStatusTransition`; doctor `--status queued` resume contradicted enforcement. Post-fix: both transitions accepted; persisted maps matching the prior generated default upgraded on load; differing (customized) maps preserved. |
 | Rollback trigger | A legacy consumer map NOT upgraded on load, OR an operator-customized map mutated by `LoadHooks`, OR any `transitions_sync_test.go` / `hooks_normalize_test.go` failure, OR a previously-valid transition rejected. |
 | Rollback procedure | Revert merge commit `96664088` (PR #294) via `git revert -m 1 96664088`. Clean at the code level (isolated to `internal/config` + `internal/hooks` + two `internal/core` comment edits, no schema or data migration). Reverting re-exposes the original defect (queued unreachable); prefer a roll-forward fix. No persisted-workspace data is rewritten by the revert — the loader upgrade is in-memory only. |
 
@@ -141,7 +143,8 @@ The shipped change modifies the status-transition validation surface and the
 ## Compound-refresh
 
 No compound learning was invalidated. The persisted-config gap
-(`LoadHooks` normalizes only the gate block, not new default transitions) is a
+(before this fix, `LoadHooks` normalized only the gate block, not new default
+transitions) is a
 reusable trap worth remembering when adding any new default to `hooks.yaml`:
 the in-code default reaches only freshly-initialized workspaces unless a
 load-time legacy-map upgrade is added. The `upgradeLegacyTransitions` /
