@@ -146,7 +146,11 @@ No compound learning was invalidated. The persisted-config gap
 (before this fix, `LoadHooks` normalized only the gate block, not new default
 transitions) is a
 reusable trap worth remembering when adding any new default to `hooks.yaml`:
-the in-code default reaches only freshly-initialized workspaces unless a
-load-time legacy-map upgrade is added. The `upgradeLegacyTransitions` /
+the in-code default automatically reaches freshly-initialized workspaces and
+existing workspaces that have NO persisted transitions block (an absent map
+falls through `ValidateStatusTransition(nil)` to `DefaultTransitions()`). It
+does NOT reach existing workspaces that persisted an explicit `transitions:`
+map — those keep their on-disk map and need a load-time upgrade. The
+`upgradeLegacyTransitions` /
 `priorGeneratedDefaultTransitions` pair follows the `PreTaskCompletionGate.Normalize()`
 precedent (082-F) and is the pattern to reuse for future default-map evolution.
