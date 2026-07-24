@@ -7,8 +7,6 @@ source: docs/exec-plans/2026-07-24-docs-consistency-readme-brochure-plan.md
 title: 'Documentation consistency and README brochure rework for v1.7.0'
 ---
 
-# Documentation consistency and README brochure rework for v1.7.0
-
 Source deliberation: `docs/decisions/2026-07-24-docs-consistency-readme-brochure-deliberation.md`
 (stash `ECC3C116`). Chosen direction: **Option A** — broad drift audit across the user-facing
 doc set plus a fuller README top restructure.
