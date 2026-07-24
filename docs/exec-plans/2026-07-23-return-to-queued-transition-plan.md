@@ -65,10 +65,21 @@ invalid — and no test or invariant depends on `queued` being unreachable.
 | X. Context Efficiency | N/A (behavioral change only). |
 | IV. CLI Containment / VII. Destructive Approval / VIII. Safety Modes | N/A — no file I/O outside cwd, no destructive operation, no elevated-risk action. |
 | XI. Merge Commit Preservation | N/A at plan level — merge strategy enforced by the Ship agent's merge gate. |
-| Scope / 2-Hour Rule | Decomposed into 3 tasks (map edits; `LoadHooks` persisted-config normalization; comment/doc align), each < 3 files + paired tests and < 4 test scenarios, honoring the 2-Hour Rule and Width Isolation per task. |
+| Scope / 2-Hour Rule | Decomposed into 3 tasks (124.002-T map edits; 124.004-T `LoadHooks` legacy-map upgrade; 124.003-T comment/doc align). 124.004-T and 124.003-T touch ≤ 2 files each. 124.002-T touches 4 files (2 production map sites + 2 paired test files) as one atomic TDD change — see the documented deviation below. |
 
-Justified deviations: none. This is an additive lifecycle change with no
-principle conflict.
+Justified deviations: **Unit 1 / task 124.002-T touches 4 files**
+(`internal/hooks/builtin_pre.go`, `internal/config/defaults.go`,
+`internal/hooks/builtin_pre_test.go`, and an external `_test`-package sync-guard
+file), one over the "< 3 files" granularity heuristic. This is justified and stays
+within the 2-Hour spirit: the two map-definition sites MUST change together (the
+mandatory `reflect.DeepEqual` sync-guard invariant fails if only one is edited, so
+they are inseparable), and Test-First requires their paired tests in the same
+task; the sync-guard/production-map assertion needs a dedicated external `_test`
+package (it imports both `hooks` and `config`, which `builtin_pre_test.go`
+(`package hooks`) cannot). The actual change is two tiny additive map edits plus
+their tests — well under 5 functions and 4 test scenarios — so it remains a single
+coherent ~2-hour unit. Units 2 (124.004-T) and 3 (124.003-T) each stay within the
+< 3 files heuristic. No other deviations.
 
 Constitution Check: pass
 
@@ -128,31 +139,47 @@ Constitution Check: pass
   rejecting `blocked->queued` / `active->queued` until the persisted map is
   normalized on load.
 * **What changes:**
-  1. **Test-first (red):** add a loader test that writes an OLD `hooks.yaml` whose
-     `lifecycle.transitions` map has `blocked: [active]` and
-     `active: [done, blocked, review, shipped, abandoned]` (NO `queued`), calls
-     `LoadHooks`, and asserts the returned config's transitions include
-     `blocked->queued` and `active->queued` (and/or feeds the loaded map into
-     `ValidateStatusTransition` and asserts both pass). Confirm RED against the
-     current `LoadHooks`.
-  2. **Green — `internal/config/loader.go` `LoadHooks`:** after unmarshal/validate,
-     normalize the loaded `Lifecycle.Transitions` map to guarantee the mandatory
-     default return-to-queued entries are present — merge `queued` into the
-     `blocked` and `active` target lists if absent (idempotent; preserves any
-     operator-added targets; never drops existing entries). Mirror the existing
-     `PreTaskCompletionGate.Normalize()` precedent (082-F): a small
-     `normalizeTransitions` / `Normalize` helper invoked from `LoadHooks`. When
-     `transitions` is entirely absent, the existing empty-map fallback to
-     `DefaultTransitions()` already yields the correct set — assert this in a
-     second test case.
-  3. Preserve monotonic behavior: normalization only ADDS the mandatory entries;
-     it never removes operator customizations and never rejects a valid config.
+  1. **Test-first (red):** add a loader test whose OLD `hooks.yaml` carries the
+     prior generated-default `lifecycle.transitions` map verbatim (`blocked:
+     [active]`, `active: [done, blocked, review, shipped, abandoned]`, plus the
+     `queued`/`review`/`done` entries exactly as the pre-change default — i.e. NO
+     `queued` target on `blocked`/`active`), calls `LoadHooks`, and asserts the
+     returned transitions now include `blocked->queued` and `active->queued`.
+     Confirm RED against the current `LoadHooks`.
+  2. **Green — `internal/config/loader.go` `LoadHooks` (legacy-vs-custom
+     discrimination):** after unmarshal/validate, compare the persisted
+     `Lifecycle.Transitions` map against the KNOWN PRIOR generated default,
+     captured as a frozen constant (the exact pre-change set:
+     `queued:{active,blocked}`, `active:{done,blocked,review,shipped,abandoned}`,
+     `blocked:{active}`, `review:{done,accepted,rejected}`, `done:{archived}`).
+       - **If the persisted map deep-equals the prior generated default** → it is a
+         legacy generated-default map → upgrade it to the new default (add
+         `blocked->queued` and `active->queued`).
+       - **If it differs in ANY way** → treat it as an operator-customized policy
+         and leave it UNTOUCHED (never inject `queued`). Optionally emit a
+         `slog.Warn` / doctor note that the persisted map predates the new default
+         and can be regenerated, but never mutate it.
+     Rationale: the persisted `lifecycle.transitions` map is an operator
+     contract. An operator who intentionally excluded `queued` (a restrictive
+     custom policy) MUST NOT be silently overridden — so a blind "always inject
+     `queued`" normalization is wrong. Only the exact legacy generated default is
+     auto-upgraded. Mirror the `PreTaskCompletionGate.Normalize()` precedent
+     (082-F) as a small `upgradeLegacyTransitions` helper invoked from `LoadHooks`.
+     When `transitions` is entirely absent, the existing empty-map fallback to
+     `DefaultTransitions()` already yields the correct set — assert this too.
+  3. **Preservation guarantee (operator-customized map):** add a test whose
+     persisted map intentionally omits `queued` AND differs from the prior default
+     in some way (e.g. an operator-restricted `active: [done]`). Assert `LoadHooks`
+     leaves it UNCHANGED (no `queued` injected, no targets added or dropped). The
+     upgrade path fires only for the exact legacy default; it never mutates a
+     customized map and never rejects a valid config.
 * **Files:** `internal/config/loader.go`, `internal/config/loader_test.go` (or a
   focused `internal/config/hooks_normalize_test.go`).
-* **Acceptance:** an OLD persisted `hooks.yaml` lacking the new transitions honors
-  `blocked->queued` / `active->queued` after `LoadHooks` (red->green); an
-  absent-`transitions` config still resolves correctly; `go test
-  ./internal/config/...` + quality gates pass.
+* **Acceptance:** a persisted `hooks.yaml` equal to the prior generated default is
+  upgraded to honor `blocked->queued` / `active->queued` after `LoadHooks`
+  (red->green); an operator-customized map that omits `queued` is PRESERVED
+  unchanged (not mutated); an absent-`transitions` config still resolves via the
+  existing default fallback; `go test ./internal/config/...` + quality gates pass.
 
 ### Unit 3: Align integration-test comment and confirm doc accuracy (tests + doc verification)
 
@@ -202,7 +229,8 @@ Constitution Check: pass
 | `blocked -> queued` valid (hooks fallback map) | `builtin_pre_test.go` `AllDefaultTransitions` table | errors (not in map) | passes |
 | `active -> queued` valid (hooks fallback map) | `builtin_pre_test.go` `AllDefaultTransitions` table | errors (not in map) | passes |
 | `blocked -> queued` / `active -> queued` valid on the **production-wired config map** | new test feeding `DefaultHooksConfig().Lifecycle.Transitions` into `ValidateStatusTransition` | errors | passes |
-| OLD persisted `hooks.yaml` (no `queued` in blocked/active) honors new transitions after load | new `internal/config` loader test (Unit 2) | errors (persisted map shadows default) | passes (`LoadHooks` normalizes) |
+| Legacy generated-default `hooks.yaml` (== prior default, no `queued`) → upgraded to include both new transitions | new `internal/config` loader test (Unit 2) | errors (persisted map shadows default) | passes (`LoadHooks` upgrades legacy) |
+| Operator-customized restrictive map (intentionally omits `queued`, differs from prior default) → PRESERVED, not mutated | new `internal/config` loader test (Unit 2) | n/a | map unchanged; no `queued` injected |
 | Still-forbidden negative (e.g. `blocked -> done`) | `builtin_pre_test.go` invalid-transition test | passes (already forbidden) | still passes |
 | Map sync guard: `reflect.DeepEqual(hooks map, config map)` | new external `_test` package | fails/absent | passes |
 | Existing lifecycle suites unaffected | `go test ./...` | green | green |
@@ -218,12 +246,14 @@ both maps, (3) confirm the new cases + sync guard green, (4) run `go test ./...`
 - **Config-map edit unverified.** The `defaults.go` map is the production-wired
   one (`workspace.go:114-118`); the `nil`-fed positive tests only exercise the
   hooks fallback. Mitigation: add the production-map positive test (Unit 1 step 5).
-- **Persisted `hooks.yaml` shadows the fix (CONFIRMED, not hypothetical).**
-  `LoadHooks` (`loader.go:120-151`) wires the persisted `lifecycle.transitions`
-  map and does not merge new defaults, so existing workspaces would keep rejecting
-  the new transitions. Mitigation: Unit 2 normalizes the loaded map in `LoadHooks`
-  to guarantee the mandatory default entries, with a red->green test using an OLD
-  persisted `hooks.yaml`.
+- **Persisted `hooks.yaml` shadows the fix (CONFIRMED) — upgrade only legacy
+  defaults.** `LoadHooks` (`loader.go:120-151`) wires the persisted
+  `lifecycle.transitions` map and does not merge new defaults, so existing
+  workspaces would keep rejecting the new transitions. Mitigation: Unit 2 upgrades
+  the loaded map ONLY when it deep-equals the prior generated default (legacy), and
+  leaves any operator-customized map untouched — so a deliberately restrictive
+  policy is never silently overridden. Covered by two red->green tests (legacy
+  upgraded; customized preserved).
 - **A hidden test assumed `queued` unreachable.** Mitigation: Unit 3 runs the
   full suite and sweeps for stale invariant comments; verified during staging that
   no test asserts `blocked->queued` or `active->queued` is forbidden (only stale
@@ -293,9 +323,11 @@ None.
   `LoadHooks` (`loader.go:120-151`) does not merge new default transition entries,
   so existing workspaces keep their persisted map and would still reject the new
   transitions. Resolved: promoted from a "verify + migration-note" contingency to
-  a first-class implementation unit (Unit 2: `LoadHooks` transition normalization)
-  with dedicated red->green test coverage using an OLD persisted `hooks.yaml`.
-  Tracked as task `124.004-T`.
+  a first-class implementation unit (Unit 2: `LoadHooks` **legacy-map upgrade** —
+  upgrade only a map that deep-equals the prior generated default; preserve any
+  operator-customized map untouched) with dedicated red->green test coverage for
+  both the legacy-upgraded and customized-preserved cases. Tracked as task
+  `124.004-T`.
 * **Two-map duplication / sync guard (Architecture + Learnings).** Resolved:
   made the deep-equality sync guard MANDATORY (dropped the weak per-package
   containment fallback), confirmed no import cycle exists, and cited the drift-test
