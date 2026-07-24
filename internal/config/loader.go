@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -115,6 +116,41 @@ func LoadRegistry(workspacePath string) (*RegistryConfig, error) {
 	return &reg, nil
 }
 
+// priorGeneratedDefaultTransitions is the exact lifecycle.transitions map that
+// DefaultHooksConfig() and WriteDefaults produced before the 124.002-T
+// transition-map widening (blocked/active lacked queued targets).
+// Used by upgradeLegacyTransitions to discriminate a legacy-generated config
+// from an operator-customized one. Must NOT be edited — immutable historical snapshot.
+var priorGeneratedDefaultTransitions = map[string][]string{
+	"queued":  {"active", "blocked"},
+	"active":  {"done", "blocked", "review", "shipped", "abandoned"},
+	"blocked": {"active"},
+	"review":  {"done", "accepted", "rejected"},
+	"done":    {"archived"},
+}
+
+// upgradeLegacyTransitions upgrades a persisted Lifecycle.Transitions map when
+// it is an exact match to the pre-124.002-T generated default. Any map that
+// differs in any way is treated as operator-customized and returned unchanged,
+// preserving the operator's intentional policy. Mirrors the
+// PreTaskCompletionGate.Normalize() precedent (082-F).
+//
+// An absent (nil/empty) map is returned unchanged because the runtime falls
+// back to DefaultTransitions() via ValidateStatusTransition(nil).
+func upgradeLegacyTransitions(persisted map[string][]string) map[string][]string {
+	if len(persisted) == 0 {
+		return persisted
+	}
+	if !reflect.DeepEqual(persisted, priorGeneratedDefaultTransitions) {
+		// Differs from the known prior generated default in some way.
+		// Treat as operator-customized; do not inject queued.
+		return persisted
+	}
+	// Exact match to the prior generated default → legacy-generated config.
+	// Upgrade to the current default (adds blocked->queued and active->queued).
+	return DefaultHooksConfig().Lifecycle.Transitions
+}
+
 // LoadHooks reads hooks.yaml from the workspace directory.
 // If the file is missing, DefaultHooksConfig is returned so callers always have a valid config.
 func LoadHooks(workspacePath string) (*HooksConfig, error) {
@@ -139,6 +175,11 @@ func LoadHooks(workspacePath string) (*HooksConfig, error) {
 	if err := cfg.Lifecycle.PreTaskCompletionGate.Validate(); err != nil {
 		return nil, fmt.Errorf("validate hooks: %w", err)
 	}
+	// Upgrade a legacy-generated transitions map to include the new default
+	// entries (blocked->queued, active->queued). Only fires when the persisted
+	// map is byte-for-byte equal to the pre-124.002-T generated default;
+	// operator-customized maps are left untouched (124.004-T).
+	cfg.Lifecycle.Transitions = upgradeLegacyTransitions(cfg.Lifecycle.Transitions)
 	// Reject header values that don't use env var expansion (security guardrail).
 	// Only $VAR or ${VAR} syntax is supported; os.ExpandEnv handles resolution.
 	for i, ep := range cfg.Notifications.Endpoints {
