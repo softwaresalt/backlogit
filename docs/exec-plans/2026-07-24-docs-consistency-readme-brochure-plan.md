@@ -141,8 +141,9 @@ sources above, then edit prose to match.
     rule set makes the check deterministic instead of relying on markdownlint's environment defaults.
     If provisioning is deferred, treat it as a blocking follow-up and apply the P-008 heading-hierarchy
     rules manually.
-  - Run the quality gates (`gofmt -l .`, `go vet ./...`, `make test` / `go test ./...`,
-    `golangci-lint run`) to confirm docs-only edits kept the build green.
+  - Run the quality gates **in the mandated order** (`AGENTS.md` — tests → vet → lint → format):
+    `make test` / `go test ./...`, then `go vet ./...`, then `golangci-lint run`, then `gofmt -l .`,
+    to confirm docs-only edits kept the build green.
 - **Accepted residual risk:** No mechanical gate proves README/installation/etc. **prose** matches
   the shipped surface — `make docs` validates only the *generated* reference vs Cobra source,
   `backlogit docs lint` validates *frontmatter only*, and README is outside docline scope. The
@@ -212,7 +213,7 @@ order), then U6 terminal verification.
 ## Constitution Check
 
 - **Safety-First Go (MUST):** N/A — no Go production code changes; documentation only.
-  U6 still runs `go vet`/`golangci-lint`/`make test` to confirm the build stayed green.
+  U6 still runs `make test`/`go vet`/`golangci-lint`/`gofmt -l .` (mandated gate order) to confirm the build stayed green.
 - **Test-First Development (NON-NEGOTIABLE):** N/A — prose docs have no unit-test harness.
   Verification is `backlogit docs lint`, the `make docs` drift check, and read-through (U6).
 - **Workspace Isolation and Security Boundaries:** pass — all edits resolve within the workspace
