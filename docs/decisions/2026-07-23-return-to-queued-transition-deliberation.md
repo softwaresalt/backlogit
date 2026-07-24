@@ -168,8 +168,14 @@ additive (no previously-valid transition becomes invalid, no invariant depends o
 persisted workspaces are reached, so the risk is low and the fix targets the real
 asymmetry rather than hiding it. `blocked -> queued` is the transition that
 directly discharges the documented contradiction; `active -> queued` is included
-for full parity with the gate broker so the manual and automated requeue paths
-are symmetric.
+for parity with the gate broker's common `active` completion path, so the manual
+and automated requeue paths are symmetric for the states operators most often
+recover from. This is deliberately narrower than full broker parity: the gate
+broker redirects any non-terminal task/subtask that fails to enter a configured
+terminal status (`gate_transition.go:99-117`), so it can also produce
+`review -> queued`. Adding `review -> queued` to the validated manual map is
+intentionally left out of scope here and can be deliberated separately if a
+manual `review` recovery need emerges.
 
 ## Consequences
 
