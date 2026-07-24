@@ -13,7 +13,8 @@ tags:
 ---
 
 Source decision: `docs/decisions/2026-07-23-return-to-queued-transition-deliberation.md`
-(Option A, decided; recommendation surfaced for operator confirm at the staging PR).
+(Option A — add BOTH `blocked->queued` AND `active->queued` — decided and
+**operator-confirmed** at the staging PR; no longer pending).
 Related prior decision: `docs/decisions/2026-07-05-gate-repeated-failure-requeue-ownership-deliberation.md`.
 
 ## Problem Frame
@@ -46,7 +47,7 @@ invalid — and no test or invariant depends on `queued` being unreachable.
 | Allow manual `active -> queued` (gate parity) | Add `queued` to the `active` entry in both transition-map definitions |
 | Keep both map copies in sync | Edit `internal/config/defaults.go:508-514` AND `internal/hooks/builtin_pre.go:16-24`; add a **mandatory** deep-equality (`reflect.DeepEqual`) test asserting `hooks.DefaultTransitions()` equals `DefaultHooksConfig().Lifecycle.Transitions`. No import cycle exists (`hooks` imports only stdlib + `internal/errors`; `config` does not import `hooks`), so an external `_test` package can compare both directly. |
 | Verify behavior on the PRODUCTION-wired map (TDD, red->green) | The production validator is wired at `internal/core/workspace.go:114-118` with `hooksCfg.Lifecycle.Transitions` (the **config** map); `DefaultTransitions()` is only the empty-map fallback. So besides the `ValidateStatusTransition(nil)` cases, add a positive test that feeds `DefaultHooksConfig().Lifecycle.Transitions` into `ValidateStatusTransition` and asserts `blocked->queued`/`active->queued` pass, giving the `defaults.go` edit its own observed red->green. |
-| Confirm existing workspaces are reached | Verify whether `backlogit init` materializes `hooks.yaml` with a serialized `lifecycle.transitions` block. If it does, a pre-existing workspace's persisted map would shadow the default-map fix — record a migration note. If init does NOT serialize transitions (relies on the in-code default), the fix reaches all workspaces; record that verification. |
+| Reach existing (persisted-`hooks.yaml`) workspaces — CONFIRMED gap | **Confirmed against source:** `internal/config/loader.go:120-151` `LoadHooks` unmarshals `hooks.yaml` directly and normalizes ONLY the `PreTaskCompletionGate` block; it does NOT merge newly-added default transition entries. `WriteDefaults` persists `hooks.yaml` with a full `transitions:` map, and `internal/core/workspace.go:114-118` wires THAT persisted map, so consumer workspaces (including the BD8DBB85 reporter) keep it. Editing `defaults.go` alone fixes ONLY newly-initialized workspaces. Fix: normalize the loaded transitions map in `LoadHooks` to guarantee the mandatory default entries (`blocked->queued`, `active->queued`) are present — see **Unit 2 (persisted-config normalization)**. |
 | No regression to forbidden transitions | Keep `queued -> done`, `blocked -> done`, etc. rejected; assert in the invalid-transition test |
 | Doc stays accurate | Confirm `internal/cli/doctor.go` long-help and generated `docs/cli-reference/backlogit_doctor.md` need NO change (code now honors them); Ship regenerates CLI-reference docs during build if the drift gate requires it |
 | Fix stale test comment | Update the comment at `internal/core/shipment_state_integrity_test.go:139` ("blocked->active is the only hook-allowed exit") |
@@ -64,7 +65,7 @@ invalid — and no test or invariant depends on `queued` being unreachable.
 | X. Context Efficiency | N/A (behavioral change only). |
 | IV. CLI Containment / VII. Destructive Approval / VIII. Safety Modes | N/A — no file I/O outside cwd, no destructive operation, no elevated-risk action. |
 | XI. Merge Commit Preservation | N/A at plan level — merge strategy enforced by the Ship agent's merge gate. |
-| Scope / 2-Hour Rule | 2 source files + paired tests, < 5 functions, < 4 new test scenarios. |
+| Scope / 2-Hour Rule | Decomposed into 3 tasks (map edits; `LoadHooks` persisted-config normalization; comment/doc align), each < 3 files + paired tests and < 4 test scenarios, honoring the 2-Hour Rule and Width Isolation per task. |
 
 Justified deviations: none. This is an additive lifecycle change with no
 principle conflict.
@@ -112,10 +113,51 @@ Constitution Check: pass
 * **Acceptance:** `go test ./internal/hooks/... ./internal/config/...` passes;
   the two new valid transitions pass and the negative case still errors.
 
-### Unit 2: Align integration-test comment and confirm doc accuracy (tests + doc verification)
+### Unit 2: Normalize persisted hooks.yaml transitions on load (migration — code + unit tests)
 
-* **Domain:** Go tests + docs verification (kept separate from Unit 1's core
-  code change per Width Isolation).
+* **Domain:** Go / config loader (single skill domain; separate from Unit 1's
+  map-definition edit per Width Isolation).
+* **Execution posture:** test-first (TDD).
+* **Why (CONFIRMED gap, not hypothetical):** `internal/config/loader.go:120-151`
+  `LoadHooks` unmarshals `hooks.yaml` and normalizes ONLY the
+  `PreTaskCompletionGate` block. Existing workspaces persist a full
+  `lifecycle.transitions:` map (written by `WriteDefaults` /
+  `defaultHooksYAML()`), and `internal/core/workspace.go:114-118` wires THAT
+  persisted map. So the Unit 1 `defaults.go` edit reaches only newly-initialized
+  workspaces; the BD8DBB85 reporter (and every existing consumer workspace) keeps
+  rejecting `blocked->queued` / `active->queued` until the persisted map is
+  normalized on load.
+* **What changes:**
+  1. **Test-first (red):** add a loader test that writes an OLD `hooks.yaml` whose
+     `lifecycle.transitions` map has `blocked: [active]` and
+     `active: [done, blocked, review, shipped, abandoned]` (NO `queued`), calls
+     `LoadHooks`, and asserts the returned config's transitions include
+     `blocked->queued` and `active->queued` (and/or feeds the loaded map into
+     `ValidateStatusTransition` and asserts both pass). Confirm RED against the
+     current `LoadHooks`.
+  2. **Green — `internal/config/loader.go` `LoadHooks`:** after unmarshal/validate,
+     normalize the loaded `Lifecycle.Transitions` map to guarantee the mandatory
+     default return-to-queued entries are present — merge `queued` into the
+     `blocked` and `active` target lists if absent (idempotent; preserves any
+     operator-added targets; never drops existing entries). Mirror the existing
+     `PreTaskCompletionGate.Normalize()` precedent (082-F): a small
+     `normalizeTransitions` / `Normalize` helper invoked from `LoadHooks`. When
+     `transitions` is entirely absent, the existing empty-map fallback to
+     `DefaultTransitions()` already yields the correct set — assert this in a
+     second test case.
+  3. Preserve monotonic behavior: normalization only ADDS the mandatory entries;
+     it never removes operator customizations and never rejects a valid config.
+* **Files:** `internal/config/loader.go`, `internal/config/loader_test.go` (or a
+  focused `internal/config/hooks_normalize_test.go`).
+* **Acceptance:** an OLD persisted `hooks.yaml` lacking the new transitions honors
+  `blocked->queued` / `active->queued` after `LoadHooks` (red->green); an
+  absent-`transitions` config still resolves correctly; `go test
+  ./internal/config/...` + quality gates pass.
+
+### Unit 3: Align integration-test comment and confirm doc accuracy (tests + doc verification)
+
+* **Domain:** Go tests + docs verification (kept separate from Unit 1 / Unit 2
+  core code changes per Width Isolation).
 * **Execution posture:** characterization-first.
 * **What changes:**
   1. Update the stale comment at
@@ -160,6 +202,7 @@ Constitution Check: pass
 | `blocked -> queued` valid (hooks fallback map) | `builtin_pre_test.go` `AllDefaultTransitions` table | errors (not in map) | passes |
 | `active -> queued` valid (hooks fallback map) | `builtin_pre_test.go` `AllDefaultTransitions` table | errors (not in map) | passes |
 | `blocked -> queued` / `active -> queued` valid on the **production-wired config map** | new test feeding `DefaultHooksConfig().Lifecycle.Transitions` into `ValidateStatusTransition` | errors | passes |
+| OLD persisted `hooks.yaml` (no `queued` in blocked/active) honors new transitions after load | new `internal/config` loader test (Unit 2) | errors (persisted map shadows default) | passes (`LoadHooks` normalizes) |
 | Still-forbidden negative (e.g. `blocked -> done`) | `builtin_pre_test.go` invalid-transition test | passes (already forbidden) | still passes |
 | Map sync guard: `reflect.DeepEqual(hooks map, config map)` | new external `_test` package | fails/absent | passes |
 | Existing lifecycle suites unaffected | `go test ./...` | green | green |
@@ -175,12 +218,13 @@ both maps, (3) confirm the new cases + sync guard green, (4) run `go test ./...`
 - **Config-map edit unverified.** The `defaults.go` map is the production-wired
   one (`workspace.go:114-118`); the `nil`-fed positive tests only exercise the
   hooks fallback. Mitigation: add the production-map positive test (Unit 1 step 5).
-- **Persisted `hooks.yaml` shadows the fix.** An existing workspace whose
-  `hooks.yaml` serializes an explicit `lifecycle.transitions` block would not pick
-  up the in-code default change. Mitigation: verify `backlogit init` behavior
-  (Unit 2 / Requirements Trace); record a migration note if init serializes the
-  map.
-- **A hidden test assumed `queued` unreachable.** Mitigation: Unit 2 runs the
+- **Persisted `hooks.yaml` shadows the fix (CONFIRMED, not hypothetical).**
+  `LoadHooks` (`loader.go:120-151`) wires the persisted `lifecycle.transitions`
+  map and does not merge new defaults, so existing workspaces would keep rejecting
+  the new transitions. Mitigation: Unit 2 normalizes the loaded map in `LoadHooks`
+  to guarantee the mandatory default entries, with a red->green test using an OLD
+  persisted `hooks.yaml`.
+- **A hidden test assumed `queued` unreachable.** Mitigation: Unit 3 runs the
   full suite and sweeps for stale invariant comments; verified during staging that
   no test asserts `blocked->queued` or `active->queued` is forbidden (only stale
   comment at `shipment_state_integrity_test.go:139`).
@@ -245,10 +289,13 @@ None.
   hooks fallback map; the production path (`workspace.go:114-118`) wires the
   config map (`defaults.go`). Resolved: added a production-map positive test to
   the Test Plan (Unit 1 step 5) so the `defaults.go` edit has its own red->green.
-* **Persisted `hooks.yaml` shadowing (Go).** An existing workspace with a
-  serialized `lifecycle.transitions` block could bypass the in-code default fix.
-  Resolved: added a Requirements-Trace / Unit-2 verification of `backlogit init`
-  behavior plus a migration-note contingency.
+* **Persisted `hooks.yaml` shadowing (Go) — CONFIRMED against source.**
+  `LoadHooks` (`loader.go:120-151`) does not merge new default transition entries,
+  so existing workspaces keep their persisted map and would still reject the new
+  transitions. Resolved: promoted from a "verify + migration-note" contingency to
+  a first-class implementation unit (Unit 2: `LoadHooks` transition normalization)
+  with dedicated red->green test coverage using an OLD persisted `hooks.yaml`.
+  Tracked as task `124.004-T`.
 * **Two-map duplication / sync guard (Architecture + Learnings).** Resolved:
   made the deep-equality sync guard MANDATORY (dropped the weak per-package
   containment fallback), confirmed no import cycle exists, and cited the drift-test
@@ -257,9 +304,9 @@ None.
 ### P3 findings (advisory — tracked, non-blocking)
 
 * Align the `redirectGate` bypass rationale comment
-  (`gate_transition.go:266-267`) — folded into Unit 2.
+  (`gate_transition.go:266-267`) — folded into Unit 3.
 * Sweep `internal/core`, `internal/mcp`, `internal/cli` for other stale invariant
-  comments — folded into Unit 2.
+  comments — folded into Unit 3.
 * Add a targeted claimed-shipment manual-requeue consistency test (Architecture) —
   noted as optional hardening in the plan's Risks.
 * Agent-native discoverability follow-ups (not in scope): surface the lifecycle
@@ -271,8 +318,43 @@ None.
 
 ### Runtime verification / operational closure
 
-No runtime surface, migration, or rollout risk beyond the additive transition
-widening. Ship's normal quality gates (`go test ./...`, `go vet ./...`,
-`golangci-lint run`, `gofmt -l .`) plus the TDD test plan constitute sufficient
-verification. No monitoring/rollback artifacts required for an in-code additive
-lifecycle change.
+This change IS a user-visible runtime behavior change: `backlogit move <id>
+--status queued` transitions from REJECTED to ACCEPTED for `blocked` and `active`
+items. Ship MUST perform runtime verification on BOTH workspace classes, because
+the fix reaches them through different code paths:
+
+* **Newly-initialized workspace** (fresh `backlogit init`): reached by the
+  `defaults.go` map edit (Unit 1).
+* **Pre-existing workspace with a persisted `hooks.yaml`** (the BD8DBB85 reporter
+  class): reached ONLY by the `LoadHooks` normalization (Unit 2). Verify with a
+  workspace whose `hooks.yaml` carries the OLD `transitions:` map (no `queued` in
+  the `blocked` / `active` entries).
+
+**Runtime verification steps (run per workspace class):**
+1. Put an item in `blocked`; run `backlogit move <id> --status queued`; assert it
+   succeeds and the item lands in `queued`.
+2. Put an item in `active`; run `backlogit move <id> --status queued`; assert
+   success.
+3. Assert a still-forbidden move (e.g. `--status done` from `queued`) is still
+   rejected.
+
+**Healthy signals:** `blocked->queued` and `active->queued` moves succeed on BOTH
+workspace classes; forbidden moves still error; `go test ./...` green; no
+CLI-reference / docline drift.
+
+**Failure signals:** a `blocked->queued` / `active->queued` move on a pre-existing
+(persisted-hooks) workspace still returns a transition-validation error (the
+`LoadHooks` normalization did not take effect / the persisted map still shadows
+the default); the deep-equality sync-guard test fails (maps drifted); any
+previously-valid transition is now rejected (over-narrowing).
+
+**Rollback trigger:** a released build rejects a previously-valid transition, OR
+the transition widening is found to violate a queue-integrity invariant in a
+consumer workspace.
+
+**Rollback procedure:** revert the `defaults.go` + `builtin_pre.go` map edits and
+the `LoadHooks` normalization. The change is additive and self-contained: revert
+restores the prior restrictive map with no data migration to undo — persisted
+`hooks.yaml` files are NOT modified by this change, so reverting the loader
+normalization simply returns to honoring each persisted map as-is. No forward data
+cleanup required.

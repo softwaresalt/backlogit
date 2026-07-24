@@ -164,7 +164,8 @@ internal behavior, and it upgrades manual recovery from a forced `-> active` to 
 correct return-to-ready `-> queued`, mirroring the automated path operators
 already rely on. The change is small (two additive map entries in two files) and
 additive (no previously-valid transition becomes invalid, no invariant depends on
-`queued` being unreachable), so the risk is low and the fix targets the real
+`queued` being unreachable), plus a loader-side normalization so existing
+persisted workspaces are reached, so the risk is low and the fix targets the real
 asymmetry rather than hiding it. `blocked -> queued` is the transition that
 directly discharges the documented contradiction; `active -> queued` is included
 for full parity with the gate broker so the manual and automated requeue paths
@@ -176,6 +177,10 @@ are symmetric.
   and agents can manually requeue blocked or active items into the ready pool.
 - The `backlogit doctor` long-help / generated `docs/cli-reference/backlogit_doctor.md`
   become accurate without edits (the code now honors what they describe).
+- Existing workspaces that persist an explicit `lifecycle.transitions:` block in
+  `hooks.yaml` are reached by normalizing the loaded map in `LoadHooks`
+  (`internal/config/loader.go`), not by the in-code default edit alone; the plan
+  carries this as a dedicated implementation unit (task `124.004-T`).
 - Tests: `TestValidateStatusTransition_AllDefaultTransitions` gains two cases; a
   new assertion pins the new transitions in both map copies; the stale comment in
   `internal/core/shipment_state_integrity_test.go:139` is corrected.
@@ -185,8 +190,11 @@ are symmetric.
 
 ## Status
 
-Decided (Stage recommendation; operator confirmation requested at the staging PR
-before Ship implements). Promoted to plan:
-`docs/exec-plans/2026-07-23-return-to-queued-transition-plan.md`. This decision
-recommends Option A but the harvested shipment is left `queued` so the operator
-can course-correct to Option B at PR review without blocking the pipeline.
+Decided — **Option A, adding BOTH `blocked -> queued` AND `active -> queued`**,
+operator-confirmed at the staging PR. This is no longer pending: Ship implements
+Option A as specified. Promoted to plan:
+`docs/exec-plans/2026-07-23-return-to-queued-transition-plan.md`. The harvested
+shipment (`104-S`) stays `queued` only as its normal pre-execution state in the
+work queue — not because the decision is open. Option B (docs-only) was considered
+and rejected; it is retained in this document solely as the record of the
+alternative, not as an outstanding choice.
