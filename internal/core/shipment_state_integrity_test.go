@@ -136,7 +136,7 @@ func TestUpdateArtifact_ClearsStaleBlockedReasonOnReentry(t *testing.T) {
 	require.Equal(t, models.StatusBlocked, blocked.Status)
 	require.Equal(t, "waiting on upstream", blocked.CustomFields["blocked_reason"])
 
-	// Act — the item leaves blocked (blocked->active is the only hook-allowed exit).
+	// Act — the item leaves blocked (blocked->active and blocked->queued are both hook-allowed).
 	updated, err := UpdateArtifact(ctx, ws, task.ID, map[string]any{"status": string(models.StatusActive)})
 	require.NoError(t, err)
 
