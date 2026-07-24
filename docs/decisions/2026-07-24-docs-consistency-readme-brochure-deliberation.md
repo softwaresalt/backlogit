@@ -197,9 +197,12 @@ names. Do not hand-edit `docs/cli-reference/`.
 
 **Verification (executed by Ship during build):** changed `docs/**` files pass
 `backlogit docs lint`; `make docs` (regenerate `docs/cli-reference/`) yields no git diff; a
-spot cross-check of README/quickstart MCP tool names against the shipped registration set;
-`gofmt`/`go vet`/`go test ./...`/`golangci-lint run` remain green (docs-only changes should not
-affect them, but the quality gates still run).
+cross-check of the canonical fact set (MCP tool names via `srv.ToolDefs()`, CLI surface, versions)
+across every edited document (README + all touched `docs/**` files), not just README/quickstart;
+markdownlint repo-wide per P-008 (0 violations); the quality gates run in the mandated
+tests -> vet -> lint -> format order (`make test`/`go test ./...`, `go vet ./...`,
+`golangci-lint run`, `gofmt -l .`) and remain green (docs-only changes should not affect them, but
+the gates still run).
 
 ## Rejected Alternatives
 
