@@ -59,9 +59,10 @@ initialized workspaces.
 
 Task 124.004-T added a load-time normalizer in `internal/config/loader.go`:
 
-* `priorGeneratedDefaultTransitions` — a FROZEN constant snapshot of the exact
-  prior generated default map. It must never change again; it is the fingerprint
-  used to recognize an un-customized legacy config.
+* `priorGeneratedDefaultTransitions` — a frozen package-level `var` snapshot of
+  the exact prior generated default map (Go maps cannot be `const`, so this is a
+  never-mutated `var`). It must never change again; it is the fingerprint used to
+  recognize an un-customized legacy config.
 * `upgradeLegacyTransitions` — called from `LoadHooks`. It `reflect.DeepEqual`s
   the persisted transitions map against the frozen prior default. On an EXACT
   match it replaces the map with the current default (upgrade). On any
@@ -74,8 +75,10 @@ sites together so they cannot drift.
 
 ### Deep-equal ambiguity (accepted)
 
-`reflect.DeepEqual` matches map VALUES, not provenance. A user who happened to
-customize their map to be byte-identical to the prior default is
+`reflect.DeepEqual` matches map VALUES, not provenance. It compares decoded map
+and slice values, so a persisted map that is merely value-identical to the prior
+default (even with different YAML formatting or key ordering) matches. A user who
+happened to customize their map to be value-identical to the prior default is
 indistinguishable from an un-customized legacy config and will be upgraded. This
 was accepted as a low-probability, low-harm ambiguity rather than adding a
 provenance marker.
@@ -85,7 +88,8 @@ provenance marker.
 * When adding an entry to any validated default map, ask: "Do already-
   initialized workspaces persist this map explicitly?" If yes, editing the
   default definition is NOT enough — ship a load-time upgrade path.
-* Freeze the prior default as a named constant so the upgrade can recognize an
+* Freeze the prior default as an immutable historical snapshot (a package-level
+  `var`, since Go maps cannot be `const`) so the upgrade can recognize an
   un-customized legacy config by exact deep-equal match; upgrade only on exact
   match, preserve everything else.
 * Guard multi-site default definitions with a `reflect.DeepEqual` sync test so

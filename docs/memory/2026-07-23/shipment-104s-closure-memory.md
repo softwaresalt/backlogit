@@ -58,7 +58,16 @@ final HEAD.
 | `.backlogit/queue/{104-S,124-F,124.002-T,124.003-T,124.004-T}.md` | Moved → `.backlogit/archive/` |
 | `.backlogit/hooks_queue.jsonl` | Updated by shipment lifecycle ops |
 | `docs/closure/2026-07-23-104-S-return-to-queued-transition-closure.md` | NEW closure record |
+
+## Files Added — Session Completion (PR #296)
+
+These docs were created after PR #295 merged and shipped via a separate
+session-completion PR (they are NOT in merge commit `369e862a`).
+
+| File | Change |
+|---|---|
 | `docs/compound/2026-07-23-persisted-config-load-time-default-map-upgrade.md` | NEW compound learning |
+| `docs/memory/2026-07-23/shipment-104s-closure-memory.md` | NEW — this file |
 
 ## Key Decisions & Rationale
 
