@@ -34,8 +34,9 @@ backlogit stores workspace configuration inside `.backlogit/`. The current imple
 | `.backlogit/hooks.yaml` | Configures the agent hook event system and built-in lifecycle hooks, including the pre-task-completion gate broker (`lifecycle.pre_task_completion_gate`) | Yes |
 
 > [!IMPORTANT]
-> `hooks.yaml` is not written by `backlogit init`; an absent file (or an absent
-> `lifecycle.pre_task_completion_gate` block) normalizes to documented defaults. The
+> `backlogit init` writes a default `hooks.yaml` with a
+> `lifecycle.pre_task_completion_gate` block. If the file or that block is absent, it
+> normalizes to documented defaults. The
 > pre-task-completion gate broker (`enabled: auto` by default) is active even without
 > an explicit block. See [Pre-Task-Completion Gate Broker](pre-task-completion-gate.md)
 > for the full config, CLI/MCP surface, and operator runbooks.
@@ -676,7 +677,7 @@ backlogit has **schema-level** support for external value translation through `e
 
 ### What does not exist yet
 
-* No generated `hooks.yaml`
+* No external-sync rules or connectors defined in `hooks.yaml`
 * No loader or executor for external sync rules
 * No CLI command that pushes artifacts to Azure DevOps, GitHub Issues, or Jira
 * No MCP tool that performs stakeholder-system synchronization
