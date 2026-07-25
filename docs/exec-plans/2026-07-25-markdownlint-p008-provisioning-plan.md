@@ -47,7 +47,7 @@ repo's pinned-action + always-reporting conventions, and reconcile the P-008 tex
 
 | Requirement (from stash / deliberation) | Implementation action | Unit |
 |---|---|---|
-| Config enabling **exactly** MD001/MD025/MD041 | Add `.markdownlint.json` (`default:false` + 3 rules) and `.markdownlintignore` (curated scope) | U1 |
+| Config enabling **exactly** MD001/MD025/MD041 | Add `.markdownlint.json` (`default:false` + 3 rules) and `.markdownlintignore` (ignore set covering every currently-dirty tracked dir + root `README.md`/`AGENTS.md`, so `make md-lint` is exit-0 Day 1) | U1 |
 | Makefile target invoking markdownlint-cli2 | Add `md-lint` target + `.PHONY` entry | U2 |
 | Characterization coverage for the new CI job | Extend `tests/integration/ci_compliance_test.go` (RED→GREEN) | U3 |
 | CI job so Ship + CI apply the same rules | Add always-reporting `md-lint` job + `md_touched` classifier to `ci.yml`, SHA-pinned `actions/setup-node` | U4 |
@@ -61,10 +61,28 @@ width isolation (single domain), and an atomic verifiable milestone.
 ### U1 — markdownlint config + ignore set (domain: config)
 
 - **Changes**: Create `.markdownlint.json` with `{ "default": false, "MD001":
-  true, "MD025": true, "MD041": true }`. Create `.markdownlintignore` listing:
-  `.backlogit/`, `docs/archive/`, `docs/closure/`, `docs/compound/`,
-  `.github/skills/`, `.copilot/`, `.copilot-tracking/`, `logs/` (and `node_modules/`
-  defensively).
+  true, "MD025": true, "MD041": true }`. Create `.markdownlintignore` (or an
+  equivalent `ignores` array — see precheck) that covers **every currently-violating
+  tracked path** so the gate is provably exit-0 on Day 1. Empirically re-verified
+  2026-07-25 (a `default:false` + MD001/MD025/MD041 run over the tree): the dirty
+  tracked buckets are the directories `.backlogit/`, `.autoharness/`,
+  `.github/skills/`, `plugin/`, `docs/archive/`, `docs/closure/`, `docs/compound/`,
+  `docs/decisions/`, `docs/design-docs/`, `docs/exec-plans/`, `docs/memory/`,
+  `docs/research/`, `docs/reviews/`, **plus the root file offenders** `README.md` and
+  `AGENTS.md` (both MD025), which must be ignored at **file** granularity since the
+  repo root is otherwise clean. Also ignore the ephemeral/never-committed dirs
+  `.copilot/`, `.copilot-tracking/`, `logs/` (and `node_modules/` defensively).
+- **Day-1 scope honesty**: with this ignore set the gate effectively enforces only the
+  **currently-clean** corpus (clean `docs/*` subdirs, `.github` non-skills, `tests/`,
+  `cmd/`, `internal/`, other root files) and is fail-closed for new/edited files
+  there. Ignored dirs graduate into scope via the future-widening roadmap below; that
+  roadmap and this ignore set are the **same list** and MUST stay consistent (adding a
+  dir to the ignore set = a future widening candidate; removing one = a widening step).
+- **Straggler rule (directory-granularity caveat)**: because the ignore list is at
+  directory granularity, any single dirty file that later appears inside an
+  otherwise-linted directory MUST be **file-ignored or fixed** so `make md-lint` stays
+  genuinely exit-0. U1 verification (below) re-runs the linter over the whole tree and
+  must exit 0 before U4 lands.
 - **Files**: `.markdownlint.json`, `.markdownlintignore` (2 new files).
 - **Load-bearing precheck (plan-review Architecture P2)**: markdownlint-cli2's
   first-class scoping is the `ignores` glob array inside its own config; honoring a
@@ -117,20 +135,33 @@ width isolation (single domain), and an atomic verifiable milestone.
 - **Verification (test-first / RED→GREEN)**: the new assertions FAIL against the
   current `ci.yml` (no md-lint job) — RED — and PASS after U4 lands — GREEN.
   Scenario count ≤ 3 (job-exists+always-reporting+no-trigger-paths;
-  setup-node presence+SHA; `md_touched` step-gating wiring). Optionally also assert
-  the `.markdownlint.json` rule set (exactly MD001/MD025/MD041, `default:false`) as a
-  standing guard for the plan's headline invariant (Constitution P2) — keep total
-  scenarios ≤ 3 by folding this into the config subtest or tracking it as U1's own
-  verification if it would exceed the granularity budget.
+  setup-node presence+SHA; `md_touched` wiring). The `md_touched` wiring scenario MUST
+  also assert the classifier is a **single brace-alternation glob** whose alternatives
+  include `.markdownlint.json`/`.markdownlint.jsonc`/`.markdownlint-cli2.jsonc`/`.markdownlintignore`,
+  `Makefile`, `make.ps1`, and `.github/workflows/ci.yml` (so a config-only or
+  Makefile-only PR still triggers the gate — F4) and is **not** a multi-pattern
+  positive list. **Required (not optional)**: assert the `.markdownlint.json` rule set
+  is exactly `{ default:false, MD001, MD025, MD041 }` — the assertion MUST fail if
+  `default` is not false, if any of the three is missing, OR if any extra rule ID is
+  enabled (catches both accidental extra defaults and missing/renamed rules,
+  Constitution P2); fold this into the config subtest to stay within the granularity
+  budget.
 - **Posture**: characterization-first. Precedes U4 (write failing test before the
   workflow edit).
 
 ### U4 — md-lint CI job + classifier in ci.yml (domain: CI/config)
 
 - **Changes**: In `.github/workflows/ci.yml`: (a) add a `md_touched` output to the
-  `changes` job via a paths-filter step with a single pattern `md_touched:
-  ['**/*.md']` (quantifier-invariant under the existing `predicate-quantifier:
-  'every'`); (b) add a `md-lint` job (`needs: changes`, `if: ${{ always() &&
+  `changes` job by folding a **single brace-alternation glob** into the existing
+  classify paths-filter step — one pattern (quantifier-invariant under the existing
+  `predicate-quantifier: 'every'`) whose alternatives cover markdown **and the gate's
+  own control files**: `'{**/*.md,.markdownlint.json,.markdownlint.jsonc,.markdownlint-cli2.jsonc,.markdownlintignore,Makefile,make.ps1,.github/workflows/ci.yml}'`.
+  This closes the fail-open hole where a PR changing ONLY the config or the Makefile
+  (no `.md`) would skip the job yet report a green gate without exercising it (F4).
+  **Do not** express this as a multi-pattern positive list: under
+  `predicate-quantifier: 'every'` multiple disjoint positive patterns are
+  constant-false (no single file matches all) — the 089-S silent fail-open trap; keep
+  it ONE brace-alternation pattern. (b) add a `md-lint` job (`needs: changes`, `if: ${{ always() &&
   !cancelled() }}`, `permissions: contents: read`) that checks out, sets up Node via
   **SHA-pinned** `actions/setup-node` (resolve the v-tag→SHA at implementation per
   F013), and runs `make md-lint` — every step gated on `needs.changes.outputs.md_touched
@@ -187,8 +218,12 @@ time after U1). U3 is authored RED before U4 and turns GREEN when U4 lands.
 - **Job inside `ci.yml`, not a standalone workflow**: reuses the `changes`
   classifier and matches the 089-S consolidation convention; a standalone workflow
   would duplicate checkout/setup and fragment the required-check surface.
-- **`md_touched: ['**/*.md']` single pattern**: quantifier-invariant, so it is
-  correct under the file's existing `predicate-quantifier: 'every'` (dorny compound).
+- **`md_touched` single brace-alternation glob**: one pattern covering markdown plus
+  the gate's own control files (config/ignore filenames, `Makefile`, `make.ps1`,
+  `ci.yml`) is quantifier-invariant under the existing `predicate-quantifier: 'every'`
+  and cannot fail open, whereas a multi-pattern positive list would be constant-false
+  under `every` (089-S trap). A config- or Makefile-only PR therefore still runs the
+  gate (F4).
 - **Advisory-then-required rollout**: avoids blocking unrelated PRs before the gate
   is observed green once.
 
@@ -277,7 +312,9 @@ Requires plan hardening: yes
   job is green. Closure artifact: note in the PR / closure record that the check is
   **advisory for one cycle**, with the rollback trigger = "remove the `md-lint` job
   and `md_touched` output; delete `.markdownlint.json`/`.markdownlintignore`/target"
-  and owner = Ship. Promotion to a required check is a follow-up operator action.
+  and owner = Ship. Promotion to a **required** check is tracked as follow-up stash
+  `918BCDAF` (branch-protection change configured outside the repo tree, after one
+  green advisory cycle; deliberately not harvested into 106-S).
 - **U5 (policy)** — runtime surface: none. Verify `make docs-lint` still passes for
   the edited policy file.
 
@@ -296,11 +333,12 @@ inventory:
 | `docs/research` | 1 | Trivial |
 | `docs/design-docs` | 4 | Small; live |
 | `docs/reviews` | 5 | Small; live |
+| root `README.md` + `AGENTS.md` | 2 | Live; file-level ignores — fix MD025 then drop the two file-ignores |
 | `docs/exec-plans` | 23 | Larger; multi-file — split before widening |
 | `plugin` | 8 | Product docs; separate domain |
 | `.autoharness` | 3 | Config-adjacent |
 | `docs/closure` / `docs/compound` / `docs/archive` | 74 / 38 / 20 | **Permanently ignored** (shipped history) |
-| `.github/skills/*` | (subset of 14) | **Permanently ignored** (template-generated; Principle IV) |
+| `.github/skills/*` | 14 | **Permanently ignored** (template-generated; Principle IV) |
 | `.backlogit` | 49 | **Permanently ignored** (machine-generated; already excluded in CI) |
 
 Widening a live bucket = "remediate MD025/MD041 in <dir>" + "remove <dir> from
@@ -369,7 +407,7 @@ a required merge-contract** (rollout risk) and a **new external Node/CI dependen
 **Unresolved operator decisions (carried forward):**
 
 - Promote `md-lint` to a **required** status check now or after one green cycle
-  (plan recommends: after one cycle).
+  (plan recommends: after one cycle) — tracked as follow-up stash `918BCDAF`.
 - Final widening schedule for live directories (plan defers all widening).
 - Exact `actions/setup-node` pin SHA (Ship resolves at implementation).
 
@@ -419,7 +457,8 @@ classifies risky actions.
 - *Architecture* — Advisory-then-required promotion is the true enforcement seam and
   is currently an untracked operator decision; until promoted the gate is
   observational. → Carried as an explicit unresolved operator decision + closure
-  owner; recommend a follow-up backlog item for the branch-protection promotion.
+  owner, and now tracked as a concrete follow-up backlog item — stash `918BCDAF`
+  (created during PR #300 remediation) — for the branch-protection promotion.
 
 **P3 (advisory, no plan change required):**
 

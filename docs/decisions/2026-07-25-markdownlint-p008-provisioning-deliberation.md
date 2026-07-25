@@ -161,10 +161,14 @@ violations **not** in the baseline.
 Concrete direction (planned as Ship tasks — Stage does not implement):
 
 1. **Config** — add `.markdownlint.json` enabling **exactly** MD001, MD025, MD041
-   with `default: false`, plus `.markdownlintignore` listing the currently-violating
-   tracked dirs (`.backlogit/`, `docs/archive/`, `docs/closure/`, `docs/compound/`,
-   `.github/skills/`) and ephemeral dirs (`.copilot/`, `.copilot-tracking/`,
-   `logs/`). Rationale for the filename pair: it honors P-008's existing
+   with `default: false`, plus `.markdownlintignore` listing every currently-violating
+   tracked dir — `.backlogit/`, `.autoharness/`, `.github/skills/`, `plugin/`,
+   `docs/archive/`, `docs/closure/`, `docs/compound/`, `docs/decisions/`,
+   `docs/design-docs/`, `docs/exec-plans/`, `docs/memory/`, `docs/research/`,
+   `docs/reviews/` — plus the root file offenders `README.md` and `AGENTS.md`
+   (file-level ignores) and ephemeral dirs (`.copilot/`, `.copilot-tracking/`,
+   `logs/`, and `node_modules/` defensively), so `make md-lint` is exit-0 on Day 1.
+   Rationale for the filename pair: it honors P-008's existing
    `.markdownlint.json` name (minimizing policy churn) and keeps rule config and
    path-scope cleanly separated; markdownlint-cli2 auto-discovers both.
    (`.markdownlint-cli2.jsonc` with embedded `config` + `ignores` was the considered
@@ -202,7 +206,9 @@ history), and treat only actively-authored live dirs as future widening candidat
 ## Unresolved Questions
 
 - Required-vs-advisory timing for the new check (recommend advisory for one cycle,
-  then required).
+  then required). The promotion to a **required** status check is now tracked as
+  follow-up stash `918BCDAF` (branch-protection change configured outside the repo
+  tree, after one green advisory cycle; deliberately **not** harvested into 106-S).
 - The final widening schedule and which live dirs graduate out of `.markdownlintignore`
   first (candidate: docs/decisions, docs/memory, docs/research, docs/design-docs —
   small buckets). Sized in the plan's future-widening section; not harvested here.
