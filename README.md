@@ -58,9 +58,9 @@ Three concerns stay separate by design: Markdown files are the durable source of
 
 backlogit stores features, tasks, and subtasks as individual Markdown files with strictly typed YAML frontmatter. These files travel with your codebase in Git, remain readable by humans, and merge cleanly without specialized tooling. The Markdown layer is the permanent source of truth: every field, status, and description lives in a file you can open in any editor.
 
-Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. The cache rebuilds automatically from the Markdown source whenever it is missing or stale.
+Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. Because the cache is disposable, you rebuild it from the Markdown source with `backlogit sync` whenever it is missing or out of date.
 
-A JSONL event model records state transitions, comments, and telemetry in append-only files. Work-item history is written per item to `.backlogit/logs/{item-id}.jsonl`, agent-operation telemetry goes to `.backlogit/telemetry.jsonl`, and harvested Copilot CLI session summaries go to `.backlogit/telemetry-sessions.jsonl`. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
+A JSONL event model records state transitions, comments, and telemetry. Work-item history is appended per item to `.backlogit/logs/{item-id}.jsonl`, and agent-operation telemetry is appended to `.backlogit/telemetry.jsonl`. Harvested Copilot CLI session summaries are materialized to `.backlogit/telemetry-sessions.jsonl`, which backlogit rewrites atomically on each harvest. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
 
 ## Plugin Installation
 
@@ -270,7 +270,7 @@ backlogit mcp
 | Configuration    | gopkg.in/yaml.v3 v3.0.1              | config.yaml, header-def.yaml, registry.yaml, hooks.yaml, migration.yaml |
 | Rate limiting    | golang.org/x/time v0.11.0            | Webhook dispatch backpressure via rate.Limiter |
 | File format      | Markdown + YAML frontmatter          | Git-friendly source of truth               |
-| Event stream     | JSONL (append-only)                  | per-item logs plus telemetry.jsonl and telemetry-sessions.jsonl |
+| Event stream     | JSONL                                | append-only per-item logs and telemetry.jsonl; materialized telemetry-sessions.jsonl summary |
 | License          | Apache-2.0                           |                                            |
 
 ## Contributing
