@@ -161,18 +161,20 @@ violations **not** in the baseline.
 Concrete direction (planned as Ship tasks — Stage does not implement):
 
 1. **Config** — add `.markdownlint.json` enabling **exactly** MD001, MD025, MD041
-   with `default: false`, plus `.markdownlintignore` listing every currently-violating
-   tracked dir — `.backlogit/`, `.autoharness/`, `.github/skills/`, `plugin/`,
-   `docs/archive/`, `docs/closure/`, `docs/compound/`, `docs/decisions/`,
-   `docs/design-docs/`, `docs/exec-plans/`, `docs/memory/`, `docs/research/`,
-   `docs/reviews/` — plus the root file offenders `README.md` and `AGENTS.md`
-   (file-level ignores) and ephemeral dirs (`.copilot/`, `.copilot-tracking/`,
+   with `default: false`, plus `.markdownlint-cli2.jsonc` carrying an `ignores` glob
+   array over every currently-violating tracked dir — `.backlogit/`, `.autoharness/`,
+   `.github/skills/`, `plugin/`, `docs/archive/`, `docs/closure/`, `docs/compound/`,
+   `docs/decisions/`, `docs/design-docs/`, `docs/exec-plans/`, `docs/memory/`,
+   `docs/research/`, `docs/reviews/` — plus the root file offenders `README.md` and
+   `AGENTS.md` (file-level ignores) and ephemeral dirs (`.copilot/`, `.copilot-tracking/`,
    `logs/`, and `node_modules/` defensively), so `make md-lint` is exit-0 on Day 1.
    Rationale for the filename pair: it honors P-008's existing
    `.markdownlint.json` name (minimizing policy churn) and keeps rule config and
-   path-scope cleanly separated; markdownlint-cli2 auto-discovers both.
-   (`.markdownlint-cli2.jsonc` with embedded `config` + `ignores` was the considered
-   single-file alternative.)
+   path-scope cleanly separated; a bare pinned `markdownlint-cli2@0.23.1` auto-discovers
+   both. This pairing is **verified**: cli2 `v0.23.1` does **not** honor
+   `.markdownlintignore` (a listed file is still linted) but **does** honor the
+   `ignores` array in `.markdownlint-cli2.jsonc`. Embedding the rules directly inside
+   `.markdownlint-cli2.jsonc` (single file) was the considered single-file alternative.
 2. **Makefile** — add a `md-lint` target invoking `npx markdownlint-cli2` over the
    configured scope (plus `.PHONY`), so Ship and humans reproduce the exact gate.
 3. **CI** — add a new always-reporting `md-lint` job to `ci.yml`: a `md_touched:
@@ -184,9 +186,11 @@ Concrete direction (planned as Ship tasks — Stage does not implement):
    is SHA-pinned, and is wired to `md_touched`.
 5. **Policy reconciliation** — update P-008: fix the precondition so it no longer
    overstates that the config already exists (describe the provisioned
-   `.markdownlint.json` + `.markdownlintignore` and the enforced scope), and adjust
+   `.markdownlint.json` + `.markdownlint-cli2.jsonc` and the enforced scope), and adjust
    the postcondition to reflect config-driven scoped enforcement rather than a bare
-   literal `**/*.md`. Keep MD001/MD025/MD041 named.
+   literal `**/*.md`. Keep MD001/MD025/MD041 named. Verify the edited policy file with
+   `make md-lint` (docline excludes the `.github/` subtree, so `make docs-lint` does
+   not lint it).
 
 **Recommended answers to the open questions** (final call deferred to
 operator/Ship): make the check **non-required for its first green cycle**, then
@@ -209,7 +213,8 @@ history), and treat only actively-authored live dirs as future widening candidat
   then required). The promotion to a **required** status check is now tracked as
   follow-up stash `918BCDAF` (branch-protection change configured outside the repo
   tree, after one green advisory cycle; deliberately **not** harvested into 106-S).
-- The final widening schedule and which live dirs graduate out of `.markdownlintignore`
+- The final widening schedule and which live dirs graduate out of the
+  `.markdownlint-cli2.jsonc` `ignores` array
   first (candidate: docs/decisions, docs/memory, docs/research, docs/design-docs —
   small buckets). Sized in the plan's future-widening section; not harvested here.
 - Exact `actions/setup-node` pin SHA (Ship resolves at implementation, per F013).
