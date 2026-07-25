@@ -26,13 +26,23 @@ AI-native agile workspace with MCP and CLI interfaces.
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
-## Overview
+backlogit is an AI-native agile workspace. Your backlog lives as plain Markdown in your repository and is served to AI agents through both an MCP server and a full command-line interface. Work items travel with your code in Git, stay readable in any editor, and merge without specialized tooling.
 
-backlogit stores features, tasks, and subtasks as individual Markdown files with strictly typed YAML frontmatter. These files travel with your codebase in Git, remain readable by humans, and merge cleanly without specialized tooling. The Markdown layer is the permanent source of truth: every field, status, and description lives in a file you can open in any editor.
+It is built for engineering teams and AI coding agents that want Git-native, human-readable work tracking with no database server to run and no SaaS to subscribe to. Agents query and update the backlog as quickly as they read source, so planning stays in the same loop as the code.
 
-Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. The cache rebuilds automatically from the Markdown source whenever it is missing or stale.
+Three concerns stay separate by design: Markdown files are the durable source of truth, an ephemeral SQLite cache keeps agent reads token-cheap, and an append-only JSONL log preserves history. The result is a single static binary that stays contained to your workspace.
 
-A JSONL event model records state transitions, comments, and telemetry in append-only files. Work-item history is written per item to `.backlogit/logs/{item-id}.jsonl`, agent-operation telemetry goes to `.backlogit/telemetry.jsonl`, and harvested Copilot CLI session summaries go to `.backlogit/telemetry-sessions.jsonl`. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
+## At a glance
+
+|  |  |
+|---|---|
+| **What it is** | An AI-native agile workspace: your backlog as Markdown, served to agents over MCP and a CLI |
+| **Who it's for** | Engineering teams and AI coding agents that want Git-native, human-readable work tracking |
+| **Interfaces** | An MCP server over stdio and a full command-line interface |
+| **Works with** | Claude Code, GitHub Copilot CLI, Cursor, and any MCP-compatible client |
+| **Storage** | Markdown with YAML frontmatter as the source of truth, plus an ephemeral SQLite query cache |
+| **Runtime** | A single static, CGo-free binary — no database server, no SaaS |
+| **License** | Apache-2.0 |
 
 ## Features
 
@@ -43,6 +53,14 @@ A JSONL event model records state transitions, comments, and telemetry in append
 - Single CGo-free static binary; workspace-contained with path traversal rejection
 - Agent-native: version surface, two-layer hooks, token telemetry, commit traceability, and dependency tracking baked in
 - Session disaster recovery: standardized checkpoint schema, MCP lifecycle tools (`list_checkpoints`, `get_checkpoint`, `resolve_checkpoint`, `cleanup_checkpoints`), and deterministic agent recovery state machine for interrupted sessions
+
+## Overview
+
+backlogit stores features, tasks, and subtasks as individual Markdown files with strictly typed YAML frontmatter. These files travel with your codebase in Git, remain readable by humans, and merge cleanly without specialized tooling. The Markdown layer is the permanent source of truth: every field, status, and description lives in a file you can open in any editor.
+
+Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. The cache rebuilds automatically from the Markdown source whenever it is missing or stale.
+
+A JSONL event model records state transitions, comments, and telemetry in append-only files. Work-item history is written per item to `.backlogit/logs/{item-id}.jsonl`, agent-operation telemetry goes to `.backlogit/telemetry.jsonl`, and harvested Copilot CLI session summaries go to `.backlogit/telemetry-sessions.jsonl`. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
 
 ## Plugin Installation
 

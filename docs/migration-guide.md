@@ -22,7 +22,7 @@ title: Migration Guide
 Before migrating, confirm you have:
 
 - backlogit installed (`backlogit --version` should print the version)
-- Go 1.22 or later if you plan to build from source
+- Go 1.24 or later if you plan to build from source
 - A current Backlog.md workspace under `backlog/` or `.backlog/`, or a legacy checklist-style backlog file
 - A project directory where the backlogit workspace will live
 - Git initialized in the project (strongly recommended so you can review and revert imports easily)
@@ -240,7 +240,7 @@ The migration command reads `.backlogit/migration.yaml` automatically when it ex
 
 Artifact types are assigned during import. backlogit does not support changing an
 artifact's type afterward with `backlogit update`, so type mapping decisions
-should be made in `.backlogit/migration.yaml` before you run `backlogit migrate import`.
+should be made in `.backlogit/migration.yaml` before you run `backlogit migrate`.
 
 If an imported item lands on the wrong type, update the migration mapping and
 re-import into a clean workspace, or recreate the artifact with the desired
