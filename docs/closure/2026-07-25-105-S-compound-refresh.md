@@ -34,8 +34,10 @@ Two verified facts:
    read paths (`list` → `db.QueryItems`) query immediately. `db.Rehydrate` runs
    only via explicit paths — the `backlogit sync` CLI command, the
    `backlogit_sync_index` MCP tool (`internal/mcp/tools.go` `handleSyncIndex`),
-   and `migrate` — plus incremental `MergeSync` on the MCP git path. A
-   missing/stale `backlogit.db` yields empty/outdated reads until one of them runs.
+   and `migrate` — plus incremental reconciliation via the explicit
+   `backlogit_merge_sync` MCP tool (`handleMergeSync` → `db.MergeSync`), which is a
+   tool call, not an automatic git-triggered path. A missing/stale `backlogit.db`
+   yields empty/outdated reads until one of them runs.
 2. **`telemetry-sessions.jsonl` is a materialized summary, not append-only.**
    `writeTelemetryJSONL` rewrites it via temp-file-then-rename each harvest and
    `--force` resets it, unlike the `os.O_APPEND` per-item logs and

@@ -84,9 +84,11 @@ precisely.
 - The actual rebuild is `db.Rehydrate`, invoked only by explicit rebuild paths: the
   `backlogit sync` CLI command (`internal/cli/root.go` `newSyncCommand`), the
   `backlogit_sync_index` MCP tool (`internal/mcp/tools.go` `handleSyncIndex`), and
-  `migrate`. The MCP server additionally reconciles incrementally via
-  `MergeSync`/`RehydrateWithManifest` on git operations. None of these fire on an
-  ordinary read.
+  `migrate`. The MCP server can also reconcile the index incrementally via the
+  explicit `backlogit_merge_sync` tool (`internal/mcp/tools.go` `handleMergeSync` →
+  `db.MergeSync`, which falls back to a full `RehydrateWithManifest` when the delta
+  exceeds its threshold) — but that too is an explicit tool call, not an automatic
+  response to a git operation. None of these fire on an ordinary read.
 
 Accurate phrasing: *"Because the cache is disposable, you rebuild it from the Markdown
 source with `backlogit sync` (or the `backlogit_sync_index` MCP tool) whenever it is
@@ -114,9 +116,11 @@ temp-file-then-rename on each harvest."*
 
 ## Why This Works
 
-The two write disciplines exist for different reasons: per-item/operation logs are
-**event streams** (append preserves history and keeps concurrent writers cheap via a
-shared `EventWriter` mutex), while `telemetry-sessions.jsonl` is a **derived
+The two write disciplines exist for different reasons: the per-item and
+operation event streams are **append-only** (append preserves history and keeps
+concurrent writers cheap; each stream serializes through its own writer mutex —
+`EventWriter` for the per-item logs, `TelemetryWriter` for `telemetry.jsonl`
+(`internal/events/telemetry.go`)), while `telemetry-sessions.jsonl` is a **derived
 projection** (a rebuilt summary that must stay internally consistent, hence the
 temp-file-then-rename rewrite — atomic on POSIX, with a narrow remove-then-rename
 window on Windows). Likewise the SQLite index is a *disposable
