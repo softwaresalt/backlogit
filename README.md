@@ -34,7 +34,7 @@ Three concerns stay separate by design: Markdown files are the durable source of
 
 ## At a glance
 
-|  |  |
+| Aspect | Summary |
 |---|---|
 | **What it is** | An AI-native agile workspace: your backlog as Markdown, served to agents over MCP and a CLI |
 | **Who it's for** | Engineering teams and AI coding agents that want Git-native, human-readable work tracking |
