@@ -32,8 +32,10 @@ Two verified facts:
 1. **Index rebuild is explicit, not automatic on read.** `core.NewWorkspace`
    opens the DB and ensures schema only; `PersistentPreRunE` does no auto-sync;
    read paths (`list` → `db.QueryItems`) query immediately. `db.Rehydrate` runs
-   only via `backlogit sync` / `migrate` (and `MergeSync` on the MCP git path).
-   A missing/stale `backlogit.db` yields empty/outdated reads until `sync`.
+   only via explicit paths — the `backlogit sync` CLI command, the
+   `backlogit_sync_index` MCP tool (`internal/mcp/tools.go` `handleSyncIndex`),
+   and `migrate` — plus incremental `MergeSync` on the MCP git path. A
+   missing/stale `backlogit.db` yields empty/outdated reads until one of them runs.
 2. **`telemetry-sessions.jsonl` is a materialized summary, not append-only.**
    `writeTelemetryJSONL` rewrites it via temp-file-then-rename each harvest and
    `--force` resets it, unlike the `os.O_APPEND` per-item logs and

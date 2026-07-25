@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Two durable storage-contract facts graduated from 105-S / feature 125-F documentation reconciliation. (1) The SQLite index is NOT rebuilt automatically on read; NewWorkspace only opens the DB and ensures schema, PersistentPreRunE does no auto-sync, and read paths query the DB immediately, so a missing or stale backlogit.db yields empty/outdated results until the explicit backlogit sync (db.Rehydrate) runs. (2) telemetry-sessions.jsonl is a materialized summary rewritten via temp-file-then-rename on each harvest (writeTelemetryJSONL) and reset by --force, so it is NOT append-only like the per-item logs and telemetry.jsonl, which use os.O_APPEND. Docs that call the whole JSONL model "append-only" or promise automatic cache recovery are factually wrong against the code.'
+description: 'Two durable storage-contract facts graduated from 105-S / feature 125-F documentation reconciliation. (1) The SQLite index is NOT rebuilt automatically on read; NewWorkspace only opens the DB and ensures schema, PersistentPreRunE does no auto-sync, and read paths query the DB immediately, so a missing or stale backlogit.db yields empty/outdated results until an explicit rebuild runs (the backlogit sync CLI command or the backlogit_sync_index MCP tool, both calling db.Rehydrate). (2) telemetry-sessions.jsonl is a materialized summary rewritten via temp-file-then-rename on each harvest (writeTelemetryJSONL; atomic on POSIX, remove-then-rename on Windows) and reset by --force, so it is NOT append-only like the persistent per-item logs and telemetry.jsonl, which use os.O_APPEND. Docs that call the whole JSONL model "append-only" or promise automatic cache recovery are factually wrong against the code.'
 doc_type: learning
 docline:
     category: best-practices
@@ -11,7 +11,7 @@ docline:
     problem_type: best_practice
     resolution_type: documentation
     resolved: true
-    root_cause: README architecture prose asserted automatic cache recovery and a uniform append-only JSONL model, but the code rebuilds the index only via the explicit sync command and rewrites the session-summary file atomically on each harvest.
+    root_cause: README architecture prose asserted automatic cache recovery and a uniform append-only JSONL model, but the code rebuilds the index only via explicit paths (backlogit sync CLI / backlogit_sync_index MCP / migrate) and rewrites the session-summary file via temp-file-then-rename on each harvest (atomic on POSIX; remove-then-rename on Windows).
     severity: low
     tags:
         - storage-contract
@@ -81,29 +81,36 @@ precisely.
   no auto-sync (`internal/cli/root.go`).
 - Read paths query the DB immediately, e.g. `list` calls `db.QueryItems` right after
   `NewWorkspace` (`internal/cli/list.go`).
-- The actual rebuild is `db.Rehydrate`, invoked only by the explicit `backlogit sync`
-  command (`internal/cli/root.go` `newSyncCommand`) and by `migrate`. The MCP path
-  reconciles via `MergeSync`/`RehydrateWithManifest` on git operations, not on every
+- The actual rebuild is `db.Rehydrate`, invoked only by explicit rebuild paths: the
+  `backlogit sync` CLI command (`internal/cli/root.go` `newSyncCommand`), the
+  `backlogit_sync_index` MCP tool (`internal/mcp/tools.go` `handleSyncIndex`), and
+  `migrate`. The MCP server additionally reconciles incrementally via
+  `MergeSync`/`RehydrateWithManifest` on git operations. None of these fire on an
   ordinary read.
 
 Accurate phrasing: *"Because the cache is disposable, you rebuild it from the Markdown
-source with `backlogit sync` whenever it is missing or out of date."*
+source with `backlogit sync` (or the `backlogit_sync_index` MCP tool) whenever it is
+missing or out of date."*
 
 ### Fact 2 — telemetry-sessions.jsonl is materialized, not append-only
 
 - `writeTelemetryJSONL` writes prior + new records to a `*.tmp` file via `os.Create`
-  then atomically renames it over `telemetry-sessions.jsonl`
-  (`internal/telemetry/harvest.go`). The checkpoint `--force` path reprocesses from
-  offset 0 and overwrites the file (`internal/telemetry/checkpoint.go`).
-- By contrast, the genuinely append-only writers use `os.O_APPEND`: per-item event
-  logs `.backlogit/logs/{item-id}.jsonl`, agent-operation `telemetry.jsonl`, and the
-  tool-calls / session-facts harvest files (`internal/telemetry/events_harvest.go`).
+  then renames it over `telemetry-sessions.jsonl` (`internal/telemetry/harvest.go`) —
+  atomic on POSIX; on Windows the destination is removed first, a narrow non-atomic
+  window the code accepts for regenerable telemetry. The checkpoint `--force` path
+  reprocesses from offset 0 and overwrites the file (`internal/telemetry/checkpoint.go`).
+- By contrast, the persistent event streams are genuinely append-only via
+  `os.O_APPEND`: per-item event logs `.backlogit/logs/{item-id}.jsonl` and
+  agent-operation `telemetry.jsonl`. The tool-calls / session-facts harvest files
+  (`internal/telemetry/events_harvest.go`) also append with `os.O_APPEND`, but `--force`
+  deletes and recreates them, so they are incremental-append rather than strictly
+  append-only over their lifecycle.
 
 Accurate phrasing: *"Work-item history is appended per item to
 `.backlogit/logs/{item-id}.jsonl`, and agent-operation telemetry is appended to
 `.backlogit/telemetry.jsonl`. Harvested Copilot CLI session summaries are materialized
-to `.backlogit/telemetry-sessions.jsonl`, which backlogit rewrites atomically on each
-harvest."*
+to `.backlogit/telemetry-sessions.jsonl`, which backlogit rewrites via
+temp-file-then-rename on each harvest."*
 
 ## Why This Works
 
@@ -111,7 +118,8 @@ The two write disciplines exist for different reasons: per-item/operation logs a
 **event streams** (append preserves history and keeps concurrent writers cheap via a
 shared `EventWriter` mutex), while `telemetry-sessions.jsonl` is a **derived
 projection** (a rebuilt summary that must stay internally consistent, hence the
-crash-safe temp-file-then-rename rewrite). Likewise the SQLite index is a *disposable
+temp-file-then-rename rewrite — atomic on POSIX, with a narrow remove-then-rename
+window on Windows). Likewise the SQLite index is a *disposable
 projection* of the Markdown source of truth — rebuild is a deliberate operator/agent
 action (`sync`), not an implicit side effect of reading, which keeps reads fast and
 predictable. Describing both precisely prevents operators from trusting a rebuild that
