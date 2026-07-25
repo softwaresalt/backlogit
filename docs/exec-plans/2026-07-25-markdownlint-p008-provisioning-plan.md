@@ -150,8 +150,16 @@ width isolation (single domain), and an atomic verifiable milestone.
   is exactly `{ default:false, MD001, MD025, MD041 }` — the assertion MUST fail if
   `default` is not false, if any of the three is missing, OR if any extra rule ID is
   enabled (catches both accidental extra defaults and missing/renamed rules,
-  Constitution P2); fold this into the config subtest to stay within the granularity
-  budget.
+    Constitution P2). **Also required**: assert `.markdownlint-cli2.jsonc` carries ONLY
+    scope/runner settings — its `globs` and `ignores` arrays plus benign runner keys —
+    and contains **NO rule-altering configuration**: specifically **no inline `config`
+    key and no `customRules` key**. markdownlint-cli2 reads BOTH files and merges them, so
+    without this the guard cannot prove the invariant against the EFFECTIVE MERGED cli2
+    configuration — a rule could be silently enabled/overridden via `.markdownlint-cli2.jsonc`
+    (its inline `config` or `customRules`) while the `.markdownlint.json` check still passes.
+    The combined guard MUST prove the effective merged cli2 configuration activates exactly
+    `{ MD001, MD025, MD041 }` with `default:false` (Constitution P2); fold both assertions
+    into the config subtest to stay within the granularity budget.
 - **Posture**: characterization-first. Precedes U4 (write failing test before the
   workflow edit).
 
