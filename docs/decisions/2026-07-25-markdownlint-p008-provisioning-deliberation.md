@@ -209,7 +209,7 @@ parity, not a scoping mechanism.
    guard test forbids `npx ` in the Makefile.
 4. **CI gate** — standalone repo-wide `md-lint` job in `.github/workflows/ci.yml`.
    No `needs`, no `if`, no path-filter — always runs. `permissions: contents: read`.
-   SHA-pinned `actions/checkout` and `actions/setup-node` (node-version `"20"`),
+   SHA-pinned `actions/checkout` and `actions/setup-node` (node-version `"22"`, matching markdownlint-cli2@0.23.1 `engines.node: ">=22"`),
    then `run: make md-lint`. The gate is **blocking/required** from the start (repo
    is clean; the gate is blocking from the start). Registration as a branch-protection required check
    is an external admin action tracked in follow-up stash `918BCDAF`.

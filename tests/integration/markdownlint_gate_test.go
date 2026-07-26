@@ -28,7 +28,8 @@ import (
 // reverting MD025 to its default (matching `title:`) would silently re-break all
 // of them. MD041 MUST stay `true` (default options) so a frontmatter `title:`
 // still credits MD041 — disabling or retargeting it to `_title` would fail every
-// frontmatter file.
+// frontmatter file. The test also guards the runner config (.markdownlint-cli2.jsonc)
+// so no rule-altering key there can change the EFFECTIVE merged rule set.
 func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 	root := findRepoRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, ".markdownlint.json"))
@@ -52,6 +53,67 @@ func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 	require.True(t, ok, "MD025 must be an object configuring front_matter_title")
 	assert.Equal(t, `^\s*_title\s*[:=]`, md025["front_matter_title"],
 		"MD025.front_matter_title must retarget to the non-existent _title key so a frontmatter title: is not double-counted with the body H1")
+
+	// Effective-config guard: markdownlint-cli2 MERGES .markdownlint-cli2.jsonc on
+	// top of .markdownlint.json. cli2 also honors rule-altering keys there
+	// (`config`, `customRules`, `overrides`, bare MD### / `default`), so a rule
+	// could be silently enabled/overridden in the runner config while the checks
+	// above still pass. Assert the runner config carries ONLY scope/runner options
+	// and no rule-altering keys, proving the EFFECTIVE merged rule set is exactly
+	// {MD001, MD025, MD041} with default:false.
+	cli2Raw, err := os.ReadFile(filepath.Join(root, ".markdownlint-cli2.jsonc"))
+	require.NoError(t, err, ".markdownlint-cli2.jsonc must exist (runner options)")
+
+	var cli2 map[string]any
+	require.NoError(t, json.Unmarshal(stripJSONCComments(cli2Raw), &cli2),
+		".markdownlint-cli2.jsonc must be valid JSONC (comments stripped)")
+
+	ruleAltering := map[string]bool{"config": true, "customRules": true, "overrides": true, "default": true}
+	for k := range cli2 {
+		assert.Falsef(t, ruleAltering[k],
+			".markdownlint-cli2.jsonc must not carry the rule-altering key %q (rules belong in .markdownlint.json)", k)
+		assert.NotRegexpf(t, `^(?i)MD\d+$`, k,
+			".markdownlint-cli2.jsonc must not enable/override rule %q directly (rules belong in .markdownlint.json)", k)
+	}
+	assert.Equal(t, true, cli2["gitignore"],
+		".markdownlint-cli2.jsonc must set gitignore:true so the gate lints exactly the tracked corpus (local==CI parity)")
+}
+
+// stripJSONCComments removes // line comments from JSONC so the runner config can
+// be parsed as JSON. It is string-aware (does not strip // that appears inside a
+// double-quoted string, e.g. a URL) and does not handle block comments, which the
+// runner config does not use.
+func stripJSONCComments(b []byte) []byte {
+	var out strings.Builder
+	for _, line := range strings.Split(string(b), "\n") {
+		inString := false
+		escaped := false
+		cut := -1
+		for i := 0; i < len(line); i++ {
+			c := line[i]
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch {
+			case c == '\\' && inString:
+				escaped = true
+			case c == '"':
+				inString = !inString
+			case c == '/' && !inString && i+1 < len(line) && line[i+1] == '/':
+				cut = i
+			}
+			if cut >= 0 {
+				break
+			}
+		}
+		if cut >= 0 {
+			line = line[:cut]
+		}
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	return []byte(out.String())
 }
 
 // TestMarkdownLintGateIsRepoWideAndPinned asserts the ci.yml md-lint job runs

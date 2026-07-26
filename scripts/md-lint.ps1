@@ -12,5 +12,15 @@
     scripts/md-lint.ps1
 #>
 
-npx --yes markdownlint-cli2@0.23.1 "**/*.md"
+# Stop on any PowerShell (non-native) error so a missing prerequisite cannot let
+# the gate pass silently. Without this, a CommandNotFoundException for `npx` can
+# leave $LASTEXITCODE stale/0 and `exit $LASTEXITCODE` would falsely report success.
+$ErrorActionPreference = 'Stop'
+
+# Fail loudly if the Node tool runner is unavailable (missing prerequisite must
+# NOT be treated as a clean gate). Get-Command throws under Stop when npx is absent.
+Get-Command npx -CommandType Application -ErrorAction Stop | Out-Null
+
+# Native command: markdownlint exits non-zero on violations; propagate that code.
+& npx --yes markdownlint-cli2@0.23.1 "**/*.md"
 exit $LASTEXITCODE

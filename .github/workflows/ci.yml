@@ -194,6 +194,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          # markdownlint-cli2@0.23.1 declares engines.node ">=22"; match it so the
+          # required gate runs on a supported runtime.
+          node-version: "22"
       - name: Run markdownlint (P-008 MD001/MD025/MD041, repo-wide)
         run: make md-lint
