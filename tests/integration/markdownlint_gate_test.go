@@ -147,6 +147,18 @@ func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	assert.Empty(t, job.If,
 		"md-lint job must have no `if` — it runs unconditionally as a repo-wide gate")
 
+	// Hard-fail contract: neither the md-lint job nor any of its steps may set
+	// `continue-on-error` truthy. A `continue-on-error: true` on the job or the
+	// lint step would let a markdownlint violation report as a non-blocking
+	// step — silently degrading the gate to advisory while every other assertion
+	// in this guard still passes. Require it unset or explicitly false.
+	assert.Truef(t, continueOnErrorHardFails(job.ContinueOnError),
+		"md-lint job must not set continue-on-error truthy (got %v) — the gate must hard-fail on violations", job.ContinueOnError)
+	for _, step := range job.Steps {
+		assert.Truef(t, continueOnErrorHardFails(step.ContinueOnError),
+			"md-lint step %q must not set continue-on-error truthy (got %v) — the gate must hard-fail on violations", step.Name, step.ContinueOnError)
+	}
+
 	// Repo-wide: no scoped md_touched change classifier gates the gate.
 	changes, ok := wf.Jobs["changes"]
 	require.True(t, ok, "ci.yml should define the changes job")
@@ -196,4 +208,17 @@ func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 		}
 	}
 	assert.True(t, foundRun, "md-lint job must run `make md-lint` (exact command line, not a substring)")
+}
+
+// continueOnErrorHardFails reports whether a `continue-on-error` value keeps a
+// job/step hard-failing on error. It is satisfied only when the field is unset
+// (nil) or an explicit boolean false. Any true value — or an expression string
+// such as `${{ ... }}` that could evaluate true — is rejected, because a
+// hard-fail gate must never let a lint violation pass as a non-blocking step.
+func continueOnErrorHardFails(v any) bool {
+	if v == nil {
+		return true
+	}
+	b, ok := v.(bool)
+	return ok && !b
 }

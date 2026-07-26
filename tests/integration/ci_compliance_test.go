@@ -60,14 +60,15 @@ type ciConcurrency struct {
 }
 
 type ciJob struct {
-	Name     string            `yaml:"name"`
-	Needs    any               `yaml:"needs"`
-	If       string            `yaml:"if"`
-	Uses     string            `yaml:"uses"`
-	RunsOn   string            `yaml:"runs-on"`
-	Outputs  map[string]string `yaml:"outputs"`
-	Strategy ciStrategy        `yaml:"strategy"`
-	Steps    []ciStep          `yaml:"steps"`
+	Name            string            `yaml:"name"`
+	Needs           any               `yaml:"needs"`
+	If              string            `yaml:"if"`
+	Uses            string            `yaml:"uses"`
+	RunsOn          string            `yaml:"runs-on"`
+	Outputs         map[string]string `yaml:"outputs"`
+	Strategy        ciStrategy        `yaml:"strategy"`
+	ContinueOnError any               `yaml:"continue-on-error"`
+	Steps           []ciStep          `yaml:"steps"`
 }
 
 type ciStrategy struct {
@@ -75,12 +76,13 @@ type ciStrategy struct {
 }
 
 type ciStep struct {
-	ID   string         `yaml:"id"`
-	Name string         `yaml:"name"`
-	Uses string         `yaml:"uses"`
-	Run  string         `yaml:"run"`
-	If   string         `yaml:"if"`
-	With map[string]any `yaml:"with"`
+	ID              string         `yaml:"id"`
+	Name            string         `yaml:"name"`
+	Uses            string         `yaml:"uses"`
+	Run             string         `yaml:"run"`
+	If              string         `yaml:"if"`
+	With            map[string]any `yaml:"with"`
+	ContinueOnError any            `yaml:"continue-on-error"`
 }
 
 // readCIWorkflow parses a GitHub Actions workflow YAML file into a ciWorkflow.
