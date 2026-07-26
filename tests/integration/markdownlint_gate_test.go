@@ -10,6 +10,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,7 +131,7 @@ func stripJSONCComments(b []byte) []byte {
 // TestMarkdownLintGateIsRepoWideAndPinned asserts the ci.yml md-lint job runs
 // repo-wide (the retired Option-B `md_touched` scoped classifier is absent),
 // always runs (no `needs`/`if` gating), invokes `make md-lint`, and pins
-// actions/setup-node to a full 40-char SHA.
+// actions/setup-node to a full 40-char SHA at the required node-version "22".
 func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	ciPath, _, _ := workflowPaths(t)
 	wf := readCIWorkflow(t, ciPath)
@@ -156,18 +157,28 @@ func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	// setup-node present and pinned to a full 40-char SHA (F013). Match the
 	// canonical `actions/setup-node@` prefix (not a substring) so a look-alike such
 	// as `other-owner/actions/setup-node@<sha>` cannot satisfy this guard.
-	var setupNodeUses string
+	var setupNode ciStep
+	foundSetupNode := false
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "actions/setup-node@") {
-			setupNodeUses = step.Uses
+			setupNode = step
+			foundSetupNode = true
 			break
 		}
 	}
-	require.NotEmpty(t, setupNodeUses, "md-lint job must set up Node via actions/setup-node")
-	parts := strings.SplitN(setupNodeUses, "@", 2)
+	require.True(t, foundSetupNode, "md-lint job must set up Node via actions/setup-node")
+	parts := strings.SplitN(setupNode.Uses, "@", 2)
 	require.Len(t, parts, 2, "actions/setup-node must be pinned with @<sha>")
 	sha := strings.Fields(parts[1])[0] // tolerate a trailing "# vX.Y.Z" comment
 	assert.Regexp(t, "^[0-9a-f]{40}$", sha, "actions/setup-node must be pinned to a full 40-char SHA (F013)")
+
+	// Guard the load-bearing runtime version. markdownlint-cli2@0.23.1 declares
+	// engines.node ">=22", so a regression to node-version 20 would reintroduce the
+	// unsupported-runtime defect while the SHA-pin check above still passes. Assert
+	// the exact node-version the setup step requests.
+	require.NotNil(t, setupNode.With, "actions/setup-node step must set a `with` map (node-version)")
+	assert.Equal(t, "22", fmt.Sprintf("%v", setupNode.With["node-version"]),
+		`actions/setup-node must request node-version "22" (markdownlint-cli2@0.23.1 requires Node >=22)`)
 
 	// The gate runs exactly `make md-lint`. Match a whole trimmed line (not a
 	// substring) so a disabled/neutered invocation such as `echo make md-lint`

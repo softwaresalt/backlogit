@@ -57,8 +57,14 @@ skip) — a tractable in-place remediation.
 
 ## Implementation Units
 
-Each unit obeys the 2-hour rule (< 3 files, < 5 functions, < 4 test scenarios),
-width isolation (single domain), and an atomic verifiable milestone.
+Each unit targets a ~2-hour, single-domain, atomically verifiable milestone. Most
+units satisfy the file-count granularity heuristic (< 3 files, < 5 functions,
+< 4 test scenarios); two are deliberate, justified exceptions that remain
+single-domain and mechanically cohesive: U2 touches 21 files (a bulk, uniform
+MD041/MD001 remediation — one leading-`# H1` edit per SKILL.md plus one heading
+increment) and U3 touches 4 files (the paired md-lint scripts plus the Makefile /
+make.ps1 targets that delegate to them). Splitting either into < 3-file slices
+would fragment a single mechanical change without reducing risk.
 
 ### U1 — markdownlint config (domain: config)
 
@@ -74,8 +80,9 @@ width isolation (single domain), and an atomic verifiable milestone.
   ```
 
   Create `.markdownlint-cli2.jsonc` with `{ "gitignore": true }` (plus comments).
-  `gitignore: true` makes cli2 skip gitignored scratch (`.copilot/`, `.autoharness/`,
-  `logs/`) and lint the non-gitignored Markdown corpus. In a clean checkout (CI) that
+  `gitignore: true` makes cli2 skip gitignored scratch (`.copilot/`, `logs/`,
+  `.autoharness/staging/`, `.autoharness/backups/`) and lint the non-gitignored
+  Markdown corpus. In a clean checkout (CI) that
   equals exactly the tracked set (1,839 files); locally it also covers new/untracked
   non-ignored Markdown (intentional pre-commit checking; scratch must be gitignored).
   This is a runner option for local-equals-CI parity. cli2 auto-discovers
@@ -148,11 +155,13 @@ width isolation (single domain), and an atomic verifiable milestone.
     (`49933ea5288caeca8642d1e84afbd3f7d6820020`, v4.4.0) with
     `node-version: "22"` (Node 22+ required by markdownlint-cli2@0.23.1 `engines.node: ">=22"`).
   - Runs `make md-lint`.
-  - Is **blocking/required from the start** — the repo is clean (0 violations),
-    so the gate is blocking from the start.
-- **Branch-protection registration**: registering `md-lint` as a required
-  branch-protection check is an external admin action tracked in follow-up stash
-  `918BCDAF`.
+  - **Hard-fails CI on any violation** — the job has no `continue-on-error`, so a
+  violation fails the job and the workflow run. The repo is already clean (0
+  violations), so the job passes today and any regression fails it.
+- **Branch-protection registration**: promoting `md-lint` to a *required status
+  check* (so a failing run blocks the merge button) is a separate admin action
+  tracked in follow-up stash `918BCDAF`. Until then the job hard-fails CI but is
+  not yet a branch-protection-enforced merge gate.
 - **Files**: `.github/workflows/ci.yml` (1 file).
 - **Verification**: the `md-lint` job runs on the PR, executes the lint step, and
   reports green. `go test ./tests/integration/ -run TestCI` passes.

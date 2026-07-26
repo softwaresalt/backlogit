@@ -3,7 +3,8 @@
   // MD041) lives in .markdownlint.json and is auto-discovered/merged by cli2.
   //
   // Honor .gitignore so `make md-lint` skips gitignored scratch (.copilot/,
-  // .autoharness/, logs/) that never reaches the repo. cli2 then lints the
+  // logs/, .autoharness/staging/, .autoharness/backups/) that never reaches the
+  // repo. cli2 then lints the
   // NON-GITIGNORED Markdown corpus: in a clean checkout (CI) that equals exactly
   // the tracked set (0 violations, verified); locally it ALSO covers new/untracked
   // non-ignored Markdown, which is intentional — violations are caught before the
