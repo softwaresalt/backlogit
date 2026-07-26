@@ -144,7 +144,7 @@ width isolation (single domain), and an atomic verifiable milestone.
   - Has no `needs`, no `if`, no path-filter — always runs on every PR.
   - Uses `permissions: contents: read`.
   - Uses SHA-pinned `actions/checkout`
-    (`11bd71901bbe58b213ffa02c9e9f1d69`, v4.2.2) and `actions/setup-node`
+    (`11bd71901bbe5b1630ceea73d27597364c9af683`, v4.2.2) and `actions/setup-node`
     (`49933ea5288caeca8642d1e84afbd3f7d6820020`, v4.4.0) with
     `node-version: "22"` (Node 22+ required by markdownlint-cli2@0.23.1 `engines.node: ">=22"`).
   - Runs `make md-lint`.

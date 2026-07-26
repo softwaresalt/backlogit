@@ -51,6 +51,8 @@ func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 
 	md025, ok := cfg["MD025"].(map[string]any)
 	require.True(t, ok, "MD025 must be an object configuring front_matter_title")
+	assert.Len(t, md025, 1,
+		"MD025 must configure ONLY front_matter_title — a stray key such as `level` would pass a value-only check while silently changing which heading level MD025 treats as the title")
 	assert.Equal(t, `^\s*_title\s*[:=]`, md025["front_matter_title"],
 		"MD025.front_matter_title must retarget to the non-existent _title key so a frontmatter title: is not double-counted with the body H1")
 
@@ -151,10 +153,12 @@ func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	assert.False(t, hasMdTouched,
 		"md_touched scoped classifier must NOT exist — the gate is repo-wide (Option-B machinery removed)")
 
-	// setup-node present and pinned to a full 40-char SHA (F013).
+	// setup-node present and pinned to a full 40-char SHA (F013). Match the
+	// canonical `actions/setup-node@` prefix (not a substring) so a look-alike such
+	// as `other-owner/actions/setup-node@<sha>` cannot satisfy this guard.
 	var setupNodeUses string
 	for _, step := range job.Steps {
-		if strings.Contains(step.Uses, "actions/setup-node") {
+		if strings.HasPrefix(step.Uses, "actions/setup-node@") {
 			setupNodeUses = step.Uses
 			break
 		}
@@ -165,13 +169,20 @@ func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	sha := strings.Fields(parts[1])[0] // tolerate a trailing "# vX.Y.Z" comment
 	assert.Regexp(t, "^[0-9a-f]{40}$", sha, "actions/setup-node must be pinned to a full 40-char SHA (F013)")
 
-	// The gate runs `make md-lint`.
+	// The gate runs exactly `make md-lint`. Match a whole trimmed line (not a
+	// substring) so a disabled/neutered invocation such as `echo make md-lint`
+	// cannot report this characterization test green.
 	foundRun := false
 	for _, step := range job.Steps {
-		if strings.Contains(step.Run, "make md-lint") {
-			foundRun = true
+		for _, line := range strings.Split(step.Run, "\n") {
+			if strings.TrimSpace(line) == "make md-lint" {
+				foundRun = true
+				break
+			}
+		}
+		if foundRun {
 			break
 		}
 	}
-	assert.True(t, foundRun, "md-lint job must run `make md-lint`")
+	assert.True(t, foundRun, "md-lint job must run `make md-lint` (exact command line, not a substring)")
 }
