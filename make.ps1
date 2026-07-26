@@ -5,7 +5,7 @@
 
 .PARAMETER Target
     Target to run. Defaults to 'all'.
-    Valid targets: all, build, test, lint, vet, fmt, cover, clean, install, verify-plugin
+    Valid targets: all, build, test, lint, vet, fmt, cover, clean, install, md-lint, verify-plugin
 
 .EXAMPLE
     .\make.ps1              # runs 'all' (fmt + vet + lint + test + build)
@@ -21,7 +21,7 @@
     .\make.ps1 verify-plugin # validate plugin bundle structure
 #>
 param(
-    [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install", "verify-plugin")]
+    [ValidateSet("all", "build", "test", "lint", "vet", "fmt", "cover", "clean", "install", "md-lint", "verify-plugin")]
     [string]$Target = "all",
 
     # Optional install directory for the 'install' target (e.g. C:\Tools).
@@ -106,6 +106,15 @@ switch ($Target) {
             $dest = Join-Path $InstallPath "backlogit.exe"
             go build -o $dest .\cmd\backlogit
             Write-Host "Installed: $dest" -ForegroundColor Green
+        }
+    }
+
+    "md-lint" {
+        Step "md-lint" {
+            & (Join-Path $PSScriptRoot 'scripts/md-lint.ps1')
+            if ($LASTEXITCODE -ne 0) {
+                exit 1
+            }
         }
     }
 

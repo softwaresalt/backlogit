@@ -2,7 +2,7 @@
 description: "Validate affected runtime surfaces after build and CI using manual, API, or browser-backed verification"
 ---
 
-## Runtime Verification
+# Runtime Verification
 
 Validate that the change works in the runtime surfaces it actually affects. Green tests are necessary; they are not always sufficient.
 

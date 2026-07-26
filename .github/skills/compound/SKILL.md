@@ -2,7 +2,7 @@
 description: "Capture solved problems as institutional knowledge for the learnings-researcher to find in future tasks"
 ---
 
-## Compound
+# Compound
 
 Document a recently solved problem to build institutional knowledge. Captures solutions in `docs/compound/` with searchable YAML frontmatter.
 

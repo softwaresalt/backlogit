@@ -2,7 +2,7 @@
 description: "Risk-triggered plan reinforcement that deepens verification, rollback, and guardrail detail before plan review"
 ---
 
-## Plan Hardening
+# Plan Hardening
 
 Strengthen an implementation plan before review when the work has elevated
 runtime, migration, security, or blast-radius risk. This is a narrow middle

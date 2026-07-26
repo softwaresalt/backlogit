@@ -3,7 +3,7 @@ name: safety-modes
 description: "Interactive safety workflows for elevated-risk work — careful, freeze-scope, investigate-first, and explicit action-risk/result tracking"
 ---
 
-## Safety Modes
+# Safety Modes
 
 Enter an explicit operating mode before performing risky work. This skill slows the agent down on purpose: it surfaces risk, narrows scope, and makes the next action legible to the operator.
 

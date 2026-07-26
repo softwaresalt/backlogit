@@ -2,7 +2,7 @@
 description: "Interactively deliberate on a request, feature, or chore — frame the problem, research options, compare trade-offs, and produce a decision artifact that links into the backlog queue"
 ---
 
-## Deliberate
+# Deliberate
 
 Explore WHAT to build and WHY through structured operator dialogue. Produces a
 decision artifact that captures the problem frame, research findings, evaluated

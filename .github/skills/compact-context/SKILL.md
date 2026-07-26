@@ -2,7 +2,7 @@
 description: "Compact and consolidate memory, plan, and tracking artifacts into durable summaries in docs/ — mandatory workflow step, not advisory"
 ---
 
-## Compact Context
+# Compact Context
 
 Scan `docs/memory/`, `docs/exec-plans/`, and `docs/closure/` for stale or oversized artifacts, produce compacted summaries, and archive verbose originals. For plans with appended reviews, consolidate into a decided-plan that replaces the original plan + review verbosity.
 

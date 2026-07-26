@@ -2,7 +2,7 @@
 description: "Produce release-readiness, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification"
 ---
 
-## Operational Closure
+# Operational Closure
 
 Turn “implemented” into “safely absorbed by the running system”. This skill creates the artifacts and decisions that close the loop after code review, CI, and runtime verification.
 
