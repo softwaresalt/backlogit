@@ -54,13 +54,16 @@ func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 	assert.Equal(t, `^\s*_title\s*[:=]`, md025["front_matter_title"],
 		"MD025.front_matter_title must retarget to the non-existent _title key so a frontmatter title: is not double-counted with the body H1")
 
-	// Effective-config guard: markdownlint-cli2 MERGES .markdownlint-cli2.jsonc on
-	// top of .markdownlint.json. cli2 also honors rule-altering keys there
-	// (`config`, `customRules`, `overrides`, bare MD### / `default`), so a rule
-	// could be silently enabled/overridden in the runner config while the checks
-	// above still pass. Assert the runner config carries ONLY scope/runner options
-	// and no rule-altering keys, proving the EFFECTIVE merged rule set is exactly
-	// {MD001, MD025, MD041} with default:false.
+	// Effective-config guard: cli2 loads BOTH the rule config (.markdownlint.json,
+	// auto-discovered — empirically verified: a 320-char line yields no MD013, so
+	// default:false from .markdownlint.json is active) AND the runner config
+	// (.markdownlint-cli2.jsonc). The runner config can carry rule-altering keys
+	// (`config`, `customRules`, `overrides`, bare MD### / `default`) that would
+	// change the EFFECTIVE rule set, and scope-altering keys (`ignores`, `globs`)
+	// that would narrow the repo-wide corpus — either could pass silently while the
+	// checks above and the lint run stay green. Enforce that the runner config
+	// contains ONLY the `gitignore` runner option, so the merged config is exactly
+	// {MD001, MD025, MD041} with default:false over the full non-gitignored corpus.
 	cli2Raw, err := os.ReadFile(filepath.Join(root, ".markdownlint-cli2.jsonc"))
 	require.NoError(t, err, ".markdownlint-cli2.jsonc must exist (runner options)")
 
@@ -69,11 +72,17 @@ func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 		".markdownlint-cli2.jsonc must be valid JSONC (comments stripped)")
 
 	ruleAltering := map[string]bool{"config": true, "customRules": true, "overrides": true, "default": true}
+	scopeAltering := map[string]bool{"ignores": true, "globs": true}
+	allowedRunnerKeys := map[string]bool{"gitignore": true}
 	for k := range cli2 {
 		assert.Falsef(t, ruleAltering[k],
 			".markdownlint-cli2.jsonc must not carry the rule-altering key %q (rules belong in .markdownlint.json)", k)
+		assert.Falsef(t, scopeAltering[k],
+			".markdownlint-cli2.jsonc must not carry the scope-altering key %q (ignores/globs would narrow the repo-wide corpus)", k)
 		assert.NotRegexpf(t, `^(?i)MD\d+$`, k,
 			".markdownlint-cli2.jsonc must not enable/override rule %q directly (rules belong in .markdownlint.json)", k)
+		assert.Truef(t, allowedRunnerKeys[k],
+			".markdownlint-cli2.jsonc must contain only the gitignore runner option (unexpected key %q)", k)
 	}
 	assert.Equal(t, true, cli2["gitignore"],
 		".markdownlint-cli2.jsonc must set gitignore:true so the gate lints the non-gitignored corpus (exactly the tracked set in a clean CI checkout; local==CI parity)")
@@ -118,13 +127,22 @@ func stripJSONCComments(b []byte) []byte {
 
 // TestMarkdownLintGateIsRepoWideAndPinned asserts the ci.yml md-lint job runs
 // repo-wide (the retired Option-B `md_touched` scoped classifier is absent),
-// invokes `make md-lint`, and pins actions/setup-node to a full 40-char SHA.
+// always runs (no `needs`/`if` gating), invokes `make md-lint`, and pins
+// actions/setup-node to a full 40-char SHA.
 func TestMarkdownLintGateIsRepoWideAndPinned(t *testing.T) {
 	ciPath, _, _ := workflowPaths(t)
 	wf := readCIWorkflow(t, ciPath)
 
 	job, ok := wf.Jobs["md-lint"]
 	require.True(t, ok, "ci.yml must define the md-lint job (repo-wide P-008 gate)")
+
+	// Always-running contract: the repo-wide gate must not be conditioned on any
+	// other job (`needs`) or expression (`if`) that could skip it and let a
+	// violating change through with the required check reported as passed/skipped.
+	assert.Empty(t, job.Needs,
+		"md-lint job must have no `needs` — it runs unconditionally as a repo-wide gate")
+	assert.Empty(t, job.If,
+		"md-lint job must have no `if` — it runs unconditionally as a repo-wide gate")
 
 	// Repo-wide: no scoped md_touched change classifier gates the gate.
 	changes, ok := wf.Jobs["changes"]
