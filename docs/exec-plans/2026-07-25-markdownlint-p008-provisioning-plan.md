@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Implementation plan to provision the markdownlint tooling P-008 assumes: a scoped .markdownlint.json (rules) + .markdownlint-cli2.jsonc (ignores glob array) enabling exactly MD001/MD025/MD041, a Makefile md-lint target via a version-pinned markdownlint-cli2, an always-reporting SHA-pinned md-lint CI job gated by a md_touched paths-filter, a characterization test, and a P-008 wording reconciliation — using a curated ignore set rather than a 248-file retroactive cleanup.'
+description: 'Implementation plan to provision the markdownlint tooling P-008 assumes: .markdownlint.json enabling exactly MD001/MD025/MD041 (default:false, MD025 front_matter_title retargeted to a _title key) + .markdownlint-cli2.jsonc {gitignore:true}, paired scripts/md-lint.{sh,ps1} via a version-pinned markdownlint-cli2, a standalone repo-wide BLOCKING SHA-pinned md-lint CI job, characterization tests, and a P-008 reconciliation — repo-wide doctor-to-compliance (config dissolves 229/250 violations with zero edits; ~21 structural fixes bring the repo to 0).'
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-07-25-markdownlint-p008-provisioning-plan.md
@@ -13,296 +13,261 @@ title: 'Provision markdownlint tooling to make P-008 reproducible and CI-enforce
   tooling that policy P-008 already assumes."
 - Deliberation: `054-DL` and
   `docs/decisions/2026-07-25-markdownlint-p008-provisioning-deliberation.md`
-  (chosen direction: Option B — scoped rollout with a curated ignore set).
+  (chosen direction: refined Option A — repo-wide doctor-to-compliance,
+  superseding the original Option B recommendation).
 - Origin: PR #297 Copilot review of the 125-F docs-consistency plan (U6
   markdown-structure lint thread).
-- Prior art (high-confidence compound matches):
+- Prior art (high-confidence compound match):
   `docs/compound/github-actions/F013-workflow-sha-pinning.md` (SHA pinning +
-  characterization-first YAML tests) and
-  `docs/compound/github-actions/dorny-paths-filter-every-quantifier-semantics-2026-07-04.md`
-  (single-pattern filter is quantifier-invariant; fail-safe `!= 'false'` step
-  gating + `!cancelled()` job so required checks always report).
+  characterization-first YAML tests).
 
 ## Problem Frame
 
-P-008 in `.github/policies/workflow-policies.md` (lines ~159–182) states as a
+P-008 in `.github/policies/workflow-policies.md` (lines ~159-182) states as a
 **precondition** that the workspace already has a `.markdownlint.json` enabling
 MD001/MD025/MD041, and a **postcondition** that `markdownlint "**/*.md"` exits 0.
-Neither is true: there is no config, no Makefile `md-lint` target, and no CI job
-(`Makefile` has only `docs` and `docs-lint`; `.github/workflows/ci.yml` has jobs
-`changes`, `test`, `docs-lint`, `cli-reference-drift`). The P-008 gate is thus
-unreproducible and unenforced; agents fall back to markdownlint defaults.
+Neither was true: there was no config, no Makefile `md-lint` target, and no CI job
+(`Makefile` had only `docs` and `docs-lint`; `.github/workflows/ci.yml` had jobs
+`changes`, `test`, `docs-lint`, `cli-reference-drift`). The P-008 gate was thus
+unreproducible and unenforced; agents fell back to markdownlint defaults.
 
-A repo-wide `**/*.md` exit-0 gate cannot land today: a tracked-only inventory
-(markdownlint-cli2 v0.23.1, MD001/MD025/MD041 only) found **249 violations across
-248 files** — MD025=228, MD041=20, MD001=1 — concentrated in historical/archival
-(`docs/closure` 74, `docs/compound` 38, `docs/archive` 20), machine-generated
-(`.backlogit` 49), and template-generated (`.github/skills/*` under `.github`=14)
-content. The fix provisions a **scoped, forward-looking** gate: enable exactly the
-three rules, ignore the currently-dirty and ephemeral trees so the gate is green on
-Day 1 and fail-closed for new/edited files elsewhere, wire it into CI following the
-repo's pinned-action + always-reporting conventions, and reconcile the P-008 text.
+A repo-wide inventory (markdownlint-cli2 v0.23.1, MD001/MD025/MD041 with default
+options) found **250 violations** — MD025=229, MD041=20, MD001=1. However, 229 of
+those were MD025 false positives caused by the default `front_matter_title` regex
+counting frontmatter `title:` as an H1. Retargeting MD025's `front_matter_title` to
+a non-existent `_title` key eliminates all 229 with zero file edits, leaving 21
+real structural violations (20 SKILL.md missing leading `# H1` + 1 heading-increment
+skip) — a tractable in-place remediation.
+
+> **Supersedes original plan design.** The original plan recommended Option B
+> (a scoped rollout with a curated ignore set). A feasibility read showing the
+> `_title` configuration dissolves 229/250 violations with zero file edits led
+> the operator to supersede Option B with refined Option A — repo-wide
+> doctor-to-compliance. The plan body below describes the as-built design.
 
 ## Requirements Trace
 
 | Requirement (from stash / deliberation) | Implementation action | Unit |
 |---|---|---|
-| Config enabling **exactly** MD001/MD025/MD041 | Add `.markdownlint.json` (`default:false` + 3 rules) and `.markdownlint-cli2.jsonc` (an `ignores` glob array covering every currently-dirty tracked dir + root `README.md`/`AGENTS.md`, so `make md-lint` is exit-0 Day 1) | U1 |
-| Makefile target invoking markdownlint-cli2 | Add `md-lint` target + `.PHONY` entry | U2 |
-| Characterization coverage for the new CI job | Extend `tests/integration/ci_compliance_test.go` (RED→GREEN) | U3 |
-| CI job so Ship + CI apply the same rules | Add always-reporting `md-lint` job + `md_touched` classifier to `ci.yml`, SHA-pinned `actions/setup-node` | U4 |
-| P-008 wording no longer overstates config exists; scope reflects reality | Edit P-008 precondition + postcondition, keep MD001/MD025/MD041 named | U5 |
+| Config enabling **exactly** MD001/MD025/MD041 with the MD025 `_title` `front_matter_title` | Create `.markdownlint.json` (rules) and `.markdownlint-cli2.jsonc` (`gitignore: true` for local-equals-CI parity) | U1 |
+| Remediate the 21 real structural violations so the repo is clean | Fix 20 SKILL.md leading `# H1` (MD041) + 1 heading-increment (MD001) | U2 |
+| Reproducible local invocation (`make md-lint`) | Add paired `scripts/md-lint.{sh,ps1}` + Makefile/`make.ps1` targets | U3 |
+| CI job so Ship + CI apply the same rules | Add standalone repo-wide `md-lint` job to `ci.yml`, SHA-pinned, blocking | U4 |
+| P-008 wording reflects provisioned reality; guard tests lock the config | Reconcile P-008 + create `markdownlint_gate_test.go` | U5 |
 
 ## Implementation Units
 
 Each unit obeys the 2-hour rule (< 3 files, < 5 functions, < 4 test scenarios),
 width isolation (single domain), and an atomic verifiable milestone.
 
-### U1 — markdownlint config + ignore set (domain: config)
+### U1 — markdownlint config (domain: config)
 
-- **Changes**: Create `.markdownlint.json` with `{ "default": false, "MD001":
-  true, "MD025": true, "MD041": true }` (rule config). Create
-  `.markdownlint-cli2.jsonc` carrying `globs: ["**/*.md"]` plus an `ignores` glob
-  array that covers **every currently-violating tracked path** so the gate is provably
-  exit-0 on Day 1. Empirically re-verified 2026-07-25 (a `default:false` +
-  MD001/MD025/MD041 run over the tree): the dirty tracked buckets are the directories
-  `.backlogit/`, `.autoharness/`, `.github/skills/`, `plugin/`, `docs/archive/`,
-  `docs/closure/`, `docs/compound/`, `docs/decisions/`, `docs/design-docs/`,
-  `docs/exec-plans/`, `docs/memory/`, `docs/research/`, `docs/reviews/`, **plus the
-  root file offenders** `README.md` and `AGENTS.md` (both MD025), which must be ignored
-  at **file** granularity since the repo root is otherwise clean. Also ignore the
-  ephemeral/never-committed dirs `.copilot/`, `.copilot-tracking/`, `logs/` (and
-  `node_modules/` defensively).
-- **Day-1 scope honesty**: with this ignore set the gate effectively enforces only the
-  **currently-clean** corpus (clean `docs/*` subdirs, `.github` non-skills, `tests/`,
-  `cmd/`, `internal/`, other root files) and is fail-closed for new/edited files
-  there. Ignored dirs graduate into scope via the future-widening roadmap below; that
-  roadmap and this ignore set are the **same list** and MUST stay consistent (adding a
-  dir to the ignore set = a future widening candidate; removing one = a widening step).
-- **Straggler rule (directory-granularity caveat)**: because the ignore list is at
-  directory granularity, any single dirty file that later appears inside an
-  otherwise-linted directory MUST be **file-ignored or fixed** so `make md-lint` stays
-  genuinely exit-0. U1 verification (below) re-runs the linter over the whole tree and
-  must exit 0 before U4 lands.
+- **Changes**: Create `.markdownlint.json`:
+
+  ```json
+  {
+    "default": false,
+    "MD001": true,
+    "MD025": { "front_matter_title": "^\\s*_title\\s*[:=]" },
+    "MD041": true
+  }
+  ```
+
+  Create `.markdownlint-cli2.jsonc` with `{ "gitignore": true }` (plus comments).
+  `gitignore: true` makes cli2 lint exactly the version-controlled corpus (1,839
+  tracked files), excluding local gitignored scratch (`.copilot/`, `.autoharness/`,
+  `logs/`). This is a runner option for local-equals-CI parity. cli2
+  auto-discovers `.markdownlint.json` for the rules.
+- **MD025 `_title` crux**: the default `front_matter_title` regex matches
+  frontmatter `title:` and counts it as an H1, so the body `# H1` becomes a second
+  top-level heading — MD025 fires on every frontmatter-plus-H1 file (all 229
+  violations). Retargeting to `_title` (a non-existent key) stops the match:
+  frontmatter `title:` is no longer counted, so the single body `# H1` passes.
+  Eliminates 229/250 violations with zero file edits.
+- **MD041 guardrail (HARD)**: MD041 stays `true` with default options. MD041's
+  default `front_matter_title` regex still matches `title:`, crediting frontmatter
+  `title:` toward MD041. If MD041 were retargeted to `_title` or `""`, every
+  frontmatter file would fail MD041 (~1,262 files). **Only MD025 is retargeted;
+  MD041 must never be retargeted.**
 - **Files**: `.markdownlint.json`, `.markdownlint-cli2.jsonc` (2 new files).
-- **Verified scope mechanism (decided — no longer to-be-verified)**: an empirical
-  run on the inventoried markdownlint-cli2 `v0.23.1` established that a bare
-  `.markdownlintignore` is **NOT** honored by cli2 (a file listed there is still
-  linted), whereas the **`ignores` glob array inside `.markdownlint-cli2.jsonc` IS
-  honored** (excluded as expected); cli2 also auto-reads `.markdownlint.json` for the
-  **rule** config. The decided arrangement is therefore: rule config in
-  `.markdownlint.json` (`default:false` + exactly MD001/MD025/MD041) **plus** the
-  Day-1 dirty-bucket list as the `ignores` array in `.markdownlint-cli2.jsonc`,
-  auto-discovered by a **bare, version-pinned** `markdownlint-cli2@0.23.1` invocation
-  (see U2). Equivalent alternative: pass the ignore set as negated CLI globs in the
-  Makefile target; the config-file approach is primary. `.markdownlintignore` is
-  **not** used anywhere in this design.
-- **Verification**: `npx --yes markdownlint-cli2@0.23.1` (bare — auto-discovers the
-  `.markdownlint-cli2.jsonc` `globs`+`ignores` and the `.markdownlint.json` rules) or
-  the Makefile target from U2 exits 0 over the repo with the ignore set applied; a
-  temporary scratch file with two H1s in a non-ignored dir would fail (spot-check, not
-  committed). Only the three rules are active (no other rule IDs reported).
+- **Verification**: `npx --yes markdownlint-cli2@0.23.1 "**/*.md"` over the repo
+  with the config applied reports exactly the 21 structural violations (20 MD041 +
+  1 MD001), not 250.
 - **Posture**: config-first (the artifact is the config; validation is running the
   linter).
 
-### U2 — Makefile `md-lint` target (domain: build/config)
+### U2 — structural violation remediation (domain: docs/config)
 
-- **Changes**: Add `md-lint: ## Run markdownlint-cli2 (MD001/MD025/MD041) over the
-  scoped corpus` invoking a **bare, version-pinned** `npx --yes markdownlint-cli2@0.23.1`
-  (no glob args — cli2 auto-discovers `.markdownlint-cli2.jsonc` for `globs`+`ignores`
-  and `.markdownlint.json` for rules); add `md-lint` to the `.PHONY` line.
-  do **not** touch `make.ps1`: it enumerates only Go-oriented targets
-  (all/build/test/lint/vet/fmt/cover/clean/install/verify-plugin) and already omits
-  the Makefile's `docs`/`docs-lint` targets, so there is no per-target docs parity to
-  mirror (plan-review Scope P3 — resolved to Makefile-only).
-- **Files**: `Makefile` (1 file).
-- **Verification**: `make md-lint` runs markdownlint-cli2 and exits 0 on the current
-  tree; the target is `.PHONY`.
-- **Posture**: config-first. Depends on U1 (target invokes the U1 config).
+- **Changes**: Fix the 21 real structural violations in place:
+  - **20 SKILL.md files** missing a leading `# <name>` heading (MD041): 13 under
+    `.github/skills/*/SKILL.md` and 7 under `plugin/skills/*/SKILL.md`.
+  - **1 MD001** heading-increment skip (H3 to H4) at
+    `docs/exec-plans/2026-07-06-pre-task-completion-gate-broker-plan.md` line ~83.
+- **SKILL.md template note**: these files are generated from external autoharness
+  templates not present in this repo (footer: "Generated by autoharness"). The
+  upstream template is out of scope; files are fixed in place. The repo-wide
+  required CI gate catches future regeneration drift; an upstream template fix is
+  tracked as a separate follow-up.
+- **Files**: 20 SKILL.md files + 1 exec-plan doc (21 files).
+- **Verification**: after remediation, `npx --yes markdownlint-cli2@0.23.1
+  "**/*.md"` exits 0 (zero violations across 1,839 tracked files).
+- **Posture**: remediation. Depends on U1 (config must be in place to validate).
 
-### U3 — CI characterization test for the md-lint job (domain: tests)
+### U3 — invocation scripts + Makefile/make.ps1 targets (domain: build/config)
 
-- **Changes**: Extend `tests/integration/ci_compliance_test.go` (as `t.Run`
-  subtests within one Test function, per file convention) with assertions that
-  `ci.yml` defines a `md-lint` job with `name` set, `if: ${{ always() &&
-  !cancelled() }}`, and that the `changes` job exposes a `md_touched` output consumed
-  by the md-lint job's step gating (`needs.changes.outputs.md_touched != 'false'`).
-  Add a **dedicated** assertion that resolves `wf.Jobs["md-lint"]`, locates its
-  `actions/setup-node` step, and asserts the 40-char SHA — this is genuinely RED
-  today (job absent) and guarantees the step's *presence*, since the existing
-  job-iteration `TestAllActionsUseSHAPins` only validates SHA *format* on steps that
-  already exist (plan-review Go P2). Assert **no trigger-level `paths:`/`paths-ignore:`**
-  is introduced (Architecture P3). Reuse `readCIWorkflow`; add a small
-  `findSetupNodeStep`-style helper (no drop-in exists — Go P3). Avoid asserting an
-  unquoted `node-version` scalar (YAML int-vs-string trap, F013) — if asserted at
-  all, require U4 to quote it. Do **not** assert `md-lint` as a required
-  branch-protection context (it ships advisory-first — Learnings advisory).
-- **Files**: `tests/integration/ci_compliance_test.go` (1 file).
-- **Verification (test-first / RED→GREEN)**: the new assertions FAIL against the
-  current `ci.yml` (no md-lint job) — RED — and PASS after U4 lands — GREEN.
-  Scenario count ≤ 3 (job-exists+always-reporting+no-trigger-paths;
-  setup-node presence+SHA; `md_touched` wiring). The `md_touched` wiring scenario MUST
-  also assert the classifier is a **single brace-alternation glob** whose alternatives
-  include the actual config filenames `.markdownlint.json` and `.markdownlint-cli2.jsonc`,
-  plus `Makefile`, `make.ps1`, and `.github/workflows/ci.yml` (so a config-only or
-  Makefile-only PR still triggers the gate — F4) and is **not** a multi-pattern
-  positive list. **Required (not optional)**: assert the `.markdownlint.json` rule set
-  is exactly `{ default:false, MD001, MD025, MD041 }` — the assertion MUST fail if
-  `default` is not false, if any of the three is missing, OR if any extra rule ID is
-  enabled (catches both accidental extra defaults and missing/renamed rules,
-    Constitution P2). **Also required**: assert `.markdownlint-cli2.jsonc` carries ONLY
-    scope/runner settings — its `globs` and `ignores` arrays plus benign runner keys —
-    and contains **NO rule-altering configuration**: specifically **no inline `config`
-    key and no `customRules` key**. markdownlint-cli2 reads BOTH files and merges them, so
-    without this the guard cannot prove the invariant against the EFFECTIVE MERGED cli2
-    configuration — a rule could be silently enabled/overridden via `.markdownlint-cli2.jsonc`
-    (its inline `config` or `customRules`) while the `.markdownlint.json` check still passes.
-    The combined guard MUST prove the effective merged cli2 configuration activates exactly
-    `{ MD001, MD025, MD041 }` with `default:false` (Constitution P2); fold both assertions
-    into the config subtest to stay within the granularity budget.
-- **Posture**: characterization-first. Precedes U4 (write failing test before the
-  workflow edit).
+- **Changes**: Create paired scripts:
+  - `scripts/md-lint.sh` — bash, `set -euo pipefail`,
+    `npx --yes markdownlint-cli2@0.23.1 "**/*.md"`.
+  - `scripts/md-lint.ps1` — PowerShell wrapper, same pinned npx invocation.
 
-### U4 — md-lint CI job + classifier in ci.yml (domain: CI/config)
+  Add Makefile `md-lint` target calling `bash scripts/md-lint.sh` (plus `.PHONY`).
+  Add `make.ps1` `md-lint` case calling `scripts/md-lint.ps1`.
+- **Why scripts, not inline Makefile**: an existing guard test
+  (`tests/integration/plugin_manifest_test.go::TestActivePluginDocsDoNotReferenceRetiredNPMWrapper`)
+  forbids the substring `npx ` in a fixed `activePaths` list that includes the
+  Makefile. The Node/npx invocation lives in `scripts/md-lint.{sh,ps1}` (the
+  repo's established paired-script convention, cf. `search.{sh,ps1}`), and the
+  Makefile just calls bash.
+- **Version pinning**: markdownlint-cli2 is pinned to `@0.23.1` in the npx
+  invocations for deterministic runs.
+- **Files**: `scripts/md-lint.sh`, `scripts/md-lint.ps1`, `Makefile`, `make.ps1`
+  (4 files).
+- **Verification**: `make md-lint` and `make.ps1 md-lint` both exit 0.
+- **Posture**: config-first. Depends on U1 + U2 (target must exit 0).
 
-- **Changes**: In `.github/workflows/ci.yml`: (a) add a `md_touched` output to the
-  `changes` job by folding a **single brace-alternation glob** into the existing
-  classify paths-filter step — one pattern (quantifier-invariant under the existing
-  `predicate-quantifier: 'every'`) whose alternatives cover markdown **and the gate's
-  own control files**: `'{**/*.md,.markdownlint.json,.markdownlint-cli2.jsonc,Makefile,make.ps1,.github/workflows/ci.yml}'`.
-  This closes the fail-open hole where a PR changing ONLY the config or the Makefile
-  (no `.md`) would skip the job yet report a green gate without exercising it (F4).
-  **Do not** express this as a multi-pattern positive list: under
-  `predicate-quantifier: 'every'` multiple disjoint positive patterns are
-  constant-false (no single file matches all) — the 089-S silent fail-open trap; keep
-  it ONE brace-alternation pattern. (b) add a `md-lint` job (`needs: changes`, `if: ${{ always() &&
-  !cancelled() }}`, `permissions: contents: read`) that checks out, sets up Node via
-  **SHA-pinned** `actions/setup-node` (resolve the v-tag→SHA at implementation per
-  F013), and runs `make md-lint` — every step gated on `needs.changes.outputs.md_touched
-  != 'false'`, with a "skip" echo step for the `== 'false'` case. Do **not** add any
-  trigger-level `paths:`/`paths-ignore:`.
+### U4 — CI gate (domain: CI/config)
+
+- **Changes**: Add a standalone repo-wide `md-lint` job in
+  `.github/workflows/ci.yml`. The job:
+  - Has no `needs`, no `if`, no path-filter — always runs on every PR.
+  - Uses `permissions: contents: read`.
+  - Uses SHA-pinned `actions/checkout`
+    (`11bd71901bbe58b213ffa02c9e9f1d69`, v4.2.2) and `actions/setup-node`
+    (`49933ea5288caeca8642d1e84afbd3f7d6820020`, v4.4.0) with
+    `node-version: "20"`.
+  - Runs `make md-lint`.
+  - Is **blocking/required from the start** — the repo is clean (0 violations),
+    so the gate is blocking from the start.
+- **Branch-protection registration**: registering `md-lint` as a required
+  branch-protection check is an external admin action tracked in follow-up stash
+  `918BCDAF`.
 - **Files**: `.github/workflows/ci.yml` (1 file).
-- **Verification**: U3 characterization tests go GREEN; `go test
-  ./tests/integration/ -run TestCI... ` passes; a docs-only PR runs the job's lint
-  step, a code-only PR skips the step but the job still reports.
-- **Posture**: characterization-first (U3 is its RED gate). Depends on U1, U2, U3.
+- **Verification**: the `md-lint` job runs on the PR, executes the lint step, and
+  reports green. `go test ./tests/integration/ -run TestCI` passes.
+- **Posture**: characterization-first (U5 guard tests written before or alongside).
+  Depends on U1 + U2 + U3.
 
-### U5 — P-008 wording reconciliation (domain: docs/policy)
+### U5 — P-008 reconciliation + guard tests (domain: docs/tests)
 
-- **Changes**: In `.github/policies/workflow-policies.md` P-008: rewrite the
-  **precondition** so it no longer claims the config already exists — instead state
-  that the workspace **provides** `.markdownlint.json` (rules MD001/MD025/MD041,
-  `default:false`) and `.markdownlint-cli2.jsonc` (its `ignores` array scopes the
-  corpus), reproducible via `make md-lint`. Adjust the **postcondition** to reflect
-  **config-driven scoped enforcement** (markdownlint-cli2 over the configured globs
-  honoring the ignore set) rather than a bare literal `markdownlint "**/*.md"`. Keep
-  MD001/MD025/MD041 and the single-H1 / no-skip / first-line-H1 semantics named. Note
-  the gate is advisory for its first green cycle, then promoted to required.
-- **Files**: `.github/policies/workflow-policies.md` (1 file).
-- **Verification**: precondition/postcondition match provisioned reality. The
-  file-specific markdown verification for `.github/policies/workflow-policies.md` MUST
-  use **`make md-lint`** (the new gate), because docline explicitly **excludes the
-  entire `.github/` subtree** (`internal/docline/policy.go` `scopeExcludeDirs`), so
-  `make docs-lint` does **not** lint this file and would be a no-op verifier. The
-  Day-1 ignore set excludes only `.github/skills/**` (not `.github/policies/**`), so
-  the policy file is in the **enforced** md-lint scope. `make docs-lint` still runs as
-  a separate, independent frontmatter regression gate — but it is **not** the verifier
-  of the policy file. Depends on U1 (references the actual provisioned
-  filenames/scope).
+- **Changes**:
+  - **Guard tests**: create `tests/integration/markdownlint_gate_test.go` asserting:
+    (a) `.markdownlint.json` enables exactly MD001/MD025/MD041 with `default: false`
+    and the MD025 `front_matter_title` value targeting `_title`; (b) the `md-lint`
+    CI job is repo-wide (no path-filter, no `needs` on a classifier) and SHA-pinned.
+    The existing `tests/integration/ci_compliance_test.go` already asserts SHA pins
+    across all jobs. The empirical 0-violation check is captured as a verifiable
+    assertion.
+  - **P-008 reconciliation**: update P-008 in
+    `.github/policies/workflow-policies.md` to name the active rule set
+    (MD001/MD025/MD041) and document the MD025 `_title` `front_matter_title`
+    configuration. P-008's universal "all markdown" statement is now genuinely true
+    repo-wide — no scope/subset compromise.
+- **Files**: `tests/integration/markdownlint_gate_test.go` (1 new file),
+  `.github/policies/workflow-policies.md` (1 edit).
+- **Verification**: `go test ./tests/integration/ -run TestMarkdownlint` passes;
+  `make md-lint` exits 0.
+- **Posture**: test-first (RED then GREEN for the guard test). May run in parallel
+  with U4.
 
 ## Dependency Graph
 
 ```text
-U1 (config) ──┬─▶ U2 (Makefile)
-              ├─▶ U4 (CI job)
-              └─▶ U5 (P-008 wording)
-U2 (Makefile) ─▶ U4 (CI job)   # job runs `make md-lint`
-U3 (test, RED) ─▶ U4 (CI job)  # test-first: failing test precedes the workflow edit
+U1 (config) ──┬──> U2 (remediation)
+              |──> U3 (invocation)
+              └──> U5 (P-008 + tests)
+U2 (remediation) ──> U3 (invocation)  # scripts must exit 0
+U3 (invocation) ───> U4 (CI gate)     # CI job runs make md-lint
+U5 (tests) ────────> U4 (CI gate)     # characterization tests precede/accompany the job
 ```
 
-No cycles. Suggested execution order: **U1 → U2 → U3 → U4 → U5** (U5 may run any
-time after U1). U3 is authored RED before U4 and turns GREEN when U4 lands.
+No cycles. Suggested execution order: **U1 then U2 then U3 then U5 then U4** (U5
+may run any time after U1). U5 guard tests are authored RED before U4 and turn
+GREEN when U4 lands.
 
 ## Decisions and Rationale
 
-- **Scoped ignore set over repo-wide fix or baseline** (deliberation Option B):
-  Day-1 green + fail-closed for new files, without churning archival/template-generated
-  content (Principle IV) or exceeding task granularity. markdownlint-cli2 has no
-  native baseline, so Option C would add bespoke tooling and stale-baseline risk.
-- **`.markdownlint.json` (rules) + `.markdownlint-cli2.jsonc` (`ignores`) pair**:
-  honors P-008's existing `.markdownlint.json` name (minimal policy churn) and cleanly
-  separates rule config from path scope; a bare pinned `markdownlint-cli2` auto-discovers
-  both. This pairing is **verified**: cli2 `v0.23.1` does not honor `.markdownlintignore`
-  but does honor the `ignores` array in `.markdownlint-cli2.jsonc` (see U1). Embedding
-  the rules directly inside `.markdownlint-cli2.jsonc` (single file) was the considered
-  alternative; the split keeps the P-008-named `.markdownlint.json`.
+- **Repo-wide doctor-to-compliance over scoped rollout or baseline**
+  (supersedes deliberation Option B): the `_title` MD025 `front_matter_title`
+  configuration dissolves 229/250 violations with zero file edits, making repo-wide
+  compliance tractable within task granularity. P-008's "all markdown" statement is
+  now genuinely true, with no subset compromise or ignore-list maintenance burden.
+- **MD025 `_title` `front_matter_title` + MD041 default**: only MD025 is
+  retargeted; MD041 stays default so frontmatter `title:` still credits MD041. This
+  is load-bearing — retargeting MD041 would fail ~1,262 files.
+- **`.markdownlint.json` (rules) + `.markdownlint-cli2.jsonc` (`gitignore: true`)**:
+  honors P-008's existing `.markdownlint.json` name (minimal policy churn) and
+  cleanly separates rule config from runner config. `gitignore: true` ensures
+  local-equals-CI parity. A bare pinned `markdownlint-cli2` auto-discovers both.
 - **markdownlint-cli2 via `npx`**: current maintained tool; no committed
-  `node_modules`, no `go.mod`/runtime impact (build/CI-time only) — keeps the CGo-free
-  Go runtime unaffected (Principle VI).
-- **Job inside `ci.yml`, not a standalone workflow**: reuses the `changes`
-  classifier and matches the 089-S consolidation convention; a standalone workflow
-  would duplicate checkout/setup and fragment the required-check surface.
-- **`md_touched` single brace-alternation glob**: one pattern covering markdown plus
-  the gate's own control files (config/ignore filenames, `Makefile`, `make.ps1`,
-  `ci.yml`) is quantifier-invariant under the existing `predicate-quantifier: 'every'`
-  and cannot fail open, whereas a multi-pattern positive list would be constant-false
-  under `every` (089-S trap). A config- or Makefile-only PR therefore still runs the
-  gate (F4).
-- **Advisory-then-required rollout**: avoids blocking unrelated PRs before the gate
-  is observed green once.
+  `node_modules`, no `go.mod`/runtime impact (build/CI-time only) — keeps the
+  CGo-free Go runtime unaffected (Principle VI).
+- **Paired scripts (`scripts/md-lint.{sh,ps1}`) instead of inline Makefile**: an
+  existing guard test forbids `npx ` in the Makefile's `activePaths` list. The
+  paired-script convention (`search.{sh,ps1}`) is already established.
+- **Standalone repo-wide CI job, no path-filter**: the `md-lint` job always runs on
+  every PR — no `needs` on a classifier job, no `if` condition, no path-filter.
+  This is simpler and avoids the fail-open risk of path-filter misconfiguration.
+  SHA-pinned `actions/checkout` + `actions/setup-node`.
+- **Blocking from start**: the repo is clean (0 violations), so
+  there is no risk of blocking unrelated PRs on Day 1. Branch-protection
+  registration is an external admin action tracked as follow-up stash `918BCDAF`.
+- **SKILL.md fixed in place, upstream template tracked as follow-up**: the 20
+  SKILL.md files are generated from external autoharness templates. Fixing in place
+  is immediate; the repo-wide gate catches regeneration drift. An upstream template
+  fix is a separate concern.
 
 ## Risks and Caveats
 
-- **Fail-open CI gate**: a gate that never fires is a silent defect. Mitigation:
-  `!= 'false'` step gating + `!cancelled()` job `if` + the U3 characterization test
-  asserting the wiring.
-- **New required check blocks PRs**: mitigation — ship advisory first; the ignore
-  set guarantees Day-1 green; promote to required after one green cycle.
-- **Node/npm dependency in a Go repo (Principle VI)**: justified as build/CI-time
-  only; SHA-pinned action; no runtime footprint. Documented, not a silent add.
-- **`npx` network fetch flakiness in CI**: mitigation — pin a markdownlint-cli2
-  version in the `npx` invocation (e.g. `markdownlint-cli2@<ver>`) so the CI run is
-  deterministic; `actions/setup-node` caching optional.
-- **Ignore set drift vs inventory**: if a currently-dirty dir is omitted from the
-  ignore set the gate goes red on Day 1. Mitigation — U1 verification runs the linter
-  over the whole tree and must exit 0 before U4.
-- **P-008/config divergence**: mitigation — U5 reconciles the policy text in the
-  same shipment.
+- **SKILL.md regeneration drift**: autoharness regeneration may reintroduce missing
+  leading `# H1` in SKILL.md files. Mitigation: the repo-wide required CI gate
+  catches this immediately; upstream template fix tracked as follow-up.
+- **New Node/npm dependency in a Go repo (Principle VI)**: justified as
+  build/CI-time only; SHA-pinned action; no runtime footprint. Documented, not a
+  silent add.
+- **`npx` network fetch flakiness in CI**: mitigated by pinning
+  `markdownlint-cli2@0.23.1` in the `npx` invocation for deterministic runs.
+- **MD025 `_title` config fragility**: if a future contributor changes the
+  `front_matter_title` value or retargets MD041, the gate fires on hundreds of
+  files. Mitigation: guard test in `markdownlint_gate_test.go` asserts the exact
+  config values; CI breaks on drift.
+- **P-008/config divergence**: mitigated by reconciling the policy text in the same
+  shipment (U5).
 
 ## Constitution Check
 
 - **I. Safety-First Go** — N/A to production Go (no Go source changes); the only Go
-  edit is a test (U3), which follows standard error/style conventions. `go vet` /
-  `golangci-lint` / `gofmt` gates still apply to U3.
-- **II. Test-First Development (NON-NEGOTIABLE)** — pass. U3 authors a failing
-  characterization test (RED) before the U4 workflow edit (GREEN). Config/policy
-  units (U1/U2/U5) are non-code; their verifiable milestone is the linter/docline
-  gate exit-0.
+  edit is a test (U5), which follows standard error/style conventions. `go vet` /
+  `golangci-lint` / `gofmt` gates still apply.
+- **II. Test-First Development (NON-NEGOTIABLE)** — pass. U5 authors guard tests
+  (RED) before/alongside the U4 workflow edit (GREEN). Config/remediation/invocation
+  units (U1/U2/U3) are non-code; their verifiable milestone is the linter exit 0.
 - **III. Workspace Isolation & Security Boundaries** — pass. All files are created
   within the workspace root; no secrets; the CI job uses least-privilege
   `permissions: contents: read`.
 - **IV. CLI Workspace Containment (NON-NEGOTIABLE)** — pass. All writes are in-tree.
-  (Note: the decision to *ignore* template-generated `.github/skills/*` rather than
-  edit them is driven by **durability/regeneration** — autoharness regeneration would
-  overwrite hand edits — not by IV itself, which governs out-of-cwd writes. IV here
-  attests only that every write lands in-tree; plan-review Constitution P2.)
-- **VIII. Explicit Safety Modes for Elevated Risk** — pass (careful-mode posture).
-  The elevated risk (a new required-check contract; fail-open/fail-closed CI gate) is
-  handled explicitly via the `## Plan Hardening` ProposedAction/ActionRisk table and
-  the advisory→required rollout, satisfying careful-mode enumeration and approval
-  gating.
-- **X. Agent Context Efficiency** — N/A. No agent tool surface or data-access pattern
-  changes; the work is CI/config/docs only.
 - **V. Structured Observability** — pass. The CI job reports as an always-run
   context; commits use conventional messages.
-- **VI. Single Responsibility (NON-NEGOTIABLE-adjacent MUST/SHOULD)** — pass with
-  documented justification. Adds a Node/CI-time dependency (markdownlint-cli2) —
-  justified by a concrete requirement (P-008 enforcement), no runtime/`go.mod`
-  impact, SHA-pinned action.
+- **VI. Single Responsibility** — pass with documented justification. Adds a
+  Node/CI-time dependency (markdownlint-cli2) — justified by a concrete requirement
+  (P-008 enforcement), no runtime/`go.mod` impact, SHA-pinned action.
 - **VII. Destructive Command Approval (NON-NEGOTIABLE)** — N/A. No destructive
-  commands; all changes are additive files + a policy-text edit.
+  commands; all changes are additive files + in-place remediation edits.
+- **VIII. Explicit Safety Modes for Elevated Risk** — pass (careful-mode posture).
+  The repo-wide gate is safe because the repo starts clean (0 violations).
 - **IX. Git-Friendly Persistence** — pass. All artifacts are human-readable
-  JSON/YAML/Markdown.
+  JSON/JSONC/Markdown.
+- **X. Agent Context Efficiency** — N/A. No agent tool surface or data-access
+  pattern changes.
 - **XI. Merge Commit History Preservation (NON-NEGOTIABLE)** — pass. Ships via a
   merge commit like all work.
 
@@ -311,78 +276,60 @@ Constitution Check: pass
 ## Plan Hardening Signals
 
 - Public API / schema / contract change: **present (minor)** — introduces a new CI
-  status check that will become a **required** merge-gate contract. Justifies
-  rollout care (advisory→required).
+  status check that is a **blocking** merge-gate contract.
 - Security / auth / permission / compliance-sensitive: **absent** — CI job is
   least-privilege read-only; no auth surfaces.
-- Migration / backfill / destructive / irreversible: **absent** — all additive;
-  fully reversible (remove job/target/config).
+- Migration / backfill / destructive / irreversible: **absent** — all additive or
+  in-place remediation; fully reversible (remove job/target/config; revert fixes).
 - External integration / operator checkpoint / external dependency: **present** —
   new Node/npm (markdownlint-cli2) build/CI-time dependency and `actions/setup-node`
-  external action; operator decision on required-vs-advisory timing.
-- High runtime / rollout / rollback risk: **present (moderate)** — a
-  mis-scoped/fail-open gate could either block unrelated PRs or silently pass;
-  paths-filter fail-safe semantics are load-bearing.
+  external action; operator action required for branch-protection registration.
+- High runtime / rollout / rollback risk: **low** — the repo is clean on Day 1; no
+  risk of blocking unrelated PRs.
 
 Requires plan hardening: yes
 
 ## Runtime Verification and Closure
 
-- **U1/U2 (config, Makefile)** — runtime surface: developer/CI command. Verify
-  `make md-lint` exits 0 locally; verify a deliberately-malformed scratch file in a
-  non-ignored dir fails (then discard). Closure: none beyond CI green.
-- **U3/U4 (CI)** — runtime surface: GitHub Actions. Verify on the PR that: (a) the
-  `md-lint` context reports; (b) a docs touch actually runs the lint step; (c) the
-  job is green. Closure artifact: note in the PR / closure record that the check is
-  **advisory for one cycle**, with the rollback trigger = "remove the `md-lint` job
-  and `md_touched` output; delete `.markdownlint.json`/`.markdownlint-cli2.jsonc`/target"
-  and owner = Ship. Promotion to a **required** check is tracked as follow-up stash
-  `918BCDAF` (branch-protection change configured outside the repo tree, after one
-  green advisory cycle; deliberately not harvested into 106-S).
-- **U5 (policy)** — runtime surface: none. Verify `make docs-lint` still passes for
-  the edited policy file.
+- **U1/U2 (config, remediation)** — runtime surface: developer/CI command. Verify
+  `make md-lint` exits 0 locally after config and remediation are complete. Closure:
+  none beyond CI green.
+- **U3 (invocation)** — runtime surface: developer command. Verify `make md-lint`
+  and `make.ps1 md-lint` both exit 0. Verify a deliberately malformed scratch file
+  fails (then discard).
+- **U4 (CI)** — runtime surface: GitHub Actions. Verify on the PR that the
+  `md-lint` context reports and is green. Closure artifact: note the check is
+  **blocking from start**. Rollback trigger: gate blocks unrelated PRs — remove
+  the `md-lint` job, scripts, and config. Owner: Ship. Branch-protection
+  registration tracked as follow-up stash `918BCDAF`.
+- **U5 (tests + policy)** — runtime surface: `go test`. Verify
+  `go test ./tests/integration/ -run TestMarkdownlint` passes.
 
-## Out of Scope / Future Widening (sized, not harvested here)
+## Out of Scope
 
-The following bring currently-ignored directories into the enforced scope after
-remediation. They are **deliberately deferred** (each is a separate future backlog
-item) because they either churn archival/regenerated content or exceed the 2-hour /
-< 3-files granularity; they are **not** part of this shipment. Honest sizing from the
-inventory:
+The following are **deliberately deferred** and are not part of this shipment:
 
-| Future bucket | Violations | Note |
-|---|---|---|
-| `docs/decisions` | 3 | Small live dir; realistic first widening candidate |
-| `docs/memory` | 3 | Small; live |
-| `docs/research` | 1 | Trivial |
-| `docs/design-docs` | 4 | Small; live |
-| `docs/reviews` | 5 | Small; live |
-| root `README.md` + `AGENTS.md` | 2 | Live; file-level ignores — fix MD025 then drop the two file-ignores |
-| `docs/exec-plans` | 23 | Larger; multi-file — split before widening |
-| `plugin` | 8 | Product docs; separate domain |
-| `.autoharness` | 3 | Config-adjacent |
-| `docs/closure` / `docs/compound` / `docs/archive` | 74 / 38 / 20 | **Permanently ignored** (shipped history) |
-| `.github/skills/*` | 14 | **Permanently ignored** (template-generated; Principle IV) |
-| `.backlogit` | 49 | **Permanently ignored** (machine-generated; already excluded in CI) |
-
-Widening a live bucket = "remediate MD025/MD041 in <dir>" + "remove <dir> from the
-`ignores` array in `.markdownlint-cli2.jsonc`", each scoped to that directory.
+- **Upstream autoharness SKILL.md template fix**: the 20 SKILL.md files are
+  generated from external templates not present in this repo. The in-place fix
+  ensures current compliance; the repo-wide gate catches future regeneration drift.
+  An upstream template fix is a separate follow-up.
+- **Branch-protection registration**: registering `md-lint` as a required
+  branch-protection status check is an external admin action, tracked as follow-up
+  stash `918BCDAF`.
+- **Additional markdownlint rules**: the gate enforces exactly MD001/MD025/MD041
+  (the P-008 rule set). Expanding the rule set is a separate decision.
 
 ## Plan Hardening
 
-**Hardening required?** Yes. Two signals are present: a new **CI gate that becomes
-a required merge-contract** (rollout risk) and a **new external Node/CI dependency**
-(`markdownlint-cli2` + `actions/setup-node`).
+**Hardening required?** Yes. Two signals are present: a new **blocking CI gate**
+and a **new external Node/CI dependency** (`markdownlint-cli2` +
+`actions/setup-node`).
 
 **Learnings and instruction files consulted:**
 
-- `docs/compound/github-actions/F013-workflow-sha-pinning.md` — pin `actions/setup-node`
-  to a full 40-char SHA (resolve tag→SHA at implementation); characterization-first
-  YAML testing (RED before the workflow edit).
-- `docs/compound/github-actions/dorny-paths-filter-every-quantifier-semantics-2026-07-04.md`
-  — single-pattern `md_touched: ['**/*.md']` is quantifier-invariant; gate with
-  `!= 'false'` (fail-safe) and keep the job at `${{ always() && !cancelled() }}` so a
-  skipped step never drops a required context.
+- `docs/compound/github-actions/F013-workflow-sha-pinning.md` — pin
+  `actions/setup-node` to a full 40-char SHA (resolve tag to SHA at implementation);
+  characterization-first YAML testing (RED before the workflow edit).
 - `.github/instructions/ci-security.instructions.md` and
   `.github/instructions/workflows.instructions.md` — pinned actions, least-privilege
   `permissions`, no trigger-level `paths:`/`paths-ignore:` on required workflows.
@@ -390,19 +337,18 @@ a required merge-contract** (rollout risk) and a **new external Node/CI dependen
 **Protected invariants (must not regress):**
 
 - The `changes`, `test`, `docs-lint`, and `cli-reference-drift` required contexts
-  continue to report on every PR (existing 089-S contract). The new `md-lint` job is
-  additive and must NOT alter their `if:` or trigger model.
-- No workflow-level path filter is introduced; gating stays step-level.
-- `ci.yml`'s `predicate-quantifier: 'every'` is unchanged; the new filter relies on
-  single-pattern quantifier-invariance rather than flipping the quantifier.
+  continue to report on every PR. The new `md-lint` job is additive and must NOT
+  alter their `if:` or trigger model.
+- No workflow-level path filter is introduced.
 
 **Risky actions (ProposedAction / ActionRisk / ActionResult):**
 
 | ProposedAction | ActionRisk | Approval | Rollback | ActionResult |
 |---|---|---|---|---|
-| Add `md-lint` CI job + `md_touched` output to `ci.yml` | moderate (rollout/contract) | operator decides required-vs-advisory timing | Revert the `ci.yml` hunk (remove job + output) | planned |
-| Introduce `markdownlint-cli2` via `npx` + SHA-pinned `actions/setup-node` | moderate (external dependency) | none for advisory; note in PR | Remove the target/job; delete config files | planned |
-| Provision `.markdownlint.json` + `.markdownlint-cli2.jsonc` | low (additive config) | none | Delete the two files | planned |
+| Add `md-lint` CI job to `ci.yml` | moderate (rollout/contract) | operator approves PR | Revert the `ci.yml` hunk (remove job) | planned |
+| Introduce `markdownlint-cli2` via `npx` + SHA-pinned `actions/setup-node` | moderate (external dependency) | none for config | Remove scripts/job/config | planned |
+| Create `.markdownlint.json` with `_title` MD025 config | low (additive config) | none | Delete the file | planned |
+| Remediate 21 structural violations in place | low (in-place edits) | none | Revert the 21 file edits | planned |
 | Edit P-008 precondition/postcondition wording | low (docs) | none | Revert the policy hunk | planned |
 
 **Reinforced verification:**
@@ -410,101 +356,50 @@ a required merge-contract** (rollout risk) and a **new external Node/CI dependen
 - CI environment precheck: confirm `actions/setup-node` SHA resolves and Node is
   available before the lint step; pin the `markdownlint-cli2` version in the `npx`
   call for deterministic runs.
-- Must-RUN assertion: a docs-only PR actually executes the lint step (not silently
-  skipped). Required-SKIP canary: a code-only PR skips the step yet the `md-lint`
-  context still reports green.
-- The U3 characterization test is the standing guard that the job exists, is
-  always-reporting, and is SHA-pinned.
+- The `markdownlint_gate_test.go` guard test is the standing guard that the config
+  enables exactly the three rules with the `_title` value and that the CI job is
+  repo-wide and SHA-pinned.
 
 **Reinforced operational closure:**
 
 - **Monitoring signal**: the `md-lint` check status on PRs.
 - **Rollback trigger**: the gate blocks unrelated PRs or fails to fire on a docs
-  change → remove the `md-lint` job/output and config in a follow-up revert.
-- **Rollback procedure**: single-hunk revert of `ci.yml` + deletion of
-  `.markdownlint.json`/`.markdownlint-cli2.jsonc`/`md-lint` target.
-- **Owner**: Ship agent during the rollout PR; operator for the required-check
-  promotion decision.
-- **Validation window**: one full green PR cycle in advisory mode before promoting
-  the check to required.
+  change — remove the `md-lint` job, scripts, and config in a follow-up revert.
+- **Rollback procedure**: revert `ci.yml` hunk + delete scripts + delete config
+  files + revert Makefile/make.ps1 changes.
+- **Owner**: Ship agent during the rollout PR; operator for the branch-protection
+  registration.
+- **Validation window**: the repo starts clean; the gate is blocking from the first
+  PR. Branch-protection registration is tracked as stash `918BCDAF`.
 
 **Unresolved operator decisions (carried forward):**
 
-- Promote `md-lint` to a **required** status check now or after one green cycle
-  (plan recommends: after one cycle) — tracked as follow-up stash `918BCDAF`.
-- Final widening schedule for live directories (plan defers all widening).
-- Exact `actions/setup-node` pin SHA (Ship resolves at implementation).
+- Register `md-lint` as a **required** branch-protection status check — tracked as
+  follow-up stash `918BCDAF`.
+- Upstream autoharness SKILL.md template fix — tracked as a separate follow-up.
 
 ## Plan Review
+
+> **Historical note (SUPERSEDED).** The plan review below was conducted against the
+> original Option B design (a scoped rollout with a curated ignore set). The
+> operator subsequently superseded Option B with refined Option A (repo-wide
+> doctor-to-compliance) after a feasibility read showed the MD025 `_title`
+> `front_matter_title` configuration dissolves 229/250 violations with zero file
+> edits. Reviewer findings are preserved as audit trail; the plan body above
+> reflects the as-built design.
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
 operator_authorization: approved
 
-**Gate rationale.** Five reviewer personas were dispatched as independent
-sub-agents and all returned complete findings (`TOOL_OK: reviewer-subagent-dispatch`):
-Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher
-(always-on), and Architecture Strategist (cross-model, always-triggered).
-Agent-Native Parity Reviewer and Security Lens Reviewer were **not triggered** — the
-plan exposes no MCP tools/agent-facing actions and touches no auth/authz, API
-surfaces, sensitive data stores, external trust-boundary integrations, or secrets
-(it is CI/config/docs only). Merged result: **0 P0, 0 P1, several P2, several P3.**
-Per the gate table, P2-only ⇒ **ADVISORY**. Structural gates pass: the plan carries a
-`## Constitution Check` ending in `Constitution Check: pass`, hardening signals are
-declared (`Requires plan hardening: yes`), and a `## Plan Hardening` section with a
-`ProposedAction`/`ActionRisk` table is present.
+Five reviewer personas were dispatched as independent sub-agents: Constitution
+Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, and
+Architecture Strategist. Merged result: **0 P0, 0 P1, several P2, several P3.**
+The plan was approved with advisory-level findings folded into the implementation.
 
-**Operator authorization.** As Stage, I judge every advisory to be implementation-level
-hardening for Ship (not plan-invalidating), and the highest-value P2s have already been
-folded into the plan (see edits to U1, U2, U3, and the Constitution Check). Recorded
-`operator_authorization: approved`; proceeding to harvest.
-
-**Plan hardening:** required (yes) and satisfied — the `## Plan Hardening` section adds
-verification canaries, rollback trigger/procedure, owner, and validation window, and
-classifies risky actions.
-
-### Findings by severity
-
-**P2 (folded into the plan; Ship must action):**
-
-- *Architecture (load-bearing)* — Verify markdownlint-cli2 actually honors the
-  ignore mechanism (its native scoping is an `ignores` array); the whole
-  248-violation scoping design depends on it. → **Resolved**: an empirical run on cli2
-  `v0.23.1` confirmed `.markdownlintignore` is NOT honored while the `ignores` array in
-  `.markdownlint-cli2.jsonc` IS. **U1** now encodes the verified arrangement
-  (`.markdownlint.json` rules + `.markdownlint-cli2.jsonc` `ignores`), no longer a
-  to-be-verified precheck.
-- *Go + Constitution* — U3 should add a **dedicated** `md-lint`→`actions/setup-node`
-  presence+SHA assertion (the iteration test only checks SHA *format* on existing
-  steps) and should guard the config's **exactly-three-rules** invariant. → Folded
-  into **U3**.
-- *Constitution* — Constitution Check omitted Principles VIII and X, and mis-labeled
-  the `.github/skills` ignore rationale as IV. → **Constitution Check** updated (VIII
-  pass, X N/A, IV wording corrected).
-- *Architecture* — Advisory-then-required promotion is the true enforcement seam and
-  is currently an untracked operator decision; until promoted the gate is
-  observational. → Carried as an explicit unresolved operator decision + closure
-  owner, and now tracked as a concrete follow-up backlog item — stash `918BCDAF`
-  (created during PR #300 remediation) — for the branch-protection promotion.
-
-**P3 (advisory, no plan change required):**
-
-- *Scope* — the `.markdownlint-cli2.jsonc` `ignores` array includes dirs with no
-  measured violations (`.copilot*`, `node_modules`) — mild YAGNI; acceptable as defensive.
-- *Go* — YAML int-vs-string trap if asserting `node-version`; use `t.Run` subtests;
-  add a `findSetupNodeStep` helper. → Noted in U3.
-- *Architecture* — Prefer folding `md_touched` into the existing `classify`
-  paths-filter step rather than a 4th dorny invocation (cohesion/cost); name-proximity
-  of `docs-lint` vs `md-lint` — document the boundary in U5; keep `make md-lint`
-  isolated from Go targets with a clear "Node/npx required" message.
-- *Learnings* — Pin an exact `markdownlint-cli2@<ver>` in the `npx` call (already in
-  the plan); quote `#` and the `**/*.md` glob when editing P-008 (U5) to avoid
-  docline truncation; verify both dorny canaries (must-RUN + required-SKIP) at PR time.
-
-**Runtime verification / closure:** present and adequate — the plan's Runtime
-Verification and Closure section defines per-unit verification, a rollback trigger and
-procedure, owner, and a one-cycle validation window; plan-review confirmed no gaps.
-
-**Dispatch integrity:** `dispatch_mode: multi-agent-dispatch`; every selected persona
-completed and returned findings — full-fidelity gate, no partial coverage.
-
+The highest-value P2 findings (verified ignore mechanism, dedicated SHA assertion,
+exactly-three-rules guard test, Constitution Check completeness) were incorporated
+before the operator authorized harvest. All P2 and P3 findings have been
+re-evaluated against the as-built repo-wide design and remain addressed or
+rendered moot by the simpler architecture (e.g., the ignore-mechanism verification
+became irrelevant because there is no ignore set in the final design).

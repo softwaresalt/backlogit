@@ -167,17 +167,25 @@ If the impl-plan output does not contain a `Requires plan hardening` conclusion,
 | Gate Point | Ship Step 5 (pre-commit, before PR creation) |
 
 **Statement**: All generated and committed Markdown files MUST conform to a strict heading
-hierarchy enforced by markdownlint rules MD001, MD025, and MD041. A single H1 per file,
-no skipped heading levels, and a top-level heading as the first non-empty line are required.
+hierarchy enforced by markdownlint rules MD001, MD025, and MD041 — no skipped heading levels
+(MD001), a single top-level heading per file (MD025), and a top-level heading as the document
+title (MD041). A file's title MAY be expressed either as a leading `# H1` or as a frontmatter
+`title:` field (MD041 credits the frontmatter title). To avoid a false "multiple top-level
+headings" result when an artifact legitimately carries both a frontmatter `title:` and a body
+`# H1`, MD025 is configured with `front_matter_title` retargeted to a non-existent `_title`
+key, so the frontmatter `title:` is not counted as a heading; a single body `# H1` still
+satisfies MD025.
 
-**Precondition**: `markdownlint` is available in the workspace (installed via markdownlint-cli
-or equivalent). The workspace has a `.markdownlint.json` config enabling MD001, MD025, MD041.
+**Precondition**: The workspace PROVIDES a `.markdownlint.json` enabling exactly MD001, MD025,
+and MD041 (`default: false`), with MD025's `front_matter_title` set to `^\s*_title\s*[:=]`.
+markdownlint is executed via the pinned `markdownlint-cli2@0.23.1` (Node), reproducible with
+`make md-lint`.
 
-**Postcondition**: `markdownlint "**/*.md"` exits 0 with no violations reported for any
-staged or committed Markdown file.
+**Postcondition**: `make md-lint` (markdownlint-cli2 over `**/*.md`) exits 0 with no violations
+reported anywhere in the tracked Markdown corpus (repo-wide).
 
 **Violation Action**: Halt. Fix the heading hierarchy violation in the offending file and
-re-run markdownlint before committing. Do not suppress or disable the rules.
+re-run `make md-lint` before committing. Do not suppress or disable the rules.
 
 ---
 

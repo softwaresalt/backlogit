@@ -2,7 +2,7 @@
 description: "Review and maintain institutional learnings in docs/compound/ so the compound library stays accurate, deduplicated, and evidence-backed"
 ---
 
-## Compound Refresh
+# Compound Refresh
 
 Review the existing compound library in `docs/compound/` and keep it aligned
 with current code, architecture, and workflow reality. Use this skill to

@@ -80,7 +80,7 @@ Global posture: **test-first** (constitution II, NON-NEGOTIABLE). Each subtask
 writes a compiling-but-failing test harness first (red), then implementation
 (green). Unit tests use the injectable `GateRunner` fake so no real autoharness
 binary is needed; integration tests may use the installed autoharness `1.4.7`.
-#### Enforcement mechanism (revised — review-driven, replaces "pre-hook host")
+### Enforcement mechanism (revised — review-driven, replaces "pre-hook host")
 
 The gate is enforced as a **first-class inline core completion service**, NOT hosted
 inside the generic `HookUpdateArtifact` pre-hook. The generic pre-hook fires at

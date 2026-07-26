@@ -1,4 +1,4 @@
-.PHONY: all build test lint vet fmt cover clean install docs docs-lint verify-plugin
+.PHONY: all build test lint vet fmt cover clean install docs docs-lint md-lint verify-plugin
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -38,6 +38,9 @@ docs:
 
 docs-lint: ## Enforce docline frontmatter compliance on authored docs
 	go run ./cmd/backlogit docs lint
+
+md-lint: ## Enforce markdownlint P-008 rules (MD001/MD025/MD041) repo-wide
+	bash scripts/md-lint.sh
 
 verify-plugin: ## Check plugin bundle structure against its manifest
 	go test ./tests/integration/ -run 'TestPluginBundleStructurallyValid' -count=1

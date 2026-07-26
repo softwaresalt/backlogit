@@ -2,7 +2,7 @@
 description: "Transform feature or chore descriptions and requirements into structured implementation plans grounded in repo patterns and research"
 ---
 
-## Implementation Plan
+# Implementation Plan
 
 Transform WHAT (requirements document) into HOW (implementation plan). Produces a structured plan that the stage agent decomposes into tasks via the harvest skill.
 

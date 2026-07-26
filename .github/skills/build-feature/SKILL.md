@@ -2,7 +2,7 @@
 description: "Execute a harness loop — iteratively run tests, capture failures, fix code, and repeat until the harness passes or the circuit breaker trips"
 ---
 
-## Build Feature
+# Build Feature
 
 Implement a requested feature by continuously looping against a strict, compiling, but failing test harness until all tests pass.
 
