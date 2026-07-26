@@ -74,10 +74,12 @@ width isolation (single domain), and an atomic verifiable milestone.
   ```
 
   Create `.markdownlint-cli2.jsonc` with `{ "gitignore": true }` (plus comments).
-  `gitignore: true` makes cli2 lint exactly the version-controlled corpus (1,839
-  tracked files), excluding local gitignored scratch (`.copilot/`, `.autoharness/`,
-  `logs/`). This is a runner option for local-equals-CI parity. cli2
-  auto-discovers `.markdownlint.json` for the rules.
+  `gitignore: true` makes cli2 skip gitignored scratch (`.copilot/`, `.autoharness/`,
+  `logs/`) and lint the non-gitignored Markdown corpus. In a clean checkout (CI) that
+  equals exactly the tracked set (1,839 files); locally it also covers new/untracked
+  non-ignored Markdown (intentional pre-commit checking; scratch must be gitignored).
+  This is a runner option for local-equals-CI parity. cli2 auto-discovers
+  `.markdownlint.json` for the rules.
 - **MD025 `_title` crux**: the default `front_matter_title` regex matches
   frontmatter `title:` and counts it as an H1, so the body `# H1` becomes a second
   top-level heading — MD025 fires on every frontmatter-plus-H1 file (all 229

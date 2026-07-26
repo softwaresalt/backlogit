@@ -2,7 +2,8 @@
 .SYNOPSIS
     Enforces the P-008 markdown heading hierarchy (MD001/MD025/MD041) repo-wide.
 .DESCRIPTION
-    Runs markdownlint-cli2 (pinned) over the version-controlled Markdown corpus.
+    Runs markdownlint-cli2 (pinned) over the non-gitignored Markdown corpus
+    (exactly the tracked set in a clean CI checkout; locally also new/untracked non-ignored files).
     The rule set is declared in .markdownlint.json; runner options (gitignore-aware
     globbing) live in .markdownlint-cli2.jsonc. The Node tool invocation is kept in
     this script so operator-facing files stay free of npx/npm tokens (enforced by

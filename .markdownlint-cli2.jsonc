@@ -2,13 +2,16 @@
   // markdownlint-cli2 runner options ONLY. The active rule set (P-008: MD001, MD025,
   // MD041) lives in .markdownlint.json and is auto-discovered/merged by cli2.
   //
-  // Honor .gitignore so `make md-lint` lints exactly the version-controlled Markdown
-  // corpus — the same set CI sees in a fresh checkout. Without this, cli2's "**/*.md"
-  // glob also walks local, gitignored scratch output (.copilot/, .autoharness/, logs/)
-  // that never reaches the repo, producing false local failures and local/CI drift.
+  // Honor .gitignore so `make md-lint` skips gitignored scratch (.copilot/,
+  // .autoharness/, logs/) that never reaches the repo. cli2 then lints the
+  // NON-GITIGNORED Markdown corpus: in a clean checkout (CI) that equals exactly
+  // the tracked set (0 violations, verified); locally it ALSO covers new/untracked
+  // non-ignored Markdown, which is intentional — violations are caught before the
+  // file is committed. Genuine local scratch not destined for the repo must be
+  // gitignored. Without this option, cli2's "**/*.md" glob would also walk the
+  // gitignored scratch above and produce false local failures / local-vs-CI drift.
   //
   // This is NOT a scoped-rollout ignore list: there is no per-directory "ignores"
-  // array, no path classifier, and no rollout allowlist. The gate is repo-wide over
-  // every tracked Markdown file.
+  // array, no path classifier, and no rollout allowlist. The gate is repo-wide.
   "gitignore": true
 }

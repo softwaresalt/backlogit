@@ -76,7 +76,7 @@ func TestMarkdownlintConfigEnablesExactlyP008Rules(t *testing.T) {
 			".markdownlint-cli2.jsonc must not enable/override rule %q directly (rules belong in .markdownlint.json)", k)
 	}
 	assert.Equal(t, true, cli2["gitignore"],
-		".markdownlint-cli2.jsonc must set gitignore:true so the gate lints exactly the tracked corpus (local==CI parity)")
+		".markdownlint-cli2.jsonc must set gitignore:true so the gate lints the non-gitignored corpus (exactly the tracked set in a clean CI checkout; local==CI parity)")
 }
 
 // stripJSONCComments removes // line comments from JSONC so the runner config can

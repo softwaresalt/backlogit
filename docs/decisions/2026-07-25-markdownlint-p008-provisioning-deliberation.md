@@ -177,10 +177,12 @@ retargeted; MD041 is never retargeted**.
 ### Runner Configuration
 
 `.markdownlint-cli2.jsonc` contains only `{ "gitignore": true }` (plus comments).
-`gitignore: true` makes cli2 lint exactly the version-controlled corpus (1,839
-tracked files, matching the CI checkout), excluding local gitignored scratch
-(`.copilot/`, `.autoharness/`, `logs/`). This is a runner option for local-equals-CI
-parity, not a scoping mechanism.
+`gitignore: true` makes cli2 skip gitignored scratch (`.copilot/`, `.autoharness/`,
+`logs/`) and lint the non-gitignored Markdown corpus. In a clean checkout (CI) that
+equals exactly the tracked set (1,839 files, 0 violations verified); locally it also
+covers new/untracked non-ignored Markdown, which is intentional (pre-commit checking) —
+genuine scratch must be gitignored. This is a runner option for local-equals-CI parity,
+not a scoping mechanism.
 
 ### Empirical Verification
 
