@@ -111,8 +111,9 @@ accept pure doc-nits as backlog.
 
 ## Quality Gates (closure branch)
 
-- markdownlint repo-wide: **0 / 1839** (the new gate now also covers these
-  closure docs)
+- markdownlint repo-wide (closure branch): **0 / 1841** — the 1,839 pre-closure
+  corpus plus the two new closure docs (this memory file + the compound learning),
+  both now covered by the gate
 - `go test ./...` ✅ | `go vet ./...` ✅ | `golangci-lint run` ✅ | gofmt clean on
   touched files (pre-merge, `842617a3`)
 - `backlogit doctor`: 1 **pre-existing, unrelated** issue only (`016.001-R`
