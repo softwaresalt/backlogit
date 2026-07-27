@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Harden docline.collectInScopeDocs against a relative workspace root: the walk computes filepath.Rel(root, p) where p is always absolute (SafeResolve -> WalkDir) but root is passed through unresolved, so a relative root (the MCP server RootPath is "." by default) fails with `Rel: can''t make <abs> relative to "."`. Fix by resolving the Rel base to the same absolute root as the walked paths; landed test-first (failing relative-root test, then the two-line fix).'
+description: 'Harden docline.collectInScopeDocs against a relative workspace root: the walk computes filepath.Rel(root, p) where p is always absolute (SafeResolve -> WalkDir) but root is passed through unresolved, so a relative root (the MCP server RootPath is "." by default) fails with `Rel: can''t make <abs> relative to "."`. Fix by resolving the Rel base to the same absolute root as the walked paths; to be implemented test-first by Ship (a failing relative-root test first, then the two-line fix).'
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-07-26-docline-collectinscopedocs-relative-root-rel-fix-plan.md
