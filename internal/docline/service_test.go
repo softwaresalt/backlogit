@@ -351,3 +351,37 @@ func TestAtomicWrite_NewFileDefaultsTo0644(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "new file gets the 0644 default, not 0600")
 }
+
+// TestCollectInScopeDocs_RelativeRootDoesNotErrorOnRel guards the Windows /
+// relative-root defect (stash EF4C0EC6): collectInScopeDocs walks an absolute
+// base returned by core.SafeResolve but computed the reporting path with
+// filepath.Rel(root, p) using the raw, possibly-relative root. When the root is
+// relative (e.g. the MCP server default RootPath of ".") filepath.Rel(rel, abs)
+// errors ("can't make <abs> relative to \".\"") and the whole lint walk fails.
+//
+// The test derives a relative root from the process working directory (read via
+// os.Getwd) WITHOUT mutating cwd, so it stays safe under t.Parallel. Before the
+// fix it fails on the filepath.Rel error; after the fix it passes and the seeded
+// in-scope doc is returned.
+func TestCollectInScopeDocs_RelativeRootDoesNotErrorOnRel(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeDoc(t, dir, "docs/decisions/seed.md", "---\ntitle: Seed\n---\nBody.\n")
+
+	// Read (do not mutate) the process cwd to construct a relative root; this is
+	// the parallel-safe form (no os.Chdir / t.Chdir).
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	rel, err := filepath.Rel(cwd, dir)
+	if err != nil {
+		// Cross-volume case (e.g. a Windows temp dir on a different drive than
+		// the repo): a relative path cannot be expressed. Skip as a hermetic
+		// fallback; the single-volume CI runner still exercises the assertion.
+		t.Skipf("cannot express temp dir %q relative to cwd %q: %v", dir, cwd, err)
+	}
+
+	got, err := collectInScopeDocs(rel, "")
+	require.NoError(t, err, "collectInScopeDocs must not error when root is a relative path")
+	assert.Contains(t, got, "docs/decisions/seed.md", "seeded in-scope doc must be returned")
+}
