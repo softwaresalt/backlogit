@@ -294,7 +294,9 @@ Requires plan hardening: no
 - **Verification before absorption**:
   1. `go test ./internal/docline/...` — U1 fails before U2 (RED), passes after
      (GREEN); the full docline suite stays green.
-  2. Repo gates: `gofmt -l .` clean, `go vet ./...` clean, `go test ./...` green.
+  2. Repo quality gates (AGENTS.md — run in order, skip none): (1) `go test ./...`
+     green, (2) `go vet ./...` clean, (3) `golangci-lint run` clean, (4)
+     `gofmt -l .` clean.
   3. End-to-end MCP re-check: **rebuild from HEAD first** (use `go run
      ./cmd/backlogit …` or reinstall the binary — a stale installed binary will not
      reflect U2, per the post-merge fresh-binary learning), then run
@@ -305,10 +307,29 @@ Requires plan hardening: no
      new or changed markdown file in this Stage shipment — i.e. this plan plus the
      backlog items harvested for it. Repo-wide scope is inherent to the P-008 gate;
      this fix does not otherwise pull backlog authoring into its own runtime scope.
-- **Operational closure**: no monitoring/rollback infrastructure needed for a
-  contained internal fix; closure is the merged PR plus the passing regression
-  test (U1) which stands as the durable guard. The Windows docline self-lint that
+- **Operational closure**: closure is the merged PR plus the passing regression
+  test (U1), which stands as the durable guard. The Windows docline self-lint that
   motivated this stash becomes usable via the MCP tool again after merge.
+- **Monitoring plan (manual — per `release-observability.instructions.md`)**: this
+  change touches a runtime surface (the docline walk), so a lightweight manual plan
+  applies since the workspace has no metrics backend.
+  - **SLI / signal**: `backlogit_docs_lint` (MCP) and `backlogit docs lint` (CLI)
+    return a valid result (`valid` present, no `Rel` error) when invoked with a
+    relative `--cwd` on Windows.
+  - **Baseline (pre-change)**: the MCP invocation with a relative root errors with
+    `docline.collectInScopeDocs: walk: Rel: …`; the CLI already succeeds.
+  - **Healthy (post-change)**: both surfaces return a valid lint result and the
+    docline suite plus `go test ./...` stay green.
+  - **Observation probe**: run `backlogit_docs_lint` via `backlogit mcp --cwd .` on
+    Windows (rebuild from HEAD first) and `go test ./internal/docline/...`.
+  - **Owner / observation window**: the merging operator, observing through the
+    next Stage session's harvest Phase 1.5 self-lint (the original failing context);
+    a single successful Windows MCP lint closes the window.
+- **Rollback trigger and procedure**: if, after merge, `backlogit_docs_lint`
+  regresses to any `Rel`/path error on Windows, or the docline suite / `go test
+  ./...` fails, revert the U2 commit (single-commit `git revert`; U1 stays as the
+  guard) and re-open 127.002-T. The change is fully reversible via revert with no
+  data or schema impact.
 
 ## Plan Review
 
