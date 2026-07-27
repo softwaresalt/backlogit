@@ -228,12 +228,23 @@ func collectInScopeDocs(root, subPath string) ([]string, error) {
 		return nil, fmt.Errorf("docline.collectInScopeDocs: %s: %w", subPath, ErrPathEscapesWorkspace)
 	}
 
+	// The walk yields absolute paths (base comes from core.SafeResolve, which
+	// absolutizes), so the Rel base must also be absolute. Using the raw root
+	// here broke when root was relative — e.g. the MCP server default RootPath of
+	// "." — because filepath.Rel(".", absPath) errors ("can't make <abs>
+	// relative to \".\""). Absolutizing root keeps byte-for-byte output for
+	// already-absolute callers (filepath.Abs(abs) == abs). See stash EF4C0EC6.
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("docline.collectInScopeDocs: resolve root: %w", err)
+	}
+
 	var out []string
 	walkErr := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, p)
+		rel, err := filepath.Rel(absRoot, p)
 		if err != nil {
 			return err
 		}
