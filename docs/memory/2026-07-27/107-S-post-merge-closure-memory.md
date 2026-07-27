@@ -28,12 +28,18 @@ title: "107-S Post-Merge Closure — Ship Session Memory"
 
 ## Items Done / Archived
 
-| Item | Type | Terminal status | Location | Commit |
+| Item | Type | Terminal status | Location | Archive provenance |
 |---|---|---|---|---|
 | 127-F | feature | archived | `.backlogit/archive/127-F.md` | 8a757d5e |
-| 127.001-T | task (RED) | archived | `.backlogit/archive/127.001-T.md` | 8bc78cc5 |
-| 127.002-T | task (GREEN) | archived | `.backlogit/archive/127.002-T.md` | 55571675 |
+| 127.001-T | task (RED) | archived | `.backlogit/archive/127.001-T.md` | 8a757d5e |
+| 127.002-T | task (GREEN) | archived | `.backlogit/archive/127.002-T.md` | 8a757d5e |
 | 107-S | shipment | archived | `.backlogit/archive/107-S.md` | 8a757d5e |
+
+The **Archive provenance** column is the terminal `commit` stamped by
+`ShipShipment` on every archived artifact — the merge commit `8a757d5e`, not the
+per-task implementation commits. The original implementation commits (RED
+`8bc78cc5`, GREEN `55571675`) were tracked pre-ship via `backlogit update
+--commit` and are recorded in "The Fix" and "Files Modified" below.
 
 `backlogit shipment ship 107-S --sha 8a757d5e` succeeded cleanly (exit 0) and
 archived all four members in one call — the 106-S "refusing to write archived
@@ -49,9 +55,9 @@ provenance stamp satisfied it).
   `can't make C:\Source\GitHub\backlogit relative to "."`.
 - **Fix** (`internal/docline/service.go`): absolutize the Rel base via
   `absRoot, err := filepath.Abs(root)` after the `SafeResolve` block and use
-  `filepath.Rel(absRoot, p)` in the WalkDir callback. Byte-identical for
-  absolute-root callers (`Abs(abs) == abs`); mirrors the existing
-  `ValidateApplyPath` idiom.
+  `filepath.Rel(absRoot, p)` in the WalkDir callback. Behaviorally equivalent for
+  absolute-root callers (`Abs` returns the same logical path; `Rel` cleans
+  internally); mirrors the existing `ValidateApplyPath` idiom.
 - **Test** (`internal/docline/service_test.go`):
   `TestCollectInScopeDocs_RelativeRootDoesNotErrorOnRel` — parallel-safe,
   derives a relative root, asserts no `Rel` error.

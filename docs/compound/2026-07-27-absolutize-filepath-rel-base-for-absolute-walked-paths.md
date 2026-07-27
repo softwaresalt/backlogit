@@ -89,7 +89,8 @@ rel, err := filepath.Rel(absRoot, p)
 the change is behaviorally equivalent for every absolute-root caller (the CLI) and
 only fixes the relative-root caller (MCP `RootPath="."`). Note `Abs` also
 `Clean`s its result, so it is not literally byte-identical for an *unclean*
-absolute input (e.g. `Abs("C:\a\..\b") == "C:\b"`); this is harmless here because
+absolute input (in Go string syntax, `Abs("C:\\a\\..\\b") == "C:\\b"`); this is
+harmless here because
 `filepath.Rel` cleans both operands internally anyway, so the computed relative
 key is unchanged. This mirrors the package's existing `ValidateApplyPath` idiom,
 which already absolutizes before relativizing — the fix restores local
