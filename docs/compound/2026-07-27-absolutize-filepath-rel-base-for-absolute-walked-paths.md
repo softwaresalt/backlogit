@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'filepath.Rel(base, target) errors on Windows when base is a relative "." but target is absolute; a directory walk that resolves its root to an absolute path (via SafeResolve) yet keeps the raw relative root as the Rel base fails only under the relative-root caller (MCP server default RootPath=".") and only on Windows. Fix by absolutizing the Rel base with filepath.Abs(root), mirroring the existing ValidateApplyPath idiom.'
+description: 'filepath.Rel(base, target) errors on any OS when base and target disagree on rootedness (relative "." base vs absolute target); a directory walk that resolves its root to an absolute path (via SafeResolve) yet keeps the raw relative root as the Rel base fails under the relative-root caller (MCP server default RootPath="."). Observed on Windows because that is where the relative-root MCP tool was run; CI stayed green because it exercises the CLI absolutized-root path. Fix by absolutizing the Rel base with filepath.Abs(root), mirroring the existing ValidateApplyPath idiom.'
 doc_type: learning
 docline:
     date: 2026-07-27T00:00:00Z
@@ -35,8 +35,9 @@ computed a repo-relative key with `filepath.Rel(root, p)` — but it passed the
 
 The docline frontmatter gate is reachable two ways: the CLI (`backlogit docs
 lint`, which already absolutized its root) and the MCP tool `backlogit_docs_lint`.
-The MCP server defaults to `RootPath == "."`, so the bug only manifested through
-the MCP path, and only on Windows.
+The MCP server defaults to `RootPath == "."`, so the bug manifests only through
+the MCP path. It was **observed on Windows** because that is where an operator
+ran the MCP tool; it is not a Windows-exclusive defect (see Problem).
 
 ## Problem
 
@@ -51,12 +52,16 @@ C:\Source\GitHub\backlogit relative to "."
 With `root == "."` (relative) but `p` absolute (WalkDir walked the absolute
 `SafeResolve` base), `filepath.Rel(".", absPath)` cannot compute a relative path.
 
-The reason it is a **Windows-only** failure is subtle: on POSIX, Go's `Rel`
-first `Clean`s both operands and, because there is a single root (`/`), it can
-often still produce an answer or a benign result; on Windows, a relative `.` and
-an absolute `C:\...` live in incompatible volume/root namespaces, so `Rel` fails
-outright. The defect was invisible on the Linux CI runner (where the same gate
-runs green) and surfaced only when an operator ran the MCP tool on Windows.
+This is **not** a Windows-only failure. Go's `filepath.Rel` cleans both operands
+and then rejects any pair whose *rootedness* disagrees — a relative base with an
+absolute target (or differing Windows volumes). The same call fails on POSIX too:
+`filepath.Rel(".", "/abs")` returns `Rel: can't make /abs relative to .`
+(verified: on Windows, `filepath.Rel(".", "C:\\abs\\...")` yields the identical
+`can't make … relative to .` error). The reason CI stayed green is **not** that
+Linux is immune — it is that the Linux `Docline frontmatter gate` exercises the
+CLI (absolutized-root) path, while the failing relative-root condition
+(`RootPath == "."`) is only reached through the MCP tool, which the operator
+happened to run on Windows.
 
 ## Root Cause
 
@@ -80,12 +85,15 @@ if err != nil {
 rel, err := filepath.Rel(absRoot, p)
 ```
 
-`filepath.Abs` is a no-op for already-absolute inputs (`Abs(abs) == abs`), so the
-change is **byte-for-byte identical** for every absolute-root caller (the CLI)
-and only fixes the relative-root caller (MCP `RootPath="."`). This mirrors the
-package's existing `ValidateApplyPath` idiom, which already absolutizes before
-relativizing — the fix restores local consistency with an established pattern
-rather than inventing a new one.
+`filepath.Abs` returns the same **logical** path for already-absolute inputs, so
+the change is behaviorally equivalent for every absolute-root caller (the CLI) and
+only fixes the relative-root caller (MCP `RootPath="."`). Note `Abs` also
+`Clean`s its result, so it is not literally byte-identical for an *unclean*
+absolute input (e.g. `Abs("C:\a\..\b") == "C:\b"`); this is harmless here because
+`filepath.Rel` cleans both operands internally anyway, so the computed relative
+key is unchanged. This mirrors the package's existing `ValidateApplyPath` idiom,
+which already absolutizes before relativizing — the fix restores local
+consistency with an established pattern rather than inventing a new one.
 
 ## Verification
 
@@ -107,14 +115,17 @@ Test-first (P-002), reproduced live before fixing:
   also fails when `base` and `target` are on **different Windows volumes** — a
   legitimately unrelatable case. Guard only that (skip when the seed temp dir is
   on a different drive than cwd) so the test still exercises the real defect on
-  same-volume runs   instead of masking it as an environmental skip.
+  same-volume runs instead of masking it as an environmental skip.
 * **Absoluteness must be checked at the operand pair, not per call site.** Grep
   the whole package for every `filepath.Rel(` to confirm there is a single base
   source of truth; a second unabsolutized call site would reintroduce the defect
   for a different caller.
-* **Linux CI will not catch this.** A cross-platform path bug that only fails on
-  Windows needs a Windows-representative test (relative-vs-absolute operands),
-  because the Linux gate stays green.
+* **Linux CI will not catch this if the gate only exercises the CLI.** The defect
+  is a rootedness mismatch reached solely by the relative-root caller
+  (`RootPath == "."`), not a Windows-exclusive bug. Because the Linux gate runs
+  the absolutized-root CLI path, it stays green; add a test that exercises the
+  relative-vs-absolute operand pair directly so the failing path is covered on
+  every platform.
 
 ## Applicability
 
