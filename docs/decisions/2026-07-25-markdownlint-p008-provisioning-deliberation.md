@@ -1,6 +1,6 @@
 ---
 title: "Provision markdownlint tooling to make policy P-008 reproducible and CI-enforced"
-description: "Decision to provision a repo-wide markdownlint (MD001/MD025/MD041) gate — config (MD025 front_matter_title retargeted to a _title key), paired md-lint scripts, Makefile/make.ps1 targets, and a standalone repo-wide blocking CI job — plus a P-008 reconciliation, via doctor-to-compliance: the _title config dissolves 229 of 250 violations with zero edits and ~21 structural fixes bring the repo to 0 (stash B3D30415, deliberation 054-DL)."
+description: "Decision to provision a repo-wide markdownlint (MD001/MD025/MD041) gate — config (MD025 front_matter_title retargeted to a _title key), paired md-lint scripts, Makefile/make.ps1 targets, and a standalone repo-wide CI job that hard-fails CI — plus a P-008 reconciliation, via doctor-to-compliance: the _title config dissolves 229 of 250 violations with zero edits and ~21 structural fixes bring the repo to 0 (stash B3D30415, deliberation 054-DL)."
 source: docs/decisions/2026-07-25-markdownlint-p008-provisioning-deliberation.md
 doc_type: decision
 chunk_strategy: h1-h2-h3
