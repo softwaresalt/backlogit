@@ -7,9 +7,13 @@
 //
 // # Leaf package
 //
-// atomicfile imports only the standard library (fmt, io, os, path/filepath,
-// runtime). It has no internal imports, so both internal/docline and
-// internal/core can depend on it without an import cycle.
+// atomicfile is a low-level leaf: it imports only the standard library (fmt, io,
+// os, path/filepath, runtime), golang.org/x/sys/windows on the Windows build,
+// and the internal/errors leaf (for the ErrWriteNotApplied / ErrWriteIndeterminate
+// durability error classes). internal/errors is itself a stdlib-only leaf, so
+// that dependency introduces no import cycle. atomicfile never imports config or
+// core, so both internal/docline and internal/core can depend on it without a
+// cycle.
 //
 // # Path-agnostic contract (security)
 //
@@ -17,8 +21,8 @@
 // it is told. Callers are responsible for pre-validating the destination path
 // (for example via internal/core.SafeResolve, or docline's ValidateApplyPath
 // preflight) BEFORE calling WriteFileAtomic. Pushing containment to the caller
-// keeps this package a stdlib-only leaf and avoids re-introducing the import
-// cycle that core.SafeResolve would create.
+// keeps this package a low-level leaf (no config/core import) and avoids
+// re-introducing the import cycle that core.SafeResolve would create.
 //
 // The temp file uses a non-".md" prefix (".atomicfile-*.tmp") so that markdown
 // scanners in docline and doctor cannot pick up a half-written temp file
