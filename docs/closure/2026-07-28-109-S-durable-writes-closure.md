@@ -36,8 +36,10 @@ behavior is therefore unchanged by this shipment.
 
 ## Runtime Verification
 
-- **CI on merged HEAD (`93f8501f`)**: 5/5 checks green — test, CLI Reference
-  Drift, Detect code changes, Docline frontmatter gate, Markdown lint (P-008).
+- **CI on reviewed feature HEAD (`93f8501f`)**: 5/5 checks green — test, CLI
+  Reference Drift, Detect code changes, Docline frontmatter gate, Markdown lint
+  (P-008). (`93f8501f` is the feature-branch HEAD the checks targeted; the merge
+  commit is `e0ae3546`.)
 - **Local gates (independently re-run each review cycle)**: `go test ./...` exit
   0, `go vet ./...` exit 0, `golangci-lint run` exit 0, `gofmt` clean
   (LF-normalized, BOM-free) on all changed files.
@@ -60,10 +62,27 @@ external-integration surfaces are involved (pure filesystem durability logic).
 - **Config**: no default change — `durable_writes` stays opt-in/false, so no
   operator action is required and no runtime surface changes for existing
   workspaces.
-- **Monitoring**: no automated SLI applies to a default-off durability flag. For
-  workspaces that opt in, the manual observation signal is the `slog.Warn`
-  "durable move: directory fsync failed (best-effort)" line and any surfaced
-  `ErrWriteIndeterminate` error from adopt/persist paths.
+- **Monitoring (manual structured checklist)**: no automated monitoring system
+  is wired for this repository, so per `release-observability.instructions.md`
+  the monitoring plan is recorded here as a manual observation requirement.
+  Because `durable_writes` is opt-in/false by default, this checklist applies
+  only to workspaces that explicitly enable the flag:
+  - **SLI / signal**: presence of the `slog.Warn` "durable move: directory fsync
+    failed (best-effort)" line, and any surfaced `ErrWriteIndeterminate` from the
+    adopt/persist paths.
+  - **Observation location / query**: the workspace's structured log stream;
+    grep the agent/CLI log for `directory fsync failed` and
+    `ErrWriteIndeterminate`.
+  - **Baseline**: zero occurrences (no fsync failures) under normal operation.
+  - **Trigger threshold**: any single `ErrWriteIndeterminate` surfaced to a
+    caller, or a sustained pattern of the best-effort fsync-failure warning.
+  - **Response owner**: the operator who enabled `durable_writes` for that
+    workspace.
+  - **Observation window**: manual, ongoing while the flag is enabled (no
+    time-boxed rollout window applies to a default-off flag).
+  - **Observed outcome (this release)**: not applicable — the flag ships
+    default-off; no opt-in workspace exists yet, so there is nothing to observe
+    for this merge. The checklist activates when a workspace opts in.
 
 ## Review Summary (four Copilot cycles)
 
@@ -98,10 +117,18 @@ medium) with five explicit acceptance criteria. This work should land before
 - `DARK_MODE_MERGE_AUTHORIZED`: PR #308, HEAD `93f8501f`, checks CLEAN,
   strategy=merge-commit, approval source=dark-mode activation record (in-scope
   109-S), no admin fallback used (`NORMAL_MERGE_READY`).
-- `DARK_MODE_COMPLETE`: merged at `e0ae3546`; shipment 109-S archived
-  (`archived_status: shipped`); reconcile pre+post PASS; follow-up stash
-  50471E28 created.
+- `DARK_MODE_COMPLETE` *(emitted upon closure-PR merge — final step)*: this
+  record is finalized only when the post-merge closure PR (#309) merges, per the
+  Ship post-merge closure protocol. Prerequisites already satisfied: feature
+  merged at `e0ae3546`; shipment 109-S archived (`archived_status: shipped`);
+  reconcile pre+post PASS; follow-up stash 50471E28 created. The release unit is
+  declared closed only after #309 merges; until then this PR remains the open
+  closure workflow step.
 
 ## Follow-Ups
 
 1. **50471E28** — durable_writes second-layer hardening (5 acceptance criteria).
+2. **7A965F8A** — bug: `ArchiveItem` re-persist drops modeled `item_links`
+   (e.g. `spike_ref`) from artifact frontmatter; observed on 123-F→120-F during
+   this shipment's archive and restored by hand in the closure PR. Root cause is
+   the archive load→persist path; related to D04D63D0.
