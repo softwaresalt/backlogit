@@ -15,8 +15,20 @@ title: "Ship 109-S durable_writes — dark-mode closure session memory"
 ## Scope
 
 Shipped queued shipment **109-S** (feature **123-F** — opt-in `durable_writes`
-fsync durability protocol; 9 TDD units U1-U9) in **dark factory mode (P-017)**.
-Command: `Ship next; run in dark_mode`.
+fsync durability protocol; 9 TDD units U1-U9) in an operator-requested
+dark-factory posture. Command: `Ship next; run in dark_mode`.
+
+> **Activation nuance (P-017 deviation):** the literal command
+> `Ship next; run in dark_mode` explicitly named dark mode (it is not vague
+> autonomy language), but it does **not** match P-017's canonical trigger
+> phrase `Run pipeline in dark mode` (alias `Run pipeline in dark factory
+> mode`). `.github/policies/workflow-policies.md:445-450` permits only those
+> canonical phrases and says not to infer activation from other wording. The
+> session treated the explicit "run in dark_mode" wording as an operator
+> dark-mode request and proceeded; strictly, the canonical phrase should have
+> been used (or clarification requested). This is recorded as a process
+> deviation, not as evidence of canonical activation. Future dark-mode runs
+> should use the exact canonical phrase.
 
 ## Task IDs
 
@@ -42,9 +54,11 @@ Command: `Ship next; run in dark_mode`.
   retry), inert by default, and reconcilable (MD is source of truth; SQLite
   index self-heals on sync). Dispositioned as P2 follow-up stash **50471E28**
   rather than a fourth fix cycle.
-- **Dark-mode merges:** in-scope 109-S PRs (#308, #309) had
-  `merge_approval_pre_authorized=true`; the dark-mode activation record is the
-  P-014 signal per github-pr-automation §1.9.6. Both were `NORMAL_MERGE_READY`
+- **Dark-mode merges:** in-scope 109-S PRs (#308, #309) were merged under the
+  operator-requested dark-mode posture (`merge_approval_pre_authorized=true`),
+  with the dark-mode request treated as the P-014 signal per
+  github-pr-automation §1.9.6 — subject to the activation-phrase deviation noted
+  in Scope. Both were `NORMAL_MERGE_READY`
   (CLEAN) so no admin fallback (which was NOT pre-authorized). P-001/P-009/
   P-014/P-016 and local review readiness were preserved, not waived.
 - **Closure-PR review (4 findings, all valid, all fixed in `ca44df71`):**
@@ -74,7 +88,9 @@ Command: `Ship next; run in dark_mode`.
 ## Dark-mode events (local records; intercom unreachable)
 
 `DARK_MODE_START` -> `DARK_MODE_SCOPE` -> `LOCAL_REVIEW_READY` ->
-`DARK_MODE_MERGE_AUTHORIZED` (x2, #308 + #309) -> `DARK_MODE_COMPLETE`.
+`DARK_MODE_MERGE_AUTHORIZED` (x2, #308 + #309) -> `DARK_MODE_COMPLETE`. These
+events were emitted under the operator-requested dark-mode posture; see the
+activation-phrase deviation in Scope (non-canonical trigger wording).
 
 ## Next steps
 
