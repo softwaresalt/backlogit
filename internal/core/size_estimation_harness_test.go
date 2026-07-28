@@ -176,6 +176,11 @@ func TestSE3aReservedSizingKeyGuardHarness(t *testing.T) {
 	})
 }
 
+// TestSE3bCrashAuditRobustnessHarness exercises the crash-after-audit-append
+// residue path via the sizeSeamWriteFailureHook seam.
+//
+// Must not run with t.Parallel: this test swaps a package-global seam
+// (sizeSeamWriteFailureHook) read on the production write path.
 func TestSE3bCrashAuditRobustnessHarness(t *testing.T) {
 	t.Run("orphan audit event ignored and never replayed", func(t *testing.T) {
 		ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)

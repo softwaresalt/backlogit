@@ -35,6 +35,9 @@ func countEstimateHistoryEvents(t *testing.T, ws *Workspace, id string) int {
 // ErrWriteNotApplied on the first atomic write is retried (scoped to the write)
 // while the estimate-history audit event — appended BEFORE the write — stays at
 // exactly one, proving the composite op is not blindly re-run.
+//
+// Must not run with t.Parallel: this test swaps a package-global seam
+// (sizeSeamAtomicWrite) read on the production write path.
 func TestSizeSeam_NotAppliedRetriesAtomicWriteOnlyEventCountStaysOne(t *testing.T) {
 	ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)
 	seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{

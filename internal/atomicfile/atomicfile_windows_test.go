@@ -39,6 +39,9 @@ func TestMoveFileExFlags_Gating(t *testing.T) {
 
 // TestAtomicReplace_PassesGatedFlagsThroughSeam drives the injected MoveFileEx
 // seam and asserts atomicReplace forwards exactly the gated flags.
+//
+// Must not run with t.Parallel: this test swaps a package-global seam
+// (moveFileEx) read on the production write path.
 func TestAtomicReplace_PassesGatedFlagsThroughSeam(t *testing.T) {
 	var captured uint32
 	orig := moveFileEx
