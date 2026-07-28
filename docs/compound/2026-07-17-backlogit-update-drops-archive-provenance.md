@@ -67,12 +67,16 @@ lossy for them.
   branch runs the typed rewrite.
 * **Attach the commit at ship time** with a single command:
   `backlogit shipment ship <id> --sha <merge-sha> --message ... --author ...`.
-  `attachCommitToItems` writes the durable frontmatter `commit` and then the
-  `commit_links` projection while archival provenance is set correctly. This is a
-  single sequential workflow (persist frontmatter, then `LinkCommit`), **not** a
-  transaction — there is no rollback if the second step fails
-  (`internal/core/shipment_lifecycle.go:345-357`). Note `shipment ship` cannot be
-  re-run once the shipment is `shipped` (it guards on `status: active`).
+  `attachCommitToItems` reloads each artifact from its **Markdown source**
+  (`findArtifact`) — not from the DB index — so `item_links` and archive provenance
+  survive the re-persist. Already-archived members are skipped entirely (no
+  re-stamp). This is a single sequential workflow (persist frontmatter, then
+  `LinkCommit`), **not** a transaction — there is no rollback if the second step
+  fails. Note `shipment ship` cannot be re-run once the shipment is `shipped`
+  (it guards on `status: active`). For details on the DB projection gap and the
+  reload-from-Markdown fix, see
+  `docs/compound/2026-07-28-attach-commit-repersist-must-reload-from-markdown.md`
+  (PR #312, shipment 110-S).
 * **If a post-hoc backfill on an archived record is unavoidable**, treat the
   frontmatter `commit` scalar and the commit *traceability* records as two
   independent concerns:
