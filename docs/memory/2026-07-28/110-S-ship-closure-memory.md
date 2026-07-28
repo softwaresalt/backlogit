@@ -57,8 +57,12 @@ Copilot review cycle, operator-approved merge, post-merge closure.
    DB and Markdown disagree on status.
 
 3. **Skip archived items**: `attachCommitToItems` skips items where
-   `artifact.Status == StatusArchived` — re-stamping an archived artifact is
-   wrong; `ArchiveItem` already stamped commit + provenance.
+   `artifact.Status == StatusArchived` — an archived artifact belongs to a prior
+   lifecycle stage and must not be re-stamped. Re-stamping aborts the write guard
+   (`refusing to write archived artifact without provenance`). `ArchiveItem` stamps
+   `archived_from`/`archived_status` provenance but does NOT write the `commit`
+   scalar; `WithCommitSHA` attaches the SHA only to the archive event for
+   traceability (`archive.go:74-76, 281-284`), not to the frontmatter.
 
 4. **Test assertion for skip semantics**: The 129.001-T test checks that the
    deliberation's commit SHA is UNCHANGED after ship. Without this, the test
@@ -96,8 +100,12 @@ Copilot review cycle, operator-approved merge, post-merge closure.
   re-claim + feature re-done transitions required after reset).
 - `backlogit shipment ship` flag is `--sha` (not `--commit`).
 - Copilot bot GraphQL login: `copilot-pull-request-reviewer` (no `[bot]` suffix).
-- `gofmt -l .` flags ~96 pre-existing files on Windows CRLF; only changed files
-  need to be clean (see 2026-07-28-durable-writes compound doc for details).
+- `gofmt -l .` reports ~96 pre-existing files on Windows CRLF (`core.autocrlf=true`).
+  The gate requires zero findings on the full corpus; the correct workaround is to
+  verify formatting on LF-normalized, BOM-free blob copies (`git show HEAD:file`)
+  rather than relaxing the gate to changed files only. See
+  `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`
+  for the exact verification procedure.
 
 ---
 

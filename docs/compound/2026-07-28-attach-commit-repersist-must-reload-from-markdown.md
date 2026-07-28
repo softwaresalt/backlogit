@@ -133,9 +133,14 @@ round-trip invariant when cross-checking with artifacts authored without links.
 - **A single `findArtifact` load for both guard and mutate is safer than a split
   load.** Two loads from different sources (DB for guard, Markdown for persist)
   create a race window where DB and Markdown diverge in status.
-- **Skip archived items at re-persist seams, do not re-stamp them.** `ArchiveItem`
-  already stamped the commit and provenance; re-stamping forces a round-trip that
-  risks data loss and aborts the write guard.
+- **Skip archived items at re-persist seams, do not re-stamp them.** An archived
+  artifact belongs to a prior lifecycle stage; re-stamping it aborts the write guard
+  (`refusing to write archived artifact without provenance`). Note: `ArchiveItem`
+  stamps `archived_from`/`archived_status` but does NOT write the `commit`
+  frontmatter scalar — `WithCommitSHA` attaches the SHA only to the archive event
+  (`archive.go:74-76, 281-284`), not to the artifact's frontmatter `commit` field.
+  The skip is correct because the archived artifact belongs to earlier work, not
+  because archiving already populated its commit scalar.
 
 ## Precedent
 
