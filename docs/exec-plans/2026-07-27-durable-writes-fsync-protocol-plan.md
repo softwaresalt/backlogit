@@ -26,8 +26,10 @@ title: 'Repo-wide durable_writes fsync protocol (atomicfile + events)'
 
 ## Problem Frame
 
-backlogit's whole write path funnels through two shared primitives, and neither
-currently fsyncs:
+backlogit's canonical write path runs through a small set of shared write
+functions, none of which currently fsyncs. Two are leaf primitives; a third is
+the exported artifact-rewrite choke point that today **bypasses** the primitive
+entirely:
 
 1. `internal/atomicfile/atomicfile.go` — `WriteFileAtomic(path, data)` writes a
    same-directory temp file then `os.Rename`. It performs **no** `Sync()` on the
@@ -44,6 +46,24 @@ currently fsyncs:
    (lines ~56-64), writing via `fmt.Fprintf` with a deferred `Close()` and **no**
    `Sync()`. The **first** append to a new log creates a new dirent (and possibly
    the `logs/` dir), which a file-only fsync does not persist.
+3. `internal/core/artifacts.go` — `WriteArtifactFile(artifact, filePath)` is the
+   **exported, single choke point for every production artifact rewrite** (its
+   own doc comment says so) and has **8 callers** across `cli` and `core`
+   (status transitions, `move`, reference rewrites, `migrate`, shipment
+   lifecycle, and `persistArtifact`). Critically, it does **not** call the
+   `atomicfile` primitive — it inlines its own `os.WriteFile(tmp)` + `os.Rename`
+   with no fsync. So `atomicfile.WriteFileAtomic` is today reached directly only
+   by the size seam (`internal/core/artifact_size.go:165`); the dominant
+   artifact-persist path bypasses it. A repo-wide guarantee therefore requires
+   routing `WriteArtifactFile` through the durable primitive (U8), not just
+   hardening `WriteFileAtomic`.
+
+Additionally, `events.EventWriter` is **constructed independently at six sites**
+(`core/archive.go:275`, `core/commits.go:38` + `:82`, `core/gate_evidence.go:60`,
+`core/shipment.go:307`, `mcp/server.go:76`). Because the durable option lives at
+writer construction (U5), a default-off option does **not** propagate to these
+existing writers unless each construction site is explicitly rewired — a dedicated
+wiring unit (U9), not a single composition-root change.
 
 The spike verified the premise fully and recommends promoting the existing
 `fsutil.go` file-content fsync patterns into both primitives, adding the missing
@@ -63,14 +83,23 @@ Each scope item from `123-F` / the spike maps to at least one unit below.
 | 1 | `WriteFileAtomic`: temp fsync + POSIX parent-dir fsync **after** rename, gated `GOOS != "windows"` | U3 |
 | 3 | Canonical-write Windows atomic replace (real data-loss fix, **unconditional**) | U4 |
 | 2 | `AppendEvent` durability: file fsync + conservative POSIX logs-dir (and level-by-level MkdirAll) fsync on durable appends; Windows best-effort | U5 |
-| 4 | Consume the indeterminate error class in critical callers (size seam, status transitions) without a reconciliation engine | U6 |
+| 1/2 | Route the central artifact-rewrite choke point `WriteArtifactFile` (8 callers) through the durable primitive so artifact persists are durable repo-wide, not just the size seam | U8 |
+| 2/5 | Rewire the six independent `EventWriter` construction sites to pass the durable option (else U5 is inert for every existing writer) | U9 |
+| 4 | Consume the indeterminate error class in critical callers (size seam, status transitions) without a reconciliation engine; retry scoped to the atomic write (never the composite event-then-write op) | U6 |
 | 6 | Document platform-asymmetric guarantee; regression harnesses; micro-benchmark fsync latency | U3/U4/U5 (harnesses, test-first), U3 (benchmark), U7 (docs) |
 
 ## Implementation Units
 
-Each unit obeys the granularity constraints (< 3 files, < 5 functions, < 4 test
-scenarios, single domain, atomic milestone). Execution posture is **test-first**
-for all code units (harness lands failing before production code).
+Each unit is a single-domain atomic milestone scoped to roughly two hours of
+effort (the binding constraint). The `< 3 files / < 5 functions / < 4 scenarios`
+figures are heuristics, not hard limits: U4 touches four files and U3, U6, and U8
+touch three, but in every case they are **tightly-coupled files within one
+package** (a build-tagged platform seam plus its test, or one writer plus its
+test) that must change together and still fit the two-hour rule. These are
+explicit, reviewed exceptions to the file-count heuristic, not scope violations;
+each unit remains a single skill domain with one verifiable milestone. Execution
+posture is **test-first** for all code units (harness lands failing before
+production code).
 
 ### U1 — `durable_writes` config flag + primitive options (config)
 
@@ -92,7 +121,11 @@ for all code units (harness lands failing before production code).
   `durability_errors.go`), mirroring `gate_errors.go`, named by **outcome** (not
   by write phase):
   - `ErrWriteNotApplied` — the mutation **definitely did not apply** (canonical
-    file/log untouched); **safe to retry** the whole operation.
+    file/log untouched); the **failed atomic write** is safe to retry. This is a
+    property of the single write, not of a composite operation: a caller that has
+    **already appended an audit event** before the file write (e.g. the size
+    seam, see U6) must retry only the atomic write, never the whole op, or it
+    double-appends the event.
   - `ErrWriteIndeterminate` — the mutation is **possibly-applied / outcome
     uncertain**; callers **MUST NOT blindly retry** (a retry may double-apply a
     status transition or duplicate an audit event).
@@ -178,7 +211,14 @@ for all code units (harness lands failing before production code).
   `SetArtifactSizeWithProvenance` → `artifact_size.go:165`; status-transition
   writers) through the durable options and define concrete handling of the U2
   classes — **no automatic state-reconciliation engine is introduced**:
-  - `ErrWriteNotApplied` → the caller may safely retry once (single apply).
+  - `ErrWriteNotApplied` → the **failed atomic write** may be retried once, but
+    **not** by re-invoking the composite operation. The size seam
+    `SetArtifactSizeWithProvenance` appends its audit event **first**
+    (`artifact_size.go:124-139`) and only then writes the artifact (`:161-167`),
+    so re-running the whole op would append a duplicate event. Retry is therefore
+    scoped to the atomic file write using the already-encoded bytes **under the
+    same lock**; alternatively the composite op is marked non-retryable. Either
+    way the event count must remain exactly one.
   - `ErrWriteIndeterminate` → the caller **does not retry the mutation**; it
     surfaces/logs the operation as possibly-committed and relies on the existing
     invariants that make this safe: the durable **frontmatter value is the single
@@ -190,9 +230,10 @@ for all code units (harness lands failing before production code).
   path. Bulk regeneration stays best-effort (durable option not set).
 - **Files**: `internal/core/artifact_size.go`, the status-transition writer
   (e.g. `internal/core/gate_transition.go`), and one `_test.go`.
-- **Tests**: (a) not-applied → single safe retry; (b) indeterminate → no
-  double-apply and no duplicate event; (c) durable-off path unchanged.
-- **Posture**: test-first. **Deps: U2, U3, U4, U5.**
+- **Tests**: (a) not-applied → the atomic write is retried but the audit event
+  count stays **exactly one** (no duplicate); (b) indeterminate → no double-apply
+  and no duplicate event; (c) durable-off path unchanged.
+- **Posture**: test-first. **Deps: U2, U3, U4, U5, U8.**
 
 ### U7 — Document platform-asymmetric guarantee (docs)
 
@@ -206,7 +247,50 @@ for all code units (harness lands failing before production code).
 - **Files**: `internal/atomicfile/doc.go` (package doc comment — docs-only edit),
   `docs/product-specs/*size-estimation-contract*.md`.
 - **Tests**: `make docs-lint` + markdownlint P-008; no runtime test.
-- **Posture**: docs. **Deps: U3, U4, U5, U6** (documents shipped behavior).
+- **Posture**: docs. **Deps: U3, U4, U5, U6, U8, U9** (documents shipped
+  behavior).
+
+### U8 — Route `WriteArtifactFile` through the durable primitive (core)
+
+- **Change**: Make `WriteArtifactFile` (`internal/core/artifacts.go:735`) delegate
+  its write to the durable primitive instead of its inline `os.WriteFile(tmp)` +
+  `os.Rename`: call `atomicfile.WriteFileAtomicWithOptions(filePath, content,
+  atomicfile.Options{DurableWrites: cfg})` where `cfg` is threaded from the
+  workspace `durable_writes` flag (U1). This makes the durability guarantee reach
+  **all 8 artifact-rewrite callers** (status transitions, `move`, reference
+  rewrites, `migrate`, shipment lifecycle, `persistArtifact`) through the single
+  documented choke point, honoring its own "single choke point" contract. The
+  existing archive-provenance guard at the top of `WriteArtifactFile` is
+  preserved unchanged. On failure the U2 classes propagate to callers
+  (`ErrWriteNotApplied` before commit; `ErrWriteIndeterminate` after). Because the
+  U4 Windows atomic-replace safety fix is unconditional, this routing also removes
+  the last inline `os.Rename` on the artifact-persist path.
+- **Files**: `internal/core/artifacts.go`, `internal/core/artifacts_test.go`.
+- **Tests**: (a) durable-on artifact rewrite fsyncs temp + parent dir (via the U3
+  seam) and the provenance guard still rejects an archived artifact without
+  provenance; (b) durable-off rewrite is unchanged behaviorally (no added fsync)
+  and still atomic; (c) a post-rename dir-fsync failure surfaces
+  `ErrWriteIndeterminate` to the caller.
+- **Posture**: test-first. **Deps: U1, U3, U4.**
+
+### U9 — Event-writer durability wiring across construction sites (core, mcp)
+
+- **Change**: Rewire the **six** independent `NewEventWriter(logsDir)`
+  construction sites to pass the durable option from U5 when the workspace
+  `durable_writes` flag (U1) is on:
+  `core/archive.go:275`, `core/commits.go:38` + `:82`,
+  `core/gate_evidence.go:60`, `core/shipment.go:307`, and `mcp/server.go:76`.
+  Prefer a single internal helper (e.g. `core.newWorkspaceEventWriter(ws)`) that
+  reads the flag once and applies `WithDurableWrites`, so the five core sites
+  funnel through one construction point and only the MCP server site is wired
+  separately; this avoids re-scattering the flag read. Without this unit, U5's
+  option is inert for every existing writer.
+- **Files**: `internal/core/events_writer.go` (new helper) + the touched core
+  call sites, `internal/mcp/server.go`, and one `_test.go`.
+- **Tests**: (a) with `durable_writes` on, an event appended through a core path
+  fsyncs the log file (seam); (b) with the flag off, construction is unchanged;
+  (c) the MCP server path constructs a durable writer when the flag is on.
+- **Posture**: test-first. **Deps: U1, U5.**
 
 ## Dependency Graph
 
@@ -217,14 +301,20 @@ Edges (unit → its dependencies):
 - U4 → {U2}
 - U5 → {U1, U2}
 - U3 → {U1, U2, U4}
-- U6 → {U2, U3, U4, U5}
-- U7 → {U3, U4, U5, U6}
+- U9 → {U1, U5}
+- U8 → {U1, U3, U4}
+- U6 → {U2, U3, U4, U5, U8}
+- U7 → {U3, U4, U5, U6, U8, U9}
 
-Topological execution order: **U1, U2 → U4, U5 → U3 → U6 → U7**. No cycles.
-U4 (the unconditional Windows safety fix) lands before U3 because U3's rename
-goes through U4's platform-replace seam. `atomicfile` never imports `config` or
-`core`: the durable-mode option and error types flow *in*; classification flows
-*out* via the `errors` leaf, preserving the leaf-primitive dependency direction.
+Topological execution order: **U1, U2 → U4, U5 → U3, U9 → U8 → U6 → U7**. No
+cycles. U4 (the unconditional Windows safety fix) lands before U3 because U3's
+rename goes through U4's platform-replace seam; U8 (routing the artifact-rewrite
+choke point) lands after U3/U4 so it delegates to the finished durable primitive;
+U9 (event-writer wiring) only needs U1/U5; U6 consumes the error contract from the
+now-durable size seam and `WriteArtifactFile` (U8). `atomicfile` never imports
+`config` or `core`: the durable-mode option and error types flow *in*;
+classification flows *out* via the `errors` leaf, preserving the leaf-primitive
+dependency direction.
 
 ## Decisions and Rationale
 
@@ -273,16 +363,33 @@ goes through U4's platform-replace seam. `atomicfile` never imports `config` or
    concurrency and `MkdirAll` cannot report which ancestors it created, so on
    durable appends fsync the parent dir unconditionally and create+sync new
    directories level-by-level.
+9. **Route `WriteArtifactFile`, don't narrow the guarantee** — the plan-review
+   surfaced that `atomicfile.WriteFileAtomic` is reached directly only by the
+   size seam; the dominant artifact-persist path is the exported
+   `WriteArtifactFile` choke point (8 callers) which inlines its own
+   `os.WriteFile` + `os.Rename`. Rather than narrowing the "repo-wide" claim, U8
+   routes `WriteArtifactFile` through the durable primitive so all callers inherit
+   durability through the single documented choke point — a small, high-leverage
+   change that makes the repo-wide guarantee actually true.
+10. **Explicit event-writer wiring unit** — `EventWriter` is constructed at six
+    independent sites, so a default-off option at construction (U5) is inert for
+    existing writers unless each site is rewired. U9 centralizes core construction
+    behind one helper and wires the MCP server path, so enabling `durable_writes`
+    actually reaches event appends instead of silently no-op'ing.
 
 ## Risks and Caveats
 
 - **Blast radius (highest risk)**: `WriteFileAtomic` is the shared canonical
-  writer for every artifact. A regression corrupts or loses writes repo-wide.
+  writer, and `WriteArtifactFile` (U8) is the exported artifact-rewrite choke
+  point for every artifact. A regression corrupts or loses writes repo-wide.
   *Mitigations*: the fsync additions are opt-in default-off (inert until enabled)
-  and delivered via new `*WithOptions` entrypoints so existing callers are
-  untouched; the durable-off fast path adds no fsync; test-first harnesses per
-  unit; the Windows atomic-replace lands behind a build tag with its own tests;
-  git is the recovery backstop for `.backlogit/` (Principle IX).
+  and delivered via new `*WithOptions` entrypoints so existing callers' signatures
+  are untouched; U8 changes only `WriteArtifactFile`'s internals (delegates to the
+  durable primitive) and U9 rewires the six event-writer construction sites, both
+  gated by the same default-off flag so the entire expanded surface is inert until
+  `durable_writes` is enabled; the durable-off fast path adds no fsync; test-first
+  harnesses per unit; the Windows atomic-replace lands behind a build tag with its
+  own tests; git is the recovery backstop for `.backlogit/` (Principle IX).
 - **Windows safety fix changes default-mode failure behavior**: removing the
   remove-before-rename fallback is unconditional, so durable-off is "no added
   fsync," **not** byte-identical to today on the Windows failure path — but the
@@ -316,8 +423,8 @@ goes through U4's platform-replace seam. `atomicfile` never imports `config` or
   preserve unwrap); no `unsafe`. `golang.org/x/sys/windows` syscalls are the
   standard, non-`unsafe` Windows API surface.
 - **II. Test-First Development (NON-NEGOTIABLE)** — pass. Every code unit
-  (U1–U6) is test-first: a failing harness lands before production code, per the
-  040-F/041-S harness pattern; U7 is docs-only.
+  (U1–U6, U8, U9) is test-first: a failing harness lands before production code,
+  per the 040-F/041-S harness pattern; U7 is docs-only.
 - **III. Workspace Isolation / Security Boundaries** — pass. All writes resolve
   within the workspace; no new path-traversal surface; no secrets. The Windows
   replace operates on the same resolved paths as today.
@@ -355,7 +462,31 @@ Constitution Check: pass
   repo-wide canonical writer; a regression is high-impact. Rollback is clean
   because the feature is opt-in default-off.
 
-Requires plan hardening: yes
+Requires plan hardening: yes — **satisfied inline** in this revision (see
+_Plan Hardening — Acceptance Criteria_ below). This plan was revised in response
+to an independent plan-review (rubber-duck) pass and a second GitHub plan-review
+pass; the high-blast-radius hardening depth is now folded into concrete
+acceptance criteria rather than deferred.
+
+## Plan Hardening — Acceptance Criteria
+
+Concrete, testable gates that must be green before U-level work is accepted:
+
+- **Crash-simulation (POSIX)** — a harness kills between the temp-fsync+rename and
+  the parent-dir fsync and asserts, after reopen, the artifact is present and
+  complete (U3/U8); a second harness kills across an event append and asserts the
+  line is durable or the caller received `ErrWriteIndeterminate` (U5/U9).
+- **Windows atomic replace** — `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` tests
+  assert the destination is **never observed missing** across existing-dest,
+  absent-dest, and locked-dest cases; `ReplaceFileW` is not used (U4).
+- **Retry safety** — the size-seam test asserts the audit-event count stays
+  **exactly one** across an `ErrWriteNotApplied` retry (U6), proving the composite
+  op is not blindly re-run.
+- **Wiring reach** — enabling `durable_writes` constructs durable writers on at
+  least one core path and the MCP server path; disabling leaves construction
+  byte-for-byte unchanged (U9).
+- **Rollback** — `durable_writes: false` is a zero-migration instant disable, and
+  reverting the merge restores the prior primitive with no data conversion.
 
 ## Runtime Verification and Closure
 
@@ -373,11 +504,16 @@ Changed runtime surfaces: the shared write path (no CLI/API/UI surface changes;
 - **U6**: verify a critical mutation receiving `ErrWriteIndeterminate` does not
   double-apply and does not emit a duplicate event (it surfaces + optionally
   cheap-re-verifies, per decision 6); a mutation receiving `ErrWriteNotApplied`
-  safely retries once.
+  retries only the atomic write, keeping the audit-event count at exactly one.
+- **U8**: with `durable_writes` on, an artifact status transition / move persisted
+  through `WriteArtifactFile` fsyncs temp + parent dir and the provenance guard
+  still fires; durable-off stays atomic with no added fsync.
+- **U9**: enabling `durable_writes` constructs durable event writers on a core
+  path and the MCP server path; disabling leaves construction unchanged.
 - **Operational closure**: rollback trigger = "any write-path regression or
   fsync-latency regression on bulk sync" → set `durable_writes: false` (instant,
   no data migration) and revert the merge. Monitoring = fsync micro-benchmark
-  result recorded in U7; owner = Ship agent during the validation window. Because
-  this is a shared-primitive change with high blast radius, `plan-harden` should
-  tighten the crash-simulation verification and the Windows replace acceptance
-  before `plan-review`.
+  result recorded in U7; owner = Ship agent during the validation window. The
+  high-blast-radius hardening depth (crash-simulation, Windows replace, retry
+  safety, wiring reach, rollback) is specified in the _Plan Hardening — Acceptance
+  Criteria_ section above and is a build-gate for the affected units.
