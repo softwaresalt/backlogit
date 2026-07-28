@@ -114,7 +114,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	}
 
 	archiveDir := filepath.Join(backlogDir, "archive")
-	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+	if err := mkdirAllDurable(archiveDir, WorkspaceDurableWrites(ws)); err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
 
@@ -732,7 +732,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	fm["status"] = archivedStatus
 	restored := models.SerializeFrontmatter(fm, body)
 
-	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
+	if err := mkdirAllDurable(filepath.Dir(originalPath), WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("create restore dir: %w", err)
 	}
 

@@ -651,6 +651,11 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	}
 
 	// Step 2: Begin DB transaction for edge rewrites and index sync.
+	// durSyncErr accumulates post-mutation directory-fsync failures from the
+	// ID-change branch. It is surfaced as ErrWriteIndeterminate just before the
+	// successful return (commit-then-surface) so the completed adopt is never
+	// rolled back yet the durability signal is not silently discarded.
+	var durSyncErr error
 	if ws.DB != nil && newID != oldID {
 		tx, txErr := ws.DB.BeginTx(ctx, nil)
 		if txErr != nil {
@@ -733,10 +738,13 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				renamedMD = true
 				// Durable same-directory rename: the artifact write fsynced the new
 				// dirent, but the old-ID entry was just removed afterward and that
-				// removal is not durable until the directory is fsynced again.
-				// Best-effort (this runs after the in-tx DB mutations / a completed
-				// file rename; surfacing an error would incorrectly roll it back).
-				durableSyncDir(ws, filepath.Dir(oldMDPath), "adopt md rename")
+				// removal is not durable until the directory is fsynced again. This
+				// runs after the in-tx DB mutations, so a failure is NOT rolled back
+				// (the rename likely persisted); it is accumulated and surfaced as
+				// ErrWriteIndeterminate after tx.Commit (commit-then-surface).
+				if e := durableSyncDirDetailed(ws, filepath.Dir(oldMDPath), "adopt md rename"); e != nil {
+					durSyncErr = errors.Join(durSyncErr, e)
+				}
 			}
 		}
 
@@ -759,9 +767,12 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			}
 			renamedLog = true
 			// Durable log rename: both the new and removed dirents live in logsDir;
-			// fsync it so the rename is durable. Best-effort for the same reason as
-			// the MD rename above.
-			durableSyncDir(ws, filepath.Dir(oldLogPath), "adopt log rename")
+			// fsync it so the rename is durable. Same commit-then-surface handling
+			// as the MD rename above: a failure is accumulated and surfaced as
+			// ErrWriteIndeterminate after commit, never rolled back.
+			if e := durableSyncDirDetailed(ws, filepath.Dir(oldLogPath), "adopt log rename"); e != nil {
+				durSyncErr = errors.Join(durSyncErr, e)
+			}
 		}
 
 		// Step 4: Commit the transaction now that all file ops succeeded.
@@ -834,7 +845,21 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		OriginFeature:        originFeature,
 		IsOrphan:             wasOrphan,
 		RewrittenArtifactIDs: rewrittenIDs,
-	}, nil
+	}, adoptDurabilityErr(newID, durSyncErr)
+}
+
+// adoptDurabilityErr returns a wrapped ErrWriteIndeterminate when a post-mutation
+// directory fsync failed during a committed adopt, and nil otherwise. The adopt
+// already applied (files renamed, tx committed, event appended), so the caller
+// still receives the fully-built result; wrapping the sentinel lets an err-only
+// caller and blerrors.IsWriteIndeterminate see the honest durability signal
+// without triggering a rollback of the completed operation.
+func adoptDurabilityErr(newID string, durSyncErr error) error {
+	if durSyncErr == nil {
+		return nil
+	}
+	return fmt.Errorf("adopt item %s applied but durability is indeterminate: %w: %w",
+		newID, blerrors.ErrWriteIndeterminate, durSyncErr)
 }
 
 // IsOrphan returns true when an item has no parent_id but its hierarchical ID

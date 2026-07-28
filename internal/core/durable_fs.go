@@ -72,18 +72,24 @@ func mkdirAllDurable(dir string, durable bool) error {
 	return nil
 }
 
-// durableSyncDir best-effort fsyncs dir when durable is enabled, logging a
-// slog.Warn on failure rather than returning an error. It is used where a move is
-// within a single directory (for example the adopt ID-rename, which rewrites and
-// removes entries in the same dir): the destination dirent was made durable by
-// the artifact write, but the subsequent same-dir removal/rename is not durable
-// until the directory is fsynced again. These call sites run after DB/tx
-// mutations, so a failure is logged, not surfaced (see durableSyncMovedFromDir).
-func durableSyncDir(ws *Workspace, dir, op string) {
+// durableSyncDirDetailed fsyncs dir when durable is enabled, logging a slog.Warn
+// on failure (preserving the observability of the former best-effort helper) AND
+// returning the error so callers can enforce the two-class contract. It is used
+// where a move is within a single directory (for example the adopt ID-rename,
+// which rewrites and removes entries in the same dir): the destination dirent was
+// made durable by the artifact write, but the subsequent same-dir removal/rename
+// is not durable until the directory is fsynced again. Callers that run after
+// DB/tx mutations must NOT roll back on this error (the mutation likely
+// persisted); they surface it as blerrors.ErrWriteIndeterminate instead. Via
+// fsyncDirIfDurable it is a no-op on Windows or when durable is off, so it never
+// produces a false indeterminate signal.
+func durableSyncDirDetailed(ws *Workspace, dir, op string) error {
 	if err := fsyncDirIfDurable(dir, WorkspaceDurableWrites(ws)); err != nil {
 		slog.Warn("durable move: directory fsync failed (best-effort)",
 			"op", op, "dir", dir, "error", err)
+		return err
 	}
+	return nil
 }
 
 // durableSyncMovedFromDir best-effort fsyncs the SOURCE parent directory after a
