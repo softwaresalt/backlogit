@@ -105,6 +105,31 @@ best-effort:
   exactly-once semantics, operation IDs, and doctor reconciliation are out of
   scope.
 
+## Durable writes (opt-in fsync protocol)
+
+The size seam's frontmatter write goes through the shared atomicfile primitive,
+which supports the opt-in `durable_writes` protocol (123-F). The workspace
+`durable_writes` config flag defaults to false (the fast, sync-free path); when
+enabled it makes the seam's artifact write fsync-backed:
+
+* **Two-class error contract.** A durable write fails as one of two outcomes.
+  `ErrWriteNotApplied` means the mutation definitely did not apply (the failure
+  occurred before the rename committed) and the atomic write is safe to retry.
+  `ErrWriteIndeterminate` means the outcome is uncertain (a parent-directory
+  fsync failed after the rename) and callers must not blindly retry.
+* **Retry is scoped to the atomic write.** Because the `estimate_history` event
+  is appended before the durable write, an `ErrWriteNotApplied` is retried once
+  around the atomic write only — never by re-running the composite op — so the
+  audit-event count stays exactly one. An `ErrWriteIndeterminate` is surfaced,
+  not retried; the durable `custom_fields.size` remains the single source of
+  truth and orphan/advisory events are still ignored on read.
+* **Platform-asymmetric guarantee.** On POSIX the durable path fsyncs the temp
+  file and the parent directory, so both content and the new dirent survive a
+  power loss. On Windows the atomic replace (MoveFileEx `REPLACE_EXISTING`,
+  applied unconditionally as a data-loss safety fix) plus `WRITE_THROUGH` give
+  file-content durability, while directory-entry durability is best-effort
+  (Windows exposes no directory-handle flush).
+
 ## Computed-on-read composition
 
 Feature and shipment size composition is computed on read and never persisted.
