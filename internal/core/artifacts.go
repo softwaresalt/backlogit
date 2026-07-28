@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -731,12 +732,28 @@ func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error
 	return realPath, nil
 }
 
-// WriteArtifactFile atomically writes an artifact to the given file path.
+// WriteArtifactFile atomically writes an artifact to the given file path using
+// the durable-off fast path. It is the exported, back-compat choke point for
+// artifact rewrites whose caller has no workspace/config in scope; callers that
+// hold a *Workspace should prefer WriteArtifactFileWithOptions so the workspace
+// durable_writes flag reaches the durable primitive.
 func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
+	return WriteArtifactFileWithOptions(artifact, filePath, false)
+}
+
+// WriteArtifactFileWithOptions atomically writes an artifact to filePath through
+// the shared atomicfile primitive, applying the durable_writes fsync protocol
+// when durable is true. It is the single production choke point for artifact
+// rewrites: it enforces the archive-provenance invariant (shared with the
+// back-compat WriteArtifactFile wrapper) and delegates the write to
+// atomicfile.WriteFileAtomicWithOptions, so the U2 durability error classes
+// (ErrWriteNotApplied before commit, ErrWriteIndeterminate after) propagate to
+// callers unchanged.
+func WriteArtifactFileWithOptions(artifact *models.Artifact, filePath string, durable bool) error {
 	// Enforce the archive-provenance invariant at the write boundary itself.
-	// WriteArtifactFile is exported and funnels every production rewrite, so it
-	// is the single choke point where "status archived <=> provenance present"
-	// can be guaranteed regardless of caller. An archived artifact missing
+	// This choke point funnels every production rewrite, so it is the single
+	// place where "status archived <=> provenance present" can be guaranteed
+	// regardless of caller. An archived artifact missing
 	// archived_from/archived_status would serialize a non-invertible record;
 	// archiving must go through ArchiveItem, which stamps both fields first.
 	if artifact.Status == models.StatusArchived &&
@@ -747,13 +764,8 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	fm := artifact.ToFrontmatterMap()
 
 	content := models.SerializeFrontmatter(fm, artifact.Description)
-	tmp := filePath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+	if err := atomicfile.WriteFileAtomicWithOptions(filePath, []byte(content), atomicfile.Options{DurableWrites: durable}); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
-	}
-	if err := os.Rename(tmp, filePath); err != nil {
-		os.Remove(tmp) //nolint:errcheck
-		return fmt.Errorf("rename artifact file: %w", err)
 	}
 	return nil
 }

@@ -164,7 +164,7 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 			continue
 		}
 		artifact.UpdatedAt = models.NowUTC()
-		if writeErr := WriteArtifactFile(artifact, filePath); writeErr != nil {
+		if writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: file write failed; skipping",
 				"source_id", sourceID, "error", writeErr)
 			result.Skipped++

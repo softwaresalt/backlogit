@@ -160,7 +160,7 @@ func findCrossArtifactReferences(
 func applyCrossArtifactRewrites(
 	ctx context.Context,
 	tx *sql.Tx,
-	_ *Workspace,
+	ws *Workspace,
 	updates []crossRefUpdate,
 ) error {
 	if len(updates) == 0 {
@@ -197,7 +197,7 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: file is read-only: %s",
 				u.artifact.ID, u.filePath)
 		}
-		if writeErr := WriteArtifactFile(u.artifact, u.filePath); writeErr != nil {
+		if writeErr := WriteArtifactFileWithOptions(u.artifact, u.filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
 			restoreWritten()
 			return fmt.Errorf("apply cross-artifact rewrite for %s: %w", u.artifact.ID, writeErr)
 		}

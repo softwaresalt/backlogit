@@ -386,7 +386,7 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
 	}
-	if err := WriteArtifactFile(artifact, targetPath); err != nil {
+	if err := WriteArtifactFileWithOptions(artifact, targetPath, WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	if currentPath != targetPath {

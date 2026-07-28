@@ -721,7 +721,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			newMDPath = filepath.Join(dir, newFileName+".md")
 
 			// Write updated artifact content (with new ID in frontmatter) to new path.
-			if writeErr := WriteArtifactFile(artifact, newMDPath); writeErr != nil {
+			if writeErr := WriteArtifactFileWithOptions(artifact, newMDPath, WorkspaceDurableWrites(ws)); writeErr != nil {
 				return nil, fmt.Errorf("adopt item %s: write new md: %w", oldID, writeErr)
 			}
 			if newMDPath != oldMDPath {
