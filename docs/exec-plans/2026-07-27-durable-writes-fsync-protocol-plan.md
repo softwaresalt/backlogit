@@ -252,20 +252,31 @@ production code).
 
 ### U8 — Route `WriteArtifactFile` through the durable primitive (core)
 
-- **Change**: Make `WriteArtifactFile` (`internal/core/artifacts.go:735`) delegate
-  its write to the durable primitive instead of its inline `os.WriteFile(tmp)` +
-  `os.Rename`: call `atomicfile.WriteFileAtomicWithOptions(filePath, content,
-  atomicfile.Options{DurableWrites: cfg})` where `cfg` is threaded from the
-  workspace `durable_writes` flag (U1). This makes the durability guarantee reach
-  **all 8 artifact-rewrite callers** (status transitions, `move`, reference
-  rewrites, `migrate`, shipment lifecycle, `persistArtifact`) through the single
-  documented choke point, honoring its own "single choke point" contract. The
-  existing archive-provenance guard at the top of `WriteArtifactFile` is
-  preserved unchanged. On failure the U2 classes propagate to callers
-  (`ErrWriteNotApplied` before commit; `ErrWriteIndeterminate` after). Because the
-  U4 Windows atomic-replace safety fix is unconditional, this routing also removes
-  the last inline `os.Rename` on the artifact-persist path.
-- **Files**: `internal/core/artifacts.go`, `internal/core/artifacts_test.go`.
+- **Change**: `WriteArtifactFile(artifact, filePath)` has **no workspace/config
+  parameter**, so it has no source for the `durable_writes` option; changing only
+  its body would leave the flag with nowhere to come from. Introduce a
+  context-bearing variant `WriteArtifactFileWithOptions(artifact *models.Artifact,
+  filePath string, durable bool) error` that delegates to
+  `atomicfile.WriteFileAtomicWithOptions(filePath, content,
+  atomicfile.Options{DurableWrites: durable})`, and keep
+  `WriteArtifactFile(artifact, filePath)` as a thin **back-compat wrapper** that
+  calls the variant with `durable=false` (callers without a config in scope stay
+  unchanged and default-off). Migrate the artifact-rewrite callers that already
+  hold a `*Workspace` (status transitions, `move`, reference rewrites, `migrate`,
+  shipment lifecycle, `persistArtifact`) to call the variant passing
+  `ws.Config.DurableWrites` (U1) — this caller migration is what lets the option
+  actually reach the choke point. Callers with no workspace/config in scope keep
+  the default-off wrapper (documented). This makes the durability guarantee reach
+  the artifact-rewrite callers through the single documented choke point, honoring
+  its own "single choke point" contract. The existing archive-provenance guard at
+  the top of `WriteArtifactFile` is preserved unchanged and shared by both entry
+  points. On failure the U2 classes propagate to callers (`ErrWriteNotApplied`
+  before commit; `ErrWriteIndeterminate` after). Because the U4 Windows
+  atomic-replace safety fix is unconditional, this routing also removes the last
+  inline `os.Rename` on the artifact-persist path.
+- **Files**: `internal/core/artifacts.go`, `internal/core/artifacts_test.go`, and
+  the direct-caller sites that thread `ws.Config.DurableWrites` (status/move/
+  reference/migrate/shipment-lifecycle/persistArtifact paths in `internal/core`).
 - **Tests**: (a) durable-on artifact rewrite fsyncs temp + parent dir (via the U3
   seam) and the provenance guard still rejects an archived artifact without
   provenance; (b) durable-off rewrite is unchanged behaviorally (no added fsync)
@@ -472,10 +483,17 @@ acceptance criteria rather than deferred.
 
 Concrete, testable gates that must be green before U-level work is accepted:
 
-- **Crash-simulation (POSIX)** — a harness kills between the temp-fsync+rename and
-  the parent-dir fsync and asserts, after reopen, the artifact is present and
-  complete (U3/U8); a second harness kills across an event append and asserts the
-  line is durable or the caller received `ErrWriteIndeterminate` (U5/U9).
+- **Durability ordering/failure seams (automated)** — a process kill does **not**
+  simulate power loss: the kernel page cache stays alive, so the rename is normally
+  observed on reopen even if the directory entry was never durably flushed, and a
+  killed process cannot return an error to its caller. Automated tests therefore
+  use **injected ordering/failure seams**, not process kills: the
+  temp-fsync → rename → parent-dir-fsync sequence is made observable in-process and
+  asserted in order (U3/U8), and a fault injected **after** the rename but before
+  the parent-dir fsync asserts the caller receives `ErrWriteIndeterminate`
+  (U5/U9). Real power-loss durability validation is reserved for an **external
+  VM/filesystem fault-injection test** (out of automated-CI scope) and is not
+  gated on the in-process seams.
 - **Windows atomic replace** — `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` tests
   assert the destination is **never observed missing** across existing-dest,
   absent-dest, and locked-dest cases; `ReplaceFileW` is not used (U4).
@@ -495,19 +513,25 @@ Changed runtime surfaces: the shared write path (no CLI/API/UI surface changes;
 
 - **U1**: verify config load with the flag both off (default) and on; confirm
   `omitempty` keeps existing configs unchanged.
-- **U3/U4/U5**: on a POSIX host, enable `durable_writes` and confirm a canonical
-  write + a new-log event append survive a simulated crash (kill between write
-  and next open); on Windows, confirm the atomic replace never leaves the
-  destination missing and dirent durability is best-effort. The per-unit
-  harnesses (Windows dir-fsync skip, durable-append dir-fsync, post-rename
-  dir-fsync-failure indeterminate class) are the primary proof.
+- **U3/U4/U5**: on a POSIX host, enable `durable_writes` and exercise the injected
+  ordering/failure seams — assert the temp-fsync → rename → parent-dir-fsync order
+  on a canonical write + a new-log event append, and assert a post-rename
+  dir-fsync fault surfaces `ErrWriteIndeterminate`; on Windows, confirm the atomic
+  replace never leaves the destination missing and dirent durability is
+  best-effort. The per-unit seam harnesses (Windows dir-fsync skip, durable-append
+  dir-fsync, post-rename dir-fsync-failure indeterminate class) are the primary
+  proof. A process kill does not validate power-loss durability (the page cache
+  survives the kill); real power-loss validation is an external VM/filesystem
+  fault-injection test, out of automated-CI scope.
 - **U6**: verify a critical mutation receiving `ErrWriteIndeterminate` does not
   double-apply and does not emit a duplicate event (it surfaces + optionally
   cheap-re-verifies, per decision 6); a mutation receiving `ErrWriteNotApplied`
   retries only the atomic write, keeping the audit-event count at exactly one.
 - **U8**: with `durable_writes` on, an artifact status transition / move persisted
-  through `WriteArtifactFile` fsyncs temp + parent dir and the provenance guard
-  still fires; durable-off stays atomic with no added fsync.
+  through a migrated caller (passing `ws.Config.DurableWrites` into
+  `WriteArtifactFileWithOptions`) fsyncs temp + parent dir via the U3 ordering
+  seam and the provenance guard still fires; the default-off `WriteArtifactFile`
+  wrapper stays atomic with no added fsync.
 - **U9**: enabling `durable_writes` constructs durable event writers on a core
   path and the MCP server path; disabling leaves construction unchanged.
 - **Operational closure**: rollback trigger = "any write-path regression or
