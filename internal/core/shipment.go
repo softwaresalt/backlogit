@@ -432,7 +432,7 @@ func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *m
 	}
 
 	targetDirAbs := filepath.Join(backlogitDir, targetDir)
-	if err := os.MkdirAll(targetDirAbs, 0o755); err != nil {
+	if err := mkdirAllDurable(targetDirAbs, WorkspaceDurableWrites(ws)); err != nil {
 		return "", "", fmt.Errorf("create directory %s: %w", targetDirAbs, err)
 	}
 	targetPath := filepath.Join(targetDirAbs, filepath.Base(currentPath))
