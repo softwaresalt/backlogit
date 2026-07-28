@@ -142,14 +142,21 @@ production code).
 ### U4 — Windows canonical atomic replace, unconditional safety fix (atomicfile, Windows)
 
 - **Change**: Replace the Windows remove-before-rename fallback with a real
-  atomic replace via `golang.org/x/sys/windows.MoveFileEx` with
-  `MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH` (the temp file is
-  same-directory / same-volume, so **no** `MOVEFILE_COPY_ALLOWED`). The
-  destination is **never** removed before the replacement is in place; on failure
-  return U2 `ErrWriteNotApplied` (destination untouched). This fix is
-  **unconditional** — it applies whether or not `durable_writes` is on, because
-  the pre-remove is a real data-loss defect, not a durability nicety.
-  `ReplaceFileW` is **rejected** (its write-through story is unreliable and
+  atomic replace via `golang.org/x/sys/windows.MoveFileEx`, separating the two
+  concerns the current flag pair conflates: `MOVEFILE_REPLACE_EXISTING`
+  (atomicity/safety) is applied **unconditionally**, while
+  `MOVEFILE_WRITE_THROUGH` (a synchronous durability flush) is applied **only when
+  `durable_writes` is on**. The seam therefore takes the `durable` bool threaded
+  from `WriteFileAtomicWithOptions`; flags =
+  `MOVEFILE_REPLACE_EXISTING | (durable ? MOVEFILE_WRITE_THROUGH : 0)` (the temp
+  file is same-directory / same-volume, so **no** `MOVEFILE_COPY_ALLOWED`). This
+  keeps the OFF-mode contract honest on Windows: default-off pays **no**
+  write-through latency yet still gets the atomic replace. The destination is
+  **never** removed before the replacement is in place; on failure return U2
+  `ErrWriteNotApplied` (destination untouched). The atomic-replace **safety** half
+  is **unconditional** — the pre-remove is a real data-loss defect, not a
+  durability nicety — but the write-through **durability** half is gated on the
+  flag. `ReplaceFileW` is **rejected** (its write-through story is unreliable and
   documented failure modes can leave the destination absent). Build tags:
   `atomicfile_windows.go` (MoveFileEx) + `atomicfile_other.go` (POSIX `os.Rename`
   passthrough). Promote `golang.org/x/sys` from indirect to direct.
@@ -159,7 +166,10 @@ production code).
 - **Tests**: (a) Windows replace over an existing dest succeeds and the dest is
   never observed missing; (b) replace failure returns `ErrWriteNotApplied` and
   leaves the original intact; (c) absent-dest and locked-dest cases behave
-  fail-closed; POSIX build uses plain rename (parity).
+  fail-closed; (d) **flag gating** — `durable=false` sets
+  `MOVEFILE_REPLACE_EXISTING` **without** `MOVEFILE_WRITE_THROUGH`, and
+  `durable=true` sets both (assert via the injected MoveFileEx-flags seam); POSIX
+  build uses plain rename (parity).
 - **Posture**: test-first. **Deps: U2.**
 
 ### U3 — `WriteFileAtomic` fsync sequence + POSIX parent-dir fsync (atomicfile)
@@ -172,9 +182,11 @@ production code).
   `runtime.GOOS != "windows"`, `Sync()` that dir handle so the rename is durable.
   Classification (U2): any failure **before** the rename commits →
   `ErrWriteNotApplied`; a parent-dir fsync failure **after** the rename →
-  `ErrWriteIndeterminate`. With durable **off**, no fsync is added (fast path);
-  the OFF contract is "no added fsync" — the U4 Windows atomic-replace safety fix
-  is unconditional and applies in both modes. Add an `fsync` micro-benchmark.
+  `ErrWriteIndeterminate`. With durable **off**, no fsync is added (fast path); the
+  OFF contract is "no added durability cost" — the U4 Windows atomic-replace
+  **safety** fix (`MOVEFILE_REPLACE_EXISTING`) is unconditional, but its
+  `MOVEFILE_WRITE_THROUGH` durability flush is gated on durable-on, so off-mode
+  adds no write-through latency on Windows. Add an `fsync` micro-benchmark.
 - **Files**: `internal/atomicfile/atomicfile.go`,
   `internal/atomicfile/atomicfile_test.go` (+ `atomicfile_bench_test.go`).
 - **Tests**: (a) durable-on write fsyncs temp + parent dir (injected dir-fsync
@@ -342,12 +354,16 @@ dependency direction.
    and construct `EventWriter` with durable options
    (`NewEventWriter(logsDir, WithDurableWrites(true))`, writer immutable). Existing
    callers are untouched.
-3. **Windows atomic replace is an unconditional safety fix** — the current
+3. **Windows atomic replace splits safety from durability** — the current
    remove-before-rename can leave a canonical file missing on a crash between
-   remove and retry. `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` replaces
-   atomically and never deletes the destination first. This is a correctness fix
-   for a real data-loss defect, so it applies in **both** durable-on and
-   durable-off modes — it is not gated by the flag. `ReplaceFileW` is rejected
+   remove and retry. `MoveFileEx(MOVEFILE_REPLACE_EXISTING)` replaces atomically
+   and never deletes the destination first; this atomic-replace **safety** half is
+   a correctness fix for a real data-loss defect, so it applies in **both**
+   durable-on and durable-off modes and is **not** gated by the flag. The
+   `MOVEFILE_WRITE_THROUGH` **durability** flush is a synchronous cost, so it is
+   gated on `durable_writes` to honor the off-mode "no added durability cost"
+   contract (flags = `REPLACE_EXISTING | (durable ? WRITE_THROUGH : 0)`).
+   `ReplaceFileW` is rejected
    (unreliable write-through; failure modes can leave the destination absent).
 4. **Build-tagged platform seam** (`_windows.go` / `_other.go`) — keeps the
    Windows syscall surface isolated and the POSIX path a plain `os.Rename`,
@@ -409,8 +425,9 @@ dependency direction.
   and locked destinations.
 - **Windows atomic-replace semantics**: `MoveFileEx` ACL/attribute and
   locked-file behavior must be confirmed. *Mitigation*: pin to same-volume
-  `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` (no `COPY_ALLOWED`); U4 tests cover
-  the failure cases; `ReplaceFileW` is rejected outright.
+  `MoveFileEx` with `REPLACE_EXISTING` always set and `WRITE_THROUGH` added only
+  in durable mode (no `COPY_ALLOWED`); U4 tests cover the failure cases and the
+  flag gating; `ReplaceFileW` is rejected outright.
 - **Non-atomic appends**: an `AppendEvent` partial write is not safe to blindly
   retry. *Mitigation*: classify partial-write / post-write fsync failures as
   `ErrWriteIndeterminate`; U6 callers surface rather than retry.
@@ -494,9 +511,10 @@ Concrete, testable gates that must be green before U-level work is accepted:
   (U5/U9). Real power-loss durability validation is reserved for an **external
   VM/filesystem fault-injection test** (out of automated-CI scope) and is not
   gated on the in-process seams.
-- **Windows atomic replace** — `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` tests
-  assert the destination is **never observed missing** across existing-dest,
-  absent-dest, and locked-dest cases; `ReplaceFileW` is not used (U4).
+- **Windows atomic replace** — `MoveFileEx` tests assert the destination is
+  **never observed missing** across existing-dest, absent-dest, and locked-dest
+  cases, and assert flag gating (`REPLACE_EXISTING` always; `WRITE_THROUGH` only
+  when `durable_writes` is on); `ReplaceFileW` is not used (U4).
 - **Retry safety** — the size-seam test asserts the audit-event count stays
   **exactly one** across an `ErrWriteNotApplied` retry (U6), proving the composite
   op is not blindly re-run.
