@@ -77,14 +77,28 @@ power loss. No `t.Parallel` in tests that swap package-global seams.
   file present) is genuinely reproduced. A whole-function stub that returns the
   sentinel *without* writing the file would let the "no duplicate remains"
   assertion pass trivially and is NOT acceptable.
+- **Combined-failure reconciliation (Copilot review)**: the existing non-git
+  upsert-failure branch calls `restoreArchiveAfterUnarchiveFailure`
+  (`internal/core/archive.go` ~L786-793), which removes the restored file and
+  restores the archive copy — a rollback. If the restore write was
+  `ErrWriteIndeterminate`, that rolls back a *possibly-applied* write, violating
+  never-roll-back-indeterminate. U1 MUST therefore track whether the restore
+  write was indeterminate and, on a subsequent DB-upsert failure, NOT invoke
+  `restoreArchiveAfterUnarchiveFailure`; instead surface
+  `errors.Join(ErrWriteIndeterminate, upsertErr)` and leave the restored file in
+  place. The existing rollback is retained ONLY for the clean / `ErrWriteNotApplied`
+  restore write.
 - **Depends on**: U4 (consumes shared `core.mkdirAllDurable` at
   `archive.go` restore-dir creation; U4 changes that function's durable retry
-  behavior — see Dependency Graph).
-- **Tests (test-first)**: (a) indeterminate on restore write (seam writes then
-  returns indeterminate) → exactly one canonical file remains, archive copy
-  removed, DB row present, function surfaces `IsWriteIndeterminate`, no rollback;
-  (b) not-applied on restore write → unchanged safe-abort behavior; (c)
-  durable-off happy path unchanged.
+  behavior — see Dependency Graph). U2 does NOT depend on U4 (its
+  `relocate=false` path never reaches `mkdirAllDurable`).
+- **Tests (test-first, ≤3 scenarios)**: (a) indeterminate on restore write (seam
+  writes then returns indeterminate) → exactly one canonical file remains, archive
+  copy removed, DB row present, function surfaces `IsWriteIndeterminate`, no
+  rollback; **and the combined sub-case** (restore indeterminate + DB upsert
+  fails) does NOT call `restoreArchiveAfterUnarchiveFailure`, keeps the restored
+  file, and surfaces both signals; (b) not-applied on restore write → unchanged
+  safe-abort behavior; (c) durable-off happy path unchanged.
 - **Posture**: test-first. **Runtime surface**: none (internal core).
 
 ### U2 — Explicit indeterminate reconciliation for dependency callers
@@ -101,24 +115,26 @@ power loss. No `t.Parallel` in tests that swap package-global seams.
   `artifact_references_indeterminate_test.go`. If explicit reconciliation proves
   disproportionate, the documented fallback is a comment noting reliance on
   `sync`-rebuild — default to reconciliation.
-- **Seam (CORRECTED)**: `AddDependency`/`RemoveDependency` call
-  `persistArtifact(..., relocate=false)`. On that same-path (`currentPath ==
-  targetPath`) rewrite the cross-directory source-dir fsync block in
-  `persistArtifact` (gated on `srcDir != dstDir`) is **skipped**, so the
-  `mkdirDirSyncFn` source-dir seam does NOT fire on this path. The only
-  indeterminate source on the `relocate=false` path is the post-rename parent
-  fsync inside `WriteArtifactFileWithOptions` (atomicfile). Therefore U2 MUST
-  either (i) add a `persistArtifact` write seam mirroring
-  `applyCrossRefWriteFn`, or (ii) inject the failure through the atomicfile
-  write seam. **Precondition assertion**: add a test asserting `persistArtifact`
-  propagates `blerrors.ErrWriteIndeterminate` on the `relocate=false` write, so
-  U2 does not silently regress if that cross-file contract changes.
-- **Tests (test-first)**: (a) indeterminate persist → DB edge NOT rolled back,
-  indeterminate surfaced; (b) not-applied persist → DB edge rolled back
-  (unchanged); (c) durable-off path unchanged; plus the `persistArtifact`
-  propagation precondition assertion above.
-- **Depends on**: U4 (the `relocate=false` persist path creates/uses dirs via
-  shared `core.mkdirAllDurable`).
+- **Seam (CORRECTED — no existing seam fires; Ship must ADD one)**:
+  `AddDependency`/`RemoveDependency` call `persistArtifact(..., relocate=false)`.
+  `resolveArtifactPersistPaths(relocate=false)` returns
+  `(currentPath, currentPath, nil)` immediately, so **both** the cross-directory
+  source-dir fsync block (gated on `srcDir != dstDir`) **and** `mkdirAllDurable`
+  are skipped — the `mkdirDirSyncFn` seam CANNOT fire here. The only durable write
+  on this path is `WriteArtifactFileWithOptions`, which `persistArtifact` calls
+  directly with no seam. Ship MUST therefore ADD a package-core
+  `persistArtifactWriteFn` package-global (wrapping `WriteArtifactFileWithOptions`,
+  mirroring `applyCrossRefWriteFn` / `sizeSeamAtomicWrite`) and inject the wrapped
+  `ErrWriteIndeterminate` through it. **Precondition assertion**: add a test
+  asserting `persistArtifact` propagates `blerrors.ErrWriteIndeterminate` on the
+  `relocate=false` write, so U2 does not silently regress if that cross-file
+  contract changes. Tests swap a package-global seam → no `t.Parallel`.
+- **Tests (test-first, ≤3 scenarios)**: (a) indeterminate persist → DB edge NOT
+  rolled back, indeterminate surfaced, **and** the `persistArtifact`-propagation
+  precondition holds; (b) not-applied persist → DB edge rolled back (unchanged);
+  (c) durable-off path unchanged.
+- **Depends on**: nothing (U2 does not reach `core.mkdirAllDurable`, so it is
+  independent of U4).
 - **Posture**: test-first. **Runtime surface**: none (internal core).
 
 ### U3 — Re-attempt parent flush on durable append retry
@@ -158,13 +174,15 @@ power loss. No `t.Parallel` in tests that swap package-global seams.
   events variant. Also fix the stale doc-comment cross-reference in this file
   (it currently says it mirrors "the U5 events level-by-level durable-mkdir";
   the events counterpart is the U3 change).
-- **Cross-consumer regression (blast radius)**: `core.mkdirAllDurable` is shared,
-  consumed at runtime by `UnarchiveItem` (U1) and the `persistArtifact` path (U2).
-  The new unconditional re-fsync of an existing dir MUST NOT falsely surface
-  indeterminate for a confirmed/happy-path dir. Add an assertion that the
-  durable happy path (existing dir, fsync succeeds) returns `nil` and does not
-  regress U1/U2 behavior. Landing U4 before U1/U2 (dependency edges below) keeps
-  those consumers building on the final shared behavior.
+- **Cross-consumer regression (blast radius)**: `core.mkdirAllDurable` is shared;
+  the consumer whose behavior this change affects is `UnarchiveItem` (U1), which
+  calls it for restore-dir creation. (U2's `persistArtifact(relocate=false)` path
+  does NOT reach `mkdirAllDurable`, so it is unaffected.) The new unconditional
+  re-fsync of an existing dir MUST NOT falsely surface indeterminate for a
+  confirmed/happy-path dir. Add an assertion that the durable happy path (existing
+  dir, fsync succeeds) returns `nil` and does not regress U1 behavior. Landing U4
+  before U1 (dependency edge below) keeps that consumer building on the final
+  shared behavior.
 - **Seam**: `mkdirDirSyncEnabled` / `mkdirDirSyncFn` package-globals;
   `durable_fs_test.go` (no `t.Parallel`).
 - **Tests (test-first)**: (a) mkdir succeeds, parent fsync fails on first call →
@@ -207,55 +225,65 @@ power loss. No `t.Parallel` in tests that swap package-global seams.
   intentional**: a human reads the wrapped "indeterminate" text and decides,
   whereas an agent needs the structured marker to avoid auto-retry duplication.
   No CLI machine-readable marker is added in this feature.
-- **Seam**: behavioural test surface in `append_comment_test.go`; inject the
-  durability error via the events writer seam or a stubbed `AppendComment`. Also
-  add a cross-package propagation assertion that `IsWriteIndeterminate` returns
-  true on the error the MCP handler receives (locking the `errors.Is` chain
-  through `core.AppendComment`).
-- **Tests (test-first)**: (a) indeterminate append → `write_indeterminate` /
-  `retryable:false` outcome, distinct from generic internal error; (b)
-  not-applied append → `write_not_applied` / `retryable:true` outcome; (c)
-  generic error → unchanged internal-error mapping; (d) success → unchanged
-  `{"ok":true}`; (e) **retry-idempotency**: after a not-applied outcome, a retry
-  produces exactly ONE comment event (mirrors the `TestSizeSeam_*` / U3
-  exactly-once assertion); the indeterminate outcome carries the do-not-retry
-  marker.
+- **Seam (no existing seam is injectable from package `mcp`; Ship must ADD one)**:
+  `EventWriter.fsyncFileImpl` / `fsyncDirImpl` are unexported in package `events`
+  and `core.AppendComment` is called directly, so neither can inject a durability
+  error from a package-`mcp` test. Ship MUST ADD a package-`mcp` seam — a
+  package-global `appendCommentFn = core.AppendComment` that `handleAppendComment`
+  calls and tests override to return a wrapped
+  `blerrors.ErrWriteNotApplied` / `ErrWriteIndeterminate` — so the outcome-mapping
+  and exactly-once retry tests are implementable within package `mcp`. Also add a
+  cross-package propagation assertion that `IsWriteIndeterminate` returns true on
+  the error the handler receives (locking the `errors.Is` chain through
+  `core.AppendComment`). Tests swap a package-global seam → no `t.Parallel`.
+- **Tests (test-first, ≤3 scenarios)**: (a) indeterminate append →
+  `write_indeterminate` / `retryable:false` outcome, distinct from the generic
+  internal error (non-durability errors stay on the `internal` path, unchanged);
+  (b) not-applied append → `write_not_applied` / `retryable:true` outcome (success
+  `{"ok":true}` response unchanged); (c) **retry-idempotency**: after a
+  not-applied outcome, a retry produces exactly ONE comment event (mirrors the
+  `TestSizeSeam_*` / U3 exactly-once assertion), and the cross-package
+  `IsWriteIndeterminate` propagation holds.
 - **Posture**: test-first. **Runtime surface**: MCP `append_comment` tool
   (agent-facing contract).
 
 ## Dependency Graph
 
-U4 changes the **shared** `core.mkdirAllDurable` function, which is consumed at
-runtime by U1 (`UnarchiveItem` restore-dir creation in `archive.go`) and by U2's
-`persistArtifact` path. So U4 is NOT independent of U1/U2 at runtime — its new
-unconditional re-fsync of an existing dir alters behavior for those consumers.
-U4 is therefore sequenced first, and U1/U2 depend on it so they build and test
-against the final shared behavior.
+U4 changes the **shared** `core.mkdirAllDurable` function, whose affected
+consumer is U1 (`UnarchiveItem` restore-dir creation in `archive.go`). U1 is
+therefore sequenced after U4 and depends on it, so U1 builds and tests against
+the final shared behavior.
 
+U2 is independent of U4: `AddDependency`/`RemoveDependency` call
+`persistArtifact(..., relocate=false)`, and `resolveArtifactPersistPaths` returns
+before `mkdirAllDurable` is reached, so U2 never touches the function U4 changes.
 U3 (the `internal/events` `EventWriter.mkdirAllDurable`) and U5 (the MCP handler)
-touch code with no shared runtime state with the others and are independent.
-U3 and U4 fix the same bug class in two separate `mkdirAllDurable`
-implementations that do not share code today (consolidation is a deferred
-follow-up, not this feature).
+touch code with no shared runtime state with the others. U3 and U4 fix the same
+bug class in two separate `mkdirAllDurable` implementations that do not share code
+today (consolidation is a deferred follow-up, not this feature).
 
 ```text
 U4 ──► U1
-  └──► U2
+U2            (independent)
 U3            (independent)
 U5            (independent)
 ```
 
-Dependency edges to wire in the backlog: `U1 depends on U4`, `U2 depends on U4`
-(`dep_type: blocks`). U3 and U5 have no upstream dependencies.
+Dependency edges to wire in the backlog: `U1 depends on U4` (`dep_type: blocks`).
+U2, U3, and U5 have no upstream dependencies.
 
 ## Decisions and Rationale
 
-- **One unit per file, test-first, existing seams**: satisfies the 2-Hour Rule
-  and Width Isolation, keeps five distinct regressions independently bisectable,
-  and reuses proven fault-injection seams rather than inventing new ones (U2 adds
-  a small `persistArtifact` write seam mirroring the existing
-  `applyCrossRefWriteFn` where the documented seam does not fire on the
-  `relocate=false` path).
+- **One unit per file, test-first**: satisfies the 2-Hour Rule and Width
+  Isolation, keeps five distinct regressions independently bisectable. Most units
+  reuse proven fault-injection seams; U2 and U5 each ADD a small package-local
+  write seam (`persistArtifactWriteFn` in core; `appendCommentFn` in mcp),
+  mirroring the existing `applyCrossRefWriteFn` / `sizeSeamAtomicWrite` pattern,
+  because no existing seam fires on their code path.
+- **Task granularity (2-Hour Rule)**: each task is a single production file plus
+  its colocated `_test.go`, one focused error-path change, and ≤3 test scenarios
+  (unchanged-behavior guards are folded into the primary cases). This keeps every
+  task within the ~2-hour NON-NEGOTIABLE granularity budget.
 - **Commit-then-surface is mandatory**: rolling back an indeterminate write is
   the primary hazard (diverges FS from DB or destroys an applied change), per the
   compound learning; every unit's tests assert no rollback and no duplicate on
@@ -288,13 +316,23 @@ Dependency edges to wire in the backlog: `U1 depends on U4`, `U2 depends on U4`
   each include an explicit test asserting event/comment count stays exactly one
   across a retry, mirroring the existing `TestSizeSeam_*` idempotency assertions.
 - **U4 shared-function blast radius**: the new unconditional re-fsync must not
-  falsely surface indeterminate for a confirmed dir; U4 test (c) and the U1/U2
-  durable happy-path assertions guard this, and the U4→U1/U2 sequencing keeps
-  consumers on the final behavior.
-- **U2 seam reachability**: the named cross-directory source-dir fsync seam does
-  not fire on the `relocate=false` dependency path; U2 injects at the atomicfile
-  write seam (or a new `persistArtifact` write seam) and asserts `persistArtifact`
+  falsely surface indeterminate for a confirmed dir; U4 test (c) and the U1
+  durable happy-path assertion guard this, and the U4→U1 sequencing keeps the
+  consumer on the final behavior.
+- **U2 seam reachability**: no existing seam fires on the `relocate=false`
+  dependency path (both the cross-directory source-dir fsync block and
+  `mkdirAllDurable` are skipped). Ship adds a package-core `persistArtifactWriteFn`
+  seam wrapping `WriteArtifactFileWithOptions` and asserts `persistArtifact`
   propagates `ErrWriteIndeterminate` as a precondition.
+- **U1 combined-failure rollback hazard**: the existing
+  `restoreArchiveAfterUnarchiveFailure` rolls back on a DB-upsert failure; when
+  the restore write was indeterminate this would roll back a possibly-applied
+  write. U1 suppresses that rollback for the indeterminate case and surfaces
+  `errors.Join(ErrWriteIndeterminate, upsertErr)` (regression-tested).
+- **U5 injectability**: the events fsync seams are unexported in package `events`
+  and `core.AppendComment` is called directly, so Ship adds a package-`mcp`
+  `appendCommentFn` seam to make the outcome and retry-idempotency tests
+  implementable.
 - **Windows/POSIX seam**: dirent durability is best-effort on Windows; tests swap
   the package-global seams (no `t.Parallel`) to exercise POSIX ordering
   in-process on a Windows host.
@@ -307,8 +345,17 @@ Dependency edges to wire in the backlog: `U1 depends on U4`, `U2 depends on U4`
 - **Safety-First Go (NON-NEGOTIABLE)** — pass. All units are Go; errors wrap with
   `%w` and route through `blerrors` sentinels; no `unsafe`.
 - **Test-First Development (NON-NEGOTIABLE)** — pass. Every unit lands a failing
-  regression test (red) before implementation (green), using named existing
-  seams (U2 adds a small write seam mirroring `applyCrossRefWriteFn`).
+  regression test (red) before implementation (green). Most units use named
+  existing seams; U2 and U5 each add a small package-local write seam
+  (`persistArtifactWriteFn`, `appendCommentFn`) mirroring `applyCrossRefWriteFn`,
+  because no existing seam fires on their path.
+- **Task Granularity (2-Hour Rule, NON-NEGOTIABLE)** — pass. Each unit is a
+  single production file plus its colocated `_test.go`, one focused error-path
+  change, and ≤3 test scenarios (unchanged-behavior guards folded into the
+  primary cases), keeping every task within the ~2-hour budget and Width
+  Isolation (Go code + colocated test only). No task is split because each is
+  already a single cohesive function-level fix; no granularity deviation is
+  claimed.
 - **Workspace Isolation and Security Boundaries** — pass. All file operations stay
   within `.backlogit`; no new path construction escapes the workspace root; no
   secrets.

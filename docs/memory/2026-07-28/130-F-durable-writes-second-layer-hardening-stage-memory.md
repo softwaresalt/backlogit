@@ -32,10 +32,13 @@ active stash entries untouched (non-stageable from this workspace).
   - `130.003-T` U3 — re-attempt parent flush on durable append retry (`internal/events/stream.go`)
   - `130.004-T` U4 — re-fsync existing dir in core mkdirAllDurable durable retry (`internal/core/durable_fs.go`)
   - `130.005-T` U5 — map durability classes to explicit MCP append_comment outcomes (`internal/mcp/tools.go`)
-- Dependencies (`dep_type: blocks`): `130.001-T -> 130.004-T`, `130.002-T -> 130.004-T`
-  (U4 changes the shared `core.mkdirAllDurable` consumed at runtime by U1/U2).
+- Dependencies (`dep_type: blocks`): `130.001-T -> 130.004-T` only
+  (U1's `UnarchiveItem` consumes the shared `core.mkdirAllDurable` that U4
+  changes). U2 does NOT depend on U4 — its `persistArtifact(relocate=false)` path
+  returns before `mkdirAllDurable`. U2/U3/U5 have no upstream dependencies.
 - Shipment `111-S` (queued): items `[130-F, 130.004-T, 130.001-T, 130.002-T, 130.003-T, 130.005-T]`
-  (parent-first, dependency order: U4 upstream before U1/U2).
+  (parent-first; U4 sequenced before its only dependent U1; U2/U3/U5 are order-free
+  and their placement is a valid topological order).
 
 ## Plan-review (multi-agent-dispatch, 2 attempts)
 
@@ -64,9 +67,11 @@ active stash entries untouched (non-stageable from this workspace).
   never-roll-back / post-commit). Governing rule: commit-then-surface
   (`docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`).
 - Existing fault-injection seams per site: `replaceFileWriteFn` (U1),
-  atomicfile write seam / new `persistArtifact` seam (U2), `EventWriter.fsyncDirImpl`
-  (U3), `mkdirDirSyncEnabled`/`mkdirDirSyncFn` (U4), `append_comment_test.go` (U5).
-  Tests swapping package-global seams must NOT use `t.Parallel`.
+  a new package-core `persistArtifactWriteFn` seam (U2 — no existing seam fires on
+  the `relocate=false` path), `EventWriter.fsyncDirImpl` (U3),
+  `mkdirDirSyncEnabled`/`mkdirDirSyncFn` (U4), and a new package-`mcp`
+  `appendCommentFn` seam (U5 — events seams are unexported and `core.AppendComment`
+  is called directly). Tests swapping package-global seams must NOT use `t.Parallel`.
 - gofmt-on-Windows: verify formatting on LF-normalized BOM-free copies (CRLF +
   autocrlf flags ~96 files falsely).
 - Deferred follow-up (Ship to stash at closure): extract a shared durable-mkdir

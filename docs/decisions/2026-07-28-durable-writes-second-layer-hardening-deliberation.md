@@ -65,16 +65,21 @@ compound learning `docs/compound/2026-07-28-durable-writes-two-class-contract-co
   - AC1 archive restore write → `replaceFileWriteFn` seam
     (`internal/core/archive.go`; precedent test
     `archive_durable_write_test.go`).
-  - AC2 dependency callers → source-dir fsync routes through the
-    `mkdirDirSyncFn` package seam; the cross-ref indeterminate caller pattern is
-    already modelled in `artifact_references.go` (`applyCrossRefWriteFn`) with
-    `artifact_references_indeterminate_test.go` as the template.
+  - AC2 dependency callers → these call `persistArtifact(relocate=false)`, whose
+    path returns before both the source-dir fsync block and `mkdirAllDurable`, so
+    the `mkdirDirSyncFn` seam CANNOT fire. Ship adds a package-core
+    `persistArtifactWriteFn` seam wrapping `WriteArtifactFileWithOptions` (the only
+    durable write on that path), modelled on `artifact_references.go`
+    (`applyCrossRefWriteFn`) with `artifact_references_indeterminate_test.go` as
+    the template.
   - AC3 events append/mkdir → `EventWriter.fsyncDirImpl` / `fsyncFileImpl`
     seams (`stream_durable_test.go`).
   - AC4 core `mkdirAllDurable` → `mkdirDirSyncEnabled` / `mkdirDirSyncFn`
     package seams (`durable_fs_test.go`).
-  - AC5 MCP `handleAppendComment` → behavioural test surface in
-    `append_comment_test.go`.
+  - AC5 MCP `handleAppendComment` → the events fsync seams are unexported in
+    package `events` and `core.AppendComment` is called directly, so Ship adds a
+    package-`mcp` `appendCommentFn` seam (overridable in `append_comment_test.go`)
+    to inject the wrapped durability error.
 - Confirmed current locations (line numbers drift, verified by grep):
   - AC1 `UnarchiveItem` non-git branch — `internal/core/archive.go`
     (~L768 restore content write returns early on error).
@@ -102,10 +107,10 @@ Fix all five ACs in a single task/PR-sized unit.
 Decompose into five atomic tasks, each scoped to a single file plus its
 colocated test, each written test-first against the existing seam.
 
-- Pros: each task is <3 files, <5 functions, <4 test scenarios; single skill
-  domain (Go code + colocated test); atomic verifiable milestone (failing test
-  → passing test); the sites are largely independent so tasks parallelize and
-  bisect cleanly.
+- Pros: each task is a single file plus its colocated test, ≤3 test scenarios,
+  single skill domain (Go code + colocated test); atomic verifiable milestone
+  (failing test → passing test); the sites are largely independent so tasks
+  parallelize and bisect cleanly.
 - Cons: five review passes; minor contract-context repetition across tasks
   (mitigated by the plan citing the compound learning once).
 
@@ -144,9 +149,13 @@ compound learning. Post-mutation fsync failures are surfaced as
 `ErrWriteNotApplied` and are safe to retry; retry paths must re-attempt a
 previously failed parent flush rather than early-returning past it.
 
-The five sites are largely independent (confirmed during research): no
-execution-blocking dependencies are wired between them. AC3 and AC4 share a bug
-class but not a file, so they stay separate with no dependency edge.
+The five sites are largely independent (confirmed during research): the only
+execution-blocking edge is `U1 depends on U4` — `UnarchiveItem` (U1) calls the
+shared `core.mkdirAllDurable` that U4 changes. U2 does NOT depend on U4: its
+`persistArtifact(relocate=false)` path returns before `mkdirAllDurable` is
+reached. AC3 and AC4 share a bug class but not a file, so they stay separate with
+no dependency edge. Each task keeps ≤3 test scenarios, honoring the 2-Hour Rule
+NON-NEGOTIABLE granularity budget without any documented deviation.
 
 ## Rejected Alternatives
 
@@ -183,5 +192,14 @@ class but not a file, so they stay separate with no dependency edge.
 - Risk: retry double-applies (duplicate audit event / duplicate comment).
   Mitigation: AC3/AC5 tests assert event/comment count stays exactly one across
   a retry, mirroring `TestSizeSeam_*` idempotency assertions.
-- Risk: triple-gated paths are hard to reach in tests. Mitigation: every site
-  has a named existing seam; the plan cites each seam per task.
+- Risk: triple-gated paths are hard to reach in tests. Mitigation: most sites
+  have a named existing seam; AC2 (`persistArtifactWriteFn`) and AC5
+  (`appendCommentFn`) add a small package-local write seam so the failure is
+  injectable in-process.
+- Risk (AC1 combined failure, Copilot review): after an indeterminate restore
+  write, a subsequent DB-upsert failure currently invokes
+  `restoreArchiveAfterUnarchiveFailure`, which removes the restored file and
+  restores the archive copy — rolling back a possibly-applied write. Mitigation:
+  U1 suppresses that rollback when the restore write was indeterminate and
+  surfaces `errors.Join(ErrWriteIndeterminate, upsertErr)`; a regression test
+  covers the combined path.
