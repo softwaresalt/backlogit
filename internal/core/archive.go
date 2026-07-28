@@ -229,12 +229,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		if err := performArtifactMove(ctx, movePlan, "archive"); err != nil {
 			return nil, err
 		}
-		if err := replaceFile(archivePath, []byte(newContent)); err != nil {
+		if err := replaceFileWithOptions(ws, archivePath, []byte(newContent)); err != nil {
 			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), archivePath, raw, "archive content write")
 			return nil, fmt.Errorf("write archive file: %w", err)
 		}
 	} else {
-		if err := replaceFile(archivePath, []byte(newContent)); err != nil {
+		if err := replaceFileWithOptions(ws, archivePath, []byte(newContent)); err != nil {
 			return nil, fmt.Errorf("write archive file: %w", err)
 		}
 		// Only remove the source file when it differs from the archive destination.
@@ -468,11 +468,11 @@ func rollbackGitArtifactMoveWithReplace(rollbackPlan artifactMovePlan, currentPa
 	}
 }
 
-func restoreArchiveAfterUnarchiveFailure(archivePath, originalPath string, raw []byte, samePath bool) error {
+func restoreArchiveAfterUnarchiveFailure(ws *Workspace, archivePath, originalPath string, raw []byte, samePath bool) error {
 	if err := os.MkdirAll(filepath.Dir(archivePath), 0o755); err != nil {
 		return fmt.Errorf("create archive dir: %w", err)
 	}
-	if err := replaceFile(archivePath, raw); err != nil {
+	if err := replaceFileWithOptions(ws, archivePath, raw); err != nil {
 		return fmt.Errorf("restore archive file: %w", err)
 	}
 	if !samePath {
@@ -483,11 +483,28 @@ func restoreArchiveAfterUnarchiveFailure(archivePath, originalPath string, raw [
 	return nil
 }
 
-func replaceFile(targetPath string, content []byte) error {
-	if err := atomicfile.WriteFileAtomic(targetPath, content); err != nil {
+// replaceFileWriteFn is the atomic-write seam used by replaceFileWithOptions. It
+// is a package-global overridden by tests to observe the durable flag routed to
+// the low-level primitive.
+//
+// Must not run with t.Parallel: tests that swap this package-global seam read on
+// the production write path.
+var replaceFileWriteFn = atomicfile.WriteFileAtomicWithOptions
+
+// replaceFileWithOptions atomically writes content to targetPath, routing the
+// workspace's durable_writes preference into the low-level primitive so archive
+// and restore content writes are power-loss durable when the flag is enabled.
+func replaceFileWithOptions(ws *Workspace, targetPath string, content []byte) error {
+	if err := replaceFileWriteFn(targetPath, content, atomicfile.Options{DurableWrites: WorkspaceDurableWrites(ws)}); err != nil {
 		return fmt.Errorf("replace file %q: %w", targetPath, err)
 	}
 	return nil
+}
+
+// replaceFile is the durable-off wrapper retained for callers that hold no
+// workspace (best-effort git-rollback restores and focused tests).
+func replaceFile(targetPath string, content []byte) error {
+	return replaceFileWithOptions(nil, targetPath, content)
 }
 
 func runGitCommand(ctx context.Context, gitPath, workTreeRoot string, args ...string) ([]byte, error) {
@@ -741,12 +758,12 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		if err := performArtifactMove(ctx, movePlan, "restore"); err != nil {
 			return err
 		}
-		if err := replaceFile(originalPath, []byte(restored)); err != nil {
+		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
 			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
 			return fmt.Errorf("write restored file: %w", err)
 		}
 	} else {
-		if err := replaceFile(originalPath, []byte(restored)); err != nil {
+		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
 			return fmt.Errorf("write restored file: %w", err)
 		}
 		// Only remove the archive file when it differs from the restored path.
@@ -765,7 +782,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
 			if useGitMove {
 				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore DB rollback")
-			} else if rollbackErr := restoreArchiveAfterUnarchiveFailure(archivePath, originalPath, raw, samePath); rollbackErr != nil {
+			} else if rollbackErr := restoreArchiveAfterUnarchiveFailure(ws, archivePath, originalPath, raw, samePath); rollbackErr != nil {
 				slog.Error("unarchive: failed to restore archive file after DB error",
 					"archive_path", archivePath, "restore_path", originalPath, "error", rollbackErr)
 			}
