@@ -397,6 +397,20 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 			}
 			return fmt.Errorf("remove old artifact file: %w", err)
 		}
+		// Durable cross-directory move: WriteArtifactFileWithOptions already made
+		// the new dirent in the destination parent durable. Now fsync the SOURCE
+		// parent so the removal of the old entry is durable too; otherwise a POSIX
+		// power loss could resurrect the old dirent alongside the new one, leaving a
+		// duplicate canonical artifact. This runs BEFORE the sole DB upsert below,
+		// so surfacing ErrWriteIndeterminate here keeps the caller's error path
+		// consistent — the upsert does not run and no completed-move rollback is
+		// disturbed.
+		if srcDir := filepath.Dir(currentPath); srcDir != filepath.Dir(targetPath) {
+			if err := fsyncDirIfDurable(srcDir, WorkspaceDurableWrites(ws)); err != nil {
+				return fmt.Errorf("fsync source dir after move: %w",
+					fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err))
+			}
+		}
 	}
 	if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
 		if restoreErr := restorePersistedArtifactFiles(currentSnapshot, targetSnapshot, currentPath, targetPath); restoreErr != nil {

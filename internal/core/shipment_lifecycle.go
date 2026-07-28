@@ -731,6 +731,12 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 					return nil, fmt.Errorf("adopt item %s: remove old md: %w", oldID, rmErr)
 				}
 				renamedMD = true
+				// Durable same-directory rename: the artifact write fsynced the new
+				// dirent, but the old-ID entry was just removed afterward and that
+				// removal is not durable until the directory is fsynced again.
+				// Best-effort (this runs after the in-tx DB mutations / a completed
+				// file rename; surfacing an error would incorrectly roll it back).
+				durableSyncDir(ws, filepath.Dir(oldMDPath), "adopt md rename")
 			}
 		}
 
@@ -752,6 +758,10 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				return nil, fmt.Errorf("adopt item %s: rename log: %w", oldID, renameErr)
 			}
 			renamedLog = true
+			// Durable log rename: both the new and removed dirents live in logsDir;
+			// fsync it so the rename is durable. Best-effort for the same reason as
+			// the MD rename above.
+			durableSyncDir(ws, filepath.Dir(oldLogPath), "adopt log rename")
 		}
 
 		// Step 4: Commit the transaction now that all file ops succeeded.

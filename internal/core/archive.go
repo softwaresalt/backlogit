@@ -233,6 +233,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), archivePath, raw, "archive content write")
 			return nil, fmt.Errorf("write archive file: %w", err)
 		}
+		durableSyncMovedFromDir(ws, currentPath, archivePath, "archive git move")
 	} else {
 		if err := replaceFileWithOptions(ws, archivePath, []byte(newContent)); err != nil {
 			return nil, fmt.Errorf("write archive file: %w", err)
@@ -246,6 +247,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 				_ = os.Remove(archivePath)
 				return nil, fmt.Errorf("remove original: %w", err)
 			}
+			durableSyncMovedFromDir(ws, currentPath, archivePath, "archive")
 		}
 	}
 
@@ -762,6 +764,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
 			return fmt.Errorf("write restored file: %w", err)
 		}
+		durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive git move")
 	} else {
 		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
 			return fmt.Errorf("write restored file: %w", err)
@@ -774,6 +777,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 			if err := os.Remove(archivePath); err != nil {
 				return fmt.Errorf("remove archive file: %w", err)
 			}
+			durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive")
 		}
 	}
 
