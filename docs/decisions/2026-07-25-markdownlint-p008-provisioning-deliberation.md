@@ -1,6 +1,6 @@
 ---
 title: "Provision markdownlint tooling to make policy P-008 reproducible and CI-enforced"
-description: "Decision to provision a repo-wide markdownlint (MD001/MD025/MD041) gate — config (MD025 front_matter_title retargeted to a _title key), paired md-lint scripts, Makefile/make.ps1 targets, and a standalone repo-wide blocking CI job — plus a P-008 reconciliation, via doctor-to-compliance: the _title config dissolves 229 of 250 violations with zero edits and ~21 structural fixes bring the repo to 0 (stash B3D30415, deliberation 054-DL)."
+description: "Decision to provision a repo-wide markdownlint (MD001/MD025/MD041) gate — config (MD025 front_matter_title retargeted to a _title key), paired md-lint scripts, Makefile/make.ps1 targets, and a standalone repo-wide CI job that hard-fails CI — plus a P-008 reconciliation, via doctor-to-compliance: the _title config dissolves 229 of 250 violations with zero edits and ~21 structural fixes bring the repo to 0 (stash B3D30415, deliberation 054-DL)."
 source: docs/decisions/2026-07-25-markdownlint-p008-provisioning-deliberation.md
 doc_type: decision
 chunk_strategy: h1-h2-h3
@@ -212,9 +212,11 @@ not a scoping mechanism.
 4. **CI gate** — standalone repo-wide `md-lint` job in `.github/workflows/ci.yml`.
    No `needs`, no `if`, no path-filter — always runs. `permissions: contents: read`.
    SHA-pinned `actions/checkout` and `actions/setup-node` (node-version `"22"`, matching markdownlint-cli2@0.23.1 `engines.node: ">=22"`),
-   then `run: make md-lint`. The gate is **blocking/required** from the start (repo
-   is clean; the gate is blocking from the start). Registration as a branch-protection required check
-   is an external admin action tracked in follow-up stash `918BCDAF`.
+   then `run: make md-lint`. The `md-lint` job **hard-fails the CI run** from its
+   first run (the repo is already 0-violation repo-wide, so the job is green
+   day-one yet fails on any future regression). Making it a **required**
+   branch-protection status check is a separate external admin action tracked in
+   follow-up stash `918BCDAF`.
 5. **P-008 reconciliation + guard tests** —
    `tests/integration/markdownlint_gate_test.go` guards the config (exactly
    MD001/MD025/MD041 with the MD025 `_title` `front_matter_title` value) and that
@@ -236,13 +238,13 @@ not a scoping mechanism.
 - Registration of `md-lint` as a **required** branch-protection status check is an
   external admin action tracked as follow-up stash `918BCDAF`.
 - The 20 fixed SKILL.md files are generated from external autoharness templates not
-  present in this repo. The repo-wide required gate catches future regeneration
+  present in this repo. The repo-wide gate catches future regeneration
   drift, but an upstream template fix is tracked as a separate follow-up.
 
 ## Risks and Mitigations
 
 - **SKILL.md regeneration drift** — autoharness regeneration may reintroduce missing
-  leading `# H1` in SKILL.md files. Mitigation: the repo-wide required CI gate
+  leading `# H1` in SKILL.md files. Mitigation: the repo-wide CI gate
   catches this immediately; upstream template fix tracked as follow-up.
 - **New Node/npm dependency in a Go repo** (Single Responsibility, Principle VI) —
   justified: build/CI-time doc-lint tool only (no runtime/`go.mod` impact), invoked

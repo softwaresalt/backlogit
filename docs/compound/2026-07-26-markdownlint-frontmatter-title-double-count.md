@@ -99,7 +99,7 @@ Run the exact config repo-wide and confirm the counts move as predicted:
 | config + 21 structural fixes | 0 | 0 | 0 | **0 / 1839** |
 
 The 21 residuals were **genuine structural** violations, not config artifacts:
-20 `SKILL.md` files missing a leading `# H1` (MD041) and 1 H3→H4 heading skip
+20 `SKILL.md` files missing a leading `# H1` (MD041) and 1 H2→H4 heading skip
 (MD001). Those require real edits — see the auto-fix note below.
 
 ## Pitfalls
