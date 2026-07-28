@@ -134,8 +134,8 @@ func writeFileAtomic(path string, data []byte, durable bool, seams durableSeams)
 
 // notApplied wraps a pre-rename failure with the ErrWriteNotApplied class: the
 // destination is untouched, so the failed atomic write is safe to retry.
-func notApplied(context string, err error) error {
-	return fmt.Errorf("%s: %w", context,
+func notApplied(op string, err error) error {
+	return fmt.Errorf("%s: %w", op,
 		fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
 }
 
