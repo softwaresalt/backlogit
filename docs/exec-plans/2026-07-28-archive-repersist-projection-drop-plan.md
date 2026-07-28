@@ -86,14 +86,23 @@ This single seam produces both bugs:
   Stamping a
   shipment merge commit onto a pre-existing linked deliberation is semantically
   wrong, so the skip is a correctness fix, not merely a guard against the write
-  error. This unit is **independent** of Unit 2: it fixes the abort regardless of
-  the field-fidelity seam.
+  error. Unit 1 is **independent of Unit 2 for implementation**, but the two
+  interact at the test boundary: Unit 2's reload-from-Markdown would *also*
+  incidentally avoid the abort (by restoring provenance on re-persist), so Unit 1's
+  distinguishing value is the *skip semantics* (never stamp a pre-existing archived
+  deliberation), which its regression must prove via an unchanged-commit assertion —
+  see Tests below.
 - **Files**: `internal/core/shipment_lifecycle.go` (1 file, 1 function).
 - **Tests (test-first)**: new core regression test — build a shipment whose
   feature links an already-archived deliberation, run the ship/archive flow,
-  assert (a) ship completes without the provenance-guard error and (b) the
-  shipment manifest is archived. Write RED first (reproduce the abort), then
-  implement.
+  assert (a) ship completes without the provenance-guard error, (b) the
+  shipment manifest is archived, and (c) the already-archived deliberation's
+  pre-existing commit SHA and archive provenance (`archived_from`/
+  `archived_status`) are **unchanged** after ship — proving the deliberation was
+  skipped, not re-stamped/re-persisted. Assertion (c) is mandatory: without it
+  the test false-greens under Unit 2, whose reload-from-Markdown would let the
+  (semantically wrong) commit-stamp succeed while still stamping the deliberation.
+  Write RED first (reproduce the abort), then implement.
 - **Posture**: test-first. **Depends on**: none.
 
 ### Unit 2 (Task) — Reload from Markdown before re-persist so links + provenance survive (7A965F8A)
@@ -121,12 +130,15 @@ This single seam produces both bugs:
   newly-trusted field.
 - **Files**: `internal/core/shipment_lifecycle.go` (1 file; a small re-persist
   helper plus its call sites — target < 3 functions).
-- **Tests (test-first)**: new core regression test — an item carrying a
-  `spike_ref` link (and, for a second assertion, an archived item carrying
-  provenance) goes through the shipment/archive re-persist path; assert the
-  frontmatter `links` block still contains the `spike_ref` and archive
-  provenance survives after re-persist. Assert BOTH the populated and the
-  empty/nil-links cases to avoid the omitempty false-green
+- **Tests (test-first)**: new core regression test — a **stamped non-archived**
+  candidate carrying a `spike_ref` link goes through the shipment re-persist path;
+  assert the frontmatter `links` block still contains the `spike_ref` after
+  re-persist. This is the reachable seam: `attachCommitToItems` re-persists
+  non-archived members, while Unit 1 skips already-archived candidates — so a
+  "provenance survives re-persist" assertion on an already-archived deliberation
+  is unreachable once Unit 1 lands, and archive-provenance-unchanged on skipped
+  archived candidates is covered by Unit 1's assertion (c). Assert BOTH the
+  populated and the empty/nil-links cases to avoid the omitempty false-green
   (`docs/compound/2026-07-21-...`). Write RED first, then implement.
 - **Posture**: test-first. **Depends on**: none (independent of Unit 1;
   different concern in the same file — Ship should sequence them to avoid a merge

@@ -142,13 +142,23 @@ Decompose into **two independent** test-first tasks:
 1. **D04D63D0 correctness** — skip already-archived linked deliberations in the
    shipment archive flow so `attachCommitToItems` never re-persists a pre-existing
    archived deliberation; regression test asserts ship-with-linked-archived-
-   deliberation succeeds and archives the manifest.
+   deliberation succeeds, archives the manifest, AND asserts the archived
+   deliberation's pre-existing commit + provenance are **unchanged** (proving the
+   skip, not a re-stamp masked by task 2's reload).
 2. **7A965F8A correctness** — reload each candidate from Markdown before
    `persistArtifact` in the shipment re-persist seam so `item_links` (`spike_ref`)
-   and archive provenance survive for every stamped member; regression test
-   asserts frontmatter links + provenance survive (populated AND empty cases).
+   survive for every stamped member; regression test asserts frontmatter
+   `item_links` survive re-persist on a **stamped non-archived** candidate
+   (populated AND empty cases). Provenance-unchanged on already-archived
+   candidates is covered by task 1's skip (archived candidates are not
+   re-persisted), so task 2 does not assert provenance-survives-re-persist for an
+   archived deliberation — that path is unreachable once task 1 lands.
 
-The two tasks are independent (no dependency). Stage only plans; Ship implements.
+The two tasks are independent for implementation (no dependency edge), but they
+interact at the test boundary: task 2's reload would incidentally avoid task 1's
+abort, so task 1's regression must assert the archived deliberation's commit is
+unchanged (skip proven), and task 2's link test must target a reachable stamped
+non-archived candidate. Stage only plans; Ship implements.
 
 ## Rejected Alternatives
 
