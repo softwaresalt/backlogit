@@ -304,7 +304,7 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		CommitSHA: commitSHA,
 	}
 
-	writer := events.NewEventWriter(logsDir)
+	writer := NewWorkspaceEventWriter(ws, logsDir)
 	if err := writer.AppendEvent(ctx, event); err != nil {
 		slog.WarnContext(ctx, "append shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 		return

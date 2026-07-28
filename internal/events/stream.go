@@ -78,6 +78,11 @@ func LogPathForItem(logsDir, itemID string) string {
 	return filepath.Join(logsDir, itemID+".jsonl")
 }
 
+// Durable reports whether the writer fsyncs each append under the durable_writes
+// protocol. It is fixed at construction (WithDurableWrites) and never changes, so
+// callers and diagnostics can observe the writer's durability mode.
+func (w *EventWriter) Durable() bool { return w.durable }
+
 // AppendEvent marshals and appends an event to the item's JSONL log file. In
 // durable mode the append is fsynced (file + POSIX parent dir) before returning;
 // a partial write or a post-write file/dir fsync failure is surfaced as

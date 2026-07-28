@@ -73,7 +73,7 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	s := &Server{
 		RootPath:   rootPath,
 		Workspace:  ws,
-		Events:     events.NewEventWriter(logsDir),
+		Events:     core.NewWorkspaceEventWriter(ws, logsDir),
 		Telemetry:  events.NewTelemetryWriter(telemetryPath),
 		HookEvents: events.NewHookEventWriter(backlogitDir),
 	}

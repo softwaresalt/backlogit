@@ -272,7 +272,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
 	// Errors are logged for diagnosability, matching the pattern in commits.go.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	ew := events.NewEventWriter(logsDir)
+	ew := NewWorkspaceEventWriter(ws, logsDir)
 	event := events.Event{
 		Timestamp: time.Now(),
 		Actor:     "backlogit",

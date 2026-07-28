@@ -57,7 +57,7 @@ func appendItemEventWithActorErr(ctx context.Context, ws *Workspace, itemID, act
 		EventType: eventType,
 		Delta:     delta,
 	}
-	writer := events.NewEventWriter(logsDir)
+	writer := NewWorkspaceEventWriter(ws, logsDir)
 	if err := writer.AppendEvent(ctx, event); err != nil {
 		return fmt.Errorf("append gate evidence %s/%s: %w", itemID, eventType, err)
 	}
