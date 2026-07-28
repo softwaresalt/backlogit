@@ -126,45 +126,33 @@ func (w *EventWriter) appendFast(itemID string, data []byte) error {
 // appendDurable performs a fsync-backed append. Failures before any bytes are
 // written (mkdir/open) are ErrWriteNotApplied (nothing appended, safe to retry);
 // a partial write or post-write file/dir fsync failure is ErrWriteIndeterminate.
+// The file open/write/fsync/close is delegated to the shared fsutil append
+// primitive (syncAppendLineDetailed) so this item-log path cannot drift from the
+// hook-event queue path; the level-by-level durable mkdir and the post-append
+// logs-dir fsync below remain stream-specific.
 func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 	if err := w.mkdirAllDurable(w.logsDir); err != nil {
 		return fmt.Errorf("create logs dir: %w",
 			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
 	}
 	path := LogPathForItem(w.logsDir, itemID)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open item log file: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
-	}
 
 	line := make([]byte, 0, len(data)+1)
 	line = append(line, data...)
 	line = append(line, '\n')
 
-	n, writeErr := f.Write(line)
-	if writeErr == nil && n != len(line) {
-		writeErr = fmt.Errorf("short write: wrote %d of %d bytes", n, len(line))
-	}
-	syncErr := writeErr
-	if syncErr == nil {
-		syncErr = w.syncFile(f)
-	}
-	closeErr := f.Close()
-
-	// Any failure from here on is post-open: bytes may be partially written, so
-	// the outcome is indeterminate (an append is not atomic; do not blindly retry).
-	if writeErr != nil {
-		return fmt.Errorf("append event write: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, writeErr))
-	}
-	if syncErr != nil {
-		return fmt.Errorf("append event fsync file: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, syncErr))
-	}
-	if closeErr != nil {
-		return fmt.Errorf("append event close: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, closeErr))
+	res := syncAppendLineDetailed(path, line, w.syncFile)
+	if res.err != nil {
+		if res.preWrite {
+			// The open failed before any bytes were written: nothing was appended,
+			// so the failed append is safe to retry.
+			return fmt.Errorf("open item log file: %w",
+				fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, res.err))
+		}
+		// Bytes may be partially written or the fsync/close failed: an append is
+		// not atomic, so the outcome is indeterminate (do not blindly retry).
+		return fmt.Errorf("append event: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, res.err))
 	}
 	// Conservatively fsync the parent logs dir on every durable append so the
 	// (possibly new) log dirent is durable. POSIX only; Windows is best-effort.

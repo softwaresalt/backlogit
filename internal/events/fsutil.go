@@ -6,28 +6,59 @@ import (
 	"runtime"
 )
 
+// syncAppendResult classifies how a durable append terminated so callers can map
+// the outcome onto the two-class error contract: a pre-write open failure means
+// nothing was appended (safe to retry), while a partial write or a post-write
+// fsync/close failure is indeterminate because an append is not atomic.
+type syncAppendResult struct {
+	// preWrite is true when the failure occurred before any bytes could be
+	// written (the file open failed). It is meaningless when err is nil.
+	preWrite bool
+	// err is the terminating error, or nil on success.
+	err error
+}
+
+// syncAppendLineDetailed is the shared file-fsync append primitive: it opens path
+// with O_CREATE|O_APPEND|O_WRONLY, writes data, fsyncs (via syncFile, defaulting
+// to f.Sync()), then closes, returning a classified result. Both the hook-event
+// queue path (syncAppendLine) and the item-log path (EventWriter.appendDurable)
+// funnel through it so the two append implementations cannot drift.
+func syncAppendLineDetailed(path string, data []byte, syncFile func(*os.File) error) syncAppendResult {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return syncAppendResult{preWrite: true, err: fmt.Errorf("open %s: %w", path, err)}
+	}
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = fmt.Errorf("short write %s: wrote %d of %d bytes", path, n, len(data))
+	}
+	syncErr := writeErr
+	if syncErr == nil {
+		if syncFile != nil {
+			syncErr = syncFile(f)
+		} else {
+			syncErr = f.Sync()
+		}
+	}
+	closeErr := f.Close()
+	if writeErr != nil {
+		return syncAppendResult{err: fmt.Errorf("write %s: %w", path, writeErr)}
+	}
+	if syncErr != nil {
+		return syncAppendResult{err: fmt.Errorf("sync %s: %w", path, syncErr)}
+	}
+	if closeErr != nil {
+		return syncAppendResult{err: fmt.Errorf("close %s: %w", path, closeErr)}
+	}
+	return syncAppendResult{}
+}
+
 // syncAppendLine opens path with O_CREATE|O_APPEND|O_WRONLY, writes data,
 // calls Sync(), then closes. Ensures write durability before returning.
 // Used for append-only JSONL queue files where each line must be durable.
 func syncAppendLine(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("syncAppendLine open %s: %w", path, err)
-	}
-	n, writeErr := f.Write(data)
-	if writeErr == nil && n != len(data) {
-		writeErr = fmt.Errorf("syncAppendLine short write %s: wrote %d of %d bytes", path, n, len(data))
-	}
-	syncErr := f.Sync()
-	closeErr := f.Close()
-	if writeErr != nil {
-		return fmt.Errorf("syncAppendLine write %s: %w", path, writeErr)
-	}
-	if syncErr != nil {
-		return fmt.Errorf("syncAppendLine sync %s: %w", path, syncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("syncAppendLine close %s: %w", path, closeErr)
+	if res := syncAppendLineDetailed(path, data, nil); res.err != nil {
+		return fmt.Errorf("syncAppendLine %s: %w", path, res.err)
 	}
 	return nil
 }
