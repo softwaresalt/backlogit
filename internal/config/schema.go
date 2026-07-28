@@ -29,6 +29,13 @@ type WorkspaceConfig struct {
 	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
 	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
 	Telemetry           *TelemetryConfig               `yaml:"telemetry,omitempty"`
+	// DurableWrites opts the workspace into the durable_writes fsync protocol
+	// (123-F): when true, the shared write primitives fsync file content and
+	// (on POSIX) the parent directory so a crash/power-loss cannot lose a
+	// just-written canonical artifact or event. It defaults to false so existing
+	// workspaces keep the fast, sync-free write path; omitempty keeps a false
+	// flag out of serialized YAML so existing configs stay byte-unchanged.
+	DurableWrites bool `yaml:"durable_writes,omitempty"`
 }
 
 // TelemetryConfig holds workspace-scoped telemetry settings.

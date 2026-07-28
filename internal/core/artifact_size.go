@@ -38,6 +38,40 @@ type SizeMutation struct {
 	Actor          ActorContext
 }
 
+// sizeSeamAtomicWrite is the injectable atomic-write seam for the size mutation.
+// It defaults to the durable primitive; tests override it to induce a
+// first-attempt ErrWriteNotApplied (asserting the scoped retry writes exactly
+// once more without re-appending the audit event) or an ErrWriteIndeterminate
+// (asserting it is surfaced, never retried). It is the production wiring in the
+// default case.
+var sizeSeamAtomicWrite = func(path string, data []byte, durable bool) error {
+	return atomicfile.WriteFileAtomicWithOptions(path, data, atomicfile.Options{DurableWrites: durable})
+}
+
+// writeSizeSeamDurable performs the size seam's artifact write with a single
+// retry SCOPED TO THE ATOMIC WRITE (never the composite event-then-write op).
+// Because the estimate-history audit event is appended BEFORE this write,
+// re-running the whole op would double-append the event; instead an
+// ErrWriteNotApplied (the write definitely did not apply, destination untouched)
+// is retried once here with the already-encoded bytes under the still-held lock,
+// keeping the audit-event count exactly one. An ErrWriteIndeterminate (the file
+// may already be replaced) is NOT retried: it is surfaced so the caller records a
+// possibly-committed mutation, relying on the durable-frontmatter-source-of-truth
+// and advisory-events-ignored-on-read invariants (no reconciliation engine).
+func writeSizeSeamDurable(path string, data []byte, durable bool) error {
+	err := sizeSeamAtomicWrite(path, data, durable)
+	if err == nil {
+		return nil
+	}
+	if blerrors.IsWriteNotApplied(err) {
+		// The destination is untouched; a single retry of the atomic write is safe
+		// and does not re-append the audit event.
+		return sizeSeamAtomicWrite(path, data, durable)
+	}
+	// ErrWriteIndeterminate or any other error: do not blindly retry.
+	return err
+}
+
 // SetArtifactSize sets the logical `size` field on an artifact via the typed
 // provenance seam. It is a thin compatibility wrapper that constructs a
 // provenance-free SizeMutation (human actor context) and delegates to
@@ -162,7 +196,7 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 	if err != nil {
 		return nil, fmt.Errorf("encode artifact %s: %w", id, err)
 	}
-	if err := atomicfile.WriteFileAtomic(ioPath, out); err != nil {
+	if err := writeSizeSeamDurable(ioPath, out, WorkspaceDurableWrites(ws)); err != nil {
 		return nil, fmt.Errorf("write artifact %s: %w", id, err)
 	}
 

@@ -6,6 +6,7 @@ package events
 // functions directly.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestSyncAppendLineDetailed_ClassifiesOpenVsPostWrite proves the shared append
+// primitive (reused by both syncAppendLine and EventWriter.appendDurable)
+// distinguishes a pre-write open failure from a post-write fsync failure so the
+// two-class error contract can be mapped consistently at both call sites.
+func TestSyncAppendLineDetailed_ClassifiesOpenVsPostWrite(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-write: open fails because the parent directory is missing.
+	res := syncAppendLineDetailed(filepath.Join(dir, "no_such_dir", "f.jsonl"), []byte("x\n"), nil)
+	require.Error(t, res.err)
+	assert.True(t, res.preWrite, "an open failure must be classified as a pre-write failure")
+
+	// Post-write: the write succeeds but the injected fsync fails.
+	path := filepath.Join(dir, "f.jsonl")
+	res2 := syncAppendLineDetailed(path, []byte("x\n"), func(*os.File) error {
+		return errors.New("simulated fsync failure")
+	})
+	require.Error(t, res2.err)
+	assert.False(t, res2.preWrite, "a post-write fsync failure must not be classified as pre-write")
+
+	// Success path returns a zero-value result.
+	res3 := syncAppendLineDetailed(path, []byte("y\n"), nil)
+	require.NoError(t, res3.err)
+	assert.False(t, res3.preWrite)
+}
 
 // ---- syncAppendLine ----------------------------------------------------------
 

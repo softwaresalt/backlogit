@@ -146,6 +146,16 @@ func findCrossArtifactReferences(
 	return updates, nil
 }
 
+// applyCrossRefWriteFn is the artifact-write seam used by
+// applyCrossArtifactRewrites. It is a package-global overridden by tests to
+// simulate an ErrWriteIndeterminate outcome (the file was mutated on disk but
+// the durability flush failed) so the rollback path can be exercised
+// deterministically.
+//
+// Must not run with t.Parallel: tests that swap this package-global seam read on
+// the production write path.
+var applyCrossRefWriteFn = WriteArtifactFileWithOptions
+
 // applyCrossArtifactRewrites applies a batch of cross-artifact reference
 // updates inside the provided transaction. For each update it:
 //
@@ -160,7 +170,7 @@ func findCrossArtifactReferences(
 func applyCrossArtifactRewrites(
 	ctx context.Context,
 	tx *sql.Tx,
-	_ *Workspace,
+	ws *Workspace,
 	updates []crossRefUpdate,
 ) error {
 	if len(updates) == 0 {
@@ -197,7 +207,14 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: file is read-only: %s",
 				u.artifact.ID, u.filePath)
 		}
-		if writeErr := WriteArtifactFile(u.artifact, u.filePath); writeErr != nil {
+		if writeErr := applyCrossRefWriteFn(u.artifact, u.filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
+			// The failing write itself may have already mutated u.filePath: under
+			// ErrWriteIndeterminate the rename committed before the durability flush
+			// failed, so the file on disk is possibly-changed. Include u in the
+			// rollback set so its snapshot is restored. This is correct for both
+			// error classes — under ErrWriteNotApplied the destination is untouched,
+			// so restoring the identical snapshot is a harmless no-op.
+			written = append(written, u)
 			restoreWritten()
 			return fmt.Errorf("apply cross-artifact rewrite for %s: %w", u.artifact.ID, writeErr)
 		}

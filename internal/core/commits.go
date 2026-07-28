@@ -35,7 +35,7 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 
 	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	ew := events.NewEventWriter(logsDir)
+	ew := NewWorkspaceEventWriter(ws, logsDir)
 	event := events.Event{
 		Timestamp: time.Now(),
 		Actor:     "backlogit",
@@ -79,7 +79,7 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, itemID, actor, comment, commitSHA string) error {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	if ew == nil {
-		ew = events.NewEventWriter(logsDir)
+		ew = NewWorkspaceEventWriter(ws, logsDir)
 	}
 	event := events.Event{
 		Actor:     actor,

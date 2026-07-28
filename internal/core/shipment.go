@@ -304,7 +304,7 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		CommitSHA: commitSHA,
 	}
 
-	writer := events.NewEventWriter(logsDir)
+	writer := NewWorkspaceEventWriter(ws, logsDir)
 	if err := writer.AppendEvent(ctx, event); err != nil {
 		slog.WarnContext(ctx, "append shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 		return
@@ -386,7 +386,7 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
 	}
-	if err := WriteArtifactFile(artifact, targetPath); err != nil {
+	if err := WriteArtifactFileWithOptions(artifact, targetPath, WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	if currentPath != targetPath {
@@ -396,6 +396,20 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 				return fmt.Errorf("remove old artifact file: %w; cleanup new artifact file: %v", err, cleanupErr)
 			}
 			return fmt.Errorf("remove old artifact file: %w", err)
+		}
+		// Durable cross-directory move: WriteArtifactFileWithOptions already made
+		// the new dirent in the destination parent durable. Now fsync the SOURCE
+		// parent so the removal of the old entry is durable too; otherwise a POSIX
+		// power loss could resurrect the old dirent alongside the new one, leaving a
+		// duplicate canonical artifact. This runs BEFORE the sole DB upsert below,
+		// so surfacing ErrWriteIndeterminate here keeps the caller's error path
+		// consistent — the upsert does not run and no completed-move rollback is
+		// disturbed.
+		if srcDir := filepath.Dir(currentPath); srcDir != filepath.Dir(targetPath) {
+			if err := fsyncDirIfDurable(srcDir, WorkspaceDurableWrites(ws)); err != nil {
+				return fmt.Errorf("fsync source dir after move: %w",
+					fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err))
+			}
 		}
 	}
 	if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
@@ -432,7 +446,7 @@ func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *m
 	}
 
 	targetDirAbs := filepath.Join(backlogitDir, targetDir)
-	if err := os.MkdirAll(targetDirAbs, 0o755); err != nil {
+	if err := mkdirAllDurable(targetDirAbs, WorkspaceDurableWrites(ws)); err != nil {
 		return "", "", fmt.Errorf("create directory %s: %w", targetDirAbs, err)
 	}
 	targetPath := filepath.Join(targetDirAbs, filepath.Base(currentPath))

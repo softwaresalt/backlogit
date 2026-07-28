@@ -73,7 +73,7 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	s := &Server{
 		RootPath:   rootPath,
 		Workspace:  ws,
-		Events:     events.NewEventWriter(logsDir),
+		Events:     core.NewWorkspaceEventWriter(ws, logsDir),
 		Telemetry:  events.NewTelemetryWriter(telemetryPath),
 		HookEvents: events.NewHookEventWriter(backlogitDir),
 	}
@@ -152,6 +152,15 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	}
 	s.Workspace = ws
 	s.refreshTemplateService(ctx)
+
+	// Rebuild the shared event writer now that the workspace (and its
+	// durable_writes config) is known. The server may have been constructed
+	// with ws=nil (NewServerForRoot), which yields a durable-off writer; the
+	// production append paths (move_item, append_comment) read s.Events only
+	// after funneling through requireWorkspace→ensureWorkspace under
+	// workspaceMu, so this single rebuild happens-before every reader.
+	logsDir := filepath.Join(s.backlogitDir(), "logs")
+	s.Events = core.NewWorkspaceEventWriter(ws, logsDir)
 
 	// Populate the manifest baseline so the first backlogit_merge_sync call
 	// can compute a real diff instead of treating every file as added.
