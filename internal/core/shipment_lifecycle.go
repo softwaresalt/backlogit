@@ -343,32 +343,29 @@ func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, c
 		return nil
 	}
 	for _, itemID := range uniqueNonEmptyStrings(itemIDs) {
-		// Use the DB fast-path for the archived-status check only (read-only;
-		// keeps the DB cache-vs-source-of-truth boundary crisp per P3 advisory).
-		statusCheck, err := loadArtifact(ctx, ws, itemID)
+		// Load from Markdown (source of truth): one authoritative read for
+		// both the archived-status guard and the mutate-then-persist operation.
+		// The DB fast-path carries neither item_links (stored in the separate
+		// item_links table) nor archive provenance (unindexed), so using it
+		// would drop those fields on re-persist and could give a stale status
+		// on the archived-skip guard when the index has not been rehydrated.
+		artifact, err := findArtifact(ctx, ws, itemID)
 		if err != nil {
-			return fmt.Errorf("load item %s for commit link: %w", itemID, err)
-		}
-		// 129.001-T: skip already-archived items — stamping a new shipment commit
-		// on a pre-existing archived artifact is semantically wrong (the artifact
-		// belonged to an earlier shipment), and the write-boundary guard would
-		// refuse the re-persist without provenance anyway.
-		if statusCheck.Status == models.StatusArchived {
-			continue
-		}
-		// 129.002-T: reload from Markdown (source of truth) before re-persist so
-		// item_links and archive provenance survive the rewrite. The DB fast-path
-		// carries neither links (stored in the separate item_links table) nor
-		// archive provenance (unindexed), so using it directly would drop those
-		// fields on every stamped candidate. Mirrors the MoveInQueue /
-		// serializer_provenance_hardening precedent.
-		artifact, reloadErr := findArtifact(ctx, ws, itemID)
-		if reloadErr != nil {
-			if errors.Is(reloadErr, blerrors.ErrNotFound) {
+			if errors.Is(err, blerrors.ErrNotFound) {
 				return fmt.Errorf("reload item %s from markdown: %w", itemID, blerrors.ErrNotFound)
 			}
-			return fmt.Errorf("reload item %s from markdown: %w", itemID, reloadErr)
+			return fmt.Errorf("reload item %s from markdown: %w", itemID, err)
 		}
+		// 129.001-T: skip already-archived items — stamping a new shipment
+		// commit on a pre-existing archived artifact is semantically wrong
+		// (the artifact belonged to an earlier shipment), and the write-
+		// boundary guard would refuse the re-persist without provenance anyway.
+		if artifact.Status == models.StatusArchived {
+			continue
+		}
+		// 129.002-T: the Markdown-loaded artifact carries item_links and
+		// archive provenance; set commit and persist it so those fields survive
+		// the rewrite (mirrors the MoveInQueue / serializer_provenance precedent).
 		artifact.Commit = commit.SHA
 		artifact.UpdatedAt = models.NowUTC()
 		if err := persistArtifact(ctx, ws, artifact, false); err != nil {
