@@ -11,6 +11,7 @@ import (
 	"time"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/fsutil"
 )
 
 // EventEstimateHistory records size/provenance mutation audit entries.
@@ -131,11 +132,17 @@ func (w *EventWriter) appendFast(itemID string, data []byte) error {
 // hook-event queue path; the level-by-level durable mkdir and the post-append
 // logs-dir fsync below remain stream-specific.
 //
-// Parent-dir durability is re-confirmed inside mkdirAllDurable (pre-write) so
+// Parent-dir durability is re-confirmed inside MkdirAllDurable (pre-write) so
 // a repeated parent-fsync failure remains ErrWriteNotApplied and does not
 // accumulate duplicate log entries across retries.
 func (w *EventWriter) appendDurable(itemID string, data []byte) error {
-	if err := w.mkdirAllDurable(w.logsDir); err != nil {
+	syncDir := func(path string) error {
+		if w.fsyncDirImpl != nil {
+			return w.fsyncDirImpl(path)
+		}
+		return fsutil.FsyncDir(path)
+	}
+	if err := fsutil.MkdirAllDurable(w.logsDir, true, w.dirSyncEnabled, syncDir); err != nil {
 		return fmt.Errorf("create logs dir: %w",
 			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
 	}
@@ -167,48 +174,6 @@ func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 	return nil
 }
 
-// mkdirAllDurable creates any missing ancestors of dir and, on POSIX, fsyncs
-// each newly created directory's parent so the new dirent is durable. When dir
-// already exists, re-fsyncs its parent to confirm dirent durability after a
-// possible prior incomplete attempt (the caller wraps any error with
-// ErrWriteNotApplied so a parent re-confirm failure is a safe-retry, not
-// ErrWriteIndeterminate).
-func (w *EventWriter) mkdirAllDurable(dir string) error {
-	if _, err := os.Stat(dir); err == nil {
-		// Dir already exists. Re-fsync its parent to confirm dirent durability
-		// before the write; the caller wraps this error with ErrWriteNotApplied.
-		return w.syncDirIfEnabled(filepath.Dir(dir))
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat %s: %w", dir, err)
-	}
-	var missing []string
-	cur := dir
-	for {
-		if _, err := os.Stat(cur); err == nil {
-			break
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("stat %s: %w", cur, err)
-		}
-		missing = append(missing, cur)
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
-		}
-		cur = parent
-	}
-	// Create shallowest-first so each parent already exists when its child lands.
-	for i := len(missing) - 1; i >= 0; i-- {
-		d := missing[i]
-		if err := os.Mkdir(d, 0o755); err != nil && !os.IsExist(err) {
-			return fmt.Errorf("mkdir %s: %w", d, err)
-		}
-		if err := w.syncDirIfEnabled(filepath.Dir(d)); err != nil {
-			return fmt.Errorf("fsync parent of %s: %w", d, err)
-		}
-	}
-	return nil
-}
-
 // syncFile fsyncs f through the injectable seam (defaulting to f.Sync()).
 func (w *EventWriter) syncFile(f *os.File) error {
 	if w.fsyncFileImpl != nil {
@@ -226,23 +191,5 @@ func (w *EventWriter) syncDirIfEnabled(path string) error {
 	if w.fsyncDirImpl != nil {
 		return w.fsyncDirImpl(path)
 	}
-	return fsyncDir(path)
-}
-
-// fsyncDir opens the directory at path and fsyncs its handle so a rename or new
-// dirent within it is durable. POSIX-only; callers gate on dirSyncEnabled.
-func fsyncDir(path string) error {
-	d, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open dir %s: %w", path, err)
-	}
-	syncErr := d.Sync()
-	closeErr := d.Close()
-	if syncErr != nil {
-		return fmt.Errorf("fsync dir %s: %w", path, syncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close dir %s: %w", path, closeErr)
-	}
-	return nil
+	return fsutil.FsyncDir(path)
 }

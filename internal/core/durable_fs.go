@@ -3,11 +3,11 @@ package core
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"runtime"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/fsutil"
 )
 
 // mkdirDirSyncEnabled gates whether mkdirAllDurable fsyncs the parent of each
@@ -25,7 +25,7 @@ var mkdirDirSyncEnabled = runtime.GOOS != "windows"
 //
 // Must not run with t.Parallel: tests that swap this seam read on the production
 // write path.
-var mkdirDirSyncFn = fsyncDirCore
+var mkdirDirSyncFn = fsutil.FsyncDir
 
 // mkdirAllDurable creates dir and any missing ancestors. When durable is false it
 // is exactly os.MkdirAll. When durable is true it creates the missing ancestors
@@ -36,61 +36,13 @@ var mkdirDirSyncFn = fsyncDirCore
 // (returns ErrWriteNotApplied on failure: the dir is already present, no new write
 // is in flight). Existing ancestors are left untouched; Windows dirent durability
 // is best-effort (the fsync is skipped).
+//
+// The implementation delegates to fsutil.MkdirAllDurable (the shared stdlib leaf)
+// and wraps any non-nil result with ErrWriteNotApplied at this boundary: every
+// fsutil failure is pre-write and retry-idempotent (D1/D3 design decisions).
 func mkdirAllDurable(dir string, durable bool) error {
-	if !durable {
-		return os.MkdirAll(dir, 0o755)
-	}
-	if _, err := os.Stat(dir); err == nil {
-		// Dir already exists. On a durable retry the previous attempt may have
-		// created the dir but failed to fsync its parent; re-confirm dirent
-		// durability now. ErrWriteNotApplied: no new write is in flight.
-		if mkdirDirSyncEnabled {
-			if fsyncErr := mkdirDirSyncFn(filepath.Dir(dir)); fsyncErr != nil {
-				return fmt.Errorf("fsync parent of existing %s: %w: %w", dir, blerrors.ErrWriteNotApplied, fsyncErr)
-			}
-		}
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat %s: %w", dir, err)
-	}
-	// Collect the missing ancestors, deepest-first.
-	var missing []string
-	cur := dir
-	for {
-		if _, err := os.Stat(cur); err == nil {
-			break
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("stat %s: %w", cur, err)
-		}
-		missing = append(missing, cur)
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
-		}
-		cur = parent
-	}
-	// Re-confirm the first existing ancestor's dirent durability: a prior attempt
-	// may have created `cur` itself but failed to fsync its parent (filepath.Dir(cur)),
-	// leaving the new dirent uncommitted. ErrWriteNotApplied: no new write yet.
-	if mkdirDirSyncEnabled {
-		if parentOfAncestor := filepath.Dir(cur); parentOfAncestor != cur {
-			if fsyncErr := mkdirDirSyncFn(parentOfAncestor); fsyncErr != nil {
-				return fmt.Errorf("fsync parent of first existing ancestor %s: %w: %w", cur, blerrors.ErrWriteNotApplied, fsyncErr)
-			}
-		}
-	}
-	// Create shallowest-first so each parent exists when its child lands, and
-	// fsync each new directory's parent so the new dirent is durable (POSIX).
-	for i := len(missing) - 1; i >= 0; i-- {
-		d := missing[i]
-		if err := os.Mkdir(d, 0o755); err != nil && !os.IsExist(err) {
-			return fmt.Errorf("mkdir %s: %w", d, err)
-		}
-		if mkdirDirSyncEnabled {
-			if err := mkdirDirSyncFn(filepath.Dir(d)); err != nil {
-				return fmt.Errorf("fsync parent of %s: %w: %w", d, blerrors.ErrWriteNotApplied, err)
-			}
-		}
+	if err := fsutil.MkdirAllDurable(dir, durable, mkdirDirSyncEnabled, mkdirDirSyncFn); err != nil {
+		return fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err)
 	}
 	return nil
 }
@@ -148,24 +100,6 @@ func durableSyncMovedFromDir(ws *Workspace, srcPath, dstPath, op string) {
 func fsyncDirIfDurable(dir string, durable bool) error {
 	if durable && mkdirDirSyncEnabled {
 		return mkdirDirSyncFn(dir)
-	}
-	return nil
-}
-
-// fsyncDirCore opens the directory at path and fsyncs its handle so a new dirent
-// within it is durable. POSIX-only; callers gate on mkdirDirSyncEnabled.
-func fsyncDirCore(path string) error {
-	d, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open dir %s: %w", path, err)
-	}
-	syncErr := d.Sync()
-	closeErr := d.Close()
-	if syncErr != nil {
-		return fmt.Errorf("fsync dir %s: %w", path, syncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close dir %s: %w", path, closeErr)
 	}
 	return nil
 }
