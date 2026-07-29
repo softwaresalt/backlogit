@@ -754,6 +754,7 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		return fmt.Errorf("plan restore move: %w", err)
 	}
 	useGitMove := !samePath && movePlan.kind == artifactMoveGit
+	writeWasIndeterminate := false
 	if useGitMove {
 		// git mv stages the archive->queue rename; the restored frontmatter update
 		// remains unstaged for the caller's normal commit flow.
@@ -761,13 +762,22 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 			return err
 		}
 		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
-			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
-			return fmt.Errorf("write restored file: %w", err)
+			if blerrors.IsWriteIndeterminate(err) {
+				// The rename committed — do NOT roll back a possibly-applied write.
+				writeWasIndeterminate = true
+			} else {
+				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
+				return fmt.Errorf("write restored file: %w", err)
+			}
 		}
-		durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive git move")
+		if !writeWasIndeterminate {
+			durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive git move")
+		}
 	} else {
-		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
-			return fmt.Errorf("write restored file: %w", err)
+		writeErr := replaceFileWithOptions(ws, originalPath, []byte(restored))
+		writeWasIndeterminate = blerrors.IsWriteIndeterminate(writeErr)
+		if writeErr != nil && !writeWasIndeterminate {
+			return fmt.Errorf("write restored file: %w", writeErr)
 		}
 		// Only remove the archive file when it differs from the restored path.
 		// When archived_from stored an archive-dir path (because the file was already
@@ -784,7 +794,12 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
 	if err == nil {
 		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
-			if useGitMove {
+			if writeWasIndeterminate {
+				// Either branch: the restore write was indeterminate (rename committed,
+				// outcome uncertain). Do NOT rollback — would violate the
+				// never-roll-back-indeterminate invariant. Surface both errors.
+				return fmt.Errorf("sync unarchive state: %w", errors.Join(blerrors.ErrWriteIndeterminate, upsertErr))
+			} else if useGitMove {
 				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore DB rollback")
 			} else if rollbackErr := restoreArchiveAfterUnarchiveFailure(ws, archivePath, originalPath, raw, samePath); rollbackErr != nil {
 				slog.Error("unarchive: failed to restore archive file after DB error",
@@ -792,6 +807,13 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 			}
 			return fmt.Errorf("sync unarchive state: %w", upsertErr)
 		}
+	}
+	// Restore write was indeterminate: the file is likely at originalPath but
+	// parent-fsync durability was not confirmed. Surface ErrWriteIndeterminate so
+	// the caller can reconcile. The archive copy has been removed and the DB row is
+	// present (commit-then-surface invariant).
+	if writeWasIndeterminate {
+		return fmt.Errorf("restore write outcome uncertain: %w", blerrors.ErrWriteIndeterminate)
 	}
 	return nil
 }

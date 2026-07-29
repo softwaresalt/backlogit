@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -137,7 +138,35 @@ func marshalGateError(body map[string]any) *mcplib.CallToolResult {
 	return mcplib.NewToolResultError(string(data))
 }
 
-// gatePassResult augments a successful gated completion with the gate outcome
+// durabilityOutcomeResult maps a durable-write error to a structured MCP error
+// result with an explicit, machine-readable durability class. It is used by
+// handleAppendComment (and any future durable-write callers) to distinguish
+// ErrWriteNotApplied (safe to retry) from ErrWriteIndeterminate (do not retry —
+// the write may have committed, duplicating would be wrong).
+//
+// Evaluation order: IsWriteNotApplied is checked before IsWriteIndeterminate
+// because the two classes are mutually exclusive and not-applied is the more
+// common safe-retry path.
+func durabilityOutcomeResult(op string, err error) *mcplib.CallToolResult {
+	var errType string
+	var retryable bool
+	switch {
+	case corerrors.IsWriteNotApplied(err):
+		errType = "write_not_applied"
+		retryable = true
+	case corerrors.IsWriteIndeterminate(err):
+		errType = "write_indeterminate"
+		retryable = false
+	default:
+		return nil
+	}
+	return marshalGateError(map[string]any{
+		"error":     errType,
+		"message":   fmt.Sprintf("%s: %v", op, err),
+		"retryable": retryable,
+	})
+}
+
 // contract so a machine caller receives gate_report_hash/head_sha and the
 // authoritative post-transition status alongside the artifact. Non-gated
 // completions (outcome == nil) are rendered by the caller via toolResultJSON.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // AddDependency adds a dependency edge from itemID to dependsOn and persists it
@@ -44,7 +45,18 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 
 	artifact.Dependencies = append(artifact.Dependencies, dependsOn)
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
+		// ErrWriteIndeterminate: the MD write committed (rename applied) but fsync
+		// failed — the dependency is likely persisted. Do NOT roll back the DB edge;
+		// rolling it back would diverge the index from the (likely-written) MD.
+		// Reconcile the stale items.dependencies column so DB-fast-path mutations
+		// see the correct dependency list; join any upsert error with the durability error.
+		if !blerrors.IsWriteIndeterminate(err) {
+			_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
+		} else {
+			if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+				err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
+			}
+		}
 		return fmt.Errorf("persist dependency %s->%s to frontmatter: %w", itemID, dependsOn, err)
 	}
 	return nil
@@ -98,7 +110,18 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 
 	artifact.Dependencies = filtered
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		restoreCacheEdge()
+		// ErrWriteIndeterminate: the MD write committed but fsync failed — the
+		// removal is likely persisted. Do NOT restore the cache edge; restoring it
+		// would diverge the index from the (likely-updated) MD.
+		// Reconcile the stale items.dependencies column so a subsequent Rehydrate
+		// does not incorrectly restore the removed edge.
+		if !blerrors.IsWriteIndeterminate(err) {
+			restoreCacheEdge()
+		} else {
+			if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+				err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
+			}
+		}
 		return fmt.Errorf("persist dependency removal %s->%s to frontmatter: %w", itemID, dependsOn, err)
 	}
 	return nil

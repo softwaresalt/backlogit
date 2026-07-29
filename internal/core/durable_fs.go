@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // mkdirDirSyncEnabled gates whether mkdirAllDurable fsyncs the parent of each
@@ -28,14 +30,25 @@ var mkdirDirSyncFn = fsyncDirCore
 // mkdirAllDurable creates dir and any missing ancestors. When durable is false it
 // is exactly os.MkdirAll. When durable is true it creates the missing ancestors
 // shallowest-first and, on POSIX, fsyncs each newly created directory's parent so
-// the new dirent survives power loss (mirroring the U5 events level-by-level
-// durable-mkdir). Existing ancestors are left untouched; Windows dirent
-// durability is best-effort (the fsync is skipped).
+// the new dirent survives power loss (mirroring the U3 events level-by-level
+// durable-mkdir). When dir already exists and durable is true, the parent is
+// re-fsynced to confirm dirent durability after a possible prior incomplete attempt
+// (returns ErrWriteNotApplied on failure: the dir is already present, no new write
+// is in flight). Existing ancestors are left untouched; Windows dirent durability
+// is best-effort (the fsync is skipped).
 func mkdirAllDurable(dir string, durable bool) error {
 	if !durable {
 		return os.MkdirAll(dir, 0o755)
 	}
 	if _, err := os.Stat(dir); err == nil {
+		// Dir already exists. On a durable retry the previous attempt may have
+		// created the dir but failed to fsync its parent; re-confirm dirent
+		// durability now. ErrWriteNotApplied: no new write is in flight.
+		if mkdirDirSyncEnabled {
+			if fsyncErr := mkdirDirSyncFn(filepath.Dir(dir)); fsyncErr != nil {
+				return fmt.Errorf("fsync parent of existing %s: %w: %w", dir, blerrors.ErrWriteNotApplied, fsyncErr)
+			}
+		}
 		return nil
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat %s: %w", dir, err)
@@ -56,6 +69,16 @@ func mkdirAllDurable(dir string, durable bool) error {
 		}
 		cur = parent
 	}
+	// Re-confirm the first existing ancestor's dirent durability: a prior attempt
+	// may have created `cur` itself but failed to fsync its parent (filepath.Dir(cur)),
+	// leaving the new dirent uncommitted. ErrWriteNotApplied: no new write yet.
+	if mkdirDirSyncEnabled {
+		if parentOfAncestor := filepath.Dir(cur); parentOfAncestor != cur {
+			if fsyncErr := mkdirDirSyncFn(parentOfAncestor); fsyncErr != nil {
+				return fmt.Errorf("fsync parent of first existing ancestor %s: %w: %w", cur, blerrors.ErrWriteNotApplied, fsyncErr)
+			}
+		}
+	}
 	// Create shallowest-first so each parent exists when its child lands, and
 	// fsync each new directory's parent so the new dirent is durable (POSIX).
 	for i := len(missing) - 1; i >= 0; i-- {
@@ -65,7 +88,7 @@ func mkdirAllDurable(dir string, durable bool) error {
 		}
 		if mkdirDirSyncEnabled {
 			if err := mkdirDirSyncFn(filepath.Dir(d)); err != nil {
-				return fmt.Errorf("fsync parent of %s: %w", d, err)
+				return fmt.Errorf("fsync parent of %s: %w: %w", d, blerrors.ErrWriteNotApplied, err)
 			}
 		}
 	}
