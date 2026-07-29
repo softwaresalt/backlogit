@@ -1,5 +1,5 @@
 ---
-description: "Post-merge closure for shipment 112-S (fsutil durable-mkdir/fsync leaf extraction, feature 131-F, PR #318 merged at 899b70e2). Records runtime verification, operational readiness, Copilot review findings, and the neutral-leaf design decisions D1-D3."
+description: "Post-merge closure for shipment 112-S (fsutil durable-mkdir/fsync leaf extraction, feature 131-F, PR #318 merged at 899b70e2). Records runtime verification, operational readiness, Copilot review findings, and the neutral-leaf design decisions D1-D4."
 doc_type: closure
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
@@ -34,7 +34,7 @@ re-fsync and Finding-2 nested-partial-create ancestor re-confirm). The
 
 | ID | Decision | Rationale |
 |---|---|---|
-| D1 | `internal/fsutil` is a pure stdlib leaf — no `internal/errors` or other internal imports | Mirrors `internal/atomicfile` and `internal/mdfront`; avoids import cycles; callers classify errors |
+| D1 | `internal/fsutil` is a pure stdlib leaf — no `internal/errors` or other internal imports | Needed because callers map the same error to different classes; importing blerrors would force premature classification. Mirrors `internal/mdfront` (pure stdlib); stricter than `internal/atomicfile` which also imports the `internal/errors` stdlib-only leaf |
 | D2 | `MkdirAllDurable` is a superset (core behavior preserved; events gains additive Finding-2 hardening) | Unifying two divergent impls on the richer semantics is safer than introducing a parameter gate |
 | D3 | Seam parameterized: `(dir string, durable, dirSyncEnabled bool, syncDir func(string) error)` | Enables injection of per-package fsync mock without exposing package-level state |
 | D4 | Scope boundary: only `fsyncDirCore`/`fsyncDir` and `mkdirAllDurable` moved; `syncAppendLineDetailed` stays in `internal/events/fsutil.go` | Avoids pulling events-only logic into the leaf |

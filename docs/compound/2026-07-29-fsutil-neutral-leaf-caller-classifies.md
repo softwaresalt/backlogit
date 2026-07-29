@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Neutral-error leaf package pattern from 112-S: stdlib-only leaves return plain fmt.Errorf wraps; callers classify into domain sentinels. FsyncDir must validate IsDir at boundary. Nil-safe closure seam for injectable fsync with nil production default.'
+description: 'Context-dependent error classification from 112-S: when the same filesystem op can mean pre-write (NotApplied) or post-write (Indeterminate), use a neutral stdlib-only leaf and let callers classify. FsyncDir must validate IsDir at boundary. Nil-safe closure seam for injectable fsync with nil production default.'
 doc_type: learning
 docline:
     date: 2026-07-29T00:00:00Z
@@ -25,17 +25,25 @@ title: 'internal/fsutil neutral-leaf: stdlib-only leaf returns plain errors; cal
 
 `internal/core/durable_fs.go` and `internal/events/stream.go` each carried a
 private copy of durable mkdir-all and parent-fsync logic. Consolidating both into
-a shared package risks import cycles and error-class entanglement: if the shared
-package imports `internal/errors` (blerrors), it cannot be a clean leaf, and the
-two call sites use different domain sentinels (`ErrWriteNotApplied` in core,
-`ErrWriteIndeterminate` in events).
+a shared package requires resolving an error-classification tension: the two call
+sites use different domain sentinels (`ErrWriteNotApplied` in core,
+`ErrWriteIndeterminate` in events), and the same directory-fsync failure maps
+to a different class depending on whether it occurred before or after the write.
 
-## Rule 1 — Stdlib-only leaves return *neutral* errors; callers classify
+## Rule 1 — Context-dependent errors require caller classification; stdlib-only leaves make this mandatory
 
-A shared low-level package like `internal/fsutil` must import only the standard
-library (mirrors `internal/atomicfile` and `internal/mdfront`). This means it
-cannot import `internal/errors`/blerrors and therefore cannot self-classify errors
-into domain sentinels. Instead:
+`internal/fsutil` imports only the standard library — no `internal/errors` or
+other internal package. This is a stricter constraint than `internal/atomicfile`,
+which imports `internal/errors` (itself a stdlib-only leaf) and therefore can
+self-classify failures into `ErrWriteNotApplied` / `ErrWriteIndeterminate`.
+
+The key distinction is not "leaf vs. non-leaf based on blerrors import" but
+**whether the correct error class depends on context that only the caller has**.
+`atomicfile` always knows: failure before the rename commit is `ErrWriteNotApplied`;
+post-rename fsync failure is `ErrWriteIndeterminate`. `fsutil.FsyncDir` does not
+know — the same fsync failure is `ErrWriteNotApplied` when called before a write
+(core mkdir path) and `ErrWriteIndeterminate` when called after a write
+(events append path). The leaf must therefore return neutral errors.
 
 - **The leaf returns plain `fmt.Errorf` wraps** — e.g.
   `fmt.Errorf("fsync dir %s: %w", path, err)`.
@@ -43,13 +51,10 @@ into domain sentinels. Instead:
   - `internal/core` wraps with `fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err)` for pre-write failures.
   - `internal/events` wraps with `blerrors.ErrWriteIndeterminate` for post-write failures; pre-write failures propagate as `ErrWriteNotApplied` from `mkdirAllDurable`'s own return to `appendDurable`.
 
-This is opposite to `internal/atomicfile`, which self-classifies using blerrors.
-The rule is: if a leaf needs blerrors, it is no longer a leaf — extract a
-classification wrapper instead.
-
-> Rule of thumb: a stdlib-only leaf returns errors the OS gave it, wrapped with
-> context. Only callers with domain knowledge know whether a failure is
-> pre-write (NotApplied) or post-write (Indeterminate).
+> Rule of thumb: when the same filesystem operation can mean either pre-write
+> (retriable, NotApplied) or post-write (indeterminate), it belongs in a neutral
+> leaf that returns plain OS errors. Self-classifying is only appropriate when the
+> caller context is always unambiguous — as it is for atomicfile's rename boundary.
 
 ## Rule 2 — Exported fsync helpers MUST validate the path is a directory
 
