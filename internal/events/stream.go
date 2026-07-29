@@ -130,6 +130,10 @@ func (w *EventWriter) appendFast(itemID string, data []byte) error {
 // primitive (syncAppendLineDetailed) so this item-log path cannot drift from the
 // hook-event queue path; the level-by-level durable mkdir and the post-append
 // logs-dir fsync below remain stream-specific.
+//
+// Parent-dir durability is re-confirmed inside mkdirAllDurable (pre-write) so
+// a repeated parent-fsync failure remains ErrWriteNotApplied and does not
+// accumulate duplicate log entries across retries.
 func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 	if err := w.mkdirAllDurable(w.logsDir); err != nil {
 		return fmt.Errorf("create logs dir: %w",
@@ -154,14 +158,6 @@ func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 		return fmt.Errorf("append event: %w",
 			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, res.err))
 	}
-	// Conservatively fsync the parent of logsDir so the logsDir dirent itself is
-	// durable — this re-confirms durability on retry when a previous attempt created
-	// logsDir but the parent fsync failed (U3 fix: ErrWriteNotApplied safe-retry
-	// contract). POSIX only; Windows is best-effort.
-	if err := w.syncDirIfEnabled(filepath.Dir(w.logsDir)); err != nil {
-		return fmt.Errorf("append event fsync parent dir: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err))
-	}
 	// Conservatively fsync the parent logs dir on every durable append so the
 	// (possibly new) log dirent is durable. POSIX only; Windows is best-effort.
 	if err := w.syncDirIfEnabled(w.logsDir); err != nil {
@@ -172,11 +168,16 @@ func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 }
 
 // mkdirAllDurable creates any missing ancestors of dir and, on POSIX, fsyncs
-// each newly created directory's parent so the new dirent is durable. Existing
-// ancestors are left untouched.
+// each newly created directory's parent so the new dirent is durable. When dir
+// already exists, re-fsyncs its parent to confirm dirent durability after a
+// possible prior incomplete attempt (the caller wraps any error with
+// ErrWriteNotApplied so a parent re-confirm failure is a safe-retry, not
+// ErrWriteIndeterminate).
 func (w *EventWriter) mkdirAllDurable(dir string) error {
 	if _, err := os.Stat(dir); err == nil {
-		return nil
+		// Dir already exists. Re-fsync its parent to confirm dirent durability
+		// before the write; the caller wraps this error with ErrWriteNotApplied.
+		return w.syncDirIfEnabled(filepath.Dir(dir))
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat %s: %w", dir, err)
 	}

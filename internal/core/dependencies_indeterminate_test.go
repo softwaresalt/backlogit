@@ -161,3 +161,68 @@ func TestAddDependency_NotAppliedPersist_EdgeRolledBack(t *testing.T) {
 	assert.False(t, edgeExistsInternal(t, ws, source.ID, target.ID),
 		"DB edge must be rolled back when persist is not-applied (file untouched)")
 }
+
+// TestAddDependency_IndeterminatePersist_ItemsRowReconciled verifies that on an
+// indeterminate persist, db.UpsertItem is called to reconcile the stale
+// items.dependencies column, so DB-fast-path mutations see the correct dep list.
+func TestAddDependency_IndeterminatePersist_ItemsRowReconciled(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "Dep feat", "feature")
+	require.NoError(t, err)
+	source, err := CreateArtifact(ctx, ws, "Source", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	target, err := CreateArtifact(ctx, ws, "Target", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+
+	origFn := persistArtifactWriteFn
+	persistArtifactWriteFn = func(a *models.Artifact, filePath string, durable bool) error {
+		return fmt.Errorf("parent fsync failed: %w", blerrors.ErrWriteIndeterminate)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = origFn })
+
+	err = AddDependency(ctx, ws, source.ID, target.ID, "blocks")
+	require.Error(t, err)
+	assert.True(t, blerrors.IsWriteIndeterminate(err))
+
+	// items.dependencies column must be reconciled via db.UpsertItem.
+	row, getErr := bldb.GetItem(ctx, ws.DB, source.ID)
+	require.NoError(t, getErr)
+	assert.Contains(t, row.Dependencies, target.ID,
+		"items.dependencies must be reconciled after indeterminate persist (UpsertItem called)")
+}
+
+// TestRemoveDependency_IndeterminatePersist_ItemsRowReconciled verifies that on an
+// indeterminate persist, db.UpsertItem is called to reconcile the stale
+// items.dependencies column so a subsequent Rehydrate does not restore the removed edge.
+func TestRemoveDependency_IndeterminatePersist_ItemsRowReconciled(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "Dep feat", "feature")
+	require.NoError(t, err)
+	source, err := CreateArtifact(ctx, ws, "Source", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	target, err := CreateArtifact(ctx, ws, "Target", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+
+	// Establish the edge cleanly first.
+	require.NoError(t, AddDependency(ctx, ws, source.ID, target.ID, "blocks"))
+
+	origFn := persistArtifactWriteFn
+	persistArtifactWriteFn = func(a *models.Artifact, filePath string, durable bool) error {
+		return fmt.Errorf("parent fsync failed: %w", blerrors.ErrWriteIndeterminate)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = origFn })
+
+	err = RemoveDependency(ctx, ws, source.ID, target.ID)
+	require.Error(t, err)
+	assert.True(t, blerrors.IsWriteIndeterminate(err))
+
+	// items.dependencies must not contain the removed dep after reconciliation.
+	row, getErr := bldb.GetItem(ctx, ws.DB, source.ID)
+	require.NoError(t, getErr)
+	assert.NotContains(t, row.Dependencies, target.ID,
+		"items.dependencies must be reconciled after indeterminate persist (dep removed)")
+}

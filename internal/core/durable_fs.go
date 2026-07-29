@@ -46,7 +46,7 @@ func mkdirAllDurable(dir string, durable bool) error {
 		// durability now. ErrWriteNotApplied: no new write is in flight.
 		if mkdirDirSyncEnabled {
 			if fsyncErr := mkdirDirSyncFn(filepath.Dir(dir)); fsyncErr != nil {
-				return fmt.Errorf("fsync parent of existing %s: %w", dir, blerrors.ErrWriteNotApplied)
+				return fmt.Errorf("fsync parent of existing %s: %w: %w", dir, blerrors.ErrWriteNotApplied, fsyncErr)
 			}
 		}
 		return nil
@@ -68,6 +68,16 @@ func mkdirAllDurable(dir string, durable bool) error {
 			break
 		}
 		cur = parent
+	}
+	// Re-confirm the first existing ancestor's dirent durability: a prior attempt
+	// may have created `cur` itself but failed to fsync its parent (filepath.Dir(cur)),
+	// leaving the new dirent uncommitted. ErrWriteNotApplied: no new write yet.
+	if mkdirDirSyncEnabled {
+		if parentOfAncestor := filepath.Dir(cur); parentOfAncestor != cur {
+			if fsyncErr := mkdirDirSyncFn(parentOfAncestor); fsyncErr != nil {
+				return fmt.Errorf("fsync parent of first existing ancestor %s: %w: %w", cur, blerrors.ErrWriteNotApplied, fsyncErr)
+			}
+		}
 	}
 	// Create shallowest-first so each parent exists when its child lands, and
 	// fsync each new directory's parent so the new dirent is durable (POSIX).

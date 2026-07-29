@@ -762,10 +762,17 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 			return err
 		}
 		if err := replaceFileWithOptions(ws, originalPath, []byte(restored)); err != nil {
-			rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
-			return fmt.Errorf("write restored file: %w", err)
+			if blerrors.IsWriteIndeterminate(err) {
+				// The rename committed — do NOT roll back a possibly-applied write.
+				writeWasIndeterminate = true
+			} else {
+				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore content write")
+				return fmt.Errorf("write restored file: %w", err)
+			}
 		}
-		durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive git move")
+		if !writeWasIndeterminate {
+			durableSyncMovedFromDir(ws, archivePath, originalPath, "unarchive git move")
+		}
 	} else {
 		writeErr := replaceFileWithOptions(ws, originalPath, []byte(restored))
 		writeWasIndeterminate = blerrors.IsWriteIndeterminate(writeErr)
@@ -787,15 +794,13 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	artifact, err := models.ArtifactFromFrontmatter(fm, body)
 	if err == nil {
 		if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
-			if useGitMove {
-				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore DB rollback")
-			} else if writeWasIndeterminate {
-				// The restore write was indeterminate (rename committed, outcome
-				// uncertain). Rolling back via restoreArchiveAfterUnarchiveFailure
-				// would remove a possibly-applied write — violating the
-				// never-roll-back-indeterminate invariant. Surface both errors so
-				// the caller can reconcile; do NOT attempt a filesystem rollback.
+			if writeWasIndeterminate {
+				// Either branch: the restore write was indeterminate (rename committed,
+				// outcome uncertain). Do NOT rollback — would violate the
+				// never-roll-back-indeterminate invariant. Surface both errors.
 				return fmt.Errorf("sync unarchive state: %w", errors.Join(blerrors.ErrWriteIndeterminate, upsertErr))
+			} else if useGitMove {
+				rollbackGitArtifactMove(reverseArtifactMovePlan(movePlan), originalPath, raw, "restore DB rollback")
 			} else if rollbackErr := restoreArchiveAfterUnarchiveFailure(ws, archivePath, originalPath, raw, samePath); rollbackErr != nil {
 				slog.Error("unarchive: failed to restore archive file after DB error",
 					"archive_path", archivePath, "restore_path", originalPath, "error", rollbackErr)

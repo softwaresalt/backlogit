@@ -75,11 +75,20 @@ func TestAppendEvent_DurableWindowsSkipsDirFsync(t *testing.T) {
 
 // TestAppendEvent_DirFsyncFailureIsIndeterminate asserts a post-write dir fsync
 // failure surfaces ErrWriteIndeterminate while the append is already visible.
+// The mock only fails for logsDir itself (the post-write dirent flush); the
+// pre-write parent re-confirm in mkdirAllDurable succeeds so the write is
+// attempted and the event is visible.
 func TestAppendEvent_DirFsyncFailureIsIndeterminate(t *testing.T) {
 	dir := t.TempDir()
 	w := NewEventWriter(dir, WithDurableWrites(true))
 	w.dirSyncEnabled = true
-	w.fsyncDirImpl = func(string) error { return errors.New("simulated dir fsync failure") }
+	// Fail only the post-write logsDir fsync, not the pre-write parent re-confirm.
+	w.fsyncDirImpl = func(p string) error {
+		if p == dir {
+			return errors.New("simulated dir fsync failure")
+		}
+		return nil
+	}
 
 	err := w.AppendEvent(context.Background(), durableEvent("T1"))
 	require.Error(t, err)
