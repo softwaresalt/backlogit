@@ -38,13 +38,12 @@ controlled error (e.g. `blerrors.ErrWriteIndeterminate`) without touching the
 
 ```go
 // In production code (shipment.go):
-var persistArtifactWriteFn = func(ws *Workspace, a *models.Artifact, opts WriteOptions) error {
-    return WriteArtifactFileWithOptions(ws, a, opts)
-}
+var persistArtifactWriteFn = WriteArtifactFileWithOptions
+// Actual signature: func(artifact *models.Artifact, filePath string, durable bool) error
 
 // In tests:
 originalFn := persistArtifactWriteFn
-persistArtifactWriteFn = func(ws *Workspace, a *models.Artifact, opts WriteOptions) error {
+persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
     return blerrors.ErrWriteIndeterminate
 }
 t.Cleanup(func() { persistArtifactWriteFn = originalFn })
@@ -63,13 +62,14 @@ real implementation. In tests, override it to inject specific durability errors.
 
 ```go
 // In production code (tools.go):
-var appendCommentFn = func(ctx context.Context, ws *core.Workspace, id, text string) error {
-    return core.AppendComment(ctx, ws, id, text)
-}
+var appendCommentFn = core.AppendComment
+// Actual signature: func(ctx context.Context, ws *core.Workspace, ew *events.EventWriter,
+//   itemID, actor, comment, commitSHA string) error
 
 // In tests:
 originalFn := appendCommentFn
-appendCommentFn = func(...) error {
+appendCommentFn = func(ctx context.Context, ws *core.Workspace, ew *events.EventWriter,
+    itemID, actor, comment, commitSHA string) error {
     return blerrors.ErrWriteIndeterminate
 }
 t.Cleanup(func() { appendCommentFn = originalFn })

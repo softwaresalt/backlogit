@@ -194,7 +194,7 @@ waiting for the next `backlogit sync`.
 Before 130-F, `append_comment` mapped every append failure to a generic internal
 error. Agents retrying on indeterminate errors then duplicated comments. Fix:
 `durabilityOutcomeResult` (`internal/mcp/gate_errors.go`) maps both classes
-explicitly — `ErrWriteNotApplied` → `not_applied` (safe retry), `ErrWriteIndeterminate`
-→ `indeterminate` (do not retry without checking) — and surfaces them as distinct
-machine-readable MCP outcome fields so callers can apply exactly-once retry
-semantics.
+explicitly — `ErrWriteNotApplied` → `"write_not_applied"` (safe retry, `retryable: true`),
+`ErrWriteIndeterminate` → `"write_indeterminate"` (do not retry without checking,
+`retryable: false`) — and surfaces them as distinct machine-readable MCP outcome
+fields so callers can apply exactly-once retry semantics.
