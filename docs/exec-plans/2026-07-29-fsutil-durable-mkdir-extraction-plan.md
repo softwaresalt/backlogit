@@ -83,31 +83,30 @@ callers pass a non-nil function.
 
 ## Task Breakdown
 
-Three tasks. Task B and Task C each depend on Task A (the leaf must land first);
-B and C are independent of each other.
+Five tasks. The leaf is split so each exported function has direct atomic
+test coverage. Backlog ID mapping: `131.001-T` (leaf + `FsyncDir`),
+`131.004-T` (`MkdirAllDurable` creation path), `131.005-T` (`MkdirAllDurable`
+retry/re-confirm), then the two migrations `131.002-T` (core) and `131.003-T`
+(events). Dependency chain: `131.001-T → 131.004-T → 131.005-T`; **both
+migrations depend on `131.005-T`** (the complete primitive), and are independent
+of each other.
 
-### Task A — Create `internal/fsutil` leaf: `FsyncDir` + `MkdirAllDurable` + unit tests
+### Task A1 — Create `internal/fsutil` leaf + `FsyncDir` with direct tests (131.001-T)
 
-- **Domain:** code + colocated unit tests (single leaf unit; test-first).
+- **Domain:** code + colocated unit tests (test-first).
 - **Files (3):** `internal/fsutil/doc.go`, `internal/fsutil/fsutil.go`,
   `internal/fsutil/fsutil_test.go`.
-- **Approach:** test-first. Port `mkdirAllDurable`'s superset body from
-  `internal/core/durable_fs.go` into `MkdirAllDurable` with the D3 parameter
-  signature (drop the inline `blerrors` wrap — the leaf returns neutral errors,
-  keeping the generic `"fsync parent of ..."` / `"mkdir ..."` / `"stat ..."`
-  messages). Port `fsyncDirCore` verbatim into `FsyncDir`. `doc.go` states the
-  leaf's stdlib-only, no-`core`/no-`events` contract.
-- **Test scenarios (table-driven, testify; mirror the existing core tests):**
-  1. `durable=false` → exactly `os.MkdirAll`, no fsync.
-  2. durable + dirSyncEnabled POSIX → each new ancestor's parent fsynced
-     (assert the recorded synced-set, like `TestMkdirAllDurable_FsyncsNewAncestorsPOSIX`).
-  3. `dirSyncEnabled=false` (Windows-equivalent) → tree created, no fsync.
-  4. per-ancestor fsync error propagates (error contains `"fsync"`).
-  5. existing-dir happy path → parent re-fsynced, returns nil.
-  6. existing-dir fsync fails → non-nil error (neutral; caller will map).
-  7. retry-after-fsync-fail → second call re-syncs parent (U4).
-  8. nested partial-create retry → first existing ancestor's parent re-confirmed
-     (Finding-2).
+- **Approach:** create the stdlib-only leaf; port `fsyncDirCore` verbatim into
+  `FsyncDir(path string) error`. `doc.go` states the leaf's stdlib-only,
+  no-`core`/no-`events` contract and the neutral-error convention.
+- **Test scenarios (direct `FsyncDir` coverage, <5):**
+  1. `FsyncDir` on a real directory returns nil (handle opened, synced, closed).
+     Guard this success case with a `runtime.GOOS == "windows"` skip — production
+     disables directory fsync on Windows (`dirSyncEnabled = runtime.GOOS != "windows"`),
+     where a directory-handle `Sync()` is unsupported and would spuriously fail
+     the test on a Windows host.
+  2. `FsyncDir` on a non-existent / non-openable path returns an error naming the
+     path (open-error case; reliable cross-platform).
 - **Acceptance criteria:**
   - `internal/fsutil` imports stdlib only (no `internal/core`, `internal/events`,
     or `internal/errors`).
@@ -115,8 +114,48 @@ B and C are independent of each other.
     primitives here return **neutral** errors and callers map onto the durability
     sentinels at the boundary, whereas backlogit-specific writers (e.g.
     `atomicfile`) may self-classify against `blerrors`.
+  - `FsyncDir` has **direct** success + open-error tests (not merely exercised via
+    `MkdirAllDurable`).
   - `go test ./internal/fsutil/...` passes; `go vet`, `golangci-lint`, `gofmt` clean.
-  - All 8 scenarios present and green.
+
+### Task A2 — Add `fsutil.MkdirAllDurable` creation-path semantics + tests (131.004-T)
+
+- **Domain:** code + colocated unit tests (test-first). **Depends on 131.001-T.**
+- **Files (2):** `internal/fsutil/fsutil.go`, `internal/fsutil/fsutil_test.go` (extend).
+- **Approach:** add `MkdirAllDurable(dir string, durable, dirSyncEnabled bool, syncDir func(string) error) error`
+  implementing the fresh-creation path — non-durable == `os.MkdirAll(dir, 0o755)`;
+  durable collects missing ancestors and creates them shallowest-first, fsyncing
+  each new directory's parent via `syncDir`. Neutral errors (generic
+  `"mkdir ..."` / `"stat ..."` / `"fsync parent of ..."` messages). Callers pass
+  `fsutil.FsyncDir` (or their seam) as `syncDir`.
+- **Test scenarios (table-driven, testify; <5):**
+  1. `durable=false` → exactly `os.MkdirAll`, no fsync.
+  2. durable + `dirSyncEnabled` POSIX → each new ancestor's parent fsynced
+     (assert the recorded synced-set).
+  3. `dirSyncEnabled=false` (Windows-equivalent) → tree created, no fsync.
+  4. per-ancestor fsync error propagates (error contains `"fsync"`).
+- **Acceptance criteria:**
+  - 4 scenarios present and green; `go test ./internal/fsutil/...` passes;
+    `go vet`, `golangci-lint`, `gofmt` clean.
+
+### Task A3 — Add `fsutil.MkdirAllDurable` retry/re-confirm semantics + tests (131.005-T)
+
+- **Domain:** code + colocated unit tests (test-first). **Depends on 131.004-T.**
+- **Files (2):** `internal/fsutil/fsutil.go`, `internal/fsutil/fsutil_test.go` (extend).
+- **Approach:** add the existing-dir parent re-fsync (U4) and the nested
+  partial-create first-existing-ancestor re-confirm (Finding-2) to
+  `MkdirAllDurable`; any fsync failure returns a neutral error. This completes
+  core's superset semantics.
+- **Test scenarios (table-driven, testify; <5):**
+  5. existing-dir happy path → parent re-fsynced, returns nil.
+  6. existing-dir fsync fails → non-nil neutral error (caller will map).
+  7. retry-after-fsync-fail → second call re-syncs parent (U4).
+  8. nested partial-create retry → first existing ancestor's parent re-confirmed
+     (Finding-2).
+- **Acceptance criteria:**
+  - 4 scenarios present and green; `MkdirAllDurable` now implements core's full
+    superset (U4 + Finding-2); `go test ./internal/fsutil/...` passes;
+    `go vet`, `golangci-lint`, `gofmt` clean.
 
 ### Task B — Migrate `internal/core/durable_fs.go` to the leaf
 
@@ -147,7 +186,8 @@ B and C are independent of each other.
     `artifacts_durable_test.go`, `artifact_size_durable_retry_test.go`,
     `durable_move_source_fsync_test.go`.
   - `go vet`, `golangci-lint`, `gofmt` clean.
-- **Depends on:** Task A.
+- **Depends on:** Task A3 (`131.005-T`) — needs the complete `MkdirAllDurable`
+  (U4 + Finding-2) since core's tests assert those semantics.
 
 ### Task C — Migrate `internal/events/stream.go` to the leaf
 
@@ -180,16 +220,19 @@ B and C are independent of each other.
   - `go test ./internal/mcp/...` passes unchanged (`append_comment_durable_test.go`
     exercises the events path via the server).
   - `go vet`, `golangci-lint`, `gofmt` clean.
-- **Depends on:** Task A.
+- **Depends on:** Task A3 (`131.005-T`) — needs the complete `MkdirAllDurable`
+  including the Finding-2 re-confirm that events gains.
 
 ## Constitution Check
 
 - **I. Safety-First Go:** no `unsafe`; all error paths wrapped with `%w`;
   sentinels routed via `blerrors`. Gates (`go vet`, `golangci-lint`, `gofmt`)
   are per-task acceptance criteria.
-- **II. Test-First:** Task A is written test-first; Tasks B/C are validated by
-  the pre-existing durable regression suite that must pass unchanged (no new
-  behavior to test on the caller side beyond what already exists).
+- **II. Test-First:** Tasks A1–A3 are written test-first, each exported function
+  carrying direct atomic coverage (`FsyncDir` in A1; `MkdirAllDurable` creation
+  path in A2; retry/re-confirm in A3). Tasks B/C are validated by the
+  pre-existing durable regression suite that must pass unchanged, plus the
+  runtime verification in the Runtime Impact section below.
 - **VI. Single Responsibility:** no new external dependency; a new internal leaf
   reduces duplication. Justified.
 - **X / leaf layering:** `internal/fsutil` is a stdlib-only leaf; no `core`/
@@ -207,9 +250,68 @@ B and C are independent of each other.
 
 ## Requires plan hardening
 
-no — pure refactor of already-hardened code; blast radius is two internal files
-plus one new leaf; full pre-existing durable regression suite guards behavior;
-no runtime/migration/rollout/security surface. Standard plan-review gate suffices.
+no — the refactor targets already-hardened code with a small blast radius (two
+internal files plus one new leaf) and the full pre-existing durable regression
+suite guards behavior. This is **not** a no-runtime-surface change, however (see
+the Runtime Impact section below): Task C adds an `fsync` on the durable
+event-append hot path and Task B changes observable error classification. Because
+those runtime deltas are bounded and their verification, monitoring, and rollback
+evidence are supplied inline below, a separate plan-harden pass is not required;
+the standard plan-review gate plus the Runtime Impact evidence suffices.
+
+## Runtime Impact and Release Observability
+
+This change **is runtime-affecting**. Correcting the earlier "no runtime surface"
+framing (plan-review finding):
+
+- **Task C (events) — new latency + failure point.** Routing
+  `EventWriter.appendDurable`'s mkdir through the shared primitive means the
+  durable event-append path performs the Finding-2 ancestor re-confirm `fsync`
+  it did not before. That re-confirm is **not** gated on a retry flag: it fires
+  on **any** fresh creation where the target dir is missing and the first
+  existing ancestor's parent differs from itself (per
+  `internal/core/durable_fs.go`), i.e. on normal first-time nested creation, not
+  only on a retry. On POSIX with `durable_writes` enabled this adds one directory
+  `fsync` — extra I/O latency and a new failure point on the durable audit/log
+  append path. Real-world frequency for events is low because its `logsDir`
+  usually pre-exists (the existing-dir branch, which already re-fsyncs the parent
+  today), but the delta is real and must be treated as runtime-affecting.
+- **Task B (core) — observable error-class change.** Boundary-wrap-all broadens
+  `core`'s `stat`/`mkdir`/non-durable `os.MkdirAll` failures from unclassified to
+  `ErrWriteNotApplied`. Callers that branch on `IsWriteNotApplied` (retry vs
+  surface-indeterminate) will now see those paths classified as safe-to-retry.
+
+### Runtime verification (Ship must perform post-build, pre-merge)
+
+- Run the full durable suites with `durable_writes` enabled:
+  `go test ./internal/fsutil/... ./internal/core/... ./internal/events/... ./internal/mcp/... ./internal/atomicfile/...`.
+- Exercise a real durable event append against a fresh (uncreated) logs tree and
+  confirm the log line is written exactly once and the dirents are fsynced
+  (no double-append across a simulated parent-fsync-fail retry) —
+  `stream_durable_test.go` `TestAppendDurable_ParentFsyncFail_RetryResyncesParent`
+  is the automated proxy; confirm it stays green.
+- Confirm `append_comment` via the MCP server path still succeeds under durable
+  mode (`internal/mcp/append_comment_durable_test.go`).
+
+### Monitoring signals (durable_writes deployments)
+
+- **SLI:** durable event-append error rate and `ErrWriteIndeterminate` incidence
+  on the item-log / hook-queue path. **Baseline:** unchanged from `130-F`/`111-S`
+  (the added fsync is a re-confirm, not a new indeterminate source). **Alert
+  threshold:** any sustained rise in `ErrWriteIndeterminate` on the append path,
+  or a new `ErrWriteNotApplied` spike from `core` mkdir paths, after rollout.
+- Where no metrics backend exists, this is a manual observation item: watch for
+  new durable-write warnings in logs during the first post-merge runs.
+
+### Rollback
+
+- **Trigger:** a regression in durable append correctness (double-append,
+  data-loss, or a new indeterminate/not-applied misclassification surfaced by the
+  suites or field logs).
+- **Procedure:** the change is behind the existing `durable_writes` gate and is a
+  contained refactor — revert the shipment's commits (merge-commit revert) to
+  restore the two in-place `mkdirAllDurable` copies; no data migration or state
+  change is involved, so revert is clean.
 
 ## Verification
 
@@ -251,4 +353,30 @@ P2/P3 advisory findings were raised. The gate is satisfied (`decision == PASS`).
 | 6 | P3 | Go/Scope | Finding-2 events path is covered only at the leaf (fsutil scenario 8), not by a pre-existing events test; guardrail is a human check. | **Accepted** — intentional for a minimal refactor; the leaf unit test is the automated gate for that path. |
 
 No finding blocks decomposition. Proceed to harvest.
+
+<!-- plan-review-attempt: 2 -->
+
+- dispatch_mode: multi-agent-dispatch
+- decision: PASS
+- date: 2026-07-29
+- reviewers: Scope Boundary Auditor, Go Reviewer (re-review after the PR #317
+  task-structure change: leaf split into 131.001-T/131.004-T/131.005-T for
+  direct per-function coverage, plus the added Runtime Impact section).
+
+### Gate outcome (attempt 2)
+
+Both re-reviewers returned **PASS** with zero P0/P1. The prior blockers
+(FsyncDir lacked direct coverage; single task bundled two exported functions and
+8 scenarios) are resolved. Only P2/P3 advisories remained; the accuracy-relevant
+ones are addressed below.
+
+| # | Sev | Source | Finding | Disposition |
+|---|---|---|---|---|
+| 1 | P2 | Go | FsyncDir direct success test needs a `runtime.GOOS == "windows"` skip (production disables dir fsync on Windows; unguarded it fails on a Windows host). | **Addressed** — Task A1 scenario 1 now specifies the Windows skip guard. |
+| 2 | P2 | Go | Runtime Impact wording ("nested partial-create *retry* edge case") understated when the events re-confirm fsync fires — it is not retry-gated; it fires on any fresh missing-dir creation. | **Addressed** — the Task C runtime bullet now states the re-confirm fires on any fresh nested creation (events `logsDir` usually pre-exists, so real frequency is low). |
+| 3 | P3 | Scope | 131.004-T's atomic milestone is internal-only (no consumer uses the intermediate MkdirAllDurable). | **Accepted** — the split is forced by the <5-scenario rule; the semantic seam (creation vs U4/Finding-2) is real. |
+| 4 | P3 | Scope | Release-observability apparatus is heavyweight for a small refactor. | **Accepted** — required by the PR review finding (#5); kept as evidence, not code scope. |
+| 5 | P3 | Go | FsyncDir Sync()/Close()-error branches lack direct coverage. | **Accepted** — optional fault-injection; the success + open-error pair is the agreed minimum. |
+
+No finding blocks decomposition. Revised structure stands.
 

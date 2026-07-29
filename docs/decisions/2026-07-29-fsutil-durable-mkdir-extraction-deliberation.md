@@ -14,8 +14,16 @@ title: 'fsutil durable-mkdir/fsync extraction — design deliberation'
   internal/events (stream.go) and internal/core (durable_fs.go) stop
   maintaining two copies of durable mkdir/fsync." Refs: `130-F`, `111-S`
   closure deferral (recovered; was stash `345297B2`).
-- This is a **pure refactor** (no intended behavior change) of durability code
-  hardened in shipment `111-S` / feature `130-F` (merged `d1be5117`).
+- This is a **behavior-preserving-for-core, additive-hardening-for-events**
+  refactor of durability code hardened in shipment `111-S` / feature `130-F`
+  (merged `d1be5117`). It is **not** literally "no behavior change": under D2 the
+  `events` call site **gains** an extra ancestor re-confirm `fsync` (the
+  Finding-2 nested-partial-create re-confirm it does not perform today), and
+  under D1/D2 the `core` call site **broadens** its `ErrWriteNotApplied`
+  classification to also cover its `stat`/`mkdir`/non-durable `os.MkdirAll`
+  failure paths (all genuinely pre-write and retry-safe). Both deltas are
+  intentional and enumerated in D1/D2 below; Ship MUST NOT treat this as a
+  strict byte-for-byte behavior-preservation task.
 
 The refactor targets two duplicated mechanics:
 
@@ -71,8 +79,13 @@ This reframes — but does not eliminate — the sentinel-placement decision bel
    construction (stat/mkdir/dir-fsync all happen before any canonical file write),
    so the classification the callers apply is unconditional
    `ErrWriteNotApplied` — there is no indeterminate case to encode. `events`
-   already wraps at the call site today; `core` moves from inline wrapping to
-   call-boundary wrapping (an `errors.Is`-preserving mechanical change).
+   already wraps at the call site today; `core` moves from **inline** wrapping
+   (only its `fsync` failures carry `ErrWriteNotApplied`) to **call-boundary**
+   wrapping (all paths). This is `errors.Is`-**broadening** for `core`'s
+   `stat`/`mkdir`/non-durable `os.MkdirAll` paths — an intentional, safe delta
+   (every path is genuinely pre-write and retry-idempotent), not a purely
+   mechanical no-op. grep confirms no `core` caller depends on those paths being
+   unclassified.
 
 D1-B remains a valid alternative (atomicfile precedent) and is noted for the
 reviewer, but D1-A is preferred and also matches the operator's stated intake
