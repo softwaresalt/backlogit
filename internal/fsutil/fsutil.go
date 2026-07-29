@@ -8,9 +8,17 @@ import (
 
 // FsyncDir opens the directory at path and fsyncs its handle so a new dirent
 // or rename within it is durable. POSIX-only; callers gate on their own
-// dir-sync-enabled flag. Returns a neutral error; callers map onto
-// blerrors.ErrWriteNotApplied on failure.
+// dir-sync-enabled flag. Returns a neutral error; callers classify it as
+// ErrWriteNotApplied for pre-write failures or ErrWriteIndeterminate for
+// post-write failures, depending on context.
 func FsyncDir(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("open dir %s: not a directory", path)
+	}
 	d, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open dir %s: %w", path, err)
