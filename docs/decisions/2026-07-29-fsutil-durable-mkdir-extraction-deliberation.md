@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: 'Deliberation for extracting the duplicated durable mkdir-all + directory-fsync mechanics from internal/core/durable_fs.go and internal/events/stream.go into a new internal/fsutil stdlib leaf package. Records the error-classification (sentinel-placement) decision, the semantics-convergence decision for the events call site, the seam-parameterization decision, and the scope boundary. Corrects the intake premise that the durability sentinels live in internal/core (they already live in the internal/errors leaf).'
-doc_type: deliberation
+doc_type: decision
 schema_version: "1.0"
 source: docs/decisions/2026-07-29-fsutil-durable-mkdir-extraction-deliberation.md
 title: 'fsutil durable-mkdir/fsync extraction — design deliberation'
