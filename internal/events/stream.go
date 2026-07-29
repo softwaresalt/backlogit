@@ -154,6 +154,14 @@ func (w *EventWriter) appendDurable(itemID string, data []byte) error {
 		return fmt.Errorf("append event: %w",
 			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, res.err))
 	}
+	// Conservatively fsync the parent of logsDir so the logsDir dirent itself is
+	// durable — this re-confirms durability on retry when a previous attempt created
+	// logsDir but the parent fsync failed (U3 fix: ErrWriteNotApplied safe-retry
+	// contract). POSIX only; Windows is best-effort.
+	if err := w.syncDirIfEnabled(filepath.Dir(w.logsDir)); err != nil {
+		return fmt.Errorf("append event fsync parent dir: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err))
+	}
 	// Conservatively fsync the parent logs dir on every durable append so the
 	// (possibly new) log dirent is durable. POSIX only; Windows is best-effort.
 	if err := w.syncDirIfEnabled(w.logsDir); err != nil {

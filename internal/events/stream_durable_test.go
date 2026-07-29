@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -129,4 +130,69 @@ func TestAppendEvent_DurableOffUnchanged(t *testing.T) {
 
 	require.NoError(t, w.AppendEvent(context.Background(), durableEvent("T1")))
 	assert.FileExists(t, filepath.Join(dir, "T1.jsonl"))
+}
+
+// TestAppendDurable_ParentFsyncFail_RetryResyncesParent is the U3 regression: when a
+// durable append creates logsDir but the parent-dir fsync fails, a retry must
+// re-attempt the parent fsync (not skip it via the early-return in mkdirAllDurable).
+// The test also asserts exactly-one event count so a retry cannot duplicate events.
+//
+// The fsyncDirImpl seam is selective by path: it fails for the parent of logsDir only
+// on the first call, isolating the parent-flush retry from the post-append logsDir flush.
+//
+// Must not use t.Parallel: sets EventWriter fields, not package-global seams; but two
+// tests sharing the same logsDir path would still be unsafe.
+func TestAppendDurable_ParentFsyncFail_RetryResyncesParent(t *testing.T) {
+	base := t.TempDir()
+	logs := filepath.Join(base, "items") // does not exist yet
+	w := NewEventWriter(logs, WithDurableWrites(true))
+	w.dirSyncEnabled = true
+	parentDir := base // filepath.Dir(logs)
+	parentFsyncCalls := 0
+	w.fsyncDirImpl = func(p string) error {
+		if p == parentDir {
+			parentFsyncCalls++
+			if parentFsyncCalls == 1 {
+				return errors.New("simulated parent dir fsync failure")
+			}
+			return nil // succeeds on retry
+		}
+		return nil // logsDir post-append fsync always succeeds
+	}
+
+	ev := durableEvent("T1")
+
+	// First append: parent fsync fails → ErrWriteNotApplied (pre-write mkdir failure).
+	err1 := w.AppendEvent(context.Background(), ev)
+	require.Error(t, err1, "first append must fail when parent fsync fails")
+	assert.True(t, blerrors.IsWriteNotApplied(err1),
+		"parent mkdir-fsync failure must be ErrWriteNotApplied (no bytes written)")
+	assert.DirExists(t, logs, "logsDir must be created even though parent fsync failed")
+	assert.Equal(t, 1, parentFsyncCalls, "parent fsync attempted once on first append")
+
+	// Retry: logsDir now exists; parent fsync must be re-attempted (not skipped).
+	err2 := w.AppendEvent(context.Background(), ev)
+	require.NoError(t, err2, "retry must succeed when parent fsync succeeds")
+	assert.Equal(t, 2, parentFsyncCalls, "parent fsync must be re-attempted on retry")
+
+	// Exactly one event written — retry did not duplicate.
+	content, readErr := os.ReadFile(filepath.Join(logs, "T1.jsonl"))
+	require.NoError(t, readErr)
+	lines := splitLines(content)
+	assert.Equal(t, 1, len(lines), "exactly one event after failed first attempt + successful retry")
+}
+
+// splitLines returns non-empty trimmed lines from data.
+func splitLines(data []byte) []string {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
