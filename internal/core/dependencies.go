@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // AddDependency adds a dependency edge from itemID to dependsOn and persists it
@@ -44,7 +45,12 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 
 	artifact.Dependencies = append(artifact.Dependencies, dependsOn)
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
+		// ErrWriteIndeterminate: the MD write committed (rename applied) but fsync
+		// failed — the dependency is likely persisted. Do NOT roll back the DB edge;
+		// rolling it back would diverge the index from the (likely-written) MD.
+		if !blerrors.IsWriteIndeterminate(err) {
+			_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
+		}
 		return fmt.Errorf("persist dependency %s->%s to frontmatter: %w", itemID, dependsOn, err)
 	}
 	return nil
@@ -98,7 +104,12 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 
 	artifact.Dependencies = filtered
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		restoreCacheEdge()
+		// ErrWriteIndeterminate: the MD write committed but fsync failed — the
+		// removal is likely persisted. Do NOT restore the cache edge; restoring it
+		// would diverge the index from the (likely-updated) MD.
+		if !blerrors.IsWriteIndeterminate(err) {
+			restoreCacheEdge()
+		}
 		return fmt.Errorf("persist dependency removal %s->%s to frontmatter: %w", itemID, dependsOn, err)
 	}
 	return nil

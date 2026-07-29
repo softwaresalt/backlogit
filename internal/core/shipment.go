@@ -363,6 +363,15 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 	artifact.CustomFields["items"] = NormalizeShipmentItems(artifact)
 }
 
+// persistArtifactWriteFn is the artifact-write seam used by persistArtifact for
+// the WriteArtifactFileWithOptions call. Tests that exercise the relocate=false
+// path (AddDependency/RemoveDependency) override this seam to inject durable-write
+// failures, because neither mkdirDirSyncFn nor mkdirAllDurable fires on that path.
+//
+// Must not run with t.Parallel: tests that swap this seam read on the production
+// write path.
+var persistArtifactWriteFn = WriteArtifactFileWithOptions
+
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
@@ -386,7 +395,7 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
 	}
-	if err := WriteArtifactFileWithOptions(artifact, targetPath, WorkspaceDurableWrites(ws)); err != nil {
+	if err := persistArtifactWriteFn(artifact, targetPath, WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	if currentPath != targetPath {
