@@ -940,6 +940,14 @@ func (s *Server) handleMergeSync(ctx context.Context, request mcplib.CallToolReq
 	return toolResultJSON(syncResult)
 }
 
+// appendCommentFn is the package-mcp seam wrapping core.AppendComment so that the
+// durability outcome mapping and exactly-once retry tests are injectable from within
+// package mcp without requiring the unexported events fsync seams.
+//
+// Must not run with t.Parallel: tests that swap this seam read on the production
+// write path.
+var appendCommentFn = core.AppendComment
+
 func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
@@ -951,7 +959,10 @@ func (s *Server) handleAppendComment(ctx context.Context, request mcplib.CallToo
 	actor, _ := request.Params.Arguments["actor"].(string)
 	comment, _ := request.Params.Arguments["comment"].(string)
 	commitSHA, _ := request.Params.Arguments["commit_sha"].(string)
-	if err := core.AppendComment(ctx, s.Workspace, s.Events, itemID, actor, comment, commitSHA); err != nil {
+	if err := appendCommentFn(ctx, s.Workspace, s.Events, itemID, actor, comment, commitSHA); err != nil {
+		if result := durabilityOutcomeResult("append comment", err); result != nil {
+			return result, nil
+		}
 		return InternalError(fmt.Sprintf("append comment: %v", err)), nil
 	}
 	return mcplib.NewToolResultText(`{"ok":true}`), nil
