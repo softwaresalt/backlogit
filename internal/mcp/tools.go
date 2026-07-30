@@ -68,6 +68,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
 			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
+			mcplib.WithString("complexity", mcplib.Description("Implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; body-preserving and mutually exclusive with other field updates")),
 			mcplib.WithString("size_source", mcplib.Description("Size provenance source (human, agent, derived)")),
 			mcplib.WithString("size_ruleset_version", mcplib.Description("Size ruleset version")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
@@ -786,6 +787,17 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	if sectionsErr != nil {
 		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
 	}
+	if hasComplexityMutationArguments(request.Params.Arguments) {
+		if len(updates) > 0 || sections != nil || hasSizeMutationArguments(request.Params.Arguments) {
+			return ValidationFailed("complexity cannot be combined with other field updates, sections, or size/provenance updates"), nil
+		}
+		complexity, _ := request.Params.Arguments["complexity"].(string)
+		artifact, err := core.SetArtifactComplexity(ctx, s.Workspace, id, complexity)
+		if err != nil {
+			return domainError("set artifact complexity", err), nil
+		}
+		return toolResultJSON(artifact)
+	}
 	// size is a single-purpose, body-preserving mutation routed through
 	// core.SetArtifactSize. It is mutually exclusive with generic field updates and
 	// section writes, which go through the rebuild path; combining them would
@@ -867,6 +879,11 @@ func hasSizeMutationArguments(args map[string]any) bool {
 		}
 	}
 	return false
+}
+
+func hasComplexityMutationArguments(args map[string]any) bool {
+	_, ok := args["complexity"]
+	return ok
 }
 
 func (s *Server) handleQuerySQL(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
