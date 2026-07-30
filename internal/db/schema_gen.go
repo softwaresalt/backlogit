@@ -46,13 +46,13 @@ func GenerateSchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) ([]
 	var stmts []string
 	for _, typeCfg := range headerDef.Types {
 		for fieldName, def := range typeCfg.Fields {
+			if err := ValidateColumnName(fieldName); err != nil {
+				return nil, err
+			}
 			if seen[fieldName] || existing[fieldName] {
 				continue
 			}
 			seen[fieldName] = true
-			if err := ValidateColumnName(fieldName); err != nil {
-				return nil, err
-			}
 			sqlType, err := MapFieldTypeToSQLite(def.Type)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", fieldName, err)
