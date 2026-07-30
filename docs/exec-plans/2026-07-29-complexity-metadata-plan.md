@@ -77,7 +77,11 @@ planning signal:
 
 * **Posture:** test-first.
 * **Files:** `internal/core/artifact_complexity.go`,
-  `internal/core/artifact_complexity_test.go`.
+  `internal/core/artifact_complexity_test.go`,
+  `internal/core/artifact_size.go` (extend the shared reserved-key set and
+  `mergePreserveReservedSizingKeys` so complexity is protected off-seam),
+  `internal/core/artifacts.go` (generic create/update call sites that consult
+  the reserved-key set).
 * **Changes:**
   * Add `SetArtifactComplexity(ctx, ws, id, complexity)` patterned after
     `SetArtifactSize`.

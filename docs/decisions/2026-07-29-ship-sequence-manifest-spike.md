@@ -13,7 +13,7 @@ docline:
     confidence: "medium"
     linked_parent_work_item: null
     promoted_to:
-        - "queue"
+        - "none"
     tags:
         - "orchestrator"
         - "shipment"
@@ -255,6 +255,9 @@ the activation evidence is insufficient for resume and audit needs.
 * Harvested spike work item: `001-SP`
 * Build shipment: not created, because the recommendation is defer rather than
   build
+* Optional follow-up: stash `0B5FA82B` captures the deferred backlogit
+  product-side sequencing gaps. `promoted_to` is `none` because the defer
+  conclusion produced no plan, queue, or learnings promotion.
 
 ## References
 
