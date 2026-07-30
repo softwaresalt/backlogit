@@ -8,7 +8,7 @@ title: Ship 113-S compacted context
 created_at: 2026-07-30T23:48:00Z
 type: compacted-memory
 release_unit: 113-S
-source:
+input_memory:
   - docs/memory/2026-07-30/ship-113-S-pr-ready-memory.md
 ---
 

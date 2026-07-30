@@ -164,6 +164,7 @@ func TestGenerateDocs_ComplexitySemantics(t *testing.T) {
 	require.NoError(t, err)
 	listRaw, err := os.ReadFile(filepath.Join(outDir, "backlogit_list.md"))
 	require.NoError(t, err)
+	assert.Contains(t, string(updateRaw), "explicit empty string clears")
 
 	for _, raw := range []string{string(updateRaw), string(listRaw)} {
 		assert.Contains(t, raw, "--complexity")

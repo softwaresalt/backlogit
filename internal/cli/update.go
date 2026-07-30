@@ -56,7 +56,7 @@ replacing the rest of the document body.
 Complexity is task-only planning metadata:
 size = implementation volume; complexity = implementation difficulty and uncertainty;
 priority = urgency. Default queue ordering does not change
-when complexity is set.`,
+when complexity is set or cleared.`,
 		Example: `  backlogit update
   backlogit update --check
   backlogit update --to v1.2.3
@@ -339,7 +339,7 @@ when complexity is set.`,
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
-	cmd.Flags().StringVar(&complexity, "complexity", "", "implementation difficulty/uncertainty (trivial, low, medium, high); body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&complexity, "complexity", "", "implementation difficulty/uncertainty (trivial, low, medium, high); explicit empty string clears; body-preserving, mutually exclusive with other field flags")
 	cmd.Flags().StringVar(&sizeSource, "size-source", "", "size provenance source (human, agent, derived)")
 	cmd.Flags().StringVar(&sizeRuleset, "size-ruleset-version", "", "size ruleset version")
 	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")

@@ -144,7 +144,23 @@ func TestSetArtifactComplexity_EmptyRejectsNonTask(t *testing.T) {
 
 	_, err = core.SetArtifactComplexity(ctx, ws, feature.ID, "")
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "does not define a complexity field")
+	assert.ErrorContains(t, err, "complexity is task-only")
+}
+
+func TestSetArtifactComplexity_RejectsNonTaskEvenWithCustomSchema(t *testing.T) {
+	ctx := context.Background()
+	ws, _, _ := setupComplexityWorkspace(t)
+	feature, err := core.CreateArtifact(ctx, ws, "Custom complexity feature", "feature")
+	require.NoError(t, err)
+	ws.HeaderDef.Types["feature"].Fields["complexity"] = &config.FieldDef{
+		Type:     "enum",
+		Values:   []string{"trivial", "low", "medium", "high"},
+		Optional: true,
+	}
+
+	_, err = core.SetArtifactComplexity(ctx, ws, feature.ID, "high")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "complexity is task-only")
 }
 
 func TestSetArtifactComplexity_EmptyRequiresComplexitySchema(t *testing.T) {
@@ -192,4 +208,6 @@ func TestSetArtifactComplexity_GenericCreateRejectsComplexity(t *testing.T) {
 	}))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "reserved")
+	assert.ErrorContains(t, err, "typed metadata seam")
+	assert.NotContains(t, err.Error(), "audited size seam")
 }

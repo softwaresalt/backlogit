@@ -88,6 +88,9 @@ func ValidateComplexityValue(ws *Workspace, artifactType, complexity string) err
 }
 
 func validateComplexityMutation(ws *Workspace, artifactType, complexity string) error {
+	if artifactType != "task" {
+		return fmt.Errorf("complexity is task-only; artifact type %q cannot store complexity: %w", artifactType, blerrors.ErrValidation)
+	}
 	if ws.HeaderDef == nil {
 		return fmt.Errorf("cannot validate complexity: header-def not loaded: %w", blerrors.ErrConfig)
 	}
