@@ -21,6 +21,7 @@ type QueryFilters struct {
 	AssignedTo      string
 	Owner           string
 	Priority        string
+	Complexity      string
 	IncludeArchived bool // when false (default), archived items are excluded from results
 	Limit           int  // max results to return (0 = no limit)
 	Offset          int  // number of results to skip for pagination
@@ -445,6 +446,10 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	if filters.Priority != "" {
 		conditions = append(conditions, "priority = ?")
 		args = append(args, filters.Priority)
+	}
+	if filters.Complexity != "" {
+		conditions = append(conditions, "complexity = ?")
+		args = append(args, filters.Complexity)
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
