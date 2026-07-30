@@ -68,7 +68,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
 			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
-			mcplib.WithString("complexity", mcplib.Description("Implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; body-preserving and mutually exclusive with other field updates")),
+			mcplib.WithString("complexity", mcplib.Description("Optional task-only implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; no provenance/history fields; explicit empty string clears; body-preserving and mutually exclusive with other field updates; does not affect queue ordering")),
 			mcplib.WithString("size_source", mcplib.Description("Size provenance source (human, agent, derived)")),
 			mcplib.WithString("size_ruleset_version", mcplib.Description("Size ruleset version")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
@@ -83,7 +83,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
 			mcplib.WithString("sprint", mcplib.Description("Filter by sprint ID")),
 			mcplib.WithString("priority", mcplib.Description("Filter by priority")),
-			mcplib.WithString("complexity", mcplib.Description("Filter by implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority")),
+			mcplib.WithString("complexity", mcplib.Description("Filter task-only implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; no default and does not affect queue ordering")),
 			mcplib.WithString("owner", mcplib.Description("Filter by owner (distinct from assigned_to)")),
 		),
 		s.handleListItems,
@@ -493,11 +493,17 @@ func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolReq
 	if v, ok := request.Params.Arguments["priority"].(string); ok {
 		filters.Priority = v
 	}
-	if v, ok := request.Params.Arguments["complexity"].(string); ok && v != "" {
-		if err := core.ValidateComplexityValue(s.Workspace, "task", v); err != nil {
-			return domainError("list items", err), nil
+	if raw, exists := request.Params.Arguments["complexity"]; exists {
+		v, ok := raw.(string)
+		if !ok {
+			return ValidationFailed("complexity must be a string"), nil
 		}
-		filters.Complexity = v
+		if v != "" {
+			if err := core.ValidateComplexityValue(s.Workspace, "task", v); err != nil {
+				return domainError("list items", err), nil
+			}
+			filters.Complexity = v
+		}
 	}
 	if v, ok := request.Params.Arguments["owner"].(string); ok {
 		filters.Owner = v
@@ -791,7 +797,10 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		if len(updates) > 0 || sections != nil || hasSizeMutationArguments(request.Params.Arguments) {
 			return ValidationFailed("complexity cannot be combined with other field updates, sections, or size/provenance updates"), nil
 		}
-		complexity, _ := request.Params.Arguments["complexity"].(string)
+		complexity, ok := request.Params.Arguments["complexity"].(string)
+		if !ok {
+			return ValidationFailed("complexity must be a string"), nil
+		}
 		artifact, err := core.SetArtifactComplexity(ctx, s.Workspace, id, complexity)
 		if err != nil {
 			return domainError("set artifact complexity", err), nil

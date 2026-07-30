@@ -55,7 +55,7 @@ replacing the rest of the document body.
 
 Complexity is task-only planning metadata:
 size = implementation volume; complexity = implementation difficulty and uncertainty;
-priority = importance and scheduling urgency. Default queue ordering does not change
+priority = urgency. Default queue ordering does not change
 when complexity is set.`,
 		Example: `  backlogit update
   backlogit update --check
@@ -137,7 +137,9 @@ when complexity is set.`,
 					}
 					return sizeErr
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id); err != nil {
+					return fmt.Errorf("write update confirmation: %w", err)
+				}
 				return nil
 			}
 
@@ -152,9 +154,11 @@ when complexity is set.`,
 						cmd.SilenceErrors = true
 						return &ExitError{Code: 4, Msg: fmt.Sprintf("task %s is busy: %v", id, complexityErr)}
 					}
-					return complexityErr
+					return fmt.Errorf("set complexity: %w", complexityErr)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id); err != nil {
+					return fmt.Errorf("write update confirmation: %w", err)
+				}
 				return nil
 			}
 

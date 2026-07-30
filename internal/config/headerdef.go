@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
@@ -53,12 +54,30 @@ func LoadHeaderDef(workspacePath string) (*HeaderDefConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("load header-def.yaml: unmarshal: %w", err)
 	}
+	upgradeLegacyGeneratedHeaderDef(&cfg)
 
 	if err := validator.New().Struct(cfg); err != nil {
 		return nil, fmt.Errorf("load header-def.yaml: validation: %w", err)
 	}
 
 	return &cfg, nil
+}
+
+// upgradeLegacyGeneratedHeaderDef widens only the generated pre-complexity
+// header-def default so existing workspaces receive task complexity without
+// overwriting operator-customized schemas.
+func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
+	if cfg == nil {
+		return
+	}
+	prior := defaultHeaderDef()
+	delete(prior.Types["task"].Fields, "complexity")
+	if !reflect.DeepEqual(cfg, prior) {
+		return
+	}
+
+	current := defaultHeaderDef()
+	cfg.Types["task"].Fields["complexity"] = current.Types["task"].Fields["complexity"]
 }
 
 // ResolveFieldSchema returns the field definitions for a given artifact type,

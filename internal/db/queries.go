@@ -448,6 +448,8 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 		args = append(args, filters.Priority)
 	}
 	if filters.Complexity != "" {
+		conditions = append(conditions, "artifact_type = ?")
+		args = append(args, "task")
 		conditions = append(conditions, "complexity = ?")
 		args = append(args, filters.Complexity)
 	}

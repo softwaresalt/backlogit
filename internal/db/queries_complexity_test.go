@@ -24,6 +24,28 @@ func TestQueryItems_ComplexityFilterMatchesTasks(t *testing.T) {
 	assert.Equal(t, "955.001-T", items[0].ID)
 }
 
+func TestQueryItems_ComplexityFilterExcludesNonTasks(t *testing.T) {
+	ctx := context.Background()
+	database := setupProjectionDB(t)
+	require.NoError(t, db.UpsertItem(ctx, database, projectionArtifact("955.003-T", map[string]any{"complexity": "high"})))
+
+	feature := projectionArtifact("955-F", map[string]any{})
+	feature.ArtifactType = "feature"
+	feature.ParentID = ""
+	feature.Level = 1
+	feature.HierarchyPath = "955"
+	require.NoError(t, db.UpsertItem(ctx, database, feature))
+	_, err := database.ExecContext(ctx, `UPDATE items SET complexity = ? WHERE id = ?`, "high", feature.ID)
+	require.NoError(t, err)
+
+	items, err := db.QueryItems(ctx, database, db.QueryFilters{Complexity: "high"})
+	require.NoError(t, err)
+
+	require.Len(t, items, 1)
+	assert.Equal(t, "955.003-T", items[0].ID)
+	assert.Equal(t, "task", items[0].ArtifactType)
+}
+
 func TestQueryItems_BlankComplexityDoesNotConstrain(t *testing.T) {
 	ctx := context.Background()
 	database := setupProjectionDB(t)

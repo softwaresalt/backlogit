@@ -191,7 +191,7 @@ that can be piped into other tooling.
 
 Complexity is task-only planning metadata:
 size = implementation volume; complexity = implementation difficulty and uncertainty;
-priority = importance and scheduling urgency. Default queue ordering does not change
+priority = urgency. Default queue ordering does not change
 when filtering by complexity.`,
 		Example: `  backlogit list
   backlogit list --status active --type task
@@ -207,7 +207,7 @@ when filtering by complexity.`,
 
 			if filterComplexity != "" {
 				if err := core.ValidateComplexityValue(ws, "task", filterComplexity); err != nil {
-					return err
+					return fmt.Errorf("validate complexity filter: %w", err)
 				}
 			}
 

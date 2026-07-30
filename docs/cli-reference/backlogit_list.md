@@ -21,7 +21,7 @@ that can be piped into other tooling.
 
 Complexity is task-only planning metadata:
 size = implementation volume; complexity = implementation difficulty and uncertainty;
-priority = importance and scheduling urgency. Default queue ordering does not change
+priority = urgency. Default queue ordering does not change
 when filtering by complexity.
 
 ```text

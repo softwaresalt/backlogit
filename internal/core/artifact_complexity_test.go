@@ -136,6 +136,34 @@ func TestSetArtifactComplexity_EmptyClearsField(t *testing.T) {
 	assert.False(t, projected.Valid)
 }
 
+func TestSetArtifactComplexity_EmptyRejectsNonTask(t *testing.T) {
+	ctx := context.Background()
+	ws, _, _ := setupComplexityWorkspace(t)
+	feature, err := core.CreateArtifact(ctx, ws, "Complexity feature", "feature")
+	require.NoError(t, err)
+
+	_, err = core.SetArtifactComplexity(ctx, ws, feature.ID, "")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not define a complexity field")
+}
+
+func TestSetArtifactComplexity_EmptyRequiresComplexitySchema(t *testing.T) {
+	ctx := context.Background()
+	ws, id, path := setupComplexityWorkspace(t)
+	delete(ws.HeaderDef.Types["task"].Fields, "complexity")
+
+	rawBefore, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	_, err = core.SetArtifactComplexity(ctx, ws, id, "")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not define a complexity field")
+
+	rawAfter, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, rawBefore, rawAfter, "schema-invalid clear must not write")
+}
+
 func TestSetArtifactComplexity_GenericUpdatePreservesComplexity(t *testing.T) {
 	ctx := context.Background()
 	ws, id, _ := setupComplexityWorkspace(t)

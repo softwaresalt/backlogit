@@ -169,7 +169,7 @@ func TestGenerateDocs_ComplexitySemantics(t *testing.T) {
 		assert.Contains(t, raw, "--complexity")
 		assert.Contains(t, raw, "size = implementation volume")
 		assert.Contains(t, raw, "complexity = implementation difficulty and uncertainty")
-		assert.Contains(t, raw, "priority = importance and scheduling urgency")
+		assert.Contains(t, raw, "priority = urgency")
 		assert.Contains(t, raw, "Default queue ordering does not change")
 	}
 }

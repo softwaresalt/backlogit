@@ -42,6 +42,28 @@ func TestUpsertItem_ProjectsModeledCustomFields(t *testing.T) {
 	assert.Equal(t, "kept-in-json-only", decoded["unmodeled"])
 }
 
+func TestUpsertItem_DoesNotProjectComplexityForNonTasks(t *testing.T) {
+	ctx := context.Background()
+	database := setupProjectionDB(t)
+	artifact := projectionArtifact("951-F", map[string]any{"complexity": "high"})
+	artifact.ArtifactType = "feature"
+	artifact.ParentID = ""
+	artifact.Level = 1
+	artifact.HierarchyPath = "951"
+
+	require.NoError(t, db.UpsertItem(ctx, database, artifact))
+
+	row := database.QueryRow(`SELECT complexity, custom_fields FROM items WHERE id = ?`, artifact.ID)
+	var complexity sql.NullString
+	var customFields string
+	require.NoError(t, row.Scan(&complexity, &customFields))
+
+	assert.False(t, complexity.Valid, "non-task complexity must stay out of the query projection")
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(customFields), &decoded))
+	assert.Equal(t, "high", decoded["complexity"], "custom field payload is preserved for compatibility")
+}
+
 func TestUpsertItemsTx_ProjectsModeledCustomFields(t *testing.T) {
 	ctx := context.Background()
 	database := setupProjectionDB(t)

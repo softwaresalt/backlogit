@@ -15,7 +15,7 @@ import (
 
 // SetArtifactComplexity sets or clears the task complexity metadata using a
 // body-preserving frontmatter seam.
-func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity string) (*models.Artifact, error) {
+func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity string) (artifact *models.Artifact, retErr error) {
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)
@@ -28,7 +28,11 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 		}
 		return nil, fmt.Errorf("lock task %s: %w", id, err)
 	}
-	defer func() { _ = unlock() }()
+	defer func() {
+		if err := unlock(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("unlock task %s: %w", id, err)
+		}
+	}()
 
 	ioPath, err := resolveContainedArtifactPath(ws, path)
 	if err != nil {
@@ -48,10 +52,10 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 	}
 
 	artifactType, _ := mdDoc.Frontmatter["artifact_type"].(string)
+	if err := validateComplexityMutation(ws, artifactType, complexity); err != nil {
+		return nil, fmt.Errorf("validate complexity for artifact %s: %w", id, err)
+	}
 	if complexity != "" {
-		if err := validateComplexityValue(ws, artifactType, complexity); err != nil {
-			return nil, err
-		}
 		setDecodedCustomField(mdDoc, "complexity", complexity)
 	} else {
 		clearDecodedCustomField(mdDoc, "complexity")
@@ -65,7 +69,7 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 		return nil, fmt.Errorf("write artifact %s: %w", id, err)
 	}
 
-	artifact, err := models.ArtifactFromFrontmatter(mdDoc.Frontmatter, string(mdDoc.Body))
+	artifact, err = models.ArtifactFromFrontmatter(mdDoc.Frontmatter, string(mdDoc.Body))
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct artifact %s: %w", id, err)
 	}
@@ -80,6 +84,10 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 // ValidateComplexityValue confirms complexity is a member of the type's
 // header-def complexity enum.
 func ValidateComplexityValue(ws *Workspace, artifactType, complexity string) error {
+	return validateComplexityMutation(ws, artifactType, complexity)
+}
+
+func validateComplexityMutation(ws *Workspace, artifactType, complexity string) error {
 	if ws.HeaderDef == nil {
 		return fmt.Errorf("cannot validate complexity: header-def not loaded: %w", blerrors.ErrConfig)
 	}
@@ -91,16 +99,15 @@ func ValidateComplexityValue(ws *Workspace, artifactType, complexity string) err
 	if !ok {
 		return fmt.Errorf("artifact type %q does not define a complexity field: %w", artifactType, blerrors.ErrValidation)
 	}
+	if complexity == "" {
+		return nil
+	}
 	for _, v := range def.Values {
 		if v == complexity {
 			return nil
 		}
 	}
 	return fmt.Errorf("invalid complexity %q: must be one of %v: %w", complexity, def.Values, blerrors.ErrValidation)
-}
-
-func validateComplexityValue(ws *Workspace, artifactType, complexity string) error {
-	return ValidateComplexityValue(ws, artifactType, complexity)
 }
 
 func clearDecodedCustomField(mdDoc *mdfront.Markdown, key string) {

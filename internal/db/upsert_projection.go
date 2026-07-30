@@ -93,7 +93,7 @@ func buildUpsertItemStatement(
 		nullString(artifact.HierarchyPath),
 	}
 
-	projected, err := projectedCustomFields(ctx, q, artifact.CustomFields)
+	projected, err := projectedCustomFields(ctx, q, artifact)
 	if err != nil {
 		return "", nil, err
 	}
@@ -110,8 +110,8 @@ func buildUpsertItemStatement(
 	return stmt, args, nil
 }
 
-func projectedCustomFields(ctx context.Context, q itemColumnQuerier, fields map[string]any) ([]projectedCustomField, error) {
-	if len(fields) == 0 {
+func projectedCustomFields(ctx context.Context, q itemColumnQuerier, artifact *models.Artifact) ([]projectedCustomField, error) {
+	if len(artifact.CustomFields) == 0 {
 		return nil, nil
 	}
 	columns, err := existingColumnsFromQuerier(ctx, q)
@@ -119,8 +119,11 @@ func projectedCustomFields(ctx context.Context, q itemColumnQuerier, fields map[
 		return nil, err
 	}
 
-	projected := make([]projectedCustomField, 0, len(fields))
-	for name, value := range fields {
+	projected := make([]projectedCustomField, 0, len(artifact.CustomFields))
+	for name, value := range artifact.CustomFields {
+		if name == "complexity" && artifact.ArtifactType != "task" {
+			continue
+		}
 		if _, base := baseItemColumnNames[name]; base {
 			continue
 		}
@@ -160,7 +163,10 @@ func existingColumnsFromQuerier(ctx context.Context, q itemColumnQuerier) (map[s
 		}
 		cols[name] = true
 	}
-	return cols, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate table_info columns: %w", err)
+	}
+	return cols, nil
 }
 
 func customFieldProjectionValue(value any) (any, error) {

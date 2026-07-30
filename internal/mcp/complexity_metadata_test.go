@@ -79,6 +79,29 @@ func TestMCPUpdateComplexity_InvalidAndMixedValidation(t *testing.T) {
 	assert.Equal(t, "validation_failed", contractErrorType(t, mixedSize))
 }
 
+func TestMCPUpdateComplexity_NonStringDoesNotClear(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	feature, err := core.CreateArtifact(ctx, ws, "MCP complexity type feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "MCP complexity type task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+	_, err = core.SetArtifactComplexity(ctx, ws, task.ID, "high")
+	require.NoError(t, err)
+
+	result, err := s.handleUpdateItem(ctx, contractRequest(map[string]any{
+		"id":         task.ID,
+		"complexity": false,
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "validation_failed", contractErrorType(t, result))
+
+	var projected sql.NullString
+	require.NoError(t, ws.DB.QueryRowContext(ctx, `SELECT complexity FROM items WHERE id = ?`, task.ID).Scan(&projected))
+	require.True(t, projected.Valid)
+	assert.Equal(t, "high", projected.String)
+}
+
 func TestMCPListComplexityFilter(t *testing.T) {
 	s, ws := setupBugFixServer(t)
 	ctx := context.Background()
