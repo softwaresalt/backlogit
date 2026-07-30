@@ -51,7 +51,12 @@ or update frontmatter fields and template-backed body sections on an existing
 artifact when an ID is supplied.
 
 Use repeated --section name=value flags to update named sections without
-replacing the rest of the document body.`,
+replacing the rest of the document body.
+
+Complexity is task-only planning metadata:
+size = implementation volume; complexity = implementation difficulty and uncertainty;
+priority = importance and scheduling urgency. Default queue ordering does not change
+when complexity is set.`,
 		Example: `  backlogit update
   backlogit update --check
   backlogit update --to v1.2.3

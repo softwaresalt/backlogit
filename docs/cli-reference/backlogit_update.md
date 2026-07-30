@@ -21,6 +21,11 @@ artifact when an ID is supplied.
 Use repeated --section name=value flags to update named sections without
 replacing the rest of the document body.
 
+Complexity is task-only planning metadata:
+size = implementation volume; complexity = implementation difficulty and uncertainty;
+priority = importance and scheduling urgency. Default queue ordering does not change
+when complexity is set.
+
 ```text
 backlogit update [id] [flags]
 ```
@@ -43,6 +48,7 @@ backlogit update [id] [flags]
       --assigned-to string            assignee
       --check                         check whether a backlogit binary update is available without applying it
       --commit string                 commit SHA
+      --complexity string             implementation difficulty/uncertainty (trivial, low, medium, high); body-preserving, mutually exclusive with other field flags
       --description string            new description
       --force-gates                   operator-only: force completion past the gate (requires --force-reason)
       --force-reason string           justification recorded in the forced-gate audit event

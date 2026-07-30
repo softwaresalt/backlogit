@@ -187,7 +187,12 @@ func newListCommand(cwd *string) *cobra.Command {
 		Long: `List artifacts from the backlogit index with optional filters.
 
 Use this command for quick operator views, grouped summaries, or JSON output
-that can be piped into other tooling.`,
+that can be piped into other tooling.
+
+Complexity is task-only planning metadata:
+size = implementation volume; complexity = implementation difficulty and uncertainty;
+priority = importance and scheduling urgency. Default queue ordering does not change
+when filtering by complexity.`,
 		Example: `  backlogit list
   backlogit list --status active --type task
   backlogit list --group-by status
