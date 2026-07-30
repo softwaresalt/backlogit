@@ -79,6 +79,14 @@ types:
       size_ruleset_version:
         type: string
         optional: true
+      complexity:
+        type: enum
+        values:
+          - trivial
+          - low
+          - medium
+          - high
+        optional: true
   review:
     prefix: R
     suffix: "-R"
