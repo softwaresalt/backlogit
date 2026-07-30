@@ -1849,3 +1849,5 @@
 {"seq":1851,"timestamp":"2026-07-30T22:08:04.5581306Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["commit"],"item_id":"132.001-T","schema_version":1}}
 {"seq":1852,"timestamp":"2026-07-30T22:16:26.5978167Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"132.002-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
 {"seq":1853,"timestamp":"2026-07-30T22:17:06.1739923Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["commit"],"item_id":"132.002-T","schema_version":1}}
+{"seq":1854,"timestamp":"2026-07-30T22:28:15.8227762Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"132.003-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
+{"seq":1855,"timestamp":"2026-07-30T22:28:56.4912028Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["commit"],"item_id":"132.003-T","schema_version":1}}
