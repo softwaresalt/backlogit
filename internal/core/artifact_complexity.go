@@ -77,7 +77,9 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 	return artifact, nil
 }
 
-func validateComplexityValue(ws *Workspace, artifactType, complexity string) error {
+// ValidateComplexityValue confirms complexity is a member of the type's
+// header-def complexity enum.
+func ValidateComplexityValue(ws *Workspace, artifactType, complexity string) error {
 	if ws.HeaderDef == nil {
 		return fmt.Errorf("cannot validate complexity: header-def not loaded: %w", blerrors.ErrConfig)
 	}
@@ -95,6 +97,10 @@ func validateComplexityValue(ws *Workspace, artifactType, complexity string) err
 		}
 	}
 	return fmt.Errorf("invalid complexity %q: must be one of %v: %w", complexity, def.Values, blerrors.ErrValidation)
+}
+
+func validateComplexityValue(ws *Workspace, artifactType, complexity string) error {
+	return ValidateComplexityValue(ws, artifactType, complexity)
 }
 
 func clearDecodedCustomField(mdDoc *mdfront.Markdown, key string) {

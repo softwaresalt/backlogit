@@ -27,6 +27,7 @@ var artifactColumns = []format.Column{
 	{Key: "type", Header: "TYPE"},
 	{Key: "priority", Header: "PRIORITY"},
 	{Key: "size", Header: "SIZE"},
+	{Key: "complexity", Header: "COMPLEXITY"},
 	{Key: "composition", Header: "COMPOSITION"},
 }
 
@@ -99,6 +100,11 @@ func artifactSizeAndComposition(a *models.Artifact, comps map[string]*core.SizeC
 	return size, composition
 }
 
+func artifactComplexity(a *models.Artifact) string {
+	complexity, _ := a.CustomFields["complexity"].(string)
+	return complexity
+}
+
 // artifactsToRows converts a slice of artifacts to the row maps consumed by format.Renderer.
 // It projects the stored per-artifact size and, for aggregate types
 // (feature/shipment), a computed-on-read composition summary — keeping the human
@@ -118,6 +124,7 @@ func artifactsToRows(ctx context.Context, ws *core.Workspace, artifacts []*model
 			"type":        a.ArtifactType,
 			"priority":    a.Priority,
 			"size":        size,
+			"complexity":  artifactComplexity(a),
 			"composition": composition,
 		}
 	}
@@ -165,6 +172,7 @@ func newListCommand(cwd *string) *cobra.Command {
 		filterType       string
 		filterStatus     string
 		filterPriority   string
+		filterComplexity string
 		filterAssignedTo string
 		filterOwner      string
 		filterSprint     string
@@ -192,10 +200,17 @@ that can be piped into other tooling.`,
 			}
 			defer ws.Close()
 
+			if filterComplexity != "" {
+				if err := core.ValidateComplexityValue(ws, "task", filterComplexity); err != nil {
+					return err
+				}
+			}
+
 			artifacts, err := db.QueryItems(ctx, ws.DB, db.QueryFilters{
 				Type:       filterType,
 				Status:     filterStatus,
 				Priority:   filterPriority,
+				Complexity: filterComplexity,
 				AssignedTo: filterAssignedTo,
 				Owner:      filterOwner,
 				Sprint:     filterSprint,
@@ -234,6 +249,7 @@ that can be piped into other tooling.`,
 						ParentID:    a.ParentID,
 						Priority:    a.Priority,
 						Size:        size,
+						Complexity:  artifactComplexity(a),
 						Composition: composition,
 					}
 				}
@@ -248,6 +264,7 @@ that can be piped into other tooling.`,
 	cmd.Flags().StringVar(&filterType, "type", "", "filter by artifact type")
 	cmd.Flags().StringVar(&filterStatus, "status", "", "filter by status")
 	cmd.Flags().StringVar(&filterPriority, "priority", "", "filter by priority")
+	cmd.Flags().StringVar(&filterComplexity, "complexity", "", "filter by implementation complexity (trivial, low, medium, high)")
 	cmd.Flags().StringVar(&filterAssignedTo, "assigned-to", "", "filter by assignee")
 	cmd.Flags().StringVar(&filterOwner, "owner", "", "filter by owner")
 	cmd.Flags().StringVar(&filterSprint, "sprint", "", "filter by sprint ID")

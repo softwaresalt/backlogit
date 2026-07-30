@@ -82,6 +82,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("assigned_to", mcplib.Description("Filter by assignee")),
 			mcplib.WithString("sprint", mcplib.Description("Filter by sprint ID")),
 			mcplib.WithString("priority", mcplib.Description("Filter by priority")),
+			mcplib.WithString("complexity", mcplib.Description("Filter by implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority")),
 			mcplib.WithString("owner", mcplib.Description("Filter by owner (distinct from assigned_to)")),
 		),
 		s.handleListItems,
@@ -490,6 +491,12 @@ func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolReq
 	}
 	if v, ok := request.Params.Arguments["priority"].(string); ok {
 		filters.Priority = v
+	}
+	if v, ok := request.Params.Arguments["complexity"].(string); ok && v != "" {
+		if err := core.ValidateComplexityValue(s.Workspace, "task", v); err != nil {
+			return domainError("list items", err), nil
+		}
+		filters.Complexity = v
 	}
 	if v, ok := request.Params.Arguments["owner"].(string); ok {
 		filters.Owner = v
