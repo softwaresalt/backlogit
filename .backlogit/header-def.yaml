@@ -117,6 +117,16 @@ types:
           - high
           - critical
         default: medium
+  spike:
+    prefix: SP
+    suffix: "-SP"
+    id_format: "{NNN}{suffix}"
+    fields:
+  chore:
+    prefix: C
+    suffix: "-C"
+    id_format: "{NNN}{suffix}"
+    fields:
   shipment:
     prefix: S
     suffix: "-S"
