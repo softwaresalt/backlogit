@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -58,33 +57,11 @@ func upsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) er
 		refsVal = sql.NullString{}
 	}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO items
-			(id, title, status, artifact_type, parent_id, sprint, priority, description,
-			 custom_fields, created_at, updated_at,
-			 assigned_to, owner, labels, dependencies, "references", "commit",
-			 level, hierarchy_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		artifact.ID,
-		artifact.Title,
-		string(artifact.Status),
-		artifact.ArtifactType,
-		nullString(artifact.ParentID),
-		nullString(artifact.Sprint),
-		nullString(artifact.Priority),
-		nullString(artifact.Description),
-		string(cf),
-		artifact.CreatedAt.Format(time.RFC3339Nano),
-		artifact.UpdatedAt.Format(time.RFC3339Nano),
-		nullString(artifact.AssignedTo),
-		nullString(artifact.Owner),
-		labelsVal,
-		depsVal,
-		refsVal,
-		nullString(artifact.Commit),
-		nullInt64(artifact.Level),
-		nullString(artifact.HierarchyPath),
-	)
+	stmt, args, err := buildUpsertItemStatement(ctx, tx, artifact, string(cf), labelsVal, depsVal, refsVal)
+	if err != nil {
+		return fmt.Errorf("build upsert item %s in tx: %w", artifact.ID, err)
+	}
+	_, err = tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return fmt.Errorf("upsert item %s in tx: %w", artifact.ID, err)
 	}

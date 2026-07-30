@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -91,6 +92,11 @@ func TestSetArtifactComplexity_PersistsAndPreservesBody(t *testing.T) {
 	assert.Equal(t, before.Status, after.Status)
 	assert.Equal(t, before.Priority, after.Priority)
 	assert.Equal(t, "high", after.CustomFields["complexity"])
+
+	var projected sql.NullString
+	require.NoError(t, ws.DB.QueryRowContext(ctx, `SELECT complexity FROM items WHERE id = ?`, id).Scan(&projected))
+	assert.True(t, projected.Valid)
+	assert.Equal(t, "high", projected.String)
 }
 
 func TestSetArtifactComplexity_RejectsInvalidValueBeforeWrite(t *testing.T) {
@@ -124,6 +130,10 @@ func TestSetArtifactComplexity_EmptyClearsField(t *testing.T) {
 	require.NoError(t, err)
 	cf, _ := md.Frontmatter["custom_fields"].(map[string]any)
 	assert.NotContains(t, cf, "complexity")
+
+	var projected sql.NullString
+	require.NoError(t, ws.DB.QueryRowContext(ctx, `SELECT complexity FROM items WHERE id = ?`, id).Scan(&projected))
+	assert.False(t, projected.Valid)
 }
 
 func TestSetArtifactComplexity_GenericUpdatePreservesComplexity(t *testing.T) {
