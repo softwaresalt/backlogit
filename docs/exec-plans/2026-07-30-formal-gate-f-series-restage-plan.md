@@ -149,7 +149,12 @@ parallel; F5 last
     characterization references only, not places to add duplicate canonicalizers.
 * **Canonical byte contract (fixed here, not delegated to the implementer):**
   * **Encoding:** UTF-8, no BOM.
-  * **Line endings:** LF (`\n`) only; any CR is normalized out before hashing.
+  * **Line endings:** LF (`\n`) only, reached by converting CRLF→LF and a lone
+    CR→LF — **never by deleting CR**. Deleting CR would let `"a\rb"` collapse
+    into `"ab"`, a canonical-hash collision that silently erases a control
+    character; converting a lone CR to LF keeps a distinct break byte, so the
+    two inputs still hash differently. A golden vector pins that `"a\rb"` and
+    `"ab"` produce different hashes (CR cannot disappear into adjacent text).
   * **Object keys:** sorted lexicographically by UTF-8 code-unit order,
     recursively at every nesting level.
   * **Array order:** preserved as-is (array order is semantic and never sorted).
@@ -202,6 +207,9 @@ parallel; F5 last
     free to define the real shape).
   * Two inputs differing only by LF vs CRLF and by unsorted vs sorted key order
     produce identical canonical bytes and identical hashes.
+  * CR normalization is collision-free: a lone CR is converted to LF (not
+    deleted), so `"a\rb"` hashes distinctly from `"ab"` — a committed vector
+    proves a CR cannot vanish into adjacent text.
   * Reordering array elements changes the hash (array order is significant).
   * A non-integer numeric input causes the canonicalizer to return an error
     (fail-closed number-domain enforcement).
