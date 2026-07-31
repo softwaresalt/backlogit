@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Task-only typed metadata (size, complexity) must enforce artifactType == "task" in the core setter/validator BEFORE schema resolution, because the DB upsert projection deliberately drops the field for non-task artifacts; without the guard a customized header-def that adds the field to another type would silently persist frontmatter the projection never surfaces.'
+description: 'Task-only typed metadata (complexity) must enforce artifactType == "task" in the core setter/validator BEFORE schema resolution, because the DB upsert projection only drops the field for non-task artifacts and the projection guard alone cannot protect the source-of-truth frontmatter; without the setter guard a customized header-def that adds the field to another type would silently persist frontmatter. The structurally similar size seam currently lacks both guards (latent gap).'
 doc_type: learning
 docline:
     date: 2026-07-30T00:00:00Z
@@ -25,8 +25,8 @@ title: 'typed metadata seam: enforce task-only in the core setter before schema 
 
 ## Problem
 
-Backlogit task metadata like `size` and `complexity` is a *task-only* concept.
-The SQLite projection already refuses to persist it for non-task artifacts:
+Backlogit's task `complexity` metadata is a *task-only* concept. The SQLite
+projection refuses to persist it for non-task artifacts:
 
 ```go
 // internal/db/upsert_projection.go
@@ -39,10 +39,10 @@ It is tempting to treat that projection guard as sufficient. It is not. The
 projection only controls what lands in the `items` table columns. The
 authoritative source of truth is the artifact's frontmatter file. If the core
 setter/validator does not itself reject non-task types, an operator who
-customizes `header-def.yaml` to add a `complexity` (or `size`) field to another
-WIT type will get the value written to that artifact's frontmatter — even though
-the DB projection deliberately drops it. The result is a source-of-truth vs
-projection divergence that no query can see.
+customizes `header-def.yaml` to add a `complexity` field to another WIT type
+will get the value written to that artifact's frontmatter — even though the DB
+projection drops it. The result is a source-of-truth vs projection divergence
+that no query can see.
 
 ## Fix
 
@@ -67,17 +67,25 @@ customized-schema regression test that adds the field to a non-task type in
 
 ## Why this recurs
 
-- `size` and `complexity` share the same "reserved key" seam
-  (`internal/core/artifact_size.go`, `internal/core/artifact_complexity.go`) and
-  the same projection drop. Any future task-only typed field will inherit the
-  same trap.
+- `size` and `complexity` share the same "reserved key" seam *structure*
+  (`internal/core/artifact_size.go`, `internal/core/artifact_complexity.go`).
+  But as of this writing only `complexity` implements the task-only invariant:
+  `validateComplexityMutation` guards `artifactType == "task"` and the projection
+  drops non-task `complexity`. `size` has **neither** guard — `validateSizeValue`
+  resolves the schema for whatever type is passed and `projectedCustomFields`
+  does not drop non-task `size`. A customized non-task `size` schema would
+  therefore be written *and* projected. That asymmetry is a latent gap: any
+  future task-only typed field should copy the complexity pattern, and `size`
+  should eventually be brought into line (with a regression test) rather than
+  cited as an example that already does this.
 - The projection guard and the setter guard look redundant but protect two
   different layers: the setter protects the file (source of truth); the
-  projection protects the index (disposable cache). Both are required.
+  projection protects the index (disposable cache). Both are required for a
+  field to be genuinely task-only.
 
 ## Citations
 
-- `internal/core/artifact_complexity.go:90-93` — task-only guard precedes schema resolution
-- `internal/db/upsert_projection.go:124-126` — projection drops non-task complexity
-- `internal/core/artifact_size.go` — mirrored `size` seam (reserved keys, same pattern)
+- `internal/core/artifact_complexity.go:90-93` — complexity task-only guard precedes schema resolution
+- `internal/db/upsert_projection.go:124-126` — projection drops non-task `complexity` only (no `size` drop)
+- `internal/core/artifact_size.go:231-262,314-336` — `size` seam: same reserved-key structure but **no** `artifactType == "task"` guard (latent gap)
 - Surfaced by Copilot review on PR #321 (shipment 113-S, feature 132-F), merge `685620ec`

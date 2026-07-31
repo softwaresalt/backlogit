@@ -57,7 +57,7 @@ tool surface, and projected into the SQLite index for task artifacts only.
   queue→archive, stamped merge SHA on 10 archive artifacts.
 - **Post-mode**: all 10 archive files matched, no P-007 deletions, 113-S removed
   from queue → **PROCEED**. Report:
-  `.backlogit/reconcile/113-S-post-20260730T171430.md`.
+  `.backlogit/reconcile/113-S-post-20260730T172745.md`.
 
 ## Knowledge Graduated
 
