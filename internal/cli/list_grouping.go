@@ -15,6 +15,7 @@ type ListItem struct {
 	Priority    string `json:"priority"`
 	Depth       int    `json:"depth"`
 	Size        string `json:"size,omitempty"`
+	Complexity  string `json:"complexity,omitempty"`
 	Composition string `json:"composition,omitempty"`
 }
 
@@ -60,6 +61,9 @@ func FormatGroupedView(items []ListItem, groupBy string) string {
 			// non-aggregate rows uncluttered.
 			if item.Size != "" {
 				line += "  " + item.Size
+			}
+			if item.Complexity != "" {
+				line += "  " + item.Complexity
 			}
 			if item.Composition != "" {
 				line += "  " + item.Composition

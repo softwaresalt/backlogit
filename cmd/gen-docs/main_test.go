@@ -155,3 +155,22 @@ func TestGenerateDocs_FrontmatterIsCanonical(t *testing.T) {
 	assert.Equal(t, string(raw), string(normalized),
 		"generated frontmatter is already canonical (migrate no-op)")
 }
+
+func TestGenerateDocs_ComplexitySemantics(t *testing.T) {
+	outDir := t.TempDir()
+	require.NoError(t, generateDocs(outDir))
+
+	updateRaw, err := os.ReadFile(filepath.Join(outDir, "backlogit_update.md"))
+	require.NoError(t, err)
+	listRaw, err := os.ReadFile(filepath.Join(outDir, "backlogit_list.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(updateRaw), "explicit empty string clears")
+
+	for _, raw := range []string{string(updateRaw), string(listRaw)} {
+		assert.Contains(t, raw, "--complexity")
+		assert.Contains(t, raw, "size = implementation volume")
+		assert.Contains(t, raw, "complexity = implementation difficulty and uncertainty")
+		assert.Contains(t, raw, "priority = urgency")
+		assert.Contains(t, raw, "Default queue ordering does not change")
+	}
+}

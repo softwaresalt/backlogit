@@ -134,6 +134,54 @@ func TestApplySchemaExtensions_Idempotent(t *testing.T) {
 	require.NoError(t, err2)
 }
 
+func TestApplySchemaExtensions_AddsComplexityFromDefaults(t *testing.T) {
+	database := setupSchemaGenTestDB(t)
+	headerDef := loadDefaultHeaderDef(t)
+
+	require.NoError(t, db.ApplySchemaExtensions(database, headerDef))
+	require.NoError(t, db.ApplySchemaExtensions(database, headerDef))
+
+	assert.True(t, columnExists(t, database, "items", "complexity"), "items.complexity must be added from task metadata")
+}
+
+func TestEnsureSchemaWithExtensions_FreshSchemaIncludesComplexity(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "fresh.db")
+	database, err := db.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	require.NoError(t, db.EnsureSchemaWithExtensions(database, loadDefaultHeaderDef(t)))
+
+	assert.True(t, columnExists(t, database, "items", "complexity"), "fresh schemas must include complexity")
+}
+
+func TestGenerateSchemaExtensions_RejectsMalformedExistingFieldName(t *testing.T) {
+	database := setupSchemaGenTestDB(t)
+	_, err := database.Exec(`ALTER TABLE items ADD COLUMN "bad-name" TEXT`)
+	require.NoError(t, err)
+
+	headerDef := &config.HeaderDefConfig{
+		Defaults: config.SystemDefaults{
+			ID:          config.FieldDef{Type: "string", Immutable: true},
+			CreatedDate: config.FieldDef{Type: "datetime", Immutable: true},
+			UpdatedDate: config.FieldDef{Type: "datetime", Immutable: false},
+		},
+		Types: map[string]*config.TypeDefConfig{
+			"task": {
+				Prefix:   "T",
+				IDFormat: "{prefix}{NNN}",
+				Fields: map[string]*config.FieldDef{
+					"bad-name": {Type: "string"},
+				},
+			},
+		},
+	}
+
+	_, err = db.GenerateSchemaExtensions(database, headerDef)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "invalid column name")
+}
+
 func setupSchemaGenTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -142,6 +190,35 @@ func setupSchemaGenTestDB(t *testing.T) *sql.DB {
 	require.NoError(t, db.EnsureSchema(database))
 	t.Cleanup(func() { database.Close() })
 	return database
+}
+
+func loadDefaultHeaderDef(t *testing.T) *config.HeaderDefConfig {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, config.WriteDefaults(dir))
+	headerDef, err := config.LoadHeaderDef(dir)
+	require.NoError(t, err)
+	return headerDef
+}
+
+func columnExists(t *testing.T, database *sql.DB, table, column string) bool {
+	t.Helper()
+	rows, err := database.Query(`PRAGMA table_info(` + table + `)`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt sql.NullString
+		require.NoError(t, rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk))
+		if name == column {
+			return true
+		}
+	}
+	require.NoError(t, rows.Err())
+	return false
 }
 
 func TestIntrospectSchema_ReturnsAllCoreTables(t *testing.T) {

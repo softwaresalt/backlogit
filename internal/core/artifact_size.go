@@ -214,9 +214,10 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 	return artifact, nil
 }
 
-// reservedSizingKeys are the size/provenance custom_fields keys that only the
-// size seam may author. Generic create/update paths must not write them off-seam.
-var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version"}
+// reservedSizingKeys are the size/provenance and complexity custom_fields keys
+// that only their typed seams may author. Generic create/update paths must not
+// write them off-seam.
+var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version", "complexity"}
 
 // validateSizeMutation performs the targeted pre-write validation for the size
 // seam: the size value against the type's enum, size_source against the fixed
@@ -263,12 +264,11 @@ func validateSizeMutation(ws *Workspace, artifactType, priorSize string, m SizeM
 
 // rejectReservedSizingKeysOnCreate enforces sole-writer integrity at the generic
 // create boundary (108-F SE-3a, Copilot G7): the generic create path may NEVER
-// author size or provenance. Any reserved sizing key (size, size_source,
-// size_ruleset_version) present on a generic create is refused so an initial size
-// is never recorded eventless, unvalidated, and off-seam. All initial sizing must
-// route through the audited SetArtifactSizeWithProvenance seam, which validates the
-// value + provenance completeness and appends the fail-closed estimate_history
-// event.
+// author size, size provenance, or complexity. Any reserved sizing key (size,
+// size_source, size_ruleset_version, complexity) present on a generic create is
+// refused so typed metadata is never recorded eventless, unvalidated, and
+// off-seam. All initial typed metadata must route through its dedicated seam,
+// such as SetArtifactSizeWithProvenance or SetArtifactComplexity.
 //
 // A prior variant permitted a provenanced size (size + size_source) to ride through
 // for "migration/import", but that permit-branch bypassed validateSizeMutation
@@ -284,7 +284,7 @@ func rejectReservedSizingKeysOnCreate(fields map[string]any) error {
 	}
 	for _, k := range reservedSizingKeys {
 		if _, ok := fields[k]; ok {
-			return fmt.Errorf("create carrying reserved sizing key %q must route through the audited size seam: %w", k, blerrors.ErrValidation)
+			return fmt.Errorf("create carrying reserved metadata key %q must route through its typed metadata seam: %w", k, blerrors.ErrValidation)
 		}
 	}
 	return nil

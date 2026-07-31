@@ -19,6 +19,11 @@ List artifacts from the backlogit index with optional filters.
 Use this command for quick operator views, grouped summaries, or JSON output
 that can be piped into other tooling.
 
+Complexity is task-only planning metadata:
+size = implementation volume; complexity = implementation difficulty and uncertainty;
+priority = urgency. Default queue ordering does not change
+when filtering by complexity.
+
 ```text
 backlogit list [flags]
 ```
@@ -36,6 +41,7 @@ backlogit list [flags]
 
 ```text
       --assigned-to string   filter by assignee
+      --complexity string    filter by implementation complexity (trivial, low, medium, high)
       --format string        output format: table, json, tile (default "table")
       --group-by string      group output by field (status, type, priority)
   -h, --help                 help for list

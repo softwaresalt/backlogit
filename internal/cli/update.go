@@ -32,6 +32,7 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		labels        string
 		commit        string
 		size          string
+		complexity    string
 		sizeSource    string
 		sizeRuleset   string
 		gateBase      string
@@ -50,7 +51,12 @@ or update frontmatter fields and template-backed body sections on an existing
 artifact when an ID is supplied.
 
 Use repeated --section name=value flags to update named sections without
-replacing the rest of the document body.`,
+replacing the rest of the document body.
+
+Complexity is task-only planning metadata:
+size = implementation volume; complexity = implementation difficulty and uncertainty;
+priority = urgency. Default queue ordering does not change
+when complexity is set or cleared.`,
 		Example: `  backlogit update
   backlogit update --check
   backlogit update --to v1.2.3
@@ -131,7 +137,28 @@ replacing the rest of the document body.`,
 					}
 					return sizeErr
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id); err != nil {
+					return fmt.Errorf("write update confirmation: %w", err)
+				}
+				return nil
+			}
+
+			if cmd.Flags().Changed("complexity") {
+				if conflicts := conflictingComplexityFlags(cmd); len(conflicts) > 0 {
+					return fmt.Errorf(
+						"--complexity cannot be combined with %s: run the complexity mutation separately to preserve the body",
+						strings.Join(conflicts, ", "))
+				}
+				if _, complexityErr := core.SetArtifactComplexity(ctx, ws, id, complexity); complexityErr != nil {
+					if errors.Is(complexityErr, core.ErrTaskBusy) {
+						cmd.SilenceErrors = true
+						return &ExitError{Code: 4, Msg: fmt.Sprintf("task %s is busy: %v", id, complexityErr)}
+					}
+					return fmt.Errorf("set complexity: %w", complexityErr)
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id); err != nil {
+					return fmt.Errorf("write update confirmation: %w", err)
+				}
 				return nil
 			}
 
@@ -312,6 +339,7 @@ replacing the rest of the document body.`,
 	cmd.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&complexity, "complexity", "", "implementation difficulty/uncertainty (trivial, low, medium, high); explicit empty string clears; body-preserving, mutually exclusive with other field flags")
 	cmd.Flags().StringVar(&sizeSource, "size-source", "", "size provenance source (human, agent, derived)")
 	cmd.Flags().StringVar(&sizeRuleset, "size-ruleset-version", "", "size ruleset version")
 	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")
@@ -327,7 +355,7 @@ func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
 	candidates := []string{
 		"title", "status", "priority", "harness-status", "description",
 		"sprint", "assigned-to", "owner", "labels", "commit", "section",
-		"size", "size-source", "size-ruleset-version", "gate-base", "force-gates", "force-reason", "json",
+		"size", "complexity", "size-source", "size-ruleset-version", "gate-base", "force-gates", "force-reason", "json",
 	}
 	var changed []string
 	for _, name := range candidates {
@@ -351,6 +379,24 @@ func conflictingSizeFlags(cmd *cobra.Command) []string {
 	candidates := []string{
 		"title", "status", "priority", "harness-status", "description",
 		"sprint", "assigned-to", "owner", "labels", "commit", "section",
+		"complexity",
+	}
+	var conflicts []string
+	for _, name := range candidates {
+		if cmd.Flags().Changed(name) {
+			conflicts = append(conflicts, "--"+name)
+		}
+	}
+	return conflicts
+}
+
+// conflictingComplexityFlags returns the set of frontmatter-mutating flags
+// (rendered as --name) that were set alongside --complexity.
+func conflictingComplexityFlags(cmd *cobra.Command) []string {
+	candidates := []string{
+		"title", "status", "priority", "harness-status", "description",
+		"sprint", "assigned-to", "owner", "labels", "commit", "section",
+		"size", "size-source", "size-ruleset-version",
 	}
 	var conflicts []string
 	for _, name := range candidates {

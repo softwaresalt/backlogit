@@ -21,6 +21,7 @@ type QueryFilters struct {
 	AssignedTo      string
 	Owner           string
 	Priority        string
+	Complexity      string
 	IncludeArchived bool // when false (default), archived items are excluded from results
 	Limit           int  // max results to return (0 = no limit)
 	Offset          int  // number of results to skip for pagination
@@ -159,35 +160,13 @@ func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) erro
 	}
 
 	return RetryWrite(ctx, func() error {
+		stmt, args, stmtErr := buildUpsertItemStatement(ctx, db, artifact, string(cf), labelsVal, depsVal, refsVal)
+		if stmtErr != nil {
+			return fmt.Errorf("build upsert item %s: %w", artifact.ID, stmtErr)
+		}
 		// Use a distinct variable (execErr) rather than reassigning the outer err
 		// so the closure does not shadow the earlier marshalling errors.
-		_, execErr := db.ExecContext(ctx,
-			`INSERT OR REPLACE INTO items
-			(id, title, status, artifact_type, parent_id, sprint, priority, description,
-			 custom_fields, created_at, updated_at,
-			 assigned_to, owner, labels, dependencies, "references", "commit",
-			 level, hierarchy_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			artifact.ID,
-			artifact.Title,
-			string(artifact.Status),
-			artifact.ArtifactType,
-			nullString(artifact.ParentID),
-			nullString(artifact.Sprint),
-			nullString(artifact.Priority),
-			nullString(artifact.Description),
-			string(cf),
-			artifact.CreatedAt.Format(time.RFC3339Nano),
-			artifact.UpdatedAt.Format(time.RFC3339Nano),
-			nullString(artifact.AssignedTo),
-			nullString(artifact.Owner),
-			labelsVal,
-			depsVal,
-			refsVal,
-			nullString(artifact.Commit),
-			nullInt64(artifact.Level),
-			nullString(artifact.HierarchyPath),
-		)
+		_, execErr := db.ExecContext(ctx, stmt, args...)
 		if execErr != nil {
 			return fmt.Errorf("upsert item %s: %w", artifact.ID, execErr)
 		}
@@ -468,6 +447,12 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 		conditions = append(conditions, "priority = ?")
 		args = append(args, filters.Priority)
 	}
+	if filters.Complexity != "" {
+		conditions = append(conditions, "artifact_type = ?")
+		args = append(args, "task")
+		conditions = append(conditions, "complexity = ?")
+		args = append(args, filters.Complexity)
+	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -669,33 +654,11 @@ func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) er
 		refsVal = sql.NullString{}
 	}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO items
-			(id, title, status, artifact_type, parent_id, sprint, priority, description,
-			 custom_fields, created_at, updated_at,
-			 assigned_to, owner, labels, dependencies, "references", "commit",
-			 level, hierarchy_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		artifact.ID,
-		artifact.Title,
-		string(artifact.Status),
-		artifact.ArtifactType,
-		nullString(artifact.ParentID),
-		nullString(artifact.Sprint),
-		nullString(artifact.Priority),
-		nullString(artifact.Description),
-		string(cf),
-		artifact.CreatedAt.Format(time.RFC3339Nano),
-		artifact.UpdatedAt.Format(time.RFC3339Nano),
-		nullString(artifact.AssignedTo),
-		nullString(artifact.Owner),
-		labelsVal,
-		depsVal,
-		refsVal,
-		nullString(artifact.Commit),
-		nullInt64(artifact.Level),
-		nullString(artifact.HierarchyPath),
-	)
+	stmt, args, err := buildUpsertItemStatement(ctx, tx, artifact, string(cf), labelsVal, depsVal, refsVal)
+	if err != nil {
+		return fmt.Errorf("build upsert item %s: %w", artifact.ID, err)
+	}
+	_, err = tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
 	}
