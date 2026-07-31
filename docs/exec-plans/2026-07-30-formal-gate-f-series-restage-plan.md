@@ -216,10 +216,16 @@ parallel; F5 last
   * The only canonicalization+hash seam for the **new F2 payloads** lives in the
     stdlib-only leaf `internal/canonical`; those payloads never compute an ad hoc
     hash. (`gateReportHash`'s existing raw path legitimately persists through F2
-    and is re-routed in F1.) A structural guard — a grep/lint check forbidding
-    `crypto/sha256` on governed payload paths outside `internal/canonical` —
+    and is re-routed in F1.) A structural guard — a **baseline/allowlist**
+    grep/lint check that rejects **new** ad hoc `crypto/sha256` (or equivalent
+    hash) sites on governed payload paths outside `internal/canonical`, while
+    explicitly allowlisting the one pre-existing seam
+    (`internal/core/gate_evidence.go`'s `gateReportHash`) until F1 re-routes it —
     enforces single-seam usage durably, rather than relying on a unit test to
-    prove a negative.
+    prove a negative. The allowlist is the machine-checkable record of the sole
+    sanctioned legacy exception; F1 deletes that entry when it re-routes
+    `gateReportHash`, so the guard never fails F2 on the very seam F2 must
+    preserve.
   * The canonicalizer is deterministic on Windows and non-Windows line endings.
   * F2 does not modify `gateReportHash`; existing gate evidence hashes are
     unchanged. Re-routing that seam (and adding a hash-scheme version field to
