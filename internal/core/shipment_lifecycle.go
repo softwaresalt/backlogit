@@ -948,13 +948,12 @@ func shouldRelocateOnStatusChange(previous models.ArtifactStatus, next models.Ar
 	return previous != next
 }
 
+// isTerminalReleaseStatus reports whether status is releasable for shipment
+// relocation/lifecycle transitions. It delegates to the authoritative
+// IsReleasableStatus predicate (the 4-status set {done, accepted, rejected,
+// archived}); the five release-progression call sites remain behaviorally unchanged.
 func isTerminalReleaseStatus(status models.ArtifactStatus) bool {
-	switch status {
-	case models.StatusDone, models.StatusAccepted, models.StatusRejected, models.StatusArchived:
-		return true
-	default:
-		return false
-	}
+	return IsReleasableStatus(status)
 }
 
 // isDescopeEligibleStatus reports whether a member archived FROM the given status

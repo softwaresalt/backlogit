@@ -562,11 +562,7 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 	// Check that all children are in terminal statuses before allowing the
 	// parent to move to a terminal status. This prevents orphaned in-progress
 	// work from being silently buried under a "done" parent.
-	terminalSet := make(map[string]bool, len(core.TerminalStatuses))
-	for _, ts := range core.TerminalStatuses {
-		terminalSet[ts] = true
-	}
-	if terminalSet[status] {
+	if core.IsCascadeTerminalStatus(status) {
 		if err := core.CheckChildrenTerminal(ctx, s.Workspace.DB, id); err != nil {
 			var blockErr *core.ChildBlockingError
 			if errors.As(err, &blockErr) {

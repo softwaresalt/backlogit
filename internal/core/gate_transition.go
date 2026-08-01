@@ -118,18 +118,10 @@ func (ws *Workspace) gateApplies(a *models.Artifact, updates map[string]any) boo
 }
 
 // isGateTerminalStatus reports whether status is one of the gate's configured
-// terminal statuses (default ["done"]).
+// terminal statuses (default ["done"]). It delegates to the parameterized
+// gate-target taxonomy predicate IsGateTargetStatus.
 func (ws *Workspace) isGateTerminalStatus(status string) bool {
-	terms := ws.gateConfig.TerminalStatuses
-	if len(terms) == 0 {
-		terms = []string{"done"}
-	}
-	for _, t := range terms {
-		if t == status {
-			return true
-		}
-	}
-	return false
+	return IsGateTargetStatus(status, ws.gateConfig.TerminalStatuses)
 }
 
 // runGatedCompletion runs the full gated completion under the per-task lock:

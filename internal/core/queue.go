@@ -433,14 +433,10 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 }
 
 // filterByResolvedDependencies removes items from the queue whose execution-blocking
-// dependencies are not yet in a terminal state (as defined by core.TerminalStatuses:
-// done, accepted, archived, shipped, abandoned, rejected).
+// dependencies have not yet stopped blocking. A dependency stops blocking when its
+// status is no-longer-blocking (the 6-status cascade set: done, accepted, archived,
+// shipped, abandoned, rejected), evaluated via IsNoLongerBlockingStatus.
 func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) ([]*models.Artifact, error) {
-	terminalStatuses := make(map[string]bool, len(TerminalStatuses))
-	for _, s := range TerminalStatuses {
-		terminalStatuses[s] = true
-	}
-
 	// Build a set of all item IDs and their statuses from the current result set.
 	statusMap := make(map[string]string)
 	for _, item := range items {
@@ -478,7 +474,7 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 					depStatus = s.String
 				}
 			}
-			if isExecutionBlockingDependency(dep.DepType) && !terminalStatuses[depStatus] {
+			if isExecutionBlockingDependency(dep.DepType) && !IsNoLongerBlockingStatus(depStatus) {
 				blocked = true
 				break
 			}

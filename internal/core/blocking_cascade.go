@@ -8,11 +8,6 @@ import (
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
-// TerminalStatuses lists the artifact statuses that satisfy the downward
-// blocking cascade check. A parent may only move to a terminal status when
-// all of its children are in one of these states.
-var TerminalStatuses = []string{"done", "accepted", "archived", "shipped", "abandoned", "rejected"}
-
 // StatusOption configures optional behavior for status-change operations.
 type StatusOption func(*statusCheckOptions)
 
@@ -65,11 +60,6 @@ func CheckChildrenTerminal(ctx context.Context, database *sql.DB, parentID strin
 		return nil
 	}
 
-	terminalSet := make(map[string]bool, len(TerminalStatuses))
-	for _, s := range TerminalStatuses {
-		terminalSet[s] = true
-	}
-
 	rows, err := database.QueryContext(ctx,
 		`SELECT id, status FROM items WHERE parent_id = ?`, parentID,
 	)
@@ -84,7 +74,8 @@ func CheckChildrenTerminal(ctx context.Context, database *sql.DB, parentID strin
 		if err := rows.Scan(&id, &status); err != nil {
 			return fmt.Errorf("scan child row: %w", err)
 		}
-		if !terminalSet[status] {
+		// A parent may complete only when every child is cascade-terminal.
+		if !IsCascadeTerminalStatus(status) {
 			blocking = append(blocking, ChildStatus{ID: id, Status: status})
 		}
 	}
