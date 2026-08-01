@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'One durable rule graduated from 114-S — for a partial-feature shipment (a shipment whose manifest covers only some of a covering feature''s work, leaving other units intended for later), closure MUST use P-015 single-artifact safe-close and MUST NOT call the cascade backlogit_ship_shipment / `backlogit shipment ship`. The cascade computes a feature scope by walking parent_id up from every manifest item (featureScopeRoots) and archives every ancestor feature unconditionally (collectArchiveCandidateIDs) with no terminal-children gate, so it archives the covering feature and any unshipped siblings — corrupting the backlog. Safe-close: archive only the manifest item IDs one artifact at a time (pre-archived items excluded), then the shipment record as its own single artifact, verifying after each that the protected set (covering feature + unshipped siblings) stays in queue. A detected cascade requires git-revert + HALT, not restore-and-continue. A descendant-only CheckChildrenTerminal gate does NOT fix the root cause because planned-but-unharvested units have no records and returnUnreleasedFeatureItems detaches harvested nonterminal descendants first; the durable product fix needs an explicit shipment-membership or durable keep-open lifecycle signal.'
+description: 'One durable rule graduated from 114-S — for a partial-feature shipment (a shipment whose manifest covers only some of a covering feature''s work, leaving other units intended for later), closure MUST use P-015 single-artifact safe-close and MUST NOT call the cascade backlogit_ship_shipment / `backlogit shipment ship`. The cascade computes a feature scope by walking parent_id up from every manifest item (featureScopeRoots) and archives every ancestor feature unconditionally (collectArchiveCandidateIDs) with no terminal-children gate, so it always archives the covering feature (plus any terminal unshipped siblings; nonterminal siblings are detached by returnUnreleasedFeatureItems and excluded) — corrupting the backlog. Safe-close: archive only the manifest item IDs one artifact at a time (pre-archived items excluded), then the shipment record as its own single artifact, verifying after each that the protected set (covering feature + unshipped siblings) stays in queue. A detected cascade requires git-revert + HALT, not restore-and-continue. A descendant-only CheckChildrenTerminal gate does NOT fix the root cause because planned-but-unharvested units have no records and returnUnreleasedFeatureItems detaches harvested nonterminal descendants first; the durable product fix needs an explicit shipment-membership or durable keep-open lifecycle signal.'
 doc_type: learning
 docline:
     date: 2026-07-31T00:00:00Z
@@ -65,10 +65,14 @@ covering feature has remaining intended work.
   **no terminal-children gate** — unlike the descendant-item branch, which is gated
   by `isTerminalReleaseStatus`.
 
-So shipping the first sub-shipment of a multi-cycle feature archives the covering
-feature and any unshipped siblings. Observed on 114-S: `backlogit shipment ship
-114-S` returned `archived_ids: [106.001-T, 106.002-T, 106-F, 114-S]` — `106-F` was
-archived though the manifest `items` were only `[106.001-T, 106.002-T]`.
+So shipping the first sub-shipment of a multi-cycle feature **always** archives the
+covering feature. Unshipped siblings are archived only when **terminal** —
+`returnUnreleasedFeatureItems` detaches **nonterminal** siblings (returns them to
+`queued`, clears `parent_id`) before `collectArchiveCandidateIDs`, so they are
+excluded from archival. Observed on 114-S: `backlogit shipment ship 114-S` returned
+`archived_ids: [106.001-T, 106.002-T, 106-F, 114-S]` — the covering feature `106-F`
+was archived though the manifest `items` were only `[106.001-T, 106.002-T]`; there
+were no sibling records to consider (F1/F4/F5/F6 are planned-but-unharvested).
 
 ## Violation-and-Recovery Walkthrough (what happened on 114-S)
 
