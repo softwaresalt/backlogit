@@ -19,10 +19,10 @@ docline:
         - 133-f
 schema_version: "1.0"
 source: docs/compound/2026-07-31-p015-single-artifact-safe-close-for-partial-feature-shipments.md
-title: 'Partial-feature shipments close via P-015 single-artifact safe-close — never the cascade ship_shipment (114-S)'
+title: 'Partial-feature shipment closure: P-015 safe-close pre-fix, native cascade allowed post-133-F-fix (114-S origin)'
 ---
 
-# Partial-Feature Shipments: Use P-015 Safe-Close, Not Cascade Ship
+# Partial-Feature Shipment Closure: P-015 Pre-Fix, Native Cascade Allowed Post-133-F-Fix
 
 One durable rule graduated from shipment 114-S (feature 106-F,
 "Formal-gate foundations" F2+F3, PR #324, merge

@@ -12,9 +12,17 @@ title: Compacted memory - 101-S through 114-S ship batch
 
 ## Summary
 
-Twelve consecutive shipments plus one dark-mode feature bundle and one platform
-release, each shipped and closed via the standard staging→feature→closure PR
-cycle (merge-commit-only, P-009):
+Eleven distinct shipments — 101-S, 102-S, 103-S, 104-S, 106-S, 107-S, 109-S,
+110-S, 111-S, 113-S, and 114-S — each shipped and closed via the standard
+staging→feature→closure PR cycle (merge-commit-only, P-009). 101-S is itself
+the dark-mode feature bundle (not a separate item); the v1.7.0 platform
+release was tagged as part of 103-S's own closure, recorded via a companion
+Orchestrator-level memory file rather than a distinct shipment. 111-S and
+113-S each contributed two source memory files (a Stage-phase and a
+Ship-phase record for the same underlying feature), and one further file
+(`ship-sequence-spike-memory.md`) records an unrelated spike session rather
+than a shipment — together accounting for the 15 archived-original files
+listed below without implying 15 (or 12) distinct shipments:
 
 * **101-S** (feature `118-F`) — DARK_MODE p1 index bundle. Added composite SQLite
   index `idx_items_parent_type_id` for the batched task-children rollup query

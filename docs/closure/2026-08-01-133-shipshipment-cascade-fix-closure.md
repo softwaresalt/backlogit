@@ -97,10 +97,15 @@ operative for this repository's own dogfooding until that binary is upgraded.
 
 1. `git merge-base --is-ancestor 47dfcc93... origin/main` — confirmed
    (MERGE_CONFIRMED gate, already run at Step 6 entry).
-2. `go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .` all pass
-   on `main` at the merge commit (inherited from the pre-merge quality gates;
-   no regressions expected since no further source changes landed after
-   merge).
+2. `go test ./...`, `go vet ./...`, and `golangci-lint run` all pass on `main`
+   at the merge commit (inherited from the pre-merge quality gates; no
+   regressions expected since no further source changes landed after merge).
+   `gofmt -l .` flags the two touched `internal/core` files as a pre-existing,
+   repo-wide Windows CRLF line-ending checkout artifact (both files are 100%
+   CRLF internally; not new drift introduced by this change) — per PR #327's
+   own testing record, this is a known false positive and the Linux/LF CI
+   gate is authoritative, not a gate failure grouped with the passing checks
+   above.
 3. `backlogit doctor` (via the compiled dogfood binary) reports no issues
    after a ship operation exercising the fixed code path.
 4. `backlogit version` on the installed `C:\Tools\backlogit.exe` — confirms
@@ -152,7 +157,14 @@ operative for this repository's own dogfooding until that binary is upgraded.
   across the unit test suite and the compiled-binary dogfood test.
 - **Alert threshold**: any `doctor --check-over-archived-features` finding, or
   any future shipment's `shipment ship` response showing a non-member
-  covering feature in `archived_ids`, is a regression — investigate
+  covering feature in `archived_ids`, is a **candidate** regression. Before
+  escalating, confirm the archived feature is not a legitimate descendant of
+  an explicit shipment-manifest member re-parented under it via `AdoptItem`
+  (the documented subtree exception in `ShipShipment`, review-fix 133.004-T:
+  `featureScopeRoots` can capture such a feature as "non-member" for snapshot
+  purposes even though `collectArchiveCandidateIDs` correctly archives it as a
+  genuine descendant of the explicit member). Only findings that do not match
+  this subtree exception are true regressions — investigate those
   immediately.
 - **Owner**: the Ship agent (this session) / repository maintainer
   (`softwaresalt`) for any future manual `doctor` runs against real backlog
@@ -165,18 +177,25 @@ operative for this repository's own dogfooding until that binary is upgraded.
   record, `returned_ids` empty or correctly listing genuinely-returned
   siblings; non-member covering features remain in `.backlogit/queue/` at
   their pre-ship status.
-- **Failure**: `doctor --check-over-archived-features` reports a finding; a
-  non-member covering feature disappears from `.backlogit/queue/` after a
-  `shipment ship` call; the regression test suite fails.
+- **Failure**: `doctor --check-over-archived-features` reports a finding that
+  is not explained by the subtree exception (below); a non-member covering
+  feature (with no explicit-member ancestor of its own) disappears from
+  `.backlogit/queue/` after a `shipment ship` call; the regression test suite
+  fails.
 
 ## Rollback Trigger and Procedure
 
 - **Trigger**: `doctor --check-over-archived-features` (or manual inspection)
   finds a covering feature archived that was not an explicit shipment
-  manifest member, on any repository state at or after `47dfcc93`.
-- **Procedure**: `git revert` the merge commit `47dfcc93` (or the specific
-  offending commit within it) on `main`, rebuild/reissue the CLI, and restore
-  any incorrectly-archived artifact via `git restore`/`git revert` on
+  manifest member **and is not a legitimate descendant of one via
+  `AdoptItem` re-parenting** (the subtree exception noted under Monitoring
+  Plan above), on any repository state at or after `47dfcc93`.
+- **Procedure**: `git revert -m 1 47dfcc93...` (the full SHA)
+  (subject to the required operator approval) on `main` — `47dfcc93` is a
+  **merge commit**, so a plain `git revert 47dfcc93` fails without `-m 1` to
+  select the mainline parent; alternatively revert the specific offending
+  commit within it — then rebuild/reissue the CLI, and restore any
+  incorrectly-archived artifact via `git restore`/`git revert` on
   `.backlogit/` per the existing P-015 git-revert-on-cascade procedure. Fully
   reversible — no data migration, no external state, all changes are
   git-tracked file moves and Go source.

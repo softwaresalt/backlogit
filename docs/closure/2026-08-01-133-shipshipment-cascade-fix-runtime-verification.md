@@ -30,7 +30,9 @@ status: "pass"
    item, `ShipShipment` must archive exactly the manifest items and must
    **not** archive their non-member covering-feature ancestors.
 2. Non-member covering-feature ancestors must be **restored** to the status
-   they held at claim-time (their pre-ship snapshot), not left `done` or
+   they held immediately before release-scope mutation inside `ShipShipment`
+   itself (`snapshotNonMemberFeatureStatuses`, `internal/core/shipment_lifecycle.go:175-191`
+   — captured at ship-time, not by `ClaimShipment`), not left `done` or
    rolled up.
 3. When multiple sibling/ancestor restorations are pending, restoration order
    must be deterministic (deepest-first) regardless of Go's randomized map
@@ -59,8 +61,9 @@ constraint):
   member task `001.001.001-T`.
 * Created a shipment whose explicit manifest contained **only**
   `001.001.001-T` (neither ancestor feature was a manifest member).
-* Claimed the shipment (captures the claim-time snapshot status of the
-  non-member ancestors).
+* Claimed the shipment (`ClaimShipment` only activates the manifest item and
+  does not snapshot ancestor-feature statuses; the ancestors' pre-mutation
+  snapshot is captured later, at ship-time, inside `ShipShipment` itself).
 * Hit an unrelated gate: the `082-F` pre-task-completion gate
   (`hooks.yaml` → `lifecycle.pre_task_completion_gate`, default
   `enabled: auto`) blocked completing `001.001.001-T` to `done` because it
@@ -77,8 +80,9 @@ constraint):
 * `001.001.001-T` (the explicit manifest member): `status=archived`,
   `archived_status=done` — correctly archived.
 * `001.001-F` (Parent, non-member ancestor): restored to `active` (its
-  claim-time snapshot status) and remained present in the scratch workspace's
-  `.backlogit/queue/` — **not** rolled up to `done`/archived.
+  pre-mutation, ship-time snapshot status captured by `ShipShipment` via
+  `snapshotNonMemberFeatureStatuses`) and remained present in the scratch
+  workspace's `.backlogit/queue/` — **not** rolled up to `done`/archived.
 * `001-F` (Grandparent, non-member ancestor): likewise restored to `active`
   and remained in `.backlogit/queue/` — **not** rolled up.
 * `backlogit doctor` against the scratch workspace after the ship operation:
