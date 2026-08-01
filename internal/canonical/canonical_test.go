@@ -315,3 +315,79 @@ func TestCanonicalControlCharEscaping(t *testing.T) {
 		t.Errorf("solidus must not be escaped")
 	}
 }
+
+func TestCanonicalInvalidUTF8FailsClosed(t *testing.T) {
+	// An integrity primitive must reject invalid UTF-8 rather than silently
+	// mapping distinct invalid byte sequences to U+FFFD (which would collide).
+	cases := []struct {
+		name  string
+		input any
+	}{
+		{"string-value-0xff", map[string]any{"s": "\xff"}},
+		{"string-value-0xfe", map[string]any{"s": "\xfe"}},
+		{"bare-string", "a\xffb"},
+		{"object-key", map[string]any{"k\xff": 1}},
+		{"array-element", []any{"\xff"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(tc.input)
+			if !errors.Is(err, ErrInvalidUTF8) {
+				t.Errorf("want ErrInvalidUTF8, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCanonicalDistinctInvalidBytesDoNotCollide(t *testing.T) {
+	// "\xff" and "\xfe" must NOT produce the same result: both fail closed
+	// instead of collapsing to an identical U+FFFD canonical form.
+	_, errFF := Canonicalize(map[string]any{"s": "\xff"})
+	_, errFE := Canonicalize(map[string]any{"s": "\xfe"})
+	if !errors.Is(errFF, ErrInvalidUTF8) || !errors.Is(errFE, ErrInvalidUTF8) {
+		t.Fatalf("both invalid inputs must fail closed: ff=%v fe=%v", errFF, errFE)
+	}
+}
+
+func TestCanonicalKeyOrderingUsesNormalizedForm(t *testing.T) {
+	// Keys are sorted by their NORMALIZED (post CR->LF) form, and emitted in
+	// that order. "\rA" normalizes to "\nA"; with "\nB" present the emitted
+	// object must be ascending on the emitted names: {"\nA":1,"\nB":2}.
+	in := map[string]any{"\rA": int64(1), "\nB": int64(2)}
+	want := "{\"\\nA\":1,\"\\nB\":2}\n"
+	got, err := Canonicalize(in)
+	if err != nil {
+		t.Fatalf("Canonicalize error: %v", err)
+	}
+	if string(got) != want {
+		t.Errorf("normalized key ordering mismatch:\n got=%q\nwant=%q", string(got), want)
+	}
+}
+
+func TestCanonicalKeyCollisionFailsClosed(t *testing.T) {
+	// Two distinct raw keys that normalize to the same name ("a\rb" and "a\nb"
+	// both -> "a\nb") must be rejected rather than emitted as duplicate names.
+	in := map[string]any{"a\rb": int64(1), "a\nb": int64(2)}
+	_, err := Canonicalize(in)
+	if !errors.Is(err, ErrDuplicateKey) {
+		t.Errorf("want ErrDuplicateKey, got %v", err)
+	}
+}
+
+func TestCanonicalFloatTwoPow64FailsClosed(t *testing.T) {
+	// 2^64 as a float64 is exactly representable but out of uint64 range; the
+	// strict "< 2^64" bound must reject it on every architecture rather than
+	// admitting a saturating conversion.
+	twoPow64 := float64(18446744073709551616.0)
+	_, err := Canonicalize(map[string]any{"n": twoPow64})
+	if !errors.Is(err, ErrNonIntegerNumber) {
+		t.Errorf("want ErrNonIntegerNumber for 2^64, got %v", err)
+	}
+	// A large integral float64 well within uint64 range that round-trips must
+	// still be accepted (defense check that we did not over-reject). 2^63 is
+	// exactly representable and converts cleanly through uint64.
+	twoPow63 := float64(9223372036854775808.0)
+	if _, err := Canonicalize(map[string]any{"n": twoPow63}); err != nil {
+		t.Errorf("integral float below 2^64 must be accepted, got %v", err)
+	}
+}

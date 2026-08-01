@@ -9,9 +9,12 @@
 //
 // The canonical byte contract (v1) is deliberately narrow and fail-closed:
 //   - integers only for numbers (non-integers must be carried as strings),
-//   - object keys sorted by Go string (UTF-8 byte) order — a deliberate
-//     divergence from RFC 8785's UTF-16 ordering,
-//   - CR/CRLF normalized to LF in string values (never deleted),
+//   - strings and object keys MUST be valid UTF-8 (invalid UTF-8 fails closed
+//     so distinct byte sequences can never collide on the U+FFFD replacement),
+//   - CR/CRLF normalized to LF in string values AND object keys (never deleted),
+//   - object keys sorted by Go string (UTF-8 byte) order of their NORMALIZED
+//     (post CR->LF) form — a deliberate divergence from RFC 8785's UTF-16
+//     ordering — with any post-normalization key collision rejected,
 //   - exactly one trailing LF appended to the serialized root.
 package canonical
 
@@ -24,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ErrNonIntegerNumber is returned (wrapped) when a numeric value cannot be
@@ -35,6 +39,18 @@ var ErrNonIntegerNumber = errors.New("canonical: non-integer number")
 // part of the supported canonical value set (nil, bool, integer numerics,
 // string, []any, map[string]any).
 var ErrUnsupportedType = errors.New("canonical: unsupported type")
+
+// ErrInvalidUTF8 is returned (wrapped) when a string value or object key is not
+// valid UTF-8. An integrity primitive MUST fail closed here: ranging a Go string
+// silently replaces each invalid byte with U+FFFD, so distinct invalid byte
+// sequences would otherwise collapse to identical canonical bytes and hashes.
+var ErrInvalidUTF8 = errors.New("canonical: invalid UTF-8")
+
+// ErrDuplicateKey is returned (wrapped) when two distinct object keys collapse
+// to the same name after CR/CRLF->LF normalization (e.g. "a\rb" and "a\nb").
+// Emitting both would produce an ambiguous object with duplicate names, so the
+// collision fails closed.
+var ErrDuplicateKey = errors.New("canonical: duplicate key after line-ending normalization")
 
 // Canonicalize returns the canonical UTF-8 encoding of v, terminated by exactly
 // one trailing LF.
@@ -70,7 +86,7 @@ func encode(v any, sb *strings.Builder) error {
 			sb.WriteString("false")
 		}
 	case string:
-		encodeString(x, sb)
+		return encodeString(x, sb)
 	case json.Number:
 		return encodeJSONNumber(x, sb)
 	case int:
@@ -138,7 +154,13 @@ func encodeFloat(f float64, orig any, sb *strings.Builder) error {
 	if f != f || f > maxFloat64 || f < -maxFloat64 {
 		return numErr(orig)
 	}
-	if f >= 0 && f <= 18446744073709551615.0 { // [0, 2^64)
+	// twoPow64 (2^64) is exactly representable as a float64. The bound MUST be a
+	// strict "< 2^64": the largest uint64 (2^64-1) is NOT representable as a
+	// float64 and rounds up to 2^64, so a "<= MaxUint64" literal bound would
+	// admit exactly 2^64 into uint64(f), which is implementation-specific and can
+	// saturate to serialize 2^64 as 18446744073709551615 on some architectures.
+	const twoPow64 = 18446744073709551616.0
+	if f >= 0 && f < twoPow64 { // [0, 2^64)
 		if u := uint64(f); float64(u) == f {
 			sb.WriteString(strconv.FormatUint(u, 10))
 			return nil
@@ -155,14 +177,22 @@ func encodeFloat(f float64, orig any, sb *strings.Builder) error {
 	return numErr(orig)
 }
 
-// encodeString writes a canonical JSON string: line endings normalized to LF,
-// then minimal escaping. Non-ASCII runes are emitted literally as UTF-8 and "/"
-// is never escaped.
-func encodeString(s string, sb *strings.Builder) {
-	// Normalize line endings first: CRLF -> LF, then any lone CR -> LF. CR is
-	// converted to a distinct LF byte, never deleted.
-	normalized := strings.ReplaceAll(s, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+// normalizeLineEndings converts CRLF then any lone CR to LF. CR is converted to
+// a distinct LF byte, never deleted. Line-ending normalization preserves UTF-8
+// validity (it only rewrites the ASCII bytes CR and LF).
+func normalizeLineEndings(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+// encodeString writes a canonical JSON string: it fails closed on invalid UTF-8,
+// normalizes line endings to LF, then applies minimal escaping. Non-ASCII runes
+// are emitted literally as UTF-8 and "/" is never escaped.
+func encodeString(s string, sb *strings.Builder) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("canonical: %w", ErrInvalidUTF8)
+	}
+	normalized := normalizeLineEndings(s)
 
 	sb.WriteByte('"')
 	for _, r := range normalized {
@@ -189,6 +219,7 @@ func encodeString(s string, sb *strings.Builder) {
 		}
 	}
 	sb.WriteByte('"')
+	return nil
 }
 
 // encodeArray writes elements in order (array order is semantic, never sorted).
@@ -206,22 +237,43 @@ func encodeArray(arr []any, sb *strings.Builder) error {
 	return nil
 }
 
-// encodeObject writes keys sorted ascending by Go string (UTF-8 byte) order.
+// encodeObject writes keys sorted ascending by the Go string (UTF-8 byte) order
+// of their NORMALIZED (post CR->LF) form. Sorting and emitting both use the
+// normalized key so the emitted key order always matches the emitted key bytes,
+// and any two distinct raw keys that normalize to the same name are rejected as
+// a duplicate-key collision (fail closed). Invalid-UTF-8 keys also fail closed.
 func encodeObject(m map[string]any, sb *strings.Builder) error {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	type keyEntry struct {
+		normalized string
+		value      any
 	}
-	sort.Strings(keys)
+	entries := make([]keyEntry, 0, len(m))
+	seen := make(map[string]struct{}, len(m))
+	for k, v := range m {
+		if !utf8.ValidString(k) {
+			return fmt.Errorf("canonical: object key: %w", ErrInvalidUTF8)
+		}
+		nk := normalizeLineEndings(k)
+		if _, dup := seen[nk]; dup {
+			return fmt.Errorf("canonical: key %q: %w", nk, ErrDuplicateKey)
+		}
+		seen[nk] = struct{}{}
+		entries = append(entries, keyEntry{normalized: nk, value: v})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].normalized < entries[j].normalized })
 
 	sb.WriteByte('{')
-	for i, k := range keys {
+	for i, e := range entries {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
-		encodeString(k, sb)
+		// e.normalized is already CR-normalized and valid UTF-8, so encodeString
+		// re-emits identical bytes to the sort key.
+		if err := encodeString(e.normalized, sb); err != nil {
+			return err
+		}
 		sb.WriteByte(':')
-		if err := encode(m[k], sb); err != nil {
+		if err := encode(e.value, sb); err != nil {
 			return err
 		}
 	}
