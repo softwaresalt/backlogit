@@ -61,6 +61,17 @@ const (
 	// configured (082-F ST4.3). Advisory only: it never changes the doctor exit
 	// code. A strict, index-backed variant is the separate follow-up 7ED9CE1A.
 	FindingMissingGateEvidence DoctorFindingType = "missing_gate_evidence"
+
+	// FindingOverArchivedCoveringFeature indicates a feature that is currently
+	// done/archived even though it was never an explicit member of any
+	// shipment manifest and has at least one descendant that was returned to
+	// the backlog by a partial-feature ship (133-F). This is the check-only
+	// detection surface for the ShipShipment covering-feature over-archive
+	// invariant: see
+	// docs/exec-plans/2026-07-31-shipshipment-partial-feature-archive-cascade-plan.md.
+	// Detection only; the destructive repair is deferred out of this release
+	// unit and, if ever built, must be CLI-only (Constitution VII).
+	FindingOverArchivedCoveringFeature DoctorFindingType = "over_archived_covering_feature"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -129,6 +140,13 @@ type DoctorOptions struct {
 	// passing/forced gate evidence event while gates are configured. Advisory only
 	// — findings never change the doctor exit code. Safe to expose on MCP (read-only).
 	CheckGateEvidence bool
+	// CheckOverArchivedFeatures enables the read-only over-archived
+	// covering-feature audit (133-F): flags a feature that is done/archived,
+	// was never an explicit shipment manifest member, yet has at least one
+	// descendant returned to the backlog by a partial-feature ship. Detection
+	// only; no mutation. CLI-only, matching CheckArchivedFrom/CheckGateEvidence
+	// (not wired to the backlogit_doctor MCP tool).
+	CheckOverArchivedFeatures bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -437,6 +455,45 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 					Description: fmt.Sprintf("terminal %s %q has no passing/forced pre-task-completion gate evidence while gates are configured (advisory; exit code unaffected)", info.artifactType, info.id),
 				})
 			}
+		}
+	}
+
+	// 133.005-T (Unit 3): check-only audit for the ShipShipment
+	// covering-feature over-archive invariant (133-F). A feature that is
+	// currently done/archived, was never itself an explicit member of any
+	// shipment manifest, yet has at least one descendant returned to the
+	// backlog by a partial-feature ship, was over-closed by the cascade rollup
+	// seam that Unit 2 now neutralizes going forward. Detection deliberately
+	// reconstructs membership from the shipment manifest and the
+	// returned_to_backlog event provenance -- NOT from parent_id, which
+	// returnUnreleasedFeatureItems clears on the returned item, making
+	// parent_id unusable for this reconstruction. No mutation is performed.
+	if opts.CheckOverArchivedFeatures {
+		explicitMembers := scanShipmentManifestFeatureIDs(refs)
+		returnedFeatureIDs, scanErr := scanReturnedFeatureIDs(logsDir)
+		if scanErr != nil {
+			slog.WarnContext(ctx, "doctor: over-archived-feature audit: scan returned-to-backlog events failed", "error", scanErr)
+		}
+		for _, info := range artifacts {
+			if info.artifactType != "feature" {
+				continue
+			}
+			if info.status != string(models.StatusDone) && info.status != string(models.StatusArchived) {
+				continue
+			}
+			if _, isMember := explicitMembers[info.id]; isMember {
+				continue
+			}
+			if _, hasReturned := returnedFeatureIDs[info.id]; !hasReturned {
+				continue
+			}
+			report.Findings = append(report.Findings, DoctorFinding{
+				Type:       FindingOverArchivedCoveringFeature,
+				ArtifactID: info.id,
+				Description: fmt.Sprintf(
+					"feature %q is %q but was never an explicit shipment manifest member and has descendant work returned to the backlog by a partial-feature ship",
+					info.id, info.status),
+			})
 		}
 	}
 
@@ -767,6 +824,85 @@ func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
 		}
 	}
 	return false
+}
+
+// scanShipmentManifestFeatureIDs derives the union of every item ID ever
+// recorded as an explicit member of any shipment manifest, across every
+// shipment regardless of its current status (queued, shipped, or archived).
+// It reuses the canonical artifact scan's parsed refs (066.001-T) rather than
+// re-walking the filesystem. A feature's presence in the returned set means at
+// least one shipment explicitly listed it as a member; absence means no
+// shipment ever claimed it directly -- the invariant a covering feature must
+// satisfy before it is legitimately closed (133-F). Shipment files that fail
+// to parse are skipped rather than aborting the whole audit; other doctor
+// checks already surface malformed/duplicate records.
+func scanShipmentManifestFeatureIDs(refs map[string][]artifactRef) map[string]struct{} {
+	members := make(map[string]struct{})
+	for _, group := range refs {
+		if len(group) == 0 || group[0].artifactType != "shipment" {
+			continue
+		}
+		artifact, _, parseErr := parseFile(group[0].path)
+		if parseErr != nil {
+			continue
+		}
+		for _, itemID := range NormalizeShipmentItems(artifact) {
+			members[itemID] = struct{}{}
+		}
+	}
+	return members
+}
+
+// scanReturnedFeatureIDs walks the flat per-item JSONL event log directory and
+// returns the union of every "feature_id" recorded on a returned_to_backlog
+// event (appended by returnUnreleasedFeatureItems when a covering feature's
+// child is excluded from a partial-feature shipment). Detection intentionally
+// reads this event provenance rather than parent_id, because
+// returnUnreleasedFeatureItems clears parent_id on the returned item -- the
+// hierarchical ID prefix alone does not reliably reconstruct which feature a
+// returned item was released FROM. A missing logs directory is treated as "no
+// returned items" rather than an error.
+func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]struct{}{}, nil
+		}
+		return nil, fmt.Errorf("read logs dir: %w", err)
+	}
+
+	returned := make(map[string]struct{})
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
+			continue
+		}
+		path := filepath.Join(logsDir, entry.Name())
+		func() {
+			f, openErr := os.Open(path)
+			if openErr != nil {
+				return
+			}
+			defer f.Close()
+
+			dec := json.NewDecoder(f)
+			for {
+				var ev struct {
+					EventType string         `json:"event_type"`
+					Delta     map[string]any `json:"delta"`
+				}
+				if decErr := dec.Decode(&ev); decErr != nil {
+					return
+				}
+				if ev.EventType != "returned_to_backlog" {
+					continue
+				}
+				if featureID, ok := ev.Delta["feature_id"].(string); ok && featureID != "" {
+					returned[featureID] = struct{}{}
+				}
+			}
+		}()
+	}
+	return returned, nil
 }
 
 // levelFromID derives a hierarchy depth from an artifact ID when the

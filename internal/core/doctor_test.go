@@ -479,3 +479,152 @@ func TestDoctor_FixMalformedRequiresCheck(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "FixMalformed requires CheckArchivedFrom")
 }
+
+// TestDoctor_OverArchivedFeatureAudit_FlagsWronglyClosedCoveringFeature is the
+// 133.005-T (Unit 3) crafted-fixture regression: a feature closed (status
+// done) that was never an explicit member of any shipment manifest, with a
+// sibling task's returned_to_backlog event naming it as the source feature,
+// must be reported. This reconstructs the historical pre-Unit-2 bug signature
+// without needing a live ShipShipment run.
+func TestDoctor_OverArchivedFeatureAudit_FlagsWronglyClosedCoveringFeature(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	logsDir := filepath.Join(wsRoot, "logs")
+	require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "queue"), 0o755))
+	require.NoError(t, os.MkdirAll(logsDir, 0o755))
+
+	// Covering feature rolled up to "done" and relocated to archive/ by the
+	// pre-Unit-2 cascade bug, even though it was never itself shipped.
+	helperWriteArtifact(t, archiveDir, "001-F.md", `---
+id: "001-F"
+title: "Over-archived covering feature"
+status: done
+artifact_type: feature
+level: 1
+hierarchy_path: "001"
+---
+Covering feature.
+`)
+
+	// The shipment that triggered the rollup only ever listed a sibling task
+	// as an explicit member -- the feature itself is NOT in the manifest.
+	helperWriteArtifact(t, archiveDir, "001-S.md", `---
+id: "001-S"
+title: "Partial-feature shipment"
+status: shipped
+artifact_type: shipment
+level: 1
+hierarchy_path: "001-S"
+custom_fields:
+    items:
+        - 001.001-T
+---
+Shipment record.
+`)
+
+	// A sibling task excluded from the shipment was returned to the backlog,
+	// recording feature_id "001-F" as its provenance -- the signal detection
+	// must use instead of parent_id (which is cleared on return).
+	logContent := `{"event_type":"returned_to_backlog","timestamp":"2026-04-20T00:00:00Z","delta":{"feature_id":"001-F"}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(logsDir, "001.002-T.jsonl"), []byte(logContent), 0o644))
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckOverArchivedFeatures: true})
+	require.NoError(t, err)
+
+	var flaggedIDs []string
+	for _, f := range report.Findings {
+		if f.Type == FindingOverArchivedCoveringFeature {
+			flaggedIDs = append(flaggedIDs, f.ArtifactID)
+		}
+	}
+	assert.Contains(t, flaggedIDs, "001-F", "over-archived covering feature must be reported")
+
+	// The audit performs no mutation: the feature record must be byte-identical.
+	after, readErr := os.ReadFile(filepath.Join(archiveDir, "001-F.md"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(after), "status: done", "audit must not mutate the feature record")
+}
+
+// TestDoctor_OverArchivedFeatureAudit_CleanWorkspaceReportsNoFindings covers
+// three near-miss scenarios that must NOT be flagged, proving the audit's
+// precision and not just its recall: (1) a feature closed by a legitimate
+// full-feature shipment where it IS an explicit manifest member; (2) a
+// feature that has a returned-to-backlog sibling but is itself still open
+// (not done/archived); (3) a closed feature with no returned_to_backlog
+// provenance at all (closed through an unrelated path).
+func TestDoctor_OverArchivedFeatureAudit_CleanWorkspaceReportsNoFindings(t *testing.T) {
+	tmp := t.TempDir()
+	wsRoot := filepath.Join(tmp, ".backlogit")
+	archiveDir := filepath.Join(wsRoot, "archive")
+	queueDir := filepath.Join(wsRoot, "queue")
+	logsDir := filepath.Join(wsRoot, "logs")
+	require.NoError(t, os.MkdirAll(queueDir, 0o755))
+	require.NoError(t, os.MkdirAll(logsDir, 0o755))
+
+	// (1) Legitimate full-feature ship: the feature IS an explicit member.
+	helperWriteArtifact(t, archiveDir, "002-F.md", `---
+id: "002-F"
+title: "Fully-shipped feature"
+status: done
+artifact_type: feature
+level: 1
+hierarchy_path: "002"
+---
+Fully shipped.
+`)
+	helperWriteArtifact(t, archiveDir, "002-S.md", `---
+id: "002-S"
+title: "Full-feature shipment"
+status: shipped
+artifact_type: shipment
+level: 1
+hierarchy_path: "002-S"
+custom_fields:
+    items:
+        - 002-F
+---
+Shipment record.
+`)
+
+	// (2) Feature still open (queued), even though a sibling names it via
+	// returned_to_backlog -- must not be flagged because it is not closed.
+	helperWriteArtifact(t, queueDir, "003-F.md", `---
+id: "003-F"
+title: "Still-open covering feature"
+status: queued
+artifact_type: feature
+level: 1
+hierarchy_path: "003"
+---
+Still open.
+`)
+	logContent := `{"event_type":"returned_to_backlog","timestamp":"2026-04-20T00:00:00Z","delta":{"feature_id":"003-F"}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(logsDir, "003.002-T.jsonl"), []byte(logContent), 0o644))
+
+	// (3) Closed feature with no returned_to_backlog provenance anywhere --
+	// closed through an ordinary, unrelated path.
+	helperWriteArtifact(t, archiveDir, "004-F.md", `---
+id: "004-F"
+title: "Ordinarily closed feature"
+status: archived
+artifact_type: feature
+level: 1
+hierarchy_path: "004"
+---
+Closed normally.
+`)
+
+	ws := newDoctorTestWorkspace(t, tmp, true)
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{CheckOverArchivedFeatures: true})
+	require.NoError(t, err)
+
+	for _, f := range report.Findings {
+		if f.Type == FindingOverArchivedCoveringFeature {
+			t.Errorf("unexpected over-archived-feature finding: %s (%s)", f.ArtifactID, f.Description)
+		}
+	}
+}
