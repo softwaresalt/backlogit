@@ -477,6 +477,12 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 // feature audit (CheckOverArchivedFeatures, 133.005-T) for a follow-up
 // remediation pass.
 //
+// Restoration order is deepest-first (see depthSortedIDs below), not simple
+// map iteration: setArtifactStatus's own cascade recomputes and can silently
+// overwrite an ancestor's status whenever a descendant's status changes, so
+// every child covering feature must be restored before its parent covering
+// feature is (review-fix for 133.004-T; PR #327 Copilot finding).
+//
 // ShipShipment's deferred cleanup calls this with its own ctx and is
 // documented to "always attempt the revert, even if a later step ... fails
 // and returns early" -- the case in which ctx is most likely already
@@ -490,8 +496,22 @@ func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapsh
 	for _, id := range archivedIDs {
 		archived[id] = struct{}{}
 	}
+	// setArtifactStatus unconditionally cascades every status change UP to
+	// the parent (cascadePersistedParentStatuses), so restoring a parent's
+	// snapshot before its child's would let the child's later restore
+	// re-cascade and silently overwrite the parent's just-restored value.
+	// Iterate deepest-first (children before parents, the same ordering
+	// completeReleaseScope already relies on depthSortedIDs for) so each
+	// feature's own restore is always the last write to touch it, instead
+	// of depending on Go's unspecified map iteration order (review-fix for
+	// 133.004-T).
+	ids := make([]string, 0, len(snapshots))
+	for id := range snapshots {
+		ids = append(ids, id)
+	}
 	var errs []error
-	for featureID, snapshot := range snapshots {
+	for _, featureID := range depthSortedIDs(ids) {
+		snapshot := snapshots[featureID]
 		if _, wasArchived := archived[featureID]; wasArchived {
 			continue
 		}

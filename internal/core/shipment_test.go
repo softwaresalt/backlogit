@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -641,6 +642,95 @@ func TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext(t *testing
 	require.NoError(t, pathErr)
 	assert.Equal(t, "queue", filepath.Base(filepath.Dir(restoredPath)),
 		"feature file must be relocated back under .backlogit/queue/ despite the canceled context")
+}
+
+// TestRestoreRolledUpNonMemberFeatures_RestoresDeepestFirstRegardlessOfMapOrder
+// is a regression guard for a review-fix (PR #327 Copilot finding):
+// restoreRolledUpNonMemberFeatures iterated `snapshots` with a plain
+// `for featureID, snapshot := range snapshots` loop. Go map iteration order
+// is intentionally randomized, but setArtifactStatus unconditionally cascades
+// every status change UP to the parent via cascadePersistedParentStatuses. If
+// a parent feature's snapshot is restored before its child's, the child's
+// later restore re-triggers the parent cascade (via ComputeParentStatus,
+// which mirrors a single child's status onto its parent) and silently
+// recomputes -- overwriting -- the parent's just-restored value, corrupting
+// the parent's final status. Restoring children before their parents
+// (deepest-first, exactly what depthSortedIDs already provides for the
+// analogous ordering need in completeReleaseScope) avoids this because each
+// parent's own restore is always the LAST write to touch it.
+//
+// A single parent/child pair would only reproduce this on roughly half of
+// all runs -- Go's map iteration order for two keys is effectively a coin
+// flip that does not repeat reliably across process runs -- so this test
+// uses eight independent parent/child pairs in ONE combined snapshots map.
+// Fixing the bug is the only way every pair lands correctly on every run;
+// the unfixed code has only a ~1-in-256 chance of coincidentally iterating
+// all eight pairs in the safe child-before-parent order.
+func TestRestoreRolledUpNonMemberFeatures_RestoresDeepestFirstRegardlessOfMapOrder(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	bg := context.Background()
+
+	const pairCount = 8
+	type pair struct {
+		parentID, childID string
+	}
+	pairs := make([]pair, 0, pairCount)
+	snapshots := make(map[string]featureStatusSnapshot, pairCount*2)
+
+	for i := 0; i < pairCount; i++ {
+		parent, err := CreateArtifact(bg, ws, fmt.Sprintf("Parent %d", i), "feature")
+		require.NoError(t, err)
+		require.NoError(t, bldb.UpsertItem(bg, ws.DB, parent))
+
+		childSeed, err := CreateArtifact(bg, ws, fmt.Sprintf("Child %d", i), "feature")
+		require.NoError(t, err)
+		require.NoError(t, bldb.UpsertItem(bg, ws.DB, childSeed))
+
+		// Nest the child under the parent the same way the codebase's other
+		// nested-feature tests do: create top-level, then re-parent via
+		// AdoptItem (CreateArtifact enforces AllowedChildren and would
+		// reject a feature-under-feature at creation time).
+		adoptResult, err := AdoptItem(bg, ws, childSeed.ID, parent.ID)
+		require.NoError(t, err)
+		childID := adoptResult.NewID
+		if childID == "" {
+			childID = childSeed.ID
+		}
+
+		// Simulate the unintended rollup completeReleaseScope's cascade
+		// performs: the child rolls up to done first, and because it is the
+		// parent's ONLY recorded child, setArtifactStatus's own cascade also
+		// forces the parent to done as a side effect.
+		_, err = setArtifactStatus(bg, ws, childID, models.StatusDone, "simulated unintended rollup")
+		require.NoError(t, err)
+
+		parentReloaded, err := loadArtifact(bg, ws, parent.ID)
+		require.NoError(t, err)
+		require.Equal(t, models.StatusDone, parentReloaded.Status,
+			"test precondition: pair %d parent must also roll up to done via the child's cascade", i)
+
+		snapshots[parent.ID] = featureStatusSnapshot{status: models.StatusQueued}
+		snapshots[childID] = featureStatusSnapshot{status: models.StatusActive}
+		pairs = append(pairs, pair{parentID: parent.ID, childID: childID})
+	}
+
+	// Act
+	restoreErr := restoreRolledUpNonMemberFeatures(bg, ws, snapshots, nil)
+
+	// Assert
+	require.NoError(t, restoreErr)
+	for i, p := range pairs {
+		restoredParent, err := loadArtifact(bg, ws, p.parentID)
+		require.NoError(t, err)
+		assert.Equal(t, models.StatusQueued, restoredParent.Status,
+			"pair %d: parent must end up at its own pre-ship snapshot, not silently overwritten by a later child-triggered cascade", i)
+
+		restoredChild, err := loadArtifact(bg, ws, p.childID)
+		require.NoError(t, err)
+		assert.Equal(t, models.StatusActive, restoredChild.Status,
+			"pair %d: child must be restored to its own pre-ship snapshot", i)
+	}
 }
 
 // 133.004-T (review-fix, PR #327 ordering finding): the non-member covering
