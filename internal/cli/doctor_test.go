@@ -178,3 +178,77 @@ func TestDoctorCommand_FixArchivedFromFlagExists(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), "--fix-archived-from", "flag must be documented in help")
 }
+
+// writeOverArchivedFeatureFixture reproduces the 133.005-T (Unit 3)
+// over-archived covering-feature signature at the file level: a feature
+// closed (status done) that was never itself an explicit shipment manifest
+// member, with a sibling task's returned_to_backlog event naming it as the
+// source feature. Mirrors the core-level fixture in
+// TestDoctor_OverArchivedFeatureAudit_FlagsWronglyClosedCoveringFeature.
+func writeOverArchivedFeatureFixture(t *testing.T, tmp string) {
+	t.Helper()
+	archiveDir := filepath.Join(tmp, ".backlogit", "archive")
+	logsDir := filepath.Join(tmp, ".backlogit", "logs")
+	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+	require.NoError(t, os.MkdirAll(logsDir, 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(archiveDir, "001-F.md"), []byte(`---
+id: "001-F"
+title: "Over-archived covering feature"
+status: done
+artifact_type: feature
+level: 1
+hierarchy_path: "001"
+---
+Covering feature.
+`), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(archiveDir, "001-S.md"), []byte(`---
+id: "001-S"
+title: "Partial-feature shipment"
+status: shipped
+artifact_type: shipment
+level: 1
+hierarchy_path: "001-S"
+custom_fields:
+    items:
+        - 001.001-T
+---
+Shipment record.
+`), 0o644))
+
+	logContent := `{"event_type":"returned_to_backlog","timestamp":"2026-04-20T00:00:00Z","delta":{"feature_id":"001-F"}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(logsDir, "001.002-T.jsonl"), []byte(logContent), 0o644))
+}
+
+// TestDoctorCommand_CheckOverArchivedFeaturesFlag is the Constitution
+// Reviewer follow-up for 133.005-T: internal/core/doctor_test.go exercised
+// core.DoctorOptions.CheckOverArchivedFeatures directly, but no test
+// confirmed the CLI actually wires --check-over-archived-features through to
+// that option. Verifies both halves of the CLI boundary: (1) the check is
+// opt-in and silent by default, matching --check-gate-evidence's
+// default-false convention, and (2) the finding surfaces via the CLI only
+// once the flag is explicitly supplied.
+func TestDoctorCommand_CheckOverArchivedFeaturesFlag(t *testing.T) {
+	tmp := t.TempDir()
+	initTestWorkspace(t, tmp)
+	writeOverArchivedFeatureFixture(t, tmp)
+
+	bufDefault := new(bytes.Buffer)
+	cmdDefault := cli.NewRootCommand()
+	cmdDefault.SetOut(bufDefault)
+	cmdDefault.SetErr(bufDefault)
+	cmdDefault.SetArgs([]string{"doctor", "--cwd", tmp})
+	require.NoError(t, cmdDefault.Execute())
+	assert.NotContains(t, bufDefault.String(), "over_archived_covering_feature",
+		"check must be opt-in and silent by default")
+
+	bufFlag := new(bytes.Buffer)
+	cmdFlag := cli.NewRootCommand()
+	cmdFlag.SetOut(bufFlag)
+	cmdFlag.SetErr(bufFlag)
+	cmdFlag.SetArgs([]string{"doctor", "--cwd", tmp, "--check-over-archived-features"})
+	require.NoError(t, cmdFlag.Execute())
+	assert.Contains(t, bufFlag.String(), "over_archived_covering_feature", "finding type must be reported")
+	assert.Contains(t, bufFlag.String(), "001-F", "over-archived covering feature must be identified via the CLI flag")
+}

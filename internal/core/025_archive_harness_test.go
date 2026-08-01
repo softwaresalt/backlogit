@@ -84,7 +84,11 @@ func TestShipShipment_QueuePathAbsentAfterShip(t *testing.T) {
 	taskQueuePath, err := core.FindArtifactPath(ctx, ws, task.ID)
 	require.NoError(t, err)
 
-	shipment, err := core.CreateShipment(ctx, ws, "Ship queue test shipment", []string{task.ID})
+	// Feature-inclusive manifest: this test's regression target is the
+	// archive-deletion bug (stale queue file after ship), not covering-feature
+	// archival semantics, so the feature is listed as an explicit member to
+	// keep its legitimate archival under the membership contract (133-F).
+	shipment, err := core.CreateShipment(ctx, ws, "Ship queue test shipment", []string{feature.ID, task.ID})
 	require.NoError(t, err)
 	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)

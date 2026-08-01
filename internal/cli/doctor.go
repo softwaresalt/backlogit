@@ -27,15 +27,16 @@ type doctorTargetFunc func(ws *core.Workspace, target, absTarget string) *core.D
 
 func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
-		checkOrphans      bool
-		checkDuplicates   bool
-		checkArchivedFrom bool
-		checkGateEvidence bool
-		fixOrphans        bool
-		fixArchivedFrom   bool
-		fixMalformed      bool
-		outputFormatFlag  string
-		targetFlag        string
+		checkOrphans              bool
+		checkDuplicates           bool
+		checkArchivedFrom         bool
+		checkGateEvidence         bool
+		checkOverArchivedFeatures bool
+		fixOrphans                bool
+		fixArchivedFrom           bool
+		fixMalformed              bool
+		outputFormatFlag          string
+		targetFlag                string
 	)
 
 	cmd := &cobra.Command{
@@ -109,13 +110,14 @@ resume) — no new command; retry policy is owned by the caller.`,
 			defer ws.Close()
 
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
-				CheckOrphans:      checkOrphans,
-				CheckDuplicates:   checkDuplicates,
-				CheckArchivedFrom: checkArchivedFrom,
-				CheckGateEvidence: checkGateEvidence,
-				FixOrphans:        fixOrphans,
-				FixArchivedFrom:   fixArchivedFrom,
-				FixMalformed:      fixMalformed,
+				CheckOrphans:              checkOrphans,
+				CheckDuplicates:           checkDuplicates,
+				CheckArchivedFrom:         checkArchivedFrom,
+				CheckGateEvidence:         checkGateEvidence,
+				CheckOverArchivedFeatures: checkOverArchivedFeatures,
+				FixOrphans:                fixOrphans,
+				FixArchivedFrom:           fixArchivedFrom,
+				FixMalformed:              fixMalformed,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -148,6 +150,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 	cmd.Flags().BoolVar(&checkDuplicates, "check-duplicates", true, "check for duplicate IDs across directories")
 	cmd.Flags().BoolVar(&checkArchivedFrom, "check-archived-from", true, "check archive records for self-referential/malformed archived_from fields")
 	cmd.Flags().BoolVar(&checkGateEvidence, "check-gate-evidence", false, "advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)")
+	cmd.Flags().BoolVar(&checkOverArchivedFeatures, "check-over-archived-features", false, "check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
 	cmd.Flags().BoolVar(&fixMalformed, "fix-malformed", false, "clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)")

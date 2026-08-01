@@ -132,7 +132,7 @@ func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string
 
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
-func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (*ShipShipmentResult, error) {
+func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err
@@ -158,6 +158,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	}
 
 	explicitScope := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+	explicitScopeSet := toIDSet(explicitScope)
 	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)
@@ -171,13 +172,62 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 
-	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
-	}
-
+	// 133.004-T: resolve covering-feature ancestry BEFORE completing the release
+	// scope. completeReleaseScope's status writes trigger the generic
+	// cascadePersistedParentStatuses rollup (harness_status.go), which marks a
+	// parent done -- and, per the registry's status-based directory routing,
+	// relocates it into the archive directory -- purely because its currently
+	// recorded children happen to all be terminal. That rollup does not know
+	// about shipment membership, so it can fire for a covering feature that was
+	// never itself listed as an explicit shipment member. Snapshotting here
+	// captures the pre-ship status of every non-member feature so the rollup
+	// can be detected and reverted once the ship completes (133-F).
 	featureIDs, err := featureScopeRoots(ctx, ws, explicitScope)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: resolve feature scope: %w", shipmentID, err)
+	}
+	nonMemberFeatureSnapshots, err := snapshotNonMemberFeatureStatuses(ctx, ws, featureIDs, explicitScopeSet)
+	if err != nil {
+		return nil, fmt.Errorf("ship shipment %s: snapshot covering feature scope: %w", shipmentID, err)
+	}
+	// archivedIDs is declared here (rather than with := at its first
+	// assignment below) so this defer's closure observes its final value:
+	// featureScopeRoots only discovers a non-member feature by walking UP
+	// from an explicitly listed descendant, so a feature nested UNDER an
+	// explicit-member root (reachable via AdoptItem re-parenting, e.g. a
+	// dotted "002.001-F") is captured here as "non-member" even though
+	// collectArchiveCandidateIDs later sweeps it into archivedIDs anyway, as
+	// a genuine descendant of that explicit-member root. Restoring such a
+	// feature would revert an archival this same call just legitimately
+	// performed (review-fix, 133.004-T).
+	var archivedIDs []string
+	// restored tracks whether the explicit, in-line restore call below (on
+	// the successful path) already ran, so the deferred fallback becomes a
+	// no-op instead of invoking restoreRolledUpNonMemberFeatures twice.
+	restored := false
+	// 133.004-T: always attempt the revert, even if a later step in this
+	// function fails and returns early -- a partial/aborted ship must not
+	// leave a non-member covering feature stranded mid-rollup. A restore
+	// failure is joined onto (never silently drops) the function's error.
+	// review-fix (PR #327): this defer is now a fallback for early-return
+	// paths only. On the successful path, the explicit call below runs the
+	// restore BEFORE VerifyPostShipConsistency and the post-ship hooks, so
+	// consistency checks and external integrations never observe the
+	// covering feature in its transient, incorrectly-rolled-up done/archived
+	// state. Relying solely on this defer would let it fire only during
+	// return unwinding -- strictly after those in-line statements already
+	// ran to completion.
+	defer func() {
+		if restored {
+			return
+		}
+		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
+		}
+	}()
+
+	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
+		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
 	}
 
 	returnedIDs := make([]string, 0)
@@ -188,8 +238,17 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			return nil, fmt.Errorf("ship shipment %s: return unreleased feature items for %s: %w", shipmentID, featureID, returnErr)
 		}
 		returnedIDs = append(returnedIDs, returned...)
-		if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
-			return nil, fmt.Errorf("ship shipment %s: mark feature %s done: %w", shipmentID, featureID, setErr)
+		// 133.004-T: only a covering feature that is itself an explicit
+		// shipment member is marked done here. A feature that is merely an
+		// ancestor of some shipped item, but was never itself a member, must
+		// be left alone -- its lifecycle is independent of this partial
+		// release, and any unintended rollup it already picked up from
+		// completeReleaseScope's cascade is reverted by the deferred restore
+		// above (133-F).
+		if _, isMember := explicitScopeSet[featureID]; isMember {
+			if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
+				return nil, fmt.Errorf("ship shipment %s: mark feature %s done: %w", shipmentID, featureID, setErr)
+			}
 		}
 	}
 
@@ -197,7 +256,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 
-	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs)
+	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs, explicitScopeSet)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: collect archive scope: %w", shipmentID, err)
 	}
@@ -206,10 +265,22 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: record commit traceability: %w", shipmentID, err)
 	}
 
-	archivedIDs, err := archiveItems(ctx, ws, archiveIDs)
+	archivedIDs, err = archiveItems(ctx, ws, archiveIDs)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: archive release scope: %w", shipmentID, err)
 	}
+
+	// review-fix (PR #327): revert any unintended non-member covering-feature
+	// rollup NOW, on the successful path, before VerifyPostShipConsistency and
+	// the post-ship hooks run. Leaving this to the deferred fallback alone
+	// would let consistency verification and any post-ship hook (webhook,
+	// custom integration) observe the feature in its transient,
+	// incorrectly-rolled-up done/archived state, even though it is reverted
+	// moments later when the function returns.
+	if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
+		return nil, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr)
+	}
+	restored = true
 
 	if err := VerifyPostShipConsistency(ctx, ws, archivedIDs); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: post-ship consistency: %w", shipmentID, err)
@@ -289,7 +360,7 @@ func returnUnreleasedFeatureItems(ctx context.Context, ws *Workspace, featureID 
 	return uniqueNonEmptyStrings(returned), nil
 }
 
-func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs, returnedIDs []string) ([]string, error) {
+func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs, returnedIDs []string, explicitScope map[string]struct{}) ([]string, error) {
 	candidates := []string{shipmentID}
 	returnedSet := toIDSet(returnedIDs)
 
@@ -307,6 +378,17 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 	}
 
 	for _, featureID := range featureIDs {
+		// 133.004-T: a covering feature (and its descendants/linked
+		// deliberations) is only archived here when the feature is itself an
+		// explicit shipment member. An ancestor feature that is merely
+		// upstream of some shipped item, but was never listed in the
+		// manifest, must be left out of the archive scope entirely -- its
+		// own lifecycle and any of its other descendants are independent of
+		// this partial release (133-F).
+		if _, isMember := explicitScope[featureID]; !isMember {
+			continue
+		}
+
 		feature, err := loadArtifact(ctx, ws, featureID)
 		if err != nil {
 			return nil, err
@@ -336,6 +418,116 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 	}
 
 	return uniqueNonEmptyStrings(candidates), nil
+}
+
+// featureStatusSnapshot captures a covering feature's pre-ship status so a
+// later unintended parent-status rollup (fired by completeReleaseScope's
+// generic cascade in cascadePersistedParentStatuses) can be detected and
+// reverted. See snapshotNonMemberFeatureStatuses / restoreRolledUpNonMemberFeatures.
+type featureStatusSnapshot struct {
+	status models.ArtifactStatus
+}
+
+// snapshotNonMemberFeatureStatuses records the pre-ship status of every
+// covering feature in featureIDs that is NOT itself an explicit member of the
+// shipment manifest (explicitScope). completeReleaseScope's generic
+// parent-status cascade (cascadePersistedParentStatuses -> ComputeParentStatus)
+// can roll such a feature to done -- and, per the registry's status-based
+// directory routing, relocate its file into the archive directory -- purely
+// because its currently recorded children happen to all be terminal, even
+// though the feature was never listed as a shipment member. Recording the
+// prior status here lets restoreRolledUpNonMemberFeatures revert that
+// unintended side effect once the ship completes (133.004-T / 133-F).
+func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featureIDs []string, explicitScope map[string]struct{}) (map[string]featureStatusSnapshot, error) {
+	snapshots := make(map[string]featureStatusSnapshot)
+	for _, featureID := range featureIDs {
+		if _, isMember := explicitScope[featureID]; isMember {
+			continue
+		}
+		item, err := loadArtifact(ctx, ws, featureID)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot feature %s: %w", featureID, err)
+		}
+		snapshots[featureID] = featureStatusSnapshot{status: item.Status}
+	}
+	return snapshots, nil
+}
+
+// restoreRolledUpNonMemberFeatures reverts any non-member covering feature
+// whose status changed during the ship -- an unintended side effect of
+// completeReleaseScope's generic parent-status cascade -- back to its
+// pre-ship status (and, via setArtifactStatus's relocate-on-change persist,
+// its pre-ship directory). Features whose status is unchanged are left
+// untouched. archivedIDs is the confirmed set of item IDs this same
+// ShipShipment call genuinely archived via archiveItems/ArchiveItem
+// (complete with archived_from/archived_status provenance and a real move
+// under .backlogit/archive/). A feature can appear in snapshots (because
+// featureScopeRoots only walks UP from explicitly-listed items, so a feature
+// nested under an explicit-member root is "non-member" by that narrower
+// test) while ALSO being a genuine descendant swept into archivedIDs by
+// collectArchiveCandidateIDs's broader descendant-based sweep. Restoring
+// such a feature would revert an archival this exact call just legitimately
+// performed, corrupting its archive provenance without reversing the
+// already-applied stash-archival side effects -- so any featureID present in
+// archivedIDs is always skipped here, regardless of its snapshotted status
+// (review-fix for 133.004-T). Restoration is best-effort per feature:
+// individual failures are joined together so one failure does not mask or
+// block reverting the others, and any feature left un-restored after a
+// joined error remains detectable by the doctor over-archived-covering-
+// feature audit (CheckOverArchivedFeatures, 133.005-T) for a follow-up
+// remediation pass.
+//
+// Restoration order is deepest-first (see depthSortedIDs below), not simple
+// map iteration: setArtifactStatus's own cascade recomputes and can silently
+// overwrite an ancestor's status whenever a descendant's status changes, so
+// every child covering feature must be restored before its parent covering
+// feature is (review-fix for 133.004-T; PR #327 Copilot finding).
+//
+// ShipShipment's deferred cleanup calls this with its own ctx and is
+// documented to "always attempt the revert, even if a later step ... fails
+// and returns early" -- the case in which ctx is most likely already
+// canceled or past its deadline. Detach from the caller's cancellation/
+// deadline up front (mirroring rollbackQueueMove, queue.go:365-372) so this
+// best-effort cleanup is not itself defeated by the very failure condition
+// it exists to clean up after (review-fix, PR #327 Copilot finding).
+func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot, archivedIDs []string) error {
+	ctx = context.WithoutCancel(ctx)
+	archived := make(map[string]struct{}, len(archivedIDs))
+	for _, id := range archivedIDs {
+		archived[id] = struct{}{}
+	}
+	// setArtifactStatus unconditionally cascades every status change UP to
+	// the parent (cascadePersistedParentStatuses), so restoring a parent's
+	// snapshot before its child's would let the child's later restore
+	// re-cascade and silently overwrite the parent's just-restored value.
+	// Iterate deepest-first (children before parents, the same ordering
+	// completeReleaseScope already relies on depthSortedIDs for) so each
+	// feature's own restore is always the last write to touch it, instead
+	// of depending on Go's unspecified map iteration order (review-fix for
+	// 133.004-T).
+	ids := make([]string, 0, len(snapshots))
+	for id := range snapshots {
+		ids = append(ids, id)
+	}
+	var errs []error
+	for _, featureID := range depthSortedIDs(ids) {
+		snapshot := snapshots[featureID]
+		if _, wasArchived := archived[featureID]; wasArchived {
+			continue
+		}
+		current, err := loadArtifact(ctx, ws, featureID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("restore feature %s: reload: %w", featureID, err))
+			continue
+		}
+		if current.Status == snapshot.status {
+			continue
+		}
+		if _, err := setArtifactStatus(ctx, ws, featureID, snapshot.status, "reverted unintended rollup from partial-feature ship"); err != nil {
+			errs = append(errs, fmt.Errorf("restore feature %s to %s: %w", featureID, snapshot.status, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, commit *CommitMetadata) error {
@@ -378,19 +570,28 @@ func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, c
 	return nil
 }
 
+// archiveItems archives every item in itemIDs, deepest-first, and always
+// returns the IDs it successfully archived even when a later item fails
+// (review-fix, PR #327 Copilot finding). ShipShipment assigns this return
+// value directly to its archivedIDs exclusion set before an error triggers
+// its own early return, so its deferred restoreRolledUpNonMemberFeatures
+// relies on this partial list to avoid reverting a nested feature this same
+// call already legitimately archived moments before a later, unrelated item
+// failed. Discarding the accumulated IDs on error (returning nil) would
+// reopen that exact corruption via a partial-failure path.
 func archiveItems(ctx context.Context, ws *Workspace, itemIDs []string) ([]string, error) {
 	ordered := depthSortedIDs(itemIDs)
 	archived := make([]string, 0, len(ordered))
 	for _, itemID := range ordered {
 		item, err := loadArtifact(ctx, ws, itemID)
 		if err != nil {
-			return nil, fmt.Errorf("load item %s for archive: %w", itemID, err)
+			return archived, fmt.Errorf("load item %s for archive: %w", itemID, err)
 		}
 		if item.Status == models.StatusArchived {
 			continue
 		}
 		if _, err := ArchiveItem(ctx, ws.DB, ws, itemID, WithTopLevel(false)); err != nil {
-			return nil, fmt.Errorf("archive item %s: %w", itemID, err)
+			return archived, fmt.Errorf("archive item %s: %w", itemID, err)
 		}
 		archived = append(archived, itemID)
 	}
