@@ -425,6 +425,89 @@ func TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup(t *te
 		"covering feature file must be restored under .backlogit/queue/, got %s", featureQueuePath)
 }
 
+// 133.004-T (review-fix): a nested feature reached only through
+// AdoptItem-based re-parenting (dotted ID, e.g. "002.001-F") must not be
+// corrupted by the non-member restore mechanism when it is a genuine,
+// fully-released descendant of an EXPLICIT-member covering feature. F is
+// never itself listed in the manifest, so featureScopeRoots still discovers
+// it (walking up from the explicitly listed grandchild task) and
+// snapshotNonMemberFeatureStatuses records it as "non-member". But
+// collectArchiveCandidateIDs's first loop sweeps F into the archive scope
+// anyway because F is a genuine descendant of the explicit-member root G,
+// and completeReleaseScope already marked it terminal. F is therefore
+// legitimately archived via the real ArchiveItem pipeline (archived_from/
+// archived_status stamped, moved under .backlogit/archive/) -- and the
+// deferred restore must recognize that and leave it alone, never reverting
+// an item that the same call already, correctly archived.
+func TestShipShipment_LegitimatelyArchivesNestedFeatureDescendantOfMember(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	rootFeature, err := CreateArtifact(ctx, ws, "Root covering feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, rootFeature))
+
+	rootTask, err := CreateArtifact(ctx, ws, "Root feature direct task", "task", WithParent(rootFeature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, rootTask))
+
+	// Nested feature: created top-level (features can only be created as
+	// roots per config's AllowedChildren), then re-parented under the root
+	// feature via AdoptItem, which -- unlike CreateArtifact -- does not
+	// enforce AllowedChildren. This mirrors how the repository's own archive
+	// contains dotted-ID features (e.g. 013.001-F) that predate this fix.
+	nestedFeatureSeed, err := CreateArtifact(ctx, ws, "Nested feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, nestedFeatureSeed))
+
+	adoptResult, err := AdoptItem(ctx, ws, nestedFeatureSeed.ID, rootFeature.ID)
+	require.NoError(t, err)
+	nestedFeatureID := adoptResult.NewID
+	if nestedFeatureID == "" {
+		nestedFeatureID = nestedFeatureSeed.ID
+	}
+
+	nestedTask, err := CreateArtifact(ctx, ws, "Nested feature task", "task", WithParent(nestedFeatureID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, nestedTask))
+
+	// Manifest lists the root feature, its direct task, and the NESTED
+	// task -- but never the nested feature itself. featureScopeRoots still
+	// discovers the nested feature by walking up from nestedTask's ancestry.
+	shipment, err := CreateShipment(ctx, ws, "Full-tree shipment", []string{rootFeature.ID, rootTask.ID, nestedTask.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.ArchivedIDs, rootFeature.ID)
+	assert.Contains(t, result.ArchivedIDs, rootTask.ID)
+	assert.Contains(t, result.ArchivedIDs, nestedTask.ID)
+	assert.Contains(t, result.ArchivedIDs, nestedFeatureID,
+		"nested feature that is a genuine descendant of the explicit-member root must be archived, not skipped")
+
+	// The critical regression check: the nested feature must remain archived
+	// after ShipShipment's deferred restore runs. Restoring it here would mean
+	// the restore mechanism reverted a legitimate, already-completed archival
+	// of the SAME call -- corrupting archived_from/archived_status and
+	// leaving the item in a confused, partially-reverted state.
+	finalNested, err := loadArtifact(ctx, ws, nestedFeatureID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusArchived, finalNested.Status,
+		"nested feature legitimately archived as part of the fully-released root must not be reverted by the non-member restore")
+
+	nestedPath, pathErr := FindArtifactPath(ctx, ws, nestedFeatureID)
+	require.NoError(t, pathErr, "nested feature file must still be discoverable")
+	assert.Equal(t, "archive", filepath.Base(filepath.Dir(nestedPath)),
+		"nested feature file must remain under .backlogit/archive/, got %s", nestedPath)
+}
+
 // T002 / ST012: Reject invalid status transition (queued -> shipped).
 func TestMoveShipmentStatus_InvalidTransition(t *testing.T) {
 	// Arrange

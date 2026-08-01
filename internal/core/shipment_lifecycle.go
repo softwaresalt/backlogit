@@ -190,12 +190,23 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: snapshot covering feature scope: %w", shipmentID, err)
 	}
+	// archivedIDs is declared here (rather than with := at its first
+	// assignment below) so this defer's closure observes its final value:
+	// featureScopeRoots only discovers a non-member feature by walking UP
+	// from an explicitly listed descendant, so a feature nested UNDER an
+	// explicit-member root (reachable via AdoptItem re-parenting, e.g. a
+	// dotted "002.001-F") is captured here as "non-member" even though
+	// collectArchiveCandidateIDs later sweeps it into archivedIDs anyway, as
+	// a genuine descendant of that explicit-member root. Restoring such a
+	// feature would revert an archival this same call just legitimately
+	// performed (review-fix, 133.004-T).
+	var archivedIDs []string
 	// 133.004-T: always attempt the revert, even if a later step in this
 	// function fails and returns early -- a partial/aborted ship must not
 	// leave a non-member covering feature stranded mid-rollup. A restore
 	// failure is joined onto (never silently drops) the function's error.
 	defer func() {
-		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots); restoreErr != nil {
+		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
 		}
 	}()
@@ -239,7 +250,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: record commit traceability: %w", shipmentID, err)
 	}
 
-	archivedIDs, err := archiveItems(ctx, ws, archiveIDs)
+	archivedIDs, err = archiveItems(ctx, ws, archiveIDs)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: archive release scope: %w", shipmentID, err)
 	}
@@ -420,14 +431,34 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 // completeReleaseScope's generic parent-status cascade -- back to its
 // pre-ship status (and, via setArtifactStatus's relocate-on-change persist,
 // its pre-ship directory). Features whose status is unchanged are left
-// untouched. Restoration is best-effort per feature: individual failures are
-// joined together so one failure does not mask or block reverting the
-// others, and any feature left un-restored after a joined error remains
-// detectable by the doctor over-archived-covering-feature audit
-// (CheckOverArchivedFeatures, 133.005-T) for a follow-up remediation pass.
-func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot) error {
+// untouched. archivedIDs is the confirmed set of item IDs this same
+// ShipShipment call genuinely archived via archiveItems/ArchiveItem
+// (complete with archived_from/archived_status provenance and a real move
+// under .backlogit/archive/). A feature can appear in snapshots (because
+// featureScopeRoots only walks UP from explicitly-listed items, so a feature
+// nested under an explicit-member root is "non-member" by that narrower
+// test) while ALSO being a genuine descendant swept into archivedIDs by
+// collectArchiveCandidateIDs's broader descendant-based sweep. Restoring
+// such a feature would revert an archival this exact call just legitimately
+// performed, corrupting its archive provenance without reversing the
+// already-applied stash-archival side effects -- so any featureID present in
+// archivedIDs is always skipped here, regardless of its snapshotted status
+// (review-fix for 133.004-T). Restoration is best-effort per feature:
+// individual failures are joined together so one failure does not mask or
+// block reverting the others, and any feature left un-restored after a
+// joined error remains detectable by the doctor over-archived-covering-
+// feature audit (CheckOverArchivedFeatures, 133.005-T) for a follow-up
+// remediation pass.
+func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot, archivedIDs []string) error {
+	archived := make(map[string]struct{}, len(archivedIDs))
+	for _, id := range archivedIDs {
+		archived[id] = struct{}{}
+	}
 	var errs []error
 	for featureID, snapshot := range snapshots {
+		if _, wasArchived := archived[featureID]; wasArchived {
+			continue
+		}
 		current, err := loadArtifact(ctx, ws, featureID)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("restore feature %s: reload: %w", featureID, err))
