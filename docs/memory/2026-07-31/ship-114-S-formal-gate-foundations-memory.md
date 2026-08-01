@@ -92,3 +92,40 @@ F-series (parent feature **106-F**, which stays `active` — more F-tasks remain
 - Shipment 114-S stays `active` on the branch; queue->archive deferred to
   post-merge `ship_shipment` (per shipment convention).
 - P-009 merge-commit-only verified allowed on repo.
+
+## Post-merge closure (2026-07-31) — P-015 violation, recovery, compliant redo
+
+- PR #324 MERGED via merge commit `f8870f864d596a1f3593405e54396d8129aa8871`
+  (P-009 verified: 2 parents 809e741d + d252007b). Branch deleted. All 6 CI
+  checks green on HEAD d252007b; Copilot review fresh; 3 threads resolved.
+
+- P-015 VIOLATION (recorded, P-005): the cascade `backlogit shipment ship 114-S`
+  was mistakenly called for a PARTIAL-FEATURE shipment (covering feature 106-F
+  intentionally excludes unharvested F1/F4/F5/F6). The cascade archived ancestor
+  feature 106-F (archived_ids: [106.001-T,106.002-T,106-F,114-S]). The side-effects
+  were committed only on closure branch chore/close-114-S (PR #325) — main stayed
+  clean.
+
+- RECOVERY (P-015 git-revert-on-cascade): `git revert 2826c8c3` (revert commit
+  a3462650) undid the cascade; working tree returned to clean baseline (106-F
+  active in queue; 114-S active in queue; manifest items pre-archived unchanged).
+  Protected set {106-F} re-verified intact.
+
+- COMPLIANT REDO (P-015 single-artifact safe-close): manifest items 106.001-T /
+  106.002-T pre-archived -> excluded from item loop (left unchanged). Shipment
+  record closed via 3 single-artifact ops: `backlogit update 114-S --commit
+  f8870f86`, `backlogit move 114-S --status done`, `backlogit archive 114-S`
+  (hook events update_artifact + archive_item; NO ship_shipment). Verify-after-each:
+  106-F confirmed still in queue. P-007: no archive deletions.
+
+- Artifacts: reconcile pre/post (safe-close) at .backlogit/reconcile/114-S-*-20260801T0228*.md;
+  compound learning docs/compound/2026-07-31-p015-single-artifact-safe-close-for-partial-feature-shipments.md;
+  corrected stash bug C0909DB5 (durable keep-open / explicit-membership fix + agent Step 6.1.b drift).
+
+## Final state
+
+- 106.001-T (F2) done+archived; 106.002-T (F3) done+archived (unchanged by close).
+- 114-S archived (archived_status: done, commit f8870f86). 106-F ACTIVE in queue
+  (spans F1-F6 across future cycles).
+- Deliverables live on main: internal/canonical/ (F2), internal/core/status_taxonomy.go (F3).
+- Closure PR #325 carries: cascade commit + its revert + compliant safe-close (honest history).
