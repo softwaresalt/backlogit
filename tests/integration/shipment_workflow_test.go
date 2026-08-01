@@ -142,8 +142,12 @@ func TestShipmentWorkflow_RehydrationConsistency(t *testing.T) {
 	assert.Equal(t, shipment.Title, recovered.Title)
 }
 
-// T008 / ST031: Shipping a shipment archives released scope and returns untouched
-// feature descendants to backlog in a real workspace.
+// T008 / ST031: Shipping a partial-feature shipment archives only the released
+// task and the shipment itself, returns the untouched future task to backlog,
+// and leaves the covering feature open (not done, not archived) in a real
+// workspace -- the 133-F / 115-S explicit-membership contract exercised
+// end-to-end against the real DB index, not just the file-scanning helpers
+// used by the internal/core unit tests.
 func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	// Arrange
 	_, ws := setupShipmentIntegrationWorkspace(t)
@@ -171,6 +175,10 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, futureTask))
 
+	// Partial-feature manifest: only releasedTask is an explicit shipment
+	// member. The covering feature is NOT listed, so per the membership
+	// contract (133-F) it must stay open -- this is the 114-S partial-feature
+	// regression scenario.
 	shipment, err := core.CreateShipment(ctx, ws, "Integration release shipment", []string{releasedTask.ID})
 	require.NoError(t, err)
 	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
@@ -185,14 +193,20 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	assert.Contains(t, result.ArchivedIDs, feature.ID)
+	assert.NotContains(t, result.ArchivedIDs, feature.ID,
+		"non-member covering feature must not be archived on a partial-feature ship")
 	assert.Contains(t, result.ArchivedIDs, releasedTask.ID)
 	assert.Contains(t, result.ArchivedIDs, shipment.ID)
 	assert.Contains(t, result.ReturnedIDs, futureTask.ID)
 
-	archivedFeature, err := db.GetItem(ctx, ws.DB, feature.ID)
+	openFeature, err := db.GetItem(ctx, ws.DB, feature.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "archived", string(archivedFeature.Status))
+	assert.NotEqual(t, "done", string(openFeature.Status), "non-member covering feature must not be marked done")
+	assert.NotEqual(t, "archived", string(openFeature.Status), "non-member covering feature must not be archived")
+	featurePath, pathErr := core.FindArtifactPath(ctx, ws, feature.ID)
+	require.NoError(t, pathErr, "covering feature file must still be discoverable")
+	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featurePath)),
+		"covering feature file must remain under .backlogit/queue/, got %s", featurePath)
 
 	queuedFutureTask, err := db.GetItem(ctx, ws.DB, futureTask.ID)
 	require.NoError(t, err)
