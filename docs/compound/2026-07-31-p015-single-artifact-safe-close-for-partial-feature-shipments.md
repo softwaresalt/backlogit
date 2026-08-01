@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'One durable rule graduated from 114-S — for a partial-feature shipment (a shipment whose manifest covers only some of a covering feature''s work, leaving other units intended for later), closure MUST use P-015 single-artifact safe-close and MUST NOT call the cascade backlogit_ship_shipment / `backlogit shipment ship`. The cascade computes a feature scope by walking parent_id up from every manifest item (featureScopeRoots) and archives every ancestor feature unconditionally (collectArchiveCandidateIDs) with no terminal-children gate, so it always archives the covering feature (plus any terminal unshipped siblings; nonterminal siblings are detached by returnUnreleasedFeatureItems and excluded) — corrupting the backlog. Safe-close: archive only the manifest item IDs one artifact at a time (pre-archived items excluded), then the shipment record as its own single artifact, verifying after each that the protected set (covering feature + unshipped siblings) stays in queue. A detected cascade requires git-revert + HALT, not restore-and-continue. A descendant-only CheckChildrenTerminal gate does NOT fix the root cause because planned-but-unharvested units have no records and returnUnreleasedFeatureItems detaches harvested nonterminal descendants first; the durable product fix needs an explicit shipment-membership or durable keep-open lifecycle signal.'
+description: 'UPDATED 2026-08-01 (shipment 115-S / feature 133-F, PR #327, merge 47dfcc93): the root-cause product fix this entry called for has SHIPPED — core.ShipShipment now gates covering-feature archival and its terminal-sibling sweep on explicit shipment-manifest membership, and snapshots/restores any non-member feature incidentally rolled up by the generic parent-status cascade. P-015 policy text now states the Ship agent MAY call the native cascade for closure, including partial-feature shipments; the manual procedure below is retained as a defense-in-depth fallback, not the mandatory-only path, for repository states containing the fix. Caveat: this repository dogfoods a separately pinned release CLI (C:\Tools\backlogit.exe) for real backlog operations — a merge to main does not retroactively change that pinned binary; verify its embedded commit is at/after the fix before trusting the cascade on a future shipment (see docs/compound/2026-08-01-self-hosted-cli-version-skew-merged-fix-not-yet-operative.md). Original 114-S incident record preserved verbatim below. One durable rule graduated from 114-S — for a partial-feature shipment (a shipment whose manifest covers only some of a covering feature''s work, leaving other units intended for later), pre-fix closure MUST use P-015 single-artifact safe-close and MUST NOT call the cascade backlogit_ship_shipment / `backlogit shipment ship`. The cascade computes a feature scope by walking parent_id up from every manifest item (featureScopeRoots) and archives every ancestor feature unconditionally (collectArchiveCandidateIDs) with no terminal-children gate, so it always archives the covering feature (plus any terminal unshipped siblings; nonterminal siblings are detached by returnUnreleasedFeatureItems and excluded) — corrupting the backlog. Safe-close: archive only the manifest item IDs one artifact at a time (pre-archived items excluded), then the shipment record as its own single artifact, verifying after each that the protected set (covering feature + unshipped siblings) stays in queue. A detected cascade requires git-revert + HALT, not restore-and-continue. A descendant-only CheckChildrenTerminal gate does NOT fix the root cause because planned-but-unharvested units have no records and returnUnreleasedFeatureItems detaches harvested nonterminal descendants first; the durable product fix needs an explicit shipment-membership or durable keep-open lifecycle signal.'
 doc_type: learning
 docline:
     date: 2026-07-31T00:00:00Z
@@ -15,6 +15,8 @@ docline:
         - p-015
         - safe-close
         - closure
+        - updated-2026-08-01
+        - 133-f
 schema_version: "1.0"
 source: docs/compound/2026-07-31-p015-single-artifact-safe-close-for-partial-feature-shipments.md
 title: 'Partial-feature shipments close via P-015 single-artifact safe-close — never the cascade ship_shipment (114-S)'
@@ -26,6 +28,48 @@ One durable rule graduated from shipment 114-S (feature 106-F,
 "Formal-gate foundations" F2+F3, PR #324, merge
 `f8870f864d596a1f3593405e54396d8129aa8871`). This entry records both a policy
 that is easy to miss and a concrete violation-and-recovery walkthrough.
+
+## Update (2026-08-01, shipment 115-S / feature 133-F): root cause now fixed in code
+
+The "Root-Cause Follow-Up" section below called for exactly this: "explicit
+shipment membership (archive only what the manifest lists)". That fix has
+since shipped: `core.ShipShipment` (`internal/core/shipment_lifecycle.go`,
+PR #327, merge `47dfcc93698a6b0b2c5420c701c365a538895580`) now gates both the
+covering-feature archival branch **and** its terminal-sibling descendant sweep
+in `collectArchiveCandidateIDs` on explicit shipment-manifest membership, and
+additionally snapshots/restores any non-member covering feature that the
+*separate*, generic `completeReleaseScope` → `cascadePersistedParentStatuses`
+parent-status rollup incidentally rolls up (`snapshotNonMemberFeatureStatuses`
+/ `restoreRolledUpNonMemberFeatures`, restoring deepest-first to stay correct
+under Go's randomized map iteration order). `.github/policies/workflow-policies.md`
+P-015 has been updated accordingly ("Code Enforcement (as of release unit
+115-S)") to state that **the Ship agent MAY call the native cascade
+`backlogit_ship_shipment` directly for closure, including partial-feature
+shipments** — the manual safe-close procedure below is retained by policy as a
+**defense-in-depth fallback**, not the mandatory-only path, for repository
+states containing this fix. It remains the mandatory path against a
+`core.ShipShipment` predating the fix, or if the `doctor
+--check-over-archived-features` audit (added alongside the fix) ever reports a
+regression.
+
+**Caveat — code fix ≠ operative everywhere yet**: this repository dogfoods a
+**separately pinned, globally-installed release binary**
+(`C:\Tools\backlogit.exe`) to operate its own `.backlogit/` backlog, rather
+than rebuilding from `HEAD` on every operation. A merge to `main` does not
+retroactively change that pinned binary's behavior. See
+`docs/compound/2026-08-01-self-hosted-cli-version-skew-merged-fix-not-yet-operative.md`
+for the concrete instance discovered while closing 115-S itself (installed
+CLI `v1.7.0`, commit `7daf8c3`, predates the fix by 9 days) — before trusting
+the cascade path on any *future* partial-feature shipment, verify the
+installed CLI's embedded commit is at or after `47dfcc93`, not merely that
+`main` contains the fix.
+
+The verification, code diff, and code-comment rationale for this fix are
+recorded in
+`docs/closure/2026-08-01-133-shipshipment-cascade-fix-runtime-verification.md`
+and this shipment's post-merge closure artifact. The remainder of this entry
+(below) is preserved verbatim as the historically accurate incident record for
+114-S and the pre-fix era.
 
 ## The Rule (P-015)
 
