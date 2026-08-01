@@ -60,16 +60,17 @@ backlogit doctor [flags]
 ### Options
 
 ```text
-      --check-archived-from   check archive records for self-referential/malformed archived_from fields (default true)
-      --check-duplicates      check for duplicate IDs across directories (default true)
-      --check-gate-evidence   advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)
-      --check-orphans         check for orphaned child artifacts (default true)
-      --fix-archived-from     repair legacy self-referential archived_from records (destructive, CLI-only)
-      --fix-malformed         clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)
-      --fix-orphans           archive orphaned artifacts instead of just reporting them
-      --format string         output format: text or json (default "text")
-  -h, --help                  help for doctor
-      --target string         validate a single .backlogit artifact file against header-def (versioned exit-code gate)
+      --check-archived-from            check archive records for self-referential/malformed archived_from fields (default true)
+      --check-duplicates               check for duplicate IDs across directories (default true)
+      --check-gate-evidence            advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)
+      --check-orphans                  check for orphaned child artifacts (default true)
+      --check-over-archived-features   check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)
+      --fix-archived-from              repair legacy self-referential archived_from records (destructive, CLI-only)
+      --fix-malformed                  clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)
+      --fix-orphans                    archive orphaned artifacts instead of just reporting them
+      --format string                  output format: text or json (default "text")
+  -h, --help                           help for doctor
+      --target string                  validate a single .backlogit artifact file against header-def (versioned exit-code gate)
 ```
 
 ### Options inherited from parent commands
