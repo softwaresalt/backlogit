@@ -370,7 +370,7 @@ Neither condition may be waived by the agent. Green CI alone is not approval. Op
 
 ---
 
-## P-015: Single-Artifact Shipment Closure (No Cascade Ship)
+## P-015: Single-Artifact Shipment Closure Invariant (No Cascade Corruption)
 
 | Field      | Value                                             |
 |------------|---------------------------------------------------|
@@ -380,13 +380,16 @@ Neither condition may be waived by the agent. Green CI alone is not approval. Op
 
 **Applies when**: `feature_shipments` is true and shipments may cover a partial subset of a covering feature's tasks (partial-feature shipments).
 
-**Statement**: The ship agent MUST close a shipment by archiving **only** the shipment manifest's explicit item IDs, one artifact at a time, via the `shipment-reconcile` safe-close procedure, and finally the shipment record itself as its own single artifact. It MUST NOT call the cascade `backlogit_ship_shipment` for closure. The cascade op treats a shipment as a proxy for its covering feature and archives the parent feature and any unshipped sibling tasks — corrupting the backlog whenever the shipment is a partial-feature shipment that intentionally excludes them.
+**Statement**: Closing a shipment MUST archive **only** the shipment manifest's explicit item IDs plus the shipment record itself. The covering feature and any unshipped sibling task that is **not** in the manifest MUST remain in `.backlogit/queue/` — never archived, relocated, or otherwise mutated as a side effect of closing the shipment.
 
-**Precondition**: The shipment manifest (`items`) has been read, and the **protected set** — the covering feature plus every unshipped sibling task that is not in the manifest — has been computed from **expected IDs** (partial-feature detection scanning both queue and archive). A clean git baseline for `.backlogit/` has been captured, and a **baseline integrity gate** has confirmed every protected-set member is present in `.backlogit/queue/` before any manifest item is archived. A protected-set member already archived or missing at baseline is treated as a pre-existing cascade and halts closure.
+**Code Enforcement (as of release unit 115-S)**: `core.ShipShipment` (`internal/core/shipment_lifecycle.go`) gates all covering-feature and sibling-task archival on explicit shipment manifest membership, and restores any non-member feature's prior status/location via a deferred, error-joining cleanup if a mid-flight failure occurs after the parent-status rollup. The invariant above is therefore **enforced by code**, not by agent process discipline: the Ship agent MAY call the native cascade `backlogit_ship_shipment` directly for closure — including partial-feature shipments — per `.github/agents/.ship.agent.md` Step 6.1.b. A `doctor --check-over-archived-features` audit (check-only, no mutation) detects any regression by cross-referencing shipment manifests against `returned_to_backlog` event provenance.
 
-**Required Check (verify-after-each invariant)**: After archiving each single manifest item (move to `done`, then archive that one artifact), confirm every protected-set member still exists in `.backlogit/queue/` — not moved to `.backlogit/archive/`, not deleted from the working tree. Manifest items legitimately archived before this run (`pre-archived`) are excluded from the item loop to avoid false positives; this exemption applies to **manifest items only** — the protected set has **no** pre-archived exemption, so any protected-set member found archived or missing is a cascade.
+**Legacy manual procedure (superseded; retained for defense-in-depth and pre-fix deployments)**: Before this fix, the cascade unconditionally archived the covering feature (and any *terminal* unshipped sibling) regardless of manifest membership, corrupting the backlog on any partial-feature shipment. The following manual procedure was the mandatory closure path in that era and remains a valid fallback if the `doctor` audit ever reports a regression, or when operating against a `core.ShipShipment` predating the 115-S fix:
 
-**Postcondition**: Every shipment manifest item **and** the shipment record are archived in `.backlogit/archive/`, the entire protected set remains present in `.backlogit/queue/`, and the cascade `backlogit_ship_shipment` was never called.
+* Archive **only** the shipment manifest's explicit item IDs, one artifact at a time, via the `shipment-reconcile` safe-close procedure, and finally the shipment record itself as its own single artifact. Do NOT call the cascade `backlogit_ship_shipment` for closure in this fallback mode.
+* **Precondition**: The shipment manifest (`items`) has been read, and the **protected set** — the covering feature plus every unshipped sibling task that is not in the manifest — has been computed from **expected IDs** (partial-feature detection scanning both queue and archive). A clean git baseline for `.backlogit/` has been captured, and a **baseline integrity gate** has confirmed every protected-set member is present in `.backlogit/queue/` before any manifest item is archived. A protected-set member already archived or missing at baseline is treated as a pre-existing cascade and halts closure.
+* **Required Check (verify-after-each invariant)**: After archiving each single manifest item (move to `done`, then archive that one artifact), confirm every protected-set member still exists in `.backlogit/queue/` — not moved to `.backlogit/archive/`, not deleted from the working tree. Manifest items legitimately archived before this run (`pre-archived`) are excluded from the item loop to avoid false positives; this exemption applies to **manifest items only** — the protected set has **no** pre-archived exemption, so any protected-set member found archived or missing is a cascade.
+* **Postcondition**: Every shipment manifest item **and** the shipment record are archived in `.backlogit/archive/`, the entire protected set remains present in `.backlogit/queue/`, and the cascade `backlogit_ship_shipment` was never called.
 
 **Violation Action (git-revert-on-cascade)**:
 
@@ -539,3 +542,4 @@ follow-up items before `DARK_MODE_COMPLETE` is emitted.
 | 1.11.0  | 2026-07-08     | Added P-016      | No parallel branch/worktree execution, with only explicit Stage spike/research worktrees exempt |
 | 1.12.0  | 2026-07-08     | Added P-017      | Dark factory autonomy contract — bounded autonomous execution, local-review authority, and audited merge approval |
 | 1.13.0  | 2026-07-08     | Migrated P-014   | Copilot Review Merge Gate → Local Review Readiness Merge Gate (local review authoritative; Copilot advisory shadow) |
+| 1.14.0  | 2026-07-31     | Amended P-015    | Non-member-artifacts-stay-in-queue invariant is now code-enforced by `core.ShipShipment` (115-S); cascade `backlogit_ship_shipment` is safe for partial-feature shipments; single-artifact manual procedure demoted to a defense-in-depth fallback |
