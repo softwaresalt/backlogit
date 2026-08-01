@@ -83,7 +83,12 @@ func TestShipShipment_SkipsAlreadyArchivedLinkedDeliberation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
-	shipment, err := CreateShipment(ctx, ws, "Shipment with archived deliberation link", []string{task.ID})
+	// Feature-inclusive manifest: under the membership contract (133-F) a
+	// children-only manifest would skip the feature's linkedDeliberationIDs
+	// collection entirely, leaving the already-archived-deliberation skip path
+	// (this test's actual focus) unexercised. Listing the feature keeps that
+	// path reachable.
+	shipment, err := CreateShipment(ctx, ws, "Shipment with archived deliberation link", []string{feature.ID, task.ID})
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
