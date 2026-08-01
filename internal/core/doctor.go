@@ -71,6 +71,22 @@ const (
 	// docs/exec-plans/2026-07-31-shipshipment-partial-feature-archive-cascade-plan.md.
 	// Detection only; the destructive repair is deferred out of this release
 	// unit and, if ever built, must be CLI-only (Constitution VII).
+	//
+	// Known limitation (heuristic, not proof; review-fix, PR #327 Copilot
+	// finding): both membership and returned-event lookups are lifetime-wide
+	// unions across every shipment manifest and every JSONL log ever written,
+	// not scoped to the specific shipment that closed this feature. A feature
+	// can accumulate a returned_to_backlog event from an EARLIER partial
+	// shipment and later be legitimately archived as a genuine descendant of
+	// a DIFFERENT, later shipment's explicit-member ancestor feature -- the
+	// exact case TestShipShipment_LegitimatelyArchivesNestedFeatureDescendantOfMember
+	// establishes as correct behavior. This finding cannot currently
+	// distinguish that legitimate case from a real over-archive regression;
+	// correlating each event and each archival to its originating shipment ID
+	// would resolve the ambiguity and is tracked as a follow-up rather than
+	// attempted in this release unit, to avoid expanding this fix's scope.
+	// Operators must verify a reported feature's actual archival history
+	// before treating this finding as confirmed corruption.
 	FindingOverArchivedCoveringFeature DoctorFindingType = "over_archived_covering_feature"
 )
 
@@ -491,7 +507,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 				Type:       FindingOverArchivedCoveringFeature,
 				ArtifactID: info.id,
 				Description: fmt.Sprintf(
-					"feature %q is %q but was never an explicit shipment manifest member and has descendant work returned to the backlog by a partial-feature ship",
+					"feature %q is %q but was never an explicit shipment manifest member and has descendant work returned to the backlog by a partial-feature ship (heuristic, lifetime-wide correlation: verify actual archival history before treating as a regression -- a feature legitimately archived later as a descendant of a different explicit-member shipment can also match this pattern)",
 					info.id, info.status),
 			})
 		}
