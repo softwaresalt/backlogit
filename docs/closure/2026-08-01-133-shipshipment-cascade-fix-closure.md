@@ -190,15 +190,28 @@ operative for this repository's own dogfooding until that binary is upgraded.
   manifest member **and is not a legitimate descendant of one via
   `AdoptItem` re-parenting** (the subtree exception noted under Monitoring
   Plan above), on any repository state at or after `47dfcc93`.
-- **Procedure**: `git revert -m 1 47dfcc93...` (the full SHA)
-  (subject to the required operator approval) on `main` — `47dfcc93` is a
-  **merge commit**, so a plain `git revert 47dfcc93` fails without `-m 1` to
-  select the mainline parent; alternatively revert the specific offending
-  commit within it — then rebuild/reissue the CLI, and restore any
-  incorrectly-archived artifact via `git restore`/`git revert` on
-  `.backlogit/` per the existing P-015 git-revert-on-cascade procedure. Fully
-  reversible — no data migration, no external state, all changes are
-  git-tracked file moves and Go source.
+- **Procedure**: reverting merge commit `47dfcc93` is **not** the correct
+  response — `47dfcc93` contains the fix itself, so reverting it restores the
+  known, strictly worse pre-fix behavior (100% deterministic over-archiving
+  for every partial-feature shipment with a covering-feature ancestor), not a
+  narrower regression. Instead:
+  1. **Contain immediately**: stop calling the native cascade
+     (`backlogit shipment ship` / `backlogit_ship_shipment`) for
+     partial-feature shipments; fall back to the P-015 single-artifact
+     safe-close procedure (`.github/policies/workflow-policies.md`), which
+     remains fully documented and available as the defense-in-depth fallback
+     regardless of this fix's state.
+  2. **Restore data, not code**: revert only the specific incorrectly-
+     archived `.backlogit/` artifact(s) via `git restore`/`git revert`
+     scoped to those files (per the existing P-015 git-revert-on-cascade
+     recovery procedure) — do **not** revert the Go source in `47dfcc93`.
+  3. **Roll forward**: file a corrected fix for the specific residual gap
+     the regression exposes (e.g. via the Ship pipeline as a new bug-fix
+     release unit), rather than reverting to the known-bad pre-fix
+     implementation.
+
+  Fully reversible at the data level — no data migration, no external state;
+  all backlog-state changes are git-tracked file moves.
 
 ## Validation Window
 
