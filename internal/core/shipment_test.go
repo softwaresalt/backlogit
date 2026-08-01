@@ -508,6 +508,140 @@ func TestShipShipment_LegitimatelyArchivesNestedFeatureDescendantOfMember(t *tes
 		"nested feature file must remain under .backlogit/archive/, got %s", nestedPath)
 }
 
+// TestArchiveItems_PreservesPriorSuccessesWhenLaterItemFails is a regression
+// guard for a review-fix (PR #327 Copilot finding): archiveItems previously
+// returned (nil, err) whenever a LATER item in its depth-sorted loop failed,
+// discarding the IDs it had already archived earlier in the very same call.
+// ShipShipment assigns that return value directly to archivedIDs before the
+// error causes an early return, so its deferred restoreRolledUpNonMemberFeatures
+// would run with an empty exclusion set and could revert a nested feature this
+// exact call had just legitimately archived -- the precise corruption the
+// archivedIDs exclusion (133.004-T review-fix) exists to prevent, just reached
+// via a partial-failure path instead of the happy path. This test exercises
+// archiveItems directly (rather than through the full ShipShipment cascade,
+// where every candidate is already relocated into .backlogit/archive/ by the
+// unguarded done-status persistArtifact relocate -- see
+// config.defaults.go's status->"archive" directory rule -- before archiveItems
+// ever runs, making ArchiveItem's distinct-occupant guard unreachable from
+// that path). archiveItems must preserve every ID it archived before the
+// failure.
+func TestArchiveItems_PreservesPriorSuccessesWhenLaterItemFails(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	parent, err := CreateArtifact(ctx, ws, "Parent (fails to archive)", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, parent))
+
+	child, err := CreateArtifact(ctx, ws, "Child (archived first)", "task", WithParent(parent.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, child))
+
+	// Poison parent's archive destination with a distinct foreign occupant
+	// (same id, different title) so ArchiveItem refuses it with
+	// ErrArchiveDestinationOccupied. Neither item's status has changed from
+	// its post-creation default, so both are still genuinely in queue/ --
+	// unlike a ShipShipment-driven call, this reproduces a real distinct-path
+	// collision rather than an already-relocated in-place recovery. child's
+	// ID has one more dot than parent's (nested one level under it), so
+	// depthSortedIDs always processes child BEFORE parent.
+	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
+	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+	foreignPath := filepath.Join(archiveDir, parent.ID+".md")
+	foreign := "---\n" +
+		"id: \"" + parent.ID + "\"\n" +
+		"title: \"Pre-existing DIFFERENT archived item\"\n" +
+		"status: archived\n" +
+		"artifact_type: feature\n" +
+		"level: 1\n" +
+		"---\nForeign archived body.\n"
+	require.NoError(t, os.WriteFile(foreignPath, []byte(foreign), 0o644))
+
+	// Act
+	archived, err := archiveItems(ctx, ws, []string{parent.ID, child.ID})
+
+	// Assert
+	require.Error(t, err, "archiving parent onto an occupied destination must fail")
+	assert.True(t, errors.Is(err, blerrors.ErrArchiveDestinationOccupied),
+		"failure must be the propagated archive-destination-occupied error; got: %v", err)
+	assert.Contains(t, archived, child.ID,
+		"archiveItems must preserve IDs it already archived before a later item's failure, not discard them")
+
+	// child must genuinely be archived on disk despite the overall call
+	// having failed on parent.
+	finalChild, loadErr := loadArtifact(ctx, ws, child.ID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, models.StatusArchived, finalChild.Status,
+		"child archived before the later failure must remain archived")
+
+	// The foreign occupant at parent's archive destination must be left
+	// untouched -- confirming the failure was a clean refusal, not a partial
+	// overwrite.
+	foreignContent, readErr := os.ReadFile(foreignPath)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(foreignContent), "Pre-existing DIFFERENT archived item")
+}
+
+// TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext is a
+// regression guard for a review-fix (PR #327 Copilot finding): ShipShipment's
+// deferred cleanup is documented to "always attempt the revert, even if a
+// later step in this function fails and returns early" (see the ShipShipment
+// defer at the archivedIDs declaration), but restoreRolledUpNonMemberFeatures
+// previously reused the caller's context unchanged. When ShipShipment's own
+// context is canceled or its deadline expires -- exactly the condition under
+// which the forward operation is most likely to have failed and triggered
+// this cleanup -- the reused context makes the internal loadArtifact/
+// setArtifactStatus calls fail immediately with context.Canceled /
+// DeadlineExceeded, leaving the covering feature stranded at its unintended
+// rolled-up status and archive-directory location despite the "always
+// attempt" guarantee. This mirrors the established rollbackQueueMove
+// precedent (internal/core/queue.go:365-372), which detaches from the
+// caller's context via context.WithoutCancel for the exact same reason.
+// restoreRolledUpNonMemberFeatures must do the same.
+func TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	bg := context.Background()
+
+	feature, err := CreateArtifact(bg, ws, "Rolled-up covering feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(bg, ws.DB, feature))
+
+	// Simulate the unintended rollup completeReleaseScope's cascade performs:
+	// the feature's status moves to done, which (per the registry's
+	// status-based directory routing) also physically relocates its file
+	// into .backlogit/archive/.
+	_, err = setArtifactStatus(bg, ws, feature.ID, models.StatusDone, "simulated unintended rollup")
+	require.NoError(t, err)
+
+	snapshots := map[string]featureStatusSnapshot{
+		feature.ID: {status: models.StatusQueued},
+	}
+
+	canceledCtx, cancel := context.WithCancel(bg)
+	cancel()
+	require.Error(t, canceledCtx.Err(), "test precondition: context must already be canceled")
+
+	// Act: archivedIDs is nil, so the feature is not in the exclusion set --
+	// it must be restored, and it must be restored EVEN THOUGH canceledCtx is
+	// already done, exactly as ShipShipment's deferred cleanup requires.
+	restoreErr := restoreRolledUpNonMemberFeatures(canceledCtx, ws, snapshots, nil)
+
+	// Assert
+	require.NoError(t, restoreErr,
+		"restore must succeed even when the caller's context is already canceled")
+
+	restored, findErr := findArtifact(bg, ws, feature.ID)
+	require.NoError(t, findErr)
+	assert.Equal(t, models.StatusQueued, restored.Status,
+		"feature must be reverted to its pre-rollup status despite the canceled context")
+	restoredPath, pathErr := FindArtifactPath(bg, ws, feature.ID)
+	require.NoError(t, pathErr)
+	assert.Equal(t, "queue", filepath.Base(filepath.Dir(restoredPath)),
+		"feature file must be relocated back under .backlogit/queue/ despite the canceled context")
+}
+
 // T002 / ST012: Reject invalid status transition (queued -> shipped).
 func TestMoveShipmentStatus_InvalidTransition(t *testing.T) {
 	// Arrange

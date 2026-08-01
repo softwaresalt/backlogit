@@ -449,7 +449,16 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 // joined error remains detectable by the doctor over-archived-covering-
 // feature audit (CheckOverArchivedFeatures, 133.005-T) for a follow-up
 // remediation pass.
+//
+// ShipShipment's deferred cleanup calls this with its own ctx and is
+// documented to "always attempt the revert, even if a later step ... fails
+// and returns early" -- the case in which ctx is most likely already
+// canceled or past its deadline. Detach from the caller's cancellation/
+// deadline up front (mirroring rollbackQueueMove, queue.go:365-372) so this
+// best-effort cleanup is not itself defeated by the very failure condition
+// it exists to clean up after (review-fix, PR #327 Copilot finding).
 func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot, archivedIDs []string) error {
+	ctx = context.WithoutCancel(ctx)
 	archived := make(map[string]struct{}, len(archivedIDs))
 	for _, id := range archivedIDs {
 		archived[id] = struct{}{}
@@ -514,19 +523,28 @@ func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, c
 	return nil
 }
 
+// archiveItems archives every item in itemIDs, deepest-first, and always
+// returns the IDs it successfully archived even when a later item fails
+// (review-fix, PR #327 Copilot finding). ShipShipment assigns this return
+// value directly to its archivedIDs exclusion set before an error triggers
+// its own early return, so its deferred restoreRolledUpNonMemberFeatures
+// relies on this partial list to avoid reverting a nested feature this same
+// call already legitimately archived moments before a later, unrelated item
+// failed. Discarding the accumulated IDs on error (returning nil) would
+// reopen that exact corruption via a partial-failure path.
 func archiveItems(ctx context.Context, ws *Workspace, itemIDs []string) ([]string, error) {
 	ordered := depthSortedIDs(itemIDs)
 	archived := make([]string, 0, len(ordered))
 	for _, itemID := range ordered {
 		item, err := loadArtifact(ctx, ws, itemID)
 		if err != nil {
-			return nil, fmt.Errorf("load item %s for archive: %w", itemID, err)
+			return archived, fmt.Errorf("load item %s for archive: %w", itemID, err)
 		}
 		if item.Status == models.StatusArchived {
 			continue
 		}
 		if _, err := ArchiveItem(ctx, ws.DB, ws, itemID, WithTopLevel(false)); err != nil {
-			return nil, fmt.Errorf("archive item %s: %w", itemID, err)
+			return archived, fmt.Errorf("archive item %s: %w", itemID, err)
 		}
 		archived = append(archived, itemID)
 	}
