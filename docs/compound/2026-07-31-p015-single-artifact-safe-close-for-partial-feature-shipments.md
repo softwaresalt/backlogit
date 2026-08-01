@@ -80,11 +80,18 @@ archived though the manifest `items` were only `[106.001-T, 106.002-T]`.
    `git revert <commit>` was the mandated recovery (vs `git restore` for an
    uncommitted cascade). The revert reinstated 114-S in queue, un-stamped the
    manifest items, and returned the tree to the clean baseline.
-3. The compliant redo: baseline integrity gate (106-F present) → manifest items
-   pre-archived (excluded) → `backlogit update 114-S --commit <merge>` →
-   `backlogit move 114-S --status done` → `backlogit archive 114-S` (three
-   single-artifact ops; hook events `update_artifact` + `archive_item`, never
-   `ship_shipment`) → verify-after-each confirmed 106-F still in queue.
+3. **HALT (mandated).** After recovery, P-015's violation action is to HALT and
+   surface the cascade to the operator with a P-005 event — recovery is NOT
+   authorization to continue. A same-session self-authorized reclosure labeled
+   "compliant" would teach agents to bypass this halt and must be avoided.
+4. The reclosure (surfaced for operator authorization, not auto-authorized):
+   baseline integrity gate (106-F present) → manifest items pre-archived
+   (excluded) → `backlogit update 114-S --commit <merge>` → `backlogit move
+   114-S --status done` → `backlogit archive 114-S` (three single-artifact ops;
+   hook events `update_artifact` + `archive_item`, never `ship_shipment`) →
+   verify-after-each confirmed 106-F still in queue. In this session the
+   reclosure was carried in the closure PR and presented to the operator for
+   explicit authorization.
 
 ## Root-Cause Follow-Up (why a descendant gate is not enough)
 

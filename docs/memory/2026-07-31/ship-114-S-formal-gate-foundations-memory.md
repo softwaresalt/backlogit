@@ -93,7 +93,7 @@ F-series (parent feature **106-F**, which stays `active` — more F-tasks remain
   post-merge `ship_shipment` (per shipment convention).
 - P-009 merge-commit-only verified allowed on repo.
 
-## Post-merge closure (2026-07-31) — P-015 violation, recovery, compliant redo
+## Post-merge closure (2026-07-31) — P-015 violation, recovery, operator-surfaced reclosure
 
 - PR #324 MERGED via merge commit `f8870f864d596a1f3593405e54396d8129aa8871`
   (P-009 verified: 2 parents 809e741d + d252007b). Branch deleted. All 6 CI
@@ -111,8 +111,13 @@ F-series (parent feature **106-F**, which stays `active` — more F-tasks remain
   active in queue; 114-S active in queue; manifest items pre-archived unchanged).
   Protected set {106-F} re-verified intact.
 
-- COMPLIANT REDO (P-015 single-artifact safe-close): manifest items 106.001-T /
-  106.002-T pre-archived -> excluded from item loop (left unchanged). Shipment
+- RECLOSURE (single-artifact safe-close, surfaced for operator authorization):
+  P-015's violation action is recover -> re-verify -> HALT; recovery is NOT
+  authorization to continue. This reclosure was performed and is surfaced in
+  closure PR #325 for explicit operator authorization (not treated as
+  auto-"compliant"). Manifest items 106.001-T / 106.002-T pre-archived ->
+  excluded from item loop (left unchanged; only 114-S carries merge SHA
+  f8870f86, the F2/F3 tasks retain their own implementation commits). Shipment
   record closed via 3 single-artifact ops: `backlogit update 114-S --commit
   f8870f86`, `backlogit move 114-S --status done`, `backlogit archive 114-S`
   (hook events update_artifact + archive_item; NO ship_shipment). Verify-after-each:
@@ -128,4 +133,7 @@ F-series (parent feature **106-F**, which stays `active` — more F-tasks remain
 - 114-S archived (archived_status: done, commit f8870f86). 106-F ACTIVE in queue
   (spans F1-F6 across future cycles).
 - Deliverables live on main: internal/canonical/ (F2), internal/core/status_taxonomy.go (F3).
-- Closure PR #325 carries: cascade commit + its revert + compliant safe-close (honest history).
+- Closure PR #325 carries: cascade commit + its revert + single-artifact
+  reclosure (honest history). P-015 mandates HALT after recovery, so the
+  reclosure is surfaced to the operator for authorization rather than treated
+  as auto-compliant.
