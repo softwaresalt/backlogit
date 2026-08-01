@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -172,6 +173,10 @@ func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, futureTask))
 
+	// Partial-feature manifest: only releasedTask is an explicit shipment
+	// member. The covering feature and its linked deliberation are NOT listed,
+	// so per the membership contract (133-F) they must stay open — this is the
+	// 114-S partial-feature regression scenario.
 	shipment, err := CreateShipment(ctx, ws, "Release cleanup shipment", []string{releasedTask.ID})
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
@@ -192,14 +197,29 @@ func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
 	assert.Equal(t, shipment.ID, result.ShipmentID)
 	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
 	assert.Contains(t, result.ArchivedIDs, shipment.ID)
-	assert.Contains(t, result.ArchivedIDs, feature.ID)
 	assert.Contains(t, result.ArchivedIDs, releasedTask.ID)
-	assert.Contains(t, result.ArchivedIDs, deliberation.ID)
+	assert.NotContains(t, result.ArchivedIDs, feature.ID,
+		"non-member covering feature must not be archived on a partial-feature ship")
+	assert.NotContains(t, result.ArchivedIDs, deliberation.ID,
+		"linked deliberation of a non-member covering feature must not be archived")
 	assert.Contains(t, result.ReturnedIDs, futureTask.ID)
 
-	archivedFeature, err := loadArtifact(ctx, ws, feature.ID)
+	// The covering feature must remain open: not done, not archived, and its
+	// file must still physically reside under .backlogit/queue/ — this is the
+	// transitive parent-status rollup seam (completeReleaseScope marks
+	// releasedTask done -> cascadePersistedParentStatuses sees all RECORDED
+	// children done -> rolls the feature to done and relocates it). Checking
+	// only ArchivedIDs absence would false-green here because the rollup
+	// relocates the file without ever routing it through the archival
+	// collector.
+	openFeature, err := findArtifact(ctx, ws, feature.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.StatusArchived, archivedFeature.Status)
+	assert.NotEqual(t, models.StatusDone, openFeature.Status, "non-member covering feature must not be marked done")
+	assert.NotEqual(t, models.StatusArchived, openFeature.Status, "non-member covering feature must not be archived")
+	featureQueuePath, pathErr := FindArtifactPath(ctx, ws, feature.ID)
+	require.NoError(t, pathErr, "covering feature file must still be discoverable")
+	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featureQueuePath)),
+		"covering feature file must remain under .backlogit/queue/, got %s", featureQueuePath)
 
 	archivedReleasedTask, err := loadArtifact(ctx, ws, releasedTask.ID)
 	require.NoError(t, err)
@@ -210,11 +230,12 @@ func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
 	assert.Equal(t, models.StatusQueued, queuedFutureTask.Status)
 	assert.Empty(t, queuedFutureTask.ParentID, "returned item should have parent_id cleared")
 
-	archivedDeliberation, err := loadArtifact(ctx, ws, deliberation.ID)
+	openDeliberation, err := findArtifact(ctx, ws, deliberation.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.StatusArchived, archivedDeliberation.Status)
+	assert.NotEqual(t, models.StatusArchived, openDeliberation.Status,
+		"linked deliberation of a non-member covering feature must not be archived")
 
-	for _, itemID := range []string{shipment.ID, feature.ID, releasedTask.ID, deliberation.ID} {
+	for _, itemID := range []string{shipment.ID, releasedTask.ID} {
 		entries, logErr := bldb.ListItemLogEntries(ctx, ws.DB, itemID, 0)
 		require.NoError(t, logErr)
 		found := false
@@ -226,6 +247,182 @@ func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
 		}
 		assert.True(t, found, "expected commit_tracked entry for %s", itemID)
 	}
+}
+
+// 133.003-T (Unit 1b): Feature-inclusive full-feature characterization — locks
+// the baseline full-feature close path. When the covering feature IS an
+// explicit shipment member, it legitimately closes and archives along with
+// all of its terminal children. This must pass both before and after the
+// Unit 2 membership-gating fix (baseline preservation guard).
+func TestShipShipment_FeatureInclusiveManifestArchivesFeature(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Full feature release", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	taskOne, err := CreateArtifact(ctx, ws, "Full feature task one", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskOne))
+
+	taskTwo, err := CreateArtifact(ctx, ws, "Full feature task two", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskTwo))
+
+	// Feature-inclusive manifest: the feature and ALL of its children are
+	// explicit members, so it is a genuine full-feature ship.
+	shipment, err := CreateShipment(ctx, ws, "Full feature shipment", []string{feature.ID, taskOne.ID, taskTwo.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.ArchivedIDs, feature.ID, "explicitly listed covering feature must be archived")
+	assert.Contains(t, result.ArchivedIDs, taskOne.ID)
+	assert.Contains(t, result.ArchivedIDs, taskTwo.ID)
+
+	archivedFeature, err := loadArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusArchived, archivedFeature.Status)
+}
+
+// 133.003-T (Unit 1b): Body-planned-only regression — the covering feature's
+// ONLY recorded children are the shipped tasks (no other siblings exist at
+// all, harvested or otherwise). This is the exact 114-S hard case: the
+// transitive parent-status rollup (completeReleaseScope -> setArtifactStatus
+// -> cascadePersistedParentStatuses -> ComputeParentStatus) sees every
+// RECORDED child done and rolls the non-member covering feature to done,
+// relocating it out of .backlogit/queue/ BEFORE the direct status seam or the
+// archival collector ever run. A membership gate on only those two seams is
+// insufficient to catch this case; the rollup itself must be neutralized.
+func TestShipShipment_BodyPlannedOnlyChildrenShipKeepsFeatureOpen(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Body-planned covering feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	// The feature's ONLY recorded children are the two tasks below; there is
+	// no unharvested/nonterminal sibling to keep it open by descendant count.
+	taskOne, err := CreateArtifact(ctx, ws, "Body-planned task one", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskOne))
+
+	taskTwo, err := CreateArtifact(ctx, ws, "Body-planned task two", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskTwo))
+
+	// Children-only manifest: the feature is NOT an explicit member, even
+	// though shipping both tasks makes every RECORDED child of the feature
+	// terminal (the exact condition that fires ComputeParentStatus's rollup).
+	shipment, err := CreateShipment(ctx, ws, "Body-planned shipment", []string{taskOne.ID, taskTwo.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.ArchivedIDs, taskOne.ID)
+	assert.Contains(t, result.ArchivedIDs, taskTwo.ID)
+	assert.NotContains(t, result.ArchivedIDs, feature.ID,
+		"non-member covering feature must not be archived even when all its recorded children ship")
+
+	// Must check BOTH status and physical file location: the rollup path
+	// closes and relocates the feature WITHOUT ever routing it through the
+	// archival collector, so ArchivedIDs absence alone false-greens.
+	openFeature, err := findArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, models.StatusDone, openFeature.Status,
+		"body-planned covering feature must not be rolled up to done")
+	assert.NotEqual(t, models.StatusArchived, openFeature.Status,
+		"body-planned covering feature must not be archived")
+	featureQueuePath, pathErr := FindArtifactPath(ctx, ws, feature.ID)
+	require.NoError(t, pathErr, "covering feature file must still be discoverable")
+	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featureQueuePath)),
+		"covering feature file must remain under .backlogit/queue/, got %s", featureQueuePath)
+}
+
+// 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
+// must fire even when a later step fails and ShipShipment returns an error.
+// moveShipmentStatusWithTopLevel's persistArtifact call (marking the
+// shipment itself "shipped") runs strictly after completeReleaseScope's
+// rollup already relocated the non-member covering feature, but strictly
+// before collectArchiveCandidateIDs/archiveItems ever run. Failing exactly
+// that write exercises the defer's error-join path without ever reaching the
+// archival collector, proving the restore is not merely a side effect of the
+// happy path.
+func TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Body-planned covering feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	// The feature's ONLY recorded children are the two tasks below, so
+	// shipping both fires the exact ComputeParentStatus rollup condition.
+	taskOne, err := CreateArtifact(ctx, ws, "Body-planned task one", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskOne))
+
+	taskTwo, err := CreateArtifact(ctx, ws, "Body-planned task two", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskTwo))
+
+	shipment, err := CreateShipment(ctx, ws, "Body-planned shipment", []string{taskOne.ID, taskTwo.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Fail only the write that persists the shipment artifact itself; let
+	// every other artifact write (tasks, the covering feature, and its
+	// restore) proceed through the real implementation.
+	injectedErr := errors.New("injected shipment write failure")
+	origFn := persistArtifactWriteFn
+	persistArtifactWriteFn = func(a *models.Artifact, filePath string, durable bool) error {
+		if a.ID == shipment.ID {
+			return injectedErr
+		}
+		return origFn(a, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = origFn })
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	// Assert
+	require.Error(t, err, "ship shipment must surface the injected write failure")
+	assert.ErrorIs(t, err, injectedErr)
+	assert.Nil(t, result)
+
+	// Even though ShipShipment failed partway through -- after the rollup
+	// already marked the covering feature done and relocated it, but before
+	// the archival collector ever ran -- the deferred restore must still have
+	// fired and reverted the feature to its pre-ship status and location.
+	restoredFeature, findErr := findArtifact(ctx, ws, feature.ID)
+	require.NoError(t, findErr)
+	assert.NotEqual(t, models.StatusDone, restoredFeature.Status,
+		"non-member covering feature must be restored even when the ship fails after the rollup")
+	assert.NotEqual(t, models.StatusArchived, restoredFeature.Status,
+		"non-member covering feature must not be archived when the ship fails after the rollup")
+	featureQueuePath, pathErr := FindArtifactPath(ctx, ws, feature.ID)
+	require.NoError(t, pathErr, "covering feature file must still be discoverable after restore")
+	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featureQueuePath)),
+		"covering feature file must be restored under .backlogit/queue/, got %s", featureQueuePath)
 }
 
 // T002 / ST012: Reject invalid status transition (queued -> shipped).

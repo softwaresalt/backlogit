@@ -132,7 +132,7 @@ func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string
 
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
-func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (*ShipShipmentResult, error) {
+func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err
@@ -158,6 +158,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	}
 
 	explicitScope := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+	explicitScopeSet := toIDSet(explicitScope)
 	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)
@@ -171,13 +172,36 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 
-	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
-	}
-
+	// 133.004-T: resolve covering-feature ancestry BEFORE completing the release
+	// scope. completeReleaseScope's status writes trigger the generic
+	// cascadePersistedParentStatuses rollup (harness_status.go), which marks a
+	// parent done -- and, per the registry's status-based directory routing,
+	// relocates it into the archive directory -- purely because its currently
+	// recorded children happen to all be terminal. That rollup does not know
+	// about shipment membership, so it can fire for a covering feature that was
+	// never itself listed as an explicit shipment member. Snapshotting here
+	// captures the pre-ship status of every non-member feature so the rollup
+	// can be detected and reverted once the ship completes (133-F).
 	featureIDs, err := featureScopeRoots(ctx, ws, explicitScope)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: resolve feature scope: %w", shipmentID, err)
+	}
+	nonMemberFeatureSnapshots, err := snapshotNonMemberFeatureStatuses(ctx, ws, featureIDs, explicitScopeSet)
+	if err != nil {
+		return nil, fmt.Errorf("ship shipment %s: snapshot covering feature scope: %w", shipmentID, err)
+	}
+	// 133.004-T: always attempt the revert, even if a later step in this
+	// function fails and returns early -- a partial/aborted ship must not
+	// leave a non-member covering feature stranded mid-rollup. A restore
+	// failure is joined onto (never silently drops) the function's error.
+	defer func() {
+		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
+		}
+	}()
+
+	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
+		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
 	}
 
 	returnedIDs := make([]string, 0)
@@ -188,8 +212,17 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			return nil, fmt.Errorf("ship shipment %s: return unreleased feature items for %s: %w", shipmentID, featureID, returnErr)
 		}
 		returnedIDs = append(returnedIDs, returned...)
-		if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
-			return nil, fmt.Errorf("ship shipment %s: mark feature %s done: %w", shipmentID, featureID, setErr)
+		// 133.004-T: only a covering feature that is itself an explicit
+		// shipment member is marked done here. A feature that is merely an
+		// ancestor of some shipped item, but was never itself a member, must
+		// be left alone -- its lifecycle is independent of this partial
+		// release, and any unintended rollup it already picked up from
+		// completeReleaseScope's cascade is reverted by the deferred restore
+		// above (133-F).
+		if _, isMember := explicitScopeSet[featureID]; isMember {
+			if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
+				return nil, fmt.Errorf("ship shipment %s: mark feature %s done: %w", shipmentID, featureID, setErr)
+			}
 		}
 	}
 
@@ -197,7 +230,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 
-	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs)
+	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs, explicitScopeSet)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: collect archive scope: %w", shipmentID, err)
 	}
@@ -289,7 +322,7 @@ func returnUnreleasedFeatureItems(ctx context.Context, ws *Workspace, featureID 
 	return uniqueNonEmptyStrings(returned), nil
 }
 
-func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs, returnedIDs []string) ([]string, error) {
+func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs, returnedIDs []string, explicitScope map[string]struct{}) ([]string, error) {
 	candidates := []string{shipmentID}
 	returnedSet := toIDSet(returnedIDs)
 
@@ -307,6 +340,17 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 	}
 
 	for _, featureID := range featureIDs {
+		// 133.004-T: a covering feature (and its descendants/linked
+		// deliberations) is only archived here when the feature is itself an
+		// explicit shipment member. An ancestor feature that is merely
+		// upstream of some shipped item, but was never listed in the
+		// manifest, must be left out of the archive scope entirely -- its
+		// own lifecycle and any of its other descendants are independent of
+		// this partial release (133-F).
+		if _, isMember := explicitScope[featureID]; !isMember {
+			continue
+		}
+
 		feature, err := loadArtifact(ctx, ws, featureID)
 		if err != nil {
 			return nil, err
@@ -336,6 +380,67 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 	}
 
 	return uniqueNonEmptyStrings(candidates), nil
+}
+
+// featureStatusSnapshot captures a covering feature's pre-ship status so a
+// later unintended parent-status rollup (fired by completeReleaseScope's
+// generic cascade in cascadePersistedParentStatuses) can be detected and
+// reverted. See snapshotNonMemberFeatureStatuses / restoreRolledUpNonMemberFeatures.
+type featureStatusSnapshot struct {
+	status models.ArtifactStatus
+}
+
+// snapshotNonMemberFeatureStatuses records the pre-ship status of every
+// covering feature in featureIDs that is NOT itself an explicit member of the
+// shipment manifest (explicitScope). completeReleaseScope's generic
+// parent-status cascade (cascadePersistedParentStatuses -> ComputeParentStatus)
+// can roll such a feature to done -- and, per the registry's status-based
+// directory routing, relocate its file into the archive directory -- purely
+// because its currently recorded children happen to all be terminal, even
+// though the feature was never listed as a shipment member. Recording the
+// prior status here lets restoreRolledUpNonMemberFeatures revert that
+// unintended side effect once the ship completes (133.004-T / 133-F).
+func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featureIDs []string, explicitScope map[string]struct{}) (map[string]featureStatusSnapshot, error) {
+	snapshots := make(map[string]featureStatusSnapshot)
+	for _, featureID := range featureIDs {
+		if _, isMember := explicitScope[featureID]; isMember {
+			continue
+		}
+		item, err := loadArtifact(ctx, ws, featureID)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot feature %s: %w", featureID, err)
+		}
+		snapshots[featureID] = featureStatusSnapshot{status: item.Status}
+	}
+	return snapshots, nil
+}
+
+// restoreRolledUpNonMemberFeatures reverts any non-member covering feature
+// whose status changed during the ship -- an unintended side effect of
+// completeReleaseScope's generic parent-status cascade -- back to its
+// pre-ship status (and, via setArtifactStatus's relocate-on-change persist,
+// its pre-ship directory). Features whose status is unchanged are left
+// untouched. Restoration is best-effort per feature: individual failures are
+// joined together so one failure does not mask or block reverting the
+// others, and any feature left un-restored after a joined error remains
+// detectable by the doctor over-archived-covering-feature audit
+// (CheckOverArchivedFeatures, 133.005-T) for a follow-up remediation pass.
+func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot) error {
+	var errs []error
+	for featureID, snapshot := range snapshots {
+		current, err := loadArtifact(ctx, ws, featureID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("restore feature %s: reload: %w", featureID, err))
+			continue
+		}
+		if current.Status == snapshot.status {
+			continue
+		}
+		if _, err := setArtifactStatus(ctx, ws, featureID, snapshot.status, "reverted unintended rollup from partial-feature ship"); err != nil {
+			errs = append(errs, fmt.Errorf("restore feature %s to %s: %w", featureID, snapshot.status, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func attachCommitToItems(ctx context.Context, ws *Workspace, itemIDs []string, commit *CommitMetadata) error {
