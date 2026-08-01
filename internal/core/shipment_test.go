@@ -14,6 +14,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -640,6 +641,78 @@ func TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext(t *testing
 	require.NoError(t, pathErr)
 	assert.Equal(t, "queue", filepath.Base(filepath.Dir(restoredPath)),
 		"feature file must be relocated back under .backlogit/queue/ despite the canceled context")
+}
+
+// 133.004-T (review-fix, PR #327 ordering finding): the non-member covering
+// feature restore must complete on the successful path BEFORE
+// VerifyPostShipConsistency and the post-ship hooks run, not merely by the
+// time the function returns. Before this fix, restoreRolledUpNonMemberFeatures
+// ran only inside ShipShipment's deferred cleanup, which -- like every Go
+// defer -- executes during return unwinding, i.e. strictly AFTER
+// VerifyPostShipConsistency and ws.HookRunner.FirePost have already run to
+// completion as ordinary in-line statements. A post-ship hook (an external
+// webhook or custom integration) could therefore observe -- and act on -- the
+// covering feature in its transient, incorrectly-rolled-up done/archived
+// state, even though the ship ultimately succeeds and the feature is
+// reverted moments later. This test registers a synchronous post-ship hook
+// probe and asserts it observes the ALREADY-RESTORED feature.
+func TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	ws.HookRunner = hooks.NewHookRunner()
+
+	feature, err := CreateArtifact(ctx, ws, "Body-planned covering feature", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	// The feature's ONLY recorded children are the two tasks below, so
+	// shipping both fires the exact ComputeParentStatus rollup condition.
+	taskOne, err := CreateArtifact(ctx, ws, "Body-planned task one", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskOne))
+
+	taskTwo, err := CreateArtifact(ctx, ws, "Body-planned task two", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, taskTwo))
+
+	shipment, err := CreateShipment(ctx, ws, "Body-planned shipment", []string{taskOne.ID, taskTwo.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	var (
+		hookFired      bool
+		observedStatus models.ArtifactStatus
+		observeErr     error
+	)
+	ws.HookRunner.Register(hooks.HookShipShipment, hooks.PhasePost, hooks.HookRegistration{
+		Name:     "probe_covering_feature_state",
+		Priority: 100,
+		Fn: func(hookCtx context.Context, hc hooks.HookContext) error {
+			hookFired = true
+			snapshot, findErr := findArtifact(hookCtx, ws, feature.ID)
+			if findErr != nil {
+				observeErr = findErr
+				return nil
+			}
+			observedStatus = snapshot.Status
+			return nil
+		},
+	})
+
+	// Act
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, hookFired, "test precondition: the post-ship hook probe must have fired")
+	require.NoError(t, observeErr)
+	assert.NotEqual(t, models.StatusDone, observedStatus,
+		"post-ship hook must observe the covering feature already restored, not the transient rolled-up done status")
+	assert.NotEqual(t, models.StatusArchived, observedStatus,
+		"post-ship hook must observe the covering feature already restored, not archived")
 }
 
 // T002 / ST012: Reject invalid status transition (queued -> shipped).

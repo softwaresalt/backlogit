@@ -201,11 +201,26 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// feature would revert an archival this same call just legitimately
 	// performed (review-fix, 133.004-T).
 	var archivedIDs []string
+	// restored tracks whether the explicit, in-line restore call below (on
+	// the successful path) already ran, so the deferred fallback becomes a
+	// no-op instead of invoking restoreRolledUpNonMemberFeatures twice.
+	restored := false
 	// 133.004-T: always attempt the revert, even if a later step in this
 	// function fails and returns early -- a partial/aborted ship must not
 	// leave a non-member covering feature stranded mid-rollup. A restore
 	// failure is joined onto (never silently drops) the function's error.
+	// review-fix (PR #327): this defer is now a fallback for early-return
+	// paths only. On the successful path, the explicit call below runs the
+	// restore BEFORE VerifyPostShipConsistency and the post-ship hooks, so
+	// consistency checks and external integrations never observe the
+	// covering feature in its transient, incorrectly-rolled-up done/archived
+	// state. Relying solely on this defer would let it fire only during
+	// return unwinding -- strictly after those in-line statements already
+	// ran to completion.
 	defer func() {
+		if restored {
+			return
+		}
 		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
 		}
@@ -254,6 +269,18 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: archive release scope: %w", shipmentID, err)
 	}
+
+	// review-fix (PR #327): revert any unintended non-member covering-feature
+	// rollup NOW, on the successful path, before VerifyPostShipConsistency and
+	// the post-ship hooks run. Leaving this to the deferred fallback alone
+	// would let consistency verification and any post-ship hook (webhook,
+	// custom integration) observe the feature in its transient,
+	// incorrectly-rolled-up done/archived state, even though it is reverted
+	// moments later when the function returns.
+	if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
+		return nil, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr)
+	}
+	restored = true
 
 	if err := VerifyPostShipConsistency(ctx, ws, archivedIDs); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: post-ship consistency: %w", shipmentID, err)
