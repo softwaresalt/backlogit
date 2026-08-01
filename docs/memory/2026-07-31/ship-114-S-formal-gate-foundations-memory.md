@@ -133,7 +133,10 @@ F-series (parent feature **106-F**, which stays `active` — more F-tasks remain
 - 114-S archived (archived_status: done, commit f8870f86). 106-F ACTIVE in queue
   (spans F1-F6 across future cycles).
 - Deliverables live on main: internal/canonical/ (F2), internal/core/status_taxonomy.go (F3).
-- Closure PR #325 carries: cascade commit + its revert + single-artifact
-  reclosure (honest history). P-015 mandates HALT after recovery, so the
-  reclosure is surfaced to the operator for authorization rather than treated
-  as auto-compliant.
+- Closure PR #325's 3 lifecycle commits: cascade (2826c8c3) + its revert
+  (a3462650) + single-artifact reclosure (fc9d66f2). Additional corrective
+  documentation-honesty commits (437f4b63, f5c4d832, and later corrections)
+  refine the closure records per Copilot review feedback without changing
+  backlog state. P-015 mandates HALT after recovery, so the reclosure is
+  surfaced to the operator for authorization rather than treated as
+  auto-compliant.
