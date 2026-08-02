@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // NewDepCmd creates the `backlogit dep` command group for managing dependencies.
@@ -52,10 +54,14 @@ func NewDepAddCmd() *cobra.Command {
 			// Non-blocks dep_types and non-shipment endpoints use the generic path.
 			if depType == "" || depType == "blocks" {
 				itemArt, e1 := db.GetItem(ctx, ws.DB, itemID)
+				if e1 != nil && !errors.Is(e1, blerrors.ErrNotFound) {
+					// Propagate real DB errors; ErrNotFound (cache miss) falls through
+					// to AddDependency which uses the filesystem-backed findArtifact.
+					return fmt.Errorf("routing check for %s: %w", itemID, e1)
+				}
 				if e1 == nil && itemArt.ArtifactType == "shipment" {
 					// Source is a shipment with a blocks edge: route through
 					// AddShipmentBlock which validates both endpoints are shipments.
-					// For non-blocks dep_types, the generic path is unchanged.
 					if err := core.AddShipmentBlock(ctx, ws, itemID, dependsOn); err != nil {
 						return err
 					}

@@ -1321,6 +1321,28 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 	if v, ok := request.Params.Arguments["dep_type"].(string); ok && v != "" {
 		depType = v
 	}
+
+	// Mirror the CLI routing: when source is a shipment and dep_type is
+	// "blocks" (the default), route through AddShipmentBlock so the MCP
+	// surface cannot bypass endpoint validation for that edge shape.
+	if depType == "blocks" {
+		itemArt, e1 := db.GetItem(ctx, s.Workspace.DB, itemID)
+		if e1 != nil && !errors.Is(e1, backlogiterrors.ErrNotFound) {
+			return InternalError(fmt.Sprintf("look up source artifact: %v", e1)), nil
+		}
+		if e1 == nil && itemArt.ArtifactType == "shipment" {
+			if err := core.AddShipmentBlock(ctx, s.Workspace, itemID, dependsOn); err != nil {
+				return domainError("add shipment block", err), nil
+			}
+			return toolResultJSON(map[string]string{
+				"item_id":    itemID,
+				"depends_on": dependsOn,
+				"dep_type":   depType,
+				"status":     "added",
+			})
+		}
+	}
+
 	if err := core.AddDependency(ctx, s.Workspace, itemID, dependsOn, depType); err != nil {
 		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
 	}
