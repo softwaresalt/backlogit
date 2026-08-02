@@ -351,6 +351,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Create a new shipment artifact"),
 			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Shipment title")),
 			mcplib.WithString("items", mcplib.Description("Optional comma-separated item IDs")),
+			mcplib.WithString("priority", mcplib.Description("Optional shipment priority (critical, high, medium, low)")),
 		),
 		s.handleCreateShipment,
 	)
@@ -1642,9 +1643,14 @@ func (s *Server) handleCreateShipment(ctx context.Context, request mcplib.CallTo
 	}
 
 	items, _ := request.Params.Arguments["items"].(string)
+	priority, _ := request.Params.Arguments["priority"].(string)
 	logger.Info("shipment tool invoked", "tool", "backlogit_create_shipment", "title", title)
 
-	shipment, err := core.CreateShipment(ctx, s.Workspace, title, splitCommaSeparated(items))
+	var opts []core.Option
+	if priority != "" {
+		opts = append(opts, core.WithPriority(priority))
+	}
+	shipment, err := core.CreateShipment(ctx, s.Workspace, title, splitCommaSeparated(items), opts...)
 	if err != nil {
 		return domainError("create shipment", err), nil
 	}

@@ -61,7 +61,10 @@ func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}
 
-	shipment, err := CreateArtifact(ctx, ws, title, "shipment", WithFields(map[string]any{"items": items}))
+	// Prepend the items field option so it can be overridden by caller opts if
+	// needed, then append caller opts (which may include WithPriority).
+	createOpts := append([]Option{WithFields(map[string]any{"items": items})}, opts...)
+	shipment, err := CreateArtifact(ctx, ws, title, "shipment", createOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}

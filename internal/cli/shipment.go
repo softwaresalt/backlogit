@@ -89,6 +89,7 @@ adding an item already assigned to another shipment is refused.`,
 func newShipmentCreateCmd() *cobra.Command {
 	var title string
 	var items string
+	var priority string
 
 	cmd := &cobra.Command{
 		Use:     "create",
@@ -104,7 +105,11 @@ func newShipmentCreateCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			shipment, err := core.CreateShipment(ctx, ws, title, splitShipmentItems(items))
+			var opts []core.Option
+			if priority != "" {
+				opts = append(opts, core.WithPriority(priority))
+			}
+			shipment, err := core.CreateShipment(ctx, ws, title, splitShipmentItems(items), opts...)
 			if err != nil {
 				return fmt.Errorf("create shipment: %w", err)
 			}
@@ -116,6 +121,7 @@ func newShipmentCreateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&title, "title", "", "shipment title")
 	cmd.Flags().StringVar(&items, "items", "", "comma-separated item IDs")
+	cmd.Flags().StringVar(&priority, "priority", "", "shipment priority (critical, high, medium, low)")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd
 }
