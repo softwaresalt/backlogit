@@ -28,7 +28,7 @@ Mode: propose (entries assessed; no files edited in this pass; one new learning 
 ### `2026-07-23-cli-mcp-filter-param-denylist-parity-test.md`
 
 **Classification: keep**  
-Evidence: PR #330 applies the same denylist pattern for `create_shipment` params (in `internal/cli/shipment_test.go`: `TestShipmentCreateCLIMCPParityLock`). The denylist pattern is now used for two separate CLI commands. The existing entry accurately describes the approach; no update needed. Pattern reinforced.
+Evidence: PR #330 applies the same denylist pattern for `create_shipment` params (in `internal/cli/shipment_test.go`: `TestCreateShipmentCLIMCPParity`). The denylist pattern is now used for two separate CLI commands. The existing entry accurately describes the approach; no update needed. Pattern reinforced.
 
 ### `2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`
 
