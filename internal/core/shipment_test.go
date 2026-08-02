@@ -1294,3 +1294,146 @@ func findArtifactPathDirect(ws *Workspace, id string) string {
 	}
 	return p
 }
+
+// --- 134.001-T: Failing tests for settable shipment priority (U1 red harness) ---
+
+// TestCreateShipmentWithPriority_PersistsFrontmatter verifies that CreateShipment
+// with WithPriority persists the priority to the returned artifact, Markdown
+// frontmatter, and the SQLite index.
+//
+// Red harness: fails until U2 threads WithPriority through CreateShipment.
+func TestCreateShipmentWithPriority_PersistsFrontmatter(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	shipment, err := CreateShipment(ctx, ws, "High priority shipment", nil, WithPriority("high"))
+	require.NoError(t, err)
+	require.NotNil(t, shipment)
+
+	// Assert: returned artifact carries the priority.
+	assert.Equal(t, "high", shipment.Priority,
+		"CreateShipment with WithPriority must set priority on the returned artifact")
+
+	// Assert: priority was written to Markdown frontmatter (create path uses
+	// os.WriteFile directly, not the persistArtifactWriteFn seam, so we assert
+	// the file rather than injecting a write seam).
+	path, err := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "priority: high",
+		"priority must be written to the Markdown frontmatter by CreateShipment")
+
+	// Assert: priority is present in the SQLite index after create.
+	indexed, err := loadArtifact(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "high", indexed.Priority,
+		"priority must be present in the SQLite index after CreateShipment")
+}
+
+// TestCreateShipmentWithPriority_QueueSortOrdersByPriority verifies that the queue
+// view orders queued shipments by priority when SortBy is "priority". N
+// independent pairs defeat Go map-iteration nondeterminism in fixture creation.
+// Shipments are created in REVERSE priority order so their sequential IDs would
+// produce the WRONG ordering under a pure id-ASC sort, ensuring the test only
+// passes when the priority column is actually persisted and used.
+//
+// Red harness: fails until U2 threads WithPriority through CreateShipment so
+// the shipments carry distinct priorities for the queue ordering to use.
+func TestCreateShipmentWithPriority_QueueSortOrdersByPriority(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	// Create shipments in REVERSE priority order so their sequential IDs
+	// (low→medium→high→critical) would sort lowest-first under a plain id-ASC
+	// tie-break. The test only passes once the priority column drives the order.
+	empty, err := CreateShipment(ctx, ws, "Unprioritized shipment", nil)
+	require.NoError(t, err)
+	low, err := CreateShipment(ctx, ws, "Low shipment", nil, WithPriority("low"))
+	require.NoError(t, err)
+	medium, err := CreateShipment(ctx, ws, "Medium shipment", nil, WithPriority("medium"))
+	require.NoError(t, err)
+	high, err := CreateShipment(ctx, ws, "High shipment", nil, WithPriority("high"))
+	require.NoError(t, err)
+	critical, err := CreateShipment(ctx, ws, "Critical shipment", nil, WithPriority("critical"))
+	require.NoError(t, err)
+
+	filter := &QueueFilter{
+		Types:    []string{"shipment"},
+		Statuses: []string{"queued"},
+		SortBy:   "priority",
+	}
+	view, err := QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, view.TotalCount, 5,
+		"queue must contain all created shipments")
+
+	idPos := func(id string) int {
+		for i, item := range view.Items {
+			if item.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+
+	// Each independent pair: higher priority must appear before lower.
+	assert.Less(t, idPos(critical.ID), idPos(high.ID),
+		"critical must sort before high")
+	assert.Less(t, idPos(high.ID), idPos(medium.ID),
+		"high must sort before medium")
+	assert.Less(t, idPos(medium.ID), idPos(low.ID),
+		"medium must sort before low")
+	assert.Less(t, idPos(low.ID), idPos(empty.ID),
+		"low must sort before empty-priority")
+}
+
+// TestCreateShipmentWithPriority_EmptyPriorityLastAndDeterministic verifies that
+// shipments with empty priority sort last, and that two empty-priority shipments
+// tie-break deterministically by id ASC.
+//
+// Red harness: partially fails until U2 persists priority (low must come before
+// empty-priority shipments, but without U2 all priorities are empty).
+func TestCreateShipmentWithPriority_EmptyPriorityLastAndDeterministic(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	s1, err := CreateShipment(ctx, ws, "Unprioritized first", nil)
+	require.NoError(t, err)
+	s2, err := CreateShipment(ctx, ws, "Unprioritized second", nil)
+	require.NoError(t, err)
+	lowShipment, err := CreateShipment(ctx, ws, "Low priority shipment", nil, WithPriority("low"))
+	require.NoError(t, err)
+
+	filter := &QueueFilter{
+		Types:    []string{"shipment"},
+		Statuses: []string{"queued"},
+		SortBy:   "priority",
+	}
+	view, err := QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+
+	idPos := func(id string) int {
+		for i, item := range view.Items {
+			if item.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+
+	// low must precede both empty-priority shipments.
+	assert.Less(t, idPos(lowShipment.ID), idPos(s1.ID),
+		"low-priority shipment must sort before empty-priority s1")
+	assert.Less(t, idPos(lowShipment.ID), idPos(s2.ID),
+		"low-priority shipment must sort before empty-priority s2")
+
+	// s1 and s2 both have empty priority; the tie-break is id ASC.
+	if s1.ID < s2.ID {
+		assert.Less(t, idPos(s1.ID), idPos(s2.ID),
+			"empty-priority tie-break must be id ASC: %s before %s", s1.ID, s2.ID)
+	} else {
+		assert.Less(t, idPos(s2.ID), idPos(s1.ID),
+			"empty-priority tie-break must be id ASC: %s before %s", s2.ID, s1.ID)
+	}
+}

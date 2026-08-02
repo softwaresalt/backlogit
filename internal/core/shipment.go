@@ -48,10 +48,14 @@ type returnBlockedJournal struct {
 // title and associates the specified item IDs with it. The shipment owns the items
 // list as an aggregate root.
 //
+// Optional Option values (e.g. WithPriority) are accepted via the variadic opts
+// parameter and will be forwarded to CreateArtifact at the create path.
+// Zero options yield the current behavior — backward-compatible.
+//
 // Worker: Create a new shipment Markdown artifact with YAML frontmatter containing
 // the items list, set status to queued, generate ID with S prefix, write to queue
 // directory, and upsert into the database index.
-func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string) (*models.Artifact, error) {
+func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string, opts ...Option) (*models.Artifact, error) {
 	items := uniqueNonEmptyStrings(itemIDs)
 	if err := validateShipmentItemIDs(ctx, ws, "", items); err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
