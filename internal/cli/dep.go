@@ -41,8 +41,7 @@ func NewDepAddCmd() *cobra.Command {
 			dependsOn := args[1]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
@@ -71,8 +70,7 @@ func NewDepRemoveCmd() *cobra.Command {
 			dependsOn := args[1]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
@@ -101,8 +99,7 @@ func NewDepListCmd() *cobra.Command {
 			itemID := args[0]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
@@ -125,4 +122,17 @@ func NewDepListCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "show items that depend on this item")
 	return cmd
+}
+
+// depCWD reads the workspace root from the root command's persistent --cwd flag.
+// Falls back to "." when the flag is absent or unset.
+func depCWD(cmd *cobra.Command) string {
+	if cmd == nil || cmd.Root() == nil {
+		return "."
+	}
+	cwd, err := cmd.Root().PersistentFlags().GetString("cwd")
+	if err != nil || cwd == "" {
+		return "."
+	}
+	return cwd
 }

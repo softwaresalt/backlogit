@@ -141,3 +141,119 @@ func TestRemoveDependency_RollsBackCacheWhenFrontmatterUpdateFails(t *testing.T)
 	assert.True(t, edgeExists(t, ws, source.ID, target.ID),
 		"cache edge must be rolled back when frontmatter cannot be updated")
 }
+
+// --- 134.003-T: Failing tests for AddShipmentBlock affordance (U3 red harness) ---
+
+// TestAddShipmentBlock_CreatesBlocksEdgeBetweenShipments verifies that
+// AddShipmentBlock creates a "blocks" edge between two shipments.
+//
+// Red harness: fails until U4 implements AddShipmentBlock (current stub returns an error).
+func TestAddShipmentBlock_CreatesBlocksEdgeBetweenShipments(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prerequisite shipment", nil)
+	require.NoError(t, err)
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent shipment", nil)
+	require.NoError(t, err)
+
+	// "prereq must ship before dependent" = dependent depends_on prereq.
+	err = core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID)
+	require.NoError(t, err, "AddShipmentBlock must succeed for two shipment endpoints")
+
+	assert.True(t, edgeExists(t, ws, dependent.ID, prereq.ID),
+		"blocks edge from dependent to prereq must be present in the cache after AddShipmentBlock")
+}
+
+// TestAddShipmentBlock_RejectsWhenDependentIsNotShipment verifies that
+// AddShipmentBlock returns an error when the dependent endpoint is not a shipment.
+//
+// Red harness: fails until U4 implements AddShipmentBlock validation (stub returns
+// a generic "not yet implemented" error, not the specific endpoint-type error).
+func TestAddShipmentBlock_RejectsWhenDependentIsNotShipment(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prerequisite shipment", nil)
+	require.NoError(t, err)
+	feat, err := core.CreateArtifact(ctx, ws, "Non-shipment feature", "feature")
+	require.NoError(t, err)
+
+	// dependent is a feature (not a shipment).
+	err = core.AddShipmentBlock(ctx, ws, feat.ID, prereq.ID)
+	require.Error(t, err,
+		"AddShipmentBlock must return an error when dependent is not a shipment")
+	// The error must not have created a stray edge.
+	assert.False(t, edgeExists(t, ws, feat.ID, prereq.ID),
+		"no edge must be created when AddShipmentBlock rejects non-shipment dependent")
+}
+
+// TestAddShipmentBlock_RejectsWhenPrerequisiteIsNotShipment verifies that
+// AddShipmentBlock returns an error when the prerequisite endpoint is not a shipment.
+//
+// Red harness: fails until U4 implements AddShipmentBlock validation.
+func TestAddShipmentBlock_RejectsWhenPrerequisiteIsNotShipment(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent shipment", nil)
+	require.NoError(t, err)
+	feat, err := core.CreateArtifact(ctx, ws, "Non-shipment feature", "feature")
+	require.NoError(t, err)
+
+	// prerequisite is a feature (not a shipment).
+	err = core.AddShipmentBlock(ctx, ws, dependent.ID, feat.ID)
+	require.Error(t, err,
+		"AddShipmentBlock must return an error when prerequisite is not a shipment")
+	assert.False(t, edgeExists(t, ws, dependent.ID, feat.ID),
+		"no edge must be created when AddShipmentBlock rejects non-shipment prerequisite")
+}
+
+// TestAddDependency_GenericPathAcceptsShipmentToNonShipmentEdge verifies that
+// the generic AddDependency path is unchanged by the shipment-block affordance:
+// a shipment→non-shipment edge is still valid via AddDependency.
+//
+// This is the additive-guard regression scenario: the guard lives only on
+// AddShipmentBlock, not on AddDependency, so previously-valid edges must
+// still succeed.
+func TestAddDependency_GenericPathAcceptsShipmentToNonShipmentEdge(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	shipment, err := core.CreateShipment(ctx, ws, "Shipment with non-ship dep", nil)
+	require.NoError(t, err)
+	feat, err := core.CreateArtifact(ctx, ws, "Feature task", "feature")
+	require.NoError(t, err)
+
+	// A shipment→feature blocks edge via generic AddDependency must succeed.
+	err = core.AddDependency(ctx, ws, shipment.ID, feat.ID, "blocks")
+	require.NoError(t, err,
+		"generic AddDependency must still accept a shipment→non-shipment edge (additive guard)")
+	assert.True(t, edgeExists(t, ws, shipment.ID, feat.ID),
+		"edge must exist after generic AddDependency for shipment→non-shipment")
+}
+
+// TestAddShipmentBlock_SurvivesSyncIndex verifies that a blocking edge created by
+// AddShipmentBlock persists through frontmatter and survives a full index rebuild.
+//
+// Red harness: fails until U4 implements AddShipmentBlock (stub errors out, so
+// no edge is created to survive).
+func TestAddShipmentBlock_SurvivesSyncIndex(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prereq shipment for sync", nil)
+	require.NoError(t, err)
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent shipment for sync", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID),
+		"AddShipmentBlock must succeed for two shipment endpoints")
+
+	// Simulate backlogit sync_index: clear item_deps and rebuild from frontmatter.
+	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
+	require.NoError(t, err)
+
+	assert.True(t, edgeExists(t, ws, dependent.ID, prereq.ID),
+		"blocks edge must survive sync_index (Rehydrate rebuilds item_deps from frontmatter)")
+}

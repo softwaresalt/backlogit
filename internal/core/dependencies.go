@@ -127,7 +127,14 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 	return nil
 }
 
-// lookupDependencyType returns the dep_type of the edge itemID->dependsOn and
+// AddShipmentBlock is the stub entry point for shipment-to-shipment blocking.
+// Full implementation is in U4 (134.004-T). This stub exists only to make
+// U3 test files compile; tests calling it will fail because no edge is created
+// and no endpoint validation is performed.
+func AddShipmentBlock(_ context.Context, _ *Workspace, _, _ string) error {
+	return fmt.Errorf("AddShipmentBlock: not yet implemented (stub for U3 compilation)")
+}
+
 // whether the edge currently exists in the cache. Defaults to "blocks" when the
 // stored dep_type is empty so a rollback re-insert preserves a valid type.
 func lookupDependencyType(ctx context.Context, ws *Workspace, itemID, dependsOn string) (string, bool, error) {
