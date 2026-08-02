@@ -199,10 +199,11 @@ operations:
 
   create_shipment:
     mcp_tool: "backlogit_create_shipment"
-    cli_command: "backlogit shipment create --title {{title}} --items {{items}}"
+    cli_command: "backlogit shipment create --title {{title}} --items {{items}} --priority {{priority}}"
     params:
       title: "title"
       items: "items"
+      priority: "priority"
 
   get_shipment:
     mcp_tool: "backlogit_get_shipment"

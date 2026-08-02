@@ -270,3 +270,117 @@ func TestBulkUpdateStatus_PartialFailure_ReportsAccurately(t *testing.T) {
 	assert.Len(t, result.Failed, 1, "task with missing file should be reported as failed")
 	assert.Contains(t, result.Failed, task.ID)
 }
+
+// --- 134.003-T: Failing queue suppression tests for shipment blocking (U3 red harness) ---
+
+// TestShipmentQueueSuppression_DependentSuppressedUntilPrerequisiteTerminal verifies
+// that a dependent shipment is suppressed in the queued-shipment view until the
+// prerequisite shipment reaches a terminal status. The direction is:
+//
+//	"prereq must ship before dependent" = dependent depends_on prereq.
+//
+// Red harness: fails until U4 implements AddShipmentBlock (stub errors, so no edge
+// is created and suppression cannot take effect).
+func TestShipmentQueueSuppression_DependentSuppressedUntilPrerequisiteTerminal(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prereq shipment", nil)
+	require.NoError(t, err)
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent shipment", nil)
+	require.NoError(t, err)
+
+	// Add blocking edge: dependent depends_on prereq.
+	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID),
+		"AddShipmentBlock must succeed for two queued shipments")
+
+	// Query the queued-shipment view: dependent must be suppressed while prereq
+	// is still in a non-terminal status.
+	filter := &core.QueueFilter{
+		Types:    []string{"shipment"},
+		Statuses: []string{"queued"},
+	}
+	view, err := core.QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+
+	visibleIDs := make(map[string]bool)
+	for _, item := range view.Items {
+		visibleIDs[item.ID] = true
+	}
+
+	assert.True(t, visibleIDs[prereq.ID],
+		"prerequisite shipment must be visible in the queued-shipment view")
+	assert.False(t, visibleIDs[dependent.ID],
+		"dependent shipment must be suppressed from the queued-shipment view "+
+			"while its prerequisite is in a non-terminal status (pinned direction: "+
+			"dependent depends_on prereq)")
+}
+
+// TestShipmentQueueSuppression_PrerequisiteNotSuppressed verifies that the
+// prerequisite shipment itself is NEVER suppressed — only the dependent is.
+// This pins the blocking direction: dependent→prerequisite (not vice versa).
+//
+// Red harness: fails until U4 implements AddShipmentBlock.
+func TestShipmentQueueSuppression_PrerequisiteNotSuppressed(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prereq (must not be suppressed)", nil)
+	require.NoError(t, err)
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent (must be suppressed)", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID))
+
+	filter := &core.QueueFilter{
+		Types:    []string{"shipment"},
+		Statuses: []string{"queued"},
+	}
+	view, err := core.QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+
+	visibleIDs := make(map[string]bool)
+	for _, item := range view.Items {
+		visibleIDs[item.ID] = true
+	}
+
+	assert.True(t, visibleIDs[prereq.ID],
+		"prerequisite must remain visible — only the dependent is suppressed")
+}
+
+// TestShipmentQueueSuppression_DependentBecomesVisibleWhenPrereqTerminal verifies
+// that the dependent shipment becomes visible once the prerequisite moves to a
+// terminal status (shipped).
+//
+// Red harness: fails until U4 implements AddShipmentBlock.
+func TestShipmentQueueSuppression_DependentBecomesVisibleWhenPrereqTerminal(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	prereq, err := core.CreateShipment(ctx, ws, "Prereq shipment (will ship)", nil)
+	require.NoError(t, err)
+	dependent, err := core.CreateShipment(ctx, ws, "Dependent shipment (will unblock)", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID))
+
+	// Transition prerequisite to "shipped" via the valid state machine (queued → active → shipped).
+	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentActive))
+	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentShipped))
+
+	// Now the dependent must be visible in the queued view.
+	filter := &core.QueueFilter{
+		Types:    []string{"shipment"},
+		Statuses: []string{"queued"},
+	}
+	view, err := core.QueryQueue(ctx, ws.DB, filter)
+	require.NoError(t, err)
+
+	visibleIDs := make(map[string]bool)
+	for _, item := range view.Items {
+		visibleIDs[item.ID] = true
+	}
+
+	assert.True(t, visibleIDs[dependent.ID],
+		"dependent shipment must become visible once its prerequisite reaches a terminal status")
+}

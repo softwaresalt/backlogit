@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 description: Create a shipment
 doc_type: reference
-ingested_at: "2026-06-26T02:27:58Z"
+ingested_at: "2026-08-02T05:40:00Z"
 schema_version: "1.0"
 source: docs/cli-reference/backlogit_shipment_create.md
 title: backlogit shipment create
@@ -25,9 +25,10 @@ backlogit shipment create [flags]
 ### Options
 
 ```text
-  -h, --help           help for create
-      --items string   comma-separated item IDs
-      --title string   shipment title
+  -h, --help              help for create
+      --items string      comma-separated item IDs
+      --priority string   shipment priority (critical, high, medium, low)
+      --title string      shipment title
 ```
 
 ### Options inherited from parent commands

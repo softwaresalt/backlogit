@@ -127,7 +127,39 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 	return nil
 }
 
-// lookupDependencyType returns the dep_type of the edge itemID->dependsOn and
+// AddShipmentBlock adds a shipment-to-shipment execution-blocking edge in the
+// direction dependent → prerequisite ("prerequisite must ship before dependent").
+//
+// Both endpoints must resolve to artifacts of type "shipment". This guard is
+// additive: the generic AddDependency path is unchanged and still accepts
+// previously-valid non-shipment and mixed-type edges. The new additive guard
+// lives only on this path.
+//
+// The edge is written via AddDependency with dep_type "blocks" so it persists
+// to the source artifact's frontmatter and survives sync_index / Rehydrate.
+// The reload + ErrWriteIndeterminate two-class contract from AddDependency applies.
+func AddShipmentBlock(ctx context.Context, ws *Workspace, dependentID, prerequisiteID string) error {
+	dependent, err := findArtifact(ctx, ws, dependentID)
+	if err != nil {
+		return fmt.Errorf("add shipment block: load dependent %s: %w", dependentID, err)
+	}
+	if dependent.ArtifactType != "shipment" {
+		return fmt.Errorf("add shipment block: dependent %s has type %q; both endpoints must be shipments",
+			dependentID, dependent.ArtifactType)
+	}
+
+	prerequisite, err := findArtifact(ctx, ws, prerequisiteID)
+	if err != nil {
+		return fmt.Errorf("add shipment block: load prerequisite %s: %w", prerequisiteID, err)
+	}
+	if prerequisite.ArtifactType != "shipment" {
+		return fmt.Errorf("add shipment block: prerequisite %s has type %q; both endpoints must be shipments",
+			prerequisiteID, prerequisite.ArtifactType)
+	}
+
+	return AddDependency(ctx, ws, dependentID, prerequisiteID, "blocks")
+}
+
 // whether the edge currently exists in the cache. Defaults to "blocks" when the
 // stored dep_type is empty so a rollback re-insert preserves a valid type.
 func lookupDependencyType(ctx context.Context, ws *Workspace, itemID, dependsOn string) (string, bool, error) {

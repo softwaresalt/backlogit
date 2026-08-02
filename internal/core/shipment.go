@@ -48,16 +48,26 @@ type returnBlockedJournal struct {
 // title and associates the specified item IDs with it. The shipment owns the items
 // list as an aggregate root.
 //
+// Optional Option values (e.g. WithPriority) are accepted via the variadic opts
+// parameter and will be forwarded to CreateArtifact at the create path.
+// Zero options yield the current behavior — backward-compatible.
+//
 // Worker: Create a new shipment Markdown artifact with YAML frontmatter containing
 // the items list, set status to queued, generate ID with S prefix, write to queue
 // directory, and upsert into the database index.
-func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string) (*models.Artifact, error) {
+func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string, opts ...Option) (*models.Artifact, error) {
 	items := uniqueNonEmptyStrings(itemIDs)
 	if err := validateShipmentItemIDs(ctx, ws, "", items); err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}
 
-	shipment, err := CreateArtifact(ctx, ws, title, "shipment", WithFields(map[string]any{"items": items}))
+	// Apply caller opts first (e.g. WithPriority) so items is always set last
+	// and cannot be overridden by a caller-supplied WithFields option. The
+	// validated items list must be the authoritative state written to the artifact.
+	createOpts := make([]Option, 0, len(opts)+1)
+	createOpts = append(createOpts, opts...)
+	createOpts = append(createOpts, WithFields(map[string]any{"items": items}))
+	shipment, err := CreateArtifact(ctx, ws, title, "shipment", createOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}

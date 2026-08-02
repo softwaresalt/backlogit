@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // NewDepCmd creates the `backlogit dep` command group for managing dependencies.
@@ -41,12 +43,39 @@ func NewDepAddCmd() *cobra.Command {
 			dependsOn := args[1]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
 			defer ws.Close()
+
+			// Route shipment→shipment blocks edges through AddShipmentBlock so the
+			// CLI cannot bypass endpoint validation for that edge shape.
+			// Non-blocks dep_types and non-shipment endpoints use the generic path.
+			//
+			// ErrNotFound (stale/absent cache entry) falls through to AddDependency,
+			// which uses the filesystem-backed findArtifact internally. This is an
+			// acceptable trade-off: shipments created via core.CreateShipment are
+			// always in the SQLite cache (CreateShipment calls UpsertItem). A stale-
+			// index bypass requires a shipment that exists on disk but not in the
+			// cache — an operator-recoverable state that sync_index resolves.
+			if depType == "" || depType == "blocks" {
+				itemArt, e1 := db.GetItem(ctx, ws.DB, itemID)
+				if e1 != nil && !errors.Is(e1, blerrors.ErrNotFound) {
+					// Propagate real DB errors; ErrNotFound (cache miss) falls through
+					// to AddDependency which uses the filesystem-backed findArtifact.
+					return fmt.Errorf("routing check for %s: %w", itemID, e1)
+				}
+				if e1 == nil && itemArt.ArtifactType == "shipment" {
+					// Source is a shipment with a blocks edge: route through
+					// AddShipmentBlock which validates both endpoints are shipments.
+					if err := core.AddShipmentBlock(ctx, ws, itemID, dependsOn); err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)
+					return nil
+				}
+			}
 
 			if err := core.AddDependency(ctx, ws, itemID, dependsOn, depType); err != nil {
 				return err
@@ -71,8 +100,7 @@ func NewDepRemoveCmd() *cobra.Command {
 			dependsOn := args[1]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
@@ -101,8 +129,7 @@ func NewDepListCmd() *cobra.Command {
 			itemID := args[0]
 
 			ctx := context.Background()
-			cwd := "."
-			ws, err := core.NewWorkspace(ctx, cwd)
+			ws, err := core.NewWorkspace(ctx, depCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
@@ -125,4 +152,17 @@ func NewDepListCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "show items that depend on this item")
 	return cmd
+}
+
+// depCWD reads the workspace root from the root command's persistent --cwd flag.
+// Falls back to "." when the flag is absent or unset.
+func depCWD(cmd *cobra.Command) string {
+	if cmd == nil || cmd.Root() == nil {
+		return "."
+	}
+	cwd, err := cmd.Root().PersistentFlags().GetString("cwd")
+	if err != nil || cwd == "" {
+		return "."
+	}
+	return cwd
 }

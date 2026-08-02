@@ -218,9 +218,14 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_add_dependency",
-			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection"),
-			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
-			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection. "+
+				"When both item_id and depends_on are shipments and dep_type is 'blocks' (default), "+
+				"the call is routed through AddShipmentBlock which validates both endpoints are shipments, "+
+				"creating a shipment-to-shipment sequencing edge: item_id must be completed after depends_on "+
+				"(depends_on must ship before item_id). "+
+				"Non-'blocks' dep_types and non-shipment endpoints use the generic path."),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID (the dependent)")),
+			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID (the prerequisite)")),
 			mcplib.WithString("dep_type", mcplib.Description("Dependency type: blocks, relates_to, parent_of"), mcplib.DefaultString("blocks")),
 		),
 		s.handleAddDependency,
@@ -351,6 +356,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Create a new shipment artifact"),
 			mcplib.WithString("title", mcplib.Required(), mcplib.Description("Shipment title")),
 			mcplib.WithString("items", mcplib.Description("Optional comma-separated item IDs")),
+			mcplib.WithString("priority", mcplib.Description("Optional shipment priority (critical, high, medium, low)")),
 		),
 		s.handleCreateShipment,
 	)
@@ -1315,6 +1321,28 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 	if v, ok := request.Params.Arguments["dep_type"].(string); ok && v != "" {
 		depType = v
 	}
+
+	// Mirror the CLI routing: when source is a shipment and dep_type is
+	// "blocks" (the default), route through AddShipmentBlock so the MCP
+	// surface cannot bypass endpoint validation for that edge shape.
+	if depType == "blocks" {
+		itemArt, e1 := db.GetItem(ctx, s.Workspace.DB, itemID)
+		if e1 != nil && !errors.Is(e1, backlogiterrors.ErrNotFound) {
+			return InternalError(fmt.Sprintf("look up source artifact: %v", e1)), nil
+		}
+		if e1 == nil && itemArt.ArtifactType == "shipment" {
+			if err := core.AddShipmentBlock(ctx, s.Workspace, itemID, dependsOn); err != nil {
+				return domainError("add shipment block", err), nil
+			}
+			return toolResultJSON(map[string]string{
+				"item_id":    itemID,
+				"depends_on": dependsOn,
+				"dep_type":   depType,
+				"status":     "added",
+			})
+		}
+	}
+
 	if err := core.AddDependency(ctx, s.Workspace, itemID, dependsOn, depType); err != nil {
 		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
 	}
@@ -1642,9 +1670,14 @@ func (s *Server) handleCreateShipment(ctx context.Context, request mcplib.CallTo
 	}
 
 	items, _ := request.Params.Arguments["items"].(string)
+	priority, _ := request.Params.Arguments["priority"].(string)
 	logger.Info("shipment tool invoked", "tool", "backlogit_create_shipment", "title", title)
 
-	shipment, err := core.CreateShipment(ctx, s.Workspace, title, splitCommaSeparated(items))
+	var opts []core.Option
+	if priority != "" {
+		opts = append(opts, core.WithPriority(priority))
+	}
+	shipment, err := core.CreateShipment(ctx, s.Workspace, title, splitCommaSeparated(items), opts...)
 	if err != nil {
 		return domainError("create shipment", err), nil
 	}
