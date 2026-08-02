@@ -136,8 +136,10 @@ The learnings-researcher surfaced directly-applicable precedent:
 
 * **Reload from Markdown at re-persist seams** — DB-first loaders omit
   non-projected fields (`item_links`, provenance); stamping a new scalar such
-  as `priority` or a dep edge must reload via `findArtifact` (the `MoveInQueue`
-  precedent). Source: `docs/compound/2026-07-28-attach-commit-repersist-must-reload-from-markdown.md`.
+  as `priority` or a dep edge at a **mutation** (re-persist) seam must reload via `findArtifact` (the `MoveInQueue`
+  precedent). Note: this applies to mutation paths (AddDependency, MoveInQueue)
+  where a DB-loaded artifact is re-persisted, NOT to creation paths
+  (CreateArtifact) which build the in-memory artifact directly. Source: `docs/compound/2026-07-28-attach-commit-repersist-must-reload-from-markdown.md`.
 * **SQLite JSON round-trips are type-lossy** — shipment membership and
   `queue_position` deserialize as `[]interface{}`/`float64`; normalize at every
   read edge. Source: `docs/compound/go-patterns/f015-shipment-stash-patterns.md`.
@@ -284,9 +286,11 @@ future Stage session.
 
 ## Risks and Mitigations
 
-* **DB-first re-persist drops non-projected fields** &rarr; stamp shipment
-  priority via a Markdown-source-of-truth reload (`findArtifact`), mirroring
-  `MoveInQueue`; never persist a DB-loaded artifact.
+* **DB-first re-persist drops non-projected fields** &rarr; at mutation
+  (re-persist) seams such as `AddDependency`, reload from Markdown via
+  `findArtifact` (the `MoveInQueue` precedent); never persist a DB-loaded
+  artifact. This does NOT apply to the create-time priority surface: `CreateShipment` →
+  `CreateArtifact` writes the in-memory artifact directly without any DB load.
 * **SQLite JSON type-lossy round-trip** &rarr; reuse existing normalization at
   read edges; do not introduce new `custom_fields` reads without normalizing.
 * **`dep_type` collapses to `blocks` on sync** &rarr; scope (b) to blocking

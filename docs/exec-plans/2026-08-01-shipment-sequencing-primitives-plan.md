@@ -117,9 +117,11 @@ roughly two hours; the file/scenario counts below are the actual counts.
   shipments by priority, **including at least one empty-priority shipment** that
   sorts last deterministically (empty and unknown priorities tie-break by
   `id ASC`).
-* **Test-seam notes**: exercise the create/persist path through the package-level
-  `persistArtifactWriteFn` seam and do **not** use `t.Parallel` in tests that
-  override package-global seams; assert queue order with N independent pairs so
+* **Test-seam notes**: the create path (`CreateShipment` → `CreateArtifact`)
+  uses `os.WriteFile` directly — NOT the `persistArtifactWriteFn` seam — so
+  tests assert priority in the written Markdown frontmatter and the SQLite index
+  after creation (direct file/index assertions, no injectable write seam on the
+  create path); assert queue order with N independent pairs so
   Go map-iteration nondeterminism cannot mask a fixture bug (production ordering
   is deterministic SQL with an `id ASC` tie-break).
 * **Files**: `internal/core/shipment_test.go`, `internal/cli/shipment_test.go`,
@@ -152,9 +154,9 @@ roughly two hours; the file/scenario counts below are the actual counts.
 * **Milestone**: U1 tests pass green; `queue view --sort priority` orders queued
   shipments by priority.
 
-### U3 — Failing tests: shipment-to-shipment blocking affordance + sync round-trip (tests)
+### U3 — Failing tests: shipment-to-shipment blocking affordance + sync round-trip (tests, core)
 
-* **Domain**: tests. **Posture**: test-first (red). **Depends on**: U2 (serialize
+* **Domain**: tests (core). **Posture**: test-first (red). **Depends on**: U2 (serialize
   the shared CLI/MCP surface for a single active branch).
 * **Changes**: Add failing tests covering (1) `AddShipmentBlock` creates a
   `blocks` edge between two shipments; (2) it rejects an edge whose endpoints are
@@ -165,22 +167,20 @@ roughly two hours; the file/scenario counts below are the actual counts.
   until the **prerequisite** reaches a terminal release status, and the
   prerequisite itself is **not** suppressed — pinning direction "A must ship
   before B" ⇒ B `depends_on` A; (4) the edge round-trips through frontmatter and
-  survives `sync_index` (Rehydrate rebuilds it as `blocks`); (5) CLI `dep add`
-  between two shipments routes through `AddShipmentBlock` validation (not the
-  generic `AddDependency`), ensuring the CLI cannot bypass shipment-aware
-  validation.
+  survives `sync_index` (Rehydrate rebuilds it as `blocks`).
 * **Test-seam notes**: drive the dependency write through `persistArtifactWriteFn`
   (the `AddDependency` relocate=false path) and the `ErrWriteIndeterminate`
   two-class contract; no `t.Parallel` when overriding package-global seams.
-* **Files**: `internal/core/dependencies_test.go`, `internal/core/queue_test.go`,
-  `internal/cli/dep_test.go` (CLI routing scenario).
+* **Files**: `internal/core/dependencies_test.go`, `internal/core/queue_test.go`.
 * **Scenarios**: add-edge, additive-endpoint-validation, directional
-  queue-suppression, sync-survival, CLI-routing.
+  queue-suppression, sync-survival.
 * **Milestone**: tests compile and fail for the expected reasons.
+* **Note**: CLI-routing scenario split to U7 (134.007-T) for width isolation
+  (CLI domain vs core domain, constitutional task granularity).
 
 ### U4 — Implement shipment-to-shipment blocking affordance (code)
 
-* **Domain**: code. **Posture**: implement to green. **Depends on**: U3.
+* **Domain**: code. **Posture**: implement to green. **Depends on**: U3, U7.
 * **Changes**: Add a **new additive** core operation
   `AddShipmentBlock(dependentID, prerequisiteID)` that validates both endpoints
   resolve to `artifact_type: shipment` and delegates to the existing generic
@@ -193,15 +193,18 @@ roughly two hours; the file/scenario counts below are the actual counts.
   `blocked_reason`, so **no derived/blocked-metadata clearing is performed**.
   Surface the affordance through the existing dependency path on both CLI and MCP:
   update `internal/cli/dep.go` so that `dep add` routes through
-  `AddShipmentBlock` when both resolved endpoints are shipments (preventing CLI
-  callers from bypassing shipment-aware validation via the generic
-  `AddDependency` path), and update the MCP `backlogit_add_dependency` tool
-  description to advertise shipment-to-shipment sequencing.
+  `AddShipmentBlock` **only** when both resolved endpoints are shipments **and**
+  `dep_type` is `blocks` (or empty/default, which defaults to `blocks`) —
+  for non-`blocks` dep_types (`relates_to`, `parent_of`) between any endpoints
+  including two shipments, the generic `AddDependency` path is unchanged and
+  must not be forced through `AddShipmentBlock`. Update the MCP
+  `backlogit_add_dependency` tool description to advertise shipment-to-shipment
+  sequencing.
 * **Files**: `internal/core/dependencies.go` (new `AddShipmentBlock` guard),
-  `internal/cli/dep.go` (route shipment-to-shipment edges through
+  `internal/cli/dep.go` (route shipment-to-shipment `blocks` edges through
   `AddShipmentBlock`), `internal/mcp/tools.go` (surface + tool description).
 * **Functions**: `AddShipmentBlock`, CLI `dep add` RunE, MCP surface hook.
-* **Milestone**: U3 tests pass green.
+* **Milestone**: U3 and U7 tests pass green.
 
 ### U5 — Registry mapping for agent discovery (config)
 
@@ -228,21 +231,41 @@ roughly two hours; the file/scenario counts below are the actual counts.
 * **Milestone**: `backlogit docs lint` passes; docs describe both behaviors and
   the deferrals.
 
+### U7 — Failing test: CLI dep add routes shipment-to-shipment blocks edges through AddShipmentBlock (tests, CLI)
+
+* **Domain**: tests (CLI). **Posture**: test-first (red). **Depends on**: U2
+  (serialize the shared CLI/MCP surface for a single active branch).
+* **Changes**: Add a failing test covering CLI `dep add` between two shipments
+  with `dep_type` `blocks` (default) routing through `AddShipmentBlock`
+  validation (not the generic `AddDependency`), ensuring the CLI cannot bypass
+  shipment-aware validation for `blocks` edges. For non-`blocks` dep_types
+  (`relates_to`, `parent_of`), even between two shipments, the generic
+  `AddDependency` path is unchanged and must not be routed through
+  `AddShipmentBlock`.
+* **Split rationale**: extracted from U3 (134.003-T) for width isolation — CLI
+  domain vs core domain, per constitutional task granularity (U3 had 5 scenarios
+  across 3 files, exceeding the <4 scenarios / <3 files heuristic).
+* **Files**: `internal/cli/dep_test.go`.
+* **Scenarios**: CLI-routing `blocks`-only conditional.
+* **Milestone**: test compiles and fails for expected reasons.
+
 ## Dependency Graph
 
 ```text
-U1 (tests: priority) ─▶ U2 (code: priority) ─┬─▶ U3 (tests: blocking) ─▶ U4 (code: blocking) ─┐
-                                             └─▶ U5 (config: registry) ──────────────────────┴─▶ U6 (docs)
+U1 (tests: priority) ─▶ U2 (code: priority) ─┬─▶ U3 (tests: core blocking) ─┬─▶ U4 (code: blocking) ─┐
+                                             ├─▶ U7 (tests: CLI routing)   ─┘                       │
+                                             └─▶ U5 (config: registry) ─────────────────────────────┴─▶ U6 (docs)
 ```
 
 * U2 depends on U1 (code needs the failing harness).
 * U3 depends on U2 (serialize the shared CLI/MCP `shipment create` surface edits;
   keep the release unit a clean build order for a single active branch).
-* U4 depends on U3 (code needs the failing harness).
+* U7 depends on U2 (same serialization reason as U3).
+* U4 depends on U3 and U7 (code needs both core and CLI failing harnesses).
 * U5 depends on U2 (the registry map reflects the create surface added in U2).
 * U6 depends on U2, U4, and U5 (documents both implemented behaviors and the
   registry/read surfaces).
-* Acyclic. Ships as one shipment, parent (feature) first, then U1→U6 in order.
+* Acyclic. Ships as one shipment, parent (feature) first, then U1→U7 in order.
 
 ## Decisions and Rationale
 
@@ -299,6 +322,7 @@ U1 (tests: priority) ─▶ U2 (code: priority) ─┬─▶ U3 (tests: blocking
 | Backward-incompatible dependency restriction | Guard lives only on the new `AddShipmentBlock` path; generic `AddDependency` and `filterByResolvedDependencies` stay byte-for-byte unchanged; assert in U3 |
 | Blocking direction inverted in code/docs | Pin dependent `depends_on` prerequisite; assert directional suppression (dependent suppressed, prerequisite not) in U3 |
 | CLI/MCP surface drift | Wire both surfaces in U2/U4; lock create parity with a denylist parity test; update the registry map (U5); re-upsert on every write |
+| CLI dep add bypasses shipment validation for non-blocks dep_types | Routing conditional is `blocks`-only; non-`blocks` dep_types between any endpoints use the generic `AddDependency` path unchanged; assert in U7 |
 | MCP `get_queue` does not sort by priority | Read surface is CLI `queue view --sort priority`; MCP read-sort parity is an explicit deferred follow-up (documented in U6) |
 | Dependency suppression runs after SQL `LIMIT`/`OFFSET` | The sequencing contract is defined over the **unpaginated** queued-shipment view (default: no limit); U3 tests the unpaginated view and the docs note the `LIMIT` interaction |
 | Go map-iteration nondeterminism in ordering tests | Use N independent pairs / deterministic tie-breaker in U1/U3 |
@@ -469,11 +493,12 @@ so they carry forward into build, review, runtime verification, and closure.
     **ActionResult: planned.**
 * **ProposedAction PA-3** — add the **new additive** `AddShipmentBlock` core
   operation over `item_deps` `blocks` (both-are-shipments guard on the new path
-  only), surfaced through the existing CLI/MCP dependency path, with a
-  sync-surviving round-trip.
+  only), surfaced through the existing CLI/MCP dependency path with a
+  `blocks`-only routing conditional (non-`blocks` dep_types between any endpoints
+  are unchanged), with a sync-surviving round-trip.
   * targets: `internal/core/dependencies.go` (new `AddShipmentBlock`),
-    `internal/cli/dep.go` (route shipment-to-shipment edges through
-    `AddShipmentBlock` so CLI cannot bypass validation),
+    `internal/cli/dep.go` (route shipment-to-shipment `blocks` edges through
+    `AddShipmentBlock` so CLI cannot bypass validation for that edge shape),
     `internal/mcp/tools.go` (surface + `add_dependency` tool-description update).
     `internal/core/queue.go` is **read-only** (no ordering-semantic change); the
     generic `AddDependency` path is unchanged.
