@@ -218,9 +218,14 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_add_dependency",
-			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection"),
-			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID")),
-			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID")),
+			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection. "+
+				"When both item_id and depends_on are shipments and dep_type is 'blocks' (default), "+
+				"the call is routed through AddShipmentBlock which validates both endpoints are shipments, "+
+				"creating a shipment-to-shipment sequencing edge: item_id depends_on depends_on "+
+				"(depends_on must ship before item_id). "+
+				"Non-'blocks' dep_types and non-shipment endpoints use the generic path."),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID (the dependent)")),
+			mcplib.WithString("depends_on", mcplib.Required(), mcplib.Description("Target artifact ID (the prerequisite)")),
 			mcplib.WithString("dep_type", mcplib.Description("Dependency type: blocks, relates_to, parent_of"), mcplib.DefaultString("blocks")),
 		),
 		s.handleAddDependency,

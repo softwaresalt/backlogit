@@ -364,7 +364,8 @@ func TestShipmentQueueSuppression_DependentBecomesVisibleWhenPrereqTerminal(t *t
 
 	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID))
 
-	// Move prerequisite to "shipped" (terminal status).
+	// Transition prerequisite to "shipped" via the valid state machine (queued → active → shipped).
+	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentActive))
 	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentShipped))
 
 	// Now the dependent must be visible in the queued view.

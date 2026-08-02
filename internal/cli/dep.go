@@ -47,6 +47,23 @@ func NewDepAddCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
+			// Route shipment→shipment blocks edges through AddShipmentBlock so the
+			// CLI cannot bypass endpoint validation for that edge shape.
+			// Non-blocks dep_types and non-shipment endpoints use the generic path.
+			if depType == "" || depType == "blocks" {
+				itemArt, e1 := db.GetItem(ctx, ws.DB, itemID)
+				if e1 == nil && itemArt.ArtifactType == "shipment" {
+					// Source is a shipment with a blocks edge: route through
+					// AddShipmentBlock which validates both endpoints are shipments.
+					// For non-blocks dep_types, the generic path is unchanged.
+					if err := core.AddShipmentBlock(ctx, ws, itemID, dependsOn); err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)
+					return nil
+				}
+			}
+
 			if err := core.AddDependency(ctx, ws, itemID, dependsOn, depType); err != nil {
 				return err
 			}
