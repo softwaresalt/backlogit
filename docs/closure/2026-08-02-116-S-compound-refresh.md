@@ -1,7 +1,7 @@
 ---
 title: "116-S Compound Refresh — Shipment Sequencing Primitives"
 source: docs/closure/2026-08-02-116-S-compound-refresh.md
-doc_type: compound-refresh
+doc_type: closure
 description: "Compound-refresh pass for PR #330 / shipment 116-S — assesses compound library entries for drift, reinforcement, or new learning candidates"
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"

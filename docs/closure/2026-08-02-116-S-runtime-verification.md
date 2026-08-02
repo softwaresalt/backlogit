@@ -1,7 +1,7 @@
 ---
 title: "116-S Runtime Verification — Shipment Sequencing Primitives"
 source: docs/closure/2026-08-02-116-S-runtime-verification.md
-doc_type: runtime-verification
+doc_type: closure
 description: "Post-merge runtime verification for PR #330 / shipment 116-S: settable shipment priority and shipment-to-shipment blocking order"
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
