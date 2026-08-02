@@ -1377,6 +1377,12 @@ func TestCreateShipmentWithPriority_QueueSortOrdersByPriority(t *testing.T) {
 		return -1
 	}
 
+	// Guard: each expected ID must be present in the result set.
+	for _, id := range []string{critical.ID, high.ID, medium.ID, low.ID, empty.ID} {
+		require.NotEqual(t, -1, idPos(id),
+			"shipment %s must be present in the queue view before comparing ordering", id)
+	}
+
 	// Each independent pair: higher priority must appear before lower.
 	assert.Less(t, idPos(critical.ID), idPos(high.ID),
 		"critical must sort before high")

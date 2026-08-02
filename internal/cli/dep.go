@@ -52,6 +52,13 @@ func NewDepAddCmd() *cobra.Command {
 			// Route shipment→shipment blocks edges through AddShipmentBlock so the
 			// CLI cannot bypass endpoint validation for that edge shape.
 			// Non-blocks dep_types and non-shipment endpoints use the generic path.
+			//
+			// ErrNotFound (stale/absent cache entry) falls through to AddDependency,
+			// which uses the filesystem-backed findArtifact internally. This is an
+			// acceptable trade-off: shipments created via core.CreateShipment are
+			// always in the SQLite cache (CreateShipment calls UpsertItem). A stale-
+			// index bypass requires a shipment that exists on disk but not in the
+			// cache — an operator-recoverable state that sync_index resolves.
 			if depType == "" || depType == "blocks" {
 				itemArt, e1 := db.GetItem(ctx, ws.DB, itemID)
 				if e1 != nil && !errors.Is(e1, blerrors.ErrNotFound) {

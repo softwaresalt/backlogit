@@ -221,7 +221,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Add a dependency between two artifacts with cycle detection. "+
 				"When both item_id and depends_on are shipments and dep_type is 'blocks' (default), "+
 				"the call is routed through AddShipmentBlock which validates both endpoints are shipments, "+
-				"creating a shipment-to-shipment sequencing edge: item_id depends_on depends_on "+
+				"creating a shipment-to-shipment sequencing edge: item_id must be completed after depends_on "+
 				"(depends_on must ship before item_id). "+
 				"Non-'blocks' dep_types and non-shipment endpoints use the generic path."),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Source artifact ID (the dependent)")),

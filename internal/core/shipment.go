@@ -61,9 +61,12 @@ func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
 	}
 
-	// Prepend the items field option so it can be overridden by caller opts if
-	// needed, then append caller opts (which may include WithPriority).
-	createOpts := append([]Option{WithFields(map[string]any{"items": items})}, opts...)
+	// Apply caller opts first (e.g. WithPriority) so items is always set last
+	// and cannot be overridden by a caller-supplied WithFields option. The
+	// validated items list must be the authoritative state written to the artifact.
+	createOpts := make([]Option, 0, len(opts)+1)
+	createOpts = append(createOpts, opts...)
+	createOpts = append(createOpts, WithFields(map[string]any{"items": items}))
 	shipment, err := CreateArtifact(ctx, ws, title, "shipment", createOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
