@@ -20,16 +20,15 @@ backlogit shipment create [flags]
 
 ```text
   backlogit shipment create --title "Sprint 1" --items 001-F,001.001-T
-  backlogit shipment create --title "High priority sprint" --items 010-F --priority high
 ```
 
 ### Options
 
 ```text
-  -h, --help               help for create
-      --items string       comma-separated item IDs
-      --priority string    shipment priority: critical, high, medium, low (optional; empty sorts last)
-      --title string       shipment title
+  -h, --help              help for create
+      --items string      comma-separated item IDs
+      --priority string   shipment priority (critical, high, medium, low)
+      --title string      shipment title
 ```
 
 ### Options inherited from parent commands
@@ -39,19 +38,6 @@ backlogit shipment create [flags]
       --jsonrpc            wrap all output in a JSON-RPC 2.0 response envelope
       --log-level string   log level: debug, info, warn, error (overrides BACKLOGIT_LOG_LEVEL)
       --no-update-check    skip the remote latest-release check
-```
-
-### Priority and queue ordering
-
-When `--priority` is supplied, the shipment enters the queue with that priority and the
-`queue view --type shipment --sort priority` command will use it for ordering.
-Shipments without a priority sort last with a deterministic `id ASC` tie-break.
-Priority is lenient: an unrecognized value sorts last rather than being rejected.
-
-To order shipments by priority:
-
-```text
-backlogit queue view --type shipment --status queued --sort priority
 ```
 
 ### SEE ALSO
