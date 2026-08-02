@@ -131,11 +131,15 @@ roughly two hours; the file/scenario counts below are the actual counts.
 ### U2 — Implement settable shipment priority create surface (code)
 
 * **Domain**: code. **Posture**: implement to green. **Depends on**: U1.
-* **Changes**: Add a `priority` parameter to `CreateShipment`, threaded through
-  the **existing** `WithPriority` create option into `CreateArtifact` (which
-  builds the in-memory source-of-truth artifact and writes Markdown + index
-  directly — **no** post-create Markdown reload is needed, because nothing is
-  DB-loaded at create time). Priority is **lenient** (accepted as-is, matching
+* **Changes**: Extend `CreateShipment` with a variadic `...Option` parameter
+  (matching the existing `CreateArtifact` pattern) and thread `WithPriority`
+  through it. The current fixed-arity signature `(ctx, ws, title, itemIDs)` gains
+  an appended `opts ...Option` slice — backward-compatible since zero options
+  yields current behavior. `CreateArtifact` builds the in-memory source-of-truth
+  artifact and writes Markdown + index directly at creation (no DB load or
+  Markdown reload is involved at the create path; the Markdown-reload precedent
+  applies only to mutation paths like `AddDependency` that re-persist a
+  DB-loaded artifact — see U4). Priority is **lenient** (accepted as-is, matching
   `UpdateArtifact`; no new validator, no `ErrValidation` rejection). Wire the CLI
   `--priority` flag (`internal/cli/shipment.go`) and the MCP `create_shipment`
   priority param (`internal/mcp/tools.go`); re-upsert into SQLite+FTS via the
@@ -161,13 +165,17 @@ roughly two hours; the file/scenario counts below are the actual counts.
   until the **prerequisite** reaches a terminal release status, and the
   prerequisite itself is **not** suppressed — pinning direction "A must ship
   before B" ⇒ B `depends_on` A; (4) the edge round-trips through frontmatter and
-  survives `sync_index` (Rehydrate rebuilds it as `blocks`).
+  survives `sync_index` (Rehydrate rebuilds it as `blocks`); (5) CLI `dep add`
+  between two shipments routes through `AddShipmentBlock` validation (not the
+  generic `AddDependency`), ensuring the CLI cannot bypass shipment-aware
+  validation.
 * **Test-seam notes**: drive the dependency write through `persistArtifactWriteFn`
   (the `AddDependency` relocate=false path) and the `ErrWriteIndeterminate`
   two-class contract; no `t.Parallel` when overriding package-global seams.
-* **Files**: `internal/core/dependencies_test.go`, `internal/core/queue_test.go`.
+* **Files**: `internal/core/dependencies_test.go`, `internal/core/queue_test.go`,
+  `internal/cli/dep_test.go` (CLI routing scenario).
 * **Scenarios**: add-edge, additive-endpoint-validation, directional
-  queue-suppression, sync-survival.
+  queue-suppression, sync-survival, CLI-routing.
 * **Milestone**: tests compile and fail for the expected reasons.
 
 ### U4 — Implement shipment-to-shipment blocking affordance (code)
@@ -183,13 +191,16 @@ roughly two hours; the file/scenario counts below are the actual counts.
   previously-valid edge (e.g. shipment→task) is newly rejected. Suppression is
   **read-time** via `filterByResolvedDependencies`, which sets no
   `blocked_reason`, so **no derived/blocked-metadata clearing is performed**.
-  Surface the affordance through the existing dependency path on both CLI and MCP,
-  and update the MCP `backlogit_add_dependency` tool description to advertise
-  shipment-to-shipment sequencing.
+  Surface the affordance through the existing dependency path on both CLI and MCP:
+  update `internal/cli/dep.go` so that `dep add` routes through
+  `AddShipmentBlock` when both resolved endpoints are shipments (preventing CLI
+  callers from bypassing shipment-aware validation via the generic
+  `AddDependency` path), and update the MCP `backlogit_add_dependency` tool
+  description to advertise shipment-to-shipment sequencing.
 * **Files**: `internal/core/dependencies.go` (new `AddShipmentBlock` guard),
-  `internal/mcp/tools.go` (surface + tool description). CLI reuses the existing
-  `dep add` command.
-* **Functions**: `AddShipmentBlock`, its MCP surface hook.
+  `internal/cli/dep.go` (route shipment-to-shipment edges through
+  `AddShipmentBlock`), `internal/mcp/tools.go` (surface + tool description).
+* **Functions**: `AddShipmentBlock`, CLI `dep add` RunE, MCP surface hook.
 * **Milestone**: U3 tests pass green.
 
 ### U5 — Registry mapping for agent discovery (config)
@@ -261,10 +272,12 @@ U1 (tests: priority) ─▶ U2 (code: priority) ─┬─▶ U3 (tests: blocking
   prevent inversion.
 * **No Markdown reload at create time for (c)** — `CreateShipment`→
   `CreateArtifact` writes the in-memory source-of-truth artifact directly and
-  never DB-loads it, so the `MoveInQueue` reload precedent does not apply to
-  create-time field injection (it applies to mutating a DB-loaded artifact).
-  Threading `WithPriority` is sufficient; the reload precedent is retained for
-  (b), where `AddDependency` already performs it.
+  never DB-loads it. The Markdown-reload precedent (`MoveInQueue`,
+  `AddDependency`) applies only at genuine re-persist seams where a DB-loaded
+  artifact is mutated and written back — not at creation. Threading
+  `WithPriority` via the variadic `...Option` parameter is sufficient.
+  The reload precedent is retained for (b), where `AddDependency` already
+  performs it.
 * **Priority read surface is the CLI `queue view`; defer MCP read-sort parity** —
   the CLI already defaults to the priority sort and is the spike-named Option B
   consumption surface. `handleGetQueue` ignores `sort_by` (defaults to
@@ -434,8 +447,10 @@ so they carry forward into build, review, runtime verification, and closure.
 
 ### Risky Actions (carry forward to Ship)
 
-* **ProposedAction PA-1** — thread `priority` through `CreateShipment` via the
-  existing `WithPriority` create option (lenient; no new validator).
+* **ProposedAction PA-1** — extend `CreateShipment` with a variadic `...Option`
+  parameter and thread `priority` via the existing `WithPriority` create option
+  (lenient; no new validator; backward-compatible — zero options yields current
+  behavior).
   * targets: `internal/core/shipment.go`, shipment Markdown + index.
     (`internal/core/artifacts.go` `WithPriority` is **invoked, read-only**, not
     modified.)
@@ -457,6 +472,8 @@ so they carry forward into build, review, runtime verification, and closure.
   only), surfaced through the existing CLI/MCP dependency path, with a
   sync-surviving round-trip.
   * targets: `internal/core/dependencies.go` (new `AddShipmentBlock`),
+    `internal/cli/dep.go` (route shipment-to-shipment edges through
+    `AddShipmentBlock` so CLI cannot bypass validation),
     `internal/mcp/tools.go` (surface + `add_dependency` tool-description update).
     `internal/core/queue.go` is **read-only** (no ordering-semantic change); the
     generic `AddDependency` path is unchanged.
@@ -600,3 +617,18 @@ Six personas were triggered; one was evaluated and deliberately not triggered:
   stash for a future Stage session.
 
 decision: PASS
+
+### Plan Review — Remediation Cycle 2
+
+* **dispatch_mode: single-agent-declared-degradation** (targeted re-review of 4
+  defect remediation edits within an already-approved plan).
+* **review-fix cycle: 2 of 3.**
+* **Remediation scope**: (1) U2/PA-1 variadic `...Option` pattern for
+  `CreateShipment` (no breaking fixed-arity change); (2) U3/U4/PA-3 + tasks
+  134.003-T/134.004-T include `internal/cli/dep.go` so CLI cannot bypass
+  shipment-aware validation; (3) U2/Decisions section Markdown-reload
+  clarification scoped to genuine re-persist seams only.
+* **Findings**: P0=0, P1=0, P2=0, P3=0. All remediations are internally
+  consistent, preserve constitution/TDD/width-isolation, maintain additive-only
+  semantics, and introduce no scope creep.
+* **decision: PASS.**
