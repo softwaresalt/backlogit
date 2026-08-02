@@ -42,7 +42,7 @@ Feature 134-F | Shipment 116-S | Merge date: 2026-08-02
 - Go toolchain: 1.24.0
 - `go vet ./...`: clean, exit 0
 - `golangci-lint run`: clean, exit 0
-- `gofmt -l .`: clean (implied by golangci-lint)
+- `gofmt -l .`: not run as separate gate (not in CI; project has pre-existing repository-wide formatting debt unrelated to PR #330)
 
 ## Targeted Scenarios Exercised
 
@@ -101,7 +101,7 @@ Exit code: 0 — all tests pass.
 - `CreateShipment` signature remains backward-compatible (variadic `...Option`)
 - `AddDependency` generic path is byte-for-byte unchanged
 - `filterByResolvedDependencies` queue suppression is read-time, non-destructive
-- CLI/MCP parity for `create_shipment` locked by denylist test (`TestShipmentCreateCLIMCPParityLock`)
+- CLI/MCP parity for `create_shipment` locked by denylist test (`TestCreateShipmentCLIMCPParity` in `internal/cli/shipment_test.go`)
 
 ## Deferred Items (not blocking this release)
 

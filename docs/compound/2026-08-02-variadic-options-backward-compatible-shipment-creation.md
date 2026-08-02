@@ -31,20 +31,25 @@ Adding a new required parameter to `CreateShipment(ctx, ws, title, itemIDs, prio
 ## Solution — Variadic `...Option`
 
 ```go
-// internal/core/shipment.go
+// internal/core/shipment.go (actual implementation excerpt)
 
 // CreateShipment creates a new shipment artifact.
 // opts are applied before the validated items field so invariants cannot be overridden.
 func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string, opts ...Option) (*models.Artifact, error) {
-    if err := validateShipmentItemIDs(ctx, ws, itemIDs); err != nil {
-        return nil, fmt.Errorf("validate shipment items: %w", err)
-    }
-    // Apply caller opts first, then items field last — this ordering invariant
-    // prevents a caller-supplied WithFields({items}) from bypassing validateShipmentItemIDs.
-    createOpts := []Option{WithStatus(ShipmentQueued)}
-    createOpts = append(createOpts, opts...)
-    createOpts = append(createOpts, WithFields(map[string]any{"items": itemIDs}))
-    return CreateArtifact(ctx, ws, "shipment", title, createOpts...)
+	items := uniqueNonEmptyStrings(itemIDs)
+	if err := validateShipmentItemIDs(ctx, ws, "", items); err != nil {
+		return nil, fmt.Errorf("create shipment %q: %w", title, err)
+	}
+	// Apply caller opts first (e.g. WithPriority) so items is always set last.
+	createOpts := make([]Option, 0, len(opts)+1)
+	createOpts = append(createOpts, opts...)
+	createOpts = append(createOpts, WithFields(map[string]any{"items": items}))
+	shipment, err := CreateArtifact(ctx, ws, title, "shipment", createOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("create shipment %q: %w", title, err)
+	}
+	// ... normalizeShipmentArtifact, bldb.UpsertItem, and event appending follow
+	return shipment, nil
 }
 ```
 
@@ -57,29 +62,39 @@ shipment, err := core.CreateShipment(ctx, ws, title, itemIDs, core.WithPriority(
 
 ## Ordering Invariant
 
-The key insight: apply caller options **before** validated required fields. This means:
+The key insight: apply caller options **before** validated required fields. `WithFields(fields)` replaces the **entire** `createOptions.Fields` map (it does `o.Fields = fields`, not a merge). This means:
 
 1. `createOpts = append(createOpts, opts...)` — caller opts applied, including any `WithPriority`
-2. `createOpts = append(createOpts, WithFields({"items": itemIDs}))` — items field applied LAST
+2. `createOpts = append(createOpts, WithFields({"items": items}))` — items field applied LAST
 
-Since `CreateArtifact` applies options left-to-right and later options win for the same field key, validated fields always win over caller options. A caller cannot bypass `validateShipmentItemIDs` by passing `WithFields({"items": ...})`.
+Because `WithFields` overwrites the entire map, the final `WithFields` call wins unconditionally. A caller cannot inject a `WithFields({"items": [malicious list]})` because the validated `items` assignment comes last and replaces whatever the caller passed. The invariant depends on this **last-write-wins** semantic of `WithFields`, not on per-key merging.
+
+**Important constraint**: this means caller-supplied `WithFields(...)` options are silently discarded when the factory also calls `WithFields`. Use fine-grained options (`WithPriority`, `WithDescription`, etc.) rather than `WithFields` in callers of factory functions that apply their own `WithFields` invariants.
 
 ## Parity Test — Denylist Lock
 
 This pattern pairs with the denylist parity test (see `2026-07-23-cli-mcp-filter-param-denylist-parity-test.md`) to ensure the CLI `--priority` flag and MCP `create_shipment.priority` param stay in sync:
 
 ```go
-// internal/cli/shipment_test.go
-var shipmentCreateOutputOnlyDenylist = map[string]bool{
-    "json":       true,
-    "output":     true,
-    "quiet":      true,
-    "no-confirm": true,
-}
+// internal/cli/shipment_test.go (actual implementation excerpt)
+// createShipmentOutputOnlyDenylist names CLI shipment-create flags that shape
+// output only and have no MCP request-param equivalent.
+// No output-only flags on shipment create at this time.
+var createShipmentOutputOnlyDenylist = map[string]bool{}
 
-func TestShipmentCreateCLIMCPParityLock(t *testing.T) {
-    // Derive CLI filter set from live pflag.FlagSet.VisitAll minus denylist
-    // Cross-check against live srv.ToolDefs() for backlogit_create_shipment
+// TestCreateShipmentCLIMCPParity is the denylist parity lock: the MCP
+// backlogit_create_shipment parameter set must equal the CLI `shipment create`
+// flag set after subtracting output-only flags.
+func TestCreateShipmentCLIMCPParity(t *testing.T) {
+	// Derive CLI flag set from the live newShipmentCreateCmd
+	cliSet := make(map[string]bool)
+	newShipmentCreateCmd().Flags().VisitAll(func(f *pflag.Flag) {
+		if createShipmentOutputOnlyDenylist[f.Name] {
+			return
+		}
+		cliSet[f.Name] = true
+	})
+	// Derive MCP param set from the live ToolDefs() and assert equal
 }
 ```
 
