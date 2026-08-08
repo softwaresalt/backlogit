@@ -600,8 +600,24 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
 		}
 	}
-	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, passDelta); aerr != nil && ws.gateConfig.EvidenceRequiredValue() {
-		return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
+	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, passDelta); aerr != nil {
+		// Parity with the task-level mustRefuseGateEvidenceFailure guarantee
+		// (106-F F1 review finding, round 3): under formal-gate enforcement,
+		// passDelta at this point already carries a REAL signed proof (the
+		// unconditional augmentShipmentDeltaWithFormalProof call above already
+		// succeeded) — this append is its sole durable record. Letting
+		// evidence_required:false silently swallow a failure here would ship
+		// with a proof that was signed but never durably persisted anywhere,
+		// defeating the feature's entire audit/authenticity guarantee.
+		// evidence_required exists to tolerate ordinary storage hiccups on the
+		// LEGACY (non-enforced) path; it must never lower formal enforcement
+		// itself, so formal enforcement unconditionally refuses here exactly
+		// as it does for the earlier signing and manifest-binding-verification
+		// failures in this same function.
+		if ws.formalGateEnforced() || ws.gateConfig.EvidenceRequiredValue() {
+			return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
+		}
+		slog.WarnContext(ctx, "shipment gate pass evidence append failed (evidence not required)", "shipment_id", shipmentID, "error", aerr)
 	}
 	return nil
 }

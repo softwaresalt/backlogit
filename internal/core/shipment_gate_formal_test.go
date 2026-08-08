@@ -230,3 +230,61 @@ func TestShipmentGate_MemberEvidenceProperlySigned_FormalEnforcementShips(t *tes
 	require.NotNil(t, result)
 	assert.Equal(t, string(ShipmentShipped), result.ShipmentStatus)
 }
+
+// TestShipmentGate_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefuses
+// verifies that under formal-gate enforcement, a failure durably appending the
+// FINAL shipment-level EventGatePassed record (the durable write of an
+// ALREADY-signed passDelta) is NEVER downgraded to a warning by the UNRELATED
+// evidence_required:false config knob — mirroring the analogous, already-fixed
+// task-level guarantee (mustRefuseGateEvidenceFailure; see
+// TestGateEvidence_FormalGateRequired_EvidenceNotRequired_StillRefuses).
+// Before this fix, gateShipmentCompletion's final append check only consulted
+// ws.gateConfig.EvidenceRequiredValue(), so evidence_required:false let a
+// formally-enforced ship proceed to completion even though its signed pass
+// proof was never durably recorded at all — a shipment-level parity gap with
+// the task-level fix, and a genuine authenticity/audit-trail hole for a
+// feature whose entire purpose is guaranteeing a durable, verifiable pass
+// record (106-F F1 review finding, round 3).
+func TestShipmentGate_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefuses(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
+		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+	}
+	// injectBroker OVERWRITES ws.gateConfig wholesale (fresh Normalize()), so
+	// the evidence_required override MUST be applied AFTER injectBroker or it
+	// is silently discarded (matches the ordering every other
+	// evidence_required:false test in this package already uses).
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	notRequired := false
+	ws.gateConfig.EvidenceRequired = &notRequired
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err, "task completion must succeed and produce properly signed formal-gate evidence")
+
+	// Inject a plain durable-storage failure for ONLY the shipment-level
+	// passed-event append. The member task's own evidence append (above,
+	// during UpdateArtifactWithGate) already ran through the real appender, so
+	// its evidence is genuinely signed; this seam only intercepts the later
+	// shipment-level append gateShipmentCompletion performs.
+	ws.gateEvidenceAppend = func(ctx context.Context, w *Workspace, itemID, eventType string, delta map[string]any) error {
+		if itemID == shipmentID && eventType == EventGatePassed {
+			return stderrors.New("injected shipment evidence append failure")
+		}
+		return appendItemEventErr(ctx, w, itemID, eventType, delta)
+	}
+
+	_, err = ShipShipment(ctx, ws, shipmentID, nil)
+	require.Error(t, err, "a failed shipment gate-pass evidence append must refuse the ship under formal enforcement even when evidence_required is false")
+
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	require.Equal(t, models.StatusActive, sh.Status, "shipment must not ship when its signed pass evidence was never durably recorded")
+}

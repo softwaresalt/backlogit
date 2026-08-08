@@ -865,10 +865,7 @@ func TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld(t *testing.T) {
 	task, err := CreateArtifact(ctx, ws, "Lock test task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
 
-	shipmentPath, err := FindArtifactPath(ctx, ws, shipment.ID)
-	require.NoError(t, err)
-
-	unlock, err := lockTaskFileWithHeartbeat(ctx, shipmentPath, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+	unlock, err := lockShipmentMembership(ctx, ws, shipment.ID)
 	require.NoError(t, err, "must be able to acquire the shipment's own membership lock directly")
 
 	done := make(chan error, 1)
@@ -897,6 +894,66 @@ func TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld(t *testing.T) {
 	items, ok := updated.CustomFields["items"].([]string)
 	require.True(t, ok)
 	assert.Contains(t, items, task.ID)
+}
+
+// TestLockShipmentMembership_StableAcrossFileRelocation verifies the lock key
+// does NOT change when the shipment's underlying markdown file relocates
+// (persistArtifact's relocate=true path, which moveShipmentStatusWithTopLevel
+// uses for every status transition, including the one ShipShipment performs
+// while still holding this very lock). Locking by the shipment's CURRENT file
+// path was found to be unsafe: a lock acquired against the pre-relocation
+// path and one acquired (by a later caller) against the post-relocation path
+// would be DIFFERENT mutexes/sidecars that never contend with each other,
+// reopening the membership race during the relocation window even with the
+// lock's scope already correctly extended (106-F F1 review finding, third
+// pass). A stable, workspace-and-ID-derived key must never change regardless
+// of where the underlying file currently lives.
+func TestLockShipmentMembership_StableAcrossFileRelocation(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Relocation lock test", nil)
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID) // queued -> active
+	require.NoError(t, err)
+
+	unlock, err := lockShipmentMembership(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Relocate the shipment's underlying file by transitioning its status
+	// WHILE still holding the lock -- simulating exactly what ShipShipment's
+	// own moveShipmentStatusWithTopLevel call does inside its locked closure.
+	require.NoError(t, moveShipmentStatusWithTopLevel(ctx, ws, shipment.ID, ShipmentShipped, false))
+
+	// A second acquisition attempt must still contend with the first: the
+	// lock key must be stable across the relocation the status change just
+	// performed, not silently succeed against a different, unheld lock keyed
+	// to the pre-relocation path.
+	done := make(chan error, 1)
+	go func() {
+		u2, acquireErr := lockShipmentMembership(ctx, ws, shipment.ID)
+		if acquireErr != nil {
+			done <- acquireErr
+			return
+		}
+		_ = u2()
+		done <- nil
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("second lockShipmentMembership acquisition succeeded (err=%v) while the first was still held -- lock key is not stable across file relocation", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: still contended.
+	}
+
+	require.NoError(t, unlock())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "second acquisition must succeed once the first lock is released")
+	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+		t.Fatal("second lockShipmentMembership acquisition never completed after the first was released")
+	}
 }
 
 // T002 / ST013: Reject adding an item already in another shipment.
