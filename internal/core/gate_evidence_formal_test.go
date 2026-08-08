@@ -146,6 +146,33 @@ func TestGateEvidence_FormalGateRequired_EvidenceNotRequired_StillRefuses(t *tes
 	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change: evidence_required:false must not bypass formal-gate enforcement")
 }
 
+// TestGateEvidence_FormalGateRequired_EmptyKeyID_RefusesCompletion verifies
+// that formal-admission signing REQUIRES a non-blank KeyID whenever
+// enforcement is active — including when enforcement is raised SOLELY by
+// the BACKLOGIT_FORMAL_GATE_REQUIRED environment anchor with no workspace
+// config at all, in which case resolvedFormalGateConfig() is zero-valued
+// and KeyID defaults to "". Signing a valid proof with an empty key
+// identifier would defeat the documented key-rotation/audit contract
+// (key_id is bound into the MAC specifically so a future rotation is
+// auditable) — 106-F F1 review finding.
+func TestGateEvidence_FormalGateRequired_EmptyKeyID_RefusesCompletion(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	// No ws.Config.FormalGate at all -> resolvedFormalGateConfig() is
+	// zero-valued (KeyID == ""), enforcement comes solely from the env anchor.
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)}}
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "completion must refuse when formal gate is enforced but no key_id is configured")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change on a refused formal-gate completion")
+}
+
 // TestGateEvidence_FormalGateRequired_NilBroker_RefusesTaskCompletion verifies
 // the task-level counterpart to gateShipmentCompletion's existing nil-broker
 // refusal: when ws.GateBroker is nil (gate disabled/unwired), gateApplies
@@ -266,6 +293,7 @@ func TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t *testing.T)
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
 
 	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	id := newActiveTask(t, ws)
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	report := []byte(`{"reviewers":[{"persona":"Constitution Reviewer","decision":"pass"}]}`)

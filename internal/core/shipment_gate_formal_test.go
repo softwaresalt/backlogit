@@ -154,6 +154,7 @@ func TestShipmentGate_MemberEvidenceTamperedProof_FormalEnforcementRefuses(t *te
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
 
 	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	runner := &taskAwareRunner{
 		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
 		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
@@ -211,6 +212,7 @@ func TestShipmentGate_MemberEvidenceProperlySigned_FormalEnforcementShips(t *tes
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
 
 	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	runner := &taskAwareRunner{
 		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
 		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},

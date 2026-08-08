@@ -204,6 +204,23 @@ func wrapFormalGateRequired(cause error) error {
 	return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, cause)
 }
 
+// requireFormalGateKeyID refuses unless formalCfg carries a non-blank KeyID.
+// KeyID is a non-secret identifier bound into EVERY signed envelope
+// specifically so a future key rotation is auditable (a verifier can tell
+// which key era produced a given proof without the key value itself ever
+// appearing anywhere). Enforcement can be raised SOLELY by the
+// BACKLOGIT_FORMAL_GATE_REQUIRED environment anchor with no workspace
+// config at all, in which case resolvedFormalGateConfig zero-values KeyID
+// to "" — silently signing valid proofs with an empty key identifier in
+// that configuration would defeat the documented rotation/audit contract
+// (106-F F1 review finding).
+func requireFormalGateKeyID(formalCfg config.FormalGateConfig) error {
+	if formalCfg.KeyID == "" {
+		return wrapFormalGateRequired(fmt.Errorf("formal_gate.key_id is required whenever formal gate evidence enforcement is active"))
+	}
+	return nil
+}
+
 // augmentDeltaWithFormalProof adds proof, key_id, proof_schema, and counter to
 // delta when formal-gate-evidence admission is enabled by workspace config or
 // required by the environment anchor (106-F F1/U4). When it is neither, delta
@@ -231,6 +248,9 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 		return noop, nil
 	}
 	formalCfg := ws.resolvedFormalGateConfig()
+	if keyIDErr := requireFormalGateKeyID(formalCfg); keyIDErr != nil {
+		return noop, keyIDErr
+	}
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {

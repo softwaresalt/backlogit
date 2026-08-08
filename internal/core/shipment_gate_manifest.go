@@ -25,10 +25,11 @@ func computeManifestDigest(ctx context.Context, ws *Workspace, shipment *models.
 		itemsAny[i] = id
 	}
 
-	coveringID := ""
-	if covering, ok := DeriveCoveringFeature(ctx, ws, shipment); ok {
-		coveringID = covering.ID
+	covering, coveringErr := deriveCoveringFeatureStrict(ctx, ws, shipment)
+	if coveringErr != nil {
+		return "", fmt.Errorf("compute manifest digest: %w", coveringErr)
 	}
+	coveringID := covering.ID
 
 	payload := map[string]any{
 		"items":            itemsAny,
@@ -59,6 +60,9 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 		return noop, nil
 	}
 	formalCfg := ws.resolvedFormalGateConfig()
+	if keyIDErr := requireFormalGateKeyID(formalCfg); keyIDErr != nil {
+		return noop, keyIDErr
+	}
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {

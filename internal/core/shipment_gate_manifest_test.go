@@ -65,6 +65,26 @@ func TestComputeManifestDigest_CoveringFeatureSwapChangesDigest(t *testing.T) {
 	require.NotEqual(t, digestA, digestB, "swapping the covering feature ID must change the digest")
 }
 
+// TestComputeManifestDigest_CoveringFeatureLookupErrorFailsClosed verifies
+// that a covering-feature resolution failure (a genuine DB error, not a
+// legitimate "no covering feature" outcome) refuses digest computation
+// entirely rather than silently signing an empty covering_feature. The
+// presentation-oriented DeriveCoveringFeature is deliberately best-effort
+// (a transient DB blip must never break rendering a shipment view), but
+// using that same best-effort behavior for a SECURITY BINDING would let an
+// indeterminate resolution silently degrade to "no covering feature" in the
+// signed proof (106-F F1 review finding).
+func TestComputeManifestDigest_CoveringFeatureLookupErrorFailsClosed(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	ctx := context.Background()
+	shipment := &models.Artifact{CustomFields: map[string]any{"items": []string{"200-F"}}}
+
+	require.NoError(t, ws.DB.Close()) // force every DB lookup to fail with a genuine (non-ErrNotFound) error
+
+	_, err := computeManifestDigest(ctx, ws, shipment, "deadbeef")
+	require.Error(t, err, "a covering-feature lookup failure must fail manifest digest computation closed, not silently sign an empty covering_feature")
+}
+
 // TestComputeManifestDigest_UnchangedManifestSameDigest verifies computing the
 // digest twice from the same logical state produces the same value
 // (deterministic, not merely "different when different").
@@ -134,6 +154,7 @@ func TestGateShipmentCompletion_ManifestChangedSinceSnapshot_Refused(t *testing.
 	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
 	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	runner := &taskAwareRunner{
 		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
 		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
@@ -173,6 +194,7 @@ func TestGateShipmentCompletion_ManifestUnchangedSinceSnapshot_Proceeds(t *testi
 	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
 	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	runner := &taskAwareRunner{
 		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
 		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
