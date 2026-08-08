@@ -51,6 +51,18 @@ var (
 	// key could not be resolved. The operation refuses; there is no
 	// unauthenticated fallback (106-F F1).
 	ErrFormalGateRequired = errors.New("backlogit: formal gate evidence required but could not be satisfied")
+
+	// ErrProofInvalid indicates a gate-evidence proof is definitively wrong: a
+	// structural violation (unknown schema, wrong purpose/manifest_digest
+	// combination), a malformed MAC encoding, or an HMAC mismatch (tampered
+	// field or wrong key) (106-F F1/U3).
+	ErrProofInvalid = errors.New("backlogit: gate evidence proof invalid")
+
+	// ErrProofUnverifiable indicates a gate-evidence proof could not be
+	// evaluated at all — e.g. the envelope could not be canonicalized to
+	// compute the expected MAC — distinct from a proof that was evaluated and
+	// found wrong (106-F F1/U3).
+	ErrProofUnverifiable = errors.New("backlogit: gate evidence proof unverifiable")
 )
 
 // GateRepeatedFailure mirrors the autoharness `gate check --json`
