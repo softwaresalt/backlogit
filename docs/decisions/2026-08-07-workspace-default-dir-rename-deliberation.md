@@ -196,9 +196,15 @@ precedence rule.
 ### Resolution precedence (fixed, documented, tested)
 
 1. `BACKLOGIT_WORKSPACE_DIR` environment override, when set and non-empty. The
-   value must be a **single path segment** — no separators, no `..`, no absolute
-   path — validated with the existing `ensureContainedRelPath` discipline
-   (`internal/config/loader.go:62-86`).
+   value must equal one of the closed candidate set exactly (`.backlog` or
+   `.backlogit`, case-sensitively) — **not** any contained single-segment path.
+   Any other value is a hard error. This eliminates the entire path-traversal
+   class outright rather than validating arbitrary relative segments with
+   `ensureContainedRelPath` (`internal/config/loader.go:62-86`), and is the
+   simplest design consistent with the closed-set contract the reviewed
+   implementation plan and harvested task specify. Unset means "use
+   precedence"; **set but empty is a distinct misconfiguration error**, never
+   silently treated as unset.
 2. `.backlog`, when it holds `config.yaml`.
 3. `.backlogit`, when it holds `config.yaml`.
 4. Neither → "not a workspace", unchanged from today.

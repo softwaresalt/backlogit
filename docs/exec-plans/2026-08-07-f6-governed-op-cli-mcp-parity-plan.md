@@ -119,16 +119,20 @@ operator-mandated F1 → F4 → F6 → F5 order.
 
 Reload the artifact **from markdown** via `findArtifact` (never the DB fast path,
 which is lossy for `item_links` and `archived_status`). Thread the caller's
-`*events.EventWriter` as a parameter — MCP passes the server's instance, the
-one-shot CLI passes `nil` — following the established `AppendComment` nil-guard
-precedent (`internal/core/commits.go:70-93`), and never mint one inside the
-function. Return a typed error on append failure instead of warning and
-continuing.
+`*events.EventWriter` as a parameter. **Both surfaces pass a real instance** —
+MCP passes the server's shared instance; the CLI constructs a per-invocation
+writer via the existing workspace writer constructor, mirroring the checkpoint
+disposition plan's resolution of this same question
+(`docs/exec-plans/2026-08-07-checkpoint-administrative-disposition-plan.md`).
+**No caller passes `nil`**, because a typed-error-on-append-failure contract and
+a nil writer are contradictory — a permanently-nil CLI writer would make every
+CLI-side append fail. The core function never mints one itself. Return a typed
+error on append failure instead of warning and continuing.
 
 Files: `internal/core/commits.go`.
 Scenarios: all three representations written; steps individually re-runnable;
-markdown reload used; nil writer creates exactly one writer used for the whole
-call; append failure surfaces a typed error.
+markdown reload used; both surfaces construct and pass a real writer, never
+nil; append failure surfaces a typed error.
 Posture: test-first.
 
 ### U3 — Route all three surfaces through the shared function (code)
@@ -287,7 +291,9 @@ deliberate error-surface change on an agent-facing surface).
 1. `core.AssociateCommit` remains expressed as discrete idempotent steps so F5's
    envelope can wrap it without a rewrite.
 2. The core function never mints an `events.EventWriter`; it always uses the
-   caller's, following the `AppendComment` nil-guard precedent.
+   caller's. Both the CLI and MCP construct and pass a real instance — no
+   caller passes `nil`, mirroring the checkpoint disposition plan's resolution
+   of the same question.
 3. The re-persist seam reloads from **markdown** (`findArtifact`), never the DB
    fast path, and never splits the load between the guard and the persist.
 4. `--force-gates` / `--gate-base` stay CLI-only; blast radius on the alternate
@@ -322,8 +328,8 @@ deliberate error-surface change on an agent-facing surface).
 * **Characterize before removing.** U1 must record today's best-effort behavior
   before U2 removes it.
 * **Assert the writer identity.** A test must confirm the passed
-  `*events.EventWriter` instance is the one used, and that the nil path creates
-  exactly one writer for the whole call.
+  `*events.EventWriter` instance is the one used, and that the CLI constructs
+  and passes its own real writer for the whole call — never `nil`.
 * **Negative fixture required.** The parity assertion must be proven to fail on a
   deliberately divergent fixture and on an empty governed set.
 * **Exercise MCP directly**, including the relative `RootPath: "."` default.
@@ -363,8 +369,11 @@ deliberate error-surface change on an agent-facing surface).
   points are modelled and the `message`/`author` contract must be declared;
   registry metadata plus a regression assertion now pin the `--force-gates`
   safety boundary; hardening flipped to **yes** with a full `## Plan Hardening`
-  section, protected invariants, and a risky-action table; the `AppendComment`
-  nil-guard precedent is cross-referenced with a writer-identity test.
+  section, protected invariants, and a risky-action table; the nil-CLI-writer
+  path was removed as self-contradictory with the typed-error-on-append-failure
+  contract — both surfaces now construct and pass a real writer, mirroring the
+  checkpoint disposition plan's resolution of the same question, and this is
+  cross-referenced with a writer-identity test.
 
 ### Cycle 2 Decision
 

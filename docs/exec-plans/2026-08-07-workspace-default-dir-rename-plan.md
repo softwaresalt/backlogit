@@ -107,20 +107,32 @@ Posture: test-first (RED).
 
 ### U2 — Resolver: closed override set, symlink-safe containment, immutable root (code)
 
-Export the candidate set from the owning package so no consumer hardcodes
-literals:
+Back the candidate set with a private array and expose it through an accessor
+that returns a defensive copy, so no importing package can mutate the
+safety-critical scan set or override allowlist at runtime:
 
 ```go
-// WorkspaceRootCandidates lists the supported storage-root directory names in
-// precedence order. It is a package-level var, never derived from config.
-var WorkspaceRootCandidates = []string{".backlog", ".backlogit"}
+// workspaceRootCandidates lists the supported storage-root directory names in
+// precedence order. Private and never derived from config; accessed only
+// through WorkspaceRootCandidates.
+var workspaceRootCandidates = [...]string{".backlog", ".backlogit"}
+
+// WorkspaceRootCandidates returns a fresh copy of the supported storage-root
+// directory names in precedence order. Callers must not rely on a shared
+// backing array; each call allocates its own copy so no caller can mutate the
+// package's closed set.
+func WorkspaceRootCandidates() []string {
+    out := make([]string, len(workspaceRootCandidates))
+    copy(out, workspaceRootCandidates[:])
+    return out
+}
 ```
 
 **Override is a closed set.** `BACKLOGIT_WORKSPACE_DIR`, when set and non-empty,
-must equal one of `WorkspaceRootCandidates` exactly (case-sensitively). Any other
-value is a hard error. This eliminates the entire traversal class rather than
-trying to validate arbitrary names, and is the simplest design consistent with
-the operator's simplicity-over-complexity policy. Unset and empty are
+must equal one of `WorkspaceRootCandidates()` exactly (case-sensitively). Any
+other value is a hard error. This eliminates the entire traversal class rather
+than trying to validate arbitrary names, and is the simplest design consistent
+with the operator's simplicity-over-complexity policy. Unset and empty are
 distinguished: unset means "use precedence"; empty means "misconfigured" and is
 an error.
 
@@ -155,13 +167,13 @@ Posture: test-first.
 
 Produce a repository-wide inventory of every read, write, scan, lock, restore,
 rehydration, telemetry, migration, and post-ship check that resolves a storage
-path, and route each through the resolved root or `WorkspaceRootCandidates`.
+path, and route each through the resolved root or `WorkspaceRootCandidates()`.
 Known targets beyond the canonical scan: `internal/core/archive.go` (restore
 path), `internal/core/shipment_verify.go` (post-ship scan),
 `internal/core/migrate_queue.go`, and the telemetry paths.
 
 The canonical scan set, archive-destination guard, and ID-collision guard consume
-`WorkspaceRootCandidates` **plus** any active override, hardcoded in code and
+`WorkspaceRootCandidates()` **plus** any active override, hardcoded in code and
 never config-derived. Add a regression test that **fails on any safety-critical
 `.backlogit` string literal** outside the candidate list and outside test
 fixtures.
@@ -207,10 +219,21 @@ Add `CheckWorkspaceRootConflict` and a finding type through the existing
 normal resolution, this check must be reachable through an explicit **read-only
 pre-resolution route** — `doctor` detects the conflict from the candidate list
 without requiring a resolved workspace — and that route is tested through the
-real CLI and MCP entry points, not only through a direct core call. Advisory,
-never blocking.
+real CLI and MCP entry points, not only through a direct core call. The MCP
+`backlogit_doctor` tool has an explicit, hardcoded schema and handler
+(`internal/mcp/tools.go`, tool registration and `handleDoctor`'s manual
+`core.DoctorOptions` field mapping): without adding a
+`check_workspace_root_conflict` boolean to both the tool's parameter schema and
+the handler's option mapping, the new check cannot be requested over MCP even
+after the `core.DoctorOptions` field exists. Advisory, never blocking.
 
-Files: `internal/core/doctor.go`, `internal/cli/doctor.go`.
+Files: `internal/core/doctor.go`, `internal/cli/doctor.go`,
+`internal/mcp/tools.go`.
+Scenarios: conflict detected via CLI `doctor`; conflict detected via the MCP
+`backlogit_doctor` tool with `check_workspace_root_conflict: true`; no conflict
+→ no finding on either surface; schema/handler mapping test asserting the new
+boolean reaches `core.DoctorOptions`.
+Posture: test-first.
 Scenarios: both roots → finding via the CLI entry point; one root → none; check
 disabled → none.
 Posture: test-first.
@@ -450,12 +473,15 @@ staging cycle.
   literals leaked across modules (Architecture); the migration posture did not
   commit to a RED phase (WS-3).
 * **Resolutions:** the override became a **closed set** equal to
-  `WorkspaceRootCandidates`, eliminating the traversal class outright, with unset
+  `WorkspaceRootCandidates()`, eliminating the traversal class outright, with unset
   distinguished from empty; `Lstat` symlink/reparse rejection plus realpath
   containment plus `os.SameFile` case-alias handling added; probes now
   distinguish not-found from indeterminate and fail closed; the root is resolved
-  once in `NewWorkspace` and stored immutably; `WorkspaceRootCandidates` exported
-  as the single owner of the two-name concept and consumed by every guard;
+  once in `NewWorkspace` and stored immutably; the candidate set is backed by a
+  private array and exposed only through the `WorkspaceRootCandidates()`
+  accessor, which returns a defensive copy so no importing package can mutate
+  the closed override set or safety-critical scan set at runtime, and is
+  consumed by every guard;
   U3 rewritten as a complete safety-path inventory plus a literal-guard
   regression test naming `archive.go`, `shipment_verify.go`, `migrate_queue.go`,
   and telemetry; `AmbiguousWorkspaceRootError` declared as a typed error in

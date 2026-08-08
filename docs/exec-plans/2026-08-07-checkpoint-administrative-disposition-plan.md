@@ -226,10 +226,16 @@ bytes on disk are never re-serialized, so evidence preservation is unaffected by
 classification.
 
 On a malformed target: move the bytes verbatim to the quarantine destination under
-`.backlogit/archive/checkpoints`, with a **clobber-refuse guard** before the rename
-(`ErrCheckpointDestinationOccupied`), then write the sidecar as an **idempotent
-upsert** so an F5 step replay converges rather than duplicating. On a failed move
-after a partial step, rename back to the canonical path and log all diagnostics.
+`WorkspaceStorageRoot(ws.RootPath)/archive/checkpoints` — the workspace's
+already-resolved storage root helper (`internal/core/workspace.go`), never the
+literal string `.backlogit/archive/checkpoints` — so this destination
+continues to resolve correctly for both `.backlog` and legacy `.backlogit`
+workspaces once shipment 121 changes the default without requiring split
+state or a follow-up fix here. Guard the move with a **clobber-refuse guard**
+before the rename (`ErrCheckpointDestinationOccupied`), then write the sidecar
+as an **idempotent upsert** so an F5 step replay converges rather than
+duplicating. On a failed move after a partial step, rename back to the
+canonical path and log all diagnostics.
 
 Files: `internal/core/checkpoint_disposition.go`.
 Scenarios: valid target refused naming `abandon`; malformed bytes byte-identical

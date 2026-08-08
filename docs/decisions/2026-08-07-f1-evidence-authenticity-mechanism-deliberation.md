@@ -249,6 +249,17 @@ greater than the highest counter already admitted for that item. Counter state i
 derived from the log itself; because the counter is inside the MAC, an actor
 without the key cannot fabricate a higher one.
 
+**Intact-log limitation (honest, load-bearing).** The log-derived counter
+provides rollback and duplicate detection **within an intact log**, not
+unconditional anti-replay: the mutating actor can delete or truncate log
+records, which lowers the observed counter floor for a later admission check.
+Full anti-replay requires a high-water anchor **outside** the actor's write
+set. The reviewed implementation plan therefore supports an **optional
+verifier-owned high-water ledger** (path supplied by environment, e.g. held by
+CI) and enforces it strictly when configured; when it is not configured, the
+guarantee is exactly the narrower intact-log guarantee stated above. No unit
+may claim a stronger guarantee than this.
+
 ### Formal admission predicate
 
 A **new, dedicated** predicate — not `gateevidence.Latest`. It requires all of:

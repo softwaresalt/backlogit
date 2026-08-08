@@ -114,11 +114,17 @@ The result is a typed struct in `internal/errors/mutation_errors.go`:
 
 ```go
 type MutationPartialError struct {
-    Completed []string
-    Class     string // "not-applied" | "indeterminate" | "double-fault"
-    Cause     error
+    Completed         []string
+    FailedStep        string // name of the step that returned the classifying error
+    CompensationState string // "compensated" | "not-compensated" | "unknown"
+    Class             string // "not-applied" | "indeterminate" | "double-fault"
+    Cause             error
 }
 ```
+
+`FailedStep` and `CompensationState` are populated by the envelope at the point
+of classification — never reconstructed later by parsing `Error()` text — so
+U6's MCP mapping can read them directly as typed fields.
 
 with `Error() string` and `Unwrap() error`; callers use `errors.As`. Accumulation
 uses `errors.Join` so `errors.Is` still finds the underlying durable-write
@@ -148,12 +154,22 @@ Posture: test-first.
 ### U4 — Wrap the create-item + dependency path (code)
 
 Wrap the governed create-and-link path so a failure part-way through does not
-leave an item without its dependency edges.
+leave an item without its dependency edges. `internal/core/dependencies.go`
+alone is insufficient: `CreateArtifact` (`internal/core/artifacts.go:124`) is
+the entry point both CLI (`internal/cli/add.go`, via `core.WithDependencies`)
+and MCP (`internal/mcp/tools.go`) invoke directly to create an item with
+at-creation dependency edges, and it performs that linking itself rather than
+delegating to a separate call. Wrap `CreateArtifact`'s own item-creation-plus-
+dependency-linking steps in the envelope (no new shared entry point — both
+callers already route through this one function), in addition to the
+standalone `AddDependency` path in `internal/core/dependencies.go` used by
+`backlogit dep add` after creation.
 
-Files: `internal/core/dependencies.go`.
+Files: `internal/core/dependencies.go`, `internal/core/artifacts.go`.
 Scenarios: dependency step fails → item creation compensated; indeterminate
 dependency write → not compensated; existing `AddDependency` rollback tests
-still pass.
+still pass; `CreateArtifact` with `WithDependencies` set and a failing edge
+write leaves no orphaned item (via CLI and MCP entry points alike).
 Posture: test-first.
 
 ### U5 — Wrap the shipment-membership path (code)

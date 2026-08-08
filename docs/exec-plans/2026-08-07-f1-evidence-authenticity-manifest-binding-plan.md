@@ -127,15 +127,27 @@ Posture: test-first.
 
 Resolve the key once into a private value and **strip
 `BACKLOGIT_GATE_EVIDENCE_KEY` from every child-process environment**, not only
-gate helpers. This specifically covers the git environment built from
-`os.Environ()` in `internal/core/archive.go` and the gate runner's `MinimalEnv`.
+gate helpers. This covers **every** production `exec.Command`/`exec.CommandContext`
+call site in the module, not just the gate subsystem: the git environment built
+from `os.Environ()` in `internal/core/archive.go` (`gitCommandEnv`), the
+unscrubbed `git log` calls in `internal/core/commits.go:132`
+(`AutoLinkCommits`) and `internal/telemetry/branch_metrics.go:160`
+(`ParseGitMergePRs`), which today leave `cmd.Env` nil and therefore inherit the
+full process environment, and the gate runner's `MinimalEnv`. It also covers
+`internal/core/gate/probe.go`'s `ExecVersionRunner.Version`, whose `cmd.Env`
+stays nil (inheriting the full environment) whenever the `Env` field is unset —
+default that runner to the scrubbed environment instead of nil-meaning-inherit.
 Add canary assertions that the key value never appears in: a child environment,
 an error string, a panic-recovery message, a structured log line, a JSONL event
 delta, the SQLite index or FTS rows, or telemetry output.
 
-Files: `internal/core/childenv.go`, `internal/core/archive.go`.
+Files: `internal/core/childenv.go`, `internal/core/archive.go`,
+`internal/core/commits.go`, `internal/telemetry/branch_metrics.go`,
+`internal/core/gate/probe.go`.
 Scenarios: git child env excludes the key; gate runner child env excludes the
-key; canary sweep over written artifacts finds no occurrence.
+key; `AutoLinkCommits` and `ParseGitMergePRs` child envs exclude the key;
+`ExecVersionRunner` with an unset `Env` field still excludes the key; canary
+sweep over written artifacts finds no occurrence.
 Posture: test-first.
 
 ### U3 — Domain-separated proof envelope and HMAC primitive (code)
@@ -183,10 +195,25 @@ Preserve the existing append-before-status-write ordering and the
 `evidence_required` refusal (`:223-249`). With formal admission neither enabled
 nor required, emit exactly today's delta.
 
+Counter allocation is **not** safe today: `appendItemEventWithActorErr`
+(`internal/core/gate_evidence.go:48-70`) constructs a fresh
+`NewWorkspaceEventWriter` per call with no shared lock across the
+read-current-counter / increment / append sequence, so two concurrent
+transitions on the same item can read the same floor and sign/append duplicate
+counters. Wrap counter allocation plus append in a **combined in-process mutex
+and cross-process sidecar-file lock**, mirroring the pattern
+`internal/events/hook_events.go`'s `HookEventWriter` already uses
+(`sync.Mutex` plus an `O_CREATE|O_EXCL` lock file with stale-lock recovery):
+the critical section must span the read of the current counter, its increment,
+signing, and the append itself, so no interleaving can produce two envelopes
+sharing a counter value for the same item.
+
 Files: `internal/core/gate_evidence.go`, `internal/core/gate_transition.go`.
 Scenarios: enabled → delta carries proof and counter+1; disabled → delta
 byte-identical to a golden fixture; sign failure under enforcement → refusal with
-no status write.
+no status write; concurrent regression test — N goroutines appending gate
+evidence for the same item concurrently produce N distinct, gapless counters
+with no duplicates.
 Posture: test-first.
 
 ### U5 — Schema-validated formal report contract (code)
