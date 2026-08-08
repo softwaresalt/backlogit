@@ -388,3 +388,26 @@ and is ready for the orchestrator's staging PR merge gate.
    reviewed `--dry-run` first.
 5. Remote operator visibility is degraded (`agent-intercom` unavailable). All
    dark-mode events are recorded here rather than broadcast.
+
+## Concurrent operator activity observed (ACTION REQUIRED before merge)
+
+Two independent changes appeared in the **primary** worktree during this session,
+after the Stage snapshot was taken. Neither was made by Stage, and neither was
+touched:
+
+1. **`.autoharness/config.yaml`** became modified (model tier bumps: tier2
+   `claude-sonnet-4.6` → `claude-sonnet-5`, tier3 `claude-opus-4.8` →
+   `claude-opus-5`, orchestrator → `gpt-5.6-sol`). Unrelated to this scope.
+2. **`.backlogit/stash.jsonl`** in the primary worktree now holds **three** active
+   entries — `9370A18C`, `FDEDE39A`, `B5D7E401`. Only `9370A18C` existed when Stage
+   snapshotted the file, and only `9370A18C` was in `DARK_MODE_SCOPE`. The two new
+   entries were **deliberately not** harvested (no scope expansion) and remain
+   active in the primary worktree.
+
+**Stash merge hazard.** This branch's committed `.backlogit/stash.jsonl` is empty
+(the in-scope entry was archived). The operator's `FDEDE39A` and `B5D7E401` exist
+only as **uncommitted** working-copy changes in the primary worktree. Merging this
+branch will make the committed stash empty; the operator's uncommitted entries will
+remain as local modifications and must be reconciled by the operator — Stage must
+not, and did not, touch them. Reconcile before or immediately after the staging PR
+merges, or those two entries will look lost on a fresh clone.
