@@ -177,11 +177,19 @@ func (ws *Workspace) formalGateEnforced() bool {
 	if ws == nil {
 		return false
 	}
-	var formalCfg config.FormalGateConfig
-	if ws.Config != nil && ws.Config.FormalGate != nil {
-		formalCfg = *ws.Config.FormalGate
+	return config.FormalGateEnforced(ws.resolvedFormalGateConfig())
+}
+
+// resolvedFormalGateConfig returns the workspace's formal-gate config,
+// defaulting to the zero value when unset. Centralized (rather than the same
+// nil-check-and-dereference repeated at every call site) so
+// formalGateEnforced, augmentDeltaWithFormalProof, and
+// augmentShipmentDeltaWithFormalProof read one consistent nil-safe lookup.
+func (ws *Workspace) resolvedFormalGateConfig() config.FormalGateConfig {
+	if ws != nil && ws.Config != nil && ws.Config.FormalGate != nil {
+		return *ws.Config.FormalGate
 	}
-	return config.FormalGateEnforced(formalCfg)
+	return config.FormalGateConfig{}
 }
 
 // wrapFormalGateRequired wraps cause under bkerrors.ErrFormalGateRequired,
@@ -222,10 +230,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	if !ws.formalGateEnforced() {
 		return noop, nil
 	}
-	var formalCfg config.FormalGateConfig
-	if ws.Config != nil && ws.Config.FormalGate != nil {
-		formalCfg = *ws.Config.FormalGate
-	}
+	formalCfg := ws.resolvedFormalGateConfig()
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {

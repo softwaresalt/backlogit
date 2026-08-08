@@ -58,10 +58,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 	if !ws.formalGateEnforced() {
 		return noop, nil
 	}
-	var formalCfg config.FormalGateConfig
-	if ws.Config != nil && ws.Config.FormalGate != nil {
-		formalCfg = *ws.Config.FormalGate
-	}
+	formalCfg := ws.resolvedFormalGateConfig()
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
