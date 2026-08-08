@@ -343,8 +343,18 @@ func headDriftError(shipmentID, pre, post string) error {
 //  2. shipment-diff: a shipment-level `autoharness gate check` over the full
 //     shipment diff (no --task) must return a proceed decision.
 //
+// originalManifestItems is the shipment's declared manifest (NormalizeShipmentItems,
+// deduplicated) as ShipShipment captured it BEFORE this function ran — the exact
+// snapshot releaseScope was derived from. Under formal enforcement, it is
+// re-checked against a fresh reload immediately before signing the manifest-binding
+// proof (106-F F1 review finding F3): without that re-check, a concurrent, unlocked
+// membership mutation (e.g. backlogit_add_to_shipment) landing after
+// validateMemberGateEvidence already validated the ORIGINAL members, but before
+// this function signs, would let the signed proof attest to a membership containing
+// a member whose gate evidence was never checked at all.
+//
 // On refusal it returns a typed gate error and performs NO shipment state change.
-func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope []string) error {
+func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, originalManifestItems []string) error {
 	if ws == nil {
 		return nil // no workspace at all; nothing to check or enforce.
 	}
@@ -541,6 +551,21 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if getErr != nil {
 			return fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
 		}
+		// TOCTOU guard (106-F F1 review finding F3): validateMemberGateEvidence
+		// (above) already validated every member of originalManifestItems — the
+		// manifest snapshot ShipShipment captured BEFORE this function ran. This
+		// re-reloaded shipment could have gained (or lost) a member via a
+		// concurrent, unlocked backlogit_add_to_shipment call in the window
+		// between that snapshot and this reload. Without this check, the
+		// signed manifest-binding proof would attest to the FRESH membership —
+		// including a member whose gate evidence was NEVER validated — while
+		// the signature falsely implies otherwise. Refuse (fail closed) rather
+		// than silently signing a manifest that has drifted from the one whose
+		// members were actually checked.
+		currentManifestItems := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+		if !manifestItemsUnchanged(originalManifestItems, currentManifestItems) {
+			return formalGateShipmentRefusal(shipmentID, "shipment manifest membership changed after evidence validation and before signing (concurrent modification) — refusing to bind a proof to unvalidated members")
+		}
 		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta)
 		if aerr != nil {
 			return aerr
@@ -558,6 +583,25 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
 	}
 	return nil
+}
+
+// manifestItemsUnchanged reports whether current is IDENTICAL to original —
+// same length, same values, same order. Any difference (an added member, a
+// removed member, or even a reorder) is treated as a change: computeManifestDigest
+// itself treats manifest order as semantically significant (reordering members
+// changes the digest), so this comparison is deliberately exact rather than a
+// set-equality check, keeping it consistent with what the signed digest actually
+// commits to (106-F F1 review finding F3).
+func manifestItemsUnchanged(original, current []string) bool {
+	if len(original) != len(current) {
+		return false
+	}
+	for i := range original {
+		if original[i] != current[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // validateMemberGateEvidence verifies every task/subtask member in the release

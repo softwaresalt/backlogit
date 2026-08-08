@@ -167,8 +167,12 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// Two-level shipment gate (082-F ST4.2): validate member-task gate evidence
 	// and run a shipment-level autoharness gate check over the full diff BEFORE
 	// completing the release scope, so an ungated member is never auto-completed.
-	// A refusal leaves shipment state unchanged.
-	if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope); err != nil {
+	// A refusal leaves shipment state unchanged. explicitScope (captured above,
+	// before any of this runs) is re-checked against a fresh reload immediately
+	// before the manifest-binding proof is signed, so a concurrent membership
+	// mutation landing after this snapshot cannot ride inside a signed proof
+	// whose members were never actually validated (106-F F1 review finding F3).
+	if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
 	}
 

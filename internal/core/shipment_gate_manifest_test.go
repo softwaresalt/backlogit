@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -119,6 +120,77 @@ func TestShipmentGate_ManifestBinding_HappyPathAdmitted(t *testing.T) {
 	digest, _ := ev.Delta["manifest_digest"].(string)
 	require.NotEmpty(t, digest, "shipment-level evidence must carry a manifest_digest")
 }
+
+// TestGateShipmentCompletion_ManifestChangedSinceSnapshot_Refused verifies the
+// F3 TOCTOU guard: gateShipmentCompletion re-checks the shipment's CURRENT
+// manifest membership against originalManifestItems (the snapshot ShipShipment
+// captured before deriving releaseScope and before this function ran)
+// immediately before signing the manifest-binding proof. If a concurrent,
+// unlocked membership mutation (e.g. backlogit_add_to_shipment) landed after
+// that snapshot but before this reload, the mismatch must refuse the whole
+// completion rather than sign a proof attesting to members whose gate
+// evidence was never validated (106-F F1 review finding F3).
+func TestGateShipmentCompletion_ManifestChangedSinceSnapshot_Refused(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
+		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	// staleOriginalManifest simulates the snapshot ShipShipment would have
+	// captured BEFORE a concurrent AddItemToShipment call changed the
+	// shipment's actual stored membership to what newGatedShipment set up
+	// (just taskID) -- i.e. the reverse of the real attack (a member was
+	// ADDED after the snapshot), but the important thing this proves is that
+	// ANY mismatch between the snapshot and the fresh reload refuses,
+	// regardless of which direction the manifest drifted.
+	staleOriginalManifest := []string{"106.999-T-never-validated"}
+	releaseScope := []string{taskID}
+
+	gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, staleOriginalManifest)
+	require.Error(t, gerr, "must refuse when the shipment's current manifest differs from the pre-call snapshot")
+	require.True(t, stderrors.Is(gerr, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", gerr)
+	assert.Contains(t, gerr.Error(), "manifest membership changed")
+
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	assert.Equal(t, models.StatusActive, sh.Status, "shipment must not ship on a manifest-drift refusal")
+}
+
+// TestGateShipmentCompletion_ManifestUnchangedSincesnapshot_Proceeds is the
+// positive counterpart: when originalManifestItems exactly matches the
+// current manifest, the TOCTOU guard does not interfere with a normal
+// completion.
+func TestGateShipmentCompletion_ManifestUnchangedSinceSnapshot_Proceeds(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+	ws := newGateTestWorkspace(t)
+	runner := &taskAwareRunner{
+		taskRes:     gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
+		shipmentRes: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+	ctx := context.Background()
+
+	_, taskID, shipmentID := newGatedShipment(t, ws)
+	_, _, err := UpdateArtifactWithGate(ctx, ws, taskID, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err)
+
+	releaseScope := []string{taskID}
+	unchangedOriginal := []string{taskID} // matches newGatedShipment's actual stored items
+
+	gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, unchangedOriginal)
+	require.NoError(t, gerr, "an unchanged manifest must not be refused by the TOCTOU guard")
+}
+
 
 // TestVerifyShipmentManifestBinding_TamperedDigestRefused verifies that a
 // recorded manifest_digest which no longer matches a fresh recomputation
