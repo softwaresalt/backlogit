@@ -237,9 +237,16 @@ report; counter strictly greater than every previously admitted counter; and no
 later block or requeue event. `EventGateForced` is never admissible.
 
 When `BACKLOGIT_GATE_HIGHWATER_LEDGER` is configured, the highest admitted
-counter is read from and written to that external ledger and enforced strictly;
-when it is not configured, the counter provides only the narrower rollback and
-duplicate detection stated in the guarantee statement.
+counter is **read only** from that external ledger and enforced strictly
+(reject if the incoming counter is not strictly greater than the ledger
+value); when it is not configured, the counter provides only the narrower
+rollback and duplicate detection stated in the guarantee statement.
+**backlogit's own process never writes to the ledger** — updating it after a
+successful admission is the responsibility of the external verifier/service
+that owns the ledger (e.g., a CI step persists the new high-water value after
+backlogit's check passes), not this codebase, so no out-of-workspace write
+occurs from within backlogit and Principle IV (CLI Workspace Containment) is
+not implicated by an operator-supplied path.
 
 **Wiring is part of this unit, not an afterthought.** Enumerate and override every
 existing early return that could bypass verification on the member-scan path —
@@ -318,14 +325,16 @@ U1 ──> U2 ──> U3 ──> U4 ──┐
 * **Enforcement anchored in the environment** — a config flag inside the
   workspace is inside the actor's write set, so it cannot be the sole authority.
 * **Honest counter guarantee** — the counter floor is derived from a mutable log.
-  Claiming unconditional anti-replay would be false; the optional external ledger
-  is the path to the stronger guarantee.
+  Claiming unconditional anti-replay would be false; the optional external
+  ledger, read-only from backlogit's side and updated only by the external
+  verifier that owns it, is the path to the stronger guarantee without
+  backlogit performing an out-of-workspace write.
 
 ## Risks and Caveats
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Log truncation lowers the counter floor | **high** | Guarantee narrowed explicitly; optional external high-water ledger enforced strictly when configured |
+| Log truncation lowers the counter floor | **high** | Guarantee narrowed explicitly; optional external high-water ledger enforced strictly when configured, read-only from backlogit's side so no out-of-workspace write occurs |
 | Key leaks via child-process environment | **high** | U2 strips it centrally and asserts absence in git and gate-runner child environments |
 | Enforcement disabled from inside the workspace | **high** | Environment anchor is authoritative; config may only raise strictness |
 | Verification skipped by an existing early return | **high** | U6 enumerates and overrides every early return with end-to-end tests |
@@ -341,7 +350,7 @@ U1 ──> U2 ──> U3 ──> U4 ──┐
 | I. Safety-First Go | No `unsafe`. Sentinels in `internal/errors`; errors wrapped with `%w`; `hmac.Equal` for comparison. |
 | II. Test-First | Every code unit is test-first with an explicit red phase. |
 | III. Workspace Isolation | No new workspace paths. Key is env-only, never written, stripped from child environments. |
-| IV. CLI Containment | No writes outside the workspace. The optional ledger path is operator-supplied and read/written only when configured. |
+| IV. CLI Containment | No writes outside the workspace by backlogit itself. The optional high-water ledger path, when configured, is read-only from backlogit's perspective — enforcement compares against it, but only an external verifier/service ever writes to update it, so backlogit performs no out-of-workspace write. |
 | V. Structured Observability | U8 gives every refusal a structured, actionable machine-readable error. |
 | VI. Single Responsibility | Stdlib only; reuses shipped `internal/canonical`; no speculative interface. |
 | IX. Git-Friendly Persistence | Evidence remains JSONL; no new persistent workspace format. |
@@ -435,7 +444,9 @@ Hardening was required (four signals).
 
 * Whether to provision an external high-water ledger. Without it the guarantee is
   the narrower rollback-detection statement; this is an operations choice, not a
-  code blocker.
+  code blocker. The ledger, when provisioned, is owned and written by the
+  external verifier/service — backlogit only reads it for comparison, so no
+  workspace-containment exception is required.
 * Key rotation ergonomics beyond a MAC-bound `key_id` and defined unknown-key
   behavior. Deferred until a second key exists.
 

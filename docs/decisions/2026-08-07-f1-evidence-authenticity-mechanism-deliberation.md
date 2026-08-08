@@ -256,7 +256,10 @@ records, which lowers the observed counter floor for a later admission check.
 Full anti-replay requires a high-water anchor **outside** the actor's write
 set. The reviewed implementation plan therefore supports an **optional
 verifier-owned high-water ledger** (path supplied by environment, e.g. held by
-CI) and enforces it strictly when configured; when it is not configured, the
+CI) and enforces it strictly when configured; backlogit only **reads** the
+ledger for comparison and never writes to it — the external verifier that owns
+the ledger is solely responsible for updating it, so no out-of-workspace write
+originates from this codebase. When the ledger is not configured, the
 guarantee is exactly the narrower intact-log guarantee stated above. No unit
 may claim a stronger guarantee than this.
 
