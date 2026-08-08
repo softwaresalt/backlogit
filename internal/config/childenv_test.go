@@ -65,3 +65,38 @@ func TestScrubGateEvidenceKeyEnv_PureFunction(t *testing.T) {
 	}
 }
 
+// TestScrubGateEvidenceKeyEnv_CaseInsensitive verifies the key is stripped
+// regardless of the case it was set with. Environment variable NAMES are
+// case-insensitive at the OS level on Windows (and commonly set in
+// non-canonical case by PowerShell `$env:`, secrets managers, or .env
+// loaders), so os.LookupEnv (used by ResolveFormalGateKey) resolves a
+// lowercase-set value successfully — the scrubber MUST match that same
+// case-insensitive resolution or the key can reach a child process while key
+// resolution itself keeps working (a real, empirically-confirmed leak).
+func TestScrubGateEvidenceKeyEnv_CaseInsensitive(t *testing.T) {
+	cases := []string{
+		"backlogit_gate_evidence_key",
+		"Backlogit_Gate_Evidence_Key",
+		"BACKLOGIT_GATE_EVIDENCE_KEY",
+		"bAcKlOgIt_GaTe_EvIdEnCe_KeY",
+	}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := []string{
+				"PATH=/usr/bin",
+				name + "=leaked-if-present",
+				"HOME=/home/test",
+			}
+			out := ScrubGateEvidenceKeyEnv(in)
+			if len(out) != 2 {
+				t.Fatalf("ScrubGateEvidenceKeyEnv(%q) len = %d, want 2: %v", name, len(out), out)
+			}
+			for _, entry := range out {
+				if strings.Contains(strings.ToUpper(entry), "LEAKED-IF-PRESENT") {
+					t.Fatalf("ScrubGateEvidenceKeyEnv(%q) leaked the key: %v", name, out)
+				}
+			}
+		})
+	}
+}
+
