@@ -398,7 +398,6 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return nil
 	}
 
-
 	// Enforced: a bounded-read failure on the single pre-resolution (timeout or
 	// cancel) MUST fail closed — never silently skip the staleness guard.
 	if headErr != nil {
@@ -524,13 +523,33 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	}
 
 	// Both checks passed: record shipment-level passing evidence.
-	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, map[string]any{
+	passDelta := map[string]any{
 		"level":    "shipment",
 		"outcome":  "passed",
 		"base_ref": ev.Base.Ref,
 		"head_ref": ev.HeadRef,
 		"ran":      ev.Ran,
-	}); aerr != nil && ws.gateConfig.EvidenceRequiredValue() {
+	}
+	// Manifest binding (106-F F1/U7): bind the ordered manifest membership,
+	// covering feature, and resolved shipment head into a purpose=shipment
+	// proof, additive to the existing head_sha ancestry and head-drift guards
+	// above (both preserved unchanged). A nil-safe best-effort GetShipment
+	// lookup failure is treated as ErrFormalGateRequired under enforcement
+	// (cannot bind a manifest we cannot read) rather than silently skipping
+	// the binding.
+	if ws.formalGateEnforced() {
+		shipment, getErr := GetShipment(ctx, ws, shipmentID)
+		if getErr != nil {
+			return fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
+		}
+		if aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta); aerr != nil {
+			return aerr
+		}
+		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, passDelta); verr != nil {
+			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
+		}
+	}
+	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, passDelta); aerr != nil && ws.gateConfig.EvidenceRequiredValue() {
 		return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
 	}
 	return nil
