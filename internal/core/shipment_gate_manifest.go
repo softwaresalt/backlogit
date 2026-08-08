@@ -59,7 +59,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, keyErr)
+		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
 	}
 
 	digest, digestErr := computeManifestDigest(ctx, ws, shipment, shipmentHead)
@@ -123,7 +123,7 @@ func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment
 	}
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, keyErr)
+		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
 	}
 
 	proof, _ := delta["proof"].(string)

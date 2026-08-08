@@ -271,21 +271,19 @@ func headResolveError(shipmentID string, cause error) error {
 	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
 }
 
-// formalGateShipmentRefusal builds a typed *GateError refusing shipment
-// completion because formal-gate-evidence admission is enforced but the
-// broker infrastructure cannot supply what enforcement requires — either the
-// broker is nil (disabled/unwired) or the current environment would
-// otherwise fail open (106-F F1/U6). Class "setup" mirrors ErrGateSetup's
-// existing "autoharness install missing under strict enforcement" semantics,
-// since both represent enforceable-gate infrastructure being unavailable
-// when the workspace requires it.
+// formalGateShipmentRefusal builds a refusal error for shipment completion
+// when formal-gate-evidence admission is enforced but the broker
+// infrastructure cannot supply what enforcement requires — either the broker
+// is nil (disabled/unwired) or the current environment would otherwise fail
+// open (106-F F1/U6). It deliberately wraps ONLY the plain ErrFormalGateRequired
+// sentinel (not the typed GateError struct used by the setup/config/timeout/
+// in_progress classes) so the MCP layer's formalGateErrorResult dispatch
+// handles it with its own distinct error_type and remediation, rather than
+// being intercepted by the pre-existing "gate_setup" class handling, whose
+// remediation text ("install or repair the autoharness binary") would be
+// misleading here.
 func formalGateShipmentRefusal(shipmentID, reason string) error {
-	return &blerrors.GateError{
-		Class:   "setup",
-		ItemID:  shipmentID,
-		Message: fmt.Sprintf("shipment %s refused: %s", shipmentID, reason),
-		Err:     blerrors.ErrFormalGateRequired,
-	}
+	return fmt.Errorf("shipment %s refused: %s: %w", shipmentID, reason, blerrors.ErrFormalGateRequired)
 }
 
 // shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED

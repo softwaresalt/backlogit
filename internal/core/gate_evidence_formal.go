@@ -194,7 +194,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, keyErr)
+		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
 	}
 
 	// The report_digest bound into the proof must reflect a report that has
@@ -208,7 +208,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	if eventType == EventGatePassed {
 		validated, valErr := gate.ValidateFormalReport(outcome.ReportJSON)
 		if valErr != nil {
-			return fmt.Errorf("%w: formal report: %v", bkerrors.ErrFormalGateRequired, valErr)
+			return fmt.Errorf("%w: formal report: %w", bkerrors.ErrFormalGateRequired, valErr)
 		}
 		digest, digestErr := gate.FormalReportDigest(*validated)
 		if digestErr != nil {
