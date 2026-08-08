@@ -88,6 +88,7 @@ func signedForcedEvent(t *testing.T, itemID, workspaceID string, counter int64) 
 			"proof_schema":  env.Schema,
 			"counter":       env.Counter,
 			"report_digest": env.ReportDigest,
+			"timestamp_utc": env.TimestampUTC,
 		},
 	}
 }
@@ -113,6 +114,31 @@ func TestFormalAdmit_ForcedEventNeverAdmissible(t *testing.T) {
 	res := gateevidence.FormalAdmit(evs, baseCtx())
 	if res.Admitted {
 		t.Fatal("FormalAdmit() admitted a forced event; EventGateForced must never be admissible")
+	}
+}
+
+// TestFormalAdmit_LaterForcedEventDoesNotBlockEarlierGenuinePass verifies that
+// a genuinely signed EventGateForced recorded AFTER a genuinely signed
+// EventGatePassed does not retroactively make the earlier pass unadmissible.
+// A force is always issued strictly later (chronologically) than any pass it
+// might follow, so its allocated counter is UNAVOIDABLY higher — that is
+// expected and not itself a tampering or replay signal. Before this fix,
+// maxOtherCounter authenticated and counted EVERY other counter-claiming
+// event, Forced included, toward the "candidate counter must be strictly
+// greater than every other counter" floor; since EventGateForced is
+// documented as never itself admissible AND never treated as invalidating a
+// prior pass (only Blocked/Requeued/Escalated are), counting its counter
+// toward the SAME floor a genuine pass must clear made every pass followed
+// by ANY later force permanently unadmissible, even though nothing about the
+// pass itself was ever tampered with or superseded (106-F F1 review finding,
+// round 5).
+func TestFormalAdmit_LaterForcedEventDoesNotBlockEarlierGenuinePass(t *testing.T) {
+	pass := signedPassEvent(t, "106.099-T", "ws-1", 5, true)
+	forced := signedForcedEvent(t, "106.099-T", "ws-1", 6) // legitimately later, higher counter
+	evs := []events.Event{pass, forced}
+	res := gateevidence.FormalAdmit(evs, baseCtx())
+	if !res.Admitted {
+		t.Fatalf("FormalAdmit() = not admitted, reason=%q, want admitted (a later genuinely signed Forced event must not block an earlier genuine pass)", res.Reason)
 	}
 }
 

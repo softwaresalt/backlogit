@@ -956,6 +956,31 @@ func TestLockShipmentMembership_StableAcrossFileRelocation(t *testing.T) {
 	}
 }
 
+// TestLockShipmentMembership_RejectsPathTraversalShipmentID verifies that a
+// shipmentID containing path-traversal segments (e.g. "../../escape") cannot
+// escape the dedicated .backlogit/.locks directory when joined into the
+// synthetic lock key. shipmentID is caller-controlled (CLI/MCP argument) and
+// reaches lockShipmentMembership BEFORE any upstream GetShipment/artifact-ID
+// validation runs, so a crafted value could otherwise cause the lock code to
+// create, touch, or stale-reclaim-and-delete a ".*.lock" file OUTSIDE the
+// workspace entirely — a path traversal / workspace escape (Constitution
+// Principle III), not merely a cosmetic lock-key concern (106-F F1 review
+// finding, round 5).
+func TestLockShipmentMembership_RejectsPathTraversalShipmentID(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	maliciousID := filepath.Join("..", "..", "..", "escape-outside-locks")
+	_, err := lockShipmentMembership(ctx, ws, maliciousID)
+	require.Error(t, err, "a shipment ID containing path traversal segments must be rejected, not joined into a filesystem path")
+
+	// The escape target must never have been created.
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	escapedPath := filepath.Join(locksDir, maliciousID)
+	_, statErr := os.Stat(escapedPath)
+	assert.True(t, os.IsNotExist(statErr), "no lock artifact must be created outside .backlogit/.locks")
+}
+
 // T002 / ST013: Reject adding an item already in another shipment.
 func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	// Arrange

@@ -347,11 +347,28 @@ func optionalTypedString(delta map[string]any, name string) (string, bool) {
 // that predates formal enforcement (byte-identical legacy evidence, per
 // augmentDeltaWithFormalProof's backward-compatibility contract), not a
 // tampering signal.
+//
+// Only OTHER EventGatePassed events are considered: EventGateForced is
+// documented as never itself admissible and does not invalidate a prior
+// genuinely-signed pass either (only a later Blocked/Requeued/Escalated
+// does, via a separate check in FormalAdmit) — yet a Forced completion,
+// being itself signed, legitimately and unavoidably receives a HIGHER
+// counter than any earlier pass simply by being later in time. Counting a
+// Forced event's counter toward this floor would refuse every genuine pass
+// ever followed by ANY later forced completion for the same item, even
+// though nothing about that pass was tampered with or superseded (106-F F1
+// review finding, round 5). Blocked/Requeued/Escalated/BaseOverride/Error
+// events are excluded for the same reason: their own semantics (explicit
+// invalidation, or pure audit) are handled separately and do not indicate a
+// competing pass attempt this floor needs to guard against.
 func maxOtherCounter(evs []events.Event, excludeIdx int, ctx FormalContext) (int64, bool, error) {
 	var max int64
 	found := false
 	for i := range evs {
 		if i == excludeIdx {
+			continue
+		}
+		if evs[i].EventType != EventGatePassed {
 			continue
 		}
 		if _, hasCounter := evs[i].Delta["counter"]; !hasCounter {

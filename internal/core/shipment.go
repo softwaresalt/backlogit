@@ -214,6 +214,18 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	// lockTaskFile only ever creates a ".<name>.lock" sidecar adjacent to
 	// the path it is given; it never requires the path itself to exist.
 	stableKey := filepath.Join(locksDir, shipmentID)
+	// shipmentID is caller-controlled (CLI/MCP argument) and reaches this
+	// function BEFORE any upstream GetShipment/artifact-ID validation runs.
+	// A value containing path-traversal segments (e.g. "../../escape") could
+	// otherwise resolve stableKey outside locksDir entirely, letting this
+	// code create, touch, or stale-reclaim-and-delete a lock artifact outside
+	// the workspace — a path traversal / workspace escape (Constitution
+	// Principle III), not merely a lock-key naming concern. Fail closed
+	// rather than trusting filepath.Join's result unchecked (106-F F1 review
+	// finding, round 5).
+	if !pathContained(locksDir, stableKey) {
+		return nil, fmt.Errorf("shipment ID %q resolves outside the shipment membership locks directory: %w", shipmentID, blerrors.ErrValidation)
+	}
 	return lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
 }
 
