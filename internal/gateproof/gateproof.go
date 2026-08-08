@@ -71,15 +71,29 @@ type Envelope struct {
 }
 
 // validate enforces the envelope's structural contract: known magic, known
-// purpose, known schema, and the purpose-conditional manifest_digest rule.
+// schema, known algorithm, and the purpose-conditional manifest_digest rule.
 // A violation here means the envelope is definitively not a valid proof
 // shape, distinct from an HMAC mismatch.
+//
+// Alg is checked explicitly (not left as an inert label bound only into the
+// canonical bytes) so it is an authoritative selector rather than
+// decorative: Sign/Verify always compute/check HMAC-SHA256 regardless of
+// the label, so without this check an envelope could claim an unrelated
+// algorithm (e.g. "HMAC-SHA1") and still receive a "valid" HMAC-SHA256
+// signature for it — an algorithm-confusion hardening gap (106-F F1 review
+// finding). A MAC computed over the canonical bytes would already differ if
+// Alg changed AFTER signing (Alg is part of the canonical payload), so this
+// check closes the narrower gap of Sign accepting a mislabeled Alg in the
+// FIRST place, not merely detecting tampering after the fact.
 func (e Envelope) validate() error {
 	if e.Magic != Magic {
 		return fmt.Errorf("%w: unknown magic %q", bkerrors.ErrProofInvalid, e.Magic)
 	}
 	if e.Schema != Schema {
 		return fmt.Errorf("%w: unknown schema %d", bkerrors.ErrProofInvalid, e.Schema)
+	}
+	if e.Alg != AlgHMACSHA256 {
+		return fmt.Errorf("%w: unknown alg %q", bkerrors.ErrProofInvalid, e.Alg)
 	}
 	switch e.Purpose {
 	case PurposeTask:

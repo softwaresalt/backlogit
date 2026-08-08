@@ -157,23 +157,46 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}
 
-	explicitScope := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
-	explicitScopeSet := toIDSet(explicitScope)
-	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
-	if err != nil {
-		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)
-	}
+	// Membership lock (106-F F1 review finding): held from the release-scope
+	// snapshot through gateShipmentCompletion's manifest-binding signing —
+	// the exact window a concurrent AddItemToShipment/ReturnBlockedItem call
+	// could otherwise land in. explicitScope's own re-check against a fresh
+	// reload (inside gateShipmentCompletion) detects a drift that already
+	// happened; this lock instead PREVENTS one from happening at all during
+	// the window that matters, since AddItemToShipment/ReturnBlockedItem
+	// acquire the identical per-shipment lock before mutating membership.
+	var explicitScope, releaseScope []string
+	var explicitScopeSet map[string]struct{}
+	lockErr := func() error {
+		unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+		if lockErr != nil {
+			return fmt.Errorf("acquire membership lock: %w", lockErr)
+		}
+		defer func() { _ = unlock() }()
 
-	// Two-level shipment gate (082-F ST4.2): validate member-task gate evidence
-	// and run a shipment-level autoharness gate check over the full diff BEFORE
-	// completing the release scope, so an ungated member is never auto-completed.
-	// A refusal leaves shipment state unchanged. explicitScope (captured above,
-	// before any of this runs) is re-checked against a fresh reload immediately
-	// before the manifest-binding proof is signed, so a concurrent membership
-	// mutation landing after this snapshot cannot ride inside a signed proof
-	// whose members were never actually validated (106-F F1 review finding F3).
-	if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
+		explicitScope = uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+		explicitScopeSet = toIDSet(explicitScope)
+		var scopeErr error
+		releaseScope, scopeErr = releaseScopeItemIDs(ctx, ws, explicitScope)
+		if scopeErr != nil {
+			return fmt.Errorf("resolve release scope: %w", scopeErr)
+		}
+
+		// Two-level shipment gate (082-F ST4.2): validate member-task gate
+		// evidence and run a shipment-level autoharness gate check over the
+		// full diff BEFORE completing the release scope, so an ungated
+		// member is never auto-completed. A refusal leaves shipment state
+		// unchanged. explicitScope (captured above, before any of this
+		// runs, and now additionally protected by the membership lock held
+		// for this entire closure) is re-checked against a fresh reload
+		// immediately before the manifest-binding proof is signed, so a
+		// concurrent membership mutation landing after this snapshot cannot
+		// ride inside a signed proof whose members were never actually
+		// validated (106-F F1 review finding F3).
+		return gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+	}()
+	if lockErr != nil {
+		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
 	}
 
 	// 133.004-T: resolve covering-feature ancestry BEFORE completing the release

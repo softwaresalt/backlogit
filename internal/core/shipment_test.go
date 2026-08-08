@@ -846,6 +846,59 @@ func TestAddItemToShipment_Success(t *testing.T) {
 	assert.Contains(t, items, task.ID)
 }
 
+// TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld verifies
+// AddItemToShipment serializes against the SAME per-shipment lock ShipShipment
+// holds across its membership-sensitive window (release scope derivation
+// through manifest-binding proof signing) — closing a TOCTOU where a
+// concurrent, unlocked membership mutation could add a member whose gate
+// evidence was never validated but still rode inside a signed manifest
+// proof (106-F F1 review finding). Proven directly: manually hold the same
+// lock AddItemToShipment must acquire, confirm it blocks, release, confirm
+// it then completes.
+func TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Lock test shipment", nil)
+	require.NoError(t, err)
+	feat, err := CreateArtifact(ctx, ws, "Lock test feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Lock test task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+
+	shipmentPath, err := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	unlock, err := lockTaskFileWithHeartbeat(ctx, shipmentPath, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+	require.NoError(t, err, "must be able to acquire the shipment's own membership lock directly")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- AddItemToShipment(ctx, ws, shipment.ID, task.ID)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("AddItemToShipment completed (err=%v) while the shipment membership lock was held by another caller", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: AddItemToShipment is still waiting on the contended lock.
+	}
+
+	require.NoError(t, unlock())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "AddItemToShipment must succeed once the lock is released")
+	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+		t.Fatal("AddItemToShipment never completed after the lock was released")
+	}
+
+	updated, err := GetShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	items, ok := updated.CustomFields["items"].([]string)
+	require.True(t, ok)
+	assert.Contains(t, items, task.ID)
+}
+
 // T002 / ST013: Reject adding an item already in another shipment.
 func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	// Arrange

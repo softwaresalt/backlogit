@@ -178,6 +178,25 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 	return nil
 }
 
+// lockShipmentMembership acquires the per-shipment advisory lock guarding
+// shipment.CustomFields["items"] — reusing task_lock.go's per-file-path
+// keyed-mutex-plus-sidecar mechanism (despite its "task" naming, it is
+// generic: keyed by resolved file path, not by artifact type), resolved
+// against the shipment's OWN file path. Every function that reads-then-writes
+// shipment membership, or that signs a manifest-binding proof over a
+// membership snapshot, MUST hold this lock for the duration of that critical
+// section. Without it, a concurrent membership mutation can land in the
+// unprotected window between a snapshot and a later re-read/signing step,
+// letting an added member ride inside a signed manifest-binding proof whose
+// gate evidence was never actually validated (106-F F1 review finding).
+func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID string) (unlock func() error, err error) {
+	path, err := FindArtifactPath(ctx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve shipment path for membership lock: %w", err)
+	}
+	return lockTaskFileWithHeartbeat(ctx, path, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+}
+
 // AddItemToShipment associates an artifact ID with a shipment. The item must not
 // already belong to another active shipment.
 //
@@ -186,6 +205,12 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // in frontmatter, rewrite the file atomically, and upsert into the database.
 // Emit slog.Debug for item association and events.jsonl record.
 func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID string) error {
+	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+	if lockErr != nil {
+		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() { _ = unlock() }()
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err
@@ -228,6 +253,12 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 // both files atomically, and emit slog.Info + events.jsonl for the return.
 // Return ErrCannotReturnItem if the item is not in this shipment.
 func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, reason string) error {
+	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+	if lockErr != nil {
+		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() { _ = unlock() }()
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err

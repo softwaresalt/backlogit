@@ -129,8 +129,13 @@ func TestShipmentGate_MemberEvidenceUnsigned_FormalEnforcementRefuses(t *testing
 
 	_, err = ShipShipment(ctx, ws, shipmentID, nil)
 	require.Error(t, err, "ship must refuse a member whose evidence carries no formal proof once enforcement is required")
-	var blocked *bkerrors.GateBlockedError
-	require.True(t, stderrors.As(err, &blocked), "want *GateBlockedError, got %T: %v", err, err)
+	// The refusal wraps the TYPED FormalAdmit cause (ErrProofInvalid or
+	// ErrProofUnverifiable), not *GateBlockedError, so gateErrorResult's MCP
+	// dispatch reaches the specific formal_gate_proof_* error code instead
+	// of collapsing to the generic gate_blocked class (106-F F1 review
+	// finding). Unsigned evidence is missing its proof fields entirely, so
+	// it classifies as ErrProofUnverifiable (could not be evaluated at all).
+	require.True(t, stderrors.Is(err, bkerrors.ErrProofUnverifiable), "err = %v, want ErrProofUnverifiable", err)
 	assert.Contains(t, err.Error(), taskID)
 
 	sh, gErr := GetShipment(ctx, ws, shipmentID)
@@ -184,8 +189,10 @@ func TestShipmentGate_MemberEvidenceTamperedProof_FormalEnforcementRefuses(t *te
 
 	_, err = ShipShipment(ctx, ws, shipmentID, nil)
 	require.Error(t, err, "ship must refuse forged/tampered member evidence under formal enforcement")
-	var blocked *bkerrors.GateBlockedError
-	require.True(t, stderrors.As(err, &blocked), "want *GateBlockedError, got %T: %v", err, err)
+	// The tampered proof fails MAC verification, classifying as
+	// ErrProofInvalid (definitively wrong), not *GateBlockedError — see the
+	// unsigned-evidence test above for why this matters for MCP dispatch.
+	require.True(t, stderrors.Is(err, bkerrors.ErrProofInvalid), "err = %v, want ErrProofInvalid", err)
 	assert.Contains(t, err.Error(), taskID)
 
 	sh, gErr := GetShipment(ctx, ws, shipmentID)

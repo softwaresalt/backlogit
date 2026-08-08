@@ -92,6 +92,31 @@ func TestVerify_UnknownSchemaRejected(t *testing.T) {
 	}
 }
 
+// TestSign_UnknownAlgRejected verifies Alg is validated as an authoritative
+// selector, not merely bound into the MAC as an inert label. Before this
+// fix, Sign/Verify accepted an envelope claiming any Alg value while
+// actually always computing/checking HMAC-SHA256 — an algorithm-confusion
+// hardening gap (106-F F1 review finding).
+func TestSign_UnknownAlgRejected(t *testing.T) {
+	env := validTaskEnvelope()
+	env.Alg = "HMAC-SHA1"
+	if _, err := Sign(env, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("Sign(unknown alg) error = %v, want ErrProofInvalid", err)
+	}
+}
+
+func TestVerify_UnknownAlgRejected(t *testing.T) {
+	env := validTaskEnvelope()
+	mac, err := Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign() unexpected error: %v", err)
+	}
+	env.Alg = "HMAC-SHA1"
+	if err := Verify(env, mac, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("Verify(unknown alg) error = %v, want ErrProofInvalid", err)
+	}
+}
+
 func TestSign_TaskEnvelopeCarryingManifestDigestRejected(t *testing.T) {
 	env := validTaskEnvelope()
 	env.ManifestDigest = "should-not-be-set-for-task"

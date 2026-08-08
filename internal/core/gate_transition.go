@@ -97,10 +97,57 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 		return nil, nil, fmt.Errorf("find artifact %s: %w", id, err)
 	}
 	if !ws.gateApplies(peek, updates) {
+		// gateApplies returns false uniformly both for a genuinely
+		// non-applicable transition (wrong artifact type, non-terminal
+		// target, already-terminal item) AND for an otherwise-gate-eligible
+		// transition whose broker just happens to be nil (disabled or
+		// unwired). Under formal-gate enforcement those two cases must be
+		// distinguished: silently completing ungated in the second case
+		// would let BACKLOGIT_FORMAL_GATE_REQUIRED=true be defeated simply
+		// by the gate being unconfigured — mirroring the identical
+		// nil-broker refusal gateShipmentCompletion already applies at the
+		// shipment level (106-F F1 review finding).
+		if ws.formalGateEnforced() && ws.GateBroker == nil && gateWouldApplyButForBroker(ws, peek, updates) {
+			return nil, nil, formalGateTaskRefusal(id, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
+		}
 		artifact, uErr := updateArtifactUngated(ctx, ws, id, updates)
 		return artifact, nil, uErr
 	}
 	return ws.runGatedCompletion(ctx, id, updates, opts)
+}
+
+// gateWouldApplyButForBroker reports whether a transition is otherwise
+// gate-eligible (task/subtask, a configured terminal target status, item not
+// already terminal) independent of whether a broker is actually wired — the
+// same predicate as gateApplies minus its ws.GateBroker == nil check. Used
+// to distinguish "the gate does not apply to this transition at all" from
+// "the gate would apply but the broker is unavailable," which under formal
+// enforcement must refuse rather than silently completing ungated.
+func gateWouldApplyButForBroker(ws *Workspace, a *models.Artifact, updates map[string]any) bool {
+	if ws == nil || a == nil {
+		return false
+	}
+	if a.ArtifactType != "task" && a.ArtifactType != "subtask" {
+		return false
+	}
+	newStatus, ok := updates["status"].(string)
+	if !ok || newStatus == "" {
+		return false
+	}
+	if !ws.isGateTerminalStatus(newStatus) {
+		return false
+	}
+	return !ws.isGateTerminalStatus(string(a.Status))
+}
+
+// formalGateTaskRefusal builds a refusal error for task-level completion when
+// formal-gate-evidence admission is enforced but no broker is wired to run
+// the gate at all — the task-level counterpart to formalGateShipmentRefusal.
+// It deliberately wraps ONLY the plain ErrFormalGateRequired sentinel (not a
+// typed *GateError) so the MCP layer's formalGateErrorResult dispatch handles
+// it with its own distinct error_type and remediation.
+func formalGateTaskRefusal(itemID, reason string) error {
+	return fmt.Errorf("item %s refused: %s: %w", itemID, reason, bkerrors.ErrFormalGateRequired)
 }
 
 // gateApplies reports whether the pre-task-completion gate must run for this

@@ -146,6 +146,47 @@ func TestGateEvidence_FormalGateRequired_EvidenceNotRequired_StillRefuses(t *tes
 	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change: evidence_required:false must not bypass formal-gate enforcement")
 }
 
+// TestGateEvidence_FormalGateRequired_NilBroker_RefusesTaskCompletion verifies
+// the task-level counterpart to gateShipmentCompletion's existing nil-broker
+// refusal: when ws.GateBroker is nil (gate disabled/unwired), gateApplies
+// returns false uniformly for BOTH a genuinely non-applicable transition AND
+// a gate-eligible one whose broker just happens to be unavailable —
+// UpdateArtifactWithGate previously took the ungated completion path in
+// EITHER case, so BACKLOGIT_FORMAL_GATE_REQUIRED=true could not prevent a
+// task from completing with NO gate evidence at all whenever the broker was
+// nil. Must refuse instead, mirroring gateShipmentCompletion's identical
+// nil-broker refusal at the shipment level (106-F F1 review finding).
+func TestGateEvidence_FormalGateRequired_NilBroker_RefusesTaskCompletion(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	ws.GateBroker = nil // disabled/unwired
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "a nil gate broker must refuse task completion when formal gate evidence is enforced")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete ungated when the broker is nil under formal enforcement")
+}
+
+// TestGateEvidence_NilBroker_NoFormalEnforcement_PreservesLegacyTaskBehavior
+// characterizes the unchanged, pre-existing behavior: a nil broker without
+// formal gate enforcement still silently completes the task ungated
+// (pre-gate behavior preserved).
+func TestGateEvidence_NilBroker_NoFormalEnforcement_PreservesLegacyTaskBehavior(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	ws.GateBroker = nil
+
+	artifact, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.NoError(t, err, "a nil broker without formal enforcement must preserve pre-gate ungated completion")
+	require.NotNil(t, artifact)
+	assert.Equal(t, "done", statusOf(t, ws, id))
+}
+
+
 // TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique verifies the
 // dedicated counter-allocation lock: N goroutines racing to allocate a counter
 // for the SAME item produce N distinct, gapless values with no duplicates

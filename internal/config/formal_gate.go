@@ -11,8 +11,9 @@ import (
 )
 
 // minFormalGateKeyBytes is the minimum decoded key length required for the
-// formal-gate-evidence HMAC key (106-F F1). 32 bytes matches the HMAC-SHA256
-// block size and gives an adequate security margin against brute force.
+// formal-gate-evidence HMAC key (106-F F1). 32 bytes matches SHA-256's
+// 256-bit output/security target (not its 64-byte compression block size)
+// and gives an adequate security margin against brute force.
 const minFormalGateKeyBytes = 32
 
 // hexOnlyPattern matches a string consisting entirely of hex digits with an

@@ -287,6 +287,27 @@ func formalGateShipmentRefusal(shipmentID, reason string) error {
 	return fmt.Errorf("shipment %s refused: %s: %w", shipmentID, reason, blerrors.ErrFormalGateRequired)
 }
 
+// formalGateMemberRefusal builds a refusal error for a shipment member whose
+// gate evidence failed the FormalAdmit predicate, wrapping res.Err — the
+// TYPED cause (ErrProofInvalid or ErrProofUnverifiable) FormalAdmit
+// classified the refusal as — rather than the *GateBlockedError struct
+// shipmentMemberEvidenceError uses for every OTHER member-scan refusal
+// reason (missing evidence, stale lineage, malformed head). gateErrorResult
+// dispatches GateBlockedError BEFORE the formal-gate sentinels, so wrapping
+// THIS specific refusal in GateBlockedError would collapse it to the
+// generic gate_blocked MCP error_type, discarding whether the cause was a
+// tampered/replayed proof or one that could not be evaluated at all —
+// defeating the specific formal_gate_proof_invalid/
+// formal_gate_proof_unverifiable MCP contract U8 introduced for exactly
+// this refusal family (106-F F1 review finding).
+func formalGateMemberRefusal(memberID string, res gateevidence.FormalResult) error {
+	cause := res.Err
+	if cause == nil {
+		cause = blerrors.ErrProofInvalid
+	}
+	return fmt.Errorf("shipment refused: member %s formal gate evidence proof did not verify: %s: %w", memberID, res.Reason, cause)
+}
+
 // shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED
 // shipment whose HEAD resolves to empty INSIDE a real git work tree (1AEA2B0E).
 // This is distinct from headResolveError (a bounded-read timeout/cancel): here the
@@ -714,7 +735,7 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 				Key:         formalKey,
 			})
 			if !res.Admitted {
-				return shipmentMemberEvidenceError(id, "formal gate evidence proof did not verify: "+res.Reason)
+				return formalGateMemberRefusal(id, res)
 			}
 		}
 		if shipmentHead != "" {

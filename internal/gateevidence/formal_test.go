@@ -13,7 +13,10 @@ func testKey() []byte {
 }
 
 // signedPassEvent builds a real, correctly-signed EventGatePassed event so
-// tests exercise genuine MAC verification rather than fixture deltas.
+// tests exercise genuine MAC verification rather than fixture deltas. The
+// returned events.Event.Actor is set to match the signed envelope's Actor
+// field (envelopeFromEvent binds the real persisted actor into
+// reconstruction, not a hardcoded constant — 106-F F1 review finding).
 func signedPassEvent(t *testing.T, itemID, workspaceID string, counter int64, ran bool) events.Event {
 	t.Helper()
 	env := gateproof.Envelope{
@@ -38,6 +41,7 @@ func signedPassEvent(t *testing.T, itemID, workspaceID string, counter int64, ra
 	}
 	return events.Event{
 		EventType: gateevidence.EventGatePassed,
+		Actor:     env.Actor,
 		Delta: map[string]any{
 			"ran":           ran,
 			"proof":         proof,
@@ -74,6 +78,7 @@ func signedForcedEvent(t *testing.T, itemID, workspaceID string, counter int64) 
 	}
 	return events.Event{
 		EventType: gateevidence.EventGateForced,
+		Actor:     env.Actor,
 		Delta: map[string]any{
 			"ran":           true,
 			"proof":         proof,
@@ -201,6 +206,48 @@ func TestFormalAdmit_WrongKeyRefused(t *testing.T) {
 	res := gateevidence.FormalAdmit(evs, ctx)
 	if res.Admitted {
 		t.Fatal("FormalAdmit() admitted a proof verified against the wrong key")
+	}
+}
+
+// TestFormalAdmit_TamperedActorRefused verifies the reconstructed envelope
+// binds the event's REAL persisted Actor field, not a hardcoded constant —
+// changing the persisted actor after signing must invalidate the MAC
+// (106-F F1 review finding: envelopeFromEvent previously hardcoded
+// Actor: "backlogit" regardless of the event's own Actor field, so tampering
+// with the persisted actor went completely undetected).
+func TestFormalAdmit_TamperedActorRefused(t *testing.T) {
+	ev := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	ev.Actor = "attacker" // tampered after signing; envelope was signed with Actor: "backlogit"
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted despite a tampered Actor field — the envelope must bind the real persisted actor, not a hardcoded value")
+	}
+}
+
+// TestFormalAdmit_FractionalCounterRejected verifies asInt64 rejects a
+// non-integer float rather than silently truncating it. Before this fix, an
+// attacker could edit a signed integer counter (e.g. 1) to a fractional
+// value (1.5, 1.999999, etc.) that truncates BACK to the original integer,
+// so the reconstructed envelope matched the original signed bytes and the
+// MAC verified despite the on-disk JSON having been tampered with —
+// contradicting the tamper-evidence guarantee (106-F F1 review finding).
+func TestFormalAdmit_FractionalCounterRejected(t *testing.T) {
+	ev := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	ev.Delta["counter"] = 1.5
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted a candidate whose counter field is a non-integer float")
+	}
+}
+
+// TestFormalAdmit_FractionalProofSchemaRejected is the proof_schema
+// counterpart to the fractional-counter finding above.
+func TestFormalAdmit_FractionalProofSchemaRejected(t *testing.T) {
+	ev := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	ev.Delta["proof_schema"] = 1.5
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted a candidate whose proof_schema field is a non-integer float")
 	}
 }
 

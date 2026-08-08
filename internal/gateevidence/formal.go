@@ -1,8 +1,11 @@
 package gateevidence
 
 import (
+	"errors"
 	"fmt"
+	"math"
 
+	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/gateproof"
 )
@@ -35,14 +38,40 @@ type FormalResult struct {
 	Admitted bool
 	// Reason is a short, human-readable refusal explanation. Empty when Admitted.
 	Reason string
+	// Err classifies a refusal as bkerrors.ErrProofInvalid (definitively
+	// wrong: tampered field, wrong key, replayed counter, ran=false, or a
+	// superseding later event) or bkerrors.ErrProofUnverifiable (could not
+	// be evaluated at all: missing/malformed proof fields, or a log-
+	// integrity check on an "other" event itself failed). Nil only when
+	// Admitted is true. Callers that need MCP-contract-precise dispatch
+	// (e.g. validateMemberGateEvidence) should wrap THIS field — not parse
+	// Reason — so the specific formal_gate_proof_invalid/
+	// formal_gate_proof_unverifiable MCP error codes (106-F F1/U8) are
+	// reachable from every FormalAdmit refusal, not just the ones raised
+	// directly by gateproof.Verify.
+	Err error
 	// Event points at the admitted candidate event, or nil when not admitted.
 	Event *events.Event
 }
 
-// refuse builds a non-admitted FormalResult with a reason, reducing
-// call-site boilerplate across FormalAdmit's many refusal branches.
-func refuse(reason string) FormalResult {
-	return FormalResult{Admitted: false, Reason: reason}
+// refuse builds a non-admitted FormalResult with a reason and a classified
+// cause, reducing call-site boilerplate across FormalAdmit's many refusal
+// branches.
+func refuse(reason string, cause error) FormalResult {
+	return FormalResult{Admitted: false, Reason: reason, Err: cause}
+}
+
+// classifyProofErr maps an arbitrary error into the ONE authoritative
+// top-level sentinel FormalResult.Err should carry: ErrProofUnverifiable if
+// err's chain already says so, ErrProofInvalid otherwise (the more common,
+// more specific default — most FormalAdmit refusals are definitive
+// rejections, not evaluation failures). A nil err (no specific underlying
+// cause to inspect) also classifies as ErrProofInvalid.
+func classifyProofErr(err error) error {
+	if err != nil && errors.Is(err, bkerrors.ErrProofUnverifiable) {
+		return bkerrors.ErrProofUnverifiable
+	}
+	return bkerrors.ErrProofInvalid
 }
 
 // FormalAdmit is the dedicated formal-admission predicate (106-F F1/U6),
@@ -65,7 +94,7 @@ func refuse(reason string) FormalResult {
 //     that external ledger value too (the stronger guarantee).
 func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 	if len(evs) == 0 {
-		return refuse("no events recorded for this item")
+		return refuse("no events recorded for this item", bkerrors.ErrProofUnverifiable)
 	}
 
 	candidateIdx := -1
@@ -75,40 +104,40 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 		}
 	}
 	if candidateIdx == -1 {
-		return refuse("no EventGatePassed event present (EventGateForced is never formally admissible)")
+		return refuse("no EventGatePassed event present (EventGateForced is never formally admissible)", bkerrors.ErrProofUnverifiable)
 	}
 
 	for i := candidateIdx + 1; i < len(evs); i++ {
 		switch evs[i].EventType {
 		case EventGateBlocked, EventGateRequeued, EventGateEscalated:
-			return refuse("a later block/requeue/escalate event invalidates the prior pass")
+			return refuse("a later block/requeue/escalate event invalidates the prior pass", bkerrors.ErrProofInvalid)
 		}
 	}
 
 	candidate := evs[candidateIdx]
 	ran, _ := candidate.Delta["ran"].(bool)
 	if !ran {
-		return refuse("candidate pass event has ran=false")
+		return refuse("candidate pass event has ran=false", bkerrors.ErrProofInvalid)
 	}
 
 	env, macHex, err := envelopeFromEvent(candidate, ctx)
 	if err != nil {
-		return refuse(err.Error())
+		return refuse(err.Error(), bkerrors.ErrProofUnverifiable)
 	}
 
 	if verifyErr := gateproof.Verify(env, macHex, ctx.Key); verifyErr != nil {
-		return refuse("proof verification failed: " + verifyErr.Error())
+		return refuse("proof verification failed: "+verifyErr.Error(), classifyProofErr(verifyErr))
 	}
 
 	maxOther, hasOther, otherErr := maxOtherCounter(evs, candidateIdx, ctx)
 	if otherErr != nil {
-		return refuse("log integrity check failed: " + otherErr.Error())
+		return refuse("log integrity check failed: "+otherErr.Error(), classifyProofErr(otherErr))
 	}
 	if hasOther && env.Counter <= maxOther {
-		return refuse("counter is not strictly greater than another counter recorded in this log (possible replay)")
+		return refuse("counter is not strictly greater than another counter recorded in this log (possible replay)", bkerrors.ErrProofInvalid)
 	}
 	if ctx.HighWaterCounter != nil && env.Counter <= *ctx.HighWaterCounter {
-		return refuse("counter is not strictly greater than the external high-water ledger value")
+		return refuse("counter is not strictly greater than the external high-water ledger value", bkerrors.ErrProofInvalid)
 	}
 
 	return FormalResult{Admitted: true, Event: &evs[candidateIdx]}
@@ -157,7 +186,7 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 		ItemID:       ctx.ItemID,
 		EventType:    ev.EventType,
 		Ran:          ran,
-		Actor:        "backlogit",
+		Actor:        ev.Actor,
 		TimestampUTC: asString(delta["timestamp_utc"]),
 		HeadSHA:      headSHA,
 		ReportDigest: reportDigest,
@@ -179,6 +208,14 @@ func (e *missingFieldError) Error() string {
 	return "candidate delta missing required field: " + e.field
 }
 
+// asInt widens v to int, requiring an EXACT integer value. A float64 (the
+// shape every JSON-round-tripped number takes once decoded into a
+// map[string]any) with a non-zero fractional part is REJECTED, not silently
+// truncated: truncating would let a tampered field value (e.g. an original
+// signed 1 edited to 1.5, or 1.999999) reconstruct back to the ORIGINAL
+// integer and pass MAC verification despite the on-disk JSON having
+// genuinely changed, contradicting the tamper-evidence guarantee (106-F F1
+// review finding).
 func asInt(v any) (int, bool) {
 	switch x := v.(type) {
 	case int:
@@ -186,12 +223,17 @@ func asInt(v any) (int, bool) {
 	case int64:
 		return int(x), true
 	case float64:
+		if x != math.Trunc(x) {
+			return 0, false
+		}
 		return int(x), true
 	default:
 		return 0, false
 	}
 }
 
+// asInt64 is the int64 counterpart to asInt — see its doc comment for why a
+// non-integer float64 is rejected rather than truncated.
 func asInt64(v any) (int64, bool) {
 	switch x := v.(type) {
 	case int64:
@@ -199,6 +241,9 @@ func asInt64(v any) (int64, bool) {
 	case int:
 		return int64(x), true
 	case float64:
+		if x != math.Trunc(x) {
+			return 0, false
+		}
 		return int64(x), true
 	default:
 		return 0, false
