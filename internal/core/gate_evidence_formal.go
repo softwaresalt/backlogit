@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/canonical"
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -146,13 +145,25 @@ func scanMaxGateEvidenceCounter(ctx context.Context, logsDir, itemID string) (in
 // always yields the same identity, and a relocated or differently-rooted copy
 // yields a different one (a deliberate, conservative choice for a
 // trust-boundary identifier).
+//
+// Hashing routes through internal/canonical.Hash (not a direct crypto/sha256
+// call) so this governed gate-evidence payload path stays on the one shared,
+// deterministic hashing seam (106-F F1; see internal/canonical/guard_test.go).
+// canonical.Hash never fails on a plain string input, but the error is still
+// checked and handled fail-closed rather than ignored.
 func workspaceIdentity(rootPath string) string {
 	abs, err := filepath.Abs(rootPath)
 	if err != nil {
 		abs = rootPath
 	}
-	sum := sha256.Sum256([]byte(filepath.ToSlash(abs)))
-	return hex.EncodeToString(sum[:16])
+	full, hashErr := canonical.Hash(filepath.ToSlash(abs))
+	if hashErr != nil {
+		return ""
+	}
+	if len(full) > 32 {
+		return full[:32]
+	}
+	return full
 }
 
 // formalGateEnforced reports whether formal-gate-evidence admission is
