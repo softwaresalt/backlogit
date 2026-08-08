@@ -184,6 +184,18 @@ func (ws *Workspace) formalGateEnforced() bool {
 	return config.FormalGateEnforced(formalCfg)
 }
 
+// wrapFormalGateRequired wraps cause under bkerrors.ErrFormalGateRequired,
+// preserving cause's own error chain via a second %w verb (Go 1.20+ multi-wrap)
+// rather than discarding it with %v. This lets a caller still discover a more
+// specific sentinel inside cause — e.g. gateproof.Sign's ErrProofInvalid or
+// ErrProofUnverifiable — via errors.Is/errors.As, so
+// internal/mcp/formal_gate_errors.go's cause-specific dispatch (U8) can route
+// to the correct, more actionable error code instead of always falling back
+// to the generic formal_gate_required classification.
+func wrapFormalGateRequired(cause error) error {
+	return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, cause)
+}
+
 // augmentDeltaWithFormalProof adds proof, key_id, proof_schema, and counter to
 // delta when formal-gate-evidence admission is enabled by workspace config or
 // required by the environment anchor (106-F F1/U4). When it is neither, delta
@@ -205,7 +217,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
+		return wrapFormalGateRequired(keyErr)
 	}
 
 	// The report_digest bound into the proof must reflect a report that has
@@ -223,14 +235,14 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 		}
 		digest, digestErr := gate.FormalReportDigest(*validated)
 		if digestErr != nil {
-			return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, digestErr)
+			return wrapFormalGateRequired(digestErr)
 		}
 		reportDigest = digest
 	}
 
 	counter, unlock, counterErr := nextGateEvidenceCounter(ctx, ws, itemID)
 	if counterErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, counterErr)
+		return wrapFormalGateRequired(counterErr)
 	}
 	defer unlock()
 
@@ -253,7 +265,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	proof, signErr := gateproof.Sign(env, key)
 	if signErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, signErr)
+		return wrapFormalGateRequired(signErr)
 	}
 
 	delta["proof"] = proof

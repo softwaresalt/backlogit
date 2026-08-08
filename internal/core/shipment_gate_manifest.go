@@ -59,17 +59,17 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
+		return wrapFormalGateRequired(keyErr)
 	}
 
 	digest, digestErr := computeManifestDigest(ctx, ws, shipment, shipmentHead)
 	if digestErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, digestErr)
+		return wrapFormalGateRequired(digestErr)
 	}
 
 	counter, unlock, counterErr := nextGateEvidenceCounter(ctx, ws, shipmentID)
 	if counterErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, counterErr)
+		return wrapFormalGateRequired(counterErr)
 	}
 	defer unlock()
 
@@ -95,7 +95,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	proof, signErr := gateproof.Sign(env, key)
 	if signErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, signErr)
+		return wrapFormalGateRequired(signErr)
 	}
 
 	delta["proof"] = proof
@@ -123,7 +123,7 @@ func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment
 	}
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return fmt.Errorf("%w: %w", bkerrors.ErrFormalGateRequired, keyErr)
+		return wrapFormalGateRequired(keyErr)
 	}
 
 	proof, _ := delta["proof"].(string)
@@ -139,7 +139,7 @@ func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment
 
 	freshDigest, digestErr := computeManifestDigest(ctx, ws, shipment, shipmentHead)
 	if digestErr != nil {
-		return fmt.Errorf("%w: %v", bkerrors.ErrProofUnverifiable, digestErr)
+		return fmt.Errorf("%w: %w", bkerrors.ErrProofUnverifiable, digestErr)
 	}
 	if freshDigest != recordedDigest {
 		return fmt.Errorf("%w: manifest changed since evidence was signed (recorded %q, fresh %q)",

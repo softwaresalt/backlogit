@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
+	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/gateproof"
 )
@@ -187,4 +190,34 @@ func unsetTestEnv(t *testing.T, key string) {
 			_ = os.Unsetenv(key)
 		}
 	})
+}
+
+// TestWrapFormalGateRequired_PreservesCauseChain verifies that
+// wrapFormalGateRequired's wrapped error satisfies errors.Is for BOTH
+// bkerrors.ErrFormalGateRequired (the outer classification) AND the
+// underlying cause's own sentinel (e.g. ErrProofInvalid/ErrProofUnverifiable
+// from gateproof.Sign) — proving a caller can still distinguish the specific
+// cause via errors.Is/errors.As rather than only ever observing the generic
+// ErrFormalGateRequired classification. This guards against a %v-instead-of-%w
+// regression, which would silently break internal/mcp/formal_gate_errors.go's
+// specific-cause dispatch (106-F F1 review finding).
+func TestWrapFormalGateRequired_PreservesCauseChain(t *testing.T) {
+	cause := fmt.Errorf("%w: key must be at least 32 bytes, got 8", bkerrors.ErrProofUnverifiable)
+	wrapped := wrapFormalGateRequired(cause)
+
+	require.True(t, errors.Is(wrapped, bkerrors.ErrFormalGateRequired),
+		"wrapped error must satisfy errors.Is(_, ErrFormalGateRequired)")
+	require.True(t, errors.Is(wrapped, bkerrors.ErrProofUnverifiable),
+		"wrapped error must preserve the underlying ErrProofUnverifiable sentinel, not just its text")
+}
+
+// TestWrapFormalGateRequired_PreservesProofInvalidCause is the ErrProofInvalid
+// counterpart to the above (gateproof.Sign's envelope-validation failure
+// mode), confirming the helper is sentinel-agnostic.
+func TestWrapFormalGateRequired_PreservesProofInvalidCause(t *testing.T) {
+	cause := fmt.Errorf("%w: unknown purpose %q", bkerrors.ErrProofInvalid, "bogus")
+	wrapped := wrapFormalGateRequired(cause)
+
+	require.True(t, errors.Is(wrapped, bkerrors.ErrFormalGateRequired))
+	require.True(t, errors.Is(wrapped, bkerrors.ErrProofInvalid))
 }
