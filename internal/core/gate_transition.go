@@ -44,15 +44,22 @@ type TransitionOptions struct {
 // the (possibly refused) artifact so CLI/MCP callers can render machine output
 // without re-parsing the gate report.
 type GateOutcome struct {
-	ItemID          string
-	OldStatus       string
-	NewStatus       string
-	Outcome         string // "passed" | "blocked" | "requeued" | "escalated" | "error"
-	StateChanged    bool
-	BaseRef         string
-	HeadRef         string
-	HeadSHA         string
-	GateReportHash  string
+	ItemID         string
+	OldStatus      string
+	NewStatus      string
+	Outcome        string // "passed" | "blocked" | "requeued" | "escalated" | "error"
+	StateChanged   bool
+	BaseRef        string
+	HeadRef        string
+	HeadSHA        string
+	GateReportHash string
+	// ReportJSON is the raw gate-check report bytes for this outcome. It is
+	// used (106-F F1/U6) to re-validate against the schema-validated formal
+	// report contract at proof-signing time for EventGatePassed evidence, so
+	// the report_digest bound into a formal proof always reflects a report
+	// that actually passed ValidateFormalReport rather than the merely
+	// best-effort GateReportHash.
+	ReportJSON      []byte
 	RepeatedFailure *gate.RepeatedFailure
 	Forced          bool
 	Ran             bool
@@ -365,6 +372,7 @@ func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, o
 		HeadRef:         ev.HeadRef,
 		HeadSHA:         ws.headSHA(ctx),
 		GateReportHash:  gateReportHash(ev.Decision.ReportJSON),
+		ReportJSON:      ev.Decision.ReportJSON,
 		RepeatedFailure: ev.Decision.RepeatedFailure,
 		Ran:             ev.Ran,
 	}

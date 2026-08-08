@@ -57,7 +57,8 @@ func TestGateEvidence_FormalGateEnabled_DeltaCarriesProofAndCounter(t *testing.T
 	ws := newGateTestWorkspace(t)
 	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
 	id := newActiveTask(t, ws)
-	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	report := `{"reviewers":[{"persona":"Constitution Reviewer","decision":"pass"}]}`
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(report)}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
 
 	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
@@ -70,6 +71,29 @@ func TestGateEvidence_FormalGateEnabled_DeltaCarriesProofAndCounter(t *testing.T
 	assert.Equal(t, "k1", ev.Delta["key_id"])
 	assert.EqualValues(t, gateproof.Schema, ev.Delta["proof_schema"])
 	assert.EqualValues(t, 1, ev.Delta["counter"], "first evidence event for this item should be counter 1")
+}
+
+// TestGateEvidence_FormalGateEnabled_InvalidReportRefusesCompletion verifies
+// that a passing gate decision whose report fails the schema-validated
+// formal report contract (106-F F1/U5) is refused when formal admission is
+// enabled — a bare exit-0 pass with an empty/non-conforming report is not
+// sufficient evidence for a formal proof, even though the underlying
+// (non-formal) gate decision itself still says "proceed."
+func TestGateEvidence_FormalGateEnabled_InvalidReportRefusesCompletion(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	unsetTestEnv(t, "BACKLOGIT_FORMAL_GATE_REQUIRED")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	id := newActiveTask(t, ws)
+	// Exit 0 with an empty report: Decide() still returns DecisionProceed
+	// (unchanged, permissive default), but ValidateFormalReport must reject it.
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte{}}}
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "completion must refuse: formal gate is enabled but the report lacks attributed-review evidence")
+	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change on a refused formal-gate completion")
 }
 
 // TestGateEvidence_FormalGateRequired_KeyMissing_RefusesCompletion verifies

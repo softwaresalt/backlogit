@@ -271,6 +271,23 @@ func headResolveError(shipmentID string, cause error) error {
 	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
 }
 
+// formalGateShipmentRefusal builds a typed *GateError refusing shipment
+// completion because formal-gate-evidence admission is enforced but the
+// broker infrastructure cannot supply what enforcement requires — either the
+// broker is nil (disabled/unwired) or the current environment would
+// otherwise fail open (106-F F1/U6). Class "setup" mirrors ErrGateSetup's
+// existing "autoharness install missing under strict enforcement" semantics,
+// since both represent enforceable-gate infrastructure being unavailable
+// when the workspace requires it.
+func formalGateShipmentRefusal(shipmentID, reason string) error {
+	return &blerrors.GateError{
+		Class:   "setup",
+		ItemID:  shipmentID,
+		Message: fmt.Sprintf("shipment %s refused: %s", shipmentID, reason),
+		Err:     blerrors.ErrFormalGateRequired,
+	}
+}
+
 // shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED
 // shipment whose HEAD resolves to empty INSIDE a real git work tree (1AEA2B0E).
 // This is distinct from headResolveError (a bounded-read timeout/cancel): here the
@@ -329,8 +346,20 @@ func headDriftError(shipmentID, pre, post string) error {
 //
 // On refusal it returns a typed gate error and performs NO shipment state change.
 func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope []string) error {
-	if ws == nil || ws.GateBroker == nil {
-		return nil // gate disabled (enabled:false) or unwired.
+	if ws == nil {
+		return nil // no workspace at all; nothing to check or enforce.
+	}
+	if ws.GateBroker == nil {
+		// Enumerated early-return #1 (106-F F1/U6): a nil broker means the
+		// gate is disabled (enabled:false) or unwired. Under ordinary
+		// (non-formal) operation this silently preserves pre-gate ship
+		// behavior. But when formal gate evidence is enforced, silently
+		// proceeding here would let a shipment ship with no enforceable gate
+		// at all — refuse instead.
+		if ws.formalGateEnforced() {
+			return formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
+		}
+		return nil
 	}
 
 	// Resolve the shipment head ONCE, bounded, before Evaluate so the member
@@ -358,10 +387,17 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return ge
 	}
 	if !ev.Enforced {
-		// Gates are not enforceable in this environment (auto fail-open): do not
-		// impose member-evidence or shipment-diff enforcement.
+		// Enumerated early-return #2 (106-F F1/U6): gates are not enforceable
+		// in this environment (auto fail-open) — ordinarily this silently
+		// skips member-evidence/shipment-diff enforcement. Under formal gate
+		// enforcement, a fail-open environment must not be allowed to ship
+		// unauthenticated: refuse instead.
+		if ws.formalGateEnforced() {
+			return formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
+		}
 		return nil
 	}
+
 
 	// Enforced: a bounded-read failure on the single pre-resolution (timeout or
 	// cancel) MUST fail closed — never silently skip the staleness guard.

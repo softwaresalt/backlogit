@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core/gate"
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/gateproof"
@@ -154,6 +155,24 @@ func workspaceIdentity(rootPath string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// formalGateEnforced reports whether formal-gate-evidence admission is
+// currently enforced for this workspace, consulting both workspace config
+// (FormalGate.Enabled) and the environment anchor
+// (BACKLOGIT_FORMAL_GATE_REQUIRED) via config.FormalGateEnforced. Centralized
+// here so every enforcement check point (evidence signing, shipment-level
+// verification) reads the same nil-safe config lookup consistently. Safe to
+// call on a nil receiver — a nil workspace can never enforce anything.
+func (ws *Workspace) formalGateEnforced() bool {
+	if ws == nil {
+		return false
+	}
+	var formalCfg config.FormalGateConfig
+	if ws.Config != nil && ws.Config.FormalGate != nil {
+		formalCfg = *ws.Config.FormalGate
+	}
+	return config.FormalGateEnforced(formalCfg)
+}
+
 // augmentDeltaWithFormalProof adds proof, key_id, proof_schema, and counter to
 // delta when formal-gate-evidence admission is enabled by workspace config or
 // required by the environment anchor (106-F F1/U4). When it is neither, delta
@@ -165,17 +184,37 @@ func workspaceIdentity(rootPath string) string {
 // refuse the transition rather than persist unauthenticated evidence; there
 // is no unauthenticated fallback under enforcement.
 func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, eventType string, outcome *GateOutcome, delta map[string]any) error {
+	if !ws.formalGateEnforced() {
+		return nil
+	}
 	var formalCfg config.FormalGateConfig
 	if ws.Config != nil && ws.Config.FormalGate != nil {
 		formalCfg = *ws.Config.FormalGate
-	}
-	if !config.FormalGateEnforced(formalCfg) {
-		return nil
 	}
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
 		return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, keyErr)
+	}
+
+	// The report_digest bound into the proof must reflect a report that has
+	// actually passed the schema-validated formal report contract (106-F
+	// F1/U5) — but only for EventGatePassed, the sole event type the U6
+	// admission predicate ever trusts. Other event types (forced, blocked,
+	// requeued, escalated, base-override) still get a tamper-evident proof
+	// for audit purposes, using the existing best-effort report hash, since
+	// they can never be formally admitted regardless of report shape.
+	reportDigest := outcome.GateReportHash
+	if eventType == EventGatePassed {
+		validated, valErr := gate.ValidateFormalReport(outcome.ReportJSON)
+		if valErr != nil {
+			return fmt.Errorf("%w: formal report: %v", bkerrors.ErrFormalGateRequired, valErr)
+		}
+		digest, digestErr := gate.FormalReportDigest(*validated)
+		if digestErr != nil {
+			return fmt.Errorf("%w: %v", bkerrors.ErrFormalGateRequired, digestErr)
+		}
+		reportDigest = digest
 	}
 
 	counter, unlock, counterErr := nextGateEvidenceCounter(ctx, ws, itemID)
@@ -197,11 +236,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 		Actor:        "backlogit",
 		TimestampUTC: time.Now().UTC().Format(time.RFC3339),
 		HeadSHA:      outcome.HeadSHA,
-		// ReportDigest interim source: outcome.GateReportHash (raw-report hash,
-		// already computed for the existing gate_report_hash delta field). U5
-		// introduces a schema-validated report contract whose digest this must
-		// switch to before formal admission (U6) can trust it as "validated".
-		ReportDigest: outcome.GateReportHash,
+		ReportDigest: reportDigest,
 		Counter:      counter,
 	}
 
@@ -214,5 +249,13 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	delta["key_id"] = formalCfg.KeyID
 	delta["proof_schema"] = gateproof.Schema
 	delta["counter"] = counter
+	// timestamp_utc and report_digest are bound inside the MAC but are not
+	// otherwise derivable from the rest of the delta (timestamp_utc is a
+	// live value; report_digest may differ from the pre-existing
+	// gate_report_hash field once EventGatePassed uses the validated-report
+	// digest). Both must be persisted verbatim so a verifier can reconstruct
+	// the exact signed envelope later.
+	delta["timestamp_utc"] = env.TimestampUTC
+	delta["report_digest"] = reportDigest
 	return nil
 }
