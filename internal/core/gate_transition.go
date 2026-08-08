@@ -227,6 +227,21 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 	}
 }
 
+// mustRefuseGateEvidenceFailure reports whether an appendGateEvidence failure
+// MUST refuse the transition regardless of the evidence_required config knob.
+// A formal-gate-evidence refusal (missing/invalid key, invalid report, a
+// proof that fails to sign) is a DIFFERENT failure class from an ordinary
+// storage/I/O append failure: evidence_required exists to let an operator
+// tolerate transient storage failures, not to lower formal-gate enforcement —
+// augmentDeltaWithFormalProof's own contract is "no unauthenticated fallback
+// under enforcement" (106-F F1 review finding: these two failure classes were
+// previously conflated behind one EvidenceRequiredValue() check, so
+// evidence_required:false silently let a formal-gate-required completion
+// proceed with NO evidence recorded at all).
+func mustRefuseGateEvidenceFailure(ws *Workspace, err error) bool {
+	return stderrors.Is(err, bkerrors.ErrFormalGateRequired) || ws.gateConfig.EvidenceRequiredValue()
+}
+
 // completeGatePass applies a passing completion: evidence first, then the durable
 // write via the ungated update (which validates the terminal transition and emits
 // standard lifecycle events).
@@ -235,7 +250,7 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 	outcome.Forced = opts.Force
 
 	if err := ws.appendGateEvidence(ctx, id, EventGatePassed, outcome, &opts); err != nil {
-		if ws.gateConfig.EvidenceRequiredValue() {
+		if mustRefuseGateEvidenceFailure(ws, err) {
 			return nil, nil, fmt.Errorf("gate evidence append failed, refusing completion of %s: %w", id, err)
 		}
 		slog.WarnContext(ctx, "gate pass evidence append failed (evidence not required)", "item_id", id, "error", err)
@@ -246,7 +261,7 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 			// of forcing. Under evidence_required, a failed forced-audit append must
 			// refuse the completion rather than silently persist a forced transition
 			// with no audit trail (parity with the pass-evidence path above).
-			if ws.gateConfig.EvidenceRequiredValue() {
+			if mustRefuseGateEvidenceFailure(ws, err) {
 				return nil, nil, fmt.Errorf("forced-gate evidence append failed, refusing completion of %s: %w", id, err)
 			}
 			slog.WarnContext(ctx, "gate forced evidence append failed (evidence not required)", "item_id", id, "error", err)
@@ -272,7 +287,7 @@ func (ws *Workspace) redirectGate(ctx context.Context, id string, current *model
 	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev)
 
 	if err := ws.appendGateEvidence(ctx, id, eventType, outcome, nil); err != nil {
-		if ws.gateConfig.EvidenceRequiredValue() {
+		if mustRefuseGateEvidenceFailure(ws, err) {
 			return nil, nil, fmt.Errorf("gate evidence append failed, refusing redirect of %s: %w", id, err)
 		}
 		slog.WarnContext(ctx, "gate redirect evidence append failed (evidence not required)", "item_id", id, "error", err)

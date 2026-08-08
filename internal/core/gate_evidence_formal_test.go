@@ -118,6 +118,34 @@ func TestGateEvidence_FormalGateRequired_KeyMissing_RefusesCompletion(t *testing
 	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change on a refused formal-gate completion")
 }
 
+// TestGateEvidence_FormalGateRequired_EvidenceNotRequired_StillRefuses verifies
+// that a formal-gate-evidence refusal (missing key, under enforcement) is
+// NEVER downgraded to a warning by the UNRELATED evidence_required:false
+// config knob. evidence_required exists to tolerate ordinary storage/I/O
+// append failures; it must not become a side channel that lowers formal-gate
+// enforcement, since config may only RAISE strictness, never lower it (106-F
+// F1 review finding — completeGatePass previously gated BOTH failure classes
+// behind the same EvidenceRequiredValue() check, so evidence_required:false
+// silently let a formal-gate-required completion proceed with NO evidence
+// recorded at all).
+func TestGateEvidence_FormalGateRequired_EvidenceNotRequired_StillRefuses(t *testing.T) {
+	unsetTestEnv(t, "BACKLOGIT_GATE_EVIDENCE_KEY")
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	notRequired := false
+	ws.gateConfig.EvidenceRequired = &notRequired
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "a formal-gate refusal must refuse the completion even when evidence_required is false")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change: evidence_required:false must not bypass formal-gate enforcement")
+}
+
 // TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique verifies the
 // dedicated counter-allocation lock: N goroutines racing to allocate a counter
 // for the SAME item produce N distinct, gapless values with no duplicates
