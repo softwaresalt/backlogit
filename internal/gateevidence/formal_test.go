@@ -218,3 +218,46 @@ func TestFormalAdmit_MissingProofFieldsRefused(t *testing.T) {
 		t.Fatal("FormalAdmit() admitted an event with no proof fields at all")
 	}
 }
+
+// TestFormalAdmit_TamperedOtherEventCounterRefused verifies a DISTINCT
+// anti-replay attack beyond the plan's already-accepted deletion/truncation
+// tradeoff: an actor edits an EXISTING, RETAINED event's counter field
+// in-place (down from its genuinely-signed value) WITHOUT re-signing it,
+// deflating the max-other-counter comparison so a stale, previously-used,
+// replayed candidate counter appears to be the new maximum. Before this
+// fix, maxOtherCounter trusted any "other" event's counter field blindly
+// (never verifying that event's own proof); this let an in-place-tampered
+// log defeat the intact-log premise the whole counter guarantee depends on.
+// The fix authenticates every OTHER event that claims a counter before
+// trusting it — a claim that fails its own verification is a same-log-
+// tampering signal, so the WHOLE admission must refuse (fail closed)
+// rather than silently ignoring the bad data point (106-F F1 review
+// finding F6).
+func TestFormalAdmit_TamperedOtherEventCounterRefused(t *testing.T) {
+	genuine := signedPassEvent(t, "106.099-T", "ws-1", 3, true)
+	genuine.Delta["counter"] = int64(1) // in-place tamper: counter edited, MAC not updated
+
+	stale := signedPassEvent(t, "106.099-T", "ws-1", 2, true) // a validly-signed but stale/replayed candidate
+
+	evs := []events.Event{genuine, stale}
+	res := gateevidence.FormalAdmit(evs, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted despite an other event's counter claim failing its own proof verification (log integrity compromised)")
+	}
+}
+
+// TestFormalAdmit_LegacyOtherEventWithoutProofNotTreatedAsTampering verifies
+// that backward compatibility is preserved: an "other" event that predates
+// formal enforcement (no counter/proof fields at all — a normal, expected,
+// non-malicious history shape) is silently skipped, never treated as a
+// tampering signal, and never blocks admission of a genuinely later signed
+// pass.
+func TestFormalAdmit_LegacyOtherEventWithoutProofNotTreatedAsTampering(t *testing.T) {
+	legacy := events.Event{EventType: gateevidence.EventGatePassed, Delta: map[string]any{"ran": true}}
+	current := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	evs := []events.Event{legacy, current}
+	res := gateevidence.FormalAdmit(evs, baseCtx())
+	if !res.Admitted {
+		t.Fatalf("FormalAdmit() = not admitted, reason=%q, want admitted (legacy pre-enforcement history must not count as tampering)", res.Reason)
+	}
+}

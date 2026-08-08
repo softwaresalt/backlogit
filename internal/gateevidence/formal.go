@@ -1,6 +1,8 @@
 package gateevidence
 
 import (
+	"fmt"
+
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/gateproof"
 )
@@ -89,7 +91,7 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 		return refuse("candidate pass event has ran=false")
 	}
 
-	env, macHex, err := envelopeFromDelta(candidate.Delta, ctx)
+	env, macHex, err := envelopeFromEvent(candidate, ctx)
 	if err != nil {
 		return refuse(err.Error())
 	}
@@ -98,7 +100,10 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 		return refuse("proof verification failed: " + verifyErr.Error())
 	}
 
-	maxOther, hasOther := maxOtherCounter(evs, candidateIdx)
+	maxOther, hasOther, otherErr := maxOtherCounter(evs, candidateIdx, ctx)
+	if otherErr != nil {
+		return refuse("log integrity check failed: " + otherErr.Error())
+	}
 	if hasOther && env.Counter <= maxOther {
 		return refuse("counter is not strictly greater than another counter recorded in this log (possible replay)")
 	}
@@ -109,14 +114,22 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 	return FormalResult{Admitted: true, Event: &evs[candidateIdx]}
 }
 
-// envelopeFromDelta reconstructs a gateproof.Envelope and its MAC from an
-// event's delta fields, binding the verifier-supplied WorkspaceID/ItemID
-// context into the reconstructed envelope (rather than trusting whatever the
-// delta itself might claim) so a proof cannot vouch for a different item or
-// workspace than the one being checked. It returns an error (not a panic or
-// zero-value silent pass) for any missing or wrong-typed field, since an
-// incomplete delta can never be formally admissible.
-func envelopeFromDelta(delta map[string]any, ctx FormalContext) (gateproof.Envelope, string, error) {
+// envelopeFromEvent reconstructs a gateproof.Envelope and its MAC from an
+// event's OWN EventType and delta fields, binding the verifier-supplied
+// WorkspaceID/ItemID context into the reconstructed envelope (rather than
+// trusting whatever the delta itself might claim) so a proof cannot vouch for
+// a different item or workspace than the one being checked. It returns an
+// error (not a panic or zero-value silent pass) for any missing or
+// wrong-typed field, since an incomplete delta can never be formally
+// admissible.
+//
+// Unlike a hardcoded EventGatePassed/ran:true assumption, this reads the
+// event's real EventType and Delta["ran"] so it can reconstruct and verify
+// ANY signed event — not just the FormalAdmit candidate — which is required
+// by maxOtherCounter to authenticate "other" (non-candidate) events before
+// trusting their counter claims (106-F F1 review finding F6).
+func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, string, error) {
+	delta := ev.Delta
 	proof, ok := delta["proof"].(string)
 	if !ok || proof == "" {
 		return gateproof.Envelope{}, "", errMissingField("proof")
@@ -132,6 +145,7 @@ func envelopeFromDelta(delta map[string]any, ctx FormalContext) (gateproof.Envel
 	}
 	reportDigest, _ := delta["report_digest"].(string)
 	headSHA, _ := delta["head_sha"].(string)
+	ran, _ := delta["ran"].(bool)
 
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
@@ -141,8 +155,8 @@ func envelopeFromDelta(delta map[string]any, ctx FormalContext) (gateproof.Envel
 		KeyID:        keyID,
 		WorkspaceID:  ctx.WorkspaceID,
 		ItemID:       ctx.ItemID,
-		EventType:    EventGatePassed,
-		Ran:          true,
+		EventType:    ev.EventType,
+		Ran:          ran,
 		Actor:        "backlogit",
 		TimestampUTC: asString(delta["timestamp_utc"]),
 		HeadSHA:      headSHA,
@@ -196,24 +210,51 @@ func asString(v any) string {
 	return s
 }
 
-// maxOtherCounter returns the highest "counter" delta value among evs,
-// excluding the event at excludeIdx, along with whether any such counter was
-// found at all.
-func maxOtherCounter(evs []events.Event, excludeIdx int) (int64, bool) {
+// maxOtherCounter returns the highest counter value among evs (excluding
+// excludeIdx) that is BACKED BY A VERIFIED PROOF under ctx, along with
+// whether any such counter was found, and an error if any OTHER event
+// CLAIMS a counter (carries a non-empty "counter" delta field) but its OWN
+// proof does not verify.
+//
+// A verification failure on a counter-claiming "other" event is a same-log-
+// tampering signal distinct from — and not covered by — the plan's
+// already-accepted deletion/truncation tradeoff: an actor can edit an
+// EXISTING, RETAINED event's counter field in place (no deletion needed) to
+// deflate this comparison's floor, letting a stale, previously-signed,
+// lower-counter proof be replayed as the new "latest pass." Authenticating
+// every counter-claiming event (not just the winning candidate) before
+// trusting it closes that gap: an unverifiable claim proves the intact-log
+// premise this whole guarantee depends on no longer holds, so the caller
+// must refuse the ENTIRE admission (fail closed) rather than silently
+// ignoring the bad data point, which would just admit the attack through a
+// different door.
+//
+// An event with NO counter field at all is skipped — never counted, never
+// verified — because that shape is the NORMAL, expected signature of history
+// that predates formal enforcement (byte-identical legacy evidence, per
+// augmentDeltaWithFormalProof's backward-compatibility contract), not a
+// tampering signal.
+func maxOtherCounter(evs []events.Event, excludeIdx int, ctx FormalContext) (int64, bool, error) {
 	var max int64
 	found := false
 	for i := range evs {
 		if i == excludeIdx {
 			continue
 		}
-		c, ok := asInt64(evs[i].Delta["counter"])
-		if !ok {
+		if _, hasCounter := evs[i].Delta["counter"]; !hasCounter {
 			continue
 		}
-		if !found || c > max {
-			max = c
+		env, macHex, err := envelopeFromEvent(evs[i], ctx)
+		if err != nil {
+			return 0, false, fmt.Errorf("other event at index %d claims a counter but is malformed: %w", i, err)
+		}
+		if verifyErr := gateproof.Verify(env, macHex, ctx.Key); verifyErr != nil {
+			return 0, false, fmt.Errorf("other event at index %d claims a counter but its proof does not verify: %w", i, verifyErr)
+		}
+		if !found || env.Counter > max {
+			max = env.Counter
 			found = true
 		}
 	}
-	return max, found
+	return max, found, nil
 }

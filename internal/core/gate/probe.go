@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/softwaresalt/backlogit/internal/config"
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
@@ -112,14 +111,7 @@ type ExecVersionRunner struct {
 func (r ExecVersionRunner) Version(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, r.Binary, "version")
 	cmd.Dir = r.Dir
-	if r.Env != nil {
-		cmd.Env = r.Env
-	} else {
-		// Default to the ambient environment scrubbed of the formal-gate
-		// evidence key (106-F F1/U2) rather than leaving Env nil, which would
-		// otherwise inherit the full ambient environment unfiltered.
-		cmd.Env = config.ChildProcessEnv()
-	}
+	cmd.Env = resolveChildEnv(r.Env)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {

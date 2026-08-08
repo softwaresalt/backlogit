@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"regexp"
+	"strings"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -60,10 +61,16 @@ func ResolveFormalGateKey() ([]byte, error) {
 }
 
 // formalGateRequiredTruthy reports whether a BACKLOGIT_FORMAL_GATE_REQUIRED
-// value represents an explicit "yes, enforce" decision.
+// value represents an explicit "yes, enforce" decision. Comparison is
+// case-insensitive and tolerant of leading/trailing whitespace (including a
+// trailing newline, a common shell-export artifact), since a strict exact
+// match against a fixed string set silently treats a plausible operator
+// misconfiguration (" true", "TRUE\n", "tRue") as "not enforced" with no
+// warning surfaced anywhere — the opposite of this anchor's fail-closed
+// intent (106-F F1 review finding).
 func formalGateRequiredTruthy(v string) bool {
-	switch v {
-	case "1", "true", "TRUE", "True":
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true":
 		return true
 	default:
 		return false

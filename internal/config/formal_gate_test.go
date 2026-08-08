@@ -100,6 +100,10 @@ func TestFormalGateEnforced_EnvironmentAnchorAuthoritative(t *testing.T) {
 		{"env requires, config disabled -> STILL enforced (config cannot lower)", "true", false, true},
 		{"env requires, config enabled -> enforced", "true", true, true},
 		{"env explicitly false, config disabled -> not enforced", "false", false, false},
+		{"env has leading/trailing whitespace -> still enforced (trimmed)", " true ", false, true},
+		{"env has trailing newline (shell export artifact) -> still enforced", "true\n", false, true},
+		{"env is mixed-case -> still enforced (case-insensitive)", "tRue", false, true},
+		{"env is bare \"1\" with whitespace -> still enforced", " 1 ", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
