@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -577,8 +578,12 @@ func isGitUntrackedPathError(err error) bool {
 }
 
 func gitCommandEnv() []string {
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, entry := range os.Environ() {
+	// Start from the ambient environment already scrubbed of the formal-gate
+	// evidence key (106-F F1/U2), then apply this call site's own git-specific
+	// exclusions on top.
+	base := config.ChildProcessEnv()
+	env := make([]string, 0, len(base)+1)
+	for _, entry := range base {
 		key, _, _ := strings.Cut(entry, "=")
 		if isGitOverrideEnv(key) || isGitLocaleEnv(key) || isGitPromptEnv(key) {
 			continue

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	dbpkg "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
@@ -129,8 +130,13 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 		return nil, nil
 	}
 
-	out, err := exec.CommandContext(ctx, "git", "-C", ws.RootPath,
-		"log", "--pretty=format:%H\t%ae\t%s", fmt.Sprintf("-n%d", depth)).Output()
+	cmd := exec.CommandContext(ctx, "git", "-C", ws.RootPath,
+		"log", "--pretty=format:%H\t%ae\t%s", fmt.Sprintf("-n%d", depth))
+	// Explicitly scrub the formal-gate-evidence key from this child process's
+	// environment (106-F F1/U2) rather than leaving Env nil, which would
+	// otherwise inherit the full ambient environment unfiltered.
+	cmd.Env = config.ChildProcessEnv()
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git log: %w", err)
 	}
