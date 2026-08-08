@@ -288,3 +288,82 @@ func TestShipmentGate_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefus
 	require.NoError(t, gErr)
 	require.Equal(t, models.StatusActive, sh.Status, "shipment must not ship when its signed pass evidence was never durably recorded")
 }
+
+// TestValidateMemberGateEvidence_FormalEnforcement_LineageUsesAuthenticatedEvent
+// verifies that under formal-gate enforcement, the per-member LINEAGE check
+// uses the event FormalAdmit actually authenticated (res.Event), never the
+// legacy Latest-selected event (latestGatePassEvidence). Latest treats
+// EventGateForced as unconditionally qualifying (any ran, no proof required)
+// and always prefers whichever qualifying event is chronologically LATEST,
+// while FormalAdmit deliberately never admits EventGateForced and does not
+// treat a LATER Forced event as invalidating a prior genuinely-signed pass
+// either (only Blocked/Requeued/Escalated invalidate). This means an actor
+// who can append JSONL entries can add a LATER, completely unsigned
+// EventGateForced carrying an ARBITRARY forged head_sha — e.g. one crafted to
+// exactly equal the shipment head, trivially satisfying the lineage check's
+// fast equality path — even though the actual AUTHENTICATED pass evidence was
+// signed for a genuinely DIVERGENT (non-ancestor) commit. Before this fix,
+// the lineage check read head_sha from `latest` (the Forced-preferring Latest
+// selection), so this forged, unsigned entry silently overrode the real,
+// cryptographically-verified commit binding (106-F F1 review finding, round
+// 4).
+func TestValidateMemberGateEvidence_FormalEnforcement_LineageUsesAuthenticatedEvent(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	ctx := context.Background()
+
+	_, head, divergent := initGitRepoWithCommits(t, ws.RootPath)
+
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+
+	// Genuine, properly signed evidence -- for the DIVERGENT (non-ancestor)
+	// commit: real, authenticated lineage that MUST be refused once correctly
+	// checked.
+	key, keyErr := config.ResolveFormalGateKey()
+	require.NoError(t, keyErr)
+	env := gateproof.Envelope{
+		Magic:        gateproof.Magic,
+		Purpose:      gateproof.PurposeTask,
+		Schema:       gateproof.Schema,
+		Alg:          gateproof.AlgHMACSHA256,
+		KeyID:        "k1",
+		WorkspaceID:  workspaceIdentity(ws.RootPath),
+		ItemID:       id,
+		EventType:    EventGatePassed,
+		Ran:          true,
+		Actor:        "backlogit",
+		TimestampUTC: "2026-08-08T00:00:00Z",
+		HeadSHA:      divergent,
+		ReportDigest: "digest123",
+		Counter:      1,
+	}
+	proof, signErr := gateproof.Sign(env, key)
+	require.NoError(t, signErr)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"ran":           true,
+		"proof":         proof,
+		"key_id":        env.KeyID,
+		"proof_schema":  env.Schema,
+		"counter":       env.Counter,
+		"head_sha":      env.HeadSHA,
+		"report_digest": env.ReportDigest,
+		"timestamp_utc": env.TimestampUTC,
+	}))
+
+	// A LATER, completely unsigned Forced event -- no proof/key_id/counter at
+	// all -- carrying a FORGED head_sha crafted to exactly equal the shipment
+	// head, so an unfixed lineage check trivially "passes" via the fast
+	// equality path regardless of what was actually authenticated.
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGateForced, map[string]any{
+		"outcome": "forced", "ran": true, "head_sha": head, "forced": true,
+	}))
+
+	err = validateMemberGateEvidence(ctx, ws, []string{id}, head)
+	require.Error(t, err, "lineage must be checked against the AUTHENTICATED pass event's head_sha (divergent, non-ancestor), not a later unsigned Forced event's forged head_sha")
+	assert.Contains(t, err.Error(), "divergent", "the refusal must reflect the authenticated evidence's real (divergent) lineage")
+}

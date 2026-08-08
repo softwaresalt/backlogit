@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,93 +16,82 @@ import (
 	"github.com/softwaresalt/backlogit/internal/gateproof"
 )
 
-// gateEvidenceCounterStaleTTL is the age after which a gate-evidence counter
-// lock sidecar file is treated as stale (left by a crashed process) and
-// removed automatically, mirroring events.HookEventWriter's hookLockStaleTTL.
-const gateEvidenceCounterStaleTTL = 60 * time.Second
-
-// gateEvidenceCounterMu serializes concurrent counter allocation across
-// goroutines within this process. A cross-process advisory sidecar-file lock
-// (acquired inside nextGateEvidenceCounter) additionally covers separate
-// backlogit processes racing on the same item (106-F F1/U4).
-var gateEvidenceCounterMu sync.Mutex
+// gateEvidenceCounterBoundedWait bounds how long a counter allocation waits
+// to acquire the per-item counter lock before failing fast with a retryable
+// error. It is deliberately more generous than defaultGateLockBoundedWait
+// (task_lock.go, sized for a single-contender completion lock): the counter
+// lock's critical section is normally very short (scan + a single JSON
+// append), but many callers can legitimately queue for the SAME item's
+// counter in quick succession, and each queued waiter's cumulative wait adds
+// up across the whole queue. Still comfortably under task_lock.go's
+// taskStaleLockTTL (60s), the threshold defaultGateLockHeartbeat (20s)
+// exists to never let a live hold reach.
+const gateEvidenceCounterBoundedWait = 10 * time.Second
 
 // nextGateEvidenceCounter allocates the next monotonic per-item counter for a
-// formal-gate-evidence proof. It holds a combined in-process mutex and
-// cross-process sidecar-file lock across the read-current-counter, increment,
-// and (by the caller) sign-and-append sequence, so two concurrent callers can
-// never allocate — and therefore sign and append — the same counter for the
-// same item. This mirrors events.HookEventWriter's AppendHookEvent locking
-// pattern (internal/events/hook_events.go).
+// formal-gate-evidence proof. It uses the SAME heartbeat-refreshed advisory
+// lock mechanism as the long-lived per-task completion lock
+// (lockTaskFileWithHeartbeat, task_lock.go), rather than a bespoke sidecar
+// with a fixed, non-heartbeated stale-TTL. A plain fixed-TTL reclaim (no
+// heartbeat) can be reaped out from under a holder whose sign+durable-append
+// step legitimately stalls past the TTL (slow disk, a contended CI runner,
+// etc.): a second caller would then see the sidecar's untouched creation-time
+// ModTime as "stale", reclaim it, rescan the SAME max counter, and allocate —
+// then sign and durably append — the IDENTICAL counter value, breaking the
+// counter-uniqueness/anti-replay guarantee the whole formal-admission feature
+// exists to provide. Worse, since ownership was never tokenized, the original
+// holder's eventual unlock() would delete the second holder's lock file out
+// from under it. lockTaskFileWithHeartbeat refreshes the sidecar's ModTime on
+// a fixed interval strictly under its stale-TTL for as long as the holder is
+// alive, so a live holder's lock is never mistaken for crash residue
+// regardless of how long the guarded sign+append sequence takes (106-F F1
+// review finding, round 4).
+//
+// The per-path in-process mutex lockTaskFile already provides (via
+// taskMutexFor) subsumes the bespoke package-global gateEvidenceCounterMu
+// this replaced — with FINER granularity (per item, not one global lock
+// across every item's counter allocation).
+//
+// The lock target is a synthetic, gateproof-specific proxy path — logPath
+// with a ".gateproof" suffix, NOT logPath itself — so the sidecar this
+// produces (".{base}.gateproof.lock") can never collide with any other
+// lockTaskFileWithHeartbeat caller keyed on a real artifact or log file path.
 //
 // The caller MUST call the returned unlock exactly once, after the sign+append
 // step completes (success or failure), and must not allocate a second counter
 // for the same item while still holding the first lock.
 func nextGateEvidenceCounter(ctx context.Context, ws *Workspace, itemID string) (counter int64, unlock func(), err error) {
-	gateEvidenceCounterMu.Lock()
-
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	logPath := events.LogPathForItem(logsDir, itemID)
-	lockPath := logPath + ".gateproof.lock"
+	lockProxyPath := logPath + ".gateproof"
 
-	release, lockErr := acquireGateEvidenceCounterLock(lockPath)
+	// lockTaskFileWithHeartbeat's underlying lockTaskFile assumes the sidecar's
+	// parent directory already exists (true for its normal use case: a real
+	// artifact file that necessarily already has a parent directory). The logs
+	// directory, however, may not exist yet for an item's FIRST-EVER gate
+	// evidence event, so it must be created explicitly first.
+	if mkdirErr := os.MkdirAll(filepath.Dir(lockProxyPath), 0o755); mkdirErr != nil {
+		return 0, nil, fmt.Errorf("create gate evidence log dir: %w", mkdirErr)
+	}
+
+	release, lockErr := lockTaskFileWithHeartbeat(ctx, lockProxyPath, gateEvidenceCounterBoundedWait, defaultGateLockHeartbeat)
 	if lockErr != nil {
-		gateEvidenceCounterMu.Unlock()
 		return 0, nil, fmt.Errorf("gate evidence counter locked for %s: %w", itemID, lockErr)
 	}
 
 	max, scanErr := scanMaxGateEvidenceCounter(ctx, logsDir, itemID)
 	if scanErr != nil {
-		release()
-		gateEvidenceCounterMu.Unlock()
+		_ = release()
 		return 0, nil, fmt.Errorf("scan gate evidence counter for %s: %w", itemID, scanErr)
 	}
 
 	unlockOnce := sync.Once{}
 	unlockFn := func() {
 		unlockOnce.Do(func() {
-			release()
-			gateEvidenceCounterMu.Unlock()
+			_ = release()
 		})
 	}
 	return max + 1, unlockFn, nil
-}
-
-// acquireGateEvidenceCounterLock acquires a cross-process advisory lock via an
-// O_CREATE|O_EXCL sidecar file, recovering a lock left behind by a crashed
-// process once it exceeds gateEvidenceCounterStaleTTL. Mirrors
-// events.HookEventWriter's lock-acquisition logic exactly (same stale-recovery
-// shape) so the two independent locking call sites stay behaviorally
-// consistent.
-func acquireGateEvidenceCounterLock(lockPath string) (release func(), err error) {
-	if mkdirErr := os.MkdirAll(filepath.Dir(lockPath), 0o755); mkdirErr != nil {
-		return nil, fmt.Errorf("create gate evidence log dir: %w", mkdirErr)
-	}
-
-	lf, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if openErr != nil {
-		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > gateEvidenceCounterStaleTTL {
-			slog.Warn("removing stale gate evidence counter lock file", "path", lockPath)
-			recoveringPath := lockPath + ".recovering"
-			_ = os.Remove(recoveringPath)
-			if renameErr := os.Rename(lockPath, recoveringPath); renameErr == nil {
-				lf, openErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-				_ = os.Remove(recoveringPath)
-			} else {
-				lf, openErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-			}
-		}
-		if openErr != nil {
-			return nil, fmt.Errorf("gate evidence counter locked by another process: %w", openErr)
-		}
-	}
-	_ = lf.Close()
-
-	return func() {
-		if rmErr := os.Remove(lockPath); rmErr != nil && !os.IsNotExist(rmErr) {
-			slog.Warn("failed to remove gate evidence counter lock file", "path", lockPath, "error", rmErr)
-		}
-	}, nil
 }
 
 // scanMaxGateEvidenceCounter returns the highest "counter" delta value already

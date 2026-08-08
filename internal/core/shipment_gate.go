@@ -753,6 +753,21 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			if !res.Admitted {
 				return formalGateMemberRefusal(id, res)
 			}
+			// The LINEAGE check below MUST use the event FormalAdmit actually
+			// authenticated, not the legacy Latest-selected `latest`: Latest
+			// treats EventGateForced as unconditionally qualifying (any ran, no
+			// proof required) and always prefers whichever qualifying event is
+			// chronologically LATEST, while FormalAdmit deliberately never
+			// admits EventGateForced and does not treat a later Forced event as
+			// invalidating a prior genuinely-signed pass either. Without this
+			// reassignment, an actor able to append JSONL entries could add a
+			// later, completely unsigned Forced event carrying an arbitrary
+			// forged head_sha (e.g. crafted to exactly equal shipmentHead,
+			// trivially satisfying the equality fast path below) and silently
+			// override the real, cryptographically-verified commit binding —
+			// making lineage pass for a commit that was never actually
+			// authenticated (106-F F1 review finding, round 4).
+			latest = res.Event
 		}
 		if shipmentHead != "" {
 			h, _ := latest.Delta["head_sha"].(string)

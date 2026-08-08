@@ -394,3 +394,62 @@ func TestWrapFormalGateRequired_PreservesProofInvalidCause(t *testing.T) {
 	require.True(t, errors.Is(wrapped, bkerrors.ErrFormalGateRequired))
 	require.True(t, errors.Is(wrapped, bkerrors.ErrProofInvalid))
 }
+
+// TestNextGateEvidenceCounter_LockSurvivesPastStaleTTLWhileHeld verifies the
+// counter lock is heartbeat-refreshed for as long as it is held, mirroring
+// the long-lived per-task completion lock (lockTaskFileWithHeartbeat /
+// defaultGateLockHeartbeat). Before this fix, the counter lock used a bespoke
+// sidecar with NO heartbeat at all: if the caller's sign+durable-append step
+// legitimately stalled past gateEvidenceCounterStaleTTL (a realistic
+// possibility — the TTL was only 60s, easily exceeded by a slow disk or a
+// contended CI runner), a second process would see the sidecar's untouched
+// creation-time mtime as "stale", reclaim it, rescan the SAME max counter,
+// and allocate — then sign and durably append — the IDENTICAL counter value,
+// breaking the counter-uniqueness/anti-replay guarantee the whole formal-
+// admission feature exists to provide. Worse, the ORIGINAL holder's eventual
+// unlock() would then delete the SECOND holder's lock file out from under it
+// (ownership was never tokenized). This test proves the fix directly: while
+// nextGateEvidenceCounter's lock is held (unlock deliberately not yet
+// called), the sidecar's on-disk ModTime is observed to advance at least
+// once during a real wait spanning slightly more than one
+// defaultGateLockHeartbeat interval — i.e. the lock is provably alive from
+// an independent observer's point of view for the ENTIRE duration of a hold
+// that exceeds the interval, exactly the property that keeps it from ever
+// being mistaken for crash residue (106-F F1 review finding, round 4).
+//
+// This test necessarily performs a real (~20s) wait — defaultGateLockHeartbeat
+// is a fixed production interval, not test-injectable — since the property
+// under test is genuinely time-based: "the sidecar is touched again before
+// the next heartbeat tick elapses," which cannot be verified by an instant
+// assertion.
+func TestNextGateEvidenceCounter_LockSurvivesPastStaleTTLWhileHeld(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real-time heartbeat verification in -short mode")
+	}
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	ctx := context.Background()
+
+	_, unlock, err := nextGateEvidenceCounter(ctx, ws, id)
+	require.NoError(t, err)
+	defer unlock()
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	logPath := events.LogPathForItem(logsDir, id)
+	sidecar := taskLockSidecarPath(logPath + ".gateproof")
+
+	info, statErr := os.Stat(sidecar)
+	require.NoError(t, statErr, "counter lock sidecar must exist while the lock is held")
+	initialModTime := info.ModTime()
+
+	// Wait past one full heartbeat interval while STILL holding the lock
+	// (unlock is deferred, not called yet) -- exactly the "sign+append is
+	// slow" scenario the fix must survive.
+	time.Sleep(defaultGateLockHeartbeat + 2*time.Second)
+
+	info, statErr = os.Stat(sidecar)
+	require.NoError(t, statErr, "counter lock sidecar must still exist after the wait")
+	require.True(t, info.ModTime().After(initialModTime),
+		"counter lock sidecar ModTime must have been refreshed by a heartbeat while genuinely held (got initial=%v, later=%v)",
+		initialModTime, info.ModTime())
+}
