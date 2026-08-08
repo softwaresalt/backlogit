@@ -163,7 +163,20 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 	if !ok || proof == "" {
 		return gateproof.Envelope{}, "", errMissingField("proof")
 	}
-	keyID, _ := delta["key_id"].(string)
+	// key_id, timestamp_utc, and ran are UNCONDITIONALLY written by both
+	// signing paths (augmentDeltaWithFormalProof / augmentShipmentDeltaWith-
+	// FormalProof) for every signed event — never legitimately absent or a
+	// non-native type. A missing key, or one holding the wrong type, can
+	// only mean the record was never genuinely signed or was corrupted/
+	// tampered after the fact, so it is refused as ErrProofUnverifiable
+	// ("could not be evaluated at all" per the design doc's fail-closed
+	// matrix) rather than silently defaulting to a zero value and letting a
+	// downstream MAC mismatch report the less precise ErrProofInvalid
+	// (106-F F1 review finding, round 3).
+	keyID, ok := requiredString(delta, "key_id")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("key_id")
+	}
 	schema, ok := asInt(delta["proof_schema"])
 	if !ok {
 		return gateproof.Envelope{}, "", errMissingField("proof_schema")
@@ -172,9 +185,29 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 	if !ok {
 		return gateproof.Envelope{}, "", errMissingField("counter")
 	}
-	reportDigest, _ := delta["report_digest"].(string)
-	headSHA, _ := delta["head_sha"].(string)
-	ran, _ := delta["ran"].(bool)
+	timestampUTC, ok := requiredString(delta, "timestamp_utc")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("timestamp_utc")
+	}
+	ran, ok := requiredBool(delta, "ran")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("ran")
+	}
+	// report_digest and head_sha ARE legitimately absent from the delta for
+	// some genuine, non-tampered events: appendGateEvidence only writes
+	// head_sha when outcome.HeadSHA is non-empty (e.g. never for a no-repo
+	// workspace), and report_digest is only meaningfully populated for
+	// EventGatePassed. Their absence must not be refused — only a WRONG
+	// TYPE, which (unlike absence) can only arise from a corrupted or
+	// tampered record, since a genuine signer always writes a string.
+	reportDigest, ok := optionalTypedString(delta, "report_digest")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("report_digest")
+	}
+	headSHA, ok := optionalTypedString(delta, "head_sha")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("head_sha")
+	}
 
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
@@ -187,7 +220,7 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 		EventType:    ev.EventType,
 		Ran:          ran,
 		Actor:        ev.Actor,
-		TimestampUTC: asString(delta["timestamp_utc"]),
+		TimestampUTC: timestampUTC,
 		HeadSHA:      headSHA,
 		ReportDigest: reportDigest,
 		Counter:      counter,
@@ -250,9 +283,44 @@ func asInt64(v any) (int64, bool) {
 	}
 }
 
-func asString(v any) string {
-	s, _ := v.(string)
-	return s
+// requiredString returns delta[name] as a string, succeeding only when the
+// key is PRESENT and holds a native string value. Use for fields every
+// signing path writes unconditionally (key_id, timestamp_utc) — for those,
+// absence or a wrong type can only indicate an unsigned, corrupted, or
+// tampered record, never a legitimate omission.
+func requiredString(delta map[string]any, name string) (string, bool) {
+	v, present := delta[name]
+	if !present {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
+// requiredBool is the bool counterpart to requiredString — see its doc
+// comment. Used for "ran", which every signing path writes unconditionally.
+func requiredBool(delta map[string]any, name string) (bool, bool) {
+	v, present := delta[name]
+	if !present {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+// optionalTypedString returns delta[name] as a string, treating outright
+// absence as a legitimate "" (some signing paths conditionally omit a field
+// entirely rather than writing an empty string — e.g. head_sha is never
+// written at all for a no-repo outcome). A PRESENT value of the wrong type,
+// however, can only arise from corruption or tampering: a genuine signer
+// only ever writes a string for these fields, so returns false in that case.
+func optionalTypedString(delta map[string]any, name string) (string, bool) {
+	v, present := delta[name]
+	if !present {
+		return "", true
+	}
+	s, ok := v.(string)
+	return s, ok
 }
 
 // maxOtherCounter returns the highest counter value among evs (excluding

@@ -1,8 +1,10 @@
 package gateevidence_test
 
 import (
+	"errors"
 	"testing"
 
+	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/gateevidence"
 	"github.com/softwaresalt/backlogit/internal/gateproof"
@@ -306,5 +308,99 @@ func TestFormalAdmit_LegacyOtherEventWithoutProofNotTreatedAsTampering(t *testin
 	res := gateevidence.FormalAdmit(evs, baseCtx())
 	if !res.Admitted {
 		t.Fatalf("FormalAdmit() = not admitted, reason=%q, want admitted (legacy pre-enforcement history must not count as tampering)", res.Reason)
+	}
+}
+
+// TestFormalAdmit_MissingKeyIDField_ClassifiedUnverifiable verifies that
+// deleting the key_id field from an otherwise genuinely-signed event's
+// persisted delta is classified as ErrProofUnverifiable ("could not be
+// evaluated at all" per the design doc's fail-closed matrix), not the more
+// generic ErrProofInvalid a bare MAC mismatch would produce. Before this
+// fix, envelopeFromEvent silently coerced a missing/wrong-typed key_id to
+// the zero value via a comma-ok type assertion rather than reporting it as
+// a missing required field, so callers that branch on FormalResult.Err (MCP
+// dispatch, remediation messaging) could not distinguish "malformed/
+// incomplete evidence" from "evaluated and definitively wrong" (106-F F1
+// review finding, round 3). key_id is never legitimately absent — it is
+// unconditionally written by both signing paths — so requiring its presence
+// cannot reject any genuine proof.
+func TestFormalAdmit_MissingKeyIDField_ClassifiedUnverifiable(t *testing.T) {
+	ev := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	delete(ev.Delta, "key_id")
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted an event with no key_id field at all")
+	}
+	if !errors.Is(res.Err, bkerrors.ErrProofUnverifiable) {
+		t.Fatalf("res.Err = %v, want ErrProofUnverifiable (missing field, not a MAC mismatch)", res.Err)
+	}
+}
+
+// TestFormalAdmit_WrongTypeTimestampUTC_ClassifiedUnverifiable is the
+// wrong-typed-field counterpart: timestamp_utc is unconditionally written as
+// a string by both signing paths, so a non-string value in the persisted
+// delta can only be evidence of tampering or corruption, never a
+// legitimately-absent field. It must be classified as ErrProofUnverifiable,
+// not silently coerced to "" and left to fail (or, worse, coincidentally
+// pass) a MAC comparison it was never meaningfully evaluated against.
+func TestFormalAdmit_WrongTypeTimestampUTC_ClassifiedUnverifiable(t *testing.T) {
+	ev := signedPassEvent(t, "106.099-T", "ws-1", 1, true)
+	ev.Delta["timestamp_utc"] = 20260808 // wrong type: number instead of string
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted an event whose timestamp_utc field is a wrong-typed (non-string) value")
+	}
+	if !errors.Is(res.Err, bkerrors.ErrProofUnverifiable) {
+		t.Fatalf("res.Err = %v, want ErrProofUnverifiable (malformed field, not a MAC mismatch)", res.Err)
+	}
+}
+
+// TestFormalAdmit_HeadSHALegitimatelyAbsent_StillAdmitted is the
+// non-regression counterpart to the two tests above: head_sha is
+// CONDITIONALLY omitted from the persisted delta entirely (never even
+// written as an empty string) whenever outcome.HeadSHA is "" — the genuine,
+// non-malicious no-repo shape appendGateEvidence has always produced.
+// Tightening envelopeFromEvent's field checks must not turn this legitimate
+// absence into a false refusal; only a wrong-TYPE head_sha (present but not
+// a string) is a malformed-evidence signal, never its outright absence.
+func TestFormalAdmit_HeadSHALegitimatelyAbsent_StillAdmitted(t *testing.T) {
+	env := gateproof.Envelope{
+		Magic:        gateproof.Magic,
+		Purpose:      gateproof.PurposeTask,
+		Schema:       gateproof.Schema,
+		Alg:          gateproof.AlgHMACSHA256,
+		KeyID:        "k1",
+		WorkspaceID:  "ws-1",
+		ItemID:       "106.099-T",
+		EventType:    gateevidence.EventGatePassed,
+		Ran:          true,
+		Actor:        "backlogit",
+		TimestampUTC: "2026-08-08T00:00:00Z",
+		HeadSHA:      "", // no-repo: genuinely never resolved, never signed non-empty.
+		ReportDigest: "digest123",
+		Counter:      1,
+	}
+	proof, err := gateproof.Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign() unexpected error: %v", err)
+	}
+	ev := events.Event{
+		EventType: gateevidence.EventGatePassed,
+		Actor:     env.Actor,
+		Delta: map[string]any{
+			"ran":           true,
+			"proof":         proof,
+			"key_id":        env.KeyID,
+			"proof_schema":  env.Schema,
+			"counter":       env.Counter,
+			"report_digest": env.ReportDigest,
+			"timestamp_utc": env.TimestampUTC,
+			// head_sha deliberately absent -- matches appendGateEvidence's
+			// conditional omission for a genuine no-repo outcome.
+		},
+	}
+	res := gateevidence.FormalAdmit([]events.Event{ev}, baseCtx())
+	if !res.Admitted {
+		t.Fatalf("FormalAdmit() = not admitted, reason=%q, want admitted (a legitimately absent head_sha must not be refused)", res.Reason)
 	}
 }
