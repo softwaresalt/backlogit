@@ -141,13 +141,18 @@ Posture: test-first.
 ### U3 — Wrap commit association (code)
 
 Wrap `core.AssociateCommit` (delivered by F6 as an ordered list of discrete
-idempotent steps, specifically so it can be wrapped without rewriting) in the
-envelope. Remove the remaining warn-and-continue path from the governed route.
-The `*events.EventWriter` is captured inside the commit-association Apply
-closure, never passed to the envelope.
+steps — frontmatter and `commit_links` idempotent and reversible, JSONL append
+sequenced last with a documented no-op `Compensate` — specifically so it can be
+wrapped without rewriting) in the envelope. Remove the remaining
+warn-and-continue path from the governed route. The `*events.EventWriter` is
+captured inside the commit-association Apply closure, never passed to the
+envelope.
 
 Files: `internal/core/commits.go`.
-Scenarios: JSONL append failure compensates the SQLite and frontmatter writes;
+Scenarios: JSONL append returning `ErrWriteNotApplied` (nothing appended)
+compensates the SQLite and frontmatter writes; JSONL append returning
+`ErrWriteIndeterminate` does **not** compensate the prior two writes, matching
+F5's classification rule and F6's honest append-only step semantics;
 indeterminate frontmatter write is not compensated; success path unchanged.
 Posture: test-first.
 

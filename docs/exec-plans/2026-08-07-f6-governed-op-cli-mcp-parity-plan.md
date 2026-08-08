@@ -49,8 +49,11 @@ The genuine remaining *surface* gap is the operator-only gate control
 
 * One shared core function performs commit association and updates **all**
   representations: frontmatter scalar, `commit_links`, and the JSONL event.
-* That function is expressed as an **ordered list of discrete idempotent steps**,
-  so F5's compensating envelope can wrap it later without rewriting it.
+* That function is expressed as an **ordered list of discrete steps** — the
+  frontmatter scalar and `commit_links` upsert are genuinely idempotent and
+  reversible; the JSONL append is append-only, sequenced last, and never itself
+  compensated (see U2) — so F5's compensating envelope can wrap it later
+  without rewriting it.
 * CLI `update --commit`, MCP `update_item(commit=…)`, and MCP `track_commit` all
   route through it and produce identical observable state.
 * A parity test asserts **behavioral** equivalence for governed operations, not
@@ -75,7 +78,8 @@ the surface it mirrors. Defining "governed" for every operation in the registry
 (this unit fixes commit association and establishes the mechanism; extending the
 governed set is a follow-up). Any change to `internal/core/gate/*`. F5's failure
 envelope — F6 lands first and F5 wraps it afterwards, which is why U2 specifies
-discrete idempotent steps rather than a monolithic function.
+discrete steps (with the JSONL append's honest append-only, never-compensated
+semantics) rather than a monolithic function.
 
 ## Requirements Trace
 
@@ -110,12 +114,33 @@ Posture: characterization-first (RED).
 ### U2 — Shared commit-association core function, expressed as discrete steps (code)
 
 Introduce `core.AssociateCommit` covering all three representations. It is built
-as an **ordered list of discrete idempotent steps** (frontmatter scalar →
-`commit_links` upsert → JSONL append), each independently applicable and
-reversible, **specifically so F5's compensating envelope can wrap it later
-without rewriting it**. A monolithic function would force a rewrite in F5; that
-structural coupling is resolved here by design rather than by resequencing the
-operator-mandated F1 → F4 → F6 → F5 order.
+as an **ordered list of discrete steps** (frontmatter scalar → `commit_links`
+upsert → JSONL append, **append deliberately last**), **specifically so F5's
+compensating envelope can wrap it later without rewriting it**. A monolithic
+function would force a rewrite in F5; that structural coupling is resolved here
+by design rather than by resequencing the operator-mandated F1 → F4 → F6 → F5
+order.
+
+**Honest step semantics (not all three steps are the same shape).** The
+frontmatter scalar write and the `commit_links` upsert are genuinely idempotent
+and reversible: re-applying them converges, and compensating them (reset the
+scalar, delete the upserted row) is safe. The **JSONL append step is not** —
+`events.EventWriter.AppendEvent` (`internal/events/stream.go:87-124`) is a plain
+append with no deduplication key, and it explicitly documents that a partial
+write or fsync failure is `ErrWriteIndeterminate`, which the writer itself
+states is unsafe to blindly retry. The append step is therefore:
+
+* sequenced **last** precisely so no later step's failure can ever require
+  compensating it — there is nothing after it in the ordered list;
+* its own `Compensate` is a **documented no-op**: an audit trail is never
+  rewritten or deleted, only ever appended to;
+* if the append itself returns `ErrWriteNotApplied` (failure before any bytes
+  were written — e.g. `MkdirAll`/`OpenFile` failure), the whole `AssociateCommit`
+  call is safe to retry because nothing was appended;
+* if the append itself returns `ErrWriteIndeterminate`, it is **not** retried
+  and does **not** trigger compensation of the two prior steps — this matches
+  F5's existing commit-then-surface rule for indeterminate outcomes exactly, so
+  no new deduplication or locking mechanism is introduced here.
 
 Reload the artifact **from markdown** via `findArtifact` (never the DB fast path,
 which is lossy for `item_links` and `archived_status`). Thread the caller's
@@ -130,9 +155,14 @@ CLI-side append fail. The core function never mints one itself. Return a typed
 error on append failure instead of warning and continuing.
 
 Files: `internal/core/commits.go`.
-Scenarios: all three representations written; steps individually re-runnable;
-markdown reload used; both surfaces construct and pass a real writer, never
-nil; append failure surfaces a typed error.
+Scenarios: all three representations written; frontmatter and `commit_links`
+steps are individually re-runnable and compensable; the JSONL append step's
+`Compensate` is asserted to be a no-op and is never invoked because nothing
+follows it; append returning `ErrWriteNotApplied` before any bytes are written
+leaves the whole call safely retryable; append returning
+`ErrWriteIndeterminate` is surfaced without retry and without compensating the
+prior two steps; markdown reload used; both surfaces construct and pass a real
+writer, never nil; append failure surfaces a typed error.
 Posture: test-first.
 
 ### U3 — Route all three surfaces through the shared function (code)
@@ -240,7 +270,7 @@ behavioral assertion) so the assertion cannot run against an empty governed set.
 | Parity test passes while behavior diverges | medium | Denylist-derived set plus a deliberately divergent negative fixture |
 | Registry `cli_command` fabricated | medium | Honest-mapping rule; U4 corrects the existing dishonest row |
 | Agent cannot distinguish deliberate asymmetry from drift | medium | U4 registry metadata plus a regression assertion pinning `--force-gates` as CLI-only |
-| Monolithic function blocks F5's envelope | **high** | U2 specifies discrete idempotent steps up front |
+| Monolithic function blocks F5's envelope | **high** | U2 specifies discrete steps up front, with honest idempotent-vs-append-only semantics per step |
 | Scope creep into a general "governed" taxonomy | medium | Scope boundary limits this unit to commit association plus the mechanism |
 
 ## Constitution Check
@@ -288,7 +318,9 @@ deliberate error-surface change on an agent-facing surface).
 
 ### Protected Invariants (must not regress)
 
-1. `core.AssociateCommit` remains expressed as discrete idempotent steps so F5's
+1. `core.AssociateCommit` remains expressed as discrete steps — frontmatter and
+   `commit_links` idempotent and reversible, JSONL append sequenced last and
+   never compensated — so F5's
    envelope can wrap it without a rewrite.
 2. The core function never mints an `events.EventWriter`; it always uses the
    caller's. Both the CLI and MCP construct and pass a real instance — no
@@ -361,7 +393,11 @@ deliberate error-surface change on an agent-facing surface).
   fallback was undefined (parity F6-2); the deliberate `--force-gates` asymmetry
   was documented only in prose, with nothing in the registry or tool contract to
   distinguish it from drift (parity F6-3).
-* **Resolutions:** U2 now specifies discrete idempotent steps explicitly so F5
+* **Resolutions:** U2 now specifies discrete steps explicitly — frontmatter and
+  `commit_links` idempotent and reversible; the JSONL append honestly
+  characterized as append-only, sequenced last, and never itself compensated,
+  matching F5's indeterminate-outcome rule rather than introducing new
+  deduplication or locking machinery — so F5
   can wrap without a rewrite, resolving the coupling by design rather than by
   resequencing the operator-mandated order; the registry marker unit was split
   out and moved **before** the behavioral assertion, and an empty governed set is
