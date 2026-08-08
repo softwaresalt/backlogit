@@ -35,6 +35,22 @@ var (
 	// within the bounded wait because another operation holds it (a gate is in
 	// progress for the same item). Retryable.
 	ErrGateInProgress = errors.New("backlogit: gate in progress for item")
+
+	// ErrGateKeyAbsent indicates BACKLOGIT_GATE_EVIDENCE_KEY is unset or empty
+	// when a formal-gate-evidence key resolution was attempted (106-F F1). The
+	// key is never sourced from config or a CLI flag.
+	ErrGateKeyAbsent = errors.New("backlogit: formal gate evidence key not set (BACKLOGIT_GATE_EVIDENCE_KEY)")
+
+	// ErrGateKeyInvalid indicates BACKLOGIT_GATE_EVIDENCE_KEY is set but fails to
+	// decode as strict base64 or hex, or decodes to fewer than 32 bytes (106-F F1).
+	ErrGateKeyInvalid = errors.New("backlogit: formal gate evidence key invalid (must be base64 or hex, >= 32 decoded bytes)")
+
+	// ErrFormalGateRequired indicates formal-admission enforcement is required
+	// (anchored by BACKLOGIT_FORMAL_GATE_REQUIRED, never lowerable by workspace
+	// config) but the operation cannot proceed under that requirement — e.g. the
+	// key could not be resolved. The operation refuses; there is no
+	// unauthenticated fallback (106-F F1).
+	ErrFormalGateRequired = errors.New("backlogit: formal gate evidence required but could not be satisfied")
 )
 
 // GateRepeatedFailure mirrors the autoharness `gate check --json`

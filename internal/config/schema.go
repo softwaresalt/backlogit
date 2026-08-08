@@ -36,6 +36,27 @@ type WorkspaceConfig struct {
 	// workspaces keep the fast, sync-free write path; omitempty keeps a false
 	// flag out of serialized YAML so existing configs stay byte-unchanged.
 	DurableWrites bool `yaml:"durable_writes,omitempty"`
+	// FormalGate configures optional HMAC-authenticated gate-evidence proof
+	// (106-F F1). Nil is equivalent to the zero value (disabled by config);
+	// enforcement may still be anchored outside the workspace — see
+	// FormalGateEnforced.
+	FormalGate *FormalGateConfig `yaml:"formal_gate,omitempty"`
+}
+
+// FormalGateConfig configures optional HMAC-authenticated formal gate evidence
+// (106-F F1). It deliberately carries only non-secret values: the HMAC key
+// itself is never a config or CLI-flag field. It is resolved exclusively from
+// the BACKLOGIT_GATE_EVIDENCE_KEY environment variable via ResolveFormalGateKey.
+type FormalGateConfig struct {
+	// Enabled opts the workspace into formal admission. This can only RAISE
+	// strictness: when the environment anchor BACKLOGIT_FORMAL_GATE_REQUIRED
+	// requires enforcement, an explicit Enabled: false here is ignored. See
+	// FormalGateEnforced.
+	Enabled bool `yaml:"enabled,omitempty"`
+	// KeyID is a non-secret identifier for the currently active key, bound
+	// inside the signed envelope (F1/U3) so key rotation is auditable. It is
+	// never the key material itself.
+	KeyID string `yaml:"key_id,omitempty"`
 }
 
 // TelemetryConfig holds workspace-scoped telemetry settings.
