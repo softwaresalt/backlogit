@@ -65,6 +65,15 @@ context (`workspace_id`, `item_id`) is persisted verbatim in the event delta
 `report_digest`, and (shipment only) `manifest_digest` — so a verifier can
 reconstruct the exact signed envelope later.
 
+Reconstruction strictness: `key_id`, `timestamp_utc`, and `ran` are written
+unconditionally by every signing path, so a persisted event missing any of
+them (or holding the wrong type) can only be unsigned, corrupted, or
+tampered — reconstruction refuses with `ErrProofUnverifiable` rather than
+silently defaulting to a zero value. `head_sha` and `report_digest` remain
+legitimately absent for genuine no-repo / non-`EventGatePassed` outcomes, so
+their outright absence is not refused — only a present-but-wrong-typed value
+is, since a genuine signer never writes anything but a string for either.
+
 ## Domain Separation Rules
 
 * `magic` + `purpose` + `schema` are bound inside the MAC, not just checked
@@ -163,15 +172,31 @@ trust decision, not a cryptographic guarantee of read-only capability.
 
 ## Anti-Replay Counter and Locking
 
-The counter is allocated under a combined in-process mutex and cross-process
-sidecar-file lock (`internal/core.nextGateEvidenceCounter`), mirroring
-`internal/events.HookEventWriter`'s existing pattern exactly (same
-stale-lock-recovery shape), so two concurrent transitions can never allocate
-— and therefore sign and append — the same counter for the same item. The
-formal-admission predicate additionally requires the candidate's counter to
-be strictly greater than every *other* counter recorded anywhere in the same
-event log (the intact-log guarantee) and, when an external high-water ledger
-is configured, strictly greater than that ledger value too. **backlogit only
+The counter is allocated under a heartbeat-refreshed advisory lock
+(`internal/core.nextGateEvidenceCounter`, reusing the same
+`lockTaskFileWithHeartbeat` mechanism the long-lived per-task completion lock
+uses), so two concurrent transitions can never allocate — and therefore sign
+and append — the same counter for the same item. A plain fixed-TTL sidecar
+with no heartbeat was tried first and rejected: it could be reclaimed out
+from under a holder whose sign+durable-append step legitimately stalled past
+the TTL, letting a second caller rescan the same max counter and allocate the
+identical value. The heartbeat refreshes the sidecar's ModTime on a fixed
+interval strictly under the stale-TTL for as long as the holder is alive, so
+a live holder's lock is never mistaken for crash residue regardless of how
+long the guarded sequence takes.
+
+The formal-admission predicate additionally requires the candidate's counter
+to be strictly greater than every *other* **`EventGatePassed`** counter
+recorded anywhere in the same event log (the intact-log guarantee) and, when
+an external high-water ledger is configured, strictly greater than that
+ledger value too. Only other `EventGatePassed` events count toward this
+floor: `EventGateForced` is documented as never itself admissible and does
+not invalidate a prior genuinely-signed pass either (only a later
+`EventGateBlocked`/`EventGateRequeued`/`EventGateEscalated` does), yet a
+Forced completion is itself signed and therefore legitimately and
+unavoidably receives a *higher* counter than any earlier pass simply by being
+later in time — counting it toward the floor would make every pass followed
+by any later forced completion permanently unadmissible. **backlogit only
 ever reads the ledger for comparison; it never writes to it** — updating the
 ledger after a successful admission is the external verifier/service's
 responsibility, so no out-of-workspace write ever originates from this
@@ -190,6 +215,19 @@ live state immediately after signing (`verifyShipmentManifestBinding`),
 refusing on either `ErrProofInvalid` (manifest changed) or
 `ErrProofUnverifiable` (proof missing or malformed) — never silently skipped.
 
+Membership mutation (`AddItemToShipment`, `ReturnBlockedItem`) and the
+locked window `ShipShipment` holds while re-checking and signing the manifest
+share one advisory lock, `internal/core.lockShipmentMembership`, extended
+through the shipment's own status transition so no unlocked window remains
+for a concurrent membership change to ride inside a signed proof. The lock
+key is a stable synthetic path derived only from the workspace root and the
+shipment ID — never the shipment's current markdown file path, which
+`persistArtifact` relocates on some status transitions (always at archival)
+— and is validated to stay contained within the dedicated
+`.backlogit/.locks` directory before use, since the shipment ID reaching this
+function is caller-controlled and not yet validated by an upstream
+`GetShipment` call.
+
 ## Formal-Admission Predicate
 
 `gateevidence.FormalAdmit` (distinct from the existing `gateevidence.Latest`,
@@ -203,8 +241,18 @@ following hold:
 3. its `ran` field is `true`;
 4. its proof verifies against the verifier-supplied workspace/item context
    and key;
-5. its counter is strictly greater than every other counter in the log, and
-   the external high-water ledger value when configured.
+5. its counter is strictly greater than every other `EventGatePassed`
+   counter in the log, and the external high-water ledger value when
+   configured.
+
+At ship time, `internal/core.validateMemberGateEvidence` reassigns its
+lineage-check event to `FormalAdmit`'s own `res.Event` under enforcement,
+never the legacy `Latest`-selected event: `Latest` prefers whichever
+qualifying event is chronologically latest (Forced included), so a later,
+completely unsigned `EventGateForced` carrying an arbitrary forged `head_sha`
+could otherwise silently override the real, cryptographically-verified
+commit binding for the ancestry check — making lineage pass for a commit that
+was never actually authenticated.
 
 ## Scope Boundaries
 
