@@ -63,6 +63,14 @@ var (
 	// compute the expected MAC — distinct from a proof that was evaluated and
 	// found wrong (106-F F1/U3).
 	ErrProofUnverifiable = errors.New("backlogit: gate evidence proof unverifiable")
+
+	// ErrFormalReportInvalid indicates a formal-gate report (106-F F1/U5) is
+	// empty, not valid JSON, or missing the required attributed-review
+	// evidence (at least one reviewer entry with a non-blank persona and
+	// decision). A non-forced PASS alone is not sufficient for formal
+	// admission; this sentinel marks the stricter schema check that a plain
+	// exit-0 pass with empty or non-JSON stdout still fails.
+	ErrFormalReportInvalid = errors.New("backlogit: formal gate report invalid")
 )
 
 // GateRepeatedFailure mirrors the autoharness `gate check --json`
