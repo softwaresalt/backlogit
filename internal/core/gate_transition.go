@@ -427,9 +427,16 @@ func (ws *Workspace) appendGateEvidence(ctx context.Context, id, eventType strin
 			delta["force_reason"] = opts.ForceReason
 		}
 	}
-	if err := ws.augmentDeltaWithFormalProof(ctx, id, eventType, outcome, delta); err != nil {
-		return err
+	unlock, augErr := ws.augmentDeltaWithFormalProof(ctx, id, eventType, outcome, delta)
+	if augErr != nil {
+		return augErr
 	}
+	// unlock MUST be deferred here (covering the real append below), not
+	// inside augmentDeltaWithFormalProof — the counter lock has to stay held
+	// across "allocate, then durably persist" as one atomic step, or a second
+	// concurrent transition for the same item could allocate and durably
+	// append the SAME counter value (106-F F1 review finding).
+	defer unlock()
 	return ws.appendGateEvent(ctx, id, eventType, delta)
 }
 

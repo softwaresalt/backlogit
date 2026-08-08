@@ -206,9 +206,21 @@ func wrapFormalGateRequired(cause error) error {
 // the key cannot be resolved or the proof cannot be produced — callers MUST
 // refuse the transition rather than persist unauthenticated evidence; there
 // is no unauthenticated fallback under enforcement.
-func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, eventType string, outcome *GateOutcome, delta map[string]any) error {
+//
+// The returned unlock is ALWAYS non-nil (a no-op when no counter lock was
+// acquired) and MUST be deferred by the caller AFTER performing the real
+// durable event append, never before. The counter lock (in-process mutex plus
+// cross-process sidecar file) is scoped by nextGateEvidenceCounter to cover
+// "allocate, then durably persist" as one atomic critical section — releasing
+// it here, before the caller's append, would let a second concurrent
+// transition for the same item scan the not-yet-persisted log, allocate the
+// SAME counter value, and durably append a colliding proof (a real TOCTOU,
+// not just a Go-memory-model data race, so `go test -race` cannot catch a
+// regression here — only an end-to-end concurrency test can).
+func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, eventType string, outcome *GateOutcome, delta map[string]any) (unlock func(), err error) {
+	noop := func() {}
 	if !ws.formalGateEnforced() {
-		return nil
+		return noop, nil
 	}
 	var formalCfg config.FormalGateConfig
 	if ws.Config != nil && ws.Config.FormalGate != nil {
@@ -217,7 +229,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return wrapFormalGateRequired(keyErr)
+		return noop, wrapFormalGateRequired(keyErr)
 	}
 
 	// The report_digest bound into the proof must reflect a report that has
@@ -231,20 +243,19 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	if eventType == EventGatePassed {
 		validated, valErr := gate.ValidateFormalReport(outcome.ReportJSON)
 		if valErr != nil {
-			return fmt.Errorf("%w: formal report: %w", bkerrors.ErrFormalGateRequired, valErr)
+			return noop, fmt.Errorf("%w: formal report: %w", bkerrors.ErrFormalGateRequired, valErr)
 		}
 		digest, digestErr := gate.FormalReportDigest(*validated)
 		if digestErr != nil {
-			return wrapFormalGateRequired(digestErr)
+			return noop, wrapFormalGateRequired(digestErr)
 		}
 		reportDigest = digest
 	}
 
-	counter, unlock, counterErr := nextGateEvidenceCounter(ctx, ws, itemID)
+	counter, countUnlock, counterErr := nextGateEvidenceCounter(ctx, ws, itemID)
 	if counterErr != nil {
-		return wrapFormalGateRequired(counterErr)
+		return noop, wrapFormalGateRequired(counterErr)
 	}
-	defer unlock()
 
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
@@ -265,7 +276,8 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	proof, signErr := gateproof.Sign(env, key)
 	if signErr != nil {
-		return wrapFormalGateRequired(signErr)
+		countUnlock()
+		return noop, wrapFormalGateRequired(signErr)
 	}
 
 	delta["proof"] = proof
@@ -280,5 +292,5 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	// the exact signed envelope later.
 	delta["timestamp_utc"] = env.TimestampUTC
 	delta["report_digest"] = reportDigest
-	return nil
+	return countUnlock, nil
 }

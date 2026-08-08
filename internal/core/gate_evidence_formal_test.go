@@ -176,6 +176,82 @@ func TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique(t *testing.T) {
 	require.Len(t, seen, n, "expected %d distinct counters, got %v", n, results)
 }
 
+// TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters drives
+// concurrency through the REAL production call path — ws.appendGateEvidence,
+// which internally calls augmentDeltaWithFormalProof and then the real
+// durable appendGateEvent — for N goroutines racing on the SAME item with NO
+// other serializing lock held. The production task-completion path
+// (runGatedCompletion) happens to be additionally serialized by an unrelated
+// per-task file lock that masks this exact race; calling appendGateEvidence
+// directly, as any future caller reasonably might, removes that incidental
+// protection and exercises the counter lock's OWN contract in isolation. It
+// proves the counter-lock TOCTOU fix: augmentDeltaWithFormalProof's returned
+// unlock must stay held (by the caller, across the real append) rather than
+// being released internally before the caller's append runs, or two
+// concurrent calls could allocate and durably persist the SAME counter value
+// (106-F F1 review finding — go test -race cannot catch this class of bug,
+// since both critical sections are individually race-free; only reading back
+// the persisted log for duplicates proves the fix).
+func TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	id := newActiveTask(t, ws)
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	report := []byte(`{"reviewers":[{"persona":"Constitution Reviewer","decision":"pass"}]}`)
+
+	const n = 20
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			outcome := &GateOutcome{Ran: true, ReportJSON: report}
+			errs[idx] = ws.appendGateEvidence(context.Background(), id, EventGatePassed, outcome, nil)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, "goroutine %d", i)
+	}
+
+	evs, rerr := events.ReadAllEvents(context.Background(), logsDir, id)
+	require.NoError(t, rerr)
+
+	seen := make(map[int64]bool, n)
+	count := 0
+	for _, ev := range evs {
+		if ev.EventType != EventGatePassed {
+			continue
+		}
+		c, ok := asTestInt64(ev.Delta["counter"])
+		require.True(t, ok, "gate-passed event missing/malformed counter: %+v", ev.Delta)
+		require.False(t, seen[c], "duplicate counter %d durably persisted across concurrent appendGateEvidence calls", c)
+		seen[c] = true
+		count++
+	}
+	require.Equal(t, n, count, "expected %d distinct EventGatePassed events with unique counters, got %d", n, count)
+}
+
+// asTestInt64 tolerantly widens a delta's "counter" value to int64, mirroring
+// internal/gateevidence.asInt64: a value round-tripped through JSON decodes
+// as float64, not int64.
+func asTestInt64(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, true
+	case int:
+		return int64(x), true
+	case float64:
+		return int64(x), true
+	default:
+		return 0, false
+	}
+}
+
 
 // unsetTestEnv removes an environment variable for the duration of the test,
 // restoring any prior value afterward via t.Cleanup.

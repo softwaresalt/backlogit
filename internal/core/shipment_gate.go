@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -540,9 +541,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if getErr != nil {
 			return fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
 		}
-		if aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta); aerr != nil {
+		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta)
+		if aerr != nil {
 			return aerr
 		}
+		// unlock MUST be deferred here (covering the manifest self-check and the
+		// real append below), not inside augmentShipmentDeltaWithFormalProof —
+		// see that function's doc comment for why releasing the counter lock any
+		// earlier reopens the counter-uniqueness TOCTOU (106-F F1 review finding).
+		defer unlock()
 		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, passDelta); verr != nil {
 			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
 		}
@@ -576,6 +583,26 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 // a resolved HEAD would break this invariant.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
+
+	// 106-F F1/U6: when formal gate evidence is enforced, EVERY member's own
+	// gate-pass evidence must additionally be formally admissible —
+	// gateevidence.Latest alone (used below to select the candidate and its
+	// head_sha for the pre-existing lineage check) never verifies a proof, so
+	// a hand-authored or replayed JSONL record would otherwise satisfy ship-time
+	// reconciliation identically to genuine evidence, defeating the shipment's
+	// authenticity guarantee at exactly the point (ship time, per member) it
+	// matters most. The key is resolved ONCE, outside the loop, so a missing/
+	// invalid key refuses immediately rather than partway through the scan.
+	enforced := ws.formalGateEnforced()
+	var formalKey []byte
+	if enforced {
+		key, keyErr := config.ResolveFormalGateKey()
+		if keyErr != nil {
+			return wrapFormalGateRequired(keyErr)
+		}
+		formalKey = key
+	}
+
 	for _, id := range releaseScope {
 		item, err := loadArtifact(ctx, ws, id)
 		if err != nil {
@@ -629,6 +656,22 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 				}
 			}
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
+		}
+		if enforced {
+			// FormalAdmit is deliberately stricter than Latest: it verifies the
+			// HMAC proof against ctx.Key/WorkspaceID/ItemID, refuses a
+			// forced-only history, and enforces counter monotonicity. A member
+			// whose only qualifying evidence is a plain (Latest-only) pass or a
+			// tampered/replayed proof is refused here even though the lineage
+			// check below would otherwise have accepted it.
+			res := gateevidence.FormalAdmit(evs, gateevidence.FormalContext{
+				WorkspaceID: workspaceIdentity(ws.RootPath),
+				ItemID:      id,
+				Key:         formalKey,
+			})
+			if !res.Admitted {
+				return shipmentMemberEvidenceError(id, "formal gate evidence proof did not verify: "+res.Reason)
+			}
 		}
 		if shipmentHead != "" {
 			h, _ := latest.Delta["head_sha"].(string)

@@ -132,8 +132,9 @@ func TestVerifyShipmentManifestBinding_TamperedDigestRefused(t *testing.T) {
 
 	shipment := &models.Artifact{ID: "999-S", CustomFields: map[string]any{"items": []string{"106.001-T"}}}
 	delta := map[string]any{"ran": true}
-	err := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, "999-S", "deadbeef", delta)
+	unlock, err := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, "999-S", "deadbeef", delta)
 	require.NoError(t, err)
+	defer unlock()
 
 	// Simulate the manifest changing after signing: an additional member appears.
 	shipment.CustomFields["items"] = []string{"106.001-T", "106.002-T"}

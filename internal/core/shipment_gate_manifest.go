@@ -48,9 +48,15 @@ func computeManifestDigest(ctx context.Context, ws *Workspace, shipment *models.
 // can be formally bound to the exact manifest membership, covering feature,
 // and shipment head it was recorded against. It is a no-op — delta returned
 // unchanged — when formal admission is neither enabled nor required.
-func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead string, delta map[string]any) error {
+//
+// The returned unlock is ALWAYS non-nil (a no-op when no counter lock was
+// acquired) and MUST be deferred by the caller AFTER performing the real
+// durable event append — see augmentDeltaWithFormalProof's doc comment for
+// why releasing the lock any earlier reopens the counter-uniqueness TOCTOU.
+func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead string, delta map[string]any) (unlock func(), err error) {
+	noop := func() {}
 	if !ws.formalGateEnforced() {
-		return nil
+		return noop, nil
 	}
 	var formalCfg config.FormalGateConfig
 	if ws.Config != nil && ws.Config.FormalGate != nil {
@@ -59,19 +65,18 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	key, keyErr := config.ResolveFormalGateKey()
 	if keyErr != nil {
-		return wrapFormalGateRequired(keyErr)
+		return noop, wrapFormalGateRequired(keyErr)
 	}
 
 	digest, digestErr := computeManifestDigest(ctx, ws, shipment, shipmentHead)
 	if digestErr != nil {
-		return wrapFormalGateRequired(digestErr)
+		return noop, wrapFormalGateRequired(digestErr)
 	}
 
-	counter, unlock, counterErr := nextGateEvidenceCounter(ctx, ws, shipmentID)
+	counter, countUnlock, counterErr := nextGateEvidenceCounter(ctx, ws, shipmentID)
 	if counterErr != nil {
-		return wrapFormalGateRequired(counterErr)
+		return noop, wrapFormalGateRequired(counterErr)
 	}
-	defer unlock()
 
 	ran, _ := delta["ran"].(bool)
 	timestampUTC := time.Now().UTC().Format(time.RFC3339)
@@ -95,7 +100,8 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	proof, signErr := gateproof.Sign(env, key)
 	if signErr != nil {
-		return wrapFormalGateRequired(signErr)
+		countUnlock()
+		return noop, wrapFormalGateRequired(signErr)
 	}
 
 	delta["proof"] = proof
@@ -104,7 +110,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 	delta["counter"] = counter
 	delta["timestamp_utc"] = timestampUTC
 	delta["manifest_digest"] = digest
-	return nil
+	return countUnlock, nil
 }
 
 // verifyShipmentManifestBinding recomputes the manifest digest from CURRENT
