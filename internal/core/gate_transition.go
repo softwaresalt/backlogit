@@ -419,6 +419,9 @@ func (ws *Workspace) appendGateEvidence(ctx context.Context, id, eventType strin
 			delta["force_reason"] = opts.ForceReason
 		}
 	}
+	if err := ws.augmentDeltaWithFormalProof(ctx, id, eventType, outcome, delta); err != nil {
+		return err
+	}
 	return ws.appendGateEvent(ctx, id, eventType, delta)
 }
 
