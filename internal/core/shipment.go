@@ -210,10 +210,26 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	if mkErr := os.MkdirAll(locksDir, 0o755); mkErr != nil {
 		return nil, fmt.Errorf("create shipment membership locks directory: %w", mkErr)
 	}
+	// A lexical/pathContained check on locksDir alone is insufficient:
+	// .backlogit/.locks (or an ancestor) could itself be a symlink to a
+	// directory outside the workspace (planted by a prior compromise or a
+	// misconfigured setup), which a string-only check cannot see. Resolve it
+	// through any symlinks and verify the REAL path still resolves within
+	// the (also symlink-resolved) workspace storage root BEFORE any lock
+	// operation runs, reusing the same containment pattern
+	// resolveContainedArtifactPath already establishes for artifact leaves —
+	// otherwise every subsequent lock operation (create, touch,
+	// stale-reclaim-and-delete) would actually operate through that external
+	// symlink target (106-F F1 review finding, round 6). All further
+	// operations are bound to the resolved path, not the original locksDir.
+	realLocksDir, containErr := resolveContainedArtifactPath(ws, locksDir)
+	if containErr != nil {
+		return nil, fmt.Errorf("resolve shipment membership locks directory containment: %w", containErr)
+	}
 	// stableKey need not (and must not) point at a real artifact file —
 	// lockTaskFile only ever creates a ".<name>.lock" sidecar adjacent to
 	// the path it is given; it never requires the path itself to exist.
-	stableKey := filepath.Join(locksDir, shipmentID)
+	stableKey := filepath.Join(realLocksDir, shipmentID)
 	// shipmentID is caller-controlled (CLI/MCP argument) and reaches this
 	// function BEFORE any upstream GetShipment/artifact-ID validation runs.
 	// A value containing path-traversal segments (e.g. "../../escape") could
@@ -223,7 +239,7 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	// Principle III), not merely a lock-key naming concern. Fail closed
 	// rather than trusting filepath.Join's result unchecked (106-F F1 review
 	// finding, round 5).
-	if !pathContained(locksDir, stableKey) {
+	if !pathContained(realLocksDir, stableKey) {
 		return nil, fmt.Errorf("shipment ID %q resolves outside the shipment membership locks directory: %w", shipmentID, blerrors.ErrValidation)
 	}
 	return lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)

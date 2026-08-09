@@ -213,6 +213,81 @@ func TestGateEvidence_NilBroker_NoFormalEnforcement_PreservesLegacyTaskBehavior(
 	assert.Equal(t, "done", statusOf(t, ws, id))
 }
 
+// TestGateEvidence_FormalGateRequired_ForceRefused verifies that under formal
+// gate enforcement, an operator --force completion is refused outright rather
+// than being allowed to produce a fully valid, formally-admissible signed
+// pass proof. completeGatePass signs a genuine EventGatePassed envelope
+// UNCONDITIONALLY (Force or not) before separately appending the
+// EventGateForced audit event, and FormalAdmit never treats a later
+// EventGateForced as invalidating a prior pass — so, before this fix, ANY
+// forced completion (regardless of what the underlying check would have
+// decided) still produced cryptographically valid evidence that would
+// satisfy ship-time formal verification, completely defeating the "formal
+// admission proves the gate genuinely ran and passed" guarantee via the
+// existing, legitimate force mechanism (106-F F1 review finding, round 6).
+// Formal enforcement may only RAISE strictness, never be bypassed by an
+// operator override, so the fix refuses the force outright rather than
+// attempting to bind/reject forced state inside the envelope.
+func TestGateEvidence_FormalGateRequired_ForceRefused(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	id := newActiveTask(t, ws)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)}}
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"},
+		TransitionOptions{Force: true, ForceReason: "operator override for hotfix", ForceSource: ForceSourceCLI})
+	require.Error(t, err, "a forced completion must be refused while formal gate evidence is enforced")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "status must not change: force must not bypass formal-gate enforcement")
+}
+
+// TestGateEvidence_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefuses
+// is the task-level counterpart to the shipment-level fix
+// (TestShipmentGate_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefuses):
+// under formal-gate enforcement, a failure durably appending the FINAL,
+// ALREADY-signed EventGatePassed record is never downgraded to a warning by
+// the UNRELATED evidence_required:false config knob. mustRefuseGateEvidenceFailure
+// only checked stderrors.Is(err, ErrFormalGateRequired) (the SIGNING failure
+// class) or EvidenceRequiredValue() — but appendGateEvidence's real durable
+// JSONL write can ALSO fail AFTER signing already succeeded, returning a
+// plain (non-ErrFormalGateRequired) error. Under evidence_required:false,
+// that plain error slipped through both disjuncts, letting the task complete
+// with a genuinely-signed proof that was never durably recorded anywhere —
+// the same authenticity/audit-trail hole already fixed at the shipment level
+// (106-F F1 review finding, round 6).
+func TestGateEvidence_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefuses(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	id := newActiveTask(t, ws)
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)}}
+	// injectBroker OVERWRITES ws.gateConfig wholesale, so the evidence_required
+	// override must be applied AFTER it (see the shipment-level test's fix for
+	// the same ordering trap).
+	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	notRequired := false
+	ws.gateConfig.EvidenceRequired = &notRequired
+
+	ws.gateEvidenceAppend = func(ctx context.Context, w *Workspace, itemID, eventType string, delta map[string]any) error {
+		if eventType == EventGatePassed {
+			return errors.New("injected durable append failure (post-signing)")
+		}
+		return appendItemEventErr(ctx, w, itemID, eventType, delta)
+	}
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "a failed durable evidence append must refuse the completion under formal enforcement even when evidence_required is false")
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete when its signed pass evidence was never durably recorded")
+}
+
 
 // TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique verifies the
 // dedicated counter-allocation lock: N goroutines racing to allocate a counter

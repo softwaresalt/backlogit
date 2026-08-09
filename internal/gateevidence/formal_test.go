@@ -321,6 +321,38 @@ func TestFormalAdmit_TamperedOtherEventCounterRefused(t *testing.T) {
 	}
 }
 
+// TestFormalAdmit_TamperedOtherEventTypeRefused verifies a DIFFERENT
+// in-place-tamper variant of the same F6 attack the test above covers: an
+// actor edits an EXISTING, genuinely-signed, high-counter event's top-level
+// EventType field (NOT a Delta field) to something other than
+// EventGatePassed — e.g. relabeling it EventGateForced — WITHOUT re-signing.
+// Before this fix, maxOtherCounter's "only EventGatePassed counts toward the
+// floor" filter (added to stop a later, genuinely signed Forced event from
+// poisoning the floor — see round 5) ran BEFORE authentication, so a
+// relabeled event was skipped entirely: its counter was never authenticated
+// OR counted, silently erasing it from the log-integrity check exactly as if
+// it never existed. That let a lower-counter, replayed candidate (whose own
+// signature is genuinely valid) be admitted as if it were the maximum,
+// defeating the anti-replay guarantee via a one-field in-place edit that
+// SHOULD have been caught by re-deriving the envelope's EventType and
+// failing MAC verification (106-F F1 review finding, round 6 — a regression
+// introduced by the round 5 fix itself). The type-based exclusion must run
+// AFTER authentication, not before: an authenticated-but-relabeled event is
+// still evidence the log has been tampered with, and must refuse the whole
+// admission, not be silently dropped from consideration.
+func TestFormalAdmit_TamperedOtherEventTypeRefused(t *testing.T) {
+	genuine := signedPassEvent(t, "106.099-T", "ws-1", 5, true)
+	genuine.EventType = gateevidence.EventGateForced // in-place tamper: type relabeled, MAC not updated
+
+	stale := signedPassEvent(t, "106.099-T", "ws-1", 2, true) // a validly-signed but stale/replayed candidate
+
+	evs := []events.Event{genuine, stale}
+	res := gateevidence.FormalAdmit(evs, baseCtx())
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted despite a relabeled other event's proof failing MAC verification against its tampered EventType (log integrity compromised)")
+	}
+}
+
 // TestFormalAdmit_LegacyOtherEventWithoutProofNotTreatedAsTampering verifies
 // that backward compatibility is preserved: an "other" event that predates
 // formal enforcement (no counter/proof fields at all — a normal, expected,

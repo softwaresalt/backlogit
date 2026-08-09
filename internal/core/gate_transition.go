@@ -196,6 +196,24 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		}
 	}
 
+	// Under formal-gate enforcement, a forced completion is refused outright
+	// rather than allowed to proceed. completeGatePass signs a genuine
+	// EventGatePassed envelope UNCONDITIONALLY (force or not) before
+	// separately appending the EventGateForced audit event, and FormalAdmit
+	// never treats a later EventGateForced as invalidating a prior pass — so
+	// letting a force through here would still produce cryptographically
+	// valid evidence that satisfies ship-time formal verification regardless
+	// of what the underlying check actually decided, completely defeating
+	// the "formal admission proves the gate genuinely ran and passed"
+	// guarantee via the existing, legitimate force mechanism. Formal
+	// enforcement may only RAISE strictness, never be bypassed by an
+	// operator override (106-F F1 review finding, round 6).
+	if opts.Force && ws.formalGateEnforced() {
+		return nil, nil, fmt.Errorf(
+			"%w: forced completion of %s is not permitted while formal gate evidence is enforced (BACKLOGIT_FORMAL_GATE_REQUIRED / formal_gate.enabled) — resolve the underlying gate check instead of forcing",
+			bkerrors.ErrFormalGateRequired, id)
+	}
+
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve artifact path %s: %w", id, err)
@@ -285,8 +303,18 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 // previously conflated behind one EvidenceRequiredValue() check, so
 // evidence_required:false silently let a formal-gate-required completion
 // proceed with NO evidence recorded at all).
+//
+// ws.formalGateEnforced() is ALSO checked directly (not just
+// stderrors.Is(err, ErrFormalGateRequired)): augmentDeltaWithFormalProof can
+// succeed (a real proof was genuinely signed) and appendGateEvent's later,
+// SEPARATE durable JSONL write can still fail on its own for an ordinary
+// storage/I/O reason — that failure is not itself ErrFormalGateRequired, so
+// the first disjunct alone missed it, letting evidence_required:false permit
+// a completion whose signed proof was never durably recorded anywhere under
+// enforcement (106-F F1 review finding, round 6 — the same gap already
+// closed for the shipment-level equivalent in gateShipmentCompletion).
 func mustRefuseGateEvidenceFailure(ws *Workspace, err error) bool {
-	return stderrors.Is(err, bkerrors.ErrFormalGateRequired) || ws.gateConfig.EvidenceRequiredValue()
+	return stderrors.Is(err, bkerrors.ErrFormalGateRequired) || ws.formalGateEnforced() || ws.gateConfig.EvidenceRequiredValue()
 }
 
 // completeGatePass applies a passing completion: evidence first, then the durable

@@ -348,27 +348,36 @@ func optionalTypedString(delta map[string]any, name string) (string, bool) {
 // augmentDeltaWithFormalProof's backward-compatibility contract), not a
 // tampering signal.
 //
-// Only OTHER EventGatePassed events are considered: EventGateForced is
-// documented as never itself admissible and does not invalidate a prior
-// genuinely-signed pass either (only a later Blocked/Requeued/Escalated
-// does, via a separate check in FormalAdmit) — yet a Forced completion,
-// being itself signed, legitimately and unavoidably receives a HIGHER
-// counter than any earlier pass simply by being later in time. Counting a
-// Forced event's counter toward this floor would refuse every genuine pass
-// ever followed by ANY later forced completion for the same item, even
-// though nothing about that pass was tampered with or superseded (106-F F1
-// review finding, round 5). Blocked/Requeued/Escalated/BaseOverride/Error
-// events are excluded for the same reason: their own semantics (explicit
-// invalidation, or pure audit) are handled separately and do not indicate a
-// competing pass attempt this floor needs to guard against.
+// Only OTHER EventGatePassed events count toward the returned floor:
+// EventGateForced is documented as never itself admissible and does not
+// invalidate a prior genuinely-signed pass either (only a later
+// Blocked/Requeued/Escalated does, via a separate check in FormalAdmit) —
+// yet a Forced completion, being itself signed, legitimately and unavoidably
+// receives a HIGHER counter than any earlier pass simply by being later in
+// time. Counting a Forced event's counter toward this floor would refuse
+// every genuine pass ever followed by ANY later forced completion for the
+// same item, even though nothing about that pass was tampered with or
+// superseded (106-F F1 review finding, round 5). Blocked/Requeued/Escalated/
+// BaseOverride/Error events are excluded for the same reason: their own
+// semantics (explicit invalidation, or pure audit) are handled separately
+// and do not indicate a competing pass attempt this floor needs to guard
+// against.
+//
+// This type-based exclusion is applied to the numeric maximum ONLY, and
+// ONLY AFTER every counter-claiming event (regardless of type) has already
+// been authenticated: EventType is bound inside the envelope, so an event
+// whose type was tampered in place (e.g. relabeled from EventGatePassed to
+// EventGateForced without re-signing) still fails MAC verification and is
+// still caught as a same-log-tampering signal. Filtering by type BEFORE
+// authentication would instead silently erase a relabeled, genuinely-signed
+// high-counter event from consideration entirely, letting a lower-counter
+// replayed candidate be admitted as if it were the true maximum (106-F F1
+// review finding, round 6 — a regression the round 5 fix itself introduced).
 func maxOtherCounter(evs []events.Event, excludeIdx int, ctx FormalContext) (int64, bool, error) {
 	var max int64
 	found := false
 	for i := range evs {
 		if i == excludeIdx {
-			continue
-		}
-		if evs[i].EventType != EventGatePassed {
 			continue
 		}
 		if _, hasCounter := evs[i].Delta["counter"]; !hasCounter {
@@ -380,6 +389,23 @@ func maxOtherCounter(evs []events.Event, excludeIdx int, ctx FormalContext) (int
 		}
 		if verifyErr := gateproof.Verify(env, macHex, ctx.Key); verifyErr != nil {
 			return 0, false, fmt.Errorf("other event at index %d claims a counter but its proof does not verify: %w", i, verifyErr)
+		}
+		// The EventGatePassed-only floor exclusion runs AFTER authentication,
+		// never before: an event whose top-level EventType was tampered
+		// in-place (e.g. relabeled from EventGatePassed to EventGateForced,
+		// without re-signing) still has a genuinely-claimed counter that MUST
+		// be authenticated first — envelopeFromEvent binds the event's real
+		// EventType into the reconstructed envelope, so a relabeled event's
+		// MAC verification correctly fails above and this function already
+		// returned a same-log-tampering error before ever reaching this
+		// check. Filtering by type BEFORE authentication would instead
+		// silently drop the tampered event from consideration entirely —
+		// erasing its counter from the floor as if it never existed, and
+		// letting a lower-counter replayed candidate be admitted as the
+		// apparent maximum (106-F F1 review finding, round 6 — a regression
+		// the round 5 fix itself introduced).
+		if evs[i].EventType != EventGatePassed {
+			continue
 		}
 		if !found || env.Counter > max {
 			max = env.Counter

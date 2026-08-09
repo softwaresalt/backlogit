@@ -981,6 +981,37 @@ func TestLockShipmentMembership_RejectsPathTraversalShipmentID(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "no lock artifact must be created outside .backlogit/.locks")
 }
 
+// TestLockShipmentMembership_RejectsSymlinkedLocksDirectory verifies that a
+// PURELY LEXICAL containment check is insufficient: if .backlogit/.locks
+// already exists as a symlink to a directory outside the workspace (planted
+// by a prior compromise or a misconfigured setup — the directory did not
+// exist before this feature and is created fresh on first use), the
+// synthetic lock key must not silently resolve, through that symlink, to a
+// location the pathContained lexical check cannot see. Resolve locksDir
+// through symlinks and verify the REAL path stays within the (also
+// symlink-resolved) workspace storage root before ANY lock operation runs,
+// mirroring resolveContainedArtifactPath's established pattern — otherwise
+// create/touch/stale-delete of the lock sidecar would actually operate
+// through the external symlink target (106-F F1 review finding, round 6).
+func TestLockShipmentMembership_RejectsSymlinkedLocksDirectory(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	outsideDir := t.TempDir()
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(locksDir), 0o755))
+	if err := os.Symlink(outsideDir, locksDir); err != nil {
+		t.Skipf("symlinks not creatable in this environment: %v", err)
+	}
+
+	_, err := lockShipmentMembership(ctx, ws, "117-S")
+	require.Error(t, err, "a .backlogit/.locks directory that is itself a symlink to outside the workspace must be rejected")
+
+	entries, readErr := os.ReadDir(outsideDir)
+	require.NoError(t, readErr)
+	assert.Empty(t, entries, "no lock artifact must be created through the symlinked external directory")
+}
+
 // T002 / ST013: Reject adding an item already in another shipment.
 func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	// Arrange
