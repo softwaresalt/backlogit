@@ -1,4 +1,5 @@
 ---
+chunk_strategy: h1-h2-h3
 description: "F4 — durable dep_type: contract for typed dependency edges in frontmatter"
 doc_type: design-doc
 schema_version: "1.0"
