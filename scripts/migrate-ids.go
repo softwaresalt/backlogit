@@ -408,15 +408,64 @@ func trailingOrdinal(segment string) (string, error) {
 	return fmt.Sprintf("%03d", ordinal), nil
 }
 
-func rewriteIDSlice(value any, rewriteCtx *rewriteContext) []string {
-	values := toStringSlice(value)
-	rewritten := make([]string, 0, len(values))
-	for _, item := range values {
-		if mapped, ok := normalizeArtifactID(item, rewriteCtx); ok {
-			rewritten = append(rewritten, mapped)
-			continue
+// rewriteIDSlice rewrites artifact IDs in a dependency list. It handles both
+// the legacy bare-string format and the typed-object format (F4).
+func rewriteIDSlice(value any, rewriteCtx *rewriteContext) any {
+	iface, ok := value.([]any)
+	if !ok {
+		values := toStringSlice(value)
+		rewritten := make([]string, 0, len(values))
+		for _, item := range values {
+			if mapped, mapOK := normalizeArtifactID(item, rewriteCtx); mapOK {
+				rewritten = append(rewritten, mapped)
+			} else {
+				rewritten = append(rewritten, item)
+			}
 		}
-		rewritten = append(rewritten, item)
+		return rewritten
+	}
+	hasObjects := false
+	for _, elem := range iface {
+		if _, isStr := elem.(string); !isStr {
+			hasObjects = true
+			break
+		}
+	}
+	if !hasObjects {
+		values := toStringSlice(value)
+		rewritten := make([]string, 0, len(values))
+		for _, item := range values {
+			if mapped, mapOK := normalizeArtifactID(item, rewriteCtx); mapOK {
+				rewritten = append(rewritten, mapped)
+			} else {
+				rewritten = append(rewritten, item)
+			}
+		}
+		return rewritten
+	}
+	rewritten := make([]any, 0, len(iface))
+	for _, elem := range iface {
+		switch entry := elem.(type) {
+		case string:
+			if mapped, mapOK := normalizeArtifactID(entry, rewriteCtx); mapOK {
+				rewritten = append(rewritten, mapped)
+			} else {
+				rewritten = append(rewritten, entry)
+			}
+		case map[string]any:
+			newEntry := make(map[string]any, len(entry))
+			for k, v := range entry {
+				newEntry[k] = v
+			}
+			if idStr, idOK := entry["id"].(string); idOK {
+				if mapped, mapOK := normalizeArtifactID(idStr, rewriteCtx); mapOK {
+					newEntry["id"] = mapped
+				}
+			}
+			rewritten = append(rewritten, newEntry)
+		default:
+			rewritten = append(rewritten, elem)
+		}
 	}
 	return rewritten
 }
