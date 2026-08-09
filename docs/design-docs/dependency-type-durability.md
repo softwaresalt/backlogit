@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "F4 — durable dep_type: contract for typed dependency edges in frontmatter"
-doc_type: design-doc
+doc_type: design
 schema_version: "1.0"
 source: docs/design-docs/dependency-type-durability.md
 title: "Dependency Type Durability — F4"
