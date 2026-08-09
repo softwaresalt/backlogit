@@ -273,16 +273,35 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 	// let a signed proof authenticate a tree the gate never actually
 	// reviewed. This mirrors the shipment path's analogous pre/post
 	// head-drift bracket around its own aggregate evaluation. A
-	// bounded-read failure fails closed under enforcement; an empty
-	// pre-evaluation head (legacy no-repo / non-context resolution failure)
-	// preserves the existing best-effort behavior rather than newly refusing
-	// a no-repo environment here (106-F F1 review finding, round 7).
+	// bounded-read failure fails closed under enforcement.
+	//
+	// headSHABounded returns ("", nil) for EVERY non-context git rev-parse
+	// HEAD failure, not only when ws.RootPath is not a git repository at
+	// all — an unborn branch (a real, initialized work tree with zero
+	// commits), a corrupted repository, or a transient execution error all
+	// produce the identical shape. Treating every empty head as "genuine
+	// no-repo, skip the check" would let a REAL work tree in one of those
+	// other states sign a proof with an empty commit binding. Mirroring the
+	// shipment path's own in-repo/no-repo discrimination
+	// (ws.inGitWorktreeBounded), an empty head is only preserved as the
+	// legacy skip when the probe confirms this is genuinely NOT a git work
+	// tree at all; a real work tree with an otherwise-unresolvable HEAD
+	// fails closed instead (106-F F1 review finding, round 9).
 	formalEnforcedNow := ws.formalGateEnforced()
 	var preEvalHead string
 	if formalEnforcedNow {
 		h, preErr := ws.headSHABounded(ctx)
 		if preErr != nil {
 			return nil, nil, wrapFormalGateRequired(fmt.Errorf("resolve head before gate evaluation for %s: %w", id, preErr))
+		}
+		if h == "" {
+			inRepo, probeErr := ws.inGitWorktreeBounded(ctx)
+			if probeErr != nil || inRepo {
+				return nil, nil, wrapFormalGateRequired(fmt.Errorf(
+					"resolve head before gate evaluation for %s: HEAD is unresolved in a real git work tree (in_repo=%v, probe_error=%v)",
+					id, inRepo, probeErr))
+			}
+			// Genuinely not a git repository at all: preserve the legacy skip.
 		}
 		preEvalHead = h
 	}

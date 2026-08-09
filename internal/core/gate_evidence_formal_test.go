@@ -341,6 +341,41 @@ func TestGateEvidence_FormalGateRequired_HeadDriftDuringEvaluation_Refuses(t *te
 	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete with formal evidence bound to an unstable tree")
 }
 
+// TestGateEvidence_FormalGateRequired_RealWorktreeUnresolvedHead_Refuses
+// verifies that an empty pre-evaluation head (headSHABounded's "", nil legacy
+// resolution-failure shape) is NOT automatically treated as "genuine no-repo,
+// skip the drift check": headSHABounded returns ("", nil) for EVERY
+// non-context git rev-parse HEAD failure, not only when ws.RootPath is not a
+// git repository at all — an unborn branch (a real, initialized work tree
+// with zero commits), a corrupted repository, or a transient execution error
+// all produce the identical ("", nil) shape. Before this fix, a real work
+// tree in exactly this state let formal completion proceed and sign a proof
+// with an empty commit binding — indistinguishable from a genuinely
+// non-repository environment. This mirrors the shipment path's existing
+// in-repo/no-repo discrimination (ws.inGitWorktreeBounded) that the
+// task-completion drift check (round 7) did not yet replicate (106-F F1
+// review finding, round 9).
+func TestGateEvidence_FormalGateRequired_RealWorktreeUnresolvedHead_Refuses(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	id := newActiveTask(t, ws)
+
+	initGitRepoNoCommits(t, ws.RootPath) // real work tree, unborn branch: HEAD unresolved
+
+	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)}}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "a real work tree with an unresolvable HEAD must fail closed under formal enforcement, not sign an empty-bound proof")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete with formal evidence bound to an unresolved HEAD in a real work tree")
+}
+
+
 
 // TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique verifies the
 // dedicated counter-allocation lock: N goroutines racing to allocate a counter
