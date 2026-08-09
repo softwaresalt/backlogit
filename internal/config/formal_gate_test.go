@@ -100,6 +100,14 @@ func TestFormalGateEnforced_EnvironmentAnchorAuthoritative(t *testing.T) {
 		{"env requires, config disabled -> STILL enforced (config cannot lower)", "true", false, true},
 		{"env requires, config enabled -> enforced", "true", true, true},
 		{"env explicitly false, config disabled -> not enforced", "false", false, false},
+		{"env explicitly 0, config disabled -> not enforced", "0", false, false},
+		// A plausible deployment typo (e.g. a truncated "true") or an
+		// unrecognized-but-present value (e.g. "yes") must NEVER silently
+		// downgrade this fail-closed, tamper-resistant anchor to "not
+		// enforced" -- only an EXPLICIT falsy value opts out. Round 8
+		// review finding.
+		{"env is a typo of true, config disabled -> STILL enforced (fail closed on typo)", "tru", false, true},
+		{"env is an unrecognized non-empty value, config disabled -> STILL enforced (fail closed on unknown)", "yes", false, true},
 		{"env has leading/trailing whitespace -> still enforced (trimmed)", " true ", false, true},
 		{"env has trailing newline (shell export artifact) -> still enforced", "true\n", false, true},
 		{"env is mixed-case -> still enforced (case-insensitive)", "tRue", false, true},

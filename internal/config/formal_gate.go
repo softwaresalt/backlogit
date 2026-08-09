@@ -61,17 +61,22 @@ func ResolveFormalGateKey() ([]byte, error) {
 	return decoded, nil
 }
 
-// formalGateRequiredTruthy reports whether a BACKLOGIT_FORMAL_GATE_REQUIRED
-// value represents an explicit "yes, enforce" decision. Comparison is
-// case-insensitive and tolerant of leading/trailing whitespace (including a
-// trailing newline, a common shell-export artifact), since a strict exact
-// match against a fixed string set silently treats a plausible operator
-// misconfiguration (" true", "TRUE\n", "tRue") as "not enforced" with no
-// warning surfaced anywhere — the opposite of this anchor's fail-closed
-// intent (106-F F1 review finding).
-func formalGateRequiredTruthy(v string) bool {
+// formalGateRequiredFalsy reports whether a BACKLOGIT_FORMAL_GATE_REQUIRED
+// value represents an explicit "no, do not require" decision — the only
+// values that intentionally opt OUT of this anchor's authority. Anything
+// else (a recognized truthy value like "true"/"1", or any unrecognized
+// non-empty value such as a typo like "tru" or an unexpected "yes") is NOT
+// explicitly false: FormalGateEnforced treats both as requiring enforcement,
+// since a plausible deployment typo in a fail-closed, tamper-resistant
+// control must never silently downgrade to "not enforced" with no warning
+// surfaced anywhere (106-F F1 review finding, round 8 — this replaces an
+// earlier formalGateRequiredTruthy allowlist-only check that silently fell
+// through to "not enforced" for any unrecognized value, typos included).
+// Comparison is case-insensitive and tolerant of leading/trailing whitespace
+// (including a trailing newline, a common shell-export artifact).
+func formalGateRequiredFalsy(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true":
+	case "", "0", "false":
 		return true
 	default:
 		return false
@@ -87,12 +92,17 @@ func formalGateRequiredTruthy(v string) bool {
 // applies.
 func FormalGateEnforced(cfg FormalGateConfig) bool {
 	if v, ok := os.LookupEnv("BACKLOGIT_FORMAL_GATE_REQUIRED"); ok {
-		if formalGateRequiredTruthy(v) {
+		if !formalGateRequiredFalsy(v) {
+			// Present and not an explicit "off" value: either a recognized
+			// truthy value or an unrecognized non-empty value (most likely a
+			// typo). Both are conservatively treated as REQUIRING
+			// enforcement — this anchor exists specifically so a
+			// misconfiguration can never silently lower the bar.
 			return true
 		}
-		// An explicit non-truthy value (e.g. "false") does not itself disable
-		// enforcement that the workspace opted into; it only means the
-		// environment does not additionally REQUIRE it. Config may still enable.
+		// An explicit falsy value does not itself disable enforcement that
+		// the workspace opted into; it only means the environment does not
+		// additionally REQUIRE it. Config may still enable.
 	}
 	return cfg.Enabled
 }

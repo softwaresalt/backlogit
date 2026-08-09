@@ -367,3 +367,38 @@ func TestValidateMemberGateEvidence_FormalEnforcement_LineageUsesAuthenticatedEv
 	require.Error(t, err, "lineage must be checked against the AUTHENTICATED pass event's head_sha (divergent, non-ancestor), not a later unsigned Forced event's forged head_sha")
 	assert.Contains(t, err.Error(), "divergent", "the refusal must reflect the authenticated evidence's real (divergent) lineage")
 }
+
+// TestUpdateArtifactWithGate_ShipmentToShippedBypassesFormalEnforcement_Refused
+// verifies that a shipment cannot be moved directly to "shipped" through the
+// GENERAL UpdateArtifactWithGate entry point (the shared choke point behind
+// both the backlogit_move_item and backlogit_update_item MCP tools, and their
+// CLI equivalents) while formal-gate evidence is enforced. gateApplies (and
+// its nil-broker sibling gateWouldApplyButForBroker) are hardcoded to
+// task/subtask artifact types only, so a shipment ALWAYS fails that check
+// and falls straight through to updateArtifactUngated — completely bypassing
+// ShipShipment's member-evidence verification, manifest-binding signing, and
+// membership locking entirely. This is a materially more complete bypass
+// than even an operator --force: it requires no force flag at all, just
+// calling a DIFFERENT, pre-existing, general-purpose tool instead of
+// ship_shipment (106-F F1 review finding, round 8). The fix requires
+// callers to use ShipShipment for this specific transition when formal
+// enforcement is active, rather than attempting to replicate its
+// verification logic inline in the general update path.
+func TestUpdateArtifactWithGate_ShipmentToShippedBypassesFormalEnforcement_Refused(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	ctx := context.Background()
+
+	_, _, shipmentID := newGatedShipment(t, ws) // newGatedShipment already claims the shipment to active
+
+	_, _, err := UpdateArtifactWithGate(ctx, ws, shipmentID, map[string]any{"status": "shipped"}, TransitionOptions{})
+	require.Error(t, err, "a direct shipment-to-shipped update must be refused under formal enforcement, not silently completed ungated")
+	require.True(t, stderrors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	sh, gErr := GetShipment(ctx, ws, shipmentID)
+	require.NoError(t, gErr)
+	require.Equal(t, models.StatusActive, sh.Status, "shipment must remain active: only ShipShipment may transition it to shipped under formal enforcement")
+}
