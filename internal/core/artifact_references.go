@@ -248,7 +248,7 @@ func applyCrossArtifactRewrites(
 			); insErr != nil {
 				restoreWritten()
 				return fmt.Errorf("apply cross-artifact rewrite for %s: insert dep %s: %w",
-					u.artifact.ID, dep, insErr)
+					u.artifact.ID, dep.ID, insErr)
 			}
 		}
 

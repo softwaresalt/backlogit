@@ -23,6 +23,9 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 	if depType == "" {
 		depType = "blocks"
 	}
+	if !blerrors.ValidDependencyType(depType) {
+		return fmt.Errorf("add dependency %s->%s: %w: %q", itemID, dependsOn, blerrors.ErrInvalidDependencyType, depType)
+	}
 	if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
 		return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
 	}
@@ -33,9 +36,24 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 		return fmt.Errorf("load source artifact %s: %w", itemID, err)
 	}
 
-	for _, dep := range artifact.Dependencies {
+	for i, dep := range artifact.Dependencies {
 		if dep.ID == dependsOn {
-			// Already recorded in frontmatter; cache insert above is sufficient.
+			if dep.Type == depType || (dep.Type == "" && depType == "blocks") {
+				// Already recorded with the same type; cache insert above is sufficient.
+				return nil
+			}
+			// Edge exists with a different type: update frontmatter to match the new type.
+			artifact.Dependencies[i].Type = depType
+			if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+				if !blerrors.IsWriteIndeterminate(err) {
+					_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
+				} else {
+					if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+						err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
+					}
+				}
+				return fmt.Errorf("persist dep type update %s->%s to frontmatter: %w", itemID, dependsOn, err)
+			}
 			return nil
 		}
 	}

@@ -202,6 +202,10 @@ func toDependencyEdges(v any) ([]DependencyEdge, error) {
 				return nil, err
 			}
 			result = append(result, edge)
+		default:
+			// Reject unsupported entry types (e.g. integers, booleans) rather than
+			// silently discarding them, so load-edge validation is strict.
+			return nil, fmt.Errorf("%w: unsupported dependency entry type %T", blerrors.ErrInvalidDependencyType, elem)
 		}
 	}
 	if len(result) == 0 {
@@ -212,12 +216,20 @@ func toDependencyEdges(v any) ([]DependencyEdge, error) {
 
 // dependencyEdgeFromMap converts a decoded YAML map to a DependencyEdge with
 // load-edge type validation. The "type" key defaults to "blocks" when absent.
+// dependencyEdgeFromMap converts a decoded YAML map to a DependencyEdge with
+// load-edge type validation. Only the accepted keys "id" and "type" are read;
+// unknown keys are silently ignored. The "type" value must be a string and one
+// of the accepted dep_type values; non-string types return ErrInvalidDependencyType.
 func dependencyEdgeFromMap(fields map[string]any) (DependencyEdge, error) {
 	edge := DependencyEdge{Type: "blocks"}
 	if v, ok := fields["id"].(string); ok {
 		edge.ID = v
 	}
-	if v, ok := fields["type"].(string); ok {
+	if raw, present := fields["type"]; present {
+		v, ok := raw.(string)
+		if !ok {
+			return DependencyEdge{}, fmt.Errorf("%w: dependency map entry type field must be a string, got %T", blerrors.ErrInvalidDependencyType, raw)
+		}
 		edge.Type = v
 	}
 	if edge.ID == "" {
