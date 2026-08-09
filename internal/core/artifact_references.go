@@ -82,7 +82,7 @@ func findCrossArtifactReferences(
 			refersParent := a.ParentID == oldID
 			var refersAnyDep bool
 			for _, dep := range a.Dependencies {
-				if dep == oldID {
+				if dep.ID == oldID {
 					refersAnyDep = true
 					break
 				}
@@ -108,10 +108,10 @@ func findCrossArtifactReferences(
 			}
 
 			if refersAnyDep {
-				newDeps := make([]string, len(a.Dependencies))
+				newDeps := make([]models.DependencyEdge, len(a.Dependencies))
 				for i, dep := range a.Dependencies {
-					if dep == oldID {
-						newDeps[i] = newID
+					if dep.ID == oldID {
+						newDeps[i] = models.DependencyEdge{ID: newID, Type: dep.Type}
 					} else {
 						newDeps[i] = dep
 					}
@@ -225,36 +225,8 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: upsert item: %w", u.artifact.ID, upsertErr)
 		}
 
-		// Snapshot existing dep_type values before deleting so we can
-		// preserve them on re-insert (frontmatter does not store dep_type).
-		existingDepTypes := make(map[string]string)
-		existingRows, queryErr := tx.QueryContext(ctx,
-			`SELECT depends_on, dep_type FROM item_deps WHERE item_id = ?`,
-			u.artifact.ID,
-		)
-		if queryErr != nil {
-			restoreWritten()
-			return fmt.Errorf("apply cross-artifact rewrite for %s: select deps: %w", u.artifact.ID, queryErr)
-		}
-		for existingRows.Next() {
-			var dep, depType string
-			if scanErr := existingRows.Scan(&dep, &depType); scanErr != nil {
-				existingRows.Close()
-				restoreWritten()
-				return fmt.Errorf("apply cross-artifact rewrite for %s: scan deps: %w", u.artifact.ID, scanErr)
-			}
-			if depType == "" {
-				depType = "blocks"
-			}
-			existingDepTypes[strings.TrimSpace(dep)] = depType
-		}
-		existingRows.Close()
-		if rowsErr := existingRows.Err(); rowsErr != nil {
-			restoreWritten()
-			return fmt.Errorf("apply cross-artifact rewrite for %s: iterate deps: %w", u.artifact.ID, rowsErr)
-		}
-
-		// Refresh dep rows: delete existing, reinsert from updated struct
+		// Refresh dep rows: delete existing, reinsert from DependencyEdge which
+		// carries the durable dep_type from frontmatter (F4 U3/U4 — typed edges).
 		// using the original dep_type when known.
 		if _, delErr := tx.ExecContext(ctx,
 			`DELETE FROM item_deps WHERE item_id = ?`, u.artifact.ID,
@@ -263,21 +235,20 @@ func applyCrossArtifactRewrites(
 			return fmt.Errorf("apply cross-artifact rewrite for %s: delete deps: %w", u.artifact.ID, delErr)
 		}
 		for _, dep := range u.artifact.Dependencies {
-			dep = strings.TrimSpace(dep)
-			if dep == "" {
+			if strings.TrimSpace(dep.ID) == "" {
 				continue
 			}
-			depType, ok := existingDepTypes[dep]
-			if !ok || depType == "" {
+			depType := dep.Type
+			if depType == "" {
 				depType = "blocks"
 			}
 			if _, insErr := tx.ExecContext(ctx,
 				`INSERT OR REPLACE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, ?)`,
-				u.artifact.ID, dep, depType,
+				u.artifact.ID, dep.ID, depType,
 			); insErr != nil {
 				restoreWritten()
 				return fmt.Errorf("apply cross-artifact rewrite for %s: insert dep %s: %w",
-					u.artifact.ID, dep, insErr)
+					u.artifact.ID, dep.ID, insErr)
 			}
 		}
 

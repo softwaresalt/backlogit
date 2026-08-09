@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -108,7 +109,11 @@ func ArtifactFromFrontmatter(fm map[string]any, body string) (*Artifact, error) 
 		a.Labels = toStringSlice(v)
 	}
 	if v, ok := fm["dependencies"]; ok {
-		a.Dependencies = toStringSlice(v)
+		edges, err := toDependencyEdges(v)
+		if err != nil {
+			return nil, fmt.Errorf("artifact %s: %w", a.ID, err)
+		}
+		a.Dependencies = edges
 	}
 	if v, ok := fm["links"]; ok {
 		a.Links = toArtifactLinks(v)
@@ -136,6 +141,104 @@ func SerializeFrontmatter(fields map[string]any, body string) string {
 		data = []byte{}
 	}
 	return "---\n" + string(data) + "---\n\n" + body
+}
+
+// toDependencyEdges converts a YAML-decoded dependencies value to []DependencyEdge.
+// It mirrors the existing toArtifactLinks manual-normalization precedent; no custom
+// UnmarshalYAML is used. Accepted entry forms:
+//
+//   - bare string s → {ID: s, Type: "blocks"}
+//   - map {id: <id>, type: <dep_type>} → DependencyEdge as specified
+//
+// Returns ErrInvalidDependencyType (wrapped) when a map entry has an unrecognized
+// type or is missing the id key. Validation happens at the load edge so callers
+// do not need to re-validate.
+func toDependencyEdges(v any) ([]DependencyEdge, error) {
+	if v == nil {
+		return nil, nil
+	}
+	// Already typed (e.g. round-trips through UpdateArtifact).
+	if edges, ok := v.([]DependencyEdge); ok {
+		for _, e := range edges {
+			t := e.Type
+			if t == "" {
+				t = "blocks"
+			}
+			if !blerrors.ValidDependencyType(t) {
+				return nil, fmt.Errorf("%w: %q (accepted: blocks, relates_to, parent_of)", blerrors.ErrInvalidDependencyType, e.Type)
+			}
+		}
+		return edges, nil
+	}
+
+	iface, ok := v.([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	result := make([]DependencyEdge, 0, len(iface))
+	for _, elem := range iface {
+		switch item := elem.(type) {
+		case string:
+			// Bare-string form: treat as blocks (default type).
+			if item == "" {
+				continue
+			}
+			result = append(result, DependencyEdge{ID: item, Type: "blocks"})
+		case map[string]any:
+			edge, err := dependencyEdgeFromMap(item)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, edge)
+		case map[any]any:
+			// yaml.v3 may decode unknown-key maps as map[any]any in some paths.
+			normalized := make(map[string]any, len(item))
+			for k, val := range item {
+				normalized[fmt.Sprintf("%v", k)] = val
+			}
+			edge, err := dependencyEdgeFromMap(normalized)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, edge)
+		default:
+			// Reject unsupported entry types (e.g. integers, booleans) rather than
+			// silently discarding them, so load-edge validation is strict.
+			return nil, fmt.Errorf("%w: unsupported dependency entry type %T", blerrors.ErrInvalidDependencyType, elem)
+		}
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
+// dependencyEdgeFromMap converts a decoded YAML map to a DependencyEdge with
+// load-edge type validation. The "type" key defaults to "blocks" when absent.
+// dependencyEdgeFromMap converts a decoded YAML map to a DependencyEdge with
+// load-edge type validation. Only the accepted keys "id" and "type" are read;
+// unknown keys are silently ignored. The "type" value must be a string and one
+// of the accepted dep_type values; non-string types return ErrInvalidDependencyType.
+func dependencyEdgeFromMap(fields map[string]any) (DependencyEdge, error) {
+	edge := DependencyEdge{Type: "blocks"}
+	if v, ok := fields["id"].(string); ok {
+		edge.ID = v
+	}
+	if raw, present := fields["type"]; present {
+		v, ok := raw.(string)
+		if !ok {
+			return DependencyEdge{}, fmt.Errorf("%w: dependency map entry type field must be a string, got %T", blerrors.ErrInvalidDependencyType, raw)
+		}
+		edge.Type = v
+	}
+	if edge.ID == "" {
+		return DependencyEdge{}, fmt.Errorf("%w: dependency map entry missing required id key", blerrors.ErrInvalidDependencyType)
+	}
+	if !blerrors.ValidDependencyType(edge.Type) {
+		return DependencyEdge{}, fmt.Errorf("%w: %q (accepted: blocks, relates_to, parent_of)", blerrors.ErrInvalidDependencyType, edge.Type)
+	}
+	return edge, nil
 }
 
 // toStringSlice converts a YAML-decoded sequence value to []string.

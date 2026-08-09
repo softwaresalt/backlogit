@@ -28,7 +28,7 @@ type createOptions struct {
 	AssignedTo   string
 	Owner        string
 	Labels       []string
-	Dependencies []string
+	Dependencies []models.DependencyEdge
 	References   []string
 	Commit       string
 
@@ -82,9 +82,16 @@ func WithLabels(labels []string) Option {
 	return func(o *createOptions) { o.Labels = labels }
 }
 
-// WithDependencies sets the artifact dependencies.
+// WithDependencies sets the artifact dependencies from a list of bare IDs.
+// Each ID is treated as a blocks edge (the default dep_type).
 func WithDependencies(deps []string) Option {
-	return func(o *createOptions) { o.Dependencies = deps }
+	return func(o *createOptions) {
+		edges := make([]models.DependencyEdge, len(deps))
+		for i, id := range deps {
+			edges[i] = models.DependencyEdge{ID: id, Type: "blocks"}
+		}
+		o.Dependencies = edges
+	}
 }
 
 // WithReferences sets the artifact references.
@@ -499,8 +506,15 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	if v, ok := updates["labels"].([]string); ok {
 		artifact.Labels = v
 	}
-	if v, ok := updates["dependencies"].([]string); ok {
+	if v, ok := updates["dependencies"].([]models.DependencyEdge); ok {
 		artifact.Dependencies = v
+	} else if strs, ok := updates["dependencies"].([]string); ok {
+		// Backward-compat: callers that still pass []string get blocks edges.
+		edges := make([]models.DependencyEdge, len(strs))
+		for j, id := range strs {
+			edges[j] = models.DependencyEdge{ID: id, Type: "blocks"}
+		}
+		artifact.Dependencies = edges
 	}
 	if v, ok := updates["links"].([]models.ArtifactLink); ok {
 		artifact.Links = v

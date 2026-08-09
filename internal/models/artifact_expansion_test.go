@@ -21,7 +21,7 @@ func TestArtifactExpansion_NewFieldsPresent(t *testing.T) {
 		AssignedTo:   "alice",
 		Owner:        "bob",
 		Labels:       []string{"backend", "urgent"},
-		Dependencies: []string{"T002", "T003"},
+		Dependencies: []models.DependencyEdge{{ID: "T002", Type: "blocks"}, {ID: "T003", Type: "blocks"}},
 		References:   []string{"docs/spec.md"},
 		Commit:       "abc123",
 	}
@@ -34,7 +34,7 @@ func TestArtifactExpansion_NewFieldsPresent(t *testing.T) {
 	assert.Equal(t, "alice", a.AssignedTo)
 	assert.Equal(t, "bob", a.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, a.Labels)
-	assert.Equal(t, []string{"T002", "T003"}, a.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{{ID: "T002", Type: "blocks"}, {ID: "T003", Type: "blocks"}}, a.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, a.References)
 	assert.Equal(t, "abc123", a.Commit)
 }
@@ -67,7 +67,7 @@ func TestArtifactExpansion_TableDriven(t *testing.T) {
 		assignedTo   string
 		owner        string
 		labels       []string
-		dependencies []string
+		dependencies []models.DependencyEdge
 		references   []string
 		commit       string
 		wantErr      bool
@@ -77,7 +77,7 @@ func TestArtifactExpansion_TableDriven(t *testing.T) {
 			assignedTo:   "alice",
 			owner:        "bob",
 			labels:       []string{"frontend"},
-			dependencies: []string{"T010"},
+			dependencies: []models.DependencyEdge{{ID: "T010", Type: "blocks"}},
 			references:   []string{"README.md"},
 			commit:       "def456",
 		},
@@ -87,7 +87,7 @@ func TestArtifactExpansion_TableDriven(t *testing.T) {
 		},
 		{
 			name:         "only dependencies populated",
-			dependencies: []string{"T020", "T021", "T022"},
+			dependencies: []models.DependencyEdge{{ID: "T020", Type: "blocks"}, {ID: "T021", Type: "blocks"}, {ID: "T022", Type: "blocks"}},
 		},
 		{
 			name:       "only assigned_to populated",

@@ -214,12 +214,16 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 					}
 				}
 
-				for _, depID := range artifact.Dependencies {
-					if depID == "" {
+				for _, dep := range artifact.Dependencies {
+					if dep.ID == "" {
 						continue
 					}
-					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
-						logger.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+					depType := dep.Type
+					if depType == "" {
+						depType = "blocks"
+					}
+					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, dep.ID, depType); depErr != nil {
+						logger.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", dep.ID, "error", depErr)
 					}
 				}
 				for _, link := range artifact.Links {
@@ -296,10 +300,13 @@ func parseMarkdownArtifact(path string) (*models.Artifact, error) {
 	return artifact, nil
 }
 
-func upsertDependencyTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn string) error {
+func upsertDependencyTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn, depType string) error {
+	if depType == "" {
+		depType = "blocks"
+	}
 	_, err := tx.ExecContext(ctx,
-		`INSERT OR IGNORE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, 'blocks')`,
-		itemID, dependsOn,
+		`INSERT OR IGNORE INTO item_deps (item_id, depends_on, dep_type) VALUES (?, ?, ?)`,
+		itemID, dependsOn, depType,
 	)
 	return err
 }

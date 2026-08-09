@@ -36,7 +36,7 @@ func TestApplyCrossArtifactRewrites_RestoresIndeterminateFailingWrite(t *testing
 	require.NoError(t, err)
 
 	updated := *ref
-	updated.Dependencies = []string{"indeterminate-dep"}
+	updated.Dependencies = []models.DependencyEdge{{ID: "indeterminate-dep", Type: "blocks"}}
 
 	// Simulate ErrWriteIndeterminate: the rename committed (file mutated on disk)
 	// but the post-rename durability flush failed, so the outcome is uncertain.

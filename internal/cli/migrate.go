@@ -13,6 +13,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 	"github.com/softwaresalt/backlogit/internal/parser"
 )
 
@@ -417,10 +418,10 @@ func importMigrationItems(ctx context.Context, ws *core.Workspace, items []parse
 		}
 		newID := newRef.id
 
-		mappedDeps := make([]string, 0, len(item.Dependencies))
+		mappedDeps := make([]models.DependencyEdge, 0, len(item.Dependencies))
 		for _, dep := range item.Dependencies {
 			if mapped, ok := idMap[legacyImportIdentity("", dep)]; ok {
-				mappedDeps = append(mappedDeps, mapped.id)
+				mappedDeps = append(mappedDeps, models.DependencyEdge{ID: mapped.id, Type: "blocks"})
 			}
 		}
 		if len(mappedDeps) == 0 {

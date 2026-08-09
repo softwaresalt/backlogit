@@ -181,12 +181,16 @@ func MergeSync(
 				if _, delErr := tx.ExecContext(ctx, `DELETE FROM item_deps WHERE item_id = ?`, artifact.ID); delErr != nil {
 					log.Warn("failed to clear deps", "id", artifact.ID, "error", delErr)
 				}
-				for _, depID := range artifact.Dependencies {
-					if depID == "" {
+				for _, dep := range artifact.Dependencies {
+					if dep.ID == "" {
 						continue
 					}
-					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, depID); depErr != nil {
-						log.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", depID, "error", depErr)
+					depType := dep.Type
+					if depType == "" {
+						depType = "blocks"
+					}
+					if depErr := upsertDependencyTx(ctx, tx, artifact.ID, dep.ID, depType); depErr != nil {
+						log.Warn("failed to upsert dependency", "item_id", artifact.ID, "dep_id", dep.ID, "error", depErr)
 					}
 				}
 
