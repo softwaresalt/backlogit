@@ -24,7 +24,7 @@ func TestToFrontmatterMap_EmitsModeledFields(t *testing.T) {
 		AssignedTo:   "agent",
 		Owner:        "owner",
 		Labels:       []string{"a", "b"},
-		Dependencies: []string{"499-T"},
+		Dependencies: []DependencyEdge{{ID: "499-T", Type: "blocks"}},
 		Links:        []ArtifactLink{{TargetID: "498-T", LinkType: "related_to"}},
 		References:   []string{"docs/x.md"},
 		Commit:       "abc1234",

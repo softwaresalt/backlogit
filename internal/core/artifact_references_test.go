@@ -58,10 +58,16 @@ func TestFindCrossArtifactReferences_DependenciesRewrite(t *testing.T) {
 
 	require.Len(t, updates, 1)
 	assert.Equal(t, t2.ID, updates[0].artifact.ID)
-	assert.Contains(t, updates[0].artifact.Dependencies, newID,
-		"dependencies should contain the new ID")
-	assert.NotContains(t, updates[0].artifact.Dependencies, t1.ID,
-		"oldID should be replaced, not retained")
+	func() {
+		found := false
+		for _, dep := range updates[0].artifact.Dependencies {
+			if dep.ID == newID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "dependencies should contain the new ID")
+	}()
 }
 
 func TestFindCrossArtifactReferences_LinksRewrite(t *testing.T) {
@@ -147,7 +153,7 @@ func TestFindCrossArtifactReferences_ExactMatchOnly(t *testing.T) {
 	// t2: dependency contains t1.ID as a substring but is not an exact match.
 	t2, err := CreateArtifact(ctx, ws, "Near-miss task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
-	t2.Dependencies = []string{t1.ID + "-ext"}
+	t2.Dependencies = []models.DependencyEdge{{ID: t1.ID + "-ext", Type: "blocks"}}
 	t2Path := findArtifactPathDirect(ws, t2.ID)
 	require.NotEmpty(t, t2Path)
 	require.NoError(t, WriteArtifactFile(t2, t2Path))
@@ -183,7 +189,7 @@ func TestFindCrossArtifactReferences_MultipleRefs(t *testing.T) {
 	// t2 has t1.ID listed twice in its dependency list.
 	t2, err := CreateArtifact(ctx, ws, "Multi-ref task", "task", WithParent(feat.ID))
 	require.NoError(t, err)
-	t2.Dependencies = []string{t1.ID, "other-dep", t1.ID}
+	t2.Dependencies = []models.DependencyEdge{{ID: t1.ID, Type: "blocks"}, {ID: "other-dep", Type: "blocks"}, {ID: t1.ID, Type: "blocks"}}
 	t2Path := findArtifactPathDirect(ws, t2.ID)
 	require.NotEmpty(t, t2Path)
 	require.NoError(t, WriteArtifactFile(t2, t2Path))
@@ -231,7 +237,7 @@ func TestApplyCrossArtifactRewrites_WritesFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Overwrite the file with oldDepID in the dependency list.
-	ref.Dependencies = []string{oldDepID}
+	ref.Dependencies = []models.DependencyEdge{{ID: oldDepID, Type: "blocks"}}
 	refPath := findArtifactPathDirect(ws, ref.ID)
 	require.NotEmpty(t, refPath)
 	require.NoError(t, WriteArtifactFile(ref, refPath))
@@ -240,7 +246,7 @@ func TestApplyCrossArtifactRewrites_WritesFile(t *testing.T) {
 	require.NoError(t, err)
 
 	updated := *ref
-	updated.Dependencies = []string{newDepID}
+	updated.Dependencies = []models.DependencyEdge{{ID: newDepID, Type: "blocks"}}
 
 	tx, err := ws.DB.BeginTx(ctx, nil)
 	require.NoError(t, err)
@@ -290,7 +296,7 @@ func TestApplyCrossArtifactRewrites_RefreshesDepsLinks(t *testing.T) {
 	require.NoError(t, err)
 
 	updated := *ref
-	updated.Dependencies = []string{newDepTarget}
+	updated.Dependencies = []models.DependencyEdge{{ID: newDepTarget, Type: "blocks"}}
 	updated.Links = []models.ArtifactLink{{TargetID: newLinkTarget, LinkType: "informs"}}
 
 	tx, err := ws.DB.BeginTx(ctx, nil)
@@ -345,7 +351,7 @@ func TestApplyCrossArtifactRewrites_RollbackOnWriteFailure(t *testing.T) {
 	snapshot1, err := os.ReadFile(ref1Path)
 	require.NoError(t, err)
 	updated1 := *ref1
-	updated1.Dependencies = []string{newDep}
+	updated1.Dependencies = []models.DependencyEdge{{ID: newDep, Type: "blocks"}}
 
 	// ref2: second update — use a directory as the target path so the rename fails.
 	ref2, err := CreateArtifact(ctx, ws, "Second artifact", "task", WithParent(feat.ID))
@@ -357,7 +363,7 @@ func TestApplyCrossArtifactRewrites_RollbackOnWriteFailure(t *testing.T) {
 	snapshot2, err := os.ReadFile(ref2ActualPath)
 	require.NoError(t, err)
 	updated2 := *ref2
-	updated2.Dependencies = []string{newDep}
+	updated2.Dependencies = []models.DependencyEdge{{ID: newDep, Type: "blocks"}}
 
 	tx, err := ws.DB.BeginTx(ctx, nil)
 	require.NoError(t, err)

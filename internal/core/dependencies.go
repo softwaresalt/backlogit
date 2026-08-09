@@ -6,6 +6,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // AddDependency adds a dependency edge from itemID to dependsOn and persists it
@@ -13,15 +14,11 @@ import (
 //
 // The edge is first inserted into the SQLite cache via db.AddDependencyChecked,
 // which validates that both items exist and rejects cycles. It is then written
-// to the artifact's frontmatter dependencies list so the edge survives an index
-// rebuild (sync_index / Rehydrate clears item_deps and repopulates it solely
-// from frontmatter). If the frontmatter write fails, the cache insert is rolled
-// back to keep the two representations consistent.
-//
-// Note: only the edge itself is durable. The frontmatter dependencies list
-// records target IDs without a dep_type, so a non-"blocks" depType is honored
-// only in the live cache until the next Rehydrate, which rebuilds every edge as
-// "blocks". Callers must not rely on a custom depType surviving sync_index.
+// to the artifact's frontmatter dependencies list as a DependencyEdge so the
+// edge — including its dep_type — survives an index rebuild (sync_index /
+// Rehydrate clears item_deps and repopulates it from frontmatter). If the
+// frontmatter write fails, the cache insert is rolled back to keep the two
+// representations consistent.
 func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depType string) error {
 	if depType == "" {
 		depType = "blocks"
@@ -37,13 +34,13 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 	}
 
 	for _, dep := range artifact.Dependencies {
-		if dep == dependsOn {
+		if dep.ID == dependsOn {
 			// Already recorded in frontmatter; cache insert above is sufficient.
 			return nil
 		}
 	}
 
-	artifact.Dependencies = append(artifact.Dependencies, dependsOn)
+	artifact.Dependencies = append(artifact.Dependencies, models.DependencyEdge{ID: dependsOn, Type: depType})
 	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
 		// ErrWriteIndeterminate: the MD write committed (rename applied) but fsync
 		// failed — the dependency is likely persisted. Do NOT roll back the DB edge;
@@ -66,22 +63,41 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 // both the SQLite cache and the source artifact's Markdown frontmatter so the
 // edge does not reappear on the next index rebuild.
 //
-// The cache edge is deleted before the frontmatter is updated. If either the
-// source artifact cannot be loaded or the frontmatter write fails, the cache
-// deletion is rolled back with a best-effort re-insert of the original edge so
-// the cache stays consistent with the frontmatter source of truth (otherwise a
-// later Rehydrate would resurrect the edge from frontmatter, leaving the two
-// representations out of sync until then).
+// The dep_type for rollback re-insertion is read from frontmatter (the
+// DependencyEdge stored in the artifact) rather than from the SQLite cache.
+// Both rollback branches, including the ErrWriteIndeterminate special case,
+// keep their current structure.
 func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn string) error {
-	// Capture the existing edge's dep_type so a rollback can restore it faithfully.
-	depType, edgeInCache, err := lookupDependencyType(ctx, ws, itemID, dependsOn)
+	// Load the artifact first so we can read the dep_type from frontmatter for
+	// a potential rollback re-insert.
+	artifact, err := findArtifact(ctx, ws, itemID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load source artifact %s: %w", itemID, err)
+	}
+
+	// Locate the edge in frontmatter to capture its type for rollback.
+	frontmatterType := "blocks"
+	edgeInFrontmatter := false
+	for _, dep := range artifact.Dependencies {
+		if dep.ID == dependsOn {
+			frontmatterType = dep.Type
+			if frontmatterType == "" {
+				frontmatterType = "blocks"
+			}
+			edgeInFrontmatter = true
+			break
+		}
+	}
+
+	// Also check whether the edge exists in the cache (for rollback eligibility).
+	_, edgeInCache, cacheErr := lookupDependencyType(ctx, ws, itemID, dependsOn)
+	if cacheErr != nil {
+		return cacheErr
 	}
 
 	restoreCacheEdge := func() {
 		if edgeInCache {
-			_ = db.UpsertDependency(ctx, ws.DB, itemID, dependsOn, depType)
+			_ = db.UpsertDependency(ctx, ws.DB, itemID, dependsOn, frontmatterType)
 		}
 	}
 
@@ -89,16 +105,14 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 		return fmt.Errorf("remove dependency %s->%s: %w", itemID, dependsOn, err)
 	}
 
-	artifact, err := findArtifact(ctx, ws, itemID)
-	if err != nil {
-		restoreCacheEdge()
-		return fmt.Errorf("load source artifact %s: %w", itemID, err)
+	if !edgeInFrontmatter {
+		return nil
 	}
 
-	filtered := make([]string, 0, len(artifact.Dependencies))
+	filtered := make([]models.DependencyEdge, 0, len(artifact.Dependencies))
 	removed := false
 	for _, dep := range artifact.Dependencies {
-		if dep == dependsOn {
+		if dep.ID == dependsOn {
 			removed = true
 			continue
 		}
@@ -160,8 +174,9 @@ func AddShipmentBlock(ctx context.Context, ws *Workspace, dependentID, prerequis
 	return AddDependency(ctx, ws, dependentID, prerequisiteID, "blocks")
 }
 
-// whether the edge currently exists in the cache. Defaults to "blocks" when the
-// stored dep_type is empty so a rollback re-insert preserves a valid type.
+// lookupDependencyType returns the dep_type for the edge itemID→dependsOn from
+// the SQLite cache, and whether the edge currently exists in the cache. Defaults
+// to "blocks" when the stored dep_type is empty.
 func lookupDependencyType(ctx context.Context, ws *Workspace, itemID, dependsOn string) (string, bool, error) {
 	edges, err := db.GetDependencies(ctx, ws.DB, itemID)
 	if err != nil {

@@ -29,7 +29,7 @@ The primary table for all backlogit artifacts (features, tasks, subtasks, delibe
 | `assigned_to` | TEXT | Assignee identifier |
 | `owner` | TEXT | Owner identifier |
 | `labels` | TEXT | Comma-separated label string |
-| `dependencies` | TEXT | Denormalized comma-separated dependency IDs |
+| `dependencies` | TEXT | JSON array of typed dep edges. New format: `[{"id":"T001","type":"blocks"}]`. Legacy format: `["T001"]` (bare IDs, type defaults to blocks). Rebuilt from frontmatter on every sync. |
 | `references` | TEXT | Comma-separated reference paths |
 | `commit` | TEXT | Last associated commit SHA |
 | `level` | INTEGER | Hierarchy depth: `1`=feature, `2`=task, `3`=subtask |

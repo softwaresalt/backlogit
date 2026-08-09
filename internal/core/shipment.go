@@ -716,7 +716,7 @@ func cloneArtifact(artifact *models.Artifact) *models.Artifact {
 
 	clone := *artifact
 	clone.Labels = append([]string(nil), artifact.Labels...)
-	clone.Dependencies = append([]string(nil), artifact.Dependencies...)
+	clone.Dependencies = append([]models.DependencyEdge(nil), artifact.Dependencies...)
 	clone.References = append([]string(nil), artifact.References...)
 	if artifact.CustomFields != nil {
 		clone.CustomFields = maps.Clone(artifact.CustomFields)

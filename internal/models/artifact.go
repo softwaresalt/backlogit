@@ -30,23 +30,36 @@ type ArtifactLink struct {
 	LinkType string `json:"link_type" yaml:"link_type"`
 }
 
+// DependencyEdge represents a durable outgoing dependency edge stored in artifact
+// frontmatter. The canonical YAML shape supports two entry forms:
+//
+//   - A bare string (e.g. "T001") means {ID: "T001", Type: "blocks"}.
+//   - An object (e.g. {id: T002, type: relates_to}) carries an explicit type.
+//
+// Accepted Type values: blocks, relates_to, parent_of.
+// An empty Type is treated as "blocks" everywhere in the pipeline.
+type DependencyEdge struct {
+	ID   string `json:"id" yaml:"id"`
+	Type string `json:"type" yaml:"type"`
+}
+
 // Artifact holds the current state of a backlogit work item.
 type Artifact struct {
-	ID           string         `json:"id" yaml:"id" validate:"required"`
-	Title        string         `json:"title" yaml:"title" validate:"required,max=200"`
-	Status       ArtifactStatus `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected archived shipped abandoned"`
-	ArtifactType string         `json:"artifact_type" yaml:"artifact_type" validate:"required"`
-	ParentID     string         `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
-	Sprint       string         `json:"sprint,omitempty" yaml:"sprint,omitempty"`
-	Priority     string         `json:"priority,omitempty" yaml:"priority,omitempty"`
-	Description  string         `json:"description,omitempty" yaml:"description,omitempty"`
-	AssignedTo   string         `json:"assigned_to,omitempty" yaml:"assigned_to,omitempty"`
-	Owner        string         `json:"owner,omitempty" yaml:"owner,omitempty"`
-	Labels       []string       `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Dependencies []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Links        []ArtifactLink `json:"links,omitempty" yaml:"links,omitempty"`
-	References   []string       `json:"references,omitempty" yaml:"references,omitempty"`
-	Commit       string         `json:"commit,omitempty" yaml:"commit,omitempty"`
+	ID           string           `json:"id" yaml:"id" validate:"required"`
+	Title        string           `json:"title" yaml:"title" validate:"required,max=200"`
+	Status       ArtifactStatus   `json:"status" yaml:"status" validate:"required,oneof=queued active blocked review done accepted rejected archived shipped abandoned"`
+	ArtifactType string           `json:"artifact_type" yaml:"artifact_type" validate:"required"`
+	ParentID     string           `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
+	Sprint       string           `json:"sprint,omitempty" yaml:"sprint,omitempty"`
+	Priority     string           `json:"priority,omitempty" yaml:"priority,omitempty"`
+	Description  string           `json:"description,omitempty" yaml:"description,omitempty"`
+	AssignedTo   string           `json:"assigned_to,omitempty" yaml:"assigned_to,omitempty"`
+	Owner        string           `json:"owner,omitempty" yaml:"owner,omitempty"`
+	Labels       []string         `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Dependencies []DependencyEdge `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Links        []ArtifactLink   `json:"links,omitempty" yaml:"links,omitempty"`
+	References   []string         `json:"references,omitempty" yaml:"references,omitempty"`
+	Commit       string           `json:"commit,omitempty" yaml:"commit,omitempty"`
 	// ArchivedFrom and ArchivedStatus carry archive provenance so an archived
 	// item survives the typed update round-trip (they are written raw by
 	// ArchiveItem and would otherwise be dropped, leaving the record
@@ -75,6 +88,11 @@ func (a Artifact) Validate() error {
 // archived status": the keys are emitted only while the item is archived, which
 // keeps them across an update round-trip on an archived item and omits stale
 // keys on any non-archived item.
+//
+// Dependencies: if all edges carry the default type (blocks or empty), the
+// list is serialized as bare strings for backward compatibility. If any edge
+// carries a non-default type (relates_to, parent_of), all edges are serialized
+// as typed objects {id: <id>, type: <type>} so the type survives rehydration.
 func (a *Artifact) ToFrontmatterMap() map[string]any {
 	fm := map[string]any{
 		"id":            a.ID,
@@ -103,7 +121,7 @@ func (a *Artifact) ToFrontmatterMap() map[string]any {
 		fm["labels"] = a.Labels
 	}
 	if len(a.Dependencies) > 0 {
-		fm["dependencies"] = a.Dependencies
+		fm["dependencies"] = serializeDependencies(a.Dependencies)
 	}
 	if len(a.Links) > 0 {
 		fm["links"] = a.Links
@@ -126,4 +144,40 @@ func (a *Artifact) ToFrontmatterMap() map[string]any {
 		fm["custom_fields"] = a.CustomFields
 	}
 	return fm
+}
+
+// serializeDependencies converts a []DependencyEdge to the YAML-friendly value
+// that ToFrontmatterMap emits for the "dependencies" key.
+//
+// If every edge carries the default type (blocks or empty string), the result
+// is a []string of bare IDs for byte-identical round-trips with the legacy
+// format. When at least one edge carries a non-default type (relates_to,
+// parent_of), all edges are emitted as typed objects {id, type} so dep_type
+// survives a Rehydrate cycle.
+func serializeDependencies(edges []DependencyEdge) any {
+	hasNonDefault := false
+	for _, e := range edges {
+		if e.Type != "" && e.Type != "blocks" {
+			hasNonDefault = true
+			break
+		}
+	}
+	if !hasNonDefault {
+		// Legacy format: bare string list.
+		ids := make([]string, len(edges))
+		for i, e := range edges {
+			ids[i] = e.ID
+		}
+		return ids
+	}
+	// Typed format: all edges as objects.
+	objs := make([]map[string]string, len(edges))
+	for i, e := range edges {
+		t := e.Type
+		if t == "" {
+			t = "blocks"
+		}
+		objs[i] = map[string]string{"id": e.ID, "type": t}
+	}
+	return objs
 }

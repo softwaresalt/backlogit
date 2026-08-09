@@ -41,7 +41,7 @@ func TestUpsertItem_NewFields_RoundTrip(t *testing.T) {
 		AssignedTo:   "alice",
 		Owner:        "bob",
 		Labels:       []string{"backend", "urgent"},
-		Dependencies: []string{"T002", "T003"},
+		Dependencies: []models.DependencyEdge{{ID: "T002", Type: "blocks"}, {ID: "T003", Type: "blocks"}},
 		References:   []string{"docs/spec.md", "README.md"},
 		Commit:       "abc123def",
 		CreatedAt:    now,
@@ -59,7 +59,7 @@ func TestUpsertItem_NewFields_RoundTrip(t *testing.T) {
 	assert.Equal(t, "alice", got.AssignedTo)
 	assert.Equal(t, "bob", got.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, got.Labels)
-	assert.Equal(t, []string{"T002", "T003"}, got.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{models.DependencyEdge{ID: "T002", Type: "blocks"}, models.DependencyEdge{ID: "T003", Type: "blocks"}}, got.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md", "README.md"}, got.References)
 	assert.Equal(t, "abc123def", got.Commit)
 }

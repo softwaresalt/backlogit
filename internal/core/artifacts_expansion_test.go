@@ -14,6 +14,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // TASK-002.01.05: Update core CRUD with new fields and ID immutability.
@@ -76,7 +77,7 @@ func TestCreateArtifact_WithNewOptions(t *testing.T) {
 	assert.Equal(t, "alice", artifact.AssignedTo)
 	assert.Equal(t, "bob", artifact.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, artifact.Labels)
-	assert.Equal(t, []string{"T002"}, artifact.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{{ID: "T002", Type: "blocks"}}, artifact.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, artifact.References)
 	assert.Equal(t, "abc123", artifact.Commit)
 }

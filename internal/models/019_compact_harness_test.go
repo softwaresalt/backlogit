@@ -25,7 +25,7 @@ func TestArtifact_Compact_ReturnsReducedFields(t *testing.T) {
 		Owner:        "bob",
 		Description:  "Long description that should be omitted in compact view",
 		Labels:       []string{"backend"},
-		Dependencies: []string{"018-T"},
+		Dependencies: []models.DependencyEdge{{ID: "018-T", Type: "blocks"}},
 		References:   []string{"docs/spec.md"},
 		CustomFields: map[string]any{"foo": "bar"},
 		CreatedAt:    now,

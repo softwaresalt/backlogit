@@ -34,7 +34,7 @@ func TestArtifactFromFrontmatter_NewFields(t *testing.T) {
 	assert.Equal(t, "alice", artifact.AssignedTo)
 	assert.Equal(t, "bob", artifact.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, artifact.Labels)
-	assert.Equal(t, []string{"T002", "T003"}, artifact.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{{ID: "T002", Type: "blocks"}, {ID: "T003", Type: "blocks"}}, artifact.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, artifact.References)
 	assert.Equal(t, "abc123", artifact.Commit)
 }
@@ -84,7 +84,7 @@ func TestSerializeFrontmatter_NewFieldsRoundTrip(t *testing.T) {
 	assert.Equal(t, "alice", artifact.AssignedTo)
 	assert.Equal(t, "bob", artifact.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, artifact.Labels)
-	assert.Equal(t, []string{"T002"}, artifact.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{{ID: "T002", Type: "blocks"}}, artifact.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, artifact.References)
 	assert.Equal(t, "abc123", artifact.Commit)
 }

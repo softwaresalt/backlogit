@@ -189,8 +189,16 @@ func TestAddDependency_IndeterminatePersist_ItemsRowReconciled(t *testing.T) {
 	// items.dependencies column must be reconciled via db.UpsertItem.
 	row, getErr := bldb.GetItem(ctx, ws.DB, source.ID)
 	require.NoError(t, getErr)
-	assert.Contains(t, row.Dependencies, target.ID,
-		"items.dependencies must be reconciled after indeterminate persist (UpsertItem called)")
+	func() {
+		found := false
+		for _, dep := range row.Dependencies {
+			if dep.ID == target.ID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "items.dependencies must be reconciled after indeterminate persist (UpsertItem called)")
+	}()
 }
 
 // TestRemoveDependency_IndeterminatePersist_ItemsRowReconciled verifies that on an
@@ -223,6 +231,14 @@ func TestRemoveDependency_IndeterminatePersist_ItemsRowReconciled(t *testing.T) 
 	// items.dependencies must not contain the removed dep after reconciliation.
 	row, getErr := bldb.GetItem(ctx, ws.DB, source.ID)
 	require.NoError(t, getErr)
-	assert.NotContains(t, row.Dependencies, target.ID,
-		"items.dependencies must be reconciled after indeterminate persist (dep removed)")
+	func() {
+		found := false
+		for _, dep := range row.Dependencies {
+			if dep.ID == target.ID {
+				found = true
+				break
+			}
+		}
+		assert.False(t, found, "items.dependencies must be reconciled after indeterminate persist (dep removed)")
+	}()
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
@@ -55,7 +56,7 @@ Description body`
 	assert.Equal(t, "alice", got.AssignedTo)
 	assert.Equal(t, "bob", got.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, got.Labels)
-	assert.Equal(t, []string{"T002"}, got.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{models.DependencyEdge{ID: "T002", Type: "blocks"}}, got.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, got.References)
 	assert.Equal(t, "abc123", got.Commit)
 }
