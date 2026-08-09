@@ -846,6 +846,172 @@ func TestAddItemToShipment_Success(t *testing.T) {
 	assert.Contains(t, items, task.ID)
 }
 
+// TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld verifies
+// AddItemToShipment serializes against the SAME per-shipment lock ShipShipment
+// holds across its membership-sensitive window (release scope derivation
+// through manifest-binding proof signing) — closing a TOCTOU where a
+// concurrent, unlocked membership mutation could add a member whose gate
+// evidence was never validated but still rode inside a signed manifest
+// proof (106-F F1 review finding). Proven directly: manually hold the same
+// lock AddItemToShipment must acquire, confirm it blocks, release, confirm
+// it then completes.
+func TestAddItemToShipment_BlocksWhileShipmentMembershipLockHeld(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Lock test shipment", nil)
+	require.NoError(t, err)
+	feat, err := CreateArtifact(ctx, ws, "Lock test feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Lock test task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+
+	unlock, err := lockShipmentMembership(ctx, ws, shipment.ID)
+	require.NoError(t, err, "must be able to acquire the shipment's own membership lock directly")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- AddItemToShipment(ctx, ws, shipment.ID, task.ID)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("AddItemToShipment completed (err=%v) while the shipment membership lock was held by another caller", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: AddItemToShipment is still waiting on the contended lock.
+	}
+
+	require.NoError(t, unlock())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "AddItemToShipment must succeed once the lock is released")
+	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+		t.Fatal("AddItemToShipment never completed after the lock was released")
+	}
+
+	updated, err := GetShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	items, ok := updated.CustomFields["items"].([]string)
+	require.True(t, ok)
+	assert.Contains(t, items, task.ID)
+}
+
+// TestLockShipmentMembership_StableAcrossFileRelocation verifies the lock key
+// does NOT change when the shipment's underlying markdown file relocates
+// (persistArtifact's relocate=true path, which moveShipmentStatusWithTopLevel
+// uses for every status transition, including the one ShipShipment performs
+// while still holding this very lock). Locking by the shipment's CURRENT file
+// path was found to be unsafe: a lock acquired against the pre-relocation
+// path and one acquired (by a later caller) against the post-relocation path
+// would be DIFFERENT mutexes/sidecars that never contend with each other,
+// reopening the membership race during the relocation window even with the
+// lock's scope already correctly extended (106-F F1 review finding, third
+// pass). A stable, workspace-and-ID-derived key must never change regardless
+// of where the underlying file currently lives.
+func TestLockShipmentMembership_StableAcrossFileRelocation(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Relocation lock test", nil)
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID) // queued -> active
+	require.NoError(t, err)
+
+	unlock, err := lockShipmentMembership(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// Relocate the shipment's underlying file by transitioning its status
+	// WHILE still holding the lock -- simulating exactly what ShipShipment's
+	// own moveShipmentStatusWithTopLevel call does inside its locked closure.
+	require.NoError(t, moveShipmentStatusWithTopLevel(ctx, ws, shipment.ID, ShipmentShipped, false))
+
+	// A second acquisition attempt must still contend with the first: the
+	// lock key must be stable across the relocation the status change just
+	// performed, not silently succeed against a different, unheld lock keyed
+	// to the pre-relocation path.
+	done := make(chan error, 1)
+	go func() {
+		u2, acquireErr := lockShipmentMembership(ctx, ws, shipment.ID)
+		if acquireErr != nil {
+			done <- acquireErr
+			return
+		}
+		_ = u2()
+		done <- nil
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("second lockShipmentMembership acquisition succeeded (err=%v) while the first was still held -- lock key is not stable across file relocation", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: still contended.
+	}
+
+	require.NoError(t, unlock())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "second acquisition must succeed once the first lock is released")
+	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+		t.Fatal("second lockShipmentMembership acquisition never completed after the first was released")
+	}
+}
+
+// TestLockShipmentMembership_RejectsPathTraversalShipmentID verifies that a
+// shipmentID containing path-traversal segments (e.g. "../../escape") cannot
+// escape the dedicated .backlogit/.locks directory when joined into the
+// synthetic lock key. shipmentID is caller-controlled (CLI/MCP argument) and
+// reaches lockShipmentMembership BEFORE any upstream GetShipment/artifact-ID
+// validation runs, so a crafted value could otherwise cause the lock code to
+// create, touch, or stale-reclaim-and-delete a ".*.lock" file OUTSIDE the
+// workspace entirely — a path traversal / workspace escape (Constitution
+// Principle III), not merely a cosmetic lock-key concern (106-F F1 review
+// finding, round 5).
+func TestLockShipmentMembership_RejectsPathTraversalShipmentID(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	maliciousID := filepath.Join("..", "..", "..", "escape-outside-locks")
+	_, err := lockShipmentMembership(ctx, ws, maliciousID)
+	require.Error(t, err, "a shipment ID containing path traversal segments must be rejected, not joined into a filesystem path")
+
+	// The escape target must never have been created.
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	escapedPath := filepath.Join(locksDir, maliciousID)
+	_, statErr := os.Stat(escapedPath)
+	assert.True(t, os.IsNotExist(statErr), "no lock artifact must be created outside .backlogit/.locks")
+}
+
+// TestLockShipmentMembership_RejectsSymlinkedLocksDirectory verifies that a
+// PURELY LEXICAL containment check is insufficient: if .backlogit/.locks
+// already exists as a symlink to a directory outside the workspace (planted
+// by a prior compromise or a misconfigured setup — the directory did not
+// exist before this feature and is created fresh on first use), the
+// synthetic lock key must not silently resolve, through that symlink, to a
+// location the pathContained lexical check cannot see. Resolve locksDir
+// through symlinks and verify the REAL path stays within the (also
+// symlink-resolved) workspace storage root before ANY lock operation runs,
+// mirroring resolveContainedArtifactPath's established pattern — otherwise
+// create/touch/stale-delete of the lock sidecar would actually operate
+// through the external symlink target (106-F F1 review finding, round 6).
+func TestLockShipmentMembership_RejectsSymlinkedLocksDirectory(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	outsideDir := t.TempDir()
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(locksDir), 0o755))
+	if err := os.Symlink(outsideDir, locksDir); err != nil {
+		t.Skipf("symlinks not creatable in this environment: %v", err)
+	}
+
+	_, err := lockShipmentMembership(ctx, ws, "117-S")
+	require.Error(t, err, "a .backlogit/.locks directory that is itself a symlink to outside the workspace must be rejected")
+
+	entries, readErr := os.ReadDir(outsideDir)
+	require.NoError(t, readErr)
+	assert.Empty(t, entries, "no lock artifact must be created through the symlinked external directory")
+}
+
 // T002 / ST013: Reject adding an item already in another shipment.
 func TestAddItemToShipment_AlreadyAssigned(t *testing.T) {
 	// Arrange

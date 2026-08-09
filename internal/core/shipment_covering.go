@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -75,6 +76,38 @@ func DeriveCoveringFeature(ctx context.Context, ws *Workspace, shipment *models.
 		}
 	}
 	return CoveringFeature{}, false
+}
+
+// deriveCoveringFeatureStrict is the fail-closed counterpart to
+// DeriveCoveringFeature, used ONLY where the covering feature feeds a
+// security-relevant binding (the manifest-binding digest, 106-F F1/U7).
+// DeriveCoveringFeature is deliberately best-effort for its presentation
+// use case — a transient DB blip must never break rendering a shipment
+// view, so it logs and skips any lookup error. Reusing that same
+// best-effort behavior for a signed digest would let an INDETERMINATE
+// resolution (a genuine DB error, not a legitimate "no covering feature in
+// this manifest" outcome) silently degrade to an empty covering_feature in
+// the signed proof. This function instead returns any lookup error OTHER
+// than ErrNotFound to the caller, so digest computation refuses rather than
+// signs a manifest binding whose covering-feature component could not
+// actually be checked (106-F F1 review finding).
+func deriveCoveringFeatureStrict(ctx context.Context, ws *Workspace, shipment *models.Artifact) (CoveringFeature, error) {
+	if ws == nil || ws.DB == nil || shipment == nil {
+		return CoveringFeature{}, nil
+	}
+	for _, itemID := range NormalizeShipmentItems(shipment) {
+		item, err := bldb.GetItem(ctx, ws.DB, itemID)
+		if err != nil {
+			if errors.Is(err, blerrors.ErrNotFound) {
+				continue
+			}
+			return CoveringFeature{}, fmt.Errorf("resolve covering feature candidate %s: %w", itemID, err)
+		}
+		if isRootCoveringFeature(item) {
+			return CoveringFeature{ID: item.ID, Title: item.Title}, nil
+		}
+	}
+	return CoveringFeature{}, nil
 }
 
 // isRootCoveringFeature reports whether the resolved artifact is a root covering

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -271,6 +272,42 @@ func headResolveError(shipmentID string, cause error) error {
 	return fmt.Errorf("shipment %s refused: cannot resolve shipment head: %v: %w", shipmentID, cause, be)
 }
 
+// formalGateShipmentRefusal builds a refusal error for shipment completion
+// when formal-gate-evidence admission is enforced but the broker
+// infrastructure cannot supply what enforcement requires — either the broker
+// is nil (disabled/unwired) or the current environment would otherwise fail
+// open (106-F F1/U6). It deliberately wraps ONLY the plain ErrFormalGateRequired
+// sentinel (not the typed GateError struct used by the setup/config/timeout/
+// in_progress classes) so the MCP layer's formalGateErrorResult dispatch
+// handles it with its own distinct error_type and remediation, rather than
+// being intercepted by the pre-existing "gate_setup" class handling, whose
+// remediation text ("install or repair the autoharness binary") would be
+// misleading here.
+func formalGateShipmentRefusal(shipmentID, reason string) error {
+	return fmt.Errorf("shipment %s refused: %s: %w", shipmentID, reason, blerrors.ErrFormalGateRequired)
+}
+
+// formalGateMemberRefusal builds a refusal error for a shipment member whose
+// gate evidence failed the FormalAdmit predicate, wrapping res.Err — the
+// TYPED cause (ErrProofInvalid or ErrProofUnverifiable) FormalAdmit
+// classified the refusal as — rather than the *GateBlockedError struct
+// shipmentMemberEvidenceError uses for every OTHER member-scan refusal
+// reason (missing evidence, stale lineage, malformed head). gateErrorResult
+// dispatches GateBlockedError BEFORE the formal-gate sentinels, so wrapping
+// THIS specific refusal in GateBlockedError would collapse it to the
+// generic gate_blocked MCP error_type, discarding whether the cause was a
+// tampered/replayed proof or one that could not be evaluated at all —
+// defeating the specific formal_gate_proof_invalid/
+// formal_gate_proof_unverifiable MCP contract U8 introduced for exactly
+// this refusal family (106-F F1 review finding).
+func formalGateMemberRefusal(memberID string, res gateevidence.FormalResult) error {
+	cause := res.Err
+	if cause == nil {
+		cause = blerrors.ErrProofInvalid
+	}
+	return fmt.Errorf("shipment refused: member %s formal gate evidence proof did not verify: %s: %w", memberID, res.Reason, cause)
+}
+
 // shipmentHeadUnresolvedInRepoError builds a fail-closed refusal for an ENFORCED
 // shipment whose HEAD resolves to empty INSIDE a real git work tree (1AEA2B0E).
 // This is distinct from headResolveError (a bounded-read timeout/cancel): here the
@@ -327,10 +364,32 @@ func headDriftError(shipmentID, pre, post string) error {
 //  2. shipment-diff: a shipment-level `autoharness gate check` over the full
 //     shipment diff (no --task) must return a proceed decision.
 //
+// originalManifestItems is the shipment's declared manifest (NormalizeShipmentItems,
+// deduplicated) as ShipShipment captured it BEFORE this function ran — the exact
+// snapshot releaseScope was derived from. Under formal enforcement, it is
+// re-checked against a fresh reload immediately before signing the manifest-binding
+// proof (106-F F1 review finding F3): without that re-check, a concurrent, unlocked
+// membership mutation (e.g. backlogit_add_to_shipment) landing after
+// validateMemberGateEvidence already validated the ORIGINAL members, but before
+// this function signs, would let the signed proof attest to a membership containing
+// a member whose gate evidence was never checked at all.
+//
 // On refusal it returns a typed gate error and performs NO shipment state change.
-func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope []string) error {
-	if ws == nil || ws.GateBroker == nil {
-		return nil // gate disabled (enabled:false) or unwired.
+func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, originalManifestItems []string) error {
+	if ws == nil {
+		return nil // no workspace at all; nothing to check or enforce.
+	}
+	if ws.GateBroker == nil {
+		// Enumerated early-return #1 (106-F F1/U6): a nil broker means the
+		// gate is disabled (enabled:false) or unwired. Under ordinary
+		// (non-formal) operation this silently preserves pre-gate ship
+		// behavior. But when formal gate evidence is enforced, silently
+		// proceeding here would let a shipment ship with no enforceable gate
+		// at all — refuse instead.
+		if ws.formalGateEnforced() {
+			return formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
+		}
+		return nil
 	}
 
 	// Resolve the shipment head ONCE, bounded, before Evaluate so the member
@@ -358,8 +417,14 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		return ge
 	}
 	if !ev.Enforced {
-		// Gates are not enforceable in this environment (auto fail-open): do not
-		// impose member-evidence or shipment-diff enforcement.
+		// Enumerated early-return #2 (106-F F1/U6): gates are not enforceable
+		// in this environment (auto fail-open) — ordinarily this silently
+		// skips member-evidence/shipment-diff enforcement. Under formal gate
+		// enforcement, a fail-open environment must not be allowed to ship
+		// unauthenticated: refuse instead.
+		if ws.formalGateEnforced() {
+			return formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
+		}
 		return nil
 	}
 
@@ -488,16 +553,92 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	}
 
 	// Both checks passed: record shipment-level passing evidence.
-	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, map[string]any{
+	passDelta := map[string]any{
 		"level":    "shipment",
 		"outcome":  "passed",
 		"base_ref": ev.Base.Ref,
 		"head_ref": ev.HeadRef,
 		"ran":      ev.Ran,
-	}); aerr != nil && ws.gateConfig.EvidenceRequiredValue() {
-		return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
+	}
+	// Manifest binding (106-F F1/U7): bind the ordered manifest membership,
+	// covering feature, and resolved shipment head into a purpose=shipment
+	// proof, additive to the existing head_sha ancestry and head-drift guards
+	// above (both preserved unchanged). A nil-safe best-effort GetShipment
+	// lookup failure is treated as ErrFormalGateRequired under enforcement
+	// (cannot bind a manifest we cannot read) rather than silently skipping
+	// the binding.
+	if ws.formalGateEnforced() {
+		shipment, getErr := GetShipment(ctx, ws, shipmentID)
+		if getErr != nil {
+			return fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
+		}
+		// TOCTOU guard (106-F F1 review finding F3): validateMemberGateEvidence
+		// (above) already validated every member of originalManifestItems — the
+		// manifest snapshot ShipShipment captured BEFORE this function ran. This
+		// re-reloaded shipment could have gained (or lost) a member via a
+		// concurrent, unlocked backlogit_add_to_shipment call in the window
+		// between that snapshot and this reload. Without this check, the
+		// signed manifest-binding proof would attest to the FRESH membership —
+		// including a member whose gate evidence was NEVER validated — while
+		// the signature falsely implies otherwise. Refuse (fail closed) rather
+		// than silently signing a manifest that has drifted from the one whose
+		// members were actually checked.
+		currentManifestItems := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+		if !manifestItemsUnchanged(originalManifestItems, currentManifestItems) {
+			return formalGateShipmentRefusal(shipmentID, "shipment manifest membership changed after evidence validation and before signing (concurrent modification) — refusing to bind a proof to unvalidated members")
+		}
+		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta)
+		if aerr != nil {
+			return aerr
+		}
+		// unlock MUST be deferred here (covering the manifest self-check and the
+		// real append below), not inside augmentShipmentDeltaWithFormalProof —
+		// see that function's doc comment for why releasing the counter lock any
+		// earlier reopens the counter-uniqueness TOCTOU (106-F F1 review finding).
+		defer unlock()
+		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, passDelta); verr != nil {
+			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
+		}
+	}
+	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, passDelta); aerr != nil {
+		// Parity with the task-level mustRefuseGateEvidenceFailure guarantee
+		// (106-F F1 review finding, round 3): under formal-gate enforcement,
+		// passDelta at this point already carries a REAL signed proof (the
+		// unconditional augmentShipmentDeltaWithFormalProof call above already
+		// succeeded) — this append is its sole durable record. Letting
+		// evidence_required:false silently swallow a failure here would ship
+		// with a proof that was signed but never durably persisted anywhere,
+		// defeating the feature's entire audit/authenticity guarantee.
+		// evidence_required exists to tolerate ordinary storage hiccups on the
+		// LEGACY (non-enforced) path; it must never lower formal enforcement
+		// itself, so formal enforcement unconditionally refuses here exactly
+		// as it does for the earlier signing and manifest-binding-verification
+		// failures in this same function.
+		if ws.formalGateEnforced() || ws.gateConfig.EvidenceRequiredValue() {
+			return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
+		}
+		slog.WarnContext(ctx, "shipment gate pass evidence append failed (evidence not required)", "shipment_id", shipmentID, "error", aerr)
 	}
 	return nil
+}
+
+// manifestItemsUnchanged reports whether current is IDENTICAL to original —
+// same length, same values, same order. Any difference (an added member, a
+// removed member, or even a reorder) is treated as a change: computeManifestDigest
+// itself treats manifest order as semantically significant (reordering members
+// changes the digest), so this comparison is deliberately exact rather than a
+// set-equality check, keeping it consistent with what the signed digest actually
+// commits to (106-F F1 review finding F3).
+func manifestItemsUnchanged(original, current []string) bool {
+	if len(original) != len(current) {
+		return false
+	}
+	for i := range original {
+		if original[i] != current[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // validateMemberGateEvidence verifies every task/subtask member in the release
@@ -523,6 +664,26 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 // a resolved HEAD would break this invariant.
 func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
+
+	// 106-F F1/U6: when formal gate evidence is enforced, EVERY member's own
+	// gate-pass evidence must additionally be formally admissible —
+	// gateevidence.Latest alone (used below to select the candidate and its
+	// head_sha for the pre-existing lineage check) never verifies a proof, so
+	// a hand-authored or replayed JSONL record would otherwise satisfy ship-time
+	// reconciliation identically to genuine evidence, defeating the shipment's
+	// authenticity guarantee at exactly the point (ship time, per member) it
+	// matters most. The key is resolved ONCE, outside the loop, so a missing/
+	// invalid key refuses immediately rather than partway through the scan.
+	enforced := ws.formalGateEnforced()
+	var formalKey []byte
+	if enforced {
+		key, keyErr := config.ResolveFormalGateKey()
+		if keyErr != nil {
+			return wrapFormalGateRequired(keyErr)
+		}
+		formalKey = key
+	}
+
 	for _, id := range releaseScope {
 		item, err := loadArtifact(ctx, ws, id)
 		if err != nil {
@@ -576,6 +737,37 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 				}
 			}
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
+		}
+		if enforced {
+			// FormalAdmit is deliberately stricter than Latest: it verifies the
+			// HMAC proof against ctx.Key/WorkspaceID/ItemID, refuses a
+			// forced-only history, and enforces counter monotonicity. A member
+			// whose only qualifying evidence is a plain (Latest-only) pass or a
+			// tampered/replayed proof is refused here even though the lineage
+			// check below would otherwise have accepted it.
+			res := gateevidence.FormalAdmit(evs, gateevidence.FormalContext{
+				WorkspaceID: workspaceIdentity(ws.RootPath),
+				ItemID:      id,
+				Key:         formalKey,
+			})
+			if !res.Admitted {
+				return formalGateMemberRefusal(id, res)
+			}
+			// The LINEAGE check below MUST use the event FormalAdmit actually
+			// authenticated, not the legacy Latest-selected `latest`: Latest
+			// treats EventGateForced as unconditionally qualifying (any ran, no
+			// proof required) and always prefers whichever qualifying event is
+			// chronologically LATEST, while FormalAdmit deliberately never
+			// admits EventGateForced and does not treat a later Forced event as
+			// invalidating a prior genuinely-signed pass either. Without this
+			// reassignment, an actor able to append JSONL entries could add a
+			// later, completely unsigned Forced event carrying an arbitrary
+			// forged head_sha (e.g. crafted to exactly equal shipmentHead,
+			// trivially satisfying the equality fast path below) and silently
+			// override the real, cryptographically-verified commit binding —
+			// making lineage pass for a commit that was never actually
+			// authenticated (106-F F1 review finding, round 4).
+			latest = res.Event
 		}
 		if shipmentHead != "" {
 			h, _ := latest.Delta["head_sha"].(string)

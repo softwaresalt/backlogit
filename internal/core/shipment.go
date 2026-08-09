@@ -178,6 +178,80 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 	return nil
 }
 
+// lockShipmentMembership acquires the per-shipment advisory lock guarding
+// shipment.CustomFields["items"] — reusing task_lock.go's per-file-path
+// keyed-mutex-plus-sidecar mechanism (despite its "task" naming, it is
+// generic: keyed by resolved file path, not by artifact type). Every
+// function that reads-then-writes shipment membership, or that signs a
+// manifest-binding proof over a membership snapshot, MUST hold this lock for
+// the duration of that critical section. Without it, a concurrent membership
+// mutation can land in the unprotected window between a snapshot and a later
+// re-read/signing step, letting an added member ride inside a signed
+// manifest-binding proof whose gate evidence was never actually validated
+// (106-F F1 review finding).
+//
+// The lock key is a STABLE synthetic path derived from the workspace root and
+// shipment ID alone — NOT the shipment's actual current markdown file path.
+// persistArtifact relocates a shipment's file whenever its target directory
+// changes (e.g. archival, or a registry configured to route active/shipped
+// shipments to different directories), and moveShipmentStatusWithTopLevel
+// performs exactly such a persist while ShipShipment still holds this lock.
+// Locking on the real file path would be unsafe: a lock acquired against the
+// pre-relocation path and one acquired (by a later caller, once the file has
+// already moved) against the post-relocation path are DIFFERENT mutexes and
+// DIFFERENT sidecar files that never contend with each other, silently
+// reopening the membership race across any relocation regardless of how far
+// the caller's own critical section has been extended (106-F F1 review
+// finding, third pass). A key derived only from the workspace root and
+// shipment ID never changes, so it keeps contending correctly no matter
+// where the underlying file currently lives.
+func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID string) (unlock func() error, err error) {
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	if mkErr := os.MkdirAll(locksDir, 0o755); mkErr != nil {
+		return nil, fmt.Errorf("create shipment membership locks directory: %w", mkErr)
+	}
+	// A lexical/pathContained check on locksDir alone is insufficient:
+	// .backlogit/.locks (or an ancestor) could itself be a symlink to a
+	// directory outside the workspace (planted by a prior compromise or a
+	// misconfigured setup), which a string-only check cannot see. Resolve it
+	// through any symlinks and verify the REAL path still resolves within
+	// the (also symlink-resolved) workspace storage root BEFORE any lock
+	// operation runs, reusing the same containment pattern
+	// resolveContainedArtifactPath already establishes for artifact leaves —
+	// otherwise every subsequent lock operation (create, touch,
+	// stale-reclaim-and-delete) would actually operate through that external
+	// symlink target (106-F F1 review finding, round 6). All further
+	// operations are bound to the resolved path, not the original locksDir.
+	realLocksDir, containErr := resolveContainedArtifactPath(ws, locksDir)
+	if containErr != nil {
+		return nil, fmt.Errorf("resolve shipment membership locks directory containment: %w", containErr)
+	}
+	// stableKey need not (and must not) point at a real artifact file —
+	// lockTaskFile only ever creates a ".<name>.lock" sidecar adjacent to
+	// the path it is given; it never requires the path itself to exist.
+	stableKey := filepath.Join(realLocksDir, shipmentID)
+	// shipmentID is caller-controlled (CLI/MCP argument) and reaches this
+	// function BEFORE any upstream GetShipment/artifact-ID validation runs.
+	// A value containing path-traversal segments (e.g. "../../escape") could
+	// otherwise resolve stableKey outside locksDir entirely, letting this
+	// code create, touch, or stale-reclaim-and-delete a lock artifact outside
+	// the workspace — a path traversal / workspace escape (Constitution
+	// Principle III), not merely a lock-key naming concern. Fail closed
+	// rather than trusting filepath.Join's result unchecked (106-F F1 review
+	// finding, round 5).
+	if !pathContained(realLocksDir, stableKey) {
+		return nil, fmt.Errorf("shipment ID %q resolves outside the shipment membership locks directory: %w", shipmentID, blerrors.ErrValidation)
+	}
+	return lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+}
+
+// shipmentMembershipLocksDirName is the fixed, dotfile-prefixed subdirectory
+// (under the workspace's backlogit storage root) holding ONLY the synthetic
+// lock-key placeholders lockShipmentMembership uses — never real artifact
+// content. The leading dot keeps it alongside the existing `.*.lock`
+// .gitignore convention for advisory lock sidecars.
+const shipmentMembershipLocksDirName = ".locks"
+
 // AddItemToShipment associates an artifact ID with a shipment. The item must not
 // already belong to another active shipment.
 //
@@ -186,6 +260,12 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // in frontmatter, rewrite the file atomically, and upsert into the database.
 // Emit slog.Debug for item association and events.jsonl record.
 func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID string) error {
+	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+	if lockErr != nil {
+		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() { _ = unlock() }()
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err
@@ -228,6 +308,12 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 // both files atomically, and emit slog.Info + events.jsonl for the return.
 // Return ErrCannotReturnItem if the item is not in this shipment.
 func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, reason string) error {
+	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+	if lockErr != nil {
+		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() { _ = unlock() }()
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err

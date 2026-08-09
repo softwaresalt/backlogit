@@ -44,15 +44,22 @@ type TransitionOptions struct {
 // the (possibly refused) artifact so CLI/MCP callers can render machine output
 // without re-parsing the gate report.
 type GateOutcome struct {
-	ItemID          string
-	OldStatus       string
-	NewStatus       string
-	Outcome         string // "passed" | "blocked" | "requeued" | "escalated" | "error"
-	StateChanged    bool
-	BaseRef         string
-	HeadRef         string
-	HeadSHA         string
-	GateReportHash  string
+	ItemID         string
+	OldStatus      string
+	NewStatus      string
+	Outcome        string // "passed" | "blocked" | "requeued" | "escalated" | "error"
+	StateChanged   bool
+	BaseRef        string
+	HeadRef        string
+	HeadSHA        string
+	GateReportHash string
+	// ReportJSON is the raw gate-check report bytes for this outcome. It is
+	// used (106-F F1/U6) to re-validate against the schema-validated formal
+	// report contract at proof-signing time for EventGatePassed evidence, so
+	// the report_digest bound into a formal proof always reflects a report
+	// that actually passed ValidateFormalReport rather than the merely
+	// best-effort GateReportHash.
+	ReportJSON      []byte
 	RepeatedFailure *gate.RepeatedFailure
 	Forced          bool
 	Ran             bool
@@ -89,11 +96,78 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 	if err != nil {
 		return nil, nil, fmt.Errorf("find artifact %s: %w", id, err)
 	}
+
+	// A shipment moving to "shipped" MUST go through ShipShipment, never
+	// this general-purpose entry point: gateApplies (and its nil-broker
+	// sibling gateWouldApplyButForBroker, below) are hardcoded to
+	// task/subtask artifact types, so a shipment always fails that check
+	// regardless of enforcement state and falls straight through to the
+	// plain ungated write — completely bypassing ShipShipment's
+	// member-evidence verification, manifest-binding signing, and
+	// membership locking. This is a materially more complete bypass than
+	// even an operator --force: it requires no force flag at all, just
+	// calling a different, pre-existing general-purpose tool
+	// (backlogit_move_item / backlogit_update_item and their CLI
+	// equivalents) instead of ship_shipment. Refused outright under formal
+	// enforcement (106-F F1 review finding, round 8).
+	if peek != nil && peek.ArtifactType == "shipment" {
+		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) && ws.formalGateEnforced() {
+			return nil, nil, formalGateShipmentRefusal(id, "shipments must be shipped via ShipShipment, not a direct status update, while formal gate evidence is enforced")
+		}
+	}
+
 	if !ws.gateApplies(peek, updates) {
+		// gateApplies returns false uniformly both for a genuinely
+		// non-applicable transition (wrong artifact type, non-terminal
+		// target, already-terminal item) AND for an otherwise-gate-eligible
+		// transition whose broker just happens to be nil (disabled or
+		// unwired). Under formal-gate enforcement those two cases must be
+		// distinguished: silently completing ungated in the second case
+		// would let BACKLOGIT_FORMAL_GATE_REQUIRED=true be defeated simply
+		// by the gate being unconfigured — mirroring the identical
+		// nil-broker refusal gateShipmentCompletion already applies at the
+		// shipment level (106-F F1 review finding).
+		if ws.formalGateEnforced() && ws.GateBroker == nil && gateWouldApplyButForBroker(ws, peek, updates) {
+			return nil, nil, formalGateTaskRefusal(id, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
+		}
 		artifact, uErr := updateArtifactUngated(ctx, ws, id, updates)
 		return artifact, nil, uErr
 	}
 	return ws.runGatedCompletion(ctx, id, updates, opts)
+}
+
+// gateWouldApplyButForBroker reports whether a transition is otherwise
+// gate-eligible (task/subtask, a configured terminal target status, item not
+// already terminal) independent of whether a broker is actually wired — the
+// same predicate as gateApplies minus its ws.GateBroker == nil check. Used
+// to distinguish "the gate does not apply to this transition at all" from
+// "the gate would apply but the broker is unavailable," which under formal
+// enforcement must refuse rather than silently completing ungated.
+func gateWouldApplyButForBroker(ws *Workspace, a *models.Artifact, updates map[string]any) bool {
+	if ws == nil || a == nil {
+		return false
+	}
+	if a.ArtifactType != "task" && a.ArtifactType != "subtask" {
+		return false
+	}
+	newStatus, ok := updates["status"].(string)
+	if !ok || newStatus == "" {
+		return false
+	}
+	if !ws.isGateTerminalStatus(newStatus) {
+		return false
+	}
+	return !ws.isGateTerminalStatus(string(a.Status))
+}
+
+// formalGateTaskRefusal builds a refusal error for task-level completion when
+// formal-gate-evidence admission is enforced but no broker is wired to run
+// the gate at all — the task-level counterpart to formalGateShipmentRefusal.
+// It deliberately wraps ONLY the plain ErrFormalGateRequired sentinel (not a
+// typed *GateError) so the MCP layer's formalGateErrorResult dispatch handles
+// it with its own distinct error_type and remediation.
+func formalGateTaskRefusal(itemID, reason string) error {
+	return fmt.Errorf("item %s refused: %s: %w", itemID, reason, bkerrors.ErrFormalGateRequired)
 }
 
 // gateApplies reports whether the pre-task-completion gate must run for this
@@ -142,6 +216,24 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		}
 	}
 
+	// Under formal-gate enforcement, a forced completion is refused outright
+	// rather than allowed to proceed. completeGatePass signs a genuine
+	// EventGatePassed envelope UNCONDITIONALLY (force or not) before
+	// separately appending the EventGateForced audit event, and FormalAdmit
+	// never treats a later EventGateForced as invalidating a prior pass — so
+	// letting a force through here would still produce cryptographically
+	// valid evidence that satisfies ship-time formal verification regardless
+	// of what the underlying check actually decided, completely defeating
+	// the "formal admission proves the gate genuinely ran and passed"
+	// guarantee via the existing, legitimate force mechanism. Formal
+	// enforcement may only RAISE strictness, never be bypassed by an
+	// operator override (106-F F1 review finding, round 6).
+	if opts.Force && ws.formalGateEnforced() {
+		return nil, nil, fmt.Errorf(
+			"%w: forced completion of %s is not permitted while formal gate evidence is enforced (BACKLOGIT_FORMAL_GATE_REQUIRED / formal_gate.enabled) — resolve the underlying gate check instead of forcing",
+			bkerrors.ErrFormalGateRequired, id)
+	}
+
 	path, err := FindArtifactPath(ctx, ws, id)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve artifact path %s: %w", id, err)
@@ -174,6 +266,46 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		return artifact, nil, uErr
 	}
 
+	// Under formal-gate enforcement, capture HEAD BEFORE Evaluate runs and
+	// verify it did not move WHILE the gate check command was running:
+	// newOutcome's head_sha binding was otherwise sampled only AFTER Evaluate
+	// returned, so a concurrent commit or checkout during evaluation could
+	// let a signed proof authenticate a tree the gate never actually
+	// reviewed. This mirrors the shipment path's analogous pre/post
+	// head-drift bracket around its own aggregate evaluation. A
+	// bounded-read failure fails closed under enforcement.
+	//
+	// headSHABounded returns ("", nil) for EVERY non-context git rev-parse
+	// HEAD failure, not only when ws.RootPath is not a git repository at
+	// all — an unborn branch (a real, initialized work tree with zero
+	// commits), a corrupted repository, or a transient execution error all
+	// produce the identical shape. Treating every empty head as "genuine
+	// no-repo, skip the check" would let a REAL work tree in one of those
+	// other states sign a proof with an empty commit binding. Mirroring the
+	// shipment path's own in-repo/no-repo discrimination
+	// (ws.inGitWorktreeBounded), an empty head is only preserved as the
+	// legacy skip when the probe confirms this is genuinely NOT a git work
+	// tree at all; a real work tree with an otherwise-unresolvable HEAD
+	// fails closed instead (106-F F1 review finding, round 9).
+	formalEnforcedNow := ws.formalGateEnforced()
+	var preEvalHead string
+	if formalEnforcedNow {
+		h, preErr := ws.headSHABounded(ctx)
+		if preErr != nil {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf("resolve head before gate evaluation for %s: %w", id, preErr))
+		}
+		if h == "" {
+			inRepo, probeErr := ws.inGitWorktreeBounded(ctx)
+			if probeErr != nil || inRepo {
+				return nil, nil, wrapFormalGateRequired(fmt.Errorf(
+					"resolve head before gate evaluation for %s: HEAD is unresolved in a real git work tree (in_repo=%v, probe_error=%v)",
+					id, inRepo, probeErr))
+			}
+			// Genuinely not a git repository at all: preserve the legacy skip.
+		}
+		preEvalHead = h
+	}
+
 	ev, evalErr := ws.GateBroker.Evaluate(ctx, gate.Request{
 		ItemID:        id,
 		WorkspaceRoot: ws.RootPath,
@@ -183,6 +315,20 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 	})
 	if evalErr != nil {
 		return ws.handleGateSetupError(ctx, id, oldStatus, evalErr)
+	}
+
+	var stableHeadSHA string
+	if formalEnforcedNow && preEvalHead != "" {
+		postHead, postErr := ws.headSHABounded(ctx)
+		if postErr != nil {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf("resolve head after gate evaluation for %s: %w", id, postErr))
+		}
+		if postHead != preEvalHead {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf(
+				"HEAD changed during gate evaluation for %s (before=%s, after=%s): refusing to bind formal evidence to an unstable tree",
+				id, preEvalHead, postHead))
+		}
+		stableHeadSHA = postHead
 	}
 
 	// F1 (083.001-T): advisory only. When a pinned config base_ref shadows an
@@ -206,13 +352,13 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 
 	switch ev.Decision.Kind {
 	case gate.DecisionProceed:
-		return ws.completeGatePass(ctx, id, updates, requestedStatus, oldStatus, ev, opts)
+		return ws.completeGatePass(ctx, id, updates, requestedStatus, oldStatus, ev, opts, stableHeadSHA)
 	case gate.DecisionRedirectQueued:
-		return ws.redirectGate(ctx, id, current, oldStatus, "queued", "requeued", EventGateRequeued, ev)
+		return ws.redirectGate(ctx, id, current, oldStatus, "queued", "requeued", EventGateRequeued, ev, stableHeadSHA)
 	case gate.DecisionRedirectBlocked:
-		return ws.redirectGate(ctx, id, current, oldStatus, "blocked", "escalated", EventGateEscalated, ev)
+		return ws.redirectGate(ctx, id, current, oldStatus, "blocked", "escalated", EventGateEscalated, ev, stableHeadSHA)
 	case gate.DecisionBlock:
-		return ws.blockGate(ctx, id, oldStatus, ev)
+		return ws.blockGate(ctx, id, oldStatus, ev, stableHeadSHA)
 	case gate.DecisionError:
 		return ws.errorGate(ctx, id, oldStatus, ev.Decision)
 	default:
@@ -220,15 +366,43 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 	}
 }
 
+// mustRefuseGateEvidenceFailure reports whether an appendGateEvidence failure
+// MUST refuse the transition regardless of the evidence_required config knob.
+// A formal-gate-evidence refusal (missing/invalid key, invalid report, a
+// proof that fails to sign) is a DIFFERENT failure class from an ordinary
+// storage/I/O append failure: evidence_required exists to let an operator
+// tolerate transient storage failures, not to lower formal-gate enforcement —
+// augmentDeltaWithFormalProof's own contract is "no unauthenticated fallback
+// under enforcement" (106-F F1 review finding: these two failure classes were
+// previously conflated behind one EvidenceRequiredValue() check, so
+// evidence_required:false silently let a formal-gate-required completion
+// proceed with NO evidence recorded at all).
+//
+// ws.formalGateEnforced() is ALSO checked directly (not just
+// stderrors.Is(err, ErrFormalGateRequired)): augmentDeltaWithFormalProof can
+// succeed (a real proof was genuinely signed) and appendGateEvent's later,
+// SEPARATE durable JSONL write can still fail on its own for an ordinary
+// storage/I/O reason — that failure is not itself ErrFormalGateRequired, so
+// the first disjunct alone missed it, letting evidence_required:false permit
+// a completion whose signed proof was never durably recorded anywhere under
+// enforcement (106-F F1 review finding, round 6 — the same gap already
+// closed for the shipment-level equivalent in gateShipmentCompletion).
+func mustRefuseGateEvidenceFailure(ws *Workspace, err error) bool {
+	return stderrors.Is(err, bkerrors.ErrFormalGateRequired) || ws.formalGateEnforced() || ws.gateConfig.EvidenceRequiredValue()
+}
+
 // completeGatePass applies a passing completion: evidence first, then the durable
 // write via the ungated update (which validates the terminal transition and emits
-// standard lifecycle events).
-func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates map[string]any, requestedStatus, oldStatus string, ev gate.Evaluation, opts TransitionOptions) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, requestedStatus, "passed", true, ev)
+// standard lifecycle events). stableHeadSHA, when non-empty, is the HEAD verified
+// stable across the gate evaluation window (see runGatedCompletion) and is bound
+// into the outcome's signed evidence instead of a fresh (potentially now-stale)
+// re-read.
+func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates map[string]any, requestedStatus, oldStatus string, ev gate.Evaluation, opts TransitionOptions, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, requestedStatus, "passed", true, ev, stableHeadSHA)
 	outcome.Forced = opts.Force
 
 	if err := ws.appendGateEvidence(ctx, id, EventGatePassed, outcome, &opts); err != nil {
-		if ws.gateConfig.EvidenceRequiredValue() {
+		if mustRefuseGateEvidenceFailure(ws, err) {
 			return nil, nil, fmt.Errorf("gate evidence append failed, refusing completion of %s: %w", id, err)
 		}
 		slog.WarnContext(ctx, "gate pass evidence append failed (evidence not required)", "item_id", id, "error", err)
@@ -239,7 +413,7 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 			// of forcing. Under evidence_required, a failed forced-audit append must
 			// refuse the completion rather than silently persist a forced transition
 			// with no audit trail (parity with the pass-evidence path above).
-			if ws.gateConfig.EvidenceRequiredValue() {
+			if mustRefuseGateEvidenceFailure(ws, err) {
 				return nil, nil, fmt.Errorf("forced-gate evidence append failed, refusing completion of %s: %w", id, err)
 			}
 			slog.WarnContext(ctx, "gate forced evidence append failed (evidence not required)", "item_id", id, "error", err)
@@ -261,11 +435,12 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 // validator, and to avoid re-entering the hook pipeline during gate requeue.
 // active->queued is also a validated transition post-124.002-T, so this path
 // is consistent with the validator — not a bypass of a forbidden transition.
-func (ws *Workspace) redirectGate(ctx context.Context, id string, current *models.Artifact, oldStatus, target, outcomeName, eventType string, ev gate.Evaluation) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev)
+// stableHeadSHA — see completeGatePass's doc comment.
+func (ws *Workspace) redirectGate(ctx context.Context, id string, current *models.Artifact, oldStatus, target, outcomeName, eventType string, ev gate.Evaluation, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev, stableHeadSHA)
 
 	if err := ws.appendGateEvidence(ctx, id, eventType, outcome, nil); err != nil {
-		if ws.gateConfig.EvidenceRequiredValue() {
+		if mustRefuseGateEvidenceFailure(ws, err) {
 			return nil, nil, fmt.Errorf("gate evidence append failed, refusing redirect of %s: %w", id, err)
 		}
 		slog.WarnContext(ctx, "gate redirect evidence append failed (evidence not required)", "item_id", id, "error", err)
@@ -280,9 +455,9 @@ func (ws *Workspace) redirectGate(ctx context.Context, id string, current *model
 
 // blockGate refuses a below-threshold completion. No durable write occurs; the
 // item retains its old status. Evidence is best-effort here (there is no state
-// change to protect).
-func (ws *Workspace) blockGate(ctx context.Context, id, oldStatus string, ev gate.Evaluation) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, oldStatus, "blocked", false, ev)
+// change to protect). stableHeadSHA — see completeGatePass's doc comment.
+func (ws *Workspace) blockGate(ctx context.Context, id, oldStatus string, ev gate.Evaluation, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, oldStatus, "blocked", false, ev, stableHeadSHA)
 	if err := ws.appendGateEvidence(ctx, id, EventGateBlocked, outcome, nil); err != nil {
 		slog.WarnContext(ctx, "gate block evidence append failed", "item_id", id, "error", err)
 	}
@@ -353,8 +528,17 @@ func (ws *Workspace) writeStatusDirect(ctx context.Context, a *models.Artifact, 
 }
 
 // newOutcome builds a GateOutcome from an evaluation, computing the best-effort
-// HEAD SHA and report hash.
-func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, outcomeName string, stateChanged bool, ev gate.Evaluation) *GateOutcome {
+// HEAD SHA and report hash. stableHeadSHA, when non-empty, OVERRIDES the
+// best-effort ws.headSHA(ctx) re-read: it is the HEAD the caller already
+// verified stable across the gate evaluation window (formal enforcement
+// only — see runGatedCompletion), so binding it instead of re-querying git a
+// further time avoids widening the TOCTOU window even further right at the
+// point evidence is actually signed (106-F F1 review finding, round 7).
+func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, outcomeName string, stateChanged bool, ev gate.Evaluation, stableHeadSHA string) *GateOutcome {
+	headSHA := stableHeadSHA
+	if headSHA == "" {
+		headSHA = ws.headSHA(ctx)
+	}
 	return &GateOutcome{
 		ItemID:          id,
 		OldStatus:       oldStatus,
@@ -363,8 +547,9 @@ func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, o
 		StateChanged:    stateChanged,
 		BaseRef:         ev.Base.Ref,
 		HeadRef:         ev.HeadRef,
-		HeadSHA:         ws.headSHA(ctx),
+		HeadSHA:         headSHA,
 		GateReportHash:  gateReportHash(ev.Decision.ReportJSON),
+		ReportJSON:      ev.Decision.ReportJSON,
 		RepeatedFailure: ev.Decision.RepeatedFailure,
 		Ran:             ev.Ran,
 	}
@@ -419,6 +604,16 @@ func (ws *Workspace) appendGateEvidence(ctx context.Context, id, eventType strin
 			delta["force_reason"] = opts.ForceReason
 		}
 	}
+	unlock, augErr := ws.augmentDeltaWithFormalProof(ctx, id, eventType, outcome, delta)
+	if augErr != nil {
+		return augErr
+	}
+	// unlock MUST be deferred here (covering the real append below), not
+	// inside augmentDeltaWithFormalProof — the counter lock has to stay held
+	// across "allocate, then durably persist" as one atomic step, or a second
+	// concurrent transition for the same item could allocate and durably
+	// append the SAME counter value (106-F F1 review finding).
+	defer unlock()
 	return ws.appendGateEvent(ctx, id, eventType, delta)
 }
 

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // BranchProfile holds aggregated metrics for a single branch, enriched with
@@ -158,6 +160,10 @@ var prMergePattern = regexp.MustCompile(`Merge pull request #(\d+) from [^/]+/(.
 // due to I/O or buffer-overflow issues.
 func ParseGitMergePRs(repoPath string) (map[string]string, error) {
 	cmd := exec.Command("git", "-C", repoPath, "log", "--merges", "--oneline", "--all")
+	// Explicitly scrub the formal-gate-evidence key from this child process's
+	// environment (106-F F1/U2) rather than leaving Env nil, which would
+	// otherwise inherit the full ambient environment unfiltered.
+	cmd.Env = config.ChildProcessEnv()
 	output, err := cmd.Output()
 	if err != nil {
 		// Git not available or not a repo — graceful degradation.

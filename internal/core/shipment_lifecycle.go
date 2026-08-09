@@ -157,66 +157,58 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}
 
-	explicitScope := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
-	explicitScopeSet := toIDSet(explicitScope)
-	releaseScope, err := releaseScopeItemIDs(ctx, ws, explicitScope)
-	if err != nil {
-		return nil, fmt.Errorf("ship shipment %s: resolve release scope: %w", shipmentID, err)
-	}
-
-	// Two-level shipment gate (082-F ST4.2): validate member-task gate evidence
-	// and run a shipment-level autoharness gate check over the full diff BEFORE
-	// completing the release scope, so an ungated member is never auto-completed.
-	// A refusal leaves shipment state unchanged.
-	if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
-	}
-
-	// 133.004-T: resolve covering-feature ancestry BEFORE completing the release
-	// scope. completeReleaseScope's status writes trigger the generic
-	// cascadePersistedParentStatuses rollup (harness_status.go), which marks a
-	// parent done -- and, per the registry's status-based directory routing,
-	// relocates it into the archive directory -- purely because its currently
-	// recorded children happen to all be terminal. That rollup does not know
-	// about shipment membership, so it can fire for a covering feature that was
-	// never itself listed as an explicit shipment member. Snapshotting here
-	// captures the pre-ship status of every non-member feature so the rollup
-	// can be detected and reverted once the ship completes (133-F).
-	featureIDs, err := featureScopeRoots(ctx, ws, explicitScope)
-	if err != nil {
-		return nil, fmt.Errorf("ship shipment %s: resolve feature scope: %w", shipmentID, err)
-	}
-	nonMemberFeatureSnapshots, err := snapshotNonMemberFeatureStatuses(ctx, ws, featureIDs, explicitScopeSet)
-	if err != nil {
-		return nil, fmt.Errorf("ship shipment %s: snapshot covering feature scope: %w", shipmentID, err)
-	}
-	// archivedIDs is declared here (rather than with := at its first
-	// assignment below) so this defer's closure observes its final value:
+	// Membership lock (106-F F1 review finding, hardened across two review
+	// passes): held from the release-scope snapshot all the way through the
+	// shipment's OWN status transition OUT of "active" — the only status
+	// during which AddItemToShipment/ReturnBlockedItem are permitted to
+	// mutate membership at all (shipmentMutationBlocked refuses on any other
+	// status). Once moveShipmentStatusWithTopLevel below completes, further
+	// membership mutation is independently blocked by that status check, so
+	// the lock does not need to be held any longer than this.
+	//
+	// An earlier version of this lock released as soon as the manifest proof
+	// was signed inside gateShipmentCompletion. That left an UNPROTECTED
+	// window between signing and this function's own status transition,
+	// during which a concurrent AddItemToShipment could still acquire the
+	// (by-then-released) lock, add an unvalidated member, and return
+	// successfully — reopening the manifest TOCTOU immediately after signing
+	// rather than before it (106-F F1 review finding, second pass). Every
+	// step that reads or acts on shipment membership (feature-scope
+	// resolution, the non-member-feature snapshot, release-scope
+	// completion, and the shipment's own status write) now runs inside this
+	// SAME locked closure so no such window remains.
+	var explicitScope, releaseScope, featureIDs, returnedIDs []string
+	var explicitScopeSet map[string]struct{}
+	var nonMemberFeatureSnapshots map[string]featureStatusSnapshot
+	// archivedIDs and restored are declared here (rather than at their first
+	// assignment) so both the locked closure below and the deferred fallback
+	// registered immediately after it observe/mutate the same variables.
 	// featureScopeRoots only discovers a non-member feature by walking UP
 	// from an explicitly listed descendant, so a feature nested UNDER an
 	// explicit-member root (reachable via AdoptItem re-parenting, e.g. a
-	// dotted "002.001-F") is captured here as "non-member" even though
+	// dotted "002.001-F") is captured as "non-member" even though
 	// collectArchiveCandidateIDs later sweeps it into archivedIDs anyway, as
 	// a genuine descendant of that explicit-member root. Restoring such a
 	// feature would revert an archival this same call just legitimately
 	// performed (review-fix, 133.004-T).
 	var archivedIDs []string
-	// restored tracks whether the explicit, in-line restore call below (on
-	// the successful path) already ran, so the deferred fallback becomes a
-	// no-op instead of invoking restoreRolledUpNonMemberFeatures twice.
+	// restored tracks whether the explicit, in-line restore call later in
+	// this function (on the successful path) already ran, so the deferred
+	// fallback becomes a no-op instead of invoking
+	// restoreRolledUpNonMemberFeatures twice.
 	restored := false
 	// 133.004-T: always attempt the revert, even if a later step in this
 	// function fails and returns early -- a partial/aborted ship must not
 	// leave a non-member covering feature stranded mid-rollup. A restore
 	// failure is joined onto (never silently drops) the function's error.
 	// review-fix (PR #327): this defer is now a fallback for early-return
-	// paths only. On the successful path, the explicit call below runs the
-	// restore BEFORE VerifyPostShipConsistency and the post-ship hooks, so
-	// consistency checks and external integrations never observe the
-	// covering feature in its transient, incorrectly-rolled-up done/archived
-	// state. Relying solely on this defer would let it fire only during
-	// return unwinding -- strictly after those in-line statements already
-	// ran to completion.
+	// paths only. On the successful path, the explicit call further below
+	// runs the restore BEFORE VerifyPostShipConsistency and the post-ship
+	// hooks, so consistency checks and external integrations never observe
+	// the covering feature in its transient, incorrectly-rolled-up
+	// done/archived state. Relying solely on this defer would let it fire
+	// only during return unwinding -- strictly after those in-line
+	// statements already ran to completion.
 	defer func() {
 		if restored {
 			return
@@ -226,34 +218,88 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}()
 
-	if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: complete release scope: %w", shipmentID, err)
-	}
-
-	returnedIDs := make([]string, 0)
-	releaseScopeSet := toIDSet(releaseScope)
-	for _, featureID := range featureIDs {
-		returned, returnErr := returnUnreleasedFeatureItems(ctx, ws, featureID, releaseScopeSet)
-		if returnErr != nil {
-			return nil, fmt.Errorf("ship shipment %s: return unreleased feature items for %s: %w", shipmentID, featureID, returnErr)
+	lockErr := func() error {
+		unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
+		if lockErr != nil {
+			return fmt.Errorf("acquire membership lock: %w", lockErr)
 		}
-		returnedIDs = append(returnedIDs, returned...)
-		// 133.004-T: only a covering feature that is itself an explicit
-		// shipment member is marked done here. A feature that is merely an
-		// ancestor of some shipped item, but was never itself a member, must
-		// be left alone -- its lifecycle is independent of this partial
-		// release, and any unintended rollup it already picked up from
-		// completeReleaseScope's cascade is reverted by the deferred restore
-		// above (133-F).
-		if _, isMember := explicitScopeSet[featureID]; isMember {
-			if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
-				return nil, fmt.Errorf("ship shipment %s: mark feature %s done: %w", shipmentID, featureID, setErr)
+		defer func() { _ = unlock() }()
+
+		explicitScope = uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+		explicitScopeSet = toIDSet(explicitScope)
+		var scopeErr error
+		releaseScope, scopeErr = releaseScopeItemIDs(ctx, ws, explicitScope)
+		if scopeErr != nil {
+			return fmt.Errorf("resolve release scope: %w", scopeErr)
+		}
+
+		// Two-level shipment gate (082-F ST4.2): validate member-task gate
+		// evidence and run a shipment-level autoharness gate check over the
+		// full diff BEFORE completing the release scope, so an ungated
+		// member is never auto-completed. A refusal leaves shipment state
+		// unchanged. explicitScope (captured above, before any of this
+		// runs, and now additionally protected by the membership lock held
+		// for this entire closure) is re-checked against a fresh reload
+		// immediately before the manifest-binding proof is signed, so a
+		// concurrent membership mutation landing after this snapshot cannot
+		// ride inside a signed proof whose members were never actually
+		// validated (106-F F1 review finding F3).
+		if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
+			return err
+		}
+
+		// 133.004-T: resolve covering-feature ancestry BEFORE completing the
+		// release scope. completeReleaseScope's status writes trigger the
+		// generic cascadePersistedParentStatuses rollup (harness_status.go),
+		// which marks a parent done -- and, per the registry's status-based
+		// directory routing, relocates it into the archive directory --
+		// purely because its currently recorded children happen to all be
+		// terminal. That rollup does not know about shipment membership, so
+		// it can fire for a covering feature that was never itself listed
+		// as an explicit shipment member. Snapshotting here captures the
+		// pre-ship status of every non-member feature so the rollup can be
+		// detected and reverted once the ship completes (133-F).
+		var featureErr error
+		featureIDs, featureErr = featureScopeRoots(ctx, ws, explicitScope)
+		if featureErr != nil {
+			return fmt.Errorf("resolve feature scope: %w", featureErr)
+		}
+		var snapshotErr error
+		nonMemberFeatureSnapshots, snapshotErr = snapshotNonMemberFeatureStatuses(ctx, ws, featureIDs, explicitScopeSet)
+		if snapshotErr != nil {
+			return fmt.Errorf("snapshot covering feature scope: %w", snapshotErr)
+		}
+
+		if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
+			return fmt.Errorf("complete release scope: %w", err)
+		}
+
+		returnedIDs = make([]string, 0)
+		releaseScopeSet := toIDSet(releaseScope)
+		for _, featureID := range featureIDs {
+			returned, returnErr := returnUnreleasedFeatureItems(ctx, ws, featureID, releaseScopeSet)
+			if returnErr != nil {
+				return fmt.Errorf("return unreleased feature items for %s: %w", featureID, returnErr)
+			}
+			returnedIDs = append(returnedIDs, returned...)
+			// 133.004-T: only a covering feature that is itself an explicit
+			// shipment member is marked done here. A feature that is merely
+			// an ancestor of some shipped item, but was never itself a
+			// member, must be left alone -- its lifecycle is independent of
+			// this partial release, and any unintended rollup it already
+			// picked up from completeReleaseScope's cascade is reverted by
+			// the deferred restore above (133-F).
+			if _, isMember := explicitScopeSet[featureID]; isMember {
+				if _, setErr := setArtifactStatus(ctx, ws, featureID, models.StatusDone, "feature released"); setErr != nil {
+					return fmt.Errorf("mark feature %s done: %w", featureID, setErr)
+				}
 			}
 		}
-	}
 
-	if err := moveShipmentStatusWithTopLevel(ctx, ws, shipmentID, ShipmentShipped, false); err != nil {
-		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, err)
+		return moveShipmentStatusWithTopLevel(ctx, ws, shipmentID, ShipmentShipped, false)
+	}()
+	if lockErr != nil {
+		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
 	}
 
 	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs, explicitScopeSet)

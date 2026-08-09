@@ -28,6 +28,13 @@ func gateErrorResult(err error, requestedStatus string) (*mcplib.CallToolResult,
 	if errors.As(err, &ge) {
 		return gateClassResult(ge), true
 	}
+	// Formal-gate-evidence refusals (106-F F1/U8) are checked last: they wrap
+	// distinct sentinels (ErrFormalGateRequired/ErrProofInvalid/
+	// ErrProofUnverifiable) rather than the typed GateBlockedError/GateError
+	// structs above, so errors.Is (not errors.As) is the correct dispatch here.
+	if result, handled := formalGateErrorResult(err); handled {
+		return result, true
+	}
 	return nil, false
 }
 

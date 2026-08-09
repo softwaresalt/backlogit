@@ -123,9 +123,7 @@ type ExecGitRunner struct {
 func (g ExecGitRunner) Verify(ctx context.Context, ref string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 	cmd.Dir = g.Dir
-	if g.Env != nil {
-		cmd.Env = g.Env
-	}
+	cmd.Env = resolveChildEnv(g.Env)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	err := cmd.Run()

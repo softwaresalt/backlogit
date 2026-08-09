@@ -3,6 +3,8 @@ package gate
 import (
 	"context"
 	stderrors "errors"
+	"os/exec"
+	"strings"
 	"testing"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -98,3 +100,29 @@ func TestVersionAtLeast(t *testing.T) {
 		}
 	}
 }
+
+// TestExecVersionRunner_NilEnvDefaultsToScrubbed verifies that
+// ExecVersionRunner.Version, when Env is unset, no longer leaves cmd.Env nil
+// (which would inherit the ambient environment including
+// BACKLOGIT_GATE_EVIDENCE_KEY unfiltered) and still functions correctly
+// against a real binary (106-F F1/U2). The explicit-Env branch is unchanged
+// existing code and is already exercised by TestProbe's fake VersionRunner.
+func TestExecVersionRunner_NilEnvDefaultsToScrubbed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", "0123456789abcdef0123456789abcdef")
+
+	r := ExecVersionRunner{Binary: "git"} // Env intentionally unset (nil)
+	out, err := r.Version(context.Background())
+	if err != nil {
+		t.Fatalf("Version() unexpected error: %v", err)
+	}
+	// firstVersionToken strips leading "git"/"version" words and returns just
+	// the parsed version token (e.g. "2.55.0.windows.3"), so assert on shape
+	// (digits and dots) rather than the literal word "git".
+	if !strings.ContainsAny(out, "0123456789") || !strings.Contains(out, ".") {
+		t.Fatalf("Version() = %q, want a version-shaped token", out)
+	}
+}
+

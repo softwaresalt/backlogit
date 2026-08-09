@@ -8,9 +8,13 @@ import "testing"
 // to "".
 //
 // This is a green-baseline characterization test (not red-before-green): it
-// documents today's raw-broker-bytes hash. F2 does NOT change gateReportHash;
-// F1 owns re-routing it through internal/canonical (and adds a hash-scheme
-// version field), at which point this pin is expected to be updated with it.
+// documents today's raw-broker-bytes hash. F2 does NOT change gateReportHash.
+// F1 (106-F) deliberately did NOT re-route it either — that migration was
+// never one of F1's reviewed units; F1's own NEW hashing (proof envelope,
+// formal report digest, shipment manifest digest) routes through
+// internal/canonical, but this pre-existing best-effort hash is left as-is
+// until a future unit explicitly re-plumbs it (see
+// internal/canonical/guard_test.go's allowlist for the paired guard).
 func TestGateReportHashCharacterization(t *testing.T) {
 	if got := gateReportHash(nil); got != "" {
 		t.Errorf("gateReportHash(nil) = %q, want empty string", got)

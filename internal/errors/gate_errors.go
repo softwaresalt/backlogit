@@ -35,6 +35,42 @@ var (
 	// within the bounded wait because another operation holds it (a gate is in
 	// progress for the same item). Retryable.
 	ErrGateInProgress = errors.New("backlogit: gate in progress for item")
+
+	// ErrGateKeyAbsent indicates BACKLOGIT_GATE_EVIDENCE_KEY is unset or empty
+	// when a formal-gate-evidence key resolution was attempted (106-F F1). The
+	// key is never sourced from config or a CLI flag.
+	ErrGateKeyAbsent = errors.New("backlogit: formal gate evidence key not set (BACKLOGIT_GATE_EVIDENCE_KEY)")
+
+	// ErrGateKeyInvalid indicates BACKLOGIT_GATE_EVIDENCE_KEY is set but fails to
+	// decode as strict base64 or hex, or decodes to fewer than 32 bytes (106-F F1).
+	ErrGateKeyInvalid = errors.New("backlogit: formal gate evidence key invalid (must be base64 or hex, >= 32 decoded bytes)")
+
+	// ErrFormalGateRequired indicates formal-admission enforcement is required
+	// (anchored by BACKLOGIT_FORMAL_GATE_REQUIRED, never lowerable by workspace
+	// config) but the operation cannot proceed under that requirement — e.g. the
+	// key could not be resolved. The operation refuses; there is no
+	// unauthenticated fallback (106-F F1).
+	ErrFormalGateRequired = errors.New("backlogit: formal gate evidence required but could not be satisfied")
+
+	// ErrProofInvalid indicates a gate-evidence proof is definitively wrong: a
+	// structural violation (unknown schema, wrong purpose/manifest_digest
+	// combination), a malformed MAC encoding, or an HMAC mismatch (tampered
+	// field or wrong key) (106-F F1/U3).
+	ErrProofInvalid = errors.New("backlogit: gate evidence proof invalid")
+
+	// ErrProofUnverifiable indicates a gate-evidence proof could not be
+	// evaluated at all — e.g. the envelope could not be canonicalized to
+	// compute the expected MAC — distinct from a proof that was evaluated and
+	// found wrong (106-F F1/U3).
+	ErrProofUnverifiable = errors.New("backlogit: gate evidence proof unverifiable")
+
+	// ErrFormalReportInvalid indicates a formal-gate report (106-F F1/U5) is
+	// empty, not valid JSON, or missing the required attributed-review
+	// evidence (at least one reviewer entry with a non-blank persona and
+	// decision). A non-forced PASS alone is not sufficient for formal
+	// admission; this sentinel marks the stricter schema check that a plain
+	// exit-0 pass with empty or non-JSON stdout still fails.
+	ErrFormalReportInvalid = errors.New("backlogit: formal gate report invalid")
 )
 
 // GateRepeatedFailure mirrors the autoharness `gate check --json`

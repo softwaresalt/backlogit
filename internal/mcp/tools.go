@@ -1778,6 +1778,14 @@ func (s *Server) handleShipShipment(ctx context.Context, request mcplib.CallTool
 		Author:  author,
 	})
 	if err != nil {
+		// Route through the shared gate-error dispatcher first (106-F F1/U8):
+		// a shipment-level gate refusal (blocked/setup/config/timeout, or a
+		// formal-gate-evidence refusal) deserves the same structured,
+		// machine-readable treatment task-level completions already get,
+		// rather than falling straight to the generic domainError.
+		if result, handled := gateErrorResult(err, ""); handled {
+			return result, nil
+		}
 		return domainError("ship shipment", err), nil
 	}
 	return toolResultJSON(result)

@@ -11,11 +11,18 @@ import (
 
 // TestGovernedSha256Allowlist is a baseline/allowlist structural guard. It
 // rejects NEW ad hoc crypto/sha256 hashing sites on governed gate-evidence
-// payload paths, while allowlisting the ONE pre-existing legacy seam until F1.
+// payload paths, while allowlisting the ONE pre-existing legacy seam until a
+// future unit closes it out.
 //
-// F1 removes internal/core/gate_evidence.go from this allowlist when it
-// re-routes gateReportHash through internal/canonical (adding a hash-scheme
-// version field). New hashing on governed paths MUST route through
+// F1 (106-F) intentionally did NOT re-route internal/core/gate_evidence.go's
+// gateReportHash through internal/canonical: that migration was never one of
+// F1's reviewed units (docs/exec-plans/2026-08-07-f1-evidence-authenticity-manifest-binding-plan.md
+// explicitly lists canonical serialization as an F2 dependency to REUSE, not
+// re-plumb into this pre-existing best-effort hash). F1's own NEW hashing
+// (the proof envelope, the schema-validated report digest, the shipment
+// manifest digest) all correctly route through internal/canonical — this
+// allowlist entry covers ONLY the one pre-existing legacy seam, deliberately
+// deferred. New hashing on governed paths MUST route through
 // internal/canonical instead of importing crypto/sha256 directly.
 //
 // NOTE: internal/cli/self_update.go also imports crypto/sha256 (for release
@@ -35,7 +42,8 @@ func TestGovernedSha256Allowlist(t *testing.T) {
 	}
 
 	// Allowlist of governed files permitted to import crypto/sha256 directly
-	// (forward-slash relative paths from the repo root). F1 empties this set.
+	// (forward-slash relative paths from the repo root). A future unit that
+	// re-routes gateReportHash through internal/canonical empties this set.
 	allowlist := map[string]bool{
 		"internal/core/gate_evidence.go": true,
 	}

@@ -111,9 +111,7 @@ type ExecVersionRunner struct {
 func (r ExecVersionRunner) Version(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, r.Binary, "version")
 	cmd.Dir = r.Dir
-	if r.Env != nil {
-		cmd.Env = r.Env
-	}
+	cmd.Env = resolveChildEnv(r.Env)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {

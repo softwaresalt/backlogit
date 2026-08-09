@@ -214,6 +214,7 @@ Use `backlogit_get_metadata_catalog` as the runtime source for current table def
 | SQL schema table reference | `.github/instructions/backlogit-sql-schema.instructions.md` |
 | CLI reference | `docs/cli-reference/` |
 | Pre-task-completion gate broker | `docs/pre-task-completion-gate.md` |
+| Formal gate evidence authenticity and manifest binding | `docs/design-docs/formal-gate-evidence-authenticity.md` |
 | Documentation frontmatter authoring | `docs/docline-frontmatter-authoring-guide.md` |
 | Compound learnings | `docs/compound/` |
 | Decisions and spike findings | `docs/decisions/` |
