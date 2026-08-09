@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -286,6 +287,58 @@ func TestGateEvidence_EvidenceRequiredFalse_FormalEnforcement_AppendFailureRefus
 	require.Error(t, err, "a failed durable evidence append must refuse the completion under formal enforcement even when evidence_required is false")
 
 	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete when its signed pass evidence was never durably recorded")
+}
+
+// headChangingRunner simulates a concurrent commit/checkout happening WHILE
+// the gate check command is running: its Run method checks out a DIFFERENT
+// ref as a side effect before returning its (otherwise ordinary) result.
+type headChangingRunner struct {
+	rootPath string
+	target   string
+	res      gate.GateResult
+}
+
+func (r *headChangingRunner) Run(_ context.Context, args []string, _ string, _ []string) (gate.GateResult, error) {
+	cmd := exec.Command("git", "checkout", r.target)
+	cmd.Dir = r.rootPath
+	cmd.Env = gate.MinimalEnv()
+	_ = cmd.Run() // best-effort: the test asserts on the completion's outcome, not this checkout
+	return r.res, nil
+}
+
+// TestGateEvidence_FormalGateRequired_HeadDriftDuringEvaluation_Refuses
+// verifies that a HEAD change occurring WHILE the gate check command runs
+// (a concurrent commit or checkout, simulated here by a fake runner that
+// checks out a different ref as a side effect) is detected and refused under
+// formal enforcement. newOutcome previously sampled head_sha ONLY AFTER
+// GateBroker.Evaluate returned, with no verification that the tree was
+// STABLE across the evaluation window — so a proof could authenticate a
+// commit the gate never actually reviewed. The shipment path already
+// brackets its own aggregate evaluation with an analogous pre/post
+// head-drift check; this closes the same gap at the task-completion level
+// (106-F F1 review finding, round 7).
+func TestGateEvidence_FormalGateRequired_HeadDriftDuringEvaluation_Refuses(t *testing.T) {
+	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = &config.FormalGateConfig{Enabled: true, KeyID: "k1"}
+	id := newActiveTask(t, ws)
+
+	_, _, divergent := initGitRepoWithCommits(t, ws.RootPath) // leaves the repo checked out on main
+
+	runner := &headChangingRunner{
+		rootPath: ws.RootPath,
+		target:   divergent,
+		res:      gate.GateResult{ExitCode: 0, Stdout: []byte(validFormalTestReport)},
+	}
+	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
+
+	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
+	require.Error(t, err, "a HEAD change during gate evaluation must refuse the completion under formal enforcement")
+	require.True(t, errors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+
+	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete with formal evidence bound to an unstable tree")
 }
 
 

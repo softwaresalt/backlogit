@@ -246,6 +246,27 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		return artifact, nil, uErr
 	}
 
+	// Under formal-gate enforcement, capture HEAD BEFORE Evaluate runs and
+	// verify it did not move WHILE the gate check command was running:
+	// newOutcome's head_sha binding was otherwise sampled only AFTER Evaluate
+	// returned, so a concurrent commit or checkout during evaluation could
+	// let a signed proof authenticate a tree the gate never actually
+	// reviewed. This mirrors the shipment path's analogous pre/post
+	// head-drift bracket around its own aggregate evaluation. A
+	// bounded-read failure fails closed under enforcement; an empty
+	// pre-evaluation head (legacy no-repo / non-context resolution failure)
+	// preserves the existing best-effort behavior rather than newly refusing
+	// a no-repo environment here (106-F F1 review finding, round 7).
+	formalEnforcedNow := ws.formalGateEnforced()
+	var preEvalHead string
+	if formalEnforcedNow {
+		h, preErr := ws.headSHABounded(ctx)
+		if preErr != nil {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf("resolve head before gate evaluation for %s: %w", id, preErr))
+		}
+		preEvalHead = h
+	}
+
 	ev, evalErr := ws.GateBroker.Evaluate(ctx, gate.Request{
 		ItemID:        id,
 		WorkspaceRoot: ws.RootPath,
@@ -255,6 +276,20 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 	})
 	if evalErr != nil {
 		return ws.handleGateSetupError(ctx, id, oldStatus, evalErr)
+	}
+
+	var stableHeadSHA string
+	if formalEnforcedNow && preEvalHead != "" {
+		postHead, postErr := ws.headSHABounded(ctx)
+		if postErr != nil {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf("resolve head after gate evaluation for %s: %w", id, postErr))
+		}
+		if postHead != preEvalHead {
+			return nil, nil, wrapFormalGateRequired(fmt.Errorf(
+				"HEAD changed during gate evaluation for %s (before=%s, after=%s): refusing to bind formal evidence to an unstable tree",
+				id, preEvalHead, postHead))
+		}
+		stableHeadSHA = postHead
 	}
 
 	// F1 (083.001-T): advisory only. When a pinned config base_ref shadows an
@@ -278,13 +313,13 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 
 	switch ev.Decision.Kind {
 	case gate.DecisionProceed:
-		return ws.completeGatePass(ctx, id, updates, requestedStatus, oldStatus, ev, opts)
+		return ws.completeGatePass(ctx, id, updates, requestedStatus, oldStatus, ev, opts, stableHeadSHA)
 	case gate.DecisionRedirectQueued:
-		return ws.redirectGate(ctx, id, current, oldStatus, "queued", "requeued", EventGateRequeued, ev)
+		return ws.redirectGate(ctx, id, current, oldStatus, "queued", "requeued", EventGateRequeued, ev, stableHeadSHA)
 	case gate.DecisionRedirectBlocked:
-		return ws.redirectGate(ctx, id, current, oldStatus, "blocked", "escalated", EventGateEscalated, ev)
+		return ws.redirectGate(ctx, id, current, oldStatus, "blocked", "escalated", EventGateEscalated, ev, stableHeadSHA)
 	case gate.DecisionBlock:
-		return ws.blockGate(ctx, id, oldStatus, ev)
+		return ws.blockGate(ctx, id, oldStatus, ev, stableHeadSHA)
 	case gate.DecisionError:
 		return ws.errorGate(ctx, id, oldStatus, ev.Decision)
 	default:
@@ -319,9 +354,12 @@ func mustRefuseGateEvidenceFailure(ws *Workspace, err error) bool {
 
 // completeGatePass applies a passing completion: evidence first, then the durable
 // write via the ungated update (which validates the terminal transition and emits
-// standard lifecycle events).
-func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates map[string]any, requestedStatus, oldStatus string, ev gate.Evaluation, opts TransitionOptions) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, requestedStatus, "passed", true, ev)
+// standard lifecycle events). stableHeadSHA, when non-empty, is the HEAD verified
+// stable across the gate evaluation window (see runGatedCompletion) and is bound
+// into the outcome's signed evidence instead of a fresh (potentially now-stale)
+// re-read.
+func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates map[string]any, requestedStatus, oldStatus string, ev gate.Evaluation, opts TransitionOptions, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, requestedStatus, "passed", true, ev, stableHeadSHA)
 	outcome.Forced = opts.Force
 
 	if err := ws.appendGateEvidence(ctx, id, EventGatePassed, outcome, &opts); err != nil {
@@ -358,8 +396,9 @@ func (ws *Workspace) completeGatePass(ctx context.Context, id string, updates ma
 // validator, and to avoid re-entering the hook pipeline during gate requeue.
 // active->queued is also a validated transition post-124.002-T, so this path
 // is consistent with the validator — not a bypass of a forbidden transition.
-func (ws *Workspace) redirectGate(ctx context.Context, id string, current *models.Artifact, oldStatus, target, outcomeName, eventType string, ev gate.Evaluation) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev)
+// stableHeadSHA — see completeGatePass's doc comment.
+func (ws *Workspace) redirectGate(ctx context.Context, id string, current *models.Artifact, oldStatus, target, outcomeName, eventType string, ev gate.Evaluation, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, target, outcomeName, true, ev, stableHeadSHA)
 
 	if err := ws.appendGateEvidence(ctx, id, eventType, outcome, nil); err != nil {
 		if mustRefuseGateEvidenceFailure(ws, err) {
@@ -377,9 +416,9 @@ func (ws *Workspace) redirectGate(ctx context.Context, id string, current *model
 
 // blockGate refuses a below-threshold completion. No durable write occurs; the
 // item retains its old status. Evidence is best-effort here (there is no state
-// change to protect).
-func (ws *Workspace) blockGate(ctx context.Context, id, oldStatus string, ev gate.Evaluation) (*models.Artifact, *GateOutcome, error) {
-	outcome := ws.newOutcome(ctx, id, oldStatus, oldStatus, "blocked", false, ev)
+// change to protect). stableHeadSHA — see completeGatePass's doc comment.
+func (ws *Workspace) blockGate(ctx context.Context, id, oldStatus string, ev gate.Evaluation, stableHeadSHA string) (*models.Artifact, *GateOutcome, error) {
+	outcome := ws.newOutcome(ctx, id, oldStatus, oldStatus, "blocked", false, ev, stableHeadSHA)
 	if err := ws.appendGateEvidence(ctx, id, EventGateBlocked, outcome, nil); err != nil {
 		slog.WarnContext(ctx, "gate block evidence append failed", "item_id", id, "error", err)
 	}
@@ -450,8 +489,17 @@ func (ws *Workspace) writeStatusDirect(ctx context.Context, a *models.Artifact, 
 }
 
 // newOutcome builds a GateOutcome from an evaluation, computing the best-effort
-// HEAD SHA and report hash.
-func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, outcomeName string, stateChanged bool, ev gate.Evaluation) *GateOutcome {
+// HEAD SHA and report hash. stableHeadSHA, when non-empty, OVERRIDES the
+// best-effort ws.headSHA(ctx) re-read: it is the HEAD the caller already
+// verified stable across the gate evaluation window (formal enforcement
+// only — see runGatedCompletion), so binding it instead of re-querying git a
+// further time avoids widening the TOCTOU window even further right at the
+// point evidence is actually signed (106-F F1 review finding, round 7).
+func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, outcomeName string, stateChanged bool, ev gate.Evaluation, stableHeadSHA string) *GateOutcome {
+	headSHA := stableHeadSHA
+	if headSHA == "" {
+		headSHA = ws.headSHA(ctx)
+	}
 	return &GateOutcome{
 		ItemID:          id,
 		OldStatus:       oldStatus,
@@ -460,7 +508,7 @@ func (ws *Workspace) newOutcome(ctx context.Context, id, oldStatus, newStatus, o
 		StateChanged:    stateChanged,
 		BaseRef:         ev.Base.Ref,
 		HeadRef:         ev.HeadRef,
-		HeadSHA:         ws.headSHA(ctx),
+		HeadSHA:         headSHA,
 		GateReportHash:  gateReportHash(ev.Decision.ReportJSON),
 		ReportJSON:      ev.Decision.ReportJSON,
 		RepeatedFailure: ev.Decision.RepeatedFailure,
