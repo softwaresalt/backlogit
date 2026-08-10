@@ -190,6 +190,24 @@ func (s *Server) RegisterTools() {
 		s.handleCleanupCheckpoints,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_abandon_checkpoint",
+			mcplib.WithDescription("Administratively abandon a valid checkpoint. Refuses a malformed target; use backlogit_quarantine_checkpoint instead."),
+			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
+			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
+		),
+		s.handleAbandonCheckpoint,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_quarantine_checkpoint",
+			mcplib.WithDescription("Quarantine a malformed checkpoint by moving its bytes verbatim to the archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."),
+			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
+			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
+		),
+		s.handleQuarantineCheckpoint,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_get_wit_metadata",
 			mcplib.WithDescription("Get complete WIT metadata for an artifact type including fields, sections, and relationships"),
 			mcplib.WithString("type", mcplib.Required(), mcplib.Description("Artifact type (feature, task, subtask)")),
@@ -1119,17 +1137,24 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 		return InternalError(fmt.Sprintf("list checkpoints: %v", err)), nil
 	}
 
-	quarantined := 0
+	// "quarantined" is fixed at 0: 136-F/U9 made listing strictly read-only,
+	// so a mere list call never physically quarantines anything (the field
+	// this key used to reflect, CheckpointSummary.Quarantined, is deprecated
+	// and permanently false on this path). needsQuarantine is the accurate,
+	// actionable signal for malformed checkpoints awaiting an explicit
+	// backlogit_quarantine_checkpoint call.
+	needsQuarantine := 0
 	for _, sm := range summaries {
-		if sm.Quarantined {
-			quarantined++
+		if sm.NeedsQuarantine {
+			needsQuarantine++
 		}
 	}
 
 	return toolResultJSON(map[string]any{
-		"checkpoints": summaries,
-		"total":       len(summaries),
-		"quarantined": quarantined,
+		"checkpoints":      summaries,
+		"total":            len(summaries),
+		"quarantined":      0,
+		"needs_quarantine": needsQuarantine,
 	})
 }
 
@@ -1195,6 +1220,68 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 		return InternalError(fmt.Sprintf("cleanup checkpoints: %v", err)), nil
 	}
 	return toolResultJSON(cleanupResult)
+}
+
+func (s *Server) handleAbandonCheckpoint(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+	filename, _ := request.Params.Arguments["filename"].(string)
+	if filename == "" {
+		return ValidationFailed("filename is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return ValidationFailed("reason is required"), nil
+	}
+	operator, _ := request.Params.Arguments["operator"].(string)
+	operator = strings.TrimSpace(operator)
+	if operator == "" {
+		return ValidationFailed("operator is required; it is never inferred on the MCP surface"), nil
+	}
+
+	if err := core.AbandonCheckpoint(ctx, ws, s.Events, filename, reason, operator); err != nil {
+		return checkpointDispositionError("abandon checkpoint", filename, err), nil
+	}
+	return toolResultJSON(map[string]string{
+		"filename":    filename,
+		"disposition": events.DispositionAbandoned,
+		"reason":      reason,
+		"operator":    operator,
+	})
+}
+
+func (s *Server) handleQuarantineCheckpoint(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		return result, nil
+	}
+	filename, _ := request.Params.Arguments["filename"].(string)
+	if filename == "" {
+		return ValidationFailed("filename is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return ValidationFailed("reason is required"), nil
+	}
+	operator, _ := request.Params.Arguments["operator"].(string)
+	operator = strings.TrimSpace(operator)
+	if operator == "" {
+		return ValidationFailed("operator is required; it is never inferred on the MCP surface"), nil
+	}
+
+	if err := core.QuarantineCheckpoint(ctx, ws, s.Events, filename, reason, operator); err != nil {
+		return checkpointDispositionError("quarantine checkpoint", filename, err), nil
+	}
+	return toolResultJSON(map[string]string{
+		"filename":    filename,
+		"disposition": events.DispositionQuarantined,
+		"reason":      reason,
+		"operator":    operator,
+	})
 }
 
 // writeSectionsToFile appends named section content to an artifact's Markdown body
@@ -2034,4 +2121,10 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	return toolResultJSON(report)
 }
+
+
+
+
+
+
 

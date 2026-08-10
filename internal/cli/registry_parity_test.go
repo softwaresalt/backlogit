@@ -21,11 +21,13 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -568,6 +570,85 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliLinks, mcpLinks, "op %q: commit_links row presence must match", opName)
 				assert.Equal(t, cliEvent, mcpEvent, "op %q: JSONL event presence must match", opName)
 
+			case "backlogit_abandon_checkpoint":
+				root, ws := setupGovernedWorkspace(t)
+				ctx := context.Background()
+				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
+				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
+
+				validCP := func() *events.CheckpointV1 {
+					now := time.Now().UTC()
+					return &events.CheckpointV1{
+						SchemaVersion: 1, Agent: "ship", SessionID: "gov-parity", Phase: "build",
+						Status: "active", CreatedAt: now, UpdatedAt: now,
+					}
+				}
+				cliFile, mcpFile := "checkpoint-gov-cli.json", "checkpoint-gov-mcp.json"
+				for _, name := range []string{cliFile, mcpFile} {
+					data, err := json.Marshal(validCP())
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(checkpointDir, name), data, 0o644))
+				}
+
+				const reason, operator = "governed parity", "gov-parity@example.com"
+				runGovernedCLI(t, root, "checkpoint", "abandon", cliFile, "--reason", reason, "--operator", operator)
+
+				logsDir := core.WorkspaceLogsRoot(root)
+				ew := core.NewWorkspaceEventWriter(ws, logsDir)
+				require.NoError(t, core.AbandonCheckpoint(ctx, ws, ew, mcpFile, reason, operator))
+
+				cliData, err := os.ReadFile(filepath.Join(checkpointDir, cliFile))
+				require.NoError(t, err)
+				mcpData, err := os.ReadFile(filepath.Join(checkpointDir, mcpFile))
+				require.NoError(t, err)
+				cliCP, err := events.ParseCheckpoint(cliData)
+				require.NoError(t, err)
+				mcpCP, err := events.ParseCheckpoint(mcpData)
+				require.NoError(t, err)
+
+				assert.Equal(t, events.DispositionAbandoned, cliCP.Disposition, "op %q: CLI surface must set disposition=abandoned", opName)
+				assert.Equal(t, reason, cliCP.DispositionReason, "op %q: CLI surface must record the reason", opName)
+				assert.Equal(t, operator, cliCP.DispositionOperator, "op %q: CLI surface must record the operator", opName)
+				assert.Equal(t, cliCP.Disposition, mcpCP.Disposition, "op %q: disposition must match across surfaces", opName)
+				assert.Equal(t, cliCP.DispositionReason, mcpCP.DispositionReason, "op %q: disposition reason must match across surfaces", opName)
+				assert.Equal(t, cliCP.DispositionOperator, mcpCP.DispositionOperator, "op %q: disposition operator must match across surfaces", opName)
+				assert.Equal(t, cliCP.Status, mcpCP.Status, "op %q: status must match across surfaces", opName)
+
+			case "backlogit_quarantine_checkpoint":
+				root, ws := setupGovernedWorkspace(t)
+				ctx := context.Background()
+				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
+				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
+
+				cliFile, mcpFile := "checkpoint-gov-cli-bad.json", "checkpoint-gov-mcp-bad.json"
+				for _, name := range []string{cliFile, mcpFile} {
+					require.NoError(t, os.WriteFile(filepath.Join(checkpointDir, name), []byte("not-json{"), 0o644))
+				}
+
+				const reason, operator = "governed parity malformed", "gov-parity@example.com"
+				runGovernedCLI(t, root, "checkpoint", "quarantine", cliFile, "--reason", reason, "--operator", operator)
+
+				logsDir := core.WorkspaceLogsRoot(root)
+				ew := core.NewWorkspaceEventWriter(ws, logsDir)
+				require.NoError(t, core.QuarantineCheckpoint(ctx, ws, ew, mcpFile, reason, operator))
+
+				archiveDir := filepath.Join(root, ".backlogit", "archive", "checkpoints")
+				cliSidecar, err := os.ReadFile(filepath.Join(archiveDir, cliFile+".disposition.json"))
+				require.NoError(t, err, "op %q: CLI surface must write a disposition sidecar", opName)
+				mcpSidecar, err := os.ReadFile(filepath.Join(archiveDir, mcpFile+".disposition.json"))
+				require.NoError(t, err, "op %q: MCP surface must write a disposition sidecar", opName)
+
+				var cliRec, mcpRec events.CheckpointDispositionRecord
+				require.NoError(t, json.Unmarshal(cliSidecar, &cliRec))
+				require.NoError(t, json.Unmarshal(mcpSidecar, &mcpRec))
+
+				assert.FileExists(t, filepath.Join(archiveDir, cliFile), "op %q: CLI surface must quarantine the file verbatim", opName)
+				assert.FileExists(t, filepath.Join(archiveDir, mcpFile), "op %q: MCP surface must quarantine the file verbatim", opName)
+				assert.Equal(t, events.DispositionQuarantined, cliRec.Disposition, "op %q: CLI sidecar disposition must be quarantined", opName)
+				assert.Equal(t, cliRec.Disposition, mcpRec.Disposition, "op %q: sidecar disposition must match across surfaces", opName)
+				assert.Equal(t, cliRec.Reason, mcpRec.Reason, "op %q: sidecar reason must match across surfaces", opName)
+				assert.Equal(t, cliRec.Operator, mcpRec.Operator, "op %q: sidecar operator must match across surfaces", opName)
+
 			default:
 				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)
 			}
@@ -612,3 +693,4 @@ func TestRegistryParity_ForceGatesAbsentFromMCPParams(t *testing.T) {
 	assert.True(t, humanTerminalOnly,
 		"registry update_task.cli_only_flags.force-gates.human_terminal_only must be true (F6/U4 deliberate asymmetry documentation)")
 }
+

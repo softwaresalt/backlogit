@@ -38,9 +38,11 @@ checkpoint files.
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
+* [backlogit checkpoint abandon](backlogit_checkpoint_abandon.md)	 - Administratively abandon a valid checkpoint
 * [backlogit checkpoint cleanup](backlogit_checkpoint_cleanup.md)	 - Archive resolved and stale checkpoints
 * [backlogit checkpoint create](backlogit_checkpoint_create.md)	 - Create a session state checkpoint
 * [backlogit checkpoint get](backlogit_checkpoint_get.md)	 - Get and validate a specific checkpoint
 * [backlogit checkpoint list](backlogit_checkpoint_list.md)	 - List session state checkpoints
+* [backlogit checkpoint quarantine](backlogit_checkpoint_quarantine.md)	 - Quarantine a malformed checkpoint
 * [backlogit checkpoint resolve](backlogit_checkpoint_resolve.md)	 - Mark a checkpoint as resolved
 

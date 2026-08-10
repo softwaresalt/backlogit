@@ -157,6 +157,32 @@ operations:
     params:
       filename: "filename"
 
+  # abandon_checkpoint and quarantine_checkpoint (136-F) are governed
+  # operations: both the MCP tool and the CLI subcommand route through the
+  # shared core.AbandonCheckpoint / core.QuarantineCheckpoint verbs and must
+  # produce identical observable state (checkpoint disposition fields, audit
+  # log entry, and — for quarantine — the archived file plus its sidecar
+  # record). See docs/design-docs/checkpoint-administrative-disposition.md.
+  abandon_checkpoint:
+    mcp_tool: "backlogit_abandon_checkpoint"
+    cli_command: "backlogit checkpoint abandon {{filename}} --reason {{reason}} --operator {{operator}}"
+    governed: true
+    governed_name: "checkpoint_abandon_disposition"
+    params:
+      filename: "filename"
+      reason: "reason"
+      operator: "operator"
+
+  quarantine_checkpoint:
+    mcp_tool: "backlogit_quarantine_checkpoint"
+    cli_command: "backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}"
+    governed: true
+    governed_name: "checkpoint_quarantine_disposition"
+    params:
+      filename: "filename"
+      reason: "reason"
+      operator: "operator"
+
   poll_hook_events:
     mcp_tool: "backlogit_poll_hook_events"
     cli_command: "backlogit hooks poll --consumer-id {{consumer_id}}"
@@ -518,3 +544,4 @@ features:
   deliberation: true
   discovery: true
   lifecycle_hygiene: true
+
