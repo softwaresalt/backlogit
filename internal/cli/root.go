@@ -302,6 +302,17 @@ file, default YAML configuration files, and default artifact templates.`,
 			}
 
 			dir := filepath.Join(root, ".backlog")
+			// Guard against writing through a symlink or Windows reparse point
+			// (junction) that may redirect workspace files outside the root.
+			if info, statErr := os.Lstat(dir); statErr == nil {
+				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(info, dir)
+				if inspectErr != nil {
+					return fmt.Errorf("inspect workspace dir: %w", inspectErr)
+				}
+				if isReparse {
+					return fmt.Errorf("workspace dir %s is a symlink or reparse point; remove it before initializing", dir)
+				}
+			}
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("create workspace dir: %w", err)
 			}

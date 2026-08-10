@@ -69,6 +69,14 @@ func WorkspaceRootCandidates() []string {
 	return out
 }
 
+// IsSymlinkOrReparsePoint reports whether the given path (described by info)
+// is a symbolic link or a Windows reparse point (junction). Use this before
+// creating children inside a candidate workspace directory to prevent writing
+// outside the workspace root.
+func IsSymlinkOrReparsePoint(info os.FileInfo, path string) (bool, error) {
+	return isSymlinkOrReparse(info, path)
+}
+
 // WorkspaceStorageRoot returns the resolved storage root when it can be
 // determined from the filesystem and otherwise falls back to the legacy
 // .backlogit location.
