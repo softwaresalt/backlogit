@@ -54,10 +54,10 @@ func TestRehydrateTelemetry_IsIdempotent(t *testing.T) {
 	writeSampleTelemetryJSONL(t, backlogitDir)
 
 	ctx := context.Background()
-	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+	require.NoError(t, db.RehydrateTelemetry(ctx, backlogitDir, sqliteDB))
 	countAfterFirst := countTelemetrySessions(t, sqliteDB)
 
-	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+	require.NoError(t, db.RehydrateTelemetry(ctx, backlogitDir, sqliteDB))
 	countAfterSecond := countTelemetrySessions(t, sqliteDB)
 
 	assert.Equal(t, countAfterFirst, countAfterSecond, "re-rehydration should produce identical row count")
@@ -74,7 +74,7 @@ func TestRehydrateTelemetry_CompositeKeyPreventsDuplicates(t *testing.T) {
 	writeSampleTelemetryJSONL(t, backlogitDir)
 
 	ctx := context.Background()
-	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+	require.NoError(t, db.RehydrateTelemetry(ctx, backlogitDir, sqliteDB))
 
 	var count int
 	err := sqliteDB.QueryRowContext(ctx,
@@ -106,7 +106,7 @@ func TestTokensByServerColumnExistsAndQueryable(t *testing.T) {
 	writeSampleTelemetryJSONLWithServerTokens(t, backlogitDir)
 
 	ctx := context.Background()
-	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+	require.NoError(t, db.RehydrateTelemetry(ctx, backlogitDir, sqliteDB))
 
 	// tokens_by_server column should exist and json_extract should work.
 	var backlogitTokens *int
@@ -129,7 +129,7 @@ func TestRehydrateTelemetry_BackwardCompatWithoutTokensByServer(t *testing.T) {
 	writeSampleTelemetryJSONL(t, backlogitDir) // old fixture without tokens_by_server
 
 	ctx := context.Background()
-	require.NoError(t, db.RehydrateTelemetry(ctx, workspacePath, sqliteDB))
+	require.NoError(t, db.RehydrateTelemetry(ctx, backlogitDir, sqliteDB))
 
 	var count int
 	require.NoError(t, sqliteDB.QueryRow("SELECT COUNT(*) FROM telemetry_sessions").Scan(&count))

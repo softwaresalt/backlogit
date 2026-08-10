@@ -19,7 +19,8 @@ or from older internal workspace layouts.
 
 Use --source with --adapter backlog-md for source imports. Use --dry-run and
 --validate before writing imported artifacts. Use --rollback only for internal
-layout migrations, not source imports.
+layout migrations, not source imports. Use --workspace-dir to rename a legacy
+.backlogit workspace directory to the new .backlog default.
 
 ```text
 backlogit migrate [flags]
@@ -31,6 +32,8 @@ backlogit migrate [flags]
   backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
   backlogit migrate --source .\.backlog --adapter backlog-md --validate
   backlogit migrate --source .\.backlog --adapter backlog-md
+  backlogit migrate --workspace-dir --dry-run
+  backlogit migrate --workspace-dir
   backlogit migrate --dry-run
   backlogit migrate --rollback
 ```
@@ -46,6 +49,7 @@ backlogit migrate [flags]
       --rollback         reverse a previous migration
       --source string    path to source workspace or file to import
       --validate         validate the source import without writing artifacts
+      --workspace-dir    rename a legacy .backlogit workspace directory to .backlog
 ```
 
 ### Options inherited from parent commands

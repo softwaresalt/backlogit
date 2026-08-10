@@ -16,6 +16,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/core/templates"
 	"github.com/softwaresalt/backlogit/internal/db"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
@@ -67,7 +68,7 @@ func NewServerForRoot(rootPath string) *Server {
 }
 
 func newServer(rootPath string, ws *core.Workspace) *Server {
-	backlogitDir := filepath.Join(rootPath, ".backlogit")
+	backlogitDir := core.WorkspaceStorageRoot(rootPath)
 	logsDir := filepath.Join(backlogitDir, "logs")
 	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
@@ -113,7 +114,10 @@ func RunStdio(s *Server) error {
 }
 
 func (s *Server) backlogitDir() string {
-	return filepath.Join(s.RootPath, ".backlogit")
+	if s.Workspace != nil && s.Workspace.StorageRoot != "" {
+		return s.Workspace.StorageRoot
+	}
+	return core.WorkspaceStorageRoot(s.RootPath)
 }
 
 func (s *Server) refreshTemplateService(ctx context.Context) {
@@ -140,7 +144,7 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	}
 
 	// dirExists is checked inside the lock so a concurrent creation of the
-	// .backlogit directory is visible and a failed init can be retried.
+	// workspace storage root is visible and a failed init can be retried.
 	if !dirExists(s.backlogitDir()) {
 		return nil, os.ErrNotExist
 	}
@@ -161,11 +165,19 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	// workspaceMu, so this single rebuild happens-before every reader.
 	logsDir := filepath.Join(s.backlogitDir(), "logs")
 	s.Events = core.NewWorkspaceEventWriter(ws, logsDir)
+	// Rebind path-dependent writers to the resolved storage root so that
+	// telemetry logging and hook polling use ws.StorageRoot, not the
+	// pre-initialization fallback that newServer computed.
+	s.Telemetry = events.NewTelemetryWriter(filepath.Join(ws.StorageRoot, "telemetry.jsonl"))
+	s.HookEvents = events.NewHookEventWriter(ws.StorageRoot)
 
 	// Populate the manifest baseline so the first backlogit_merge_sync call
 	// can compute a real diff instead of treating every file as added.
 	// manifestMu is acquired inside workspaceMu — the documented lock order.
-	storageRoot := core.WorkspaceStorageRoot(ws.RootPath)
+	storageRoot := ws.StorageRoot
+	if storageRoot == "" {
+		storageRoot = core.WorkspaceStorageRoot(ws.RootPath)
+	}
 	s.manifestMu.Lock()
 	if s.manifest == nil {
 		if m, buildErr := db.BuildManifest(storageRoot); buildErr == nil {
@@ -187,6 +199,10 @@ func (s *Server) requireWorkspace(ctx context.Context) (*core.Workspace, *mcplib
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, WorkspaceNotInitialized()
+	}
+	var ambiguous *corerrors.AmbiguousWorkspaceRootError
+	if errors.As(err, &ambiguous) {
+		return nil, WorkspaceRootAmbiguous(ambiguous.Roots)
 	}
 	return nil, InternalError(fmt.Sprintf("open workspace: %v", err))
 }

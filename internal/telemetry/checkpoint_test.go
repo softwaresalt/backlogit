@@ -19,13 +19,20 @@ import (
 	"github.com/softwaresalt/backlogit/internal/telemetry"
 )
 
+func newTelemetryStorageRoot(t *testing.T) string {
+	t.Helper()
+
+	storageRoot := filepath.Join(t.TempDir(), ".backlogit")
+	require.NoError(t, os.MkdirAll(storageRoot, 0o755))
+	return storageRoot
+}
+
 // ---- LoadCheckpoint / SaveCheckpoint ------------------------------------------
 
 func TestLoadCheckpoint_MissingFile_ReturnsZeroCheckpoint(t *testing.T) {
 	// A missing checkpoint file is not an error — the caller treats it as
 	// "no prior harvest" and processes all logs from offset 0.
-	ws := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	ws := newTelemetryStorageRoot(t)
 
 	cp, err := telemetry.LoadCheckpoint(ws)
 	require.NoError(t, err, "missing checkpoint file must not return an error")
@@ -37,11 +44,9 @@ func TestLoadCheckpoint_MissingFile_ReturnsZeroCheckpoint(t *testing.T) {
 func TestLoadCheckpoint_CorruptJSON_ReturnsZeroCheckpoint(t *testing.T) {
 	// Corrupt JSON is treated as missing — log a warning and return a zero
 	// checkpoint so the next harvest re-processes all files.
-	ws := t.TempDir()
-	backlogitDir := filepath.Join(ws, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	ws := newTelemetryStorageRoot(t)
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, ".telemetry-checkpoint.json"),
+		filepath.Join(ws, ".telemetry-checkpoint.json"),
 		[]byte("not valid json }{"),
 		0o644,
 	))
@@ -53,8 +58,7 @@ func TestLoadCheckpoint_CorruptJSON_ReturnsZeroCheckpoint(t *testing.T) {
 }
 
 func TestSaveAndLoadCheckpoint_RoundtripPreservesOffsets(t *testing.T) {
-	ws := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	ws := newTelemetryStorageRoot(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	original := &telemetry.HarvestCheckpoint{
@@ -79,8 +83,7 @@ func TestSaveCheckpoint_AtomicWrite_DoesNotCorruptOnPartialWrite(t *testing.T) {
 	// SaveCheckpoint must use temp-file-then-rename for atomicity.
 	// We can't easily simulate a partial write in a unit test, but we can
 	// assert that no .tmp files are left behind after a successful save.
-	ws := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	ws := newTelemetryStorageRoot(t)
 
 	cp := &telemetry.HarvestCheckpoint{
 		FileOffsets: map[string]int64{"a.log": 100},
@@ -89,7 +92,7 @@ func TestSaveCheckpoint_AtomicWrite_DoesNotCorruptOnPartialWrite(t *testing.T) {
 	}
 	require.NoError(t, telemetry.SaveCheckpoint(ws, cp))
 
-	entries, err := os.ReadDir(filepath.Join(ws, ".backlogit"))
+	entries, err := os.ReadDir(ws)
 	require.NoError(t, err)
 	for _, e := range entries {
 		assert.NotContains(t, e.Name(), ".tmp", "no temp files should remain after SaveCheckpoint")
@@ -104,12 +107,11 @@ func TestHarvestTelemetry_Force_ReprocessesAllLogs(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
 	// Seed a checkpoint that would skip the only log file if respected.
-	require.NoError(t, os.MkdirAll(filepath.Join(workspacePath, ".backlogit"), 0o755))
 	bigOffset := &telemetry.HarvestCheckpoint{
 		FileOffsets: map[string]int64{
 			"process-001.log": 999999,
@@ -134,7 +136,7 @@ func TestHarvestTelemetry_Incremental_SkipsProcessedBytes(t *testing.T) {
 	logsDir := filepath.Join(copilotPath, "logs")
 	writeSampleProcessLog(t, logsDir)
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -165,7 +167,7 @@ func TestHarvestTelemetry_NewLogFile_FullyProcessed(t *testing.T) {
 	logsDir := filepath.Join(copilotPath, "logs")
 	writeSampleProcessLog(t, logsDir) // process-001.log: 2 sessions
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 

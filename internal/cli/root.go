@@ -134,11 +134,11 @@ func newRootCommandImpl(jctx *jsonrpcInterceptor, latestLookup latestVersionLook
 		Use:     "backlogit",
 		Version: version.Resolve(),
 		Short:   "Backlogit — AI-native agile workspace",
-		Long: `backlogit manages a project-local work item workspace under .backlogit.
+		Long: `backlogit manages a project-local work item workspace under .backlog by default.
 
-	It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
-	per-item history in .backlogit\logs\{item-id}.jsonl, and deferred planning work
-	in .backlogit\stash.jsonl.
+	It stores active work in .backlog\queue, terminal work in .backlog\archive,
+	per-item history in .backlog\logs\{item-id}.jsonl, and deferred planning work
+	in .backlog\stash.jsonl. Existing .backlogit workspaces remain supported.
 
 Use backlogit to initialize a workspace, create and update artifacts, query the
 SQLite cache, migrate from supported backlog sources, manage the work queue, and
@@ -285,7 +285,7 @@ func newInitCommand(cwd *string) *cobra.Command {
 		Short: "Initialize a new backlogit workspace",
 		Long: `Initialize a backlogit workspace in the target directory.
 
-This creates the .backlogit storage root, logs directory, canonical stash JSONL
+This creates the .backlog storage root, logs directory, canonical stash JSONL
 file, default YAML configuration files, and default artifact templates.`,
 		Example: `  backlogit init
   backlogit init D:\Source\MyProject`,
@@ -294,7 +294,25 @@ file, default YAML configuration files, and default artifact templates.`,
 			if len(args) > 0 {
 				root = args[0]
 			}
-			dir := filepath.Join(root, ".backlogit")
+			legacyDir := filepath.Join(root, core.WorkspaceRootCandidates()[1])
+			if info, err := os.Stat(legacyDir); err == nil && info.IsDir() {
+				return fmt.Errorf("workspace already exists at .backlogit; use 'backlogit migrate --workspace-dir' to rename it to .backlog")
+			} else if err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("stat legacy workspace dir: %w", err)
+			}
+
+			dir := filepath.Join(root, ".backlog")
+			// Guard against writing through a symlink or Windows reparse point
+			// (junction) that may redirect workspace files outside the root.
+			if info, statErr := os.Lstat(dir); statErr == nil {
+				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(info, dir)
+				if inspectErr != nil {
+					return fmt.Errorf("inspect workspace dir: %w", inspectErr)
+				}
+				if isReparse {
+					return fmt.Errorf("workspace dir %s is a symlink or reparse point; remove it before initializing", dir)
+				}
+			}
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("create workspace dir: %w", err)
 			}
@@ -320,7 +338,7 @@ func newSyncCommand(cwd *string) *cobra.Command {
 		Long: `Rebuild the backlogit SQLite cache from the Markdown and JSONL files in
 the workspace.
 
-Use this after making manual changes to .backlogit files or when you want to
+Use this after making manual changes to .backlog or .backlogit files or when you want to
 force the disposable cache to match the file-backed source of truth.`,
 		Example: `  backlogit sync
   backlogit --cwd D:\Source\MyProject sync`,

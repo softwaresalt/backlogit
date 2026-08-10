@@ -482,6 +482,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
 			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),
+			mcplib.WithBoolean("check_workspace_root_conflict", mcplib.Description("Enable read-only detection of a conflicting .backlog and .backlogit workspace root before workspace initialization (default false)")),
 			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
 			mcplib.WithString("target", mcplib.Description("Validate a single artifact file (path relative to the workspace, confined to the storage root) and return a versioned DoctorTargetResult instead of a full workspace scan")),
 		),
@@ -1086,7 +1087,7 @@ func (s *Server) handleSaveMemory(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed("key is required"), nil
 	}
 	summary, _ := request.Params.Arguments["summary"].(string)
-	memoriesPath := filepath.Join(s.Workspace.RootPath, ".backlogit", "memories.json")
+	memoriesPath := filepath.Join(s.backlogitDir(), "memories.json")
 	if err := events.SaveMemory(ctx, memoriesPath, key, summary); err != nil {
 		return InternalError(fmt.Sprintf("save memory: %v", err)), nil
 	}
@@ -1101,7 +1102,7 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 	if stateDump == "" {
 		return ValidationFailed("state_dump is required"), nil
 	}
-	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 	path, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
 	if err != nil {
 		return domainError("create checkpoint", err), nil
@@ -1113,7 +1114,7 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
 	}
-	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 
 	filter := events.CheckpointFilter{}
 	if v, ok := request.Params.Arguments["consumer_id"].(string); ok && v != "" {
@@ -1166,7 +1167,7 @@ func (s *Server) handleGetCheckpoint(ctx context.Context, request mcplib.CallToo
 	if filename == "" {
 		return ValidationFailed("filename is required"), nil
 	}
-	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 	cp, err := events.GetCheckpoint(ctx, checkpointDir, filename)
 	if err != nil {
 		return domainError("get checkpoint", err), nil
@@ -1186,7 +1187,7 @@ func (s *Server) handleResolveCheckpoint(ctx context.Context, request mcplib.Cal
 	if filename == "" {
 		return ValidationFailed("filename is required"), nil
 	}
-	checkpointDir := filepath.Join(s.Workspace.RootPath, ".backlogit", "checkpoints")
+	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 	if err := events.ResolveCheckpoint(ctx, checkpointDir, filename); err != nil {
 		return domainError("resolve checkpoint", err), nil
 	}
@@ -1203,7 +1204,7 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 	if result != nil {
 		return result, nil
 	}
-	checkpointDir := filepath.Join(ws.RootPath, ".backlogit", "checkpoints")
+	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 
 	retentionDays := 7 // default
 	if v, ok := request.Params.Arguments["retention_days"].(float64); ok {
@@ -2057,7 +2058,7 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 		opts.AttributionPrefixes = ws.Config.Telemetry.AttributionPrefixes
 	}
 
-	hr, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, opts)
+	hr, err := telemetry.HarvestTelemetry(ctx, ws.StorageRoot, copilotPath, ws.DB, opts)
 	if err != nil {
 		if errors.Is(err, backlogiterrors.ErrTelemetrySourceMissing) {
 			return ValidationFailed(fmt.Sprintf("telemetry source missing — run 'backlogit mcp' from a workspace that contains a .copilot directory: %v", err)), nil
@@ -2076,8 +2077,44 @@ func (s *Server) handleTelemetryHarvest(ctx context.Context, request mcplib.Call
 // It scans the workspace for structural integrity issues (orphaned artifacts,
 // duplicate IDs) and returns a compact JSON DoctorReport.
 func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	checkOrphans := true
+	checkDuplicates := true
+	checkPartialMutations := false
+	checkWorkspaceRootConflict := false
+	fixOrphans := false
+	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
+		checkOrphans = v
+	}
+	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
+		checkDuplicates = v
+	}
+	if v, ok := request.Params.Arguments["check_partial_mutations"].(bool); ok {
+		checkPartialMutations = v
+	}
+	if v, ok := request.Params.Arguments["check_workspace_root_conflict"].(bool); ok {
+		checkWorkspaceRootConflict = v
+	}
+	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
+		fixOrphans = v
+	}
+
+	preflightFindings := []core.DoctorFinding(nil)
+	if checkWorkspaceRootConflict {
+		findings, err := core.CheckWorkspaceRootConflict(s.RootPath)
+		if err != nil {
+			return InternalError(fmt.Sprintf("doctor workspace root conflict: %v", err)), nil
+		}
+		preflightFindings = findings
+	}
+
 	ws, result := s.requireWorkspace(ctx)
 	if result != nil {
+		if len(preflightFindings) > 0 {
+			return toolResultJSON(&core.DoctorReport{
+				Findings:  preflightFindings,
+				CheckedAt: time.Now().UTC(),
+			})
+		}
 		return result, nil
 	}
 
@@ -2092,28 +2129,12 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 		return toolResultJSON(res)
 	}
 
-	checkOrphans := true
-	checkDuplicates := true
-	checkPartialMutations := false
-	fixOrphans := false
-	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
-		checkOrphans = v
-	}
-	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
-		checkDuplicates = v
-	}
-	if v, ok := request.Params.Arguments["check_partial_mutations"].(bool); ok {
-		checkPartialMutations = v
-	}
-	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
-		fixOrphans = v
-	}
-
 	opts := &core.DoctorOptions{
-		CheckOrphans:          checkOrphans,
-		CheckDuplicates:       checkDuplicates,
-		CheckPartialMutations: checkPartialMutations,
-		FixOrphans:            fixOrphans,
+		CheckOrphans:               checkOrphans,
+		CheckDuplicates:            checkDuplicates,
+		CheckPartialMutations:      checkPartialMutations,
+		CheckWorkspaceRootConflict: checkWorkspaceRootConflict,
+		FixOrphans:                 fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)
 	if err != nil {
@@ -2121,10 +2142,3 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	return toolResultJSON(report)
 }
-
-
-
-
-
-
-

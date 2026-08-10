@@ -75,7 +75,7 @@ func setupSinceWorkspace(t *testing.T) (workspacePath, copilotPath string) {
 func TestHarvestTelemetry_Since_ExcludesOlderEvents(t *testing.T) {
 	workspacePath, copilotPath := setupSinceWorkspace(t)
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -93,7 +93,7 @@ func TestHarvestTelemetry_Since_ExcludesOlderEvents(t *testing.T) {
 func TestHarvestTelemetry_Since_FullHarvestWhenAllEventsNewer(t *testing.T) {
 	workspacePath, copilotPath := setupSinceWorkspace(t)
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -111,7 +111,7 @@ func TestHarvestTelemetry_Since_FullHarvestWhenAllEventsNewer(t *testing.T) {
 func TestHarvestTelemetry_Since_FutureDate_ReturnsZeroSessions(t *testing.T) {
 	workspacePath, copilotPath := setupSinceWorkspace(t)
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -136,7 +136,7 @@ func TestHarvestTelemetry_ZeroTimestampEvents_AlwaysIncluded(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(filepath.Join(logsDir, "no-ts.log"), []byte(noTSLog), 0o644))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 

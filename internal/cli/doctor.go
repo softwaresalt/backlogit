@@ -27,17 +27,18 @@ type doctorTargetFunc func(ws *core.Workspace, target, absTarget string) *core.D
 
 func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
-		checkOrphans              bool
-		checkDuplicates           bool
-		checkArchivedFrom         bool
-		checkGateEvidence         bool
-		checkOverArchivedFeatures bool
-		checkPartialMutations     bool
-		fixOrphans                bool
-		fixArchivedFrom           bool
-		fixMalformed              bool
-		outputFormatFlag          string
-		targetFlag                string
+		checkOrphans               bool
+		checkDuplicates            bool
+		checkArchivedFrom          bool
+		checkGateEvidence          bool
+		checkOverArchivedFeatures  bool
+		checkPartialMutations      bool
+		checkWorkspaceRootConflict bool
+		fixOrphans                 bool
+		fixArchivedFrom            bool
+		fixMalformed               bool
+		outputFormatFlag           string
+		targetFlag                 string
 	)
 
 	cmd := &cobra.Command{
@@ -83,6 +84,14 @@ resume) — no new command; retry policy is owned by the caller.`,
 			}
 
 			ctx := context.Background()
+			preflightFindings := []core.DoctorFinding(nil)
+			if checkWorkspaceRootConflict {
+				findings, err := core.CheckWorkspaceRootConflict(*cwd)
+				if err != nil {
+					return fmt.Errorf("doctor: check workspace root conflict: %w", err)
+				}
+				preflightFindings = findings
+			}
 
 			// Target mode: single-file gate with a versioned exit-code contract.
 			if cmd.Flags().Changed("target") {
@@ -106,20 +115,24 @@ resume) — no new command; retry policy is owned by the caller.`,
 
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
+				if len(preflightFindings) > 0 {
+					return writeDoctorPreflightReport(cmd.OutOrStdout(), outputFormatFlag, preflightFindings)
+				}
 				return fmt.Errorf("open workspace: %w", err)
 			}
 			defer ws.Close()
 
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
-				CheckOrphans:              checkOrphans,
-				CheckDuplicates:           checkDuplicates,
-				CheckArchivedFrom:         checkArchivedFrom,
-				CheckGateEvidence:         checkGateEvidence,
-				CheckOverArchivedFeatures: checkOverArchivedFeatures,
-				CheckPartialMutations:     checkPartialMutations,
-				FixOrphans:                fixOrphans,
-				FixArchivedFrom:           fixArchivedFrom,
-				FixMalformed:              fixMalformed,
+				CheckOrphans:               checkOrphans,
+				CheckDuplicates:            checkDuplicates,
+				CheckArchivedFrom:          checkArchivedFrom,
+				CheckGateEvidence:          checkGateEvidence,
+				CheckOverArchivedFeatures:  checkOverArchivedFeatures,
+				CheckPartialMutations:      checkPartialMutations,
+				CheckWorkspaceRootConflict: checkWorkspaceRootConflict,
+				FixOrphans:                 fixOrphans,
+				FixArchivedFrom:            fixArchivedFrom,
+				FixMalformed:               fixMalformed,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -154,6 +167,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 	cmd.Flags().BoolVar(&checkGateEvidence, "check-gate-evidence", false, "advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)")
 	cmd.Flags().BoolVar(&checkOverArchivedFeatures, "check-over-archived-features", false, "check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)")
 	cmd.Flags().BoolVar(&checkPartialMutations, "check-partial-mutations", false, "advisory: detect residual partial commit-association and dependency-linking state (exit code unaffected)")
+	cmd.Flags().BoolVar(&checkWorkspaceRootConflict, "check-workspace-root-conflict", false, "check for a conflicting .backlog and .backlogit workspace root before opening the workspace")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
 	cmd.Flags().BoolVar(&fixMalformed, "fix-malformed", false, "clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)")
@@ -161,6 +175,30 @@ resume) — no new command; retry policy is owned by the caller.`,
 	cmd.Flags().StringVar(&targetFlag, "target", "", "validate a single .backlogit artifact file against header-def (versioned exit-code gate)")
 
 	return cmd
+}
+
+func writeDoctorPreflightReport(w io.Writer, format string, findings []core.DoctorFinding) error {
+	report := &core.DoctorReport{
+		Findings:  findings,
+		CheckedAt: time.Now().UTC(),
+	}
+	if format == "json" {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(report)
+	}
+
+	if len(report.Findings) == 0 {
+		_, err := fmt.Fprintln(w, "No issues found.")
+		return err
+	}
+	for _, f := range report.Findings {
+		if _, err := fmt.Fprintf(w, "[%s] %s: %s\n", f.Type, f.ArtifactID, f.Description); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(w, "\n%d issue(s) found, 0 fix(es) applied.\n", len(report.Findings))
+	return err
 }
 
 // runDoctorTargetMode owns the doctor --target lock lifecycle in a SYNCHRONOUS

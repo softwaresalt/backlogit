@@ -82,3 +82,13 @@ func TestCheckpointCreate_InvalidSchema(t *testing.T) {
 	err := runCLIErr(t, root, "checkpoint", "create", "--state-dump", stateDump)
 	require.Error(t, err, "create must reject an invalid V1 checkpoint")
 }
+
+func TestCheckpointCreate_MissingWorkspaceStorageRootFailsClosed(t *testing.T) {
+	root := t.TempDir()
+
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"sess-missing","phase":"build"}`
+	err := runCLIErr(t, root, "checkpoint", "create", "--state-dump", stateDump)
+
+	require.Error(t, err, "create must fail when no workspace storage root exists")
+	assert.Contains(t, err.Error(), "resolve checkpoint dir")
+}

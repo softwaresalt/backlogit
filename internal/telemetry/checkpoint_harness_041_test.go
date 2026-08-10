@@ -9,7 +9,6 @@ package telemetry_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -23,8 +22,7 @@ import (
 // no intermediate .tmp files in the workspace .backlogit/ directory after a
 // successful write.
 func TestSaveCheckpoint_NoDotTmpAfterSuccess(t *testing.T) {
-	ws := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	ws := newTelemetryStorageRoot(t)
 
 	cp := &telemetry.HarvestCheckpoint{
 		FileOffsets: map[string]int64{"process-001.log": 4096},
@@ -33,7 +31,7 @@ func TestSaveCheckpoint_NoDotTmpAfterSuccess(t *testing.T) {
 	}
 	require.NoError(t, telemetry.SaveCheckpoint(ws, cp))
 
-	entries, err := os.ReadDir(filepath.Join(ws, ".backlogit"))
+	entries, err := os.ReadDir(ws)
 	require.NoError(t, err)
 	for _, e := range entries {
 		assert.NotContains(t, e.Name(), ".tmp",

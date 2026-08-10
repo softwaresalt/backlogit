@@ -49,7 +49,7 @@ Under the current backlogit methodology, queue-driven migration is intentionally
 
 ### Step 1: Initialize the backlogit workspace
 
-Run `backlogit init` in the directory where the imported backlog should live. This creates `.backlogit/` and writes the default workspace and migration configuration files.
+Run `backlogit init` in the directory where the imported backlog should live. This creates `.backlog/` for new workspaces and writes the default workspace and migration configuration files. Existing `.backlogit/` workspaces remain supported.
 
 ```bash
 cd your-project
@@ -58,14 +58,34 @@ backlogit init
 
 Review these files before importing if your project needs custom mapping:
 
-- `.backlogit/config.yaml` for artifact types and naming
-- `.backlogit/registry.yaml` for routing
-- `.backlogit/migration.yaml` for source-path to artifact-type mapping
+- `.backlog/config.yaml` for artifact types and naming
+- `.backlog/registry.yaml` for routing
+- `.backlog/migration.yaml` for source-path to artifact-type mapping
 
 The generated `migration.yaml` defaults to the current structured Backlog.md layout and maps:
 
 - task-like directories to `task`
 - milestone files to `feature`
+
+### Rename a legacy workspace directory
+
+If your repository already uses `.backlogit/`, you can rename it to the new
+default with the workspace-directory migration command:
+
+```bash
+backlogit migrate --workspace-dir --dry-run
+backlogit migrate --workspace-dir
+```
+
+`backlogit migrate --workspace-dir` performs a pure directory move from
+`.backlogit/` to `.backlog/`. It does not rewrite artifact content and it does
+not rehydrate the index.
+
+[!IMPORTANT]
+When both `.backlog/` and `.backlogit/` exist, backlogit refuses automatic
+selection. Set `BACKLOGIT_WORKSPACE_DIR` to `.backlog` or `.backlogit`
+exactly, or remove one directory. The override is a closed set; path values,
+case aliases such as `.BACKLOG`, and empty strings are rejected.
 
 ### Step 2: Preview the migration with --dry-run
 
@@ -110,9 +130,9 @@ Once the dry run and validation pass, run the migration without `--dry-run`:
 backlogit migrate --source ./.backlog --adapter backlog-md
 ```
 
-backlogit will create one Markdown artifact per imported work item inside `.backlogit/`, assign new backlogit IDs, preserve key source metadata, and then rehydrate the SQLite index.
+backlogit will create one Markdown artifact per imported work item inside `.backlog/` by default, assign new backlogit IDs, preserve key source metadata, and then rehydrate the SQLite index.
 
-Imported active work lands under `.backlogit/queue/`. Imported terminal work such as archived items stays under `.backlogit/archive/`. Migration does not create top-level `queue/`, `tasks/`, `epics/`, or `archive/` directories in the repository root.
+Imported active work lands under `.backlog/queue/`. Imported terminal work such as archived items stays under `.backlog/archive/`. Legacy `.backlogit/queue/` and `.backlogit/archive/` workspaces continue to work. Migration does not create top-level `queue/`, `tasks/`, `epics/`, or `archive/` directories in the repository root.
 
 ### Step 5: Sync the index and verify
 
@@ -232,21 +252,21 @@ Inspect `migration-preview.json` to verify that every item was mapped correctly 
 
 ## Customizing Artifact Mapping
 
-If you want different target types for the currently supported imported classes, edit `.backlogit/migration.yaml` before importing. For example, you can remap milestone files to `feature` instead of `epic`, or change task-like directories to use a custom type that exists in your `config.yaml`.
+If you want different target types for the currently supported imported classes, edit `.backlog/migration.yaml` before importing. Legacy `.backlogit/migration.yaml` files remain supported for older workspaces. For example, you can remap milestone files to `feature` instead of `epic`, or change task-like directories to use a custom type that exists in your `config.yaml`.
 
-The migration command reads `.backlogit/migration.yaml` automatically when it exists.
+The migration command reads the workspace root's `migration.yaml` automatically when it exists.
 
 ## Configuring Artifact Types for Future Imports
 
 Artifact types are assigned during import. backlogit does not support changing an
 artifact's type afterward with `backlogit update`, so type mapping decisions
-should be made in `.backlogit/migration.yaml` before you run `backlogit migrate`.
+should be made in the workspace root's `migration.yaml` before you run `backlogit migrate`.
 
 If an imported item lands on the wrong type, update the migration mapping and
 re-import into a clean workspace, or recreate the artifact with the desired
 type through the normal CLI or MCP create flow.
 
-To configure custom artifact types for future use, edit `.backlogit/config.yaml`:
+To configure custom artifact types for future use, edit `.backlog/config.yaml` in a new workspace, or `.backlogit/config.yaml` in an existing legacy workspace:
 
 ```yaml
 artifact_types:
@@ -310,16 +330,16 @@ git clean -fd
 
 ```bash
 # Linux / macOS
-find .backlogit/queue .backlogit/archive -name '*.md' -delete
+find .backlog/queue .backlog/archive -name '*.md' -delete
 
 # Windows PowerShell
-Get-ChildItem -Path .backlogit\queue,.backlogit\archive -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Remove-Item
+Get-ChildItem -Path .backlog\queue,.backlog\archive -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Remove-Item
 ```
 
 3. Delete the index to clear the cache:
 
 ```bash
-rm .backlogit/backlogit.db
+rm .backlog/backlogit.db
 ```
 
 4. Rehydrate from the remaining Markdown source:

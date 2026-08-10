@@ -40,8 +40,12 @@ checkpoint files.`,
 	return cmd
 }
 
-func checkpointDir(cwd string) string {
-	return filepath.Join(cwd, ".backlogit", "checkpoints")
+func checkpointDir(cwd string) (string, error) {
+	storageRoot, err := core.ResolveStorageRoot(cwd)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace storage root: %w", err)
+	}
+	return filepath.Join(storageRoot, "checkpoints"), nil
 }
 
 // newCheckpointCreateCmd returns the `backlogit checkpoint create` subcommand.
@@ -69,7 +73,10 @@ is returned as JSON.`,
 				return fmt.Errorf("state-dump is required")
 			}
 
-			dir := checkpointDir(*cwd)
+			dir, err := checkpointDir(*cwd)
+			if err != nil {
+				return fmt.Errorf("resolve checkpoint dir: %w", err)
+			}
 			path, err := events.CreateCheckpoint(ctx, dir, stateDump)
 			if err != nil {
 				return fmt.Errorf("create checkpoint: %w", err)
@@ -97,7 +104,10 @@ func newCheckpointListCmd(cwd *string) *cobra.Command {
 			ctx := context.Background()
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-list")
 
-			dir := checkpointDir(*cwd)
+			dir, err := checkpointDir(*cwd)
+			if err != nil {
+				return fmt.Errorf("resolve checkpoint dir: %w", err)
+			}
 			filter := events.CheckpointFilter{
 				Agent:      agent,
 				Status:     status,
@@ -158,7 +168,10 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 			filename := args[0]
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-get", "filename", filename)
 
-			dir := checkpointDir(*cwd)
+			dir, err := checkpointDir(*cwd)
+			if err != nil {
+				return fmt.Errorf("resolve checkpoint dir: %w", err)
+			}
 			cp, err := events.GetCheckpoint(ctx, dir, filename)
 			if err != nil {
 				return fmt.Errorf("get checkpoint: %w", err)
@@ -188,7 +201,10 @@ func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 			filename := args[0]
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-resolve", "filename", filename)
 
-			dir := checkpointDir(*cwd)
+			dir, err := checkpointDir(*cwd)
+			if err != nil {
+				return fmt.Errorf("resolve checkpoint dir: %w", err)
+			}
 			if err := events.ResolveCheckpoint(ctx, dir, filename); err != nil {
 				return fmt.Errorf("resolve checkpoint: %w", err)
 			}
@@ -218,11 +234,14 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 			ctx := context.Background()
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-cleanup")
 
-			dir := checkpointDir(*cwd)
+			dir, err := checkpointDir(*cwd)
+			if err != nil {
+				return fmt.Errorf("resolve checkpoint dir: %w", err)
+			}
 
 			// Load retention from config if not overridden.
 			if retentionDays == 0 {
-				wsPath := filepath.Join(*cwd, ".backlogit")
+				wsPath := filepath.Dir(dir)
 				cfg, err := config.Load(ctx, wsPath)
 				if err == nil && cfg.CheckpointRetention.RetentionDays > 0 {
 					retentionDays = cfg.CheckpointRetention.RetentionDays
@@ -244,8 +263,6 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 	cmd.Flags().IntVar(&retentionDays, "retention-days", 0, "override retention days (defaults to config)")
 	return cmd
 }
-
-
 
 // resolveCheckpointOperator resolves the operator identity for a checkpoint
 // disposition action (abandon or quarantine) in priority order: the
@@ -389,5 +406,3 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
-
-

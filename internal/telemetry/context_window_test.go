@@ -134,7 +134,7 @@ func TestHarvestTelemetry_ProducesContextWindowMetrics(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 

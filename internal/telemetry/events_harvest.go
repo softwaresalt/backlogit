@@ -276,7 +276,7 @@ func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint
 		return 0, 0, fmt.Errorf("read session-state dir: %w", err)
 	}
 
-	telemetryDir := filepath.Join(workspacePath, ".backlogit", "telemetry")
+	telemetryDir := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry")
 	if err := os.MkdirAll(telemetryDir, 0o755); err != nil {
 		return 0, 0, fmt.Errorf("create telemetry dir: %w", err)
 	}

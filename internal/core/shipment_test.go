@@ -1315,7 +1315,7 @@ func TestShipment_RehydrationConsistency(t *testing.T) {
 
 	// Force rehydration by closing and reopening workspace
 	ws.Close()
-	ws2, err := NewWorkspace(ctx, filepath.Dir(ws.RootPath))
+	ws2, err := NewWorkspace(ctx, ws.RootPath)
 	require.NoError(t, err)
 	defer ws2.Close()
 

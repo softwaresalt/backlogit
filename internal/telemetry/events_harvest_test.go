@@ -114,8 +114,10 @@ func TestHarvestEventsFacts_IncrementalSkip(t *testing.T) {
 	// Sessions already in ProcessedEventSessions should be skipped.
 	dir := t.TempDir()
 	copilotDir := filepath.Join(dir, ".copilot")
+	workspacePath := filepath.Join(dir, ".backlogit")
 	sessionDir := filepath.Join(copilotDir, "session-state", "session-complete")
 	require.NoError(t, os.MkdirAll(sessionDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 
 	eventsContent := buildEventsJSONL([]string{
 		`{"type":"session.start","timestamp":"2026-05-01T10:00:00Z","data":{"sessionId":"session-complete","startTime":"2026-05-01T10:00:00Z","context":{"branch":"main","repository":"owner/repo"}}}`,
@@ -130,7 +132,7 @@ func TestHarvestEventsFacts_IncrementalSkip(t *testing.T) {
 		ProcessedEventSessions: map[string]bool{"session-complete": true},
 	}
 
-	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, dir, cp, time.Now(), false)
+	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, workspacePath, cp, time.Now(), false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, tcAdded, "already-processed session should produce 0 tool call facts")
 	assert.Equal(t, 0, sfAdded, "already-processed session should produce 0 session facts")
@@ -139,8 +141,10 @@ func TestHarvestEventsFacts_IncrementalSkip(t *testing.T) {
 func TestHarvestEventsFacts_NewSession(t *testing.T) {
 	dir := t.TempDir()
 	copilotDir := filepath.Join(dir, ".copilot")
+	workspacePath := filepath.Join(dir, ".backlogit")
 	sessionDir := filepath.Join(copilotDir, "session-state", "session-new")
 	require.NoError(t, os.MkdirAll(sessionDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 
 	eventsContent := buildEventsJSONL([]string{
 		`{"type":"session.start","timestamp":"2026-05-01T10:00:00Z","data":{"sessionId":"session-new","startTime":"2026-05-01T10:00:00Z","context":{"branch":"main","repository":"owner/repo"}}}`,
@@ -157,14 +161,14 @@ func TestHarvestEventsFacts_NewSession(t *testing.T) {
 		ProcessedEventSessions: make(map[string]bool),
 	}
 
-	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, dir, cp, time.Now(), false)
+	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, workspacePath, cp, time.Now(), false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, tcAdded)
 	assert.Equal(t, 1, sfAdded)
 	assert.True(t, cp.ProcessedEventSessions["session-new"], "completed session should be marked processed")
 
 	// Verify fact files exist and have content
-	telDir := filepath.Join(dir, ".backlogit", "telemetry")
+	telDir := filepath.Join(workspacePath, "telemetry")
 	tcFacts, err := readToolCallFacts(filepath.Join(telDir, "tool-calls.jsonl"))
 	require.NoError(t, err)
 	require.Len(t, tcFacts, 2)
@@ -188,8 +192,10 @@ func TestHarvestEventsFacts_NewSession(t *testing.T) {
 func TestHarvestEventsFacts_ForceClears(t *testing.T) {
 	dir := t.TempDir()
 	copilotDir := filepath.Join(dir, ".copilot")
+	workspacePath := filepath.Join(dir, ".backlogit")
 	sessionDir := filepath.Join(copilotDir, "session-state", "session-force")
 	require.NoError(t, os.MkdirAll(sessionDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 
 	eventsContent := buildEventsJSONL([]string{
 		`{"type":"session.start","timestamp":"2026-05-01T10:00:00Z","data":{"sessionId":"session-force","startTime":"2026-05-01T10:00:00Z","context":{"branch":"main","repository":"owner/repo"}}}`,
@@ -205,7 +211,7 @@ func TestHarvestEventsFacts_ForceClears(t *testing.T) {
 	}
 
 	// Force should clear the skip list and re-process
-	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, dir, cp, time.Now(), true)
+	tcAdded, sfAdded, err := HarvestEventsFacts(copilotDir, workspacePath, cp, time.Now(), true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, tcAdded, "force should re-process previously-completed session")
 	assert.Equal(t, 1, sfAdded)

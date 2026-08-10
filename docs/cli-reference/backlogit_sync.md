@@ -17,7 +17,7 @@ Rehydrate the SQLite index from Markdown source files
 Rebuild the backlogit SQLite cache from the Markdown and JSONL files in
 the workspace.
 
-Use this after making manual changes to .backlogit files or when you want to
+Use this after making manual changes to .backlog or .backlogit files or when you want to
 force the disposable cache to match the file-backed source of truth.
 
 ```text

@@ -28,7 +28,10 @@ func helperWriteArtifact(t *testing.T, dir, filename, content string) {
 // "scan all dirs" path.
 func newDoctorTestWorkspace(t *testing.T, rootPath string, withConfig bool) *Workspace {
 	t.Helper()
-	ws := &Workspace{RootPath: rootPath}
+	ws := &Workspace{
+		RootPath:    rootPath,
+		StorageRoot: filepath.Join(rootPath, ".backlogit"),
+	}
 	if withConfig {
 		ws.Config = &config.WorkspaceConfig{
 			ArtifactTypes: map[string]*config.ArtifactTypeConfig{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -48,7 +47,7 @@ func newHooksPollCmd(cwd *string) *cobra.Command {
 			}
 			defer ws.Close()
 
-			backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+			backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 			hw := events.NewHookEventWriter(backlogitDir)
 			cs := events.NewCheckpointStore(backlogitDir)
 			result, err := events.PollHookEvents(ctx, hw, cs, consumerID, nil)
@@ -100,7 +99,7 @@ func newHooksAckCmd(cwd *string) *cobra.Command {
 			}
 			defer ws.Close()
 
-			backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+			backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 			cs := events.NewCheckpointStore(backlogitDir)
 			if err := events.AckHookEvents(ctx, cs, consumerID, seq); err != nil {
 				return fmt.Errorf("ack hook events: %w", err)

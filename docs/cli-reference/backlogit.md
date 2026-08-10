@@ -14,11 +14,11 @@ Backlogit — AI-native agile workspace
 
 ### Synopsis
 
-backlogit manages a project-local work item workspace under .backlogit.
+backlogit manages a project-local work item workspace under .backlog by default.
 
-	It stores active work in .backlogit\queue, terminal work in .backlogit\archive,
-	per-item history in .backlogit\logs\{item-id}.jsonl, and deferred planning work
-	in .backlogit\stash.jsonl.
+	It stores active work in .backlog\queue, terminal work in .backlog\archive,
+	per-item history in .backlog\logs\{item-id}.jsonl, and deferred planning work
+	in .backlog\stash.jsonl. Existing .backlogit workspaces remain supported.
 
 Use backlogit to initialize a workspace, create and update artifacts, query the
 SQLite cache, migrate from supported backlog sources, manage the work queue, and

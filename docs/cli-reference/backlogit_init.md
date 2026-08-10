@@ -16,7 +16,7 @@ Initialize a new backlogit workspace
 
 Initialize a backlogit workspace in the target directory.
 
-This creates the .backlogit storage root, logs directory, canonical stash JSONL
+This creates the .backlog storage root, logs directory, canonical stash JSONL
 file, default YAML configuration files, and default artifact templates.
 
 ```text

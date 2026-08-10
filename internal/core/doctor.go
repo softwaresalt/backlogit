@@ -45,6 +45,10 @@ const (
 	// queue/archive root collision is explicitly distinguishable in the report.
 	FindingRootIDCollision DoctorFindingType = "root_id_collision"
 
+	// FindingWorkspaceRootConflict indicates that both supported workspace
+	// storage root names are present under the same repository root.
+	FindingWorkspaceRootConflict DoctorFindingType = "workspace_root_conflict"
+
 	// FindingArchivedFromSelfRef indicates an archive record whose archived_from
 	// resolves to its own archive path (self-referential). UnarchiveItem cannot
 	// restore such a record to the queue without the read-time self-heal, and the
@@ -184,6 +188,8 @@ type DoctorOptions struct {
 	// for governed commit association and dependency-linking paths. Advisory only:
 	// findings never change the doctor exit code.
 	CheckPartialMutations bool
+	// CheckWorkspaceRootConflict enables the read-only dual-root conflict check.
+	CheckWorkspaceRootConflict bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -211,6 +217,14 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	report := &DoctorReport{
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
+	}
+
+	if opts.CheckWorkspaceRootConflict {
+		findings, err := checkWorkspaceRootConflict(ws.RootPath)
+		if err != nil {
+			return nil, fmt.Errorf("doctor: check workspace root conflict: %w", err)
+		}
+		report.Findings = append(report.Findings, findings...)
 	}
 
 	type artifactInfo struct {
@@ -1068,6 +1082,48 @@ func pathContained(root, p string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// CheckWorkspaceRootConflict reports whether both supported workspace storage
+// roots exist under rootPath.
+func CheckWorkspaceRootConflict(rootPath string) ([]DoctorFinding, error) {
+	return checkWorkspaceRootConflict(rootPath)
+}
+
+func checkWorkspaceRootConflict(rootPath string) ([]DoctorFinding, error) {
+	cleanRoot, err := filepath.Abs(filepath.Clean(rootPath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace root %s: %w", rootPath, err)
+	}
+
+	entries, err := os.ReadDir(cleanRoot)
+	if err != nil {
+		return nil, fmt.Errorf("read workspace root %s: %w", cleanRoot, err)
+	}
+
+	present := make([]string, 0, len(workspaceRootCandidates))
+	for _, candidate := range workspaceRootCandidates {
+		_, ok, probeErr := probeWorkspaceCandidate(cleanRoot, candidate, entries)
+		if probeErr != nil {
+			return nil, probeErr
+		}
+		if ok {
+			present = append(present, candidate)
+		}
+	}
+	if len(present) < 2 {
+		return nil, nil
+	}
+
+	return []DoctorFinding{{
+		Type:       FindingWorkspaceRootConflict,
+		ArtifactID: "workspace",
+		Description: fmt.Sprintf(
+			"workspace root contains both %s and %s; set BACKLOGIT_WORKSPACE_DIR to one supported name or remove one",
+			present[0],
+			present[1],
+		),
+	}}, nil
+}
+
 // hasReturnedToBacklogEvent reports whether the item's event log contains a
 // returned_to_backlog entry, indicating intentional orphaning by ShipShipment.
 func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
@@ -1183,4 +1239,3 @@ func levelFromID(id string) int {
 	}
 	return strings.Count(id[:dash], ".") + 1
 }
-

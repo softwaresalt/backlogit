@@ -27,7 +27,7 @@ type migrationStateEntry struct {
 func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, error) {
 	report := &MigrationReport{DryRun: dryRun}
 
-	backlogDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogDir := workspaceStorageRoot(ws)
 	entries, err := os.ReadDir(backlogDir)
 	if err != nil {
 		return nil, fmt.Errorf("read workspace dir: %w", err)
@@ -89,7 +89,7 @@ func MigrateFlatToHierarchical(ws *Workspace, dryRun bool) (*MigrationReport, er
 // RollbackMigration reverses a previous migration using the state file
 // (.backlogit/.migration-state) to restore the pre-migration layout.
 func RollbackMigration(ws *Workspace) error {
-	statePath := filepath.Join(ws.RootPath, ".backlogit", ".migration-state")
+	statePath := filepath.Join(workspaceStorageRoot(ws), ".migration-state")
 	data, err := os.ReadFile(statePath)
 	if os.IsNotExist(err) {
 		return nil

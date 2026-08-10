@@ -31,8 +31,8 @@ type artifactRef struct {
 // and returns a map from artifact ID to every canonical .md file that declares
 // that ID. Files that fail to parse or carry an empty ID are skipped. Returning
 // every ref (not just the first) lets callers detect duplicate / colliding IDs
-// across the queue and archive directories. The fixed .backlogit/archive
-// directory is always included in the scan set (see below) so cross-boundary
+// across the queue and archive directories. The candidate archive directories
+// are always included in the scan set (see below) so cross-boundary
 // root-ID collisions are detectable even when the registry does not route the
 // archive.
 func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
@@ -41,32 +41,36 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 		return nil, fmt.Errorf("resolve artifact search dirs: %w", err)
 	}
 
-	// ArchiveItem always relocates items into the fixed .backlogit/archive
-	// directory, regardless of registry configuration. artifactSearchDirs only
-	// surfaces the archive dir via registry.yaml when ws.Config != nil. A MISSING
-	// registry.yaml is handled gracefully (LoadRegistry falls back to
-	// DefaultRegistry, which routes the archive), but a registry that is present
-	// yet unreadable, or that loads successfully without an archive-routing rule,
-	// would drop the archive from the scan set -- letting a queued + an archived
-	// item share a root ID undetected, exactly the 066-F data-loss path this
-	// scanner exists to close. Force the canonical archive directory into the
-	// scan set so the collision guard and doctor audit never go blind to
+	// ArchiveItem always relocates items into the resolved storage root's
+	// archive directory, but stale or conflicting records can still exist under
+	// either supported workspace root name. Force both archive candidates into
+	// the scan set so the collision guard and doctor audit never go blind to
 	// already-archived IDs.
-	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
-	archivePresent := false
-	for _, d := range dirs {
-		if filepath.Clean(d) == filepath.Clean(archiveDir) {
-			archivePresent = true
-			break
+	for _, candidate := range WorkspaceRootCandidates() {
+		archiveDir := filepath.Join(ws.RootPath, candidate, "archive")
+		archivePresent := false
+		for _, d := range dirs {
+			if filepath.Clean(d) == filepath.Clean(archiveDir) {
+				archivePresent = true
+				break
+			}
 		}
-	}
-	if !archivePresent {
-		dirs = append(dirs, archiveDir)
+		if !archivePresent {
+			// Guard against path traversal: skip candidate dirs that are
+			// symlinks or reparse points before adding their archive subdir.
+			candidateDir := filepath.Join(ws.RootPath, candidate)
+			if info, statErr := os.Lstat(candidateDir); statErr == nil {
+				if isReparse, _ := isSymlinkOrReparse(info, candidateDir); isReparse {
+					continue
+				}
+			}
+			dirs = append(dirs, archiveDir)
+		}
 	}
 
 	refs := make(map[string][]artifactRef)
 	for _, dirPath := range dirs {
-		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+		if _, statErr := os.Lstat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
 		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
