@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: 'Design record for F6: governed-operation CLI/MCP parity hardening — one shared core function for commit association, behavioral parity assertion, and deliberate asymmetry documentation.'
-doc_type: design-doc
+doc_type: design
 schema_version: "1.0"
 source: docs/design-docs/governed-operation-parity.md
 title: Governed-Operation Parity Contract (F6)
@@ -133,3 +133,4 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 `core.LinkCommit` is deprecated. It is retained for backward compatibility but must not be used for
 new code. It only writes `commit_links` and JSONL (no frontmatter scalar) and silently swallows
 JSONL append failures. Use `core.AssociateCommit` instead.
+
