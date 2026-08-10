@@ -61,7 +61,15 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if err != nil {
 		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
 	}
-	priorCommit := artifact.Commit
+	// Snapshot the full pre-mutation artifact so the compensating write uses
+	// persistArtifact (no hooks) rather than UpdateArtifact (fires hooks).
+	// Using UpdateArtifact inside the envelope would leave spurious hook-queue
+	// entries on every compensated write, even after a clean rollback.
+	priorArtifact := cloneArtifact(artifact)
+	// Set the commit field on the working copy so the Apply step can call
+	// persistArtifact directly, bypassing the hook machinery.
+	artifact.Commit = sha
+	artifact.UpdatedAt = time.Now().UTC()
 
 	// Snapshot the pre-existing commit_links row (if any) before the envelope
 	// runs. On Compensate, if the row pre-existed we restore the original
@@ -106,13 +114,22 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 		{
 			Name: "frontmatter-scalar",
 			Apply: func(ctx context.Context) error {
-				if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
+				// Use persistArtifact (not UpdateArtifact) to write the
+				// frontmatter without firing pre/post hooks. Hook emission
+				// is intentionally deferred until the entire envelope
+				// succeeds so compensated writes leave no spurious hook-queue
+				// entries. The SQLite fast-path (items.commit column) is
+				// intentionally not updated here; commit_links is the
+				// authoritative per-SHA representation.
+				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
 					return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
 				}
 				return nil
 			},
 			Compensate: func(ctx context.Context) error {
-				if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": priorCommit}); err != nil {
+				// Restore the original frontmatter using the pre-snapshotted
+				// artifact so no hook events are emitted for the rollback.
+				if err := persistArtifact(ctx, ws, cloneArtifact(priorArtifact), false); err != nil {
 					return fmt.Errorf("compensate associate commit frontmatter %s: %w", itemID, err)
 				}
 				return nil
@@ -327,6 +344,8 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 	}
 	return linked, nil
 }
+
+
 
 
 
