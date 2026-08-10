@@ -94,3 +94,46 @@ func TestResolveDispositionTarget_RejectsSymlink(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
+
+// TestResolveDispositionTarget_WorksWithRelativeWorkspaceRoot is a regression
+// test for a real bug caught by post-merge runtime verification: when
+// ws.RootPath is a relative path (as it commonly is when the CLI is invoked
+// with a relative --cwd, e.g. "." or a relative subdirectory), the
+// checkpoints directory path built from it must still resolve and confine
+// correctly. Previously, a non-absolute checkpointsDirAbs was passed into
+// confineToStorageRoot, which detected "not absolute" and re-joined it onto
+// ws.RootPath a second time, corrupting the path and causing every
+// disposition call to fail with "target escapes checkpoints directory" when
+// invoked with a relative workspace root.
+func TestResolveDispositionTarget_WorksWithRelativeWorkspaceRoot(t *testing.T) {
+	parent := t.TempDir()
+	relRoot := "rel-workspace"
+	absRoot := filepath.Join(parent, relRoot)
+	backlogitDir := filepath.Join(absRoot, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, checkpointsSubdir), 0o755))
+
+	origWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(parent))
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	ctx := context.Background()
+	// ws.RootPath is intentionally relative here, mirroring how the CLI
+	// constructs a workspace from a relative --cwd value.
+	ws, err := NewWorkspace(ctx, relRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+	require.False(t, filepath.IsAbs(ws.RootPath), "test setup must exercise the relative-root code path")
+
+	target, err := ResolveDispositionTarget(ws, "checkpoint-rel.json")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(target), "resolved target must always be absolute")
+
+	// The resolved absolute path must actually be inside the real checkpoints
+	// directory, not a corrupted double-joined path.
+	realCheckpointsDir, err := filepath.Abs(filepath.Join(backlogitDir, checkpointsSubdir))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(realCheckpointsDir, "checkpoint-rel.json"), target)
+}

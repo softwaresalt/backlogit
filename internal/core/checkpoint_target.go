@@ -72,7 +72,19 @@ func ResolveDispositionTarget(ws *Workspace, filename string) (string, error) {
 		return "", err
 	}
 
-	checkpointsDirAbs := filepath.Join(WorkspaceStorageRoot(ws.RootPath), checkpointsSubdir)
+	// filepath.Abs is required here (not just filepath.Join): ws.RootPath may
+	// itself be a relative path (e.g. the CLI's --cwd flag defaults to "." or
+	// a caller-supplied relative directory). Without normalizing to an
+	// absolute path, this value would be passed into confineToStorageRoot
+	// below, which detects "not absolute" and re-joins it onto ws.RootPath a
+	// second time — corrupting the path into something like
+	// "<root>/<root>/.backlogit/checkpoints/<file>" that never exists and
+	// always fails containment, breaking every disposition call made with a
+	// relative workspace path.
+	checkpointsDirAbs, err := filepath.Abs(filepath.Join(WorkspaceStorageRoot(ws.RootPath), checkpointsSubdir))
+	if err != nil {
+		return "", fmt.Errorf("resolve checkpoints directory: %w", err)
+	}
 
 	// Reject a symlinked checkpoints directory itself, not just a symlinked
 	// leaf file. confineToStorageRoot below only proves the resolved target is
@@ -149,6 +161,3 @@ func rejectSymlinkedDir(path, label string) error {
 	}
 	return nil
 }
-
-
-
