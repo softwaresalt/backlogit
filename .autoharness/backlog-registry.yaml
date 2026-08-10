@@ -53,7 +53,7 @@ operations:
       assignee: "assigned_to"
       priority: "priority"
       size: "size"
-      commit: "sha"
+      commit: "commit"
     # --force-gates and --gate-base are intentionally absent from the MCP surface.
     # Forcing a completion gate is a deliberate human-at-a-terminal action; the
     # established rule is that a fallback surface must never be more dangerous than

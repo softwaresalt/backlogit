@@ -798,7 +798,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed(fmt.Sprintf("invalid sections param: %v", sectionsErr)), nil
 	}
 	if hasComplexityMutationArguments(request.Params.Arguments) {
-		if len(updates) > 0 || sections != nil || hasSizeMutationArguments(request.Params.Arguments) {
+		if len(updates) > 0 || sections != nil || hasSizeMutationArguments(request.Params.Arguments) || commitSHA != "" {
 			return ValidationFailed("complexity cannot be combined with other field updates, sections, or size/provenance updates"), nil
 		}
 		complexity, ok := request.Params.Arguments["complexity"].(string)
@@ -816,7 +816,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	// section writes, which go through the rebuild path; combining them would
 	// double-write and negate body preservation.
 	if hasSizeMutationArguments(request.Params.Arguments) {
-		if len(updates) > 0 || sections != nil {
+		if len(updates) > 0 || sections != nil || commitSHA != "" {
 			return ValidationFailed("size cannot be combined with other field updates or sections"), nil
 		}
 		size, _ := request.Params.Arguments["size"].(string)
@@ -857,21 +857,29 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return toolResultJSON(artifact)
 	}
 
-	requestedStatus, _ := updates["status"].(string)
-	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
-	if err != nil {
-		if result, handled := gateErrorResult(err, requestedStatus); handled {
-			return result, nil
+	// Skip UpdateArtifactWithGate when the only mutation is a commit association;
+	// calling it with an empty updates map would bump updated_at and fire hooks spuriously.
+	var (
+		artifact *models.Artifact
+		outcome  *core.GateOutcome
+	)
+	if len(updates) > 0 || sections != nil {
+		requested, _ := updates["status"].(string)
+		var updErr error
+		artifact, outcome, updErr = core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
+		if updErr != nil {
+			if result, handled := gateErrorResult(updErr, requested); handled {
+				return result, nil
+			}
+			return domainError("update artifact", updErr), nil
 		}
-		return domainError("update artifact", err), nil
-	}
-	// Write section content when provided. UpdateArtifact already wrote the
-	// frontmatter and upserted the DB with the prior body; writeSectionsToFile
-	// rewrites the body and re-upserts so the DB/FTS reflect the new section
-	// content immediately.
-	if sections != nil {
-		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
-			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
+		// Write section content when provided. UpdateArtifact already wrote the
+		// frontmatter and upserted the DB with the prior body; writeSectionsToFile
+		// rewrites the body and re-upserts so the DB/FTS reflect the new section content.
+		if sections != nil {
+			if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
+				return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
+			}
 		}
 	}
 	// Route commit association through governed-operation core (F6/U3).
@@ -880,9 +888,23 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		if assocErr := core.AssociateCommit(ctx, s.Workspace, s.Events, id, commitSHA, "", ""); assocErr != nil {
 			return InternalError(fmt.Sprintf("associate commit: %v", assocErr)), nil
 		}
+		// Reload the artifact from the DB so the response reflects the committed SHA.
+		// AssociateCommit calls UpdateArtifact which upserts the DB; GetItem returns the fresh state.
+		freshArt, freshErr := db.GetItem(ctx, s.Workspace.DB, id)
+		if freshErr == nil {
+			artifact = freshArt
+		}
 	}
 	if outcome != nil {
 		return gatePassResult(artifact, outcome)
+	}
+	if artifact == nil {
+		// commit-only path with no gate: reload from DB for response.
+		var loadErr error
+		artifact, loadErr = db.GetItem(ctx, s.Workspace.DB, id)
+		if loadErr != nil {
+			return InternalError(fmt.Sprintf("reload artifact: %v", loadErr)), nil
+		}
 	}
 	return toolResultJSON(artifact)
 }
@@ -1481,6 +1503,9 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 	message, _ := request.Params.Arguments["message"].(string)
 	author, _ := request.Params.Arguments["author"].(string)
 	if err := core.AssociateCommit(ctx, s.Workspace, s.Events, itemID, sha, message, author); err != nil {
+		if result := durabilityOutcomeResult("track commit", err); result != nil {
+			return result, nil
+		}
 		return InternalError(fmt.Sprintf("track commit: %v", err)), nil
 	}
 	return toolResultJSON(map[string]string{

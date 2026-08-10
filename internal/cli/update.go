@@ -312,6 +312,17 @@ when complexity is set or cleared.`,
 				}
 			}
 
+			// Route commit association through the shared governed-operation core function (F6 U3).
+			// The CLI has no --message or --author flags; empty strings are stored and documented
+			// in docs/design-docs/governed-operation-parity.md.
+			if commitSHA != "" {
+				logsDir := core.WorkspaceLogsRoot(ws.RootPath)
+				ew := core.NewWorkspaceEventWriter(ws, logsDir)
+				if assocErr := core.AssociateCommit(ctx, ws, ew, id, commitSHA, "", ""); assocErr != nil {
+					return fmt.Errorf("associate commit: %w", assocErr)
+				}
+			}
+
 			// Emit the deferred gate --json payload now that any section updates
 			// have been persisted, so the machine-readable gate outcome reflects a
 			// fully-applied mutation rather than preempting it.
@@ -324,16 +335,6 @@ when complexity is set or cleared.`,
 				return nil
 			}
 
-			// Route commit association through the shared governed-operation core function (F6 U3).
-			// The CLI has no --message or --author flags; empty strings are stored and documented
-			// in docs/design-docs/governed-operation-parity.md.
-			if commitSHA != "" {
-				logsDir := core.WorkspaceLogsRoot(ws.RootPath)
-				ew := core.NewWorkspaceEventWriter(ws, logsDir)
-				if assocErr := core.AssociateCommit(ctx, ws, ew, id, commitSHA, "", ""); assocErr != nil {
-					return fmt.Errorf("associate commit: %w", assocErr)
-				}
-			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
 			return nil
 		},

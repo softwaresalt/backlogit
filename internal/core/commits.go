@@ -57,18 +57,20 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
 
-	// Step 1: frontmatter scalar update — reloads from markdown via UpdateArtifact
-	// (which delegates to findArtifact, never the DB fast path).
-	if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
-		return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
-	}
-
-	// Step 2: commit_links upsert — idempotent (INSERT OR REPLACE), reversible via DELETE.
+	// Step 1: commit_links upsert — idempotent (INSERT OR REPLACE), reversible via DELETE.
+	// Sequenced first so a DB failure is fail-fast with no file mutation, avoiding
+	// partial state where the frontmatter scalar is updated but commit_links is absent.
 	if _, err := ws.DB.ExecContext(ctx,
-		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
+		"INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)",
 		itemID, sha, message, author,
 	); err != nil {
-		return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
+		return fmt.Errorf("associate commit step 1 (commit_links upsert): %w", err)
+	}
+
+	// Step 2: frontmatter scalar update — reloads from markdown via UpdateArtifact
+	// (which delegates to findArtifact, never the DB fast path).
+	if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
+		return fmt.Errorf("associate commit step 2 (frontmatter scalar): %w", err)
 	}
 
 	// Step 3: JSONL append — append-only, LAST step, never compensated.

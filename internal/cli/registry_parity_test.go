@@ -569,7 +569,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliEvent, mcpEvent, "op %q: JSONL event presence must match", opName)
 
 			default:
-				t.Skipf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one", opName, op.MCPTool)
+				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)
 			}
 		})
 	}
