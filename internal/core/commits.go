@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -62,6 +63,33 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	}
 	priorCommit := artifact.Commit
 
+	// Snapshot the pre-existing commit_links row (if any) before the envelope
+	// runs. On Compensate, if the row pre-existed we restore the original
+	// values rather than deleting it, so a retry or concurrent AutoLinkCommits
+	// write is never destroyed by a compensation that runs after a JSONL failure.
+	type priorLink struct {
+		message string
+		author  string
+	}
+	var preExistingLink *priorLink
+	{
+		var msg, auth string
+		scanErr := ws.DB.QueryRowContext(ctx,
+			`SELECT message, author FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
+			itemID, sha,
+		).Scan(&msg, &auth)
+		if scanErr == nil {
+			preExistingLink = &priorLink{message: msg, author: auth}
+		}
+		// sql.ErrNoRows is the expected case (row did not pre-exist); any
+		// other error is a transient DB issue that should not block the
+		// mutation — log and proceed without a snapshot.
+		if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+			slog.Warn("associate commit: pre-snapshot query failed; compensate will delete on failure",
+				"item_id", itemID, "sha", sha, "error", scanErr)
+		}
+	}
+
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
 		Actor:     "backlogit",
@@ -106,11 +134,25 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 				return nil
 			},
 			Compensate: func(ctx context.Context) error {
+				// Restore the pre-existing row if one was present before
+				// this call; delete only when the row is new. This prevents
+				// a JSONL failure from destroying a commit association that
+				// was written by a prior AutoLinkCommits or LinkCommit call.
+				if preExistingLink != nil {
+					if _, restoreErr := ws.DB.ExecContext(ctx,
+						`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author)
+						VALUES (?, ?, ?, ?)`,
+						itemID, sha, preExistingLink.message, preExistingLink.author,
+					); restoreErr != nil {
+						return fmt.Errorf("compensate associate commit link (restore) %s/%s: %w", itemID, sha, restoreErr)
+					}
+					return nil
+				}
 				if _, err := ws.DB.ExecContext(ctx,
 					`DELETE FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
 					itemID, sha,
 				); err != nil {
-					return fmt.Errorf("compensate associate commit link %s/%s: %w", itemID, sha, err)
+					return fmt.Errorf("compensate associate commit link (delete) %s/%s: %w", itemID, sha, err)
 				}
 				return nil
 			},
@@ -285,3 +327,6 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 	}
 	return linked, nil
 }
+
+
+
