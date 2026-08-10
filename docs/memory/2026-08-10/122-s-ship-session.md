@@ -11,7 +11,7 @@ learning).
 
 ## Task IDs Completed
 
-- 136-F, 136.001-T through 136.013-T (archived, status=done, commit=5b963353)
+- 136-F, 136.001-T through 136.013-T (archived, status=done, commit=04d14fbe — the final main tip including both PR #342 and the PR #343 fix-forward, not the intermediate pre-fix merge commit)
 - 122-S shipment (archived, status=done)
 
 ## New Backlog Follow-Ups (queued, not part of this shipment)
@@ -76,3 +76,4 @@ learning).
 - `C:\Tools\backlogit.exe` (this repo's own dogfooded pinned binary) does not
   yet include these commands — documented as residual exposure, consistent
   with prior compound learning on self-hosted CLI version skew.
+

@@ -118,7 +118,7 @@ this repository's release cadence (documented in
 
 ## Backlog Follow-Ups (accepted, non-blocking)
 
-Four hardening items were identified during PR review and accepted as
+Three hardening items were identified during PR review and accepted as
 backlog work rather than blocking the merge (review-fix cycle limit reached;
 none affect the protected invariants verified above for the common,
 single-agent usage pattern):
