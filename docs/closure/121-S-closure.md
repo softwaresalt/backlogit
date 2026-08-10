@@ -1,6 +1,8 @@
 ---
+chunk_strategy: h1-h2-h3
 doc_type: closure
 schema_version: "1.0"
+source: docs/closure/121-S-closure.md
 title: Shipment 121-S Closure — Default Workspace Dir Rename
 created_at: 2026-08-10T21:55:00Z
 shipment: 121-S
