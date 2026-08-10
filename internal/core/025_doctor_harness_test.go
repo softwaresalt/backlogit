@@ -21,11 +21,16 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 var allDoctorChecks = &core.DoctorOptions{
 	CheckOrphans:    true,
 	CheckDuplicates: true,
+}
+
+var partialMutationDoctorChecks = &core.DoctorOptions{
+	CheckPartialMutations: true,
 }
 
 // TestDoctor_DetectsOrphanedTask verifies that a level-2 task with no parent_id
@@ -185,6 +190,99 @@ func TestDoctor_NilLayoutDoesNotPanic(t *testing.T) {
 	report, err := core.Doctor(ctx, ws, allDoctorChecks)
 	require.NoError(t, err, "Doctor must return a nil error on a valid workspace")
 	require.NotNil(t, report, "Doctor must return a non-nil DoctorReport")
+}
+
+func TestDoctor_DetectsCommitLinkWithoutJSONLEvent(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Commit feature", "feature")
+	require.NoError(t, err)
+	task, err := core.CreateArtifact(ctx, ws, "Commit task", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+
+	_, err = ws.DB.ExecContext(ctx,
+		`INSERT INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
+		task.ID, "abc123def", "feat: track commit", "test@example.com",
+	)
+	require.NoError(t, err)
+
+	report, err := core.Doctor(ctx, ws, partialMutationDoctorChecks)
+	require.NoError(t, err)
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.Type == core.FindingPartialCommitAssociation && finding.ArtifactID == task.ID {
+			found = true
+			assert.Contains(t, finding.Description, "commit_links")
+			assert.Contains(t, finding.Description, "commit_tracked")
+		}
+	}
+	assert.True(t, found, "Doctor must flag commit_links rows that have no matching commit_tracked event")
+}
+
+func TestDoctor_DetectsInconsistentDependencyEdges(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, ws *core.Workspace, sourceID, targetID string)
+	}{
+		{
+			name: "frontmatter-only edge",
+			setup: func(t *testing.T, ws *core.Workspace, sourceID, targetID string) {
+				t.Helper()
+				_, err := ws.DB.ExecContext(context.Background(),
+					`DELETE FROM item_deps WHERE item_id = ? AND depends_on = ?`,
+					sourceID, targetID,
+				)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "cache-only edge",
+			setup: func(t *testing.T, ws *core.Workspace, sourceID, targetID string) {
+				t.Helper()
+				path, err := core.FindArtifactPath(context.Background(), ws, sourceID)
+				require.NoError(t, err)
+				content, err := os.ReadFile(path)
+				require.NoError(t, err)
+				fm, body, err := models.ParseFrontmatter(string(content))
+				require.NoError(t, err)
+				delete(fm, "dependencies")
+				require.NoError(t, os.WriteFile(path, []byte(models.SerializeFrontmatter(fm, body)), 0o644))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupTestWorkspace(t)
+			ctx := context.Background()
+
+			feature, err := core.CreateArtifact(ctx, ws, "Dependency feature", "feature")
+			require.NoError(t, err)
+			target, err := core.CreateArtifact(ctx, ws, "Dependency target", "task", core.WithParent(feature.ID))
+			require.NoError(t, err)
+			source, err := core.CreateArtifact(ctx, ws, "Dependency source", "task",
+				core.WithParent(feature.ID),
+				core.WithDependencies([]string{target.ID}),
+			)
+			require.NoError(t, err)
+
+			tt.setup(t, ws, source.ID, target.ID)
+
+			report, err := core.Doctor(ctx, ws, partialMutationDoctorChecks)
+			require.NoError(t, err)
+
+			found := false
+			for _, finding := range report.Findings {
+				if finding.Type == core.FindingInconsistentDependencyEdge && finding.ArtifactID == source.ID {
+					found = true
+					assert.Contains(t, finding.Description, target.ID)
+				}
+			}
+			assert.True(t, found, "Doctor must detect %s", tt.name)
+		})
+	}
 }
 
 // removeFrontmatterField removes a key: value line from YAML frontmatter bytes.

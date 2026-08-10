@@ -16,6 +16,17 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
+type mutationPartialResponse struct {
+	Error             string   `json:"error"`
+	Message           string   `json:"message"`
+	Classification    string   `json:"classification"`
+	CompletedSteps    []string `json:"completed_steps"`
+	FailedStep        string   `json:"failed_step"`
+	CompensationState string   `json:"compensation_state"`
+	Retryable         bool     `json:"retryable"`
+	Recovery          string   `json:"recovery"`
+}
+
 func makeErrorResult(errType, message string) *mcplib.CallToolResult {
 	resp := errorResponse{Error: errType, Message: message}
 	data, err := json.Marshal(resp)
@@ -76,6 +87,10 @@ func InternalError(detail string) *mcplib.CallToolResult {
 // op is a short camelCase description of the operation, prepended to
 // InternalError messages to aid diagnosis (e.g. "archive item").
 func domainError(op string, err error) *mcplib.CallToolResult {
+	var partialErr *corerrors.MutationPartialError
+	if errors.As(err, &partialErr) {
+		return mutationPartialError(op, partialErr)
+	}
 	switch {
 	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound),
 		errors.Is(err, corerrors.ErrCheckpointNotFound):
@@ -94,6 +109,37 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		return ValidationFailed(err.Error())
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
+	}
+}
+
+func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcplib.CallToolResult {
+	resp := mutationPartialResponse{
+		Error:             "mutation_partial",
+		Message:           fmt.Sprintf("%s: %s", op, err.Error()),
+		Classification:    err.Class,
+		CompletedSteps:    append([]string(nil), err.Completed...),
+		FailedStep:        err.FailedStep,
+		CompensationState: err.CompensationState,
+		Retryable:         err.Class == "not-applied",
+		Recovery:          mutationPartialRecovery(err.Class),
+	}
+	data, marshalErr := json.Marshal(resp)
+	if marshalErr != nil {
+		return InternalError(fmt.Sprintf("marshal mutation partial response: %v", marshalErr))
+	}
+	return mcplib.NewToolResultError(string(data))
+}
+
+func mutationPartialRecovery(classification string) string {
+	switch classification {
+	case "not-applied":
+		return "safe to retry the mutation; the envelope compensated earlier steps, and doctor with check_partial_mutations can confirm the clean state"
+	case "indeterminate":
+		return "do not blindly retry; inspect doctor with check_partial_mutations to reconcile state"
+	case "double-fault":
+		return "manual recovery required; inspect doctor with check_partial_mutations and review compensation failures"
+	default:
+		return "inspect doctor with check_partial_mutations before retrying"
 	}
 }
 

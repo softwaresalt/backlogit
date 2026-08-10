@@ -56,34 +56,12 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if ew == nil {
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
-
-	// Step 1: frontmatter scalar update — reloads from markdown via UpdateArtifact
-	// (which delegates to findArtifact, never the DB fast path). Sequenced first so
-	// an unknown or unwritable itemID fails fast before any DB mutation, preventing
-	// orphan commit_links rows (commit_links has no FK constraint).
-	if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
-		return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
+	artifact, err := findArtifact(ctx, ws, itemID)
+	if err != nil {
+		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
 	}
+	priorCommit := artifact.Commit
 
-	// Step 2: commit_links upsert — idempotent, reversible via DELETE.
-	// Uses a conditional upsert to preserve non-empty message/author metadata already
-	// recorded by track_commit when a later CLI/update_item call supplies empty strings.
-	// Partial state (frontmatter updated, commit_links absent) is theoretically possible
-	// if this upsert fails; retry with the same SHA is safe (both steps are idempotent).
-	if _, err := ws.DB.ExecContext(ctx,
-		`INSERT INTO commit_links (item_id, commit_sha, message, author)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(item_id, commit_sha) DO UPDATE SET
-		  message = CASE WHEN excluded.message != '' THEN excluded.message ELSE commit_links.message END,
-		  author  = CASE WHEN excluded.author  != '' THEN excluded.author  ELSE commit_links.author  END`,
-		itemID, sha, message, author,
-	); err != nil {
-		return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
-	}
-
-	// Step 3: JSONL append — append-only, LAST step, never compensated.
-	// Timestamp is intentionally zero: AppendEvent stamps time.Now() on its own copy
-	// so the JSONL timestamp is authoritative (matching the AppendComment convention).
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
 		Actor:     "backlogit",
@@ -95,12 +73,65 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 			"author":     author,
 		},
 	}
-	if err := ew.AppendEvent(ctx, event); err != nil {
-		// Surface the error without retrying; do not compensate prior steps.
-		// ErrWriteIndeterminate: caller treats as a non-retryable partial write.
-		// ErrWriteNotApplied: caller may safely retry the whole call.
-		return fmt.Errorf("associate commit step 3 (JSONL append): %w", err)
+
+	err = MutationEnvelope(ctx, []MutationStep{
+		{
+			Name: "frontmatter-scalar",
+			Apply: func(ctx context.Context) error {
+				if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
+					return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": priorCommit}); err != nil {
+					return fmt.Errorf("compensate associate commit frontmatter %s: %w", itemID, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "commit-links-upsert",
+			Apply: func(ctx context.Context) error {
+				if _, err := ws.DB.ExecContext(ctx,
+					`INSERT INTO commit_links (item_id, commit_sha, message, author)
+					VALUES (?, ?, ?, ?)
+					ON CONFLICT(item_id, commit_sha) DO UPDATE SET
+					  message = CASE WHEN excluded.message != '' THEN excluded.message ELSE commit_links.message END,
+					  author  = CASE WHEN excluded.author  != '' THEN excluded.author  ELSE commit_links.author  END`,
+					itemID, sha, message, author,
+				); err != nil {
+					return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if _, err := ws.DB.ExecContext(ctx,
+					`DELETE FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
+					itemID, sha,
+				); err != nil {
+					return fmt.Errorf("compensate associate commit link %s/%s: %w", itemID, sha, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "jsonl-append",
+			Apply: func(ctx context.Context) error {
+				if err := ew.AppendEvent(ctx, event); err != nil {
+					return fmt.Errorf("associate commit step 3 (JSONL append): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("associate commit: %w", err)
 	}
+
 	if indexErr := dbpkg.IndexEvent(ctx, ws.DB, logsDir, event); indexErr != nil {
 		// Index failure is non-fatal: the JSONL file is the source of truth and
 		// can be rebuilt on next sync. Log and continue.

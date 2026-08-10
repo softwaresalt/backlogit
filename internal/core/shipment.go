@@ -283,19 +283,45 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 	}
 
 	items = append(items, itemID)
+	originalShipment := cloneArtifact(shipment)
 	if shipment.CustomFields == nil {
 		shipment.CustomFields = map[string]any{}
 	}
 	shipment.CustomFields["items"] = items
 	shipment.UpdatedAt = models.NowUTC()
-	if err := persistArtifact(ctx, ws, shipment, false); err != nil {
+	if err := MutationEnvelope(ctx, []MutationStep{
+		{
+			Name: "frontmatter-update",
+			Apply: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, shipment, false); err != nil {
+					return fmt.Errorf("persist shipment membership %s->%s: %w", shipmentID, itemID, err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, cloneArtifact(originalShipment), false); err != nil {
+					return fmt.Errorf("restore shipment membership %s->%s: %w", shipmentID, itemID, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "jsonl-append",
+			Apply: func(context.Context) error {
+				appendItemEvent(ctx, ws, shipmentID, "shipment_item_added", map[string]any{
+					"item_id": itemID,
+				})
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				return nil
+			},
+		},
+	}); err != nil {
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, err)
 	}
 
 	slog.DebugContext(ctx, "shipment item added", "shipment_id", shipmentID, "item_id", itemID)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_item_added", map[string]any{
-		"item_id": itemID,
-	})
 
 	return nil
 }

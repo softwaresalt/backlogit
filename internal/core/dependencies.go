@@ -26,53 +26,81 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 	if !blerrors.ValidDependencyType(depType) {
 		return fmt.Errorf("add dependency %s->%s: %w: %q", itemID, dependsOn, blerrors.ErrInvalidDependencyType, depType)
 	}
-	if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
-		return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
-	}
-
 	artifact, err := findArtifact(ctx, ws, itemID)
 	if err != nil {
-		_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
 		return fmt.Errorf("load source artifact %s: %w", itemID, err)
 	}
+	originalArtifact := cloneArtifact(artifact)
 
 	for i, dep := range artifact.Dependencies {
 		if dep.ID == dependsOn {
 			if dep.Type == depType || (dep.Type == "" && depType == "blocks") {
-				// Already recorded with the same type; cache insert above is sufficient.
+				if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
+					return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
+				}
 				return nil
 			}
 			// Edge exists with a different type: update frontmatter to match the new type.
 			artifact.Dependencies[i].Type = depType
-			if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-				if !blerrors.IsWriteIndeterminate(err) {
-					_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
-				} else {
-					if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-						err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
-					}
-				}
-				return fmt.Errorf("persist dep type update %s->%s to frontmatter: %w", itemID, dependsOn, err)
-			}
-			return nil
+			return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, artifact, originalArtifact,
+				fmt.Sprintf("persist dep type update %s->%s to frontmatter", itemID, dependsOn))
 		}
 	}
 
 	artifact.Dependencies = append(artifact.Dependencies, models.DependencyEdge{ID: dependsOn, Type: depType})
-	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
-		// ErrWriteIndeterminate: the MD write committed (rename applied) but fsync
-		// failed — the dependency is likely persisted. Do NOT roll back the DB edge;
-		// rolling it back would diverge the index from the (likely-written) MD.
-		// Reconcile the stale items.dependencies column so DB-fast-path mutations
-		// see the correct dependency list; join any upsert error with the durability error.
-		if !blerrors.IsWriteIndeterminate(err) {
-			_ = db.DeleteDependency(ctx, ws.DB, itemID, dependsOn)
-		} else {
-			if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-				err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
-			}
-		}
-		return fmt.Errorf("persist dependency %s->%s to frontmatter: %w", itemID, dependsOn, err)
+	return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, artifact, originalArtifact,
+		fmt.Sprintf("persist dependency %s->%s to frontmatter", itemID, dependsOn))
+}
+
+func addDependencyWithEnvelope(
+	ctx context.Context,
+	ws *Workspace,
+	itemID string,
+	dependsOn string,
+	depType string,
+	artifact *models.Artifact,
+	originalArtifact *models.Artifact,
+	persistContext string,
+) error {
+	err := MutationEnvelope(ctx, []MutationStep{
+		{
+			Name: "item-deps-insert",
+			Apply: func(ctx context.Context) error {
+				if err := db.AddDependencyChecked(ctx, ws.DB, itemID, dependsOn, depType); err != nil {
+					return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if err := db.DeleteDependency(ctx, ws.DB, itemID, dependsOn); err != nil {
+					return fmt.Errorf("remove dependency %s->%s from cache: %w", itemID, dependsOn, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "frontmatter-update",
+			Apply: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+					if blerrors.IsWriteIndeterminate(err) {
+						if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
+							err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
+						}
+					}
+					return fmt.Errorf("%s: %w", persistContext, err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, cloneArtifact(originalArtifact), false); err != nil {
+					return fmt.Errorf("restore dependency frontmatter %s->%s: %w", itemID, dependsOn, err)
+				}
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("add dependency %s->%s: %w", itemID, dependsOn, err)
 	}
 	return nil
 }

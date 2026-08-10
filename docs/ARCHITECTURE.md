@@ -215,6 +215,7 @@ Use `backlogit_get_metadata_catalog` as the runtime source for current table def
 | CLI reference | `docs/cli-reference/` |
 | Pre-task-completion gate broker | `docs/pre-task-completion-gate.md` |
 | Formal gate evidence authenticity and manifest binding | `docs/design-docs/formal-gate-evidence-authenticity.md` |
+| Governed multi-mutation recovery | `docs/design-docs/governed-mutation-recovery-contract.md` |
 | Documentation frontmatter authoring | `docs/docline-frontmatter-authoring-guide.md` |
 | Compound learnings | `docs/compound/` |
 | Decisions and spike findings | `docs/decisions/` |

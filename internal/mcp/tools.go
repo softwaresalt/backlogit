@@ -463,6 +463,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
+			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),
 			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
 			mcplib.WithString("target", mcplib.Description("Validate a single artifact file (path relative to the workspace, confined to the storage root) and return a versioned DoctorTargetResult instead of a full workspace scan")),
 		),
@@ -1999,6 +2000,7 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 
 	checkOrphans := true
 	checkDuplicates := true
+	checkPartialMutations := false
 	fixOrphans := false
 	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
 		checkOrphans = v
@@ -2006,14 +2008,18 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
 		checkDuplicates = v
 	}
+	if v, ok := request.Params.Arguments["check_partial_mutations"].(bool); ok {
+		checkPartialMutations = v
+	}
 	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
 		fixOrphans = v
 	}
 
 	opts := &core.DoctorOptions{
-		CheckOrphans:    checkOrphans,
-		CheckDuplicates: checkDuplicates,
-		FixOrphans:      fixOrphans,
+		CheckOrphans:          checkOrphans,
+		CheckDuplicates:       checkDuplicates,
+		CheckPartialMutations: checkPartialMutations,
+		FixOrphans:            fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)
 	if err != nil {

@@ -16,6 +16,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -92,6 +93,12 @@ func TestAddDependency_IndeterminatePersist_EdgeNotRolledBack(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, blerrors.IsWriteIndeterminate(err),
 		"AddDependency must surface ErrWriteIndeterminate from indeterminate persist")
+	var partialErr *blerrors.MutationPartialError
+	require.True(t, errors.As(err, &partialErr))
+	assert.Equal(t, []string{"item-deps-insert"}, partialErr.Completed)
+	assert.Equal(t, "frontmatter-update", partialErr.FailedStep)
+	assert.Equal(t, "not-compensated", partialErr.CompensationState)
+	assert.Equal(t, "indeterminate", partialErr.Class)
 
 	// DB edge must NOT be rolled back: the MD write likely persisted.
 	assert.True(t, edgeExistsInternal(t, ws, source.ID, target.ID),
@@ -156,6 +163,12 @@ func TestAddDependency_NotAppliedPersist_EdgeRolledBack(t *testing.T) {
 	err = AddDependency(ctx, ws, source.ID, target.ID, "blocks")
 	require.Error(t, err)
 	assert.False(t, blerrors.IsWriteIndeterminate(err), "not-applied error must not be classified as indeterminate")
+	var partialErr *blerrors.MutationPartialError
+	require.True(t, errors.As(err, &partialErr))
+	assert.Equal(t, []string{"item-deps-insert"}, partialErr.Completed)
+	assert.Equal(t, "frontmatter-update", partialErr.FailedStep)
+	assert.Equal(t, "compensated", partialErr.CompensationState)
+	assert.Equal(t, "not-applied", partialErr.Class)
 
 	// DB edge must be rolled back: the file was untouched.
 	assert.False(t, edgeExistsInternal(t, ws, source.ID, target.ID),
