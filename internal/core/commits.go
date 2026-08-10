@@ -65,11 +65,17 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 		return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
 	}
 
-	// Step 2: commit_links upsert — idempotent (INSERT OR REPLACE), reversible via DELETE.
+	// Step 2: commit_links upsert — idempotent, reversible via DELETE.
+	// Uses a conditional upsert to preserve non-empty message/author metadata already
+	// recorded by track_commit when a later CLI/update_item call supplies empty strings.
 	// Partial state (frontmatter updated, commit_links absent) is theoretically possible
 	// if this upsert fails; retry with the same SHA is safe (both steps are idempotent).
 	if _, err := ws.DB.ExecContext(ctx,
-		"INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)",
+		`INSERT INTO commit_links (item_id, commit_sha, message, author)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(item_id, commit_sha) DO UPDATE SET
+		  message = CASE WHEN excluded.message != '' THEN excluded.message ELSE commit_links.message END,
+		  author  = CASE WHEN excluded.author  != '' THEN excluded.author  ELSE commit_links.author  END`,
 		itemID, sha, message, author,
 	); err != nil {
 		return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
