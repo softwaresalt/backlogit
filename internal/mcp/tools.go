@@ -1137,17 +1137,24 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 		return InternalError(fmt.Sprintf("list checkpoints: %v", err)), nil
 	}
 
-	quarantined := 0
+	// "quarantined" is fixed at 0: 136-F/U9 made listing strictly read-only,
+	// so a mere list call never physically quarantines anything (the field
+	// this key used to reflect, CheckpointSummary.Quarantined, is deprecated
+	// and permanently false on this path). needsQuarantine is the accurate,
+	// actionable signal for malformed checkpoints awaiting an explicit
+	// backlogit_quarantine_checkpoint call.
+	needsQuarantine := 0
 	for _, sm := range summaries {
 		if sm.NeedsQuarantine {
-			quarantined++
+			needsQuarantine++
 		}
 	}
 
 	return toolResultJSON(map[string]any{
-		"checkpoints": summaries,
-		"total":       len(summaries),
-		"quarantined": quarantined,
+		"checkpoints":      summaries,
+		"total":            len(summaries),
+		"quarantined":      0,
+		"needs_quarantine": needsQuarantine,
 	})
 }
 
@@ -1225,10 +1232,12 @@ func (s *Server) handleAbandonCheckpoint(ctx context.Context, request mcplib.Cal
 		return ValidationFailed("filename is required"), nil
 	}
 	reason, _ := request.Params.Arguments["reason"].(string)
+	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return ValidationFailed("reason is required"), nil
 	}
 	operator, _ := request.Params.Arguments["operator"].(string)
+	operator = strings.TrimSpace(operator)
 	if operator == "" {
 		return ValidationFailed("operator is required; it is never inferred on the MCP surface"), nil
 	}
@@ -1254,10 +1263,12 @@ func (s *Server) handleQuarantineCheckpoint(ctx context.Context, request mcplib.
 		return ValidationFailed("filename is required"), nil
 	}
 	reason, _ := request.Params.Arguments["reason"].(string)
+	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return ValidationFailed("reason is required"), nil
 	}
 	operator, _ := request.Params.Arguments["operator"].(string)
+	operator = strings.TrimSpace(operator)
 	if operator == "" {
 		return ValidationFailed("operator is required; it is never inferred on the MCP surface"), nil
 	}
@@ -2110,6 +2121,9 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	return toolResultJSON(report)
 }
+
+
+
 
 
 

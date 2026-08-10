@@ -165,3 +165,70 @@ func TestHandleQuarantineCheckpoint_MissingOperator(t *testing.T) {
 	assert.True(t, result.IsError, "quarantine must fail when operator is not supplied")
 }
 
+
+
+// TestHandleAbandonCheckpoint_WhitespaceOnlyOperatorRejected asserts CLI/MCP
+// parity: the CLI trims and rejects a whitespace-only operator, so the MCP
+// surface must reject it too rather than persisting a blank audit identity.
+func TestHandleAbandonCheckpoint_WhitespaceOnlyOperatorRejected(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	writeCheckpointFileMCP(t, ws.RootPath, "checkpoint-mcp-ws-operator.json",
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active","created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_abandon_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"filename": "checkpoint-mcp-ws-operator.json",
+		"reason":   "superseded",
+		"operator": "   ",
+	}
+
+	result, err := s.handleAbandonCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "abandon must reject a whitespace-only operator")
+}
+
+// TestHandleAbandonCheckpoint_WhitespaceOnlyReasonRejected mirrors the
+// operator case for reason.
+func TestHandleAbandonCheckpoint_WhitespaceOnlyReasonRejected(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	writeCheckpointFileMCP(t, ws.RootPath, "checkpoint-mcp-ws-reason.json",
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active","created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_abandon_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"filename": "checkpoint-mcp-ws-reason.json",
+		"reason":   "   ",
+		"operator": "tester@example.com",
+	}
+
+	result, err := s.handleAbandonCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "abandon must reject a whitespace-only reason")
+}
+
+// TestHandleQuarantineCheckpoint_WhitespaceOnlyOperatorRejected mirrors the
+// abandon case for quarantine.
+func TestHandleQuarantineCheckpoint_WhitespaceOnlyOperatorRejected(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	writeCheckpointFileMCP(t, ws.RootPath, "checkpoint-mcp-ws-quarantine.json", "not-json{")
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_quarantine_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"filename": "checkpoint-mcp-ws-quarantine.json",
+		"reason":   "corrupt",
+		"operator": "\t\n",
+	}
+
+	result, err := s.handleQuarantineCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "quarantine must reject a whitespace-only operator")
+}

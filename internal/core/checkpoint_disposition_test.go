@@ -5,14 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
@@ -283,3 +286,89 @@ func TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved(t *testing.T) {
 		assert.NoFileExists(t, destPath, "nothing must be quarantined when audit fails")
 	})
 }
+
+
+
+// TestCheckpointDisposition_IndeterminateAuditLeavesTargetUnmoved is the
+// companion to TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved: it
+// exercises the ErrWriteIndeterminate branch (not just ErrWriteNotApplied) by
+// overriding the checkpointAuditAppendFn seam to actually append the audit
+// event (mirroring a real indeterminate outcome: bytes committed, durability
+// confirmation uncertain) and then return the indeterminate sentinel. Both
+// disposition verbs must refuse and leave their target completely untouched
+// — nothing moved, nothing rewritten — matching the "either failure class
+// leaves the target unmoved" protected invariant.
+//
+// Must not run with t.Parallel(): overrides the package-level
+// checkpointAuditAppendFn seam.
+func TestCheckpointDisposition_IndeterminateAuditLeavesTargetUnmoved(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	orig := checkpointAuditAppendFn
+	checkpointAuditAppendFn = func(ctx context.Context, ew *events.EventWriter, event events.Event) error {
+		// Real append first so the "possibly-applied" indeterminate semantics
+		// are faithfully simulated, then surface the sentinel.
+		_ = ew.AppendEvent(ctx, event)
+		return fmt.Errorf("simulated post-write fsync failure: %w", blerrors.ErrWriteIndeterminate)
+	}
+	t.Cleanup(func() { checkpointAuditAppendFn = orig })
+
+	ew := newDispositionEventWriter(t, ws)
+
+	t.Run("abandon", func(t *testing.T) {
+		validData := writeDispositionCheckpoint(t, dir, "checkpoint-abandon-indet.json", validDispositionTestCheckpoint())
+		beforeSum := sha256.Sum256(validData)
+
+		err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-abandon-indet.json", "reason", "operator@example.com")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, blerrors.ErrCheckpointAuditIndeterminate)
+
+		after, ok := hashFile(t, filepath.Join(dir, "checkpoint-abandon-indet.json"))
+		require.True(t, ok, "target must remain in place")
+		assert.Equal(t, hex.EncodeToString(beforeSum[:]), after, "target bytes must be unchanged on indeterminate audit outcome")
+	})
+
+	t.Run("quarantine", func(t *testing.T) {
+		malformed := writeMalformedCheckpoint(t, dir, "checkpoint-quarantine-indet.json")
+		beforeSum := sha256.Sum256(malformed)
+
+		err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-quarantine-indet.json", "reason", "operator@example.com")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, blerrors.ErrCheckpointAuditIndeterminate)
+
+		after, ok := hashFile(t, filepath.Join(dir, "checkpoint-quarantine-indet.json"))
+		require.True(t, ok, "target must remain in place, unmoved")
+		assert.Equal(t, hex.EncodeToString(beforeSum[:]), after, "target bytes must be unchanged on indeterminate audit outcome")
+
+		destPath := filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", "checkpoint-quarantine-indet.json")
+		assert.NoFileExists(t, destPath, "nothing must be quarantined when audit outcome is indeterminate")
+	})
+}
+
+// TestResolveDispositionTarget_RejectsSymlinkedCheckpointsDir asserts that a
+// symlinked checkpoints directory (not merely a symlinked leaf file) is
+// refused, closing the gap where the directory itself could redirect a
+// disposition action to a file living elsewhere under .backlogit.
+func TestResolveDispositionTarget_RejectsSymlinkedCheckpointsDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows CI runners")
+	}
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	ctx := context.Background()
+	ws, err := NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+
+	realDir := filepath.Join(backlogitDir, "real-checkpoints")
+	require.NoError(t, os.MkdirAll(realDir, 0o755))
+	require.NoError(t, os.Symlink(realDir, filepath.Join(backlogitDir, checkpointsSubdir)))
+
+	_, err = ResolveDispositionTarget(ws, "checkpoint-x.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
+}
+

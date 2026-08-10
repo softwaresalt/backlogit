@@ -52,4 +52,12 @@ var (
 	// disposition operation refuses and nothing is moved or rewritten; the
 	// caller must NOT blindly retry and should reconcile state before retrying.
 	ErrCheckpointAuditIndeterminate = errors.New("backlogit: checkpoint disposition audit append outcome indeterminate")
+
+	// ErrCheckpointCannotResolveAbandoned indicates ResolveCheckpoint was
+	// called on a checkpoint that carries an administrative "abandoned"
+	// disposition. Abandon is a terminal, non-resumable disposition; resolve
+	// must not silently transition an abandoned checkpoint back to
+	// "resolved" and erase that terminal state.
+	ErrCheckpointCannotResolveAbandoned = errors.New("backlogit: checkpoint has been administratively abandoned; resolve is refused")
 )
+

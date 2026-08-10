@@ -189,8 +189,18 @@ type checkpointDispositionErrorResponse struct {
 
 // checkpointDispositionError maps a checkpoint disposition sentinel error
 // (internal/errors checkpoint_errors.go) to a structured MCP error result.
-// Unrecognized errors fall back to InternalError.
+// A *corerrors.MutationPartialError from the underlying MutationEnvelope (the
+// rewrite/move/sidecar steps) is detected first and routed through the same
+// mutationPartialError formatter domainError uses, so a partial-mutation
+// failure surfaces its classification, completed steps, compensation state,
+// and retryable flag instead of falling through to a generic internal error.
+// Any other unrecognized error also falls back to InternalError.
 func checkpointDispositionError(op, filename string, err error) *mcplib.CallToolResult {
+	var partialErr *corerrors.MutationPartialError
+	if errors.As(err, &partialErr) {
+		return mutationPartialError(op, partialErr)
+	}
+
 	resp := checkpointDispositionErrorResponse{
 		Error:    "checkpoint_disposition_failed",
 		Message:  fmt.Sprintf("%s: %v", op, err),
@@ -241,3 +251,4 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 	}
 	return mcplib.NewToolResultError(string(data))
 }
+

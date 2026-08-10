@@ -164,6 +164,14 @@ func ResolveCheckpoint(_ context.Context, checkpointDir, filename string) error 
 		return nil
 	}
 
+	// Refuse to resolve an administratively abandoned checkpoint. Abandon
+	// (136-F) is a terminal, non-resumable disposition; silently flipping
+	// Status to "resolved" here would erase that terminal state and let
+	// resolve undo an abandon disposition.
+	if cp.Disposition == DispositionAbandoned {
+		return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointCannotResolveAbandoned, filename)
+	}
+
 	cp.Status = "resolved"
 	cp.UpdatedAt = time.Now().UTC()
 
@@ -278,3 +286,4 @@ func ensurePathContained(dir, path string) error {
 	}
 	return nil
 }
+

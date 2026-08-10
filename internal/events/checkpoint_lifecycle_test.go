@@ -239,6 +239,31 @@ func TestResolveCheckpoint_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointNotFound)
 }
 
+// TestResolveCheckpoint_RefusesAbandoned is a 136-F regression: ResolveCheckpoint
+// must not silently undo an administrative abandon disposition by flipping
+// Status back to "resolved". Abandon is a terminal, non-resumable state.
+func TestResolveCheckpoint_RefusesAbandoned(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+	cp := validCheckpointV1()
+	cp.Status = "abandoned"
+	cp.Disposition = DispositionAbandoned
+	cp.DispositionReason = "superseded"
+	cp.DispositionOperator = "tester@example.com"
+	cp.DispositionAt = time.Now().UTC()
+	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointCannotResolveAbandoned)
+
+	// The checkpoint must remain untouched — still abandoned, not resolved.
+	unchanged, getErr := GetCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")
+	require.NoError(t, getErr)
+	assert.Equal(t, "abandoned", unchanged.Status)
+	assert.Equal(t, DispositionAbandoned, unchanged.Disposition)
+}
+
 func TestResolveCheckpoint_PathTraversal(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".backlogit", "checkpoints")
 	err := ResolveCheckpoint(context.Background(), dir, "../../secret.json")
@@ -396,4 +421,5 @@ func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
 	assert.Equal(t, 2, result.ArchivedCount)
 	assert.Equal(t, 1, result.SkippedCount)
 }
+
 

@@ -59,7 +59,20 @@ func ResolveDispositionTarget(ws *Workspace, filename string) (string, error) {
 		return "", fmt.Errorf("%w: filename must not be a UNC path", blerrors.ErrCheckpointTargetUnsafe)
 	}
 
-	absCandidate := filepath.Join(WorkspaceStorageRoot(ws.RootPath), checkpointsSubdir, filename)
+	checkpointsDirAbs := filepath.Join(WorkspaceStorageRoot(ws.RootPath), checkpointsSubdir)
+
+	// Reject a symlinked checkpoints directory itself, not just a symlinked
+	// leaf file. confineToStorageRoot below only proves the resolved target is
+	// contained somewhere under the workspace storage root (.backlogit); if
+	// the checkpoints directory is a symlink to another location still inside
+	// .backlogit (e.g. .backlogit/tasks), that broader containment check
+	// alone would pass while the disposition verb rewrites or moves a file
+	// that never actually lived in the intended checkpoints directory.
+	if err := rejectSymlinkedDir(checkpointsDirAbs, "checkpoints directory"); err != nil {
+		return "", err
+	}
+
+	absCandidate := filepath.Join(checkpointsDirAbs, filename)
 	absTarget, inScope, err := confineToStorageRoot(ws, absCandidate)
 	if err != nil {
 		return "", fmt.Errorf("resolve checkpoint disposition target: %w", err)
@@ -74,4 +87,20 @@ func ResolveDispositionTarget(ws *Workspace, filename string) (string, error) {
 
 	return absTarget, nil
 }
+
+// rejectSymlinkedDir returns ErrCheckpointTargetUnsafe if path exists and is a
+// symlink. A non-existent path is not an error here (callers create the
+// directory afterward via os.MkdirAll); label is used only in the error
+// message for diagnostics.
+func rejectSymlinkedDir(path, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s must not be a symlink", blerrors.ErrCheckpointTargetUnsafe, label)
+	}
+	return nil
+}
+
 

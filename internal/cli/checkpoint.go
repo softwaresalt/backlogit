@@ -113,17 +113,25 @@ func newCheckpointListCmd(cwd *string) *cobra.Command {
 				return fmt.Errorf("list checkpoints: %w", err)
 			}
 
-			quarantined := 0
+			// "quarantined" is fixed at 0: 136-F/U9 made listing strictly
+			// read-only, so a mere list call never physically quarantines
+			// anything (the field this key used to reflect,
+			// CheckpointSummary.Quarantined, is deprecated and permanently
+			// false on this path). needsQuarantine is the accurate,
+			// actionable signal for malformed checkpoints awaiting an
+			// explicit checkpoint quarantine call.
+			needsQuarantine := 0
 			for _, s := range summaries {
 				if s.NeedsQuarantine {
-					quarantined++
+					needsQuarantine++
 				}
 			}
 
 			result := map[string]any{
-				"checkpoints": summaries,
-				"total":       len(summaries),
-				"quarantined": quarantined,
+				"checkpoints":      summaries,
+				"total":            len(summaries),
+				"quarantined":      0,
+				"needs_quarantine": needsQuarantine,
 			}
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
@@ -381,4 +389,5 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
+
 

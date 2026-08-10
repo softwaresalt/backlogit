@@ -21,6 +21,18 @@ const checkpointAuditItemID = "checkpoint-disposition-audit"
 // checkpoint disposition move or rewrite is performed.
 const EventCheckpointDisposition = "checkpoint_disposition"
 
+// checkpointAuditAppendFn is a package-level, test-swappable seam around
+// (*events.EventWriter).AppendEvent, mirroring the established
+// replaceFileWriteFn pattern (archive_durable_write_test.go) so tests outside
+// the events package can simulate an ErrWriteIndeterminate outcome (the event
+// bytes are actually appended, then the sentinel is returned) without needing
+// white-box access to EventWriter's unexported fsync seams.
+//
+// Tests that override this variable must not run with t.Parallel().
+var checkpointAuditAppendFn = func(ctx context.Context, ew *events.EventWriter, event events.Event) error {
+	return ew.AppendEvent(ctx, event)
+}
+
 // appendCheckpointDispositionAudit appends an audit event recording a
 // checkpoint administrative disposition action (abandon or quarantine) BEFORE
 // any move or rewrite of the checkpoint file is performed. Per the protected
@@ -49,7 +61,7 @@ func appendCheckpointDispositionAudit(ctx context.Context, ew *events.EventWrite
 			"operator": operator,
 		},
 	}
-	if err := ew.AppendEvent(ctx, event); err != nil {
+	if err := checkpointAuditAppendFn(ctx, ew, event); err != nil {
 		if blerrors.IsWriteIndeterminate(err) {
 			return fmt.Errorf("%w: %v", blerrors.ErrCheckpointAuditIndeterminate, err)
 		}

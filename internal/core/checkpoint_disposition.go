@@ -3,12 +3,14 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
@@ -99,7 +101,11 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		{
 			Name: "rewrite-checkpoint",
 			Apply: func(context.Context) error {
-				return writeBytesAtomically(target, updated, 0o644)
+				// atomicfile.WriteFileAtomic replaces an existing destination
+				// correctly on Windows (a plain os.Rename(tmp, path) fails
+				// there when path already exists), unlike a hand-rolled
+				// temp-then-rename helper.
+				return atomicfile.WriteFileAtomic(target, updated)
 			},
 		},
 	})
@@ -117,12 +123,13 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 // AbandonCheckpoint instead.
 //
 // On success, the checkpoint's bytes are moved VERBATIM (byte-identical, no
-// rewrite) to WorkspaceStorageRoot(ws.RootPath)/archive/checkpoints, guarded
-// by a clobber-refuse check against an existing destination file
-// (ErrCheckpointDestinationOccupied). A disposition sidecar record is written
-// as an idempotent upsert alongside the quarantined file. If the sidecar
-// write fails after the move succeeds, the move is rolled back (renamed
-// back) and diagnostics are logged — nothing is left half-quarantined.
+// rewrite) to WorkspaceStorageRoot(ws.RootPath)/archive/checkpoints via an
+// atomic link-then-remove sequence that cannot silently clobber a
+// concurrently-created destination (ErrCheckpointDestinationOccupied). A
+// disposition sidecar record is written as an idempotent upsert alongside the
+// quarantined file. If the sidecar write fails after the move succeeds, the
+// move is rolled back and diagnostics are logged — nothing is left
+// half-quarantined.
 //
 // reason and operator must both be non-empty; operator is never defaulted to
 // a fixed identity such as "backlogit". ew must be a real, non-nil
@@ -161,19 +168,18 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		return blerrors.ErrCheckpointUseAbandon
 	}
 
-	destDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive", "checkpoints")
+	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
+	if err := rejectSymlinkedDir(archiveDir, "archive directory"); err != nil {
+		return err
+	}
+	destDir := filepath.Join(archiveDir, "checkpoints")
+	if err := rejectSymlinkedDir(destDir, "archive checkpoints directory"); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("quarantine checkpoint: create archive dir: %w", err)
 	}
 	destPath := filepath.Join(destDir, baseName)
-
-	// Clobber-refuse guard before rename: never overwrite an existing
-	// quarantined file with a different one that happens to share a filename.
-	if _, statErr := os.Stat(destPath); statErr == nil {
-		return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
-	} else if !os.IsNotExist(statErr) {
-		return fmt.Errorf("quarantine checkpoint: stat destination %s: %w", baseName, statErr)
-	}
 
 	// Audit append happens BEFORE any move. A failed audit append (either
 	// failure class) leaves the target file untouched.
@@ -198,13 +204,13 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "move-verbatim",
 			Apply: func(context.Context) error {
-				return os.Rename(target, destPath)
+				return moveNoReplace(target, destPath)
 			},
 			Compensate: func(context.Context) error {
-				if renameErr := os.Rename(destPath, target); renameErr != nil {
-					slog.Error("quarantine checkpoint: failed to rename back after downstream failure",
-						"file", baseName, "error", renameErr)
-					return fmt.Errorf("rename back %s: %w", baseName, renameErr)
+				if restoreErr := moveNoReplace(destPath, target); restoreErr != nil {
+					slog.Error("quarantine checkpoint: failed to restore after downstream failure",
+						"file", baseName, "error", restoreErr)
+					return fmt.Errorf("restore %s: %w", baseName, restoreErr)
 				}
 				return nil
 			},
@@ -212,26 +218,37 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "write-disposition-sidecar",
 			Apply: func(context.Context) error {
-				return writeBytesAtomically(sidecarPath, sidecarData, 0o644)
+				return atomicfile.WriteFileAtomic(sidecarPath, sidecarData)
 			},
 		},
 	})
 	if err != nil {
+		// MutationPartialError.Unwrap returns Cause, so errors.Is traverses
+		// through to the underlying *os.LinkError / syscall errno raised by
+		// moveNoReplace's os.Link when the destination already exists.
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
+		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 	}
 	return nil
 }
 
-// writeBytesAtomically writes data to path via a temp-file-then-rename
-// sequence, mirroring writeStringAtomically (stash.go) for byte slices.
-func writeBytesAtomically(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
-		return fmt.Errorf("write file %s: %w", path, err)
+// moveNoReplace moves src to dst atomically without ever clobbering an
+// existing file at dst, closing a TOCTOU race that a separate
+// os.Stat-then-os.Rename check cannot: os.Link fails with EEXIST if dst
+// already exists (created by a concurrent quarantine call, for example),
+// and no bytes at dst are ever overwritten. Once the link is established the
+// original is removed; if that removal fails the just-created link is
+// unwound so no duplicate is left behind.
+func moveNoReplace(src, dst string) error {
+	if err := os.Link(src, dst); err != nil {
+		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename file %s: %w", path, err)
+	if err := os.Remove(src); err != nil {
+		_ = os.Remove(dst)
+		return fmt.Errorf("remove source after link %s: %w", src, err)
 	}
 	return nil
 }
+
