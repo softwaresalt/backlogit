@@ -59,6 +59,19 @@ func ResolveDispositionTarget(ws *Workspace, filename string) (string, error) {
 		return "", fmt.Errorf("%w: filename must not be a UNC path", blerrors.ErrCheckpointTargetUnsafe)
 	}
 
+	// Verify the workspace storage root (.backlogit) itself has not escaped
+	// the workspace via a symlink before trusting anything derived from it.
+	// confineToStorageRoot's containment check is relative to
+	// WorkspaceStorageRoot(ws.RootPath) as resolved (EvalSymlinks) — if
+	// .backlogit itself is a symlink pointing entirely outside ws.RootPath,
+	// that check would pass trivially (the target is "contained" within
+	// wherever the symlink points), letting a disposition verb mutate files
+	// far outside the workspace. This check proves .backlogit's real path
+	// still lives under ws.RootPath's real path before anything else runs.
+	if err := verifyStorageRootContained(ws); err != nil {
+		return "", err
+	}
+
 	checkpointsDirAbs := filepath.Join(WorkspaceStorageRoot(ws.RootPath), checkpointsSubdir)
 
 	// Reject a symlinked checkpoints directory itself, not just a symlinked
@@ -88,6 +101,40 @@ func ResolveDispositionTarget(ws *Workspace, filename string) (string, error) {
 	return absTarget, nil
 }
 
+// verifyStorageRootContained proves that WorkspaceStorageRoot(ws.RootPath)
+// (.backlogit) resolves, after following any symlinks, to a location still
+// contained within ws.RootPath's own resolved real path. A missing directory
+// is not an error here (a fresh workspace may not have created .backlogit's
+// checkpoints subtree yet); only an existing, escaping symlink chain is
+// rejected.
+func verifyStorageRootContained(ws *Workspace) error {
+	absRoot, err := filepath.Abs(ws.RootPath)
+	if err != nil {
+		return fmt.Errorf("resolve workspace root: %w", err)
+	}
+	storageRoot := WorkspaceStorageRoot(ws.RootPath)
+	absStorage, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return fmt.Errorf("resolve storage root: %w", err)
+	}
+
+	realRoot, rootErr := filepath.EvalSymlinks(absRoot)
+	if rootErr != nil {
+		realRoot = absRoot
+	}
+	realStorage, storageErr := filepath.EvalSymlinks(absStorage)
+	if storageErr != nil {
+		// .backlogit does not exist yet (or a component is missing): nothing
+		// to escape through. Not this function's concern.
+		return nil
+	}
+
+	if realStorage != realRoot && !pathContained(realRoot, realStorage) {
+		return fmt.Errorf("%w: workspace storage root (.backlogit) escapes the workspace via a symlink", blerrors.ErrCheckpointTargetUnsafe)
+	}
+	return nil
+}
+
 // rejectSymlinkedDir returns ErrCheckpointTargetUnsafe if path exists and is a
 // symlink. A non-existent path is not an error here (callers create the
 // directory afterward via os.MkdirAll); label is used only in the error
@@ -102,5 +149,6 @@ func rejectSymlinkedDir(path, label string) error {
 	}
 	return nil
 }
+
 
 

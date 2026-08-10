@@ -372,3 +372,28 @@ func TestResolveDispositionTarget_RejectsSymlinkedCheckpointsDir(t *testing.T) {
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
 
+
+
+// TestResolveDispositionTarget_RejectsSymlinkedStorageRoot asserts that a
+// symlinked .backlogit directory (not merely a symlinked checkpoints
+// subdirectory) pointing entirely outside the workspace root is refused. A
+// symlinked storage root would otherwise let confineToStorageRoot's
+// containment check pass trivially (the target is "contained" within
+// wherever .backlogit points), because that check is relative to
+// WorkspaceStorageRoot's own resolved location.
+func TestResolveDispositionTarget_RejectsSymlinkedStorageRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows CI runners")
+	}
+	root := t.TempDir()
+	outsideDir := t.TempDir() // a sibling temp dir, entirely outside root
+	require.NoError(t, os.MkdirAll(filepath.Join(outsideDir, checkpointsSubdir), 0o755))
+
+	// .backlogit itself is a symlink pointing outside the workspace root.
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(root, ".backlogit")))
+
+	ws := &Workspace{RootPath: root}
+	_, err := ResolveDispositionTarget(ws, "checkpoint-x.json")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
+}
