@@ -1,8 +1,10 @@
 ---
-title: "Checkpoint Administrative Disposition"
+chunk_strategy: h1-h2-h3
 description: "Design rationale for the checkpoint abandon and quarantine verb pair (136-F)"
-doc_type: design-doc
+doc_type: design
 schema_version: "1.0"
+source: docs/design-docs/checkpoint-administrative-disposition.md
+title: Checkpoint Administrative Disposition
 ---
 
 # Checkpoint Administrative Disposition
@@ -137,3 +139,4 @@ Per the implementation plan (`docs/exec-plans/2026-08-07-checkpoint-administrati
 the following are explicitly out of scope for this feature: `SetEscapeHTML`,
 any change touching stash `B5D7E401`, `CheckpointDelete`, recovery/resume
 flows, and hook checkpoints under `.backlogit/runtime/hooks/`.
+
