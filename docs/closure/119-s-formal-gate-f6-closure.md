@@ -1,10 +1,18 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Operational closure record for 119-S: F6 governed-operation CLI/MCP commit-association parity.'
+description: "Operational closure for 119-S (Formal Gate F6 — governed-operation CLI/MCP parity): implementation, Copilot review cycle, merge, and post-merge archival."
 doc_type: closure
+docline:
+    date: 2026-08-10T00:00:00Z
+    status: accepted
+    tags:
+        - operational-closure
+        - formal-gate
+        - 119-S
+        - governed-operation-parity
 schema_version: "1.0"
 source: docs/closure/119-s-formal-gate-f6-closure.md
-title: 119-S Closure — Formal Gate F6 Governed-Operation Parity
+title: "119-S Formal Gate F6 — Operational Closure"
 ---
 
 # 119-S Closure — Formal Gate F6
@@ -45,14 +53,14 @@ title: 119-S Closure — Formal Gate F6 Governed-Operation Parity
 - `golangci-lint run`: clean (5 min timeout)
 - `gofmt -l .`: clean on changed files
 - CI: all checks green (Docline, Markdown lint, CLI Reference Drift, test)
-- Copilot review: 9 threads raised, all addressed and resolved
+- Copilot review: 10 threads raised (8+1+1), all addressed and resolved
 
 ## Copilot Review Cycle
 
-Review cycle 1 (commit ed42dbb8): 8 findings — all fixed in 2c00a2a2
-Review cycle 2 (commit 2c00a2a2): 1 finding — fixed in c8f508a1 + 937f6237
-Review cycle 3 (commit 937f6237): 1 finding — fixed in 937f6237 (conditional upsert)
-Total: 2 review-fix cycles. P0 findings: 0 residual at merge.
+- Review cycle 1 (commit ed42dbb8): 8 findings — all fixed in 2c00a2a2
+- Review cycle 2 (commit 2c00a2a2): 1 finding — fixed in c8f508a1
+- Review cycle 3 (commit c8f508a1): 1 finding — fixed in 937f6237 (conditional upsert)
+- Total: 3 review-fix cycles. P0/P1 residual at merge: 0.
 
 ## Releasability: READY
 
@@ -63,10 +71,7 @@ Total: 2 review-fix cycles. P0 findings: 0 residual at merge.
 
 ## Follow-Up Items
 
-- Track extending the governed set to other operations beyond commit-association
-  (currently only commit-association has governed: true)
-- Consider adding MCP-handler-level behavioral parity tests when package boundary
-  allows it (currently tested at core function level due to import cycle)
+- `4CF89803`: Extend `governed: true` to other registry operations beyond commit-association
 
 ## Archive Integrity (P-007)
 

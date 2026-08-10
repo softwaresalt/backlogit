@@ -35,7 +35,7 @@ TestRegistryParity_ForceGatesAbsentFromMCPParams in registry_parity_test.go.
 
 ## Copilot Review Cycle Summary
 
-- 9 threads total across 3 rounds
+- 10 threads total across 3 rounds
 - Key findings addressed:
   - CLI: AssociateCommit before deferred gate JSON return
   - MCP: commitSHA in size/complexity exclusivity checks
@@ -55,3 +55,4 @@ TestRegistryParity_ForceGatesAbsentFromMCPParams in registry_parity_test.go.
 - Branch: post-merge/119-s-formal-gate-f6
 - Clean (after this commit)
 - Pending: push + PR creation for post-merge closure
+
