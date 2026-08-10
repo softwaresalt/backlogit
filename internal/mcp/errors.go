@@ -170,3 +170,74 @@ func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult 
 	}
 	return mcplib.NewToolResultError(string(data))
 }
+
+
+// checkpointDispositionErrorResponse is the structured MCP error shape for
+// checkpoint disposition (abandon/quarantine) failures. It carries a stable
+// code, the offending checkpoint filename, a class-derived retryable flag,
+// and an actionable remediation hint so an agent caller does not need to
+// parse the error message to decide what to do next.
+type checkpointDispositionErrorResponse struct {
+	Error       string `json:"error"`
+	Message     string `json:"message"`
+	Code        string `json:"code"`
+	Filename    string `json:"filename"`
+	Retryable   bool   `json:"retryable"`
+	Outcome     string `json:"outcome,omitempty"`
+	Remediation string `json:"remediation"`
+}
+
+// checkpointDispositionError maps a checkpoint disposition sentinel error
+// (internal/errors checkpoint_errors.go) to a structured MCP error result.
+// Unrecognized errors fall back to InternalError.
+func checkpointDispositionError(op, filename string, err error) *mcplib.CallToolResult {
+	resp := checkpointDispositionErrorResponse{
+		Error:    "checkpoint_disposition_failed",
+		Message:  fmt.Sprintf("%s: %v", op, err),
+		Filename: filename,
+	}
+	switch {
+	case errors.Is(err, corerrors.ErrCheckpointUseQuarantine):
+		resp.Code = "checkpoint_use_quarantine"
+		resp.Retryable = false
+		resp.Remediation = "this target is malformed; call backlogit_quarantine_checkpoint instead of backlogit_abandon_checkpoint"
+	case errors.Is(err, corerrors.ErrCheckpointUseAbandon):
+		resp.Code = "checkpoint_use_abandon"
+		resp.Retryable = false
+		resp.Remediation = "this target is valid; call backlogit_abandon_checkpoint instead of backlogit_quarantine_checkpoint"
+	case errors.Is(err, corerrors.ErrCheckpointTargetUnsafe):
+		resp.Code = "checkpoint_target_unsafe"
+		resp.Retryable = false
+		resp.Remediation = "supply a bare checkpoint filename (basename only, no path separators, no traversal, no symlink)"
+	case errors.Is(err, corerrors.ErrCheckpointReasonRequired):
+		resp.Code = "checkpoint_reason_required"
+		resp.Retryable = false
+		resp.Remediation = "retry with a non-empty reason parameter"
+	case errors.Is(err, corerrors.ErrCheckpointOperatorRequired):
+		resp.Code = "checkpoint_operator_required"
+		resp.Retryable = false
+		resp.Remediation = "retry with a non-empty operator parameter; operator is never inferred on the MCP surface"
+	case errors.Is(err, corerrors.ErrCheckpointDestinationOccupied):
+		resp.Code = "checkpoint_destination_occupied"
+		resp.Retryable = false
+		resp.Remediation = "an existing quarantined file already occupies the destination; resolve the conflict manually before retrying"
+	case errors.Is(err, corerrors.ErrCheckpointAuditIndeterminate):
+		resp.Code = "checkpoint_audit_indeterminate"
+		resp.Retryable = false
+		resp.Outcome = "indeterminate"
+		resp.Remediation = "do not blindly retry; inspect the checkpoint disposition audit log to reconcile state before retrying"
+	case errors.Is(err, corerrors.ErrCheckpointAuditNotApplied):
+		resp.Code = "checkpoint_audit_not_applied"
+		resp.Retryable = true
+		resp.Remediation = "the audit append definitely did not apply and nothing was moved or rewritten; safe to retry"
+	case errors.Is(err, corerrors.ErrCheckpointNotFound):
+		return NotFound(err.Error())
+	default:
+		return InternalError(fmt.Sprintf("%s: %v", op, err))
+	}
+	data, marshalErr := json.Marshal(resp)
+	if marshalErr != nil {
+		return InternalError(fmt.Sprintf("marshal checkpoint disposition error: %v", marshalErr))
+	}
+	return mcplib.NewToolResultError(string(data))
+}

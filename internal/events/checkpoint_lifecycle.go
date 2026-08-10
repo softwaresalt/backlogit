@@ -16,8 +16,14 @@ import (
 )
 
 // ListCheckpoints returns checkpoint summaries from checkpointDir, applying optional filter.
-// Unparseable files are quarantined to .backlogit/quarantine/checkpoints/ and included
-// in the result with ValidationErr populated.
+//
+// ListCheckpoints is read-only (136-F/U9): it NEVER moves, deletes, or rewrites
+// any checkpoint file, and it never fails due to a disposition- or audit-related
+// error. Files that fail to parse are surfaced with NeedsQuarantine=true and a
+// RemediationCommand an operator or agent can run to quarantine the file via
+// QuarantineCheckpoint. Prior to 136-F, ListCheckpoints physically quarantined
+// unparseable files as a side effect of listing; that side effect has been
+// removed so listing can never mutate workspace state.
 func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointFilter) ([]CheckpointSummary, error) {
 	pattern := filepath.Join(checkpointDir, "checkpoint-*.json")
 	matches, err := filepath.Glob(pattern)
@@ -25,7 +31,6 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		return nil, fmt.Errorf("glob checkpoints: %w", err)
 	}
 
-	quarantineDir := filepath.Join(filepath.Dir(checkpointDir), "quarantine", "checkpoints")
 	var summaries []CheckpointSummary
 	now := time.Now().UTC()
 
@@ -39,25 +44,15 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 
 		cp, parseErr := ParseCheckpoint(data)
 		if parseErr != nil {
-			// Quarantine unparseable file — set Quarantined=true to distinguish from
-			// schema validation failures which stay in the checkpoints dir.
-			summary := CheckpointSummary{
-				Filename:      filename,
-				ValidationErr: parseErr.Error(),
-				Quarantined:   true,
-			}
-			summaries = append(summaries, summary)
-			quarantinePath := filepath.Join(quarantineDir, filename)
-			if mkErr := os.MkdirAll(quarantineDir, 0o755); mkErr == nil {
-				if runtime.GOOS == "windows" {
-					_ = os.Remove(quarantinePath)
-				}
-				if mvErr := os.Rename(path, quarantinePath); mvErr != nil {
-					slog.Warn("checkpoint quarantine failed", "file", filename, "error", mvErr)
-				} else {
-					slog.Info("checkpoint quarantined", "file", filename, "dest", quarantinePath)
-				}
-			}
+			// Read-only: surface the parse failure as a quarantine candidate
+			// instead of physically moving the file. QuarantineCheckpoint
+			// (136-F/U7) performs the actual move when invoked explicitly.
+			summaries = append(summaries, CheckpointSummary{
+				Filename:            filename,
+				ValidationErr:       parseErr.Error(),
+				NeedsQuarantine:     true,
+				RemediationCommand:  fmt.Sprintf("backlogit checkpoint quarantine %s --reason <reason>", filename),
+			})
 			continue
 		}
 
@@ -75,6 +70,8 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		}
 		if valErr != nil {
 			summary.ValidationErr = valErr.Error()
+			summary.NeedsQuarantine = true
+			summary.RemediationCommand = fmt.Sprintf("backlogit checkpoint quarantine %s --reason <reason>", filename)
 		}
 
 		// Apply filters.

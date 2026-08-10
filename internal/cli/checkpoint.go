@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
 
@@ -30,6 +35,8 @@ checkpoint files.`,
 	cmd.AddCommand(newCheckpointGetCmd(cwd))
 	cmd.AddCommand(newCheckpointResolveCmd(cwd))
 	cmd.AddCommand(newCheckpointCleanupCmd(cwd))
+	cmd.AddCommand(newCheckpointAbandonCmd(cwd))
+	cmd.AddCommand(newCheckpointQuarantineCmd(cwd))
 	return cmd
 }
 
@@ -108,7 +115,7 @@ func newCheckpointListCmd(cwd *string) *cobra.Command {
 
 			quarantined := 0
 			for _, s := range summaries {
-				if s.Quarantined {
+				if s.NeedsQuarantine {
 					quarantined++
 				}
 			}
@@ -229,3 +236,149 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 	cmd.Flags().IntVar(&retentionDays, "retention-days", 0, "override retention days (defaults to config)")
 	return cmd
 }
+
+
+
+// resolveCheckpointOperator resolves the operator identity for a checkpoint
+// disposition action (abandon or quarantine) in priority order: the
+// --operator flag, then the BACKLOGIT_OPERATOR environment variable, then the
+// current OS user. It NEVER defaults to a fixed identity such as "backlogit"
+// — if none of these sources resolve a non-empty value, it returns
+// ErrCheckpointOperatorRequired so the caller can supply one explicitly.
+func resolveCheckpointOperator(flagValue string) (string, error) {
+	if v := strings.TrimSpace(flagValue); v != "" {
+		return v, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("BACKLOGIT_OPERATOR")); v != "" {
+		return v, nil
+	}
+	if u, err := user.Current(); err == nil {
+		if v := strings.TrimSpace(u.Username); v != "" {
+			return v, nil
+		}
+	}
+	return "", blerrors.ErrCheckpointOperatorRequired
+}
+
+// newCheckpointAbandonCmd returns the `backlogit checkpoint abandon` subcommand.
+// It mirrors the MCP backlogit_abandon_checkpoint tool: AbandonCheckpoint
+// operates only on a parseable, schema-valid checkpoint target — a malformed
+// target must be quarantined instead (see `checkpoint quarantine`).
+func newCheckpointAbandonCmd(cwd *string) *cobra.Command {
+	var reason, operatorFlag string
+
+	cmd := &cobra.Command{
+		Use:   "abandon <filename>",
+		Short: "Administratively abandon a valid checkpoint",
+		Long: `Administratively abandon a session state checkpoint.
+
+Abandon operates ONLY on a parseable, schema-valid checkpoint. If the target
+file is malformed (unparseable or schema-invalid), this command refuses and
+directs you to "checkpoint quarantine" instead — abandon and quarantine are
+disjoint verbs by design.`,
+		Example: `  backlogit checkpoint abandon checkpoint-20260423-100000.json --reason "superseded by newer session"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			filename := args[0]
+			slog.Info("checkpoint command invoked", "operation", "checkpoint-abandon", "filename", filename)
+
+			if strings.TrimSpace(reason) == "" {
+				return blerrors.ErrCheckpointReasonRequired
+			}
+			operator, err := resolveCheckpointOperator(operatorFlag)
+			if err != nil {
+				return err
+			}
+
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			logsDir := core.WorkspaceLogsRoot(ws.RootPath)
+			ew := core.NewWorkspaceEventWriter(ws, logsDir)
+
+			if err := core.AbandonCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
+				return fmt.Errorf("abandon checkpoint: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]string{
+				"filename":    filename,
+				"disposition": events.DispositionAbandoned,
+				"reason":      reason,
+				"operator":    operator,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the disposition (required)")
+	cmd.Flags().StringVar(&operatorFlag, "operator", "", "operator identity (defaults to BACKLOGIT_OPERATOR env var, then the OS user)")
+	_ = cmd.MarkFlagRequired("reason")
+	return cmd
+}
+
+// newCheckpointQuarantineCmd returns the `backlogit checkpoint quarantine`
+// subcommand. It mirrors the MCP backlogit_quarantine_checkpoint tool:
+// QuarantineCheckpoint operates only on a malformed (unparseable or
+// schema-invalid) checkpoint target — a valid target must be abandoned
+// instead (see `checkpoint abandon`).
+func newCheckpointQuarantineCmd(cwd *string) *cobra.Command {
+	var reason, operatorFlag string
+
+	cmd := &cobra.Command{
+		Use:   "quarantine <filename>",
+		Short: "Quarantine a malformed checkpoint",
+		Long: `Quarantine a malformed session state checkpoint.
+
+Quarantine operates ONLY on a malformed (unparseable or schema-invalid)
+checkpoint. If the target file parses and validates cleanly, this command
+refuses and directs you to "checkpoint abandon" instead — abandon and
+quarantine are disjoint verbs by design. The checkpoint's bytes are moved
+verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
+		Example: `  backlogit checkpoint quarantine checkpoint-20260423-100000.json --reason "corrupt JSON"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			filename := args[0]
+			slog.Info("checkpoint command invoked", "operation", "checkpoint-quarantine", "filename", filename)
+
+			if strings.TrimSpace(reason) == "" {
+				return blerrors.ErrCheckpointReasonRequired
+			}
+			operator, err := resolveCheckpointOperator(operatorFlag)
+			if err != nil {
+				return err
+			}
+
+			ws, err := core.NewWorkspace(ctx, *cwd)
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			logsDir := core.WorkspaceLogsRoot(ws.RootPath)
+			ew := core.NewWorkspaceEventWriter(ws, logsDir)
+
+			if err := core.QuarantineCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
+				return fmt.Errorf("quarantine checkpoint: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]string{
+				"filename":    filename,
+				"disposition": events.DispositionQuarantined,
+				"reason":      reason,
+				"operator":    operator,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the disposition (required)")
+	cmd.Flags().StringVar(&operatorFlag, "operator", "", "operator identity (defaults to BACKLOGIT_OPERATOR env var, then the OS user)")
+	_ = cmd.MarkFlagRequired("reason")
+	return cmd
+}
+

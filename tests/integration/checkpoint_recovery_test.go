@@ -87,7 +87,9 @@ func TestCheckpointRecoveryFlow(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(checkpointDir, "checkpoint-20260423-100000.json"))
 }
 
-// TestCheckpointRecoveryFlow_QuarantineCorrupt verifies corrupt checkpoints are quarantined.
+// TestCheckpointRecoveryFlow_QuarantineCorrupt verifies corrupt checkpoints are
+// flagged for quarantine by list (read-only, 136-F/U9) and are physically
+// quarantined only when the operator explicitly runs checkpoint quarantine.
 func TestCheckpointRecoveryFlow_QuarantineCorrupt(t *testing.T) {
 	root := setupIntegrationWorkspace(t)
 	checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
@@ -119,15 +121,24 @@ func TestCheckpointRecoveryFlow_QuarantineCorrupt(t *testing.T) {
 		0o644,
 	))
 
-	// List — both should appear; corrupt with validation error.
+	// List — both should appear; corrupt is flagged NeedsQuarantine, not moved.
 	output, err := runCLI(t, root, "checkpoint", "list")
 	require.NoError(t, err)
 	assert.Contains(t, output, "valid-session")
-	assert.Contains(t, output, "quarantined")
+	assert.Contains(t, output, "needs_quarantine")
+	assert.Contains(t, output, "remediation_command")
 
-	// Verify corrupt file was quarantined.
+	// List must never physically move the corrupt file.
 	quarantineDir := filepath.Join(root, ".backlogit", "quarantine", "checkpoints")
-	assert.FileExists(t, filepath.Join(quarantineDir, "checkpoint-corrupt.json"))
+	assert.NoFileExists(t, filepath.Join(quarantineDir, "checkpoint-corrupt.json"))
+	assert.FileExists(t, filepath.Join(checkpointDir, "checkpoint-corrupt.json"))
+
+	// Explicitly quarantining moves the file verbatim to the archive.
+	_, err = runCLI(t, root, "checkpoint", "quarantine", "checkpoint-corrupt.json", "--reason", "corrupt JSON", "--operator", "test-operator")
+	require.NoError(t, err)
+	archiveDir := filepath.Join(root, ".backlogit", "archive", "checkpoints")
+	assert.FileExists(t, filepath.Join(archiveDir, "checkpoint-corrupt.json"))
+	assert.NoFileExists(t, filepath.Join(checkpointDir, "checkpoint-corrupt.json"))
 }
 
 // TestCheckpointRecoveryFlow_MultipleCheckpoints tests recovery selection from multiple checkpoints.
@@ -196,3 +207,4 @@ func TestCheckpointRecoveryFlow_MultipleCheckpoints(t *testing.T) {
 	assert.Equal(t, 1, result.Total)
 	assert.Equal(t, "recent-session", result.Checkpoints[0].SessionID)
 }
+

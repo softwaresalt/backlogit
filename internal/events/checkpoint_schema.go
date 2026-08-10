@@ -19,12 +19,25 @@ type CheckpointV1 struct {
 	Agent         string              `json:"agent" validate:"required,oneof=ship stage"`
 	SessionID     string              `json:"session_id" validate:"required"`
 	Phase         string              `json:"phase" validate:"required"`
-	Status        string              `json:"status" validate:"required,oneof=active resolved"`
+	Status        string              `json:"status" validate:"required,oneof=active resolved abandoned"`
 	CreatedAt     time.Time           `json:"created_at" validate:"required"`
 	UpdatedAt     time.Time           `json:"updated_at" validate:"required"`
 	Context       CheckpointContext   `json:"context"`
 	Progress      *CheckpointProgress `json:"progress,omitempty"`
 	ResumeHint    string              `json:"resume_hint,omitempty"`
+
+	// Disposition, DispositionReason, DispositionOperator, and DispositionAt
+	// (136-F) record an administrative disposition action taken against this
+	// checkpoint via AbandonCheckpoint. Disposition validates against a closed
+	// allowlist (see DispositionAbandoned, DispositionQuarantined) and fails
+	// closed on any unrecognized value. These fields are populated only when
+	// an abandon disposition has been applied; QuarantineCheckpoint never
+	// rewrites the checkpoint bytes and instead records its disposition in a
+	// sidecar (see CheckpointDispositionRecord).
+	Disposition         string    `json:"disposition,omitempty" validate:"omitempty,oneof=abandoned quarantined"`
+	DispositionReason   string    `json:"disposition_reason,omitempty"`
+	DispositionOperator string    `json:"disposition_operator,omitempty"`
+	DispositionAt       time.Time `json:"disposition_at,omitempty"`
 }
 
 // CheckpointContext holds shipment/feature/branch context for the checkpoint.
@@ -67,7 +80,20 @@ type CheckpointSummary struct {
 	// Quarantined is true when the file was physically moved to the quarantine
 	// directory due to a parse failure. ValidationErr may also be set for
 	// schema validation failures that do NOT quarantine the file.
+	//
+	// Deprecated: ListCheckpoints (136-F/U9) no longer performs the physical
+	// quarantine move as a side effect of listing. This field is retained for
+	// backward JSON-shape compatibility and stays false on the read-only list
+	// path; use NeedsQuarantine and RemediationCommand instead to detect and
+	// act on malformed checkpoints.
 	Quarantined bool `json:"quarantined,omitempty"`
+	// NeedsQuarantine is true when the checkpoint file failed to parse and is a
+	// quarantine candidate. ListCheckpoints never moves the file itself
+	// (136-F/U9); callers must run the remediation command to quarantine it.
+	NeedsQuarantine bool `json:"needs_quarantine,omitempty"`
+	// RemediationCommand is the exact CLI invocation an operator or agent can
+	// run to quarantine this checkpoint when NeedsQuarantine is true.
+	RemediationCommand string `json:"remediation_command,omitempty"`
 }
 
 // CleanupResult reports the outcome of a checkpoint cleanup operation.

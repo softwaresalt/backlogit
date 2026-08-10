@@ -122,7 +122,11 @@ func TestListCheckpoints_FilterByMaxAge(t *testing.T) {
 	assert.Len(t, summaries, 1)
 }
 
-func TestListCheckpoints_QuarantinesBadFiles(t *testing.T) {
+// TestListCheckpoints_FlagsBadFilesReadOnly asserts the 136-F/U9 read-only
+// contract: ListCheckpoints never moves, deletes, or rewrites a malformed
+// checkpoint file. It surfaces NeedsQuarantine and a RemediationCommand so a
+// caller can explicitly invoke QuarantineCheckpoint instead.
+func TestListCheckpoints_FlagsBadFilesReadOnly(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".backlogit", "checkpoints")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -134,11 +138,14 @@ func TestListCheckpoints_QuarantinesBadFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, summaries, 1)
 	assert.NotEmpty(t, summaries[0].ValidationErr)
+	assert.True(t, summaries[0].NeedsQuarantine)
+	assert.Contains(t, summaries[0].RemediationCommand, "checkpoint quarantine checkpoint-bad.json")
+	assert.False(t, summaries[0].Quarantined, "list must never physically quarantine")
 
-	// Check file was quarantined.
+	// The file must remain in place: ListCheckpoints is read-only.
 	quarantine := filepath.Join(root, ".backlogit", "quarantine", "checkpoints", "checkpoint-bad.json")
-	assert.FileExists(t, quarantine)
-	assert.NoFileExists(t, filepath.Join(dir, "checkpoint-bad.json"))
+	assert.NoFileExists(t, quarantine)
+	assert.FileExists(t, filepath.Join(dir, "checkpoint-bad.json"))
 }
 
 func TestListCheckpoints_SortedByCreatedAtDesc(t *testing.T) {
@@ -389,3 +396,4 @@ func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
 	assert.Equal(t, 2, result.ArchivedCount)
 	assert.Equal(t, 1, result.SkippedCount)
 }
+
