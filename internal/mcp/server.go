@@ -165,6 +165,11 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	// workspaceMu, so this single rebuild happens-before every reader.
 	logsDir := filepath.Join(s.backlogitDir(), "logs")
 	s.Events = core.NewWorkspaceEventWriter(ws, logsDir)
+	// Rebind path-dependent writers to the resolved storage root so that
+	// telemetry logging and hook polling use ws.StorageRoot, not the
+	// pre-initialization fallback that newServer computed.
+	s.Telemetry = events.NewTelemetryWriter(filepath.Join(ws.StorageRoot, "telemetry.jsonl"))
+	s.HookEvents = events.NewHookEventWriter(ws.StorageRoot)
 
 	// Populate the manifest baseline so the first backlogit_merge_sync call
 	// can compute a real diff instead of treating every file as added.
