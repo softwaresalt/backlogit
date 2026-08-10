@@ -19,6 +19,7 @@ package cli
 //                              surfaces the registry pairs against.
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -35,16 +36,20 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/events"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // registryOperation is a single entry in the .autoharness operation map. Only the
 // fields relevant to drift detection are decoded.
 type registryOperation struct {
-	MCPTool    string            `yaml:"mcp_tool"`
-	CLICommand string            `yaml:"cli_command"`
-	MCPOnly    bool              `yaml:"mcp_only"`
-	Params     map[string]string `yaml:"params"`
+	MCPTool      string            `yaml:"mcp_tool"`
+	CLICommand   string            `yaml:"cli_command"`
+	MCPOnly      bool              `yaml:"mcp_only"`
+	Governed     bool              `yaml:"governed"`
+	GovernedName string            `yaml:"governed_name"`
+	Params       map[string]string `yaml:"params"`
 }
 
 // registryFile is the top-level shape of .autoharness/backlog-registry.yaml.
@@ -384,4 +389,226 @@ func TestRegistryParity_FlagAndPositionalParity(t *testing.T) {
 				name, positionals, path)
 		}
 	}
+}
+
+// governedOperations returns all operations with governed: true from the registry.
+// The set is derived from the live registry so newly added governed operations
+// enter the test automatically without a manual allowlist update.
+// extractGovernedID extracts the artifact ID from CLI add command output.
+func extractGovernedID(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) == 2 {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	t.Fatalf("could not extract ID from output: %q", output)
+	return ""
+}
+
+func governedOperations(t *testing.T) map[string]registryOperation {
+	t.Helper()
+	ops := loadRegistryOperations(t)
+	governed := map[string]registryOperation{}
+	for name, op := range ops {
+		if op.Governed {
+			governed[name] = op
+		}
+	}
+	return governed
+}
+
+// setupGovernedWorkspace creates a workspace in a temp dir and returns the root
+// path and a workspace instance. It constructs the .backlogit directory with
+// default config so CLI commands resolve correctly.
+func setupGovernedWorkspace(t *testing.T) (string, *core.Workspace) {
+	t.Helper()
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+	return root, ws
+}
+
+// runGovernedCLI executes a root command invocation against root and returns stdout.
+func runGovernedCLI(t *testing.T, root string, args ...string) {
+	t.Helper()
+	cmd := NewRootCommand()
+	out := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	allArgs := append([]string{"--cwd", root}, args...)
+	cmd.SetArgs(allArgs)
+	require.NoError(t, cmd.Execute(), "cli %v failed: %s", args, errBuf.String())
+}
+
+// addGovernedArtifact creates an artifact via CLI and returns its ID.
+func addGovernedArtifact(t *testing.T, root, artifactType, title, parent string) string {
+	t.Helper()
+	cmd := NewRootCommand()
+	out := new(bytes.Buffer)
+	cmd.SetOut(out)
+	cmd.SetErr(new(bytes.Buffer))
+	args := []string{"--cwd", root, "add", "--type", artifactType, "--title", title}
+	if parent != "" {
+		args = append(args, "--parent", parent)
+	}
+	cmd.SetArgs(args)
+	require.NoError(t, cmd.Execute())
+	return extractGovernedID(t, out.String())
+}
+
+// observeGovernedState reads all three commit-association representations for
+// itemID / sha from a fresh workspace connection and the JSONL log on disk.
+func observeGovernedState(t *testing.T, rootPath, itemID, sha string) (frontmatterSHA string, hasLinksRow, hasJSONLEvent bool) {
+	t.Helper()
+	ctx := context.Background()
+
+	// Fresh workspace for authoritative DB state.
+	freshWS, err := core.NewWorkspace(ctx, rootPath)
+	require.NoError(t, err)
+	defer freshWS.Close()
+
+	// 1. Frontmatter scalar — read from markdown, not DB cache.
+	artPath, err := core.FindArtifactPath(ctx, freshWS, itemID)
+	require.NoError(t, err)
+	data, err := os.ReadFile(artPath)
+	require.NoError(t, err)
+	fm, body, err := models.ParseFrontmatter(string(data))
+	require.NoError(t, err)
+	art, err := models.ArtifactFromFrontmatter(fm, body)
+	require.NoError(t, err)
+	frontmatterSHA = art.Commit
+
+	// 2. commit_links row.
+	var linkCount int
+	_ = freshWS.DB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM commit_links WHERE item_id = ? AND commit_sha = ?",
+		itemID, sha).Scan(&linkCount)
+	hasLinksRow = linkCount > 0
+
+	// 3. JSONL commit_tracked event.
+	logsDir := core.WorkspaceLogsRoot(rootPath)
+	evs, _ := events.ReadAllEvents(ctx, logsDir, itemID)
+	for _, ev := range evs {
+		if ev.EventType == "commit_tracked" {
+			if d, ok := ev.Delta["commit_sha"].(string); ok && d == sha {
+				hasJSONLEvent = true
+				break
+			}
+		}
+	}
+	return frontmatterSHA, hasLinksRow, hasJSONLEvent
+}
+
+// TestRegistryParity_GovernedOperationBehavioralParity is the F6/U5 behavioral
+// parity assertion. For each governed: true operation in the registry, this test
+// executes both surfaces against equivalent fixtures and asserts identical
+// observable state. Two HARD gates:
+//  1. The governed set must not be empty (no vacuous pass).
+//  2. An operation with governed_name "commit_association" must exist.
+func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
+	governed := governedOperations(t)
+
+	// Gate 1: governed set must be non-empty.
+	require.NotEmpty(t, governed,
+		"governed operation set must not be empty: add governed: true to at least one operation")
+
+	// Gate 2: commit_association required by name.
+	var foundCommitAssoc bool
+	for _, op := range governed {
+		if op.GovernedName == "commit_association" {
+			foundCommitAssoc = true
+			break
+		}
+	}
+	require.True(t, foundCommitAssoc,
+		"a governed operation with governed_name: commit_association is required — the test cannot pass vacuously")
+
+	const testSHA = "aabbccddee0001000200030004000500060007aabb"
+
+	for opName, op := range governed {
+		opName, op := opName, op
+		t.Run(opName, func(t *testing.T) {
+			if op.MCPTool == "" || op.CLICommand == "" {
+				t.Skipf("operation %q has no CLI surface; skipping behavioral parity", opName)
+			}
+
+			switch op.MCPTool {
+			case "backlogit_track_commit":
+				root, ws := setupGovernedWorkspace(t)
+
+				featID := addGovernedArtifact(t, root, "feature", "Gov parity feature", "")
+				taskCLI := addGovernedArtifact(t, root, "task", "Gov parity CLI task", featID)
+				taskMCP := addGovernedArtifact(t, root, "task", "Gov parity MCP task", featID)
+				ctx := context.Background()
+
+				// CLI surface: update --commit now routes through AssociateCommit.
+				runGovernedCLI(t, root, "update", taskCLI, "--commit", testSHA)
+
+				// MCP surface (track_commit): call AssociateCommit directly.
+				logsDir := core.WorkspaceLogsRoot(root)
+				ew := core.NewWorkspaceEventWriter(ws, logsDir)
+				require.NoError(t, core.AssociateCommit(ctx, ws, ew, taskMCP, testSHA, "feat: governed parity", "test@example.com"))
+
+				cliSHA, cliLinks, cliEvent := observeGovernedState(t, root, taskCLI, testSHA)
+				mcpSHA, mcpLinks, mcpEvent := observeGovernedState(t, root, taskMCP, testSHA)
+
+				// Structural parity: all three representations must be present on both surfaces.
+				assert.True(t, cliSHA == testSHA, "op %q: CLI frontmatter scalar must equal input SHA", opName)
+				assert.True(t, cliLinks, "op %q: CLI surface must write commit_links row", opName)
+				assert.True(t, cliEvent, "op %q: CLI surface must write JSONL commit_tracked event", opName)
+				assert.Equal(t, cliSHA, mcpSHA, "op %q: frontmatter SHA must match across surfaces", opName)
+				assert.Equal(t, cliLinks, mcpLinks, "op %q: commit_links row presence must match", opName)
+				assert.Equal(t, cliEvent, mcpEvent, "op %q: JSONL event presence must match", opName)
+
+			default:
+				t.Skipf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one", opName, op.MCPTool)
+			}
+		})
+	}
+}
+
+// TestRegistryParity_ForceGatesAbsentFromMCPParams is the F6/U5 regression
+// assertion: --force-gates must not appear in the MCP surface parameter map.
+// The registry's update_task cli_only_flags documents this deliberate asymmetry.
+func TestRegistryParity_ForceGatesAbsentFromMCPParams(t *testing.T) {
+	ops := loadRegistryOperations(t)
+
+	// Load the full raw registry to check cli_only_flags.
+	regPath := findRegistryPath(t)
+	data, err := os.ReadFile(regPath)
+	require.NoError(t, err)
+	var rawFile map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &rawFile))
+	rawOps, _ := rawFile["operations"].(map[string]any)
+
+	// For every MCP tool, assert force_gates is not a documented param.
+	for opName, op := range ops {
+		if op.MCPOnly || op.MCPTool == "" {
+			continue
+		}
+		// Check the raw operation's params map for "force_gates" or "force-gates".
+		rawOp, _ := rawOps[opName].(map[string]any)
+		params, _ := rawOp["params"].(map[string]any)
+		_, hasForceGates := params["force_gates"]
+		_, hasForceGatesDash := params["force-gates"]
+		assert.Falsef(t, hasForceGates || hasForceGatesDash,
+			"operation %q must not include force_gates in its params (human-terminal-only, P-010 blast-radius rule)",
+			opName)
+	}
+
+	// Assert that update_task explicitly documents force-gates as human_terminal_only.
+	rawUpdateTask, _ := rawOps["update_task"].(map[string]any)
+	cliOnlyFlags, _ := rawUpdateTask["cli_only_flags"].(map[string]any)
+	forceGatesEntry, _ := cliOnlyFlags["force-gates"].(map[string]any)
+	humanTerminalOnly, _ := forceGatesEntry["human_terminal_only"].(bool)
+	assert.True(t, humanTerminalOnly,
+		"registry update_task.cli_only_flags.force-gates.human_terminal_only must be true (F6/U4 deliberate asymmetry documentation)")
 }

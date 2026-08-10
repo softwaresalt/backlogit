@@ -41,6 +41,9 @@ operations:
   update_task:
     mcp_tool: "backlogit_update_item"
     cli_command: "backlogit update {{id}}"
+    # When the commit parameter is provided, update_item routes through
+    # core.AssociateCommit (F6/U3) producing all three representations.
+    # The governed: true marker on track_commit covers this convergence.
     params:
       task_id: "id"
       title: "title"
@@ -50,7 +53,19 @@ operations:
       assignee: "assigned_to"
       priority: "priority"
       size: "size"
-
+      commit: "sha"
+    # --force-gates and --gate-base are intentionally absent from the MCP surface.
+    # Forcing a completion gate is a deliberate human-at-a-terminal action; the
+    # established rule is that a fallback surface must never be more dangerous than
+    # the surface it mirrors (blast-radius rationale). Agents can use this metadata
+    # to tell deliberate asymmetry from drift.
+    cli_only_flags:
+      force-gates:
+        human_terminal_only: true
+        rationale: "gate forcing is operator-only; MCP exclusion is deliberate and permanent"
+      gate-base:
+        human_terminal_only: true
+        rationale: "operator-only base ref override; audited action not appropriate for agent surfaces"
   move_task:
     mcp_tool: "backlogit_move_item"
     cli_command: "backlogit move {{id}} --status {{status}}"
@@ -188,9 +203,22 @@ operations:
       task_id: "id"
       reverse: "reverse"
 
+  # commit_association is the canonical governed operation: all three surfaces
+  # (MCP track_commit, MCP update_item(commit=), CLI update --commit) now route
+  # through core.AssociateCommit (F6/U2-U3) and produce identical observable state.
   track_commit:
     mcp_tool: "backlogit_track_commit"
+    # After F6/U3, the cli_command is honest: backlogit update --commit now calls
+    # core.AssociateCommit (frontmatter scalar + commit_links + JSONL event),
+    # identical to MCP track_commit. CLI limitation: --message and --author flags
+    # are absent; those fields are stored as empty strings on the CLI path.
+    # This deliberate asymmetry is documented in governed-operation-parity.md.
     cli_command: "backlogit update {{task_id}} --commit {{sha}}"
+    governed: true
+    governed_name: "commit_association"
+    cli_param_gaps:
+      message: "not available on CLI; stored as empty string (deliberate — see governed-operation-parity.md)"
+      author: "not available on CLI; stored as empty string (deliberate — see governed-operation-parity.md)"
     params:
       task_id: "item_id"
       sha: "sha"

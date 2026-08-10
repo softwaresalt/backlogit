@@ -783,11 +783,13 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		return ValidationFailed("id is required"), nil
 	}
 	updates := make(map[string]any)
-	for _, key := range []string{"title", "status", "description", "sprint", "priority", "assigned_to", "owner", "commit"} {
+	for _, key := range []string{"title", "status", "description", "sprint", "priority", "assigned_to", "owner"} {
 		if v, ok := request.Params.Arguments[key].(string); ok && v != "" {
 			updates[key] = v
 		}
 	}
+	// commit is handled separately via AssociateCommit for all-three-representation parity (F6/U3)
+	commitSHA, _ := request.Params.Arguments["commit"].(string)
 	if v, ok := request.Params.Arguments["labels"].(string); ok && v != "" {
 		updates["labels"] = strings.Split(v, ",")
 	}
@@ -870,6 +872,13 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	if sections != nil {
 		if writeErr := writeSectionsToFile(ctx, s.Workspace, artifact, sections); writeErr != nil {
 			return InternalError(fmt.Sprintf("write sections: %v", writeErr)), nil
+		}
+	}
+	// Route commit association through governed-operation core (F6/U3).
+	// message and author are unavailable in update_item; empty strings documented in governed-operation-parity.md.
+	if commitSHA != "" {
+		if assocErr := core.AssociateCommit(ctx, s.Workspace, s.Events, id, commitSHA, "", ""); assocErr != nil {
+			return InternalError(fmt.Sprintf("associate commit: %v", assocErr)), nil
 		}
 	}
 	if outcome != nil {
@@ -1471,7 +1480,7 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 	}
 	message, _ := request.Params.Arguments["message"].(string)
 	author, _ := request.Params.Arguments["author"].(string)
-	if err := core.LinkCommit(ctx, s.Workspace.DB, s.Workspace, itemID, sha, message, author); err != nil {
+	if err := core.AssociateCommit(ctx, s.Workspace, s.Events, itemID, sha, message, author); err != nil {
 		return InternalError(fmt.Sprintf("track commit: %v", err)), nil
 	}
 	return toolResultJSON(map[string]string{

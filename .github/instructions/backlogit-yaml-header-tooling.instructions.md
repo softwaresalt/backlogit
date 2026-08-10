@@ -25,7 +25,7 @@ The table below covers every field present in artifact frontmatter (features, ta
 | `owner` | Yes | `backlogit_update_item` | `owner` param |
 | `labels` | Yes | `backlogit_update_item` | `labels` param; comma-separated string |
 | `references` | Partial | `backlogit_create_item` | Set at creation via `references` param; **not editable after creation** via standard tools |
-| `commit` | Yes | `backlogit_update_item` or `backlogit_track_commit` | `backlogit_track_commit` records full SHA + message + author in `commit_links`; `backlogit_update_item` writes to frontmatter `commit` field only |
+| `commit` | Yes | `backlogit_update_item` or `backlogit_track_commit` | After F6/U3, all three surfaces (`backlogit_track_commit`, `backlogit_update_item(commit=)`, CLI `update --commit`) route through `core.AssociateCommit` and write all three representations: frontmatter scalar, `commit_links` row, and JSONL `commit_tracked` event. CLI path stores empty message/author (no flags available — deliberate, see `docs/design-docs/governed-operation-parity.md`). |
 | `dependencies` | Yes | `backlogit_add_dependency`, `backlogit_remove_dependency` | Manages the `item_deps` table and frontmatter `dependencies` field. Each edge is a `DependencyEdge{ID, Type}`. Bare-string entries default to `type: blocks`. See `docs/design-docs/dependency-type-durability.md` for the full YAML shape. |
 | `custom_fields` | No | None (gap) | JSON blob written by internal tools; not directly editable via any MCP tool |
 | `sections` (body sections) | Yes | `backlogit_update_item` or `backlogit_create_item` | `sections` param accepts `{"section_name": "content"}` JSON |

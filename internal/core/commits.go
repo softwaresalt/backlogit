@@ -23,8 +23,90 @@ type CommitLinkInfo struct {
 	Author    string `json:"author"`
 }
 
+// AssociateCommit performs commit association for an artifact through an ordered
+// list of discrete steps so that F5's compensating envelope can wrap each step
+// independently without rewriting this function:
+//
+//  1. Frontmatter scalar update (idempotent, reversible — reloads from markdown,
+//     never the DB fast path; see compound rule 2026-07-28).
+//  2. commit_links upsert (idempotent, reversible via DELETE).
+//  3. JSONL append (append-only, sequenced LAST, explicitly never compensated).
+//
+// The JSONL append is NOT idempotent: events.EventWriter.AppendEvent appends with
+// no dedup key and documents ErrWriteIndeterminate on partial/fsync failure as
+// unsafe to blindly retry. It is sequenced last so no subsequent step requires
+// compensating it. Its Compensate in F5 will be a documented no-op (an audit
+// trail is never rewritten). ErrWriteNotApplied before any bytes are written
+// leaves the call safely retryable. ErrWriteIndeterminate is surfaced as an error
+// without retrying and without compensating the prior two steps, matching F5's
+// existing indeterminate-outcome rule — no new dedup/locking mechanism is
+// introduced here.
+//
+// The ew parameter must not be nil. Callers are responsible for lifecycle
+// management: the MCP server passes its shared s.Events instance so concurrent
+// calls serialize through that writer's mutex; the CLI constructs a
+// per-invocation writer via NewWorkspaceEventWriter, mirroring the established
+// comment/checkpoint disposition plan (see compound rule 2026-07-04). The core
+// function never mints an EventWriter itself.
+//
+// message and author are preserved when provided (MCP track_commit). When not
+// available (CLI fallback), empty strings are stored and documented in the
+// governed-operation parity contract (U6).
+func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter, itemID, sha, message, author string) error {
+	if ew == nil {
+		return fmt.Errorf("associate commit: EventWriter must not be nil")
+	}
+
+	// Step 1: frontmatter scalar update — reloads from markdown via UpdateArtifact
+	// (which delegates to findArtifact, never the DB fast path).
+	if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
+		return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
+	}
+
+	// Step 2: commit_links upsert — idempotent (INSERT OR REPLACE), reversible via DELETE.
+	if _, err := ws.DB.ExecContext(ctx,
+		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
+		itemID, sha, message, author,
+	); err != nil {
+		return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
+	}
+
+	// Step 3: JSONL append — append-only, LAST step, never compensated.
+	// Timestamp is intentionally zero: AppendEvent stamps time.Now() on its own copy
+	// so the JSONL timestamp is authoritative (matching the AppendComment convention).
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	event := events.Event{
+		Actor:     "backlogit",
+		ItemID:    itemID,
+		EventType: "commit_tracked",
+		Delta: map[string]any{
+			"commit_sha": sha,
+			"message":    message,
+			"author":     author,
+		},
+	}
+	if err := ew.AppendEvent(ctx, event); err != nil {
+		// Surface the error without retrying; do not compensate prior steps.
+		// ErrWriteIndeterminate: caller treats as a non-retryable partial write.
+		// ErrWriteNotApplied: caller may safely retry the whole call.
+		return fmt.Errorf("associate commit step 3 (JSONL append): %w", err)
+	}
+	if indexErr := dbpkg.IndexEvent(ctx, ws.DB, logsDir, event); indexErr != nil {
+		// Index failure is non-fatal: the JSONL file is the source of truth and
+		// can be rebuilt on next sync. Log and continue.
+		slog.Warn("associate commit: failed to index commit_tracked event",
+			"item_id", itemID, "sha", sha, "error", indexErr)
+	}
+
+	return nil
+}
+
 // LinkCommit associates a git commit SHA and author with an artifact in the SQLite index
 // and appends a commit_tracked event to the item's JSONL log for rehydration durability.
+//
+// Deprecated: Use AssociateCommit instead. LinkCommit is a best-effort implementation
+// that silently swallows JSONL append failures and does not update the frontmatter scalar.
+// It is retained for backward compatibility but must not be used for new code.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
 	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,

@@ -191,8 +191,11 @@ when complexity is set or cleared.`,
 			if cmd.Flags().Changed("labels") && labels != "" {
 				updates["labels"] = splitCSV(labels)
 			}
+			// --commit: captured separately so core.AssociateCommit handles all three
+			// representations (frontmatter scalar, commit_links, JSONL event).
+			var commitSHA string
 			if cmd.Flags().Changed("commit") {
-				updates["commit"] = commit
+				commitSHA = commit
 			}
 
 			// Parse section updates: name=value pairs.
@@ -205,7 +208,7 @@ when complexity is set or cleared.`,
 				sectionUpdates[name] = value
 			}
 
-			if len(updates) == 0 && len(sectionUpdates) == 0 {
+			if len(updates) == 0 && len(sectionUpdates) == 0 && commitSHA == "" {
 				return fmt.Errorf("no updates specified")
 			}
 
@@ -321,6 +324,16 @@ when complexity is set or cleared.`,
 				return nil
 			}
 
+			// Route commit association through the shared governed-operation core function (F6 U3).
+			// The CLI has no --message or --author flags; empty strings are stored and documented
+			// in docs/design-docs/governed-operation-parity.md.
+			if commitSHA != "" {
+				logsDir := core.WorkspaceLogsRoot(ws.RootPath)
+				ew := core.NewWorkspaceEventWriter(ws, logsDir)
+				if assocErr := core.AssociateCommit(ctx, ws, ew, id, commitSHA, "", ""); assocErr != nil {
+					return fmt.Errorf("associate commit: %w", assocErr)
+				}
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
 			return nil
 		},
