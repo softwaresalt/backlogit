@@ -1,28 +1,15 @@
 package telemetry
 
-import (
-	"os"
-	"path/filepath"
-)
+import "path/filepath"
 
-var workspaceRootCandidates = [...]string{".backlog", ".backlogit"}
-
+// workspaceStorageRoot returns the storage root to use for telemetry paths.
+// It accepts either an already-resolved storage-root directory (whose base
+// matches one of the supported candidate names) or a parent directory and
+// returns the path unchanged in both cases — callers that hold a *core.Workspace
+// should pass ws.StorageRoot directly so that the immutable resolved root is
+// honoured and the closed-set / override / fail-closed contract is preserved.
+// A plain parent-directory path falls through unchanged; callers that cannot
+// yet supply a pre-resolved storage root accept the resulting path as-is.
 func workspaceStorageRoot(workspacePath string) string {
-	cleanPath := filepath.Clean(workspacePath)
-	base := filepath.Base(cleanPath)
-	for _, candidate := range workspaceRootCandidates {
-		if base == candidate {
-			return cleanPath
-		}
-	}
-
-	for _, candidate := range workspaceRootCandidates {
-		storageRoot := filepath.Join(cleanPath, candidate)
-		info, err := os.Stat(filepath.Join(storageRoot, "config.yaml"))
-		if err == nil && !info.IsDir() {
-			return storageRoot
-		}
-	}
-
-	return filepath.Join(cleanPath, workspaceRootCandidates[len(workspaceRootCandidates)-1])
+	return filepath.Clean(workspacePath)
 }

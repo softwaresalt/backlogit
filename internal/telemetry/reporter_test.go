@@ -21,8 +21,7 @@ import (
 // report tests that do not need a full harvest run.
 func writeMinimalTelemetryJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	records := []string{
 		`{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-rpt-1","branch":"main","repository":"backlogit","total_tokens":1500,"prompt_tokens":1000,"completion_tokens":500,"cached_tokens":200,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4":1500},"tool_calls_by_server":{"backlogit":2,"copilot":1},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}`,
 		`{"record_type":"tool_usage","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-rpt-1","server_name":"backlogit","tool_name":"backlogit_get_item","call_count":2,"total_duration_ms":90}`,
@@ -30,7 +29,7 @@ func writeMinimalTelemetryJSONL(t *testing.T, workspacePath string) {
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }
@@ -98,7 +97,7 @@ func TestGenerateReport_SessionFilter_LimitsToSingleSession(t *testing.T) {
 func TestGenerateReport_NoData_ReturnsInformativeMessage(t *testing.T) {
 	ws := t.TempDir()
 	// No telemetry-sessions.jsonl in this workspace.
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	require.NoError(t, os.MkdirAll(ws, 0o755))
 
 	output, err := telemetry.GenerateReport(ws, telemetry.ReportOptions{
 		GroupBy: "session",
@@ -115,8 +114,7 @@ func TestGenerateReport_NoData_ReturnsInformativeMessage(t *testing.T) {
 // distinct dates and branches to validate both grouping modes.
 func writeTrendTelemetryJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	// Two sessions on 2026-04-09, one on 2026-04-10; branches main and feat-x.
 	records := []string{
 		`{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"s1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_per_task":750,"compaction_count":0}`,
@@ -125,7 +123,7 @@ func writeTrendTelemetryJSONL(t *testing.T, workspacePath string) {
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }
@@ -203,7 +201,7 @@ func TestGenerateTrendReport_MarkdownFormat_Valid(t *testing.T) {
 
 func TestGenerateTrendReport_NoData_ReturnsInformativeMessage(t *testing.T) {
 	ws := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".backlogit"), 0o755))
+	require.NoError(t, os.MkdirAll(ws, 0o755))
 
 	output, err := telemetry.GenerateTrendReport(ws, telemetry.TrendOptions{
 		By:     "date",
@@ -236,8 +234,7 @@ func TestGenerateTrendReport_Limit_RestrictsGroups(t *testing.T) {
 // (all zeros), all harvested on 2026-05-08 on branch "main".
 func writeGhostTrendJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	records := []string{
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-active-1","branch":"main","repository":"repo","total_tokens":1000,"model_calls":2,"tool_calls":4,"compaction_count":0}`,
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ghost-active-2","branch":"main","repository":"repo","total_tokens":1000,"model_calls":2,"tool_calls":4,"compaction_count":0}`,
@@ -247,7 +244,7 @@ func writeGhostTrendJSONL(t *testing.T, workspacePath string) {
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }
@@ -428,15 +425,14 @@ func TestGenerateTrendReport_ExistingFields_Unchanged(t *testing.T) {
 // populated so that PrimaryModel resolution can be verified.
 func writeModelAwareJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	records := []string{
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4.6":1500},"compaction_count":0,"model_class":"sonnet"}`,
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ma-sess-2","branch":"main","repository":"repo","total_tokens":400,"model_calls":1,"tool_calls":1,"tokens_by_model":{"gpt-5.4":400},"compaction_count":0,"model_class":"gpt"}`,
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }
@@ -560,8 +556,7 @@ func TestGenerateReport_InvalidGroupBy_ReturnsError(t *testing.T) {
 // classes harvested on the same date to verify trend grouping by class.
 func writeClassTrendJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	records := []string{
 		// Two sonnet sessions
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"ct-1","branch":"main","repository":"repo","total_tokens":1500,"model_calls":2,"tool_calls":3,"tokens_by_model":{"claude-sonnet-4.6":1500},"compaction_count":0,"model_class":"sonnet"}`,
@@ -571,7 +566,7 @@ func writeClassTrendJSONL(t *testing.T, workspacePath string) {
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }
@@ -618,15 +613,14 @@ func TestGenerateTrendReport_ByClass_JSON_AggregatesCorrectly(t *testing.T) {
 func TestGenerateTrendReport_ByClass_FallbackDerivation(t *testing.T) {
 	// Sessions without model_class field should derive it from TokensByModel.
 	ws := t.TempDir()
-	backlogitDir := filepath.Join(ws, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(ws, 0o755))
 	records := []string{
 		// No model_class field — should derive from tokens_by_model
 		`{"record_type":"session_summary","harvested_at":"2026-05-08T00:00:00Z","session_id":"fb-1","branch":"main","repository":"repo","total_tokens":800,"model_calls":1,"tool_calls":2,"tokens_by_model":{"claude-haiku-4.5":800},"compaction_count":0}`,
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(ws, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 

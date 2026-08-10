@@ -28,8 +28,7 @@ func requireShipment040TelemetryHarness(t *testing.T, taskID string) {
 func writeRichTelemetryJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
 
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 
 	records := []string{
 		`{"record_type":"session_summary","harvested_at":"2026-04-09T00:00:00Z","session_id":"sess-rich-1","branch":"main","repository":"backlogit","total_tokens":2200,"prompt_tokens":1400,"completion_tokens":800,"cached_tokens":100,"model_calls":3,"tool_calls":4,"tokens_by_model":{"claude-sonnet-4":2200},"tool_calls_by_server":{"backlogit":3,"copilot":1},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}`,
@@ -39,7 +38,7 @@ func writeRichTelemetryJSONL(t *testing.T, workspacePath string) {
 	}
 
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(strings.Join(records, "\n")+"\n"),
 		0o644,
 	))
@@ -110,7 +109,7 @@ func writeSessionEventsFixture(t *testing.T, copilotPath, sessionID string) {
 func writeCompletedTaskLog(t *testing.T, workspacePath, itemID string) {
 	t.Helper()
 
-	logsDir := filepath.Join(workspacePath, ".backlogit", "logs")
+	logsDir := filepath.Join(workspacePath, "logs")
 	require.NoError(t, os.MkdirAll(logsDir, 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(logsDir, itemID+".jsonl"),
@@ -122,7 +121,7 @@ func writeCompletedTaskLog(t *testing.T, workspacePath, itemID string) {
 func readTelemetryJSONL(t *testing.T, workspacePath string) ([]telemetry.SessionSummaryRecord, []telemetry.ToolUsageRecord) {
 	t.Helper()
 
-	f, err := os.Open(filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl"))
+	f, err := os.Open(filepath.Join(workspacePath, "telemetry-sessions.jsonl"))
 	require.NoError(t, err)
 	defer f.Close()
 
@@ -155,7 +154,7 @@ func readTelemetryJSONL(t *testing.T, workspacePath string) ([]telemetry.Session
 func openTelemetryIndexDB(t *testing.T, workspacePath string) *sql.DB {
 	t.Helper()
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { sqliteDB.Close() })
 	return sqliteDB

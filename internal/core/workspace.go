@@ -73,7 +73,7 @@ func WorkspaceRootCandidates() []string {
 // determined from the filesystem and otherwise falls back to the legacy
 // .backlogit location.
 func WorkspaceStorageRoot(rootPath string) string {
-	if storageRoot, err := resolveStorageRoot(rootPath); err == nil {
+	if storageRoot, err := ResolveStorageRoot(rootPath); err == nil {
 		return storageRoot
 	}
 	return filepath.Join(rootPath, workspaceRootCandidates[len(workspaceRootCandidates)-1])
@@ -96,7 +96,7 @@ func workspaceStorageRoot(ws *Workspace) string {
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
-	backlogitDir, err := resolveStorageRoot(rootPath)
+	backlogitDir, err := ResolveStorageRoot(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -247,14 +247,15 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 }
 
 func resolveWorkspaceRoot(rootPath string) (string, error) {
-	storageRoot, err := resolveStorageRoot(rootPath)
+	storageRoot, err := ResolveStorageRoot(rootPath)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Dir(storageRoot), nil
 }
 
-func resolveStorageRoot(rootPath string) (string, error) {
+// ResolveStorageRoot resolves the configured workspace storage-root directory.
+func ResolveStorageRoot(rootPath string) (string, error) {
 	cleanRoot, err := filepath.Abs(filepath.Clean(rootPath))
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root %s: %w", rootPath, err)
@@ -306,6 +307,10 @@ func resolveStorageRoot(rootPath string) (string, error) {
 	default:
 		return "", &blerrors.AmbiguousWorkspaceRootError{Roots: matchNames}
 	}
+}
+
+func resolveStorageRoot(rootPath string) (string, error) {
+	return ResolveStorageRoot(rootPath)
 }
 
 func resolveDirectStorageRoot(rootPath string) (string, bool, error) {

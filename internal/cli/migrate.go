@@ -52,10 +52,10 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 				switch {
 				case result.AlreadyDone:
 					fmt.Fprintf(cmd.OutOrStdout(), "Workspace directory already uses %s\n", filepath.Base(result.Destination))
-				case result.DryRun:
-					fmt.Fprintf(cmd.OutOrStdout(), "Dry run: workspace directory would move from %s to %s\n", result.Source, result.Destination)
 				case len(result.Files) == 0:
 					fmt.Fprintln(cmd.OutOrStdout(), "No legacy .backlogit workspace directory found")
+				case result.DryRun:
+					fmt.Fprintf(cmd.OutOrStdout(), "Dry run: workspace directory would move from %s to %s\n", result.Source, result.Destination)
 				default:
 					fmt.Fprintf(cmd.OutOrStdout(), "Migrated workspace directory from %s to %s\n", result.Source, result.Destination)
 				}

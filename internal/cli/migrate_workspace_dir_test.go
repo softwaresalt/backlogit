@@ -48,3 +48,17 @@ func TestMigrateCommand_WorkspaceDirMovesLegacyRoot(t *testing.T) {
 	assert.NoDirExists(t, legacyDir)
 	assert.DirExists(t, filepath.Join(root, ".backlog"))
 }
+
+func TestMigrateCommand_WorkspaceDirDryRunWithoutLegacyRootReportsNoSource(t *testing.T) {
+	root := t.TempDir()
+
+	buf := new(bytes.Buffer)
+	cmd := cli.NewRootCommand()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"migrate", "--cwd", root, "--workspace-dir", "--dry-run"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "No legacy .backlogit workspace directory found")
+	assert.NotContains(t, buf.String(), "would move")
+}

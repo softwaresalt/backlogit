@@ -52,8 +52,7 @@ import (
 // Current implementation ranks alphabetically: backlogit (#1), copilot (#2).
 func writeTokenRankingJSONL(t *testing.T, workspacePath string) {
 	t.Helper()
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	records := []string{
 		// Session 1: backlogit dominates call count, copilot is minor.
 		`{"record_type":"session_summary","harvested_at":"2026-04-25T00:00:00Z","session_id":"tok-sess-1","branch":"main","repository":"backlogit","total_tokens":1000,"prompt_tokens":700,"completion_tokens":300,"cached_tokens":0,"model_calls":2,"tool_calls":10,"tokens_by_model":{"claude-sonnet-4":1000},"tool_calls_by_server":{"backlogit":9,"copilot":1},"completed_tasks":[],"tokens_per_task":null,"compaction_count":0}`,
@@ -62,7 +61,7 @@ func writeTokenRankingJSONL(t *testing.T, workspacePath string) {
 	}
 	content := strings.Join(records, "\n") + "\n"
 	require.NoError(t, os.WriteFile(
-		filepath.Join(backlogitDir, "telemetry-sessions.jsonl"),
+		filepath.Join(workspacePath, "telemetry-sessions.jsonl"),
 		[]byte(content), 0o644,
 	))
 }

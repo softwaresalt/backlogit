@@ -50,7 +50,11 @@ func newMemorySaveCmd(cwd *string) *cobra.Command {
 			// Resolve the memories path from the workspace root (not raw --cwd) so a
 			// save invoked from a subdirectory writes to the correct .backlogit,
 			// matching the MCP handleSaveMemory path resolution exactly.
-			memoriesPath := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "memories.json")
+			storageRoot, err := core.ResolveStorageRoot(ws.RootPath)
+			if err != nil {
+				return fmt.Errorf("resolve workspace storage root: %w", err)
+			}
+			memoriesPath := filepath.Join(storageRoot, "memories.json")
 			if err := events.SaveMemory(ctx, memoriesPath, key, summary); err != nil {
 				return fmt.Errorf("save memory: %w", err)
 			}

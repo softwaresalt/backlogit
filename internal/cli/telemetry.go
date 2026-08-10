@@ -97,7 +97,7 @@ reparse all logs from the beginning.`,
 			}
 
 			copilotPath := ws.RootPath + "/.copilot"
-			result, err := telemetry.HarvestTelemetry(ctx, ws.RootPath, copilotPath, ws.DB, opts)
+			result, err := telemetry.HarvestTelemetry(ctx, ws.StorageRoot, copilotPath, ws.DB, opts)
 			if err != nil {
 				return fmt.Errorf("harvest: %w", err)
 			}
@@ -122,7 +122,7 @@ func newTelemetryListCmd(cwd *string) *cobra.Command {
 		Use:   "list",
 		Short: "List harvested session summaries",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
+			out, err := telemetry.GenerateReport(core.WorkspaceStorageRoot(*cwd), telemetry.ReportOptions{
 				GroupBy: "session",
 				Format:  telemetry.FormatTable,
 			})
@@ -141,7 +141,7 @@ func newTelemetryTopCmd(cwd *string) *cobra.Command {
 		Short: "Show top N servers by token usage",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("n")
-			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
+			out, err := telemetry.GenerateReport(core.WorkspaceStorageRoot(*cwd), telemetry.ReportOptions{
 				GroupBy: "server",
 				Format:  telemetry.FormatTable,
 				Limit:   n,
@@ -167,7 +167,7 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 			format, _ := cmd.Flags().GetString("format")
 			limit, _ := cmd.Flags().GetInt("limit")
 
-			out, err := telemetry.GenerateReport(*cwd, telemetry.ReportOptions{
+			out, err := telemetry.GenerateReport(core.WorkspaceStorageRoot(*cwd), telemetry.ReportOptions{
 				SessionID: session,
 				GroupBy:   by,
 				Format:    telemetry.ReportFormat(format),
@@ -208,7 +208,7 @@ Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).`,
 			format, _ := cmd.Flags().GetString("format")
 			limit, _ := cmd.Flags().GetInt("limit")
 
-			out, err := telemetry.GenerateTrendReport(*cwd, telemetry.TrendOptions{
+			out, err := telemetry.GenerateTrendReport(core.WorkspaceStorageRoot(*cwd), telemetry.TrendOptions{
 				By:     by,
 				Format: telemetry.ReportFormat(format),
 				Limit:  limit,

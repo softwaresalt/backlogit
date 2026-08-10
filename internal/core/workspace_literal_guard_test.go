@@ -19,7 +19,7 @@ func TestWorkspaceLiteralGuard_NoHardcodedLegacyStorageRoot(t *testing.T) {
 	fset := token.NewFileSet()
 	var violations []string
 
-	for _, dir := range []string{"core", "cli", "mcp", "config"} {
+	for _, dir := range []string{"core", "cli", "mcp", "config", "telemetry", "db"} {
 		err := filepath.WalkDir(filepath.Join(root, "internal", dir), func(path string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr

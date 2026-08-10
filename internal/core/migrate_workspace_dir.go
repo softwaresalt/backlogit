@@ -107,12 +107,19 @@ func gitMoveWorkspaceDir(rootPath, sourceRel, destRel string) error {
 }
 
 func existingDirectory(path string) (bool, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
+	}
+	reparsePoint, inspectErr := isSymlinkOrReparse(info, path)
+	if inspectErr != nil {
+		return false, fmt.Errorf("inspect directory %s: %w", path, inspectErr)
+	}
+	if reparsePoint {
+		return false, fmt.Errorf("%s is a symlink or reparse point; remove it before migrating", path)
 	}
 	if !info.IsDir() {
 		return false, fmt.Errorf("%s exists but is not a directory", path)

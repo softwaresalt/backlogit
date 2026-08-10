@@ -19,11 +19,10 @@ import (
 func setupTelemetryHarvestWorkspace(t *testing.T) (workspacePath, copilotPath string) {
 	t.Helper()
 	root := t.TempDir()
-	workspacePath = filepath.Join(root, "workspace")
+	workspacePath = filepath.Join(root, "workspace", ".backlogit")
 	copilotPath = filepath.Join(root, ".copilot")
-	backlogitDir := filepath.Join(workspacePath, ".backlogit")
 	logsDir := filepath.Join(copilotPath, "logs")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 	require.NoError(t, os.MkdirAll(logsDir, 0o755))
 	return workspacePath, copilotPath
 }
@@ -42,7 +41,7 @@ func TestHarvestTelemetry_ProducesSessionSummaries(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -52,7 +51,7 @@ func TestHarvestTelemetry_ProducesSessionSummaries(t *testing.T) {
 	assert.Greater(t, result.TotalTokens, 0)
 
 	// telemetry-sessions.jsonl should exist
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspacePath, "telemetry-sessions.jsonl")
 	assert.FileExists(t, jsonlPath)
 }
 
@@ -60,7 +59,7 @@ func TestHarvestTelemetry_ReHarvestIsIdempotent(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -78,7 +77,7 @@ func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -86,7 +85,7 @@ func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read back the JSONL and verify tokens_by_server field is present.
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspacePath, "telemetry-sessions.jsonl")
 	content, err := os.ReadFile(jsonlPath)
 	require.NoError(t, err)
 
@@ -115,9 +114,9 @@ func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
 
 func TestHarvestTelemetry_MissingCopilotDir(t *testing.T) {
 	workspacePath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(workspacePath, ".backlogit"), 0o755))
+	require.NoError(t, os.MkdirAll(workspacePath, 0o755))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
@@ -132,14 +131,14 @@ func TestHarvestTelemetry_WritesModelClassToJSONL(t *testing.T) {
 	workspacePath, copilotPath := setupTelemetryHarvestWorkspace(t)
 	writeSampleProcessLog(t, filepath.Join(copilotPath, "logs"))
 
-	sqliteDB, err := db.Open(filepath.Join(workspacePath, ".backlogit", "index.db"))
+	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
 	defer sqliteDB.Close()
 
 	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
 
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspacePath, "telemetry-sessions.jsonl")
 	content, err := os.ReadFile(jsonlPath)
 	require.NoError(t, err)
 
