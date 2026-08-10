@@ -48,10 +48,10 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 			// instead of physically moving the file. QuarantineCheckpoint
 			// (136-F/U7) performs the actual move when invoked explicitly.
 			summaries = append(summaries, CheckpointSummary{
-				Filename:            filename,
-				ValidationErr:       parseErr.Error(),
-				NeedsQuarantine:     true,
-				RemediationCommand:  fmt.Sprintf("backlogit checkpoint quarantine %s --reason <reason>", filename),
+				Filename:           filename,
+				ValidationErr:      parseErr.Error(),
+				NeedsQuarantine:    true,
+				RemediationCommand: remediationQuarantineCommand(filename),
 			})
 			continue
 		}
@@ -71,7 +71,7 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		if valErr != nil {
 			summary.ValidationErr = valErr.Error()
 			summary.NeedsQuarantine = true
-			summary.RemediationCommand = fmt.Sprintf("backlogit checkpoint quarantine %s --reason <reason>", filename)
+			summary.RemediationCommand = remediationQuarantineCommand(filename)
 		}
 
 		// Apply filters.
@@ -271,6 +271,25 @@ func validateCheckpointFilename(filename string) error {
 	return nil
 }
 
+// remediationQuarantineCommand builds a shell-safe "checkpoint quarantine"
+// remediation command string for filename. Both the filename and the
+// "<reason>" placeholder are single-quoted (with embedded single quotes
+// escaped) so the advertised command is safe to run verbatim in a POSIX
+// shell even if filename contains spaces or shell metacharacters, and so the
+// literal "<reason>" placeholder is never interpreted as input redirection
+// when copy-pasted unmodified.
+func remediationQuarantineCommand(filename string) string {
+	return fmt.Sprintf("backlogit checkpoint quarantine %s --reason %s", shellQuoteSingle(filename), shellQuoteSingle("<reason>"))
+}
+
+// shellQuoteSingle wraps s in single quotes for safe inclusion in a POSIX
+// shell command line, escaping any embedded single quotes using the standard
+// close-quote/escaped-quote/reopen-quote idiom.
+func shellQuoteSingle(s string) string {
+	const escapedQuote = `'\''`
+	return "'" + strings.ReplaceAll(s, "'", escapedQuote) + "'"
+}
+
 // ensurePathContained verifies that resolved path is under the expected dir.
 func ensurePathContained(dir, path string) error {
 	absDir, err := filepath.Abs(dir)
@@ -286,4 +305,6 @@ func ensurePathContained(dir, path string) error {
 	}
 	return nil
 }
+
+
 
