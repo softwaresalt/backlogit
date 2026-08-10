@@ -94,6 +94,16 @@ func TestMigrateWorkspaceDir_RejectsLegacyRootSymlink(t *testing.T) {
 	assert.Contains(t, err.Error(), "symlink or reparse point")
 }
 
+func TestMigrateWorkspaceDir_RejectsNonWorkspaceDirectory(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(source, 0o755))
+	// No config.yaml — not a backlogit workspace
+
+	_, err := MigrateWorkspaceDir(root, MigrateWorkspaceDirOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a valid backlogit workspace")
+}
 func seedLegacyWorkspaceDir(t *testing.T, root string) string {
 	t.Helper()
 

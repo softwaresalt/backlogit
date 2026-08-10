@@ -65,6 +65,17 @@ func MigrateWorkspaceDir(rootPath string, opts MigrateWorkspaceDirOptions) (*Mig
 		return result, nil
 	}
 
+	// Validate the source directory is a recognised backlogit workspace before
+	// listing or moving it. This prevents renaming arbitrary user data that
+	// happens to share the .backlogit directory name.
+	_, validSource, probeErr := probeWorkspaceCandidate(cleanRoot, workspaceRootCandidates[1], nil)
+	if probeErr != nil {
+		return nil, fmt.Errorf("validate source workspace dir: %w", probeErr)
+	}
+	if !validSource {
+		return nil, fmt.Errorf("source directory %s is not a valid backlogit workspace (config.yaml not found or not readable)", source)
+	}
+
 	files, err := listWorkspaceDirFiles(source)
 	if err != nil {
 		return nil, fmt.Errorf("list source files: %w", err)
