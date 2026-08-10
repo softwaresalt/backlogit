@@ -81,13 +81,18 @@ func MutationEnvelope(ctx context.Context, steps []MutationStep) error {
 		}
 
 		// Not indeterminate: compensate applied steps in reverse order.
+		// Detach from the original (possibly canceled) context so a
+		// request cancellation or deadline expiry does not immediately
+		// fail the SQL and artifact rollback calls, converting a
+		// recoverable cancellation into a spurious double-fault.
+		compensateCtx := context.WithoutCancel(ctx)
 		var compensationErr error
 		for j := len(appliedIndexes) - 1; j >= 0; j-- {
 			appliedStep := steps[appliedIndexes[j]]
 			if appliedStep.Compensate == nil {
 				continue
 			}
-			if err := appliedStep.Compensate(ctx); err != nil {
+			if err := appliedStep.Compensate(compensateCtx); err != nil {
 				compensationErr = errors.Join(compensationErr, err)
 			}
 		}
@@ -111,3 +116,4 @@ func MutationEnvelope(ctx context.Context, steps []MutationStep) error {
 
 	return nil
 }
+

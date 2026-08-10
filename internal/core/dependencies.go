@@ -42,13 +42,14 @@ func AddDependency(ctx context.Context, ws *Workspace, itemID, dependsOn, depTyp
 			}
 			// Edge exists with a different type: update frontmatter to match the new type.
 			artifact.Dependencies[i].Type = depType
-			return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, artifact, originalArtifact,
+			return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, dep.Type, artifact, originalArtifact,
 				fmt.Sprintf("persist dep type update %s->%s to frontmatter", itemID, dependsOn))
 		}
 	}
 
 	artifact.Dependencies = append(artifact.Dependencies, models.DependencyEdge{ID: dependsOn, Type: depType})
-	return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, artifact, originalArtifact,
+	// New edge: pass empty oldEdgeType so Compensate deletes on rollback.
+	return addDependencyWithEnvelope(ctx, ws, itemID, dependsOn, depType, "", artifact, originalArtifact,
 		fmt.Sprintf("persist dependency %s->%s to frontmatter", itemID, dependsOn))
 }
 
@@ -58,6 +59,12 @@ func addDependencyWithEnvelope(
 	itemID string,
 	dependsOn string,
 	depType string,
+	// oldEdgeType is the dep_type the edge had before this call. When empty,
+	// the edge did not previously exist and the Compensate deletes it.
+	// When non-empty, the edge existed with a different type and the Compensate
+	// restores the original type via UpsertDependency rather than destroying
+	// the edge entirely.
+	oldEdgeType string,
 	artifact *models.Artifact,
 	originalArtifact *models.Artifact,
 	persistContext string,
@@ -72,6 +79,15 @@ func addDependencyWithEnvelope(
 				return nil
 			},
 			Compensate: func(ctx context.Context) error {
+				if oldEdgeType != "" {
+					// Type-update path: restore the prior type rather than
+					// deleting the edge, which would lose the pre-existing
+					// relationship entirely.
+					if err := db.UpsertDependency(ctx, ws.DB, itemID, dependsOn, oldEdgeType); err != nil {
+						return fmt.Errorf("restore dependency type %s->%s: %w", itemID, dependsOn, err)
+					}
+					return nil
+				}
 				if err := db.DeleteDependency(ctx, ws.DB, itemID, dependsOn); err != nil {
 					return fmt.Errorf("remove dependency %s->%s from cache: %w", itemID, dependsOn, err)
 				}
@@ -239,3 +255,4 @@ func lookupDependencyType(ctx context.Context, ws *Workspace, itemID, dependsOn 
 	}
 	return "", false, nil
 }
+

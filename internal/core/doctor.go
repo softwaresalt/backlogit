@@ -93,6 +93,15 @@ const (
 	// a matching commit_tracked event in the authoritative JSONL log.
 	FindingPartialCommitAssociation DoctorFindingType = "partial_commit_association"
 
+	// FindingInconsistentShipmentMembership indicates the items list in a
+	// shipment's frontmatter does not match the items list stored in the SQLite
+	// index fast-path (custom_fields.items). A mismatch in either direction
+	// suggests a partial AddItemToShipment write where the frontmatter write
+	// succeeded (possibly indeterminate) but the SQLite index was not yet
+	// refreshed, or a concurrent out-of-band edit to one representation.
+	// Advisory; never blocking.
+	FindingInconsistentShipmentMembership DoctorFindingType = "inconsistent_shipment_membership"
+
 	// FindingInconsistentDependencyEdge indicates frontmatter dependency edges and
 	// cached item_deps edges disagree for the same artifact.
 	FindingInconsistentDependencyEdge DoctorFindingType = "inconsistent_dependency_edge"
@@ -537,6 +546,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			return nil, fmt.Errorf("doctor: detect inconsistent dependency edges: %w", depErr)
 		}
 		report.Findings = append(report.Findings, dependencyFindings...)
+
+		shipmentFindings, shipmentErr := detectInconsistentShipmentMembership(ctx, ws, idToFiles, ids)
+		if shipmentErr != nil {
+			return nil, fmt.Errorf("doctor: detect inconsistent shipment membership: %w", shipmentErr)
+		}
+		report.Findings = append(report.Findings, shipmentFindings...)
 	}
 
 	return report, nil
@@ -646,6 +661,87 @@ func hasCommitTrackedEvent(itemEvents []events.Event, commitSHA string) bool {
 		}
 	}
 	return false
+}
+
+// detectInconsistentShipmentMembership compares the items list in each
+// shipment's frontmatter against the items list stored in the SQLite index
+// (custom_fields.items). A mismatch in either direction indicates a potential
+// partial AddItemToShipment write or an out-of-band edit to one representation.
+// This check covers both mismatch directions: frontmatter-only items (the
+// frontmatter write succeeded but the index is stale or the JSONL event was
+// lost) and index-only items (the index was somehow updated without a
+// corresponding frontmatter write, which should not occur in normal operation).
+// Advisory only — findings never change the doctor exit code.
+func detectInconsistentShipmentMembership(
+	ctx context.Context,
+	ws *Workspace,
+	idToFiles map[string][]string,
+	ids []string,
+) ([]DoctorFinding, error) {
+	findings := make([]DoctorFinding, 0)
+	for _, id := range ids {
+		paths := idToFiles[id]
+		if len(paths) == 0 {
+			continue
+		}
+		artifact, _, err := parseFile(paths[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse artifact %s: %w", id, err)
+		}
+		if artifact.ArtifactType != "shipment" {
+			continue
+		}
+
+		// Load the items list from the SQLite index custom_fields column.
+		dbArtifact, dbErr := bldb.GetItem(ctx, ws.DB, id)
+		if dbErr != nil {
+			// Item may not be indexed yet; skip silently.
+			continue
+		}
+
+		frontmatterItems := NormalizeShipmentItems(artifact)
+		dbItems := NormalizeShipmentItems(dbArtifact)
+
+		frontmatterSet := make(map[string]struct{}, len(frontmatterItems))
+		for _, item := range frontmatterItems {
+			frontmatterSet[item] = struct{}{}
+		}
+		dbSet := make(map[string]struct{}, len(dbItems))
+		for _, item := range dbItems {
+			dbSet[item] = struct{}{}
+		}
+
+		var frontmatterOnly, dbOnly []string
+		for item := range frontmatterSet {
+			if _, ok := dbSet[item]; !ok {
+				frontmatterOnly = append(frontmatterOnly, item)
+			}
+		}
+		for item := range dbSet {
+			if _, ok := frontmatterSet[item]; !ok {
+				dbOnly = append(dbOnly, item)
+			}
+		}
+		if len(frontmatterOnly) == 0 && len(dbOnly) == 0 {
+			continue
+		}
+
+		description := fmt.Sprintf("shipment membership mismatch for %q", id)
+		if len(frontmatterOnly) > 0 {
+			sort.Strings(frontmatterOnly)
+			description += fmt.Sprintf("; frontmatter-only items: %v", frontmatterOnly)
+		}
+		if len(dbOnly) > 0 {
+			sort.Strings(dbOnly)
+			description += fmt.Sprintf("; index-only items: %v", dbOnly)
+		}
+		findings = append(findings, DoctorFinding{
+			Type:        FindingInconsistentShipmentMembership,
+			ArtifactID:  id,
+			Description: description,
+		})
+	}
+	return findings, nil
 }
 
 func dependencyKey(depID, depType string) string {
@@ -1087,3 +1183,4 @@ func levelFromID(id string) int {
 	}
 	return strings.Count(id[:dash], ".") + 1
 }
+

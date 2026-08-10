@@ -306,11 +306,24 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 			},
 		},
 		{
+			// Append the audit event using a direct EventWriter so JSONL
+			// failures propagate to the envelope instead of being swallowed
+			// by the fire-and-forget appendItemEvent wrapper.
+			// Compensate is a documented no-op: audit trails are never
+			// rewritten.
 			Name: "jsonl-append",
-			Apply: func(context.Context) error {
-				appendItemEvent(ctx, ws, shipmentID, "shipment_item_added", map[string]any{
-					"item_id": itemID,
-				})
+			Apply: func(ctx context.Context) error {
+				logsDir := WorkspaceLogsRoot(ws.RootPath)
+				ew := NewWorkspaceEventWriter(ws, logsDir)
+				ev := events.Event{
+					Actor:     "backlogit",
+					ItemID:    shipmentID,
+					EventType: "shipment_item_added",
+					Delta:     map[string]any{"item_id": itemID},
+				}
+				if appendErr := ew.AppendEvent(ctx, ev); appendErr != nil {
+					return fmt.Errorf("shipment item added JSONL append: %w", appendErr)
+				}
 				return nil
 			},
 			Compensate: func(context.Context) error {
@@ -890,3 +903,4 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, journalPath
 	removeReturnBlockedJournal(ctx, ws.RootPath, journal.Shipment.ID, journal.Item.ID)
 	return nil
 }
+

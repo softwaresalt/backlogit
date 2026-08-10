@@ -762,7 +762,7 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 	}
 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
 	if err != nil {
-		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
+		return domainError("create artifact", err), nil
 	}
 
 	// Write section content when sections are provided; independent of template service.
@@ -887,7 +887,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	// message and author are unavailable in update_item; empty strings documented in governed-operation-parity.md.
 	if commitSHA != "" {
 		if assocErr := core.AssociateCommit(ctx, s.Workspace, s.Events, id, commitSHA, "", ""); assocErr != nil {
-			return InternalError(fmt.Sprintf("associate commit: %v", assocErr)), nil
+			return domainError("associate commit", assocErr), nil
 		}
 		// Reload the artifact from the DB so the response reflects the committed SHA.
 		// AssociateCommit calls UpdateArtifact which upserts the DB; GetItem returns the fresh state.
@@ -1376,7 +1376,7 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 	}
 
 	if err := core.AddDependency(ctx, s.Workspace, itemID, dependsOn, depType); err != nil {
-		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
+		return domainError("add dependency", err), nil
 	}
 	return toolResultJSON(map[string]string{
 		"item_id":    itemID,
@@ -1504,6 +1504,13 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 	message, _ := request.Params.Arguments["message"].(string)
 	author, _ := request.Params.Arguments["author"].(string)
 	if err := core.AssociateCommit(ctx, s.Workspace, s.Events, itemID, sha, message, author); err != nil {
+		// Check for structured partial mutation result first (F5 envelope) so
+		// the completed/failed/compensation payload is not discarded by the
+		// durability sentinel unwrap in durabilityOutcomeResult below.
+		var partialErr *backlogiterrors.MutationPartialError
+		if errors.As(err, &partialErr) {
+			return mutationPartialError("track commit", partialErr), nil
+		}
 		if result := durabilityOutcomeResult("track commit", err); result != nil {
 			return result, nil
 		}
@@ -2027,3 +2034,4 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	return toolResultJSON(report)
 }
+
