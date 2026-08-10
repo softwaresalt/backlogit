@@ -12,7 +12,7 @@ session: ship-121-s-135-f
 
 - PR #345 merged at 99e8ecc8 (merge commit)
 - All scope items archived: 135-F, 135.001-T..135.009-T, 121-S
-- All 11 Copilot review threads addressed and resolved
+- All 12 Copilot review threads (including 1 pre-existing resolved thread on cli/migrate.go) addressed and resolved
 - CI passed on all 5 push cycles
 
 ## Files Modified (beyond feature implementation)
@@ -47,7 +47,7 @@ session: ship-121-s-135-f
 
 ## Open Follow-ups
 
-- Full fallback fix: change WorkspaceStorageRoot to default to .backlog for
+- [planned] Full fallback fix: change WorkspaceStorageRoot to default to .backlog for
   fresh repos, requiring updating all WorkspaceStorageRoot(ws.RootPath) call sites.
-- workspace_dualroot_test.go parallel env var pollution: remove t.Parallel()
+- [planned] workspace_dualroot_test.go parallel env var pollution: remove t.Parallel()
   from tests that mutate BACKLOGIT_WORKSPACE_DIR.

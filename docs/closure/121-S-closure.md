@@ -18,7 +18,7 @@ merge_commit: 99e8ecc8
 - **PR**: [#345](https://github.com/softwaresalt/backlogit/pull/345)
 - **Merge commit**: 99e8ecc8 (merge commit, P-009 compliant)
 - **Merged**: 2026-08-10
-- **Branch**: eat/135-f-workspace-default-dir-rename
+- **Branch**: feat/135-f-workspace-default-dir-rename
 
 ## Scope Delivered
 
@@ -72,6 +72,7 @@ Final gate: review at bcedc93e = HEAD, 0 unresolved Copilot threads, no pending 
 | PRRT_kwDORzozKM6YBUHO | internal/cli/root.go | a03b09f4 |
 | PRRT_kwDORzozKM6YCObM | internal/core/archive.go | ce51ea26 |
 | PRRT_kwDORzozKM6YCsDf | internal/mcp/server.go | 04bf082c |
+| PRRT_kwDORzozKM6X_g8u | internal/cli/migrate.go | d9cd012e (pre-existing resolved) |
 | PRRT_kwDORzozKM6YC3uj | internal/core/migrate_workspace_dir.go | bcedc93e |
 
 ## Rollback Trigger
