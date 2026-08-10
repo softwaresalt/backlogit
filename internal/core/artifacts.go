@@ -641,7 +641,7 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 // When ws.Config is nil (e.g., in bare test workspaces), it falls back to all non-hidden
 // top-level directories under .backlogit.
 func artifactSearchDirs(ws *Workspace) ([]string, error) {
-	backlogitDir := WorkspaceStorageRoot(ws.RootPath)
+	backlogitDir := workspaceStorageRoot(ws)
 
 	if ws.Config == nil {
 		// No config loaded: scan all non-hidden dirs under .backlogit.

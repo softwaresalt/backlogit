@@ -56,13 +56,21 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 			}
 		}
 		if !archivePresent {
+			// Guard against path traversal: skip candidate dirs that are
+			// symlinks or reparse points before adding their archive subdir.
+			candidateDir := filepath.Join(ws.RootPath, candidate)
+			if info, statErr := os.Lstat(candidateDir); statErr == nil {
+				if isReparse, _ := isSymlinkOrReparse(info, candidateDir); isReparse {
+					continue
+				}
+			}
 			dirs = append(dirs, archiveDir)
 		}
 	}
 
 	refs := make(map[string][]artifactRef)
 	for _, dirPath := range dirs {
-		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+		if _, statErr := os.Lstat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
 		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {

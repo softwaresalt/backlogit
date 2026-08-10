@@ -103,6 +103,14 @@ func appendMissingCandidateQueueDirs(searchDirs []string, ws *Workspace) []strin
 	}
 
 	for _, candidate := range WorkspaceRootCandidates() {
+		// Guard against path traversal: skip candidate dirs that are
+		// symlinks or reparse points to prevent WalkDir escaping the workspace.
+		candidateDir := filepath.Join(ws.RootPath, candidate)
+		if info, statErr := os.Lstat(candidateDir); statErr == nil {
+			if isReparse, _ := isSymlinkOrReparse(info, candidateDir); isReparse {
+				continue
+			}
+		}
 		queueDir := filepath.Join(ws.RootPath, candidate, queueRootDir(ws))
 		cleaned := filepath.Clean(queueDir)
 		if _, ok := seen[cleaned]; ok {
