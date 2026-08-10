@@ -463,6 +463,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
+			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),
 			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
 			mcplib.WithString("target", mcplib.Description("Validate a single artifact file (path relative to the workspace, confined to the storage root) and return a versioned DoctorTargetResult instead of a full workspace scan")),
 		),
@@ -761,7 +762,7 @@ func (s *Server) handleCreateItem(ctx context.Context, request mcplib.CallToolRe
 	}
 	artifact, err := core.CreateArtifact(ctx, s.Workspace, title, artifactType, opts...)
 	if err != nil {
-		return InternalError(fmt.Sprintf("create artifact: %v", err)), nil
+		return domainError("create artifact", err), nil
 	}
 
 	// Write section content when sections are provided; independent of template service.
@@ -886,7 +887,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 	// message and author are unavailable in update_item; empty strings documented in governed-operation-parity.md.
 	if commitSHA != "" {
 		if assocErr := core.AssociateCommit(ctx, s.Workspace, s.Events, id, commitSHA, "", ""); assocErr != nil {
-			return InternalError(fmt.Sprintf("associate commit: %v", assocErr)), nil
+			return domainError("associate commit", assocErr), nil
 		}
 		// Reload the artifact from the DB so the response reflects the committed SHA.
 		// AssociateCommit calls UpdateArtifact which upserts the DB; GetItem returns the fresh state.
@@ -1375,7 +1376,7 @@ func (s *Server) handleAddDependency(ctx context.Context, request mcplib.CallToo
 	}
 
 	if err := core.AddDependency(ctx, s.Workspace, itemID, dependsOn, depType); err != nil {
-		return InternalError(fmt.Sprintf("add dependency: %v", err)), nil
+		return domainError("add dependency", err), nil
 	}
 	return toolResultJSON(map[string]string{
 		"item_id":    itemID,
@@ -1503,6 +1504,13 @@ func (s *Server) handleTrackCommit(ctx context.Context, request mcplib.CallToolR
 	message, _ := request.Params.Arguments["message"].(string)
 	author, _ := request.Params.Arguments["author"].(string)
 	if err := core.AssociateCommit(ctx, s.Workspace, s.Events, itemID, sha, message, author); err != nil {
+		// Check for structured partial mutation result first (F5 envelope) so
+		// the completed/failed/compensation payload is not discarded by the
+		// durability sentinel unwrap in durabilityOutcomeResult below.
+		var partialErr *backlogiterrors.MutationPartialError
+		if errors.As(err, &partialErr) {
+			return mutationPartialError("track commit", partialErr), nil
+		}
 		if result := durabilityOutcomeResult("track commit", err); result != nil {
 			return result, nil
 		}
@@ -1999,6 +2007,7 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 
 	checkOrphans := true
 	checkDuplicates := true
+	checkPartialMutations := false
 	fixOrphans := false
 	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
 		checkOrphans = v
@@ -2006,14 +2015,18 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	if v, ok := request.Params.Arguments["check_duplicates"].(bool); ok {
 		checkDuplicates = v
 	}
+	if v, ok := request.Params.Arguments["check_partial_mutations"].(bool); ok {
+		checkPartialMutations = v
+	}
 	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
 		fixOrphans = v
 	}
 
 	opts := &core.DoctorOptions{
-		CheckOrphans:    checkOrphans,
-		CheckDuplicates: checkDuplicates,
-		FixOrphans:      fixOrphans,
+		CheckOrphans:          checkOrphans,
+		CheckDuplicates:       checkDuplicates,
+		CheckPartialMutations: checkPartialMutations,
+		FixOrphans:            fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)
 	if err != nil {
@@ -2021,3 +2034,4 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	return toolResultJSON(report)
 }
+

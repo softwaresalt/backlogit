@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -325,12 +326,67 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 
 	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
-		return nil, fmt.Errorf("write artifact file: %w", err)
+	steps := []MutationStep{
+		{
+			Name: "file-write",
+			Apply: func(context.Context) error {
+				if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
+					return fmt.Errorf("write artifact file: %w", err)
+				}
+				if err := os.Rename(tmpPath, filePath); err != nil {
+					_ = os.Remove(tmpPath)
+					return fmt.Errorf("rename artifact file: %w", err)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("remove artifact file %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+		},
 	}
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath)
-		return nil, fmt.Errorf("rename artifact file: %w", err)
+	if ws.DB != nil {
+		steps = append(steps, MutationStep{
+			Name: "db-upsert",
+			Apply: func(ctx context.Context) error {
+				if err := db.UpsertItem(ctx, ws.DB, artifact); err != nil {
+					return fmt.Errorf("index artifact %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if err := db.DeleteItemCascade(ctx, ws.DB, artifact.ID); err != nil && !errors.Is(err, blerrors.ErrNotFound) {
+					return fmt.Errorf("remove indexed artifact %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+		})
+		for _, dep := range artifact.Dependencies {
+			dependency := dep
+			if dependency.Type == "" {
+				dependency.Type = "blocks"
+			}
+			steps = append(steps, MutationStep{
+				Name: "dependency-edge:" + dependency.ID,
+				Apply: func(ctx context.Context) error {
+					if err := db.UpsertDependency(ctx, ws.DB, artifact.ID, dependency.ID, dependency.Type); err != nil {
+						return fmt.Errorf("index dependency edge %s->%s: %w", artifact.ID, dependency.ID, err)
+					}
+					return nil
+				},
+				Compensate: func(ctx context.Context) error {
+					if err := db.DeleteDependency(ctx, ws.DB, artifact.ID, dependency.ID); err != nil {
+						return fmt.Errorf("remove dependency edge %s->%s: %w", artifact.ID, dependency.ID, err)
+					}
+					return nil
+				},
+			})
+		}
+	}
+	if err := MutationEnvelope(ctx, steps); err != nil {
+		return nil, fmt.Errorf("create artifact %s: %w", artifact.ID, err)
 	}
 
 	// 070.001-T: when this create is part of a batch, register the freshly
@@ -338,17 +394,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	// a collision against it without re-scanning the filesystem.
 	if o.canonicalCache != nil {
 		o.canonicalCache.record(artifactID, filePath)
-	}
-
-	// Upsert to the SQLite index so that NextID and query-based callers see
-	// the new artifact immediately without requiring an explicit rehydration.
-	if ws.DB != nil {
-		if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
-			// Remove the file we just wrote so we don't leave an orphaned artifact
-			// on disk that cannot be found via the DB index.
-			os.Remove(filePath)
-			return nil, fmt.Errorf("index artifact %s: %w", artifact.ID, upsertErr)
-		}
 	}
 	// Fire post-create hooks.
 	if ws.HookRunner != nil {

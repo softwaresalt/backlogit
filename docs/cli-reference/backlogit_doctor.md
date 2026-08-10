@@ -65,6 +65,7 @@ backlogit doctor [flags]
       --check-gate-evidence            advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)
       --check-orphans                  check for orphaned child artifacts (default true)
       --check-over-archived-features   check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)
+      --check-partial-mutations        advisory: detect residual partial commit-association and dependency-linking state (exit code unaffected)
       --fix-archived-from              repair legacy self-referential archived_from records (destructive, CLI-only)
       --fix-malformed                  clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)
       --fix-orphans                    archive orphaned artifacts instead of just reporting them

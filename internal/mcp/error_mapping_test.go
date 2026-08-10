@@ -143,3 +143,63 @@ func TestDomainError_MessageContainsOpOnInternal(t *testing.T) {
 	assert.Contains(t, msg, "archive item",
 		"internal error message must contain the op prefix")
 }
+
+func TestDomainError_MutationPartial_MapsStructuredPayload(t *testing.T) {
+	tests := []struct {
+		name         string
+		class        string
+		retryable    bool
+		recoveryHint string
+	}{
+		{
+			name:         "not applied",
+			class:        "not-applied",
+			retryable:    true,
+			recoveryHint: "safe to retry",
+		},
+		{
+			name:         "indeterminate",
+			class:        "indeterminate",
+			retryable:    false,
+			recoveryHint: "do not blindly retry",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := domainError("track commit", fmt.Errorf("wrap: %w", &corerrors.MutationPartialError{
+				Completed:         []string{"frontmatter-scalar"},
+				FailedStep:        "jsonl-append",
+				CompensationState: "compensated",
+				Class:             tt.class,
+				Cause:             corerrors.ErrWriteNotApplied,
+			}))
+
+			require.True(t, result.IsError)
+			require.NotEmpty(t, result.Content)
+			text, ok := result.Content[0].(mcplib.TextContent)
+			require.True(t, ok)
+
+			var resp struct {
+				Error             string   `json:"error"`
+				Message           string   `json:"message"`
+				Classification    string   `json:"classification"`
+				CompletedSteps    []string `json:"completed_steps"`
+				FailedStep        string   `json:"failed_step"`
+				CompensationState string   `json:"compensation_state"`
+				Retryable         bool     `json:"retryable"`
+				Recovery          string   `json:"recovery"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(text.Text), &resp))
+			assert.Equal(t, "mutation_partial", resp.Error)
+			assert.Equal(t, tt.class, resp.Classification)
+			assert.Equal(t, []string{"frontmatter-scalar"}, resp.CompletedSteps)
+			assert.Equal(t, "jsonl-append", resp.FailedStep)
+			assert.Equal(t, "compensated", resp.CompensationState)
+			assert.Equal(t, tt.retryable, resp.Retryable)
+			assert.Contains(t, resp.Recovery, "check_partial_mutations")
+			assert.Contains(t, resp.Recovery, tt.recoveryHint)
+			assert.Contains(t, resp.Message, "track commit")
+		})
+	}
+}

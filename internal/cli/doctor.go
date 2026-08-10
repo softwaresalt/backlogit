@@ -32,6 +32,7 @@ func newDoctorCommand(cwd *string) *cobra.Command {
 		checkArchivedFrom         bool
 		checkGateEvidence         bool
 		checkOverArchivedFeatures bool
+		checkPartialMutations     bool
 		fixOrphans                bool
 		fixArchivedFrom           bool
 		fixMalformed              bool
@@ -115,6 +116,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 				CheckArchivedFrom:         checkArchivedFrom,
 				CheckGateEvidence:         checkGateEvidence,
 				CheckOverArchivedFeatures: checkOverArchivedFeatures,
+				CheckPartialMutations:     checkPartialMutations,
 				FixOrphans:                fixOrphans,
 				FixArchivedFrom:           fixArchivedFrom,
 				FixMalformed:              fixMalformed,
@@ -151,6 +153,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 	cmd.Flags().BoolVar(&checkArchivedFrom, "check-archived-from", true, "check archive records for self-referential/malformed archived_from fields")
 	cmd.Flags().BoolVar(&checkGateEvidence, "check-gate-evidence", false, "advisory: warn when a terminal task/subtask lacks pre-task-completion gate evidence (exit code unaffected)")
 	cmd.Flags().BoolVar(&checkOverArchivedFeatures, "check-over-archived-features", false, "check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)")
+	cmd.Flags().BoolVar(&checkPartialMutations, "check-partial-mutations", false, "advisory: detect residual partial commit-association and dependency-linking state (exit code unaffected)")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
 	cmd.Flags().BoolVar(&fixMalformed, "fix-malformed", false, "clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)")

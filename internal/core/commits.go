@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -56,34 +57,47 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if ew == nil {
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
+	artifact, err := findArtifact(ctx, ws, itemID)
+	if err != nil {
+		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
+	}
+	// Snapshot the full pre-mutation artifact so the compensating write uses
+	// persistArtifact (no hooks) rather than UpdateArtifact (fires hooks).
+	// Using UpdateArtifact inside the envelope would leave spurious hook-queue
+	// entries on every compensated write, even after a clean rollback.
+	priorArtifact := cloneArtifact(artifact)
+	// Set the commit field on the working copy so the Apply step can call
+	// persistArtifact directly, bypassing the hook machinery.
+	artifact.Commit = sha
+	artifact.UpdatedAt = time.Now().UTC()
 
-	// Step 1: frontmatter scalar update — reloads from markdown via UpdateArtifact
-	// (which delegates to findArtifact, never the DB fast path). Sequenced first so
-	// an unknown or unwritable itemID fails fast before any DB mutation, preventing
-	// orphan commit_links rows (commit_links has no FK constraint).
-	if _, err := UpdateArtifact(ctx, ws, itemID, map[string]any{"commit": sha}); err != nil {
-		return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
+	// Snapshot the pre-existing commit_links row (if any) before the envelope
+	// runs. On Compensate, if the row pre-existed we restore the original
+	// values rather than deleting it, so a retry or concurrent AutoLinkCommits
+	// write is never destroyed by a compensation that runs after a JSONL failure.
+	type priorLink struct {
+		message string
+		author  string
+	}
+	var preExistingLink *priorLink
+	{
+		var msg, auth string
+		scanErr := ws.DB.QueryRowContext(ctx,
+			`SELECT message, author FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
+			itemID, sha,
+		).Scan(&msg, &auth)
+		if scanErr == nil {
+			preExistingLink = &priorLink{message: msg, author: auth}
+		}
+		// sql.ErrNoRows is the expected case (row did not pre-exist); any
+		// other error is a transient DB issue that should not block the
+		// mutation — log and proceed without a snapshot.
+		if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+			slog.Warn("associate commit: pre-snapshot query failed; compensate will delete on failure",
+				"item_id", itemID, "sha", sha, "error", scanErr)
+		}
 	}
 
-	// Step 2: commit_links upsert — idempotent, reversible via DELETE.
-	// Uses a conditional upsert to preserve non-empty message/author metadata already
-	// recorded by track_commit when a later CLI/update_item call supplies empty strings.
-	// Partial state (frontmatter updated, commit_links absent) is theoretically possible
-	// if this upsert fails; retry with the same SHA is safe (both steps are idempotent).
-	if _, err := ws.DB.ExecContext(ctx,
-		`INSERT INTO commit_links (item_id, commit_sha, message, author)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(item_id, commit_sha) DO UPDATE SET
-		  message = CASE WHEN excluded.message != '' THEN excluded.message ELSE commit_links.message END,
-		  author  = CASE WHEN excluded.author  != '' THEN excluded.author  ELSE commit_links.author  END`,
-		itemID, sha, message, author,
-	); err != nil {
-		return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
-	}
-
-	// Step 3: JSONL append — append-only, LAST step, never compensated.
-	// Timestamp is intentionally zero: AppendEvent stamps time.Now() on its own copy
-	// so the JSONL timestamp is authoritative (matching the AppendComment convention).
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	event := events.Event{
 		Actor:     "backlogit",
@@ -95,12 +109,88 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 			"author":     author,
 		},
 	}
-	if err := ew.AppendEvent(ctx, event); err != nil {
-		// Surface the error without retrying; do not compensate prior steps.
-		// ErrWriteIndeterminate: caller treats as a non-retryable partial write.
-		// ErrWriteNotApplied: caller may safely retry the whole call.
-		return fmt.Errorf("associate commit step 3 (JSONL append): %w", err)
+
+	err = MutationEnvelope(ctx, []MutationStep{
+		{
+			Name: "frontmatter-scalar",
+			Apply: func(ctx context.Context) error {
+				// Use persistArtifact (not UpdateArtifact) to write the
+				// frontmatter without firing pre/post hooks. Hook emission
+				// is intentionally deferred until the entire envelope
+				// succeeds so compensated writes leave no spurious hook-queue
+				// entries. The SQLite fast-path (items.commit column) is
+				// intentionally not updated here; commit_links is the
+				// authoritative per-SHA representation.
+				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+					return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				// Restore the original frontmatter using the pre-snapshotted
+				// artifact so no hook events are emitted for the rollback.
+				if err := persistArtifact(ctx, ws, cloneArtifact(priorArtifact), false); err != nil {
+					return fmt.Errorf("compensate associate commit frontmatter %s: %w", itemID, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "commit-links-upsert",
+			Apply: func(ctx context.Context) error {
+				if _, err := ws.DB.ExecContext(ctx,
+					`INSERT INTO commit_links (item_id, commit_sha, message, author)
+					VALUES (?, ?, ?, ?)
+					ON CONFLICT(item_id, commit_sha) DO UPDATE SET
+					  message = CASE WHEN excluded.message != '' THEN excluded.message ELSE commit_links.message END,
+					  author  = CASE WHEN excluded.author  != '' THEN excluded.author  ELSE commit_links.author  END`,
+					itemID, sha, message, author,
+				); err != nil {
+					return fmt.Errorf("associate commit step 2 (commit_links upsert): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				// Restore the pre-existing row if one was present before
+				// this call; delete only when the row is new. This prevents
+				// a JSONL failure from destroying a commit association that
+				// was written by a prior AutoLinkCommits or LinkCommit call.
+				if preExistingLink != nil {
+					if _, restoreErr := ws.DB.ExecContext(ctx,
+						`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author)
+						VALUES (?, ?, ?, ?)`,
+						itemID, sha, preExistingLink.message, preExistingLink.author,
+					); restoreErr != nil {
+						return fmt.Errorf("compensate associate commit link (restore) %s/%s: %w", itemID, sha, restoreErr)
+					}
+					return nil
+				}
+				if _, err := ws.DB.ExecContext(ctx,
+					`DELETE FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
+					itemID, sha,
+				); err != nil {
+					return fmt.Errorf("compensate associate commit link (delete) %s/%s: %w", itemID, sha, err)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "jsonl-append",
+			Apply: func(ctx context.Context) error {
+				if err := ew.AppendEvent(ctx, event); err != nil {
+					return fmt.Errorf("associate commit step 3 (JSONL append): %w", err)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("associate commit: %w", err)
 	}
+
 	if indexErr := dbpkg.IndexEvent(ctx, ws.DB, logsDir, event); indexErr != nil {
 		// Index failure is non-fatal: the JSONL file is the source of truth and
 		// can be rebuilt on next sync. Log and continue.
@@ -254,3 +344,8 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 	}
 	return linked, nil
 }
+
+
+
+
+

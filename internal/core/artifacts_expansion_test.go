@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -62,12 +64,14 @@ func TestCreateArtifact_WithNewOptions(t *testing.T) {
 	// Act
 	feat, err := core.CreateArtifact(ctx, ws, "Test feature", "feature")
 	require.NoError(t, err)
+	target, err := core.CreateArtifact(ctx, ws, "Dependency target", "task", core.WithParent(feat.ID))
+	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Test task", "task",
 		core.WithParent(feat.ID),
 		core.WithAssignedTo("alice"),
 		core.WithOwner("bob"),
 		core.WithLabels([]string{"backend", "urgent"}),
-		core.WithDependencies([]string{"T002"}),
+		core.WithDependencies([]string{target.ID}),
 		core.WithReferences([]string{"docs/spec.md"}),
 		core.WithCommit("abc123"),
 	)
@@ -77,7 +81,7 @@ func TestCreateArtifact_WithNewOptions(t *testing.T) {
 	assert.Equal(t, "alice", artifact.AssignedTo)
 	assert.Equal(t, "bob", artifact.Owner)
 	assert.Equal(t, []string{"backend", "urgent"}, artifact.Labels)
-	assert.Equal(t, []models.DependencyEdge{{ID: "T002", Type: "blocks"}}, artifact.Dependencies)
+	assert.Equal(t, []models.DependencyEdge{{ID: target.ID, Type: "blocks"}}, artifact.Dependencies)
 	assert.Equal(t, []string{"docs/spec.md"}, artifact.References)
 	assert.Equal(t, "abc123", artifact.Commit)
 }
@@ -126,6 +130,84 @@ func TestUpdateArtifact_IDImmutability(t *testing.T) {
 	// Assert — should be rejected with descriptive error
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "immutable")
+}
+
+func TestCreateArtifact_WithDependencies_IndexesEdgesImmediately(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Dependency feature", "feature")
+	require.NoError(t, err)
+	target, err := core.CreateArtifact(ctx, ws, "Dependency target", "task", core.WithParent(feature.ID))
+	require.NoError(t, err)
+	source, err := core.CreateArtifact(ctx, ws, "Dependency source", "task",
+		core.WithParent(feature.ID),
+		core.WithDependencies([]string{target.ID}),
+	)
+	require.NoError(t, err)
+
+	edges, err := db.GetDependencies(ctx, ws.DB, source.ID)
+	require.NoError(t, err)
+	require.Len(t, edges, 1)
+	assert.Equal(t, source.ID, edges[0].ItemID)
+	assert.Equal(t, target.ID, edges[0].DependsOn)
+	assert.Equal(t, "blocks", edges[0].DepType)
+}
+
+func TestCreateArtifact_WithDependencies_FailingEdgeWriteCompensatesItem(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := core.CreateArtifact(ctx, ws, "Dependency feature", "feature")
+	require.NoError(t, err)
+
+	_, err = core.CreateArtifact(ctx, ws, "Broken dependency source", "task",
+		core.WithParent(feature.ID),
+		core.WithDependencies([]string{"missing-dependency"}),
+	)
+	require.Error(t, err)
+
+	var partialErr *blerrors.MutationPartialError
+	require.True(t, errors.As(err, &partialErr))
+	assert.Equal(t, []string{"file-write", "db-upsert"}, partialErr.Completed)
+	assert.Equal(t, "dependency-edge:missing-dependency", partialErr.FailedStep)
+	assert.Equal(t, "compensated", partialErr.CompensationState)
+	assert.Equal(t, "not-applied", partialErr.Class)
+
+	var count int
+	row := ws.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE title = ?`, "Broken dependency source")
+	require.NoError(t, row.Scan(&count))
+	assert.Zero(t, count, "failed dependency linking must not leave an indexed item behind")
+	assert.False(t, artifactTitleExistsOnDisk(t, ws, "Broken dependency source"),
+		"failed dependency linking must not leave a markdown artifact behind")
+}
+
+func artifactTitleExistsOnDisk(t *testing.T, ws *core.Workspace, title string) bool {
+	t.Helper()
+
+	found := false
+	err := filepath.WalkDir(core.WorkspaceStorageRoot(ws.RootPath), func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		fm, _, parseErr := models.ParseFrontmatter(string(data))
+		if parseErr != nil {
+			return parseErr
+		}
+		if gotTitle, _ := fm["title"].(string); gotTitle == title {
+			found = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return found
 }
 
 func TestCreateArtifact_WithoutNewOptions(t *testing.T) {

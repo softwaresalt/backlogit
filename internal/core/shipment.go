@@ -283,19 +283,58 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 	}
 
 	items = append(items, itemID)
+	originalShipment := cloneArtifact(shipment)
 	if shipment.CustomFields == nil {
 		shipment.CustomFields = map[string]any{}
 	}
 	shipment.CustomFields["items"] = items
 	shipment.UpdatedAt = models.NowUTC()
-	if err := persistArtifact(ctx, ws, shipment, false); err != nil {
+	if err := MutationEnvelope(ctx, []MutationStep{
+		{
+			Name: "frontmatter-update",
+			Apply: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, shipment, false); err != nil {
+					return fmt.Errorf("persist shipment membership %s->%s: %w", shipmentID, itemID, err)
+				}
+				return nil
+			},
+			Compensate: func(ctx context.Context) error {
+				if err := persistArtifact(ctx, ws, cloneArtifact(originalShipment), false); err != nil {
+					return fmt.Errorf("restore shipment membership %s->%s: %w", shipmentID, itemID, err)
+				}
+				return nil
+			},
+		},
+		{
+			// Append the audit event using a direct EventWriter so JSONL
+			// failures propagate to the envelope instead of being swallowed
+			// by the fire-and-forget appendItemEvent wrapper.
+			// Compensate is a documented no-op: audit trails are never
+			// rewritten.
+			Name: "jsonl-append",
+			Apply: func(ctx context.Context) error {
+				logsDir := WorkspaceLogsRoot(ws.RootPath)
+				ew := NewWorkspaceEventWriter(ws, logsDir)
+				ev := events.Event{
+					Actor:     "backlogit",
+					ItemID:    shipmentID,
+					EventType: "shipment_item_added",
+					Delta:     map[string]any{"item_id": itemID},
+				}
+				if appendErr := ew.AppendEvent(ctx, ev); appendErr != nil {
+					return fmt.Errorf("shipment item added JSONL append: %w", appendErr)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				return nil
+			},
+		},
+	}); err != nil {
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, err)
 	}
 
 	slog.DebugContext(ctx, "shipment item added", "shipment_id", shipmentID, "item_id", itemID)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_item_added", map[string]any{
-		"item_id": itemID,
-	})
 
 	return nil
 }
@@ -864,3 +903,4 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, journalPath
 	removeReturnBlockedJournal(ctx, ws.RootPath, journal.Shipment.ID, journal.Item.ID)
 	return nil
 }
+

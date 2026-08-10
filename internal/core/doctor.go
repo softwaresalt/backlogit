@@ -88,6 +88,23 @@ const (
 	// Operators must verify a reported feature's actual archival history
 	// before treating this finding as confirmed corruption.
 	FindingOverArchivedCoveringFeature DoctorFindingType = "over_archived_covering_feature"
+
+	// FindingPartialCommitAssociation indicates a commit_links row exists without
+	// a matching commit_tracked event in the authoritative JSONL log.
+	FindingPartialCommitAssociation DoctorFindingType = "partial_commit_association"
+
+	// FindingInconsistentShipmentMembership indicates the items list in a
+	// shipment's frontmatter does not match the items list stored in the SQLite
+	// index fast-path (custom_fields.items). A mismatch in either direction
+	// suggests a partial AddItemToShipment write where the frontmatter write
+	// succeeded (possibly indeterminate) but the SQLite index was not yet
+	// refreshed, or a concurrent out-of-band edit to one representation.
+	// Advisory; never blocking.
+	FindingInconsistentShipmentMembership DoctorFindingType = "inconsistent_shipment_membership"
+
+	// FindingInconsistentDependencyEdge indicates frontmatter dependency edges and
+	// cached item_deps edges disagree for the same artifact.
+	FindingInconsistentDependencyEdge DoctorFindingType = "inconsistent_dependency_edge"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -163,6 +180,10 @@ type DoctorOptions struct {
 	// only; no mutation. CLI-only, matching CheckArchivedFrom/CheckGateEvidence
 	// (not wired to the backlogit_doctor MCP tool).
 	CheckOverArchivedFeatures bool
+	// CheckPartialMutations enables detection of residual partial-mutation state
+	// for governed commit association and dependency-linking paths. Advisory only:
+	// findings never change the doctor exit code.
+	CheckPartialMutations bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -513,7 +534,237 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		}
 	}
 
+	if opts.CheckPartialMutations && ws.DB != nil {
+		commitFindings, commitErr := detectPartialCommitAssociations(ctx, ws, logsDir)
+		if commitErr != nil {
+			return nil, fmt.Errorf("doctor: detect partial commit associations: %w", commitErr)
+		}
+		report.Findings = append(report.Findings, commitFindings...)
+
+		dependencyFindings, depErr := detectInconsistentDependencyEdges(ctx, ws, idToFiles, ids)
+		if depErr != nil {
+			return nil, fmt.Errorf("doctor: detect inconsistent dependency edges: %w", depErr)
+		}
+		report.Findings = append(report.Findings, dependencyFindings...)
+
+		shipmentFindings, shipmentErr := detectInconsistentShipmentMembership(ctx, ws, idToFiles, ids)
+		if shipmentErr != nil {
+			return nil, fmt.Errorf("doctor: detect inconsistent shipment membership: %w", shipmentErr)
+		}
+		report.Findings = append(report.Findings, shipmentFindings...)
+	}
+
 	return report, nil
+}
+
+func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) ([]DoctorFinding, error) {
+	rows, err := ws.DB.QueryContext(ctx, `SELECT item_id, commit_sha FROM commit_links ORDER BY item_id, commit_sha`)
+	if err != nil {
+		return nil, fmt.Errorf("query commit links: %w", err)
+	}
+	defer rows.Close()
+
+	eventCache := make(map[string][]events.Event)
+	findings := make([]DoctorFinding, 0)
+	for rows.Next() {
+		var itemID string
+		var commitSHA string
+		if err := rows.Scan(&itemID, &commitSHA); err != nil {
+			return nil, fmt.Errorf("scan commit link: %w", err)
+		}
+		itemEvents, ok := eventCache[itemID]
+		if !ok {
+			loadedEvents, err := events.ReadAllEvents(ctx, logsDir, itemID)
+			if err != nil {
+				return nil, fmt.Errorf("read events for %s: %w", itemID, err)
+			}
+			itemEvents = loadedEvents
+			eventCache[itemID] = itemEvents
+		}
+		if hasCommitTrackedEvent(itemEvents, commitSHA) {
+			continue
+		}
+		findings = append(findings, DoctorFinding{
+			Type:       FindingPartialCommitAssociation,
+			ArtifactID: itemID,
+			Description: fmt.Sprintf(
+				"commit_links contains %q for %q, but the item JSONL log has no matching commit_tracked event",
+				commitSHA, itemID,
+			),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate commit links: %w", err)
+	}
+	return findings, nil
+}
+
+func detectInconsistentDependencyEdges(
+	ctx context.Context,
+	ws *Workspace,
+	idToFiles map[string][]string,
+	ids []string,
+) ([]DoctorFinding, error) {
+	findings := make([]DoctorFinding, 0)
+	for _, id := range ids {
+		paths := idToFiles[id]
+		if len(paths) == 0 {
+			continue
+		}
+		artifact, _, err := parseFile(paths[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse artifact %s: %w", id, err)
+		}
+		dbEdges, err := bldb.GetDependencies(ctx, ws.DB, id)
+		if err != nil {
+			return nil, fmt.Errorf("load cached dependencies for %s: %w", id, err)
+		}
+
+		frontmatterSet := make(map[string]struct{}, len(artifact.Dependencies))
+		for _, dep := range artifact.Dependencies {
+			frontmatterSet[dependencyKey(dep.ID, dep.Type)] = struct{}{}
+		}
+		cacheSet := make(map[string]struct{}, len(dbEdges))
+		for _, dep := range dbEdges {
+			cacheSet[dependencyKey(dep.DependsOn, dep.DepType)] = struct{}{}
+		}
+
+		missingInCache := dependencyDiff(frontmatterSet, cacheSet)
+		missingInFrontmatter := dependencyDiff(cacheSet, frontmatterSet)
+		if len(missingInCache) == 0 && len(missingInFrontmatter) == 0 {
+			continue
+		}
+
+		description := fmt.Sprintf("dependency edge mismatch for %q", id)
+		if len(missingInCache) > 0 {
+			description += fmt.Sprintf("; frontmatter-only edges: %v", missingInCache)
+		}
+		if len(missingInFrontmatter) > 0 {
+			description += fmt.Sprintf("; cache-only edges: %v", missingInFrontmatter)
+		}
+		findings = append(findings, DoctorFinding{
+			Type:        FindingInconsistentDependencyEdge,
+			ArtifactID:  id,
+			Description: description,
+		})
+	}
+	return findings, nil
+}
+
+func hasCommitTrackedEvent(itemEvents []events.Event, commitSHA string) bool {
+	for _, event := range itemEvents {
+		if event.EventType != "commit_tracked" {
+			continue
+		}
+		if loggedSHA, _ := event.Delta["commit_sha"].(string); loggedSHA == commitSHA {
+			return true
+		}
+	}
+	return false
+}
+
+// detectInconsistentShipmentMembership compares the items list in each
+// shipment's frontmatter against the items list stored in the SQLite index
+// (custom_fields.items). A mismatch in either direction indicates a potential
+// partial AddItemToShipment write or an out-of-band edit to one representation.
+// This check covers both mismatch directions: frontmatter-only items (the
+// frontmatter write succeeded but the index is stale or the JSONL event was
+// lost) and index-only items (the index was somehow updated without a
+// corresponding frontmatter write, which should not occur in normal operation).
+// Advisory only — findings never change the doctor exit code.
+func detectInconsistentShipmentMembership(
+	ctx context.Context,
+	ws *Workspace,
+	idToFiles map[string][]string,
+	ids []string,
+) ([]DoctorFinding, error) {
+	findings := make([]DoctorFinding, 0)
+	for _, id := range ids {
+		paths := idToFiles[id]
+		if len(paths) == 0 {
+			continue
+		}
+		artifact, _, err := parseFile(paths[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse artifact %s: %w", id, err)
+		}
+		if artifact.ArtifactType != "shipment" {
+			continue
+		}
+
+		// Load the items list from the SQLite index custom_fields column.
+		dbArtifact, dbErr := bldb.GetItem(ctx, ws.DB, id)
+		if dbErr != nil {
+			// Item may not be indexed yet; skip silently.
+			continue
+		}
+
+		frontmatterItems := NormalizeShipmentItems(artifact)
+		dbItems := NormalizeShipmentItems(dbArtifact)
+
+		frontmatterSet := make(map[string]struct{}, len(frontmatterItems))
+		for _, item := range frontmatterItems {
+			frontmatterSet[item] = struct{}{}
+		}
+		dbSet := make(map[string]struct{}, len(dbItems))
+		for _, item := range dbItems {
+			dbSet[item] = struct{}{}
+		}
+
+		var frontmatterOnly, dbOnly []string
+		for item := range frontmatterSet {
+			if _, ok := dbSet[item]; !ok {
+				frontmatterOnly = append(frontmatterOnly, item)
+			}
+		}
+		for item := range dbSet {
+			if _, ok := frontmatterSet[item]; !ok {
+				dbOnly = append(dbOnly, item)
+			}
+		}
+		if len(frontmatterOnly) == 0 && len(dbOnly) == 0 {
+			continue
+		}
+
+		description := fmt.Sprintf("shipment membership mismatch for %q", id)
+		if len(frontmatterOnly) > 0 {
+			sort.Strings(frontmatterOnly)
+			description += fmt.Sprintf("; frontmatter-only items: %v", frontmatterOnly)
+		}
+		if len(dbOnly) > 0 {
+			sort.Strings(dbOnly)
+			description += fmt.Sprintf("; index-only items: %v", dbOnly)
+		}
+		findings = append(findings, DoctorFinding{
+			Type:        FindingInconsistentShipmentMembership,
+			ArtifactID:  id,
+			Description: description,
+		})
+	}
+	return findings, nil
+}
+
+func dependencyKey(depID, depType string) string {
+	return depID + "|" + normalizedDependencyType(depType)
+}
+
+func normalizedDependencyType(depType string) string {
+	if depType == "" {
+		return "blocks"
+	}
+	return depType
+}
+
+func dependencyDiff(left, right map[string]struct{}) []string {
+	diff := make([]string, 0)
+	for key := range left {
+		if _, ok := right[key]; ok {
+			continue
+		}
+		diff = append(diff, key)
+	}
+	sort.Strings(diff)
+	return diff
 }
 
 // gateEvidenceMissing reports whether a terminal gated member lacks valid gate
@@ -932,3 +1183,4 @@ func levelFromID(id string) int {
 	}
 	return strings.Count(id[:dash], ".") + 1
 }
+
