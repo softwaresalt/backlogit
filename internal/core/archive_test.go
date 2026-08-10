@@ -556,3 +556,54 @@ func readStashJSONL(path string) ([]map[string]any, error) {
 	}
 	return entries, nil
 }
+
+// TestUnarchiveItem_LegacyArchivedFromAfterMigration verifies that UnarchiveItem
+// can restore items archived before a workspace directory migration
+// (.backlogit -> .backlog). After migration the archived_from field still
+// references the legacy root (.backlogit/queue/<id>.md), but the workspace
+// storage root is now .backlog. The restore must succeed rather than rejecting
+// the path as escaping the storage root.
+func TestUnarchiveItem_LegacyArchivedFromAfterMigration(t *testing.T) {
+	// Arrange: archive an item under .backlogit
+	ws := setupArchiveWorkspace(t)
+	ctx := context.Background()
+
+	_, err := core.ArchiveItem(ctx, ws.DB, ws, "001-T")
+	require.NoError(t, err)
+
+	// Verify the archived_from value still references .backlogit
+	archivePath := filepath.Join(ws.RootPath, ".backlogit", "archive", "001-T.md")
+	raw, readErr := os.ReadFile(archivePath)
+	require.NoError(t, readErr)
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	archivedFrom, _ := fm["archived_from"].(string)
+	require.Contains(t, archivedFrom, ".backlogit/queue/")
+
+	// Simulate migration: rename .backlogit to .backlog.
+	// Close the DB first to avoid Windows file lock on the sqlite file.
+	require.NoError(t, ws.DB.Close())
+	oldDir := filepath.Join(ws.RootPath, ".backlogit")
+	newDir := filepath.Join(ws.RootPath, ".backlog")
+	require.NoError(t, os.Rename(oldDir, newDir))
+
+	// Close old DB and reopen from the migrated location
+	ws.DB.Close()
+	newDBPath := filepath.Join(newDir, "backlogit.db")
+	newDB, dbErr := db.Open(newDBPath)
+	require.NoError(t, dbErr)
+	t.Cleanup(func() { newDB.Close() })
+
+	// Update workspace to use the new storage root
+	ws.StorageRoot = newDir
+	ws.DB = newDB
+
+	// Act: unarchive under the migrated root
+	err = core.UnarchiveItem(ctx, ws.DB, ws, "001-T")
+
+	// Assert: item should be restored to the queue under .backlog
+	require.NoError(t, err)
+	restoredPath := filepath.Join(newDir, "queue", "001-T.md")
+	assert.FileExists(t, restoredPath)
+	assert.NoFileExists(t, filepath.Join(newDir, "archive", "001-T.md"))
+}

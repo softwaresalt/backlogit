@@ -717,6 +717,23 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 		originalPath = resolveWorkspacePath(ws.RootPath, canonicalRestorePath(ws, filepath.Base(archivePath)))
 	}
 
+	// Remap a supported prior-root prefix to the resolved storage root.
+	// After workspace directory migration (.backlogit -> .backlog), archived_from
+	// paths may still reference the legacy root candidate. Replace the legacy
+	// prefix transparently so migrated items can be unarchived without requiring
+	// doctor --fix-archived-from to have run first.
+	storageRootBase := filepath.Base(backlogDir)
+	for _, candidate := range WorkspaceRootCandidates() {
+		if candidate == storageRootBase {
+			continue
+		}
+		legacyPrefix := filepath.Join(ws.RootPath, candidate)
+		if strings.HasPrefix(originalPath, legacyPrefix+string(filepath.Separator)) {
+			originalPath = filepath.Join(backlogDir, originalPath[len(legacyPrefix)+1:])
+			break
+		}
+	}
+
 	// F-006: Validate the restore path is contained within .backlogit to prevent
 	// path traversal when restoring artifacts from archive.
 	rel, relErr := filepath.Rel(backlogDir, originalPath)
