@@ -215,6 +215,10 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 		resp.Code = "checkpoint_use_abandon"
 		resp.Retryable = false
 		resp.Remediation = "this target is valid; call backlogit_abandon_checkpoint instead of backlogit_quarantine_checkpoint"
+	case errors.Is(err, corerrors.ErrCheckpointNotActive):
+		resp.Code = "checkpoint_not_active"
+		resp.Retryable = false
+		resp.Remediation = "abandon requires an active checkpoint; this checkpoint has a different status (e.g. resolved) and is not eligible"
 	case errors.Is(err, corerrors.ErrCheckpointTargetUnsafe):
 		resp.Code = "checkpoint_target_unsafe"
 		resp.Retryable = false
@@ -251,4 +255,5 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 	}
 	return mcplib.NewToolResultError(string(data))
 }
+
 

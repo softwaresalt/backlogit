@@ -397,3 +397,30 @@ func TestResolveDispositionTarget_RejectsSymlinkedStorageRoot(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
+
+
+// TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus is a U6-contract
+// regression: abandon requires an active checkpoint (the already-abandoned
+// case is the sole idempotent exception). A "resolved" checkpoint must be
+// refused with ErrCheckpointNotActive rather than silently rewritten to
+// "abandoned".
+func TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	resolvedCP := validDispositionTestCheckpoint()
+	resolvedCP.Status = "resolved"
+	writeDispositionCheckpoint(t, dir, "checkpoint-resolved.json", resolvedCP)
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-resolved.json", "reason", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointNotActive)
+
+	data, readErr := os.ReadFile(filepath.Join(dir, "checkpoint-resolved.json"))
+	require.NoError(t, readErr)
+	cp, parseErr := events.ParseCheckpoint(data)
+	require.NoError(t, parseErr)
+	assert.Equal(t, "resolved", cp.Status, "status must remain unchanged when abandon is refused")
+	assert.Empty(t, cp.Disposition, "disposition must not be set when abandon is refused")
+}

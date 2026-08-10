@@ -59,5 +59,14 @@ var (
 	// must not silently transition an abandoned checkpoint back to
 	// "resolved" and erase that terminal state.
 	ErrCheckpointCannotResolveAbandoned = errors.New("backlogit: checkpoint has been administratively abandoned; resolve is refused")
+
+	// ErrCheckpointNotActive indicates AbandonCheckpoint was called on a
+	// parseable, schema-valid checkpoint whose Status is neither "active" nor
+	// already "abandoned" (the sole idempotent exception). Per the U6
+	// contract, abandon requires an active checkpoint; any other non-active,
+	// non-abandoned status (e.g. "resolved") is a state conflict, not a
+	// silent transition to "abandoned".
+	ErrCheckpointNotActive = errors.New("backlogit: checkpoint is not active; abandon requires an active checkpoint")
 )
+
 

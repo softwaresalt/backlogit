@@ -78,6 +78,15 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		return nil
 	}
 
+	// The U6 contract requires an active checkpoint (the already-abandoned
+	// case above is the sole idempotent exception). Any other status (e.g.
+	// "resolved") is a state conflict, not a silent transition to
+	// "abandoned" — refuse rather than rewrite a checkpoint that was never
+	// active in the first place.
+	if cp.Status != "active" {
+		return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
+	}
+
 	// Audit append happens BEFORE any rewrite of the checkpoint file. A failed
 	// audit append (either failure class) leaves the target file untouched.
 	if auditErr := appendCheckpointDispositionAudit(ctx, ew, baseName, dispositionVerbAbandon, reason, operator); auditErr != nil {
@@ -251,4 +260,5 @@ func moveNoReplace(src, dst string) error {
 	}
 	return nil
 }
+
 
