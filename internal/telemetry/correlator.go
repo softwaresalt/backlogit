@@ -172,7 +172,7 @@ type rawEventRecord struct {
 // Events are stored per-item in .backlogit/logs/<item_id>.jsonl with the
 // structure: {"event_type":"status_changed","delta":{"to":"done",...},...}
 func loadCompletedTasks(workspacePath string) ([]string, error) {
-	logsDir := filepath.Join(workspacePath, ".backlogit", "logs")
+	logsDir := filepath.Join(workspaceStorageRoot(workspacePath), "logs")
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
 		if os.IsNotExist(err) {

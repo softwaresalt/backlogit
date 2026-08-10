@@ -27,7 +27,7 @@ func (s *Server) handleConfigResource(ctx context.Context, req mcplib.ReadResour
 	ws, err := s.ensureWorkspace(ctx)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("workspace not initialized: no .backlogit directory found. Run backlogit init first: %w", err)
+			return nil, fmt.Errorf("workspace not initialized: no supported workspace directory found. Run backlogit init first: %w", err)
 		}
 		return nil, fmt.Errorf("open workspace: %w", err)
 	}

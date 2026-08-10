@@ -34,7 +34,7 @@ func VerifyPostShipConsistency(_ context.Context, ws *Workspace, archivedIDs []s
 		return nil
 	}
 
-	backlogDir := WorkspaceStorageRoot(ws.RootPath)
+	backlogDir := workspaceStorageRoot(ws)
 
 	// Derive archive directories from registry status conditions so that a
 	// customised registry.yaml (non-default archive path) is respected. Fall
@@ -62,6 +62,7 @@ func VerifyPostShipConsistency(_ context.Context, ws *Workspace, archivedIDs []s
 	if err != nil {
 		return fmt.Errorf("verify post-ship consistency: enumerate dirs: %w", err)
 	}
+	searchDirs = appendMissingCandidateQueueDirs(searchDirs, ws)
 
 	var staleIDs []string
 	for _, dir := range searchDirs {
@@ -93,4 +94,23 @@ func VerifyPostShipConsistency(_ context.Context, ws *Workspace, archivedIDs []s
 		return fmt.Errorf("post-ship consistency: stale queue files found for archived items: %v", staleIDs)
 	}
 	return nil
+}
+
+func appendMissingCandidateQueueDirs(searchDirs []string, ws *Workspace) []string {
+	seen := make(map[string]struct{}, len(searchDirs))
+	for _, dir := range searchDirs {
+		seen[filepath.Clean(dir)] = struct{}{}
+	}
+
+	for _, candidate := range WorkspaceRootCandidates() {
+		queueDir := filepath.Join(ws.RootPath, candidate, queueRootDir(ws))
+		cleaned := filepath.Clean(queueDir)
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		searchDirs = append(searchDirs, queueDir)
+		seen[cleaned] = struct{}{}
+	}
+
+	return searchDirs
 }

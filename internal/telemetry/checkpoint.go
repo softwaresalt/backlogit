@@ -45,7 +45,7 @@ type HarvestCheckpoint struct {
 const checkpointFilename = ".telemetry-checkpoint.json"
 
 func checkpointPath(workspacePath string) string {
-	return filepath.Join(workspacePath, ".backlogit", checkpointFilename)
+	return filepath.Join(workspaceStorageRoot(workspacePath), checkpointFilename)
 }
 
 // LoadCheckpoint reads the harvest checkpoint from

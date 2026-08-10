@@ -60,7 +60,7 @@ backlogit stores features, tasks, and subtasks as individual Markdown files with
 
 Alongside the Markdown files, backlogit maintains an ephemeral SQLite cache called `backlogit.db`. This cache is gitignored and fully disposable. When agents need to find work, they execute targeted SQL queries against the index rather than scanning hundreds of Markdown files. A query like `SELECT id, title FROM items WHERE artifact_type='task' AND status='active'` costs roughly 20 tokens; reading the equivalent files would cost tens of thousands. Because the cache is disposable, you rebuild it from the Markdown source with `backlogit sync` whenever it is missing or out of date.
 
-A JSONL event model records state transitions, comments, and telemetry. Work-item history is appended per item to `.backlogit/logs/{item-id}.jsonl`, and agent-operation telemetry is appended to `.backlogit/telemetry.jsonl`. Harvested Copilot CLI session summaries are materialized to `.backlogit/telemetry-sessions.jsonl`, which backlogit rewrites atomically on each harvest. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
+A JSONL event model records state transitions, comments, and telemetry. New workspaces store work-item history at `.backlog/logs/{item-id}.jsonl`, agent-operation telemetry at `.backlog/telemetry.jsonl`, and harvested Copilot CLI session summaries at `.backlog/telemetry-sessions.jsonl`. Existing `.backlogit/` workspaces remain supported. This separation keeps the Markdown artifacts concise, the cache disposable, and the history durable. The architecture follows Command Query Responsibility Segregation: writes go to Markdown files, reads go to SQLite, and history flows into JSONL.
 
 ## Plugin Installation
 
@@ -195,6 +195,11 @@ installs the bundled plugin from the `.github/plugin/plugin.json` manifest.
 cd your-project
 backlogit init
 ```
+
+[!NOTE]
+New workspaces use `.backlog/` by default. Existing `.backlogit/`
+workspaces continue to work. If both directories exist, set
+`BACKLOGIT_WORKSPACE_DIR` to `.backlog` or `.backlogit` exactly.
 
 **Create a feature and task:**
 

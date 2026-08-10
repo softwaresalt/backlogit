@@ -155,7 +155,7 @@ func HarvestTelemetry(ctx context.Context, workspacePath, copilotPath string, sq
 	}
 
 	// Read prior JSONL for incremental merge, excluding sessions we just re-processed.
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry-sessions.jsonl")
 	var priorSessions []SessionSummaryRecord
 	var priorTools []ToolUsageRecord
 	if !opts.Force {

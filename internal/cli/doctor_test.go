@@ -252,3 +252,29 @@ func TestDoctorCommand_CheckOverArchivedFeaturesFlag(t *testing.T) {
 	assert.Contains(t, bufFlag.String(), "over_archived_covering_feature", "finding type must be reported")
 	assert.Contains(t, bufFlag.String(), "001-F", "over-archived covering feature must be identified via the CLI flag")
 }
+
+func TestDoctorCommand_CheckWorkspaceRootConflictFlag(t *testing.T) {
+	tmp := t.TempDir()
+	for _, candidate := range []string{".backlog", ".backlogit"} {
+		dir := filepath.Join(tmp, candidate)
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, config.WriteDefaults(dir))
+	}
+
+	buf := new(bytes.Buffer)
+	cmd := cli.NewRootCommand()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"doctor",
+		"--cwd", tmp,
+		"--check-workspace-root-conflict",
+		"--check-orphans=false",
+		"--check-duplicates=false",
+	})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "workspace_root_conflict")
+	assert.Contains(t, buf.String(), ".backlog")
+	assert.Contains(t, buf.String(), ".backlogit")
+}

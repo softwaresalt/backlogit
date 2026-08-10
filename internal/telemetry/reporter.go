@@ -59,7 +59,7 @@ func GenerateReport(workspacePath string, opts ReportOptions) (string, error) {
 		return GenerateFactsReport(workspacePath, opts.GroupBy, format, opts.Limit)
 	}
 
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry-sessions.jsonl")
 	sessions, tools, err := readSessionJSONL(jsonlPath, nil)
 	if err != nil {
 		return "", fmt.Errorf("read telemetry data: %w", err)
@@ -390,7 +390,7 @@ type TrendGroup struct {
 // report grouped by date or branch. Returns an informative message when no
 // harvested data exists.
 func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error) {
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry-sessions.jsonl")
 	sessions, _, err := readSessionJSONL(jsonlPath, nil)
 	if err != nil {
 		return "", fmt.Errorf("read telemetry data: %w", err)
@@ -702,7 +702,7 @@ type toolCallAggregate struct {
 // GenerateFactsReport reads fact JSONL files from .backlogit/telemetry/ and
 // produces a formatted report. Supported groupBy values: "tool", "context".
 func GenerateFactsReport(workspacePath, groupBy string, format ReportFormat, limit int) (string, error) {
-	telDir := filepath.Join(workspacePath, ".backlogit", "telemetry")
+	telDir := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry")
 
 	switch groupBy {
 	case "tool":

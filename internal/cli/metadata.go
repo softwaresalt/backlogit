@@ -129,7 +129,7 @@ func newMetadataTemplatesCommand(cwd *string) *cobra.Command {
 // metadata functions require, mirroring the MCP handlers' inputs including the
 // queue-layout nil fallback used by the MCP queueLayout() helper.
 func loadWITInputs(ws *core.Workspace) (*config.HeaderDefConfig, []*config.TemplateConfig, *config.QueueLayoutConfig, error) {
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 	headerDef, err := config.LoadHeaderDef(backlogitDir)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load header-def: %w", err)
@@ -221,7 +221,7 @@ func loadMetadataCatalog(ctx context.Context, cwd string) (*core.MetadataCatalog
 	}
 	defer ws.Close()
 
-	backlogitDir := filepath.Join(ws.RootPath, ".backlogit")
+	backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 	registry, err := config.LoadRegistry(backlogitDir)
 	if err != nil {
 		return nil, fmt.Errorf("load registry: %w", err)

@@ -16,6 +16,15 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
+type workspaceRootAmbiguousResponse struct {
+	Error                string   `json:"error"`
+	Message              string   `json:"message"`
+	Roots                []string `json:"roots"`
+	SupportedResolutions []string `json:"supported_resolutions"`
+	Override             string   `json:"override"`
+	Retryable            bool     `json:"retryable"`
+}
+
 type mutationPartialResponse struct {
 	Error             string   `json:"error"`
 	Message           string   `json:"message"`
@@ -39,7 +48,24 @@ func makeErrorResult(errType, message string) *mcplib.CallToolResult {
 
 // WorkspaceNotInitialized returns an MCP error for missing workspace.
 func WorkspaceNotInitialized() *mcplib.CallToolResult {
-	return makeErrorResult("workspace_not_initialized", "No .backlogit directory found. Run backlogit init first.")
+	return makeErrorResult("workspace_not_initialized", "No supported workspace directory found. Run backlogit init first.")
+}
+
+// WorkspaceRootAmbiguous returns an MCP error when both workspace roots exist.
+func WorkspaceRootAmbiguous(roots []string) *mcplib.CallToolResult {
+	resp := workspaceRootAmbiguousResponse{
+		Error:                "workspace_root_ambiguous",
+		Message:              "Both supported workspace directories exist. Set BACKLOGIT_WORKSPACE_DIR to one supported name or remove one directory.",
+		Roots:                append([]string(nil), roots...),
+		SupportedResolutions: core.WorkspaceRootCandidates(),
+		Override:             "BACKLOGIT_WORKSPACE_DIR",
+		Retryable:            false,
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return InternalError(fmt.Sprintf("marshal workspace root ambiguous response: %v", err))
+	}
+	return mcplib.NewToolResultError(string(data))
 }
 
 // ValidationFailed returns an MCP error for parameter validation failures.
@@ -101,6 +127,12 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		errors.Is(err, core.ErrTaskBusy),
 		errors.Is(err, corerrors.ErrChildrenNotTerminal):
 		return Conflict(err.Error())
+	case errors.Is(err, corerrors.ErrAmbiguousWorkspaceRoot):
+		var ambiguous *corerrors.AmbiguousWorkspaceRootError
+		if errors.As(err, &ambiguous) {
+			return WorkspaceRootAmbiguous(ambiguous.Roots)
+		}
+		return WorkspaceRootAmbiguous(core.WorkspaceRootCandidates())
 	case errors.Is(err, corerrors.ErrValidation),
 		errors.Is(err, corerrors.ErrInvalidLinkType),
 		errors.Is(err, corerrors.ErrTelemetrySourceMissing),
@@ -170,7 +202,6 @@ func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult 
 	}
 	return mcplib.NewToolResultError(string(data))
 }
-
 
 // checkpointDispositionErrorResponse is the structured MCP error shape for
 // checkpoint disposition (abandon/quarantine) failures. It carries a stable
@@ -255,5 +286,3 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 	}
 	return mcplib.NewToolResultError(string(data))
 }
-
-

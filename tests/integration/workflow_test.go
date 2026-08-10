@@ -50,10 +50,10 @@ func TestWorkflow_InitCreatesWorkspace(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Contains(t, output, "Initialized")
-	assert.DirExists(t, filepath.Join(root, ".backlogit"))
-	assert.FileExists(t, filepath.Join(root, ".backlogit", "config.yaml"))
-	assert.FileExists(t, filepath.Join(root, ".backlogit", "header-def.yaml"))
-	assert.DirExists(t, filepath.Join(root, ".backlogit", "templates"))
+	assert.DirExists(t, filepath.Join(root, ".backlog"))
+	assert.FileExists(t, filepath.Join(root, ".backlog", "config.yaml"))
+	assert.FileExists(t, filepath.Join(root, ".backlog", "header-def.yaml"))
+	assert.DirExists(t, filepath.Join(root, ".backlog", "templates"))
 }
 
 func TestWorkflow_AddThenList(t *testing.T) {

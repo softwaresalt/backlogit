@@ -120,12 +120,12 @@ func TestResolveDispositionTarget_WorksWithRelativeWorkspaceRoot(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origWD) })
 
 	ctx := context.Background()
-	// ws.RootPath is intentionally relative here, mirroring how the CLI
-	// constructs a workspace from a relative --cwd value.
+	// Open the workspace through a relative path to prove resolution still works
+	// when the caller supplies a relative --cwd.
 	ws, err := NewWorkspace(ctx, relRoot)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ws.Close() })
-	require.False(t, filepath.IsAbs(ws.RootPath), "test setup must exercise the relative-root code path")
+	require.True(t, filepath.IsAbs(ws.RootPath), "workspace root is normalized to an absolute path")
 
 	target, err := ResolveDispositionTarget(ws, "checkpoint-rel.json")
 	require.NoError(t, err)

@@ -12,7 +12,7 @@ This workspace uses **backlogit** for structured backlog management. All agents 
 | Setting | Value |
 |---------|-------|
 | Tool | backlogit |
-| Directory | `.backlogit/` |
+| Directory | `.backlog/` (default), `.backlogit/` (legacy-supported) |
 | Access | both |
 | Registry | `.autoharness/backlog-registry.yaml` |
 
@@ -152,7 +152,7 @@ If a tool-specific overlay instruction file is installed (for example,
 
 ## Rules
 
-1. **Always use the backlog tool** for task management. Do not create markdown task files outside the `.backlogit/` directory.
+1. **Always use the backlog tool** for task management. Do not create markdown task files outside the configured workspace backlog directory (`.backlog/` by default, `.backlogit/` for legacy workspaces).
 2. **Use abstract status values** mapped through the registry, not hardcoded strings.
 3. **Check the registry** (`.autoharness/backlog-registry.yaml`) for the exact field names and operation parameters when unsure.
 4. **Prefer MCP tools** over CLI when both are available — MCP returns structured JSON, CLI returns human-readable text.

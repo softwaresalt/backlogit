@@ -102,7 +102,7 @@ backlogit_track_commit(item_id="022-F", sha="abc123", message="feat(stash): add 
 
 ### When to sync
 
-Call `backlogit_sync_index` after any direct file edit in `.backlogit/`. The index cache becomes stale if artifacts are modified outside the MCP or CLI surfaces.
+Call `backlogit_sync_index` after any direct file edit in the workspace backlog directory. New workspaces default to `.backlog/`; legacy `.backlogit/` workspaces remain supported. The index cache becomes stale if artifacts are modified outside the MCP or CLI surfaces.
 
 ### Reading custom_fields via SQL
 

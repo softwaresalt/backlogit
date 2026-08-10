@@ -41,7 +41,7 @@ checkpoint files.`,
 }
 
 func checkpointDir(cwd string) string {
-	return filepath.Join(cwd, ".backlogit", "checkpoints")
+	return filepath.Join(core.WorkspaceStorageRoot(cwd), "checkpoints")
 }
 
 // newCheckpointCreateCmd returns the `backlogit checkpoint create` subcommand.
@@ -222,7 +222,7 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 
 			// Load retention from config if not overridden.
 			if retentionDays == 0 {
-				wsPath := filepath.Join(*cwd, ".backlogit")
+				wsPath := core.WorkspaceStorageRoot(*cwd)
 				cfg, err := config.Load(ctx, wsPath)
 				if err == nil && cfg.CheckpointRetention.RetentionDays > 0 {
 					retentionDays = cfg.CheckpointRetention.RetentionDays
@@ -244,8 +244,6 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 	cmd.Flags().IntVar(&retentionDays, "retention-days", 0, "override retention days (defaults to config)")
 	return cmd
 }
-
-
 
 // resolveCheckpointOperator resolves the operator identity for a checkpoint
 // disposition action (abandon or quarantine) in priority order: the
@@ -389,5 +387,3 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
-
-

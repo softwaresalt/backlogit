@@ -117,7 +117,7 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 // No direct upserts during harvest — RehydrateTelemetry is the only writer.
 // Idempotent: calling twice with the same JSONL produces the same table state.
 func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB) error {
-	jsonlPath := filepath.Join(workspacePath, ".backlogit", "telemetry-sessions.jsonl")
+	jsonlPath := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry-sessions.jsonl")
 	f, err := os.Open(jsonlPath)
 	if err != nil {
 		if os.IsNotExist(err) {

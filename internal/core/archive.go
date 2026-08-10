@@ -108,7 +108,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		cascadedItems, failedItems = archiveDescendants(ctx, database, ws, itemID, cfg)
 	}
 
-	backlogDir := WorkspaceStorageRoot(ws.RootPath)
+	backlogDir := workspaceStorageRoot(ws)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact: %w", err)
@@ -681,7 +681,7 @@ func canonicalTargetPath(targetPath string) string {
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
-	backlogDir := WorkspaceStorageRoot(ws.RootPath)
+	backlogDir := workspaceStorageRoot(ws)
 	archivePath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
 		return fmt.Errorf("find archived artifact: %w", err)
@@ -867,20 +867,23 @@ func queueRootDir(ws *Workspace) string {
 	return "queue"
 }
 
-// canonicalRestorePath returns the repo-root-relative, .backlogit/-prefixed POSIX
-// restore path for a record basename: ".backlogit/<queueRootDir(ws)>/<basename>"
+// canonicalRestorePath returns the repo-root-relative, storage-root-prefixed POSIX
+// restore path for a record basename: "<storageRoot>/<queueRootDir(ws)>/<basename>"
 // (default "queue"). It is pure over ws.Config.QueueLayout (mirrors queueRootDir)
 // and deliberately does NOT consult the status-keyed registry routing, which would
 // re-introduce the archive self-reference for terminal-status items.
 //
 // The output format matches workspaceRelativePath(ws.RootPath, …) — the
-// ".backlogit/queue/<id>.md" form asserted by archive_test.go and accepted by the
+// "<storageRoot>/queue/<id>.md" form asserted by archive_test.go and accepted by the
 // UnarchiveItem F-006 traversal guard (archive.go:368-373). A QueueLayout.RootDir
 // that is empty, absolute, volume-qualified, cleans to "." or "..", or otherwise
 // escapes its parent is rejected: the resolver falls back to the default "queue"
 // so the returned path is always workspace-contained.
 func canonicalRestorePath(ws *Workspace, basename string) string {
-	const storageRoot = ".backlogit"
+	storageRoot := workspaceRootCandidates[len(workspaceRootCandidates)-1]
+	if ws != nil {
+		storageRoot = filepath.Base(workspaceStorageRoot(ws))
+	}
 	root := queueRootDir(ws)
 	if isUnsafeRootDir(root) {
 		root = "queue"
@@ -889,7 +892,7 @@ func canonicalRestorePath(ws *Workspace, basename string) string {
 }
 
 // isUnsafeRootDir reports whether a configured QueueLayout.RootDir would escape
-// the .backlogit workspace storage root if used directly. It rejects absolute
+// the workspace storage root if used directly. It rejects absolute
 // paths (POSIX or OS-specific), volume-qualified paths, and any ".." parent
 // traversal so canonicalRestorePath can fall back to a contained default.
 func isUnsafeRootDir(root string) bool {

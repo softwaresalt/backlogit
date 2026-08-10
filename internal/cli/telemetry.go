@@ -252,7 +252,7 @@ Use --format json for machine-readable output.`,
 				return fmt.Errorf("unsupported format %q: supported values are \"table\", \"json\", \"markdown\"", format)
 			}
 
-			jsonlPath := filepath.Join(*cwd, ".backlogit", "telemetry-sessions.jsonl")
+			jsonlPath := filepath.Join(core.WorkspaceStorageRoot(*cwd), "telemetry-sessions.jsonl")
 			sessions, err := telemetry.ReadSessionsOnly(jsonlPath)
 			if err != nil {
 				return fmt.Errorf("read telemetry data: %w", err)

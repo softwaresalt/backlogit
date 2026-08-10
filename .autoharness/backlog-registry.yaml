@@ -1,7 +1,9 @@
 schema_version: "1.0.0"
 tool_name: "backlogit"
 tool_type: "both"
-directory: ".backlogit"
+# New workspaces default to .backlog. Existing repositories may continue to use
+# .backlogit until they are migrated with `backlogit migrate --workspace-dir`.
+directory: ".backlog"
 
 mcp_server:
   command: "backlogit mcp"
@@ -544,4 +546,3 @@ features:
   deliberation: true
   discovery: true
   lifecycle_hygiene: true
-

@@ -18,7 +18,7 @@ import (
 )
 
 func newMigrateCommand(cwd *string) *cobra.Command {
-	var dryRun, rollback, detect, validate bool
+	var dryRun, rollback, detect, validate, workspaceDir bool
 	var source, adapter, format string
 
 	cmd := &cobra.Command{
@@ -29,13 +29,39 @@ or from older internal workspace layouts.
 
 Use --source with --adapter backlog-md for source imports. Use --dry-run and
 --validate before writing imported artifacts. Use --rollback only for internal
-layout migrations, not source imports.`,
+layout migrations, not source imports. Use --workspace-dir to rename a legacy
+.backlogit workspace directory to the new .backlog default.`,
 		Example: `  backlogit migrate --source .\.backlog --adapter backlog-md --dry-run
   backlogit migrate --source .\.backlog --adapter backlog-md --validate
   backlogit migrate --source .\.backlog --adapter backlog-md
+  backlogit migrate --workspace-dir --dry-run
+  backlogit migrate --workspace-dir
   backlogit migrate --dry-run
   backlogit migrate --rollback`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if workspaceDir {
+				if source != "" || adapter != "" || detect || validate || rollback {
+					return fmt.Errorf("--workspace-dir cannot be combined with source-import or rollback flags")
+				}
+
+				result, err := core.MigrateWorkspaceDir(*cwd, core.MigrateWorkspaceDirOptions{DryRun: dryRun})
+				if err != nil {
+					return fmt.Errorf("migrate workspace dir: %w", err)
+				}
+
+				switch {
+				case result.AlreadyDone:
+					fmt.Fprintf(cmd.OutOrStdout(), "Workspace directory already uses %s\n", filepath.Base(result.Destination))
+				case result.DryRun:
+					fmt.Fprintf(cmd.OutOrStdout(), "Dry run: workspace directory would move from %s to %s\n", result.Source, result.Destination)
+				case len(result.Files) == 0:
+					fmt.Fprintln(cmd.OutOrStdout(), "No legacy .backlogit workspace directory found")
+				default:
+					fmt.Fprintf(cmd.OutOrStdout(), "Migrated workspace directory from %s to %s\n", result.Source, result.Destination)
+				}
+				return nil
+			}
+
 			if source != "" || adapter != "" || detect || validate {
 				if rollback {
 					return fmt.Errorf("--rollback cannot be combined with source-import flags")
@@ -85,6 +111,7 @@ layout migrations, not source imports.`,
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview changes without moving files")
 	cmd.Flags().BoolVar(&rollback, "rollback", false, "reverse a previous migration")
+	cmd.Flags().BoolVar(&workspaceDir, "workspace-dir", false, "rename a legacy .backlogit workspace directory to .backlog")
 	cmd.Flags().StringVar(&source, "source", "", "path to source workspace or file to import")
 	cmd.Flags().StringVar(&adapter, "adapter", "", "migration adapter to use (for example: backlog-md)")
 	cmd.Flags().BoolVar(&detect, "detect", false, "detect the adapter for the source and print it")
@@ -125,7 +152,7 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 		return fmt.Errorf("parse source migration: %w", err)
 	}
 
-	if migrationCfg, cfgErr := config.LoadMigrationConfig(filepath.Join(cwd, ".backlogit")); cfgErr == nil {
+	if migrationCfg, cfgErr := config.LoadMigrationConfig(core.WorkspaceStorageRoot(cwd)); cfgErr == nil {
 		applyMigrationConfig(sourcePath, report.Items, migrationCfg)
 	}
 	stampMigrationProvenance(report.Items)

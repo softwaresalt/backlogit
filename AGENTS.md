@@ -24,7 +24,7 @@ backlogit uses a two-agent pipeline model:
 - **Ship agent**: Backlog-to-shipped pipeline (harness, build, review, PR, fix-CI, closure)
 - **Orchestrator**: Routes incoming requests to the appropriate pipeline agent
 
-Work items flow through `.backlogit/` using the backlogit MCP server for state management. Shipments group related items for release.
+Work items flow through the workspace backlog directory (`.backlog/` by default, `.backlogit/` for legacy workspaces such as this repository) using the backlogit MCP server for state management. Shipments group related items for release.
 
 ---
 
@@ -331,7 +331,7 @@ This file is a map, not a manual. For deeper context, consult these sources:
 | Constitutional principles | `.github/instructions/constitution.instructions.md` |
 
 Active work items (features, chores, tasks, spikes, deliberations, bugs) are tracked as
-work items in the backlog queue (`.backlogit/queue/`). Durable knowledge
+work items in the backlog queue (`.backlog/queue/` by default, `.backlogit/queue/` in this repository's legacy workspace). Durable knowledge
 lives in `docs/`: compound learnings in `docs/compound/`, plans in `docs/exec-plans/`,
 decisions and spike findings in `docs/decisions/`, session memory in `docs/memory/`,
 and closure records in `docs/closure/`. When completed work produces durable design
