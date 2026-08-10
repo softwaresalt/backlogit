@@ -95,7 +95,6 @@ func TestResolveDispositionTarget_RejectsSymlink(t *testing.T) {
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
 
-
 // TestResolveDispositionTarget_WorksWithRelativeWorkspaceRoot is a regression
 // test for a real bug caught by post-merge runtime verification: when
 // ws.RootPath is a relative path (as it commonly is when the CLI is invoked

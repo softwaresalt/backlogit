@@ -161,7 +161,3 @@ func rejectSymlinkedDir(path, label string) error {
 	}
 	return nil
 }
-
-
-
-
