@@ -186,7 +186,7 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 	if err := rejectSymlinkedDir(destDir, "archive checkpoints directory"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := mkdirAllDurable(destDir, WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("quarantine checkpoint: create archive dir: %w", err)
 	}
 	destPath := filepath.Join(destDir, baseName)
@@ -249,6 +249,13 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 	return nil
 }
 
+// osRemove is the seam for os.Remove used in moveNoReplace; tests override it
+// to induce deterministic remove failures without relying on OS-level chmod tricks.
+//
+// Must not run with t.Parallel: tests that swap this seam read on the production
+// write path.
+var osRemove = os.Remove
+
 // moveNoReplace moves src to dst atomically without ever clobbering an
 // existing file at dst, closing a TOCTOU race that a separate
 // os.Stat-then-os.Rename check cannot: os.Link fails with EEXIST if dst
@@ -285,18 +292,23 @@ func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) er
 		if !bytes.Equal(classificationData, current) {
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointContentChanged, src)
 		}
+		// Residual TOCTOU race (136.014-T, acknowledged): a concurrent writer can
+		// replace the file between the bytes.Equal check above and the os.Link call
+		// below. Full closure requires an advisory lock (future work); the current
+		// content re-verify narrows but does not eliminate the window.
 	}
 
 	if err := os.Link(src, dst); err != nil {
 		return err
 	}
 
-	if err := os.Remove(src); err != nil {
+	if err := osRemove(src); err != nil {
 		// 136.015-T: Join both errors when the unwind also fails so neither
-		// is silently discarded.
+		// is silently discarded. Include ErrWriteIndeterminate so callers can
+		// detect the indeterminate state (both src and dst may exist).
 		unwErr := fmt.Errorf("remove source after link %s: %w", src, err)
-		if dstErr := os.Remove(dst); dstErr != nil {
-			return errors.Join(unwErr, fmt.Errorf("unwind remove dst %s: %w", dst, dstErr))
+		if dstErr := osRemove(dst); dstErr != nil {
+			return errors.Join(unwErr, fmt.Errorf("unwind remove dst %s: %w", dst, dstErr), blerrors.ErrWriteIndeterminate)
 		}
 		return unwErr
 	}

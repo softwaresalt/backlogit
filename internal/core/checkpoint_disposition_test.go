@@ -453,100 +453,62 @@ func TestQuarantineCheckpoint_StableContentProceedsNormally(t *testing.T) {
 
 // TestMoveNoReplace_JoinsBothErrorsWhenUnwindFails verifies that when both the
 // source removal and the dst unwind removal fail, errors.Join is used and both
-// errors are present in the returned error (not one silently discarded).
-// Must not run with t.Parallel: overrides mkdirDirSyncFn/enabled seams.
+// errors are present in the returned error (not one silently discarded), and
+// ErrWriteIndeterminate is included so callers can detect the indeterminate state.
+// Must not run with t.Parallel: overrides osRemove seam.
 func TestMoveNoReplace_JoinsBothErrorsWhenUnwindFails(t *testing.T) {
 	srcDir := t.TempDir()
 	dstDir := t.TempDir()
-	srcFile := filepath.Join(srcDir, "src.json")
-	dstFile := filepath.Join(dstDir, "dst.json")
-	require.NoError(t, os.WriteFile(srcFile, []byte("data"), 0o644))
+	src := filepath.Join(srcDir, "src.json")
+	dst := filepath.Join(dstDir, "dst.json")
+	require.NoError(t, os.WriteFile(src, []byte("payload"), 0o644))
 
-	// Link dst manually to simulate the post-link state.
-	require.NoError(t, os.Link(srcFile, dstFile))
-	// Make the src not-removable by replacing it with a directory.
-	require.NoError(t, os.Remove(srcFile))
-	require.NoError(t, os.MkdirAll(srcFile, 0o755))
-	// Make the dst not-removable by replacing it with a directory.
-	require.NoError(t, os.Remove(dstFile))
-	require.NoError(t, os.MkdirAll(dstFile, 0o755))
-
-	// Now call moveNoReplace: os.Link will fail because dstFile is a dir,
-	// so we need a different approach. Let's test the double-failure path
-	// directly by calling the func with a src that exists after Link.
-	// The cleanest way is to directly simulate the internal condition by
-	// calling moveNoReplace in a scenario that fails at Remove(src).
-
-	// Setup: write a new src, make dst already exist as a file.
-	src2 := filepath.Join(srcDir, "src2.json")
-	require.NoError(t, os.WriteFile(src2, []byte("payload"), 0o644))
-
-	// Make src2 a hardlink to something, then write a new file at src2 location
-	// to simulate a read-only directory preventing src removal.
-	// Instead, we test the joinedErr contract by calling moveNoReplace on a
-	// scenario where both removes fail using a read-only directory trick.
-	if err := os.Chmod(srcDir, 0o500); err != nil {
-		t.Skip("cannot make dir read-only on this platform")
+	// Inject seam: first call (Remove src) returns srcErr; second call (unwind
+	// Remove dst) returns dstErr. Both errors must appear in the joined result
+	// alongside ErrWriteIndeterminate.
+	srcErr := fmt.Errorf("injected src remove failure")
+	dstRemoveErr := fmt.Errorf("injected dst remove failure")
+	calls := 0
+	osRemove = func(_ string) error {
+		calls++
+		if calls == 1 {
+			return srcErr
+		}
+		return dstRemoveErr
 	}
-	t.Cleanup(func() { _ = os.Chmod(srcDir, 0o755) })
+	t.Cleanup(func() { osRemove = os.Remove })
 
-	// Link first manually (we can't use moveNoReplace for the link since srcDir is read-only now)
-	// Actually we can't link either once the dir is read-only.
-	// Let's restore and take a simpler approach: use a temp dst dir that is read-only too.
-	_ = os.Chmod(srcDir, 0o755)
-
-	src3 := filepath.Join(srcDir, "src3.json")
-	dst3 := filepath.Join(dstDir, "dst3.json")
-	require.NoError(t, os.WriteFile(src3, []byte("payload3"), 0o644))
-
-	// Make BOTH directories read-only after Link so both Removes fail.
-	require.NoError(t, os.Link(src3, dst3))
-	require.NoError(t, os.Chmod(srcDir, 0o500))
-	require.NoError(t, os.Chmod(dstDir, 0o500))
-	t.Cleanup(func() {
-		_ = os.Chmod(srcDir, 0o755)
-		_ = os.Chmod(dstDir, 0o755)
-	})
-
-	// Now simulate the os.Remove(src) failure scenario. moveNoReplace will
-	// try os.Link (fails because dst3 exists), so actually we need to test
-	// moveNoReplace AFTER the link has been manually placed. The simplest
-	// unit-test surface is to call it via a helper that skips the link.
-	// Since moveNoReplace is unexported and does the link itself, we test
-	// the actual behavior via the observable contract: when both dirs are
-	// read-only the link itself will fail (dst already exists). Skip and
-	// note this is exercised by the integration path below.
-
-	// Restore and use the direct contract test instead.
-	_ = os.Chmod(srcDir, 0o755)
-	_ = os.Chmod(dstDir, 0o755)
-
-	// Direct contract: call moveNoReplace with no classification data and no ws.
-	// Success case (dst3 still exists from the earlier Link, so Link will fail).
-	err := moveNoReplace(src3, dst3, nil, nil)
+	err := moveNoReplace(src, dst, nil, nil)
 	require.Error(t, err)
-	// It should be a link error (dst already exists), NOT the joined error.
-	// The join path is exercised when the link succeeds but Remove(src) fails.
-	// We test the join behavior through the QuarantineCheckpoint integration path.
-	assert.True(t, os.IsExist(err) || err != nil, "link-to-existing-dst must fail")
+	assert.ErrorIs(t, err, srcErr, "joined error must contain the src remove failure")
+	assert.ErrorIs(t, err, dstRemoveErr, "joined error must contain the dst unwind remove failure")
+	assert.ErrorIs(t, err, blerrors.ErrWriteIndeterminate, "joined error must include ErrWriteIndeterminate sentinel")
 }
 
 // TestQuarantineCheckpoint_UnwindFailureSurfacedAsIndeterminate verifies that
 // when moveNoReplace encounters both src-remove and dst-unwind-remove failures
-// the error propagates through QuarantineCheckpoint (integration-level contract).
-// This test relies on the observable error wrapping, not on inducing the OS-level
-// double-remove failure (which requires read-only dirs and is platform-dependent).
+// the joined error includes ErrWriteIndeterminate, and that error propagates
+// through QuarantineCheckpoint so callers can detect the indeterminate state.
+// Must not run with t.Parallel: overrides osRemove seam.
 func TestQuarantineCheckpoint_UnwindFailureSurfacedAsIndeterminate(t *testing.T) {
-	// When both removes in moveNoReplace fail, the joined error does NOT wrap
-	// os.ErrExist, so QuarantineCheckpoint should NOT return
-	// ErrCheckpointDestinationOccupied. Instead it should return a generic
-	// quarantine error wrapping the joined failure.
-	// We verify the property: ErrWriteIndeterminate is threaded when the
-	// move wraps it (136.015-T: the QuarantineCheckpoint caller detects the
-	// combined failure and wraps with ErrWriteIndeterminate).
-	// This test is a compile-time / logic contract test; runtime coverage of the
-	// double-remove failure is best done at the OS integration level.
-	t.Log("136.015-T: ErrWriteIndeterminate wrapping for double-remove failure is verified via code review and compile check")
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-unwind.json")
+
+	// Inject seam: all Remove calls return an error, causing both the src and
+	// dst removals in moveNoReplace to fail. The joined error must include
+	// ErrWriteIndeterminate, which MutationEnvelope propagates as "indeterminate"
+	// and QuarantineCheckpoint surfaces to the caller.
+	osRemove = func(_ string) error {
+		return fmt.Errorf("injected remove failure")
+	}
+	t.Cleanup(func() { osRemove = os.Remove })
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-unwind.json", "corrupt", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrWriteIndeterminate,
+		"double remove failure must surface as ErrWriteIndeterminate through QuarantineCheckpoint")
 }
 
 // ── 136.016-T: Durable writes — fsync dirs after move ─────────────────────────
