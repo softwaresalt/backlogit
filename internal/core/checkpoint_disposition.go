@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -213,10 +214,10 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "move-verbatim",
 			Apply: func(context.Context) error {
-				return moveNoReplace(target, destPath)
+				return moveNoReplace(target, destPath, ws, data)
 			},
 			Compensate: func(context.Context) error {
-				if restoreErr := moveNoReplace(destPath, target); restoreErr != nil {
+				if restoreErr := moveNoReplace(destPath, target, ws, nil); restoreErr != nil {
 					slog.Error("quarantine checkpoint: failed to restore after downstream failure",
 						"file", baseName, "error", restoreErr)
 					return fmt.Errorf("restore %s: %w", baseName, restoreErr)
@@ -238,6 +239,11 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
 		}
+		// A combined unwind failure from moveNoReplace means both src and dst
+		// may exist — outcome is indeterminate.
+		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
+			return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
+		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 	}
 	return nil
@@ -250,14 +256,62 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 // and no bytes at dst are ever overwritten. Once the link is established the
 // original is removed; if that removal fails the just-created link is
 // unwound so no duplicate is left behind.
-func moveNoReplace(src, dst string) error {
+//
+// classificationData, when non-nil, is the bytes read during the earlier
+// classification pass. moveNoReplace re-hashes the file on disk immediately
+// before the link and refuses with ErrCheckpointContentChanged if the
+// content has changed, closing the TOCTOU classify-then-move race
+// (136.014-T).
+//
+// ws, when non-nil, is used to determine whether durable_writes is enabled.
+// After a successful link+remove, fsyncDirIfDurable is called on both the
+// destination and source directories so the new and removed dirents survive
+// power loss (136.016-T). Any post-mutation fsync failure is classified as
+// ErrWriteIndeterminate: the move succeeded, durability is uncertain.
+//
+// When the source removal fails and the unwind os.Remove(dst) also fails,
+// both errors are joined via errors.Join and returned so neither failure is
+// silently discarded (136.015-T).
+func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) error {
+	// 136.014-T: Re-verify content immediately before the link to close the
+	// TOCTOU classify-then-move race. Compare the file on disk byte-for-byte
+	// against the bytes read at classification time. If they differ (another
+	// process replaced the file), refuse the move.
+	if classificationData != nil {
+		current, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("re-read source for content check %s: %w", src, err)
+		}
+		if !bytes.Equal(classificationData, current) {
+			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointContentChanged, src)
+		}
+	}
+
 	if err := os.Link(src, dst); err != nil {
 		return err
 	}
+
 	if err := os.Remove(src); err != nil {
-		_ = os.Remove(dst)
-		return fmt.Errorf("remove source after link %s: %w", src, err)
+		// 136.015-T: Join both errors when the unwind also fails so neither
+		// is silently discarded.
+		unwErr := fmt.Errorf("remove source after link %s: %w", src, err)
+		if dstErr := os.Remove(dst); dstErr != nil {
+			return errors.Join(unwErr, fmt.Errorf("unwind remove dst %s: %w", dst, dstErr))
+		}
+		return unwErr
 	}
+
+	// 136.016-T: After a successful link+remove, fsync both destination and
+	// source directories when durable_writes is enabled.
+	if ws != nil && WorkspaceDurableWrites(ws) {
+		if err := fsyncDirIfDurable(filepath.Dir(dst), true); err != nil {
+			return fmt.Errorf("%w: fsync destination dir after move: %w", blerrors.ErrWriteIndeterminate, err)
+		}
+		if err := fsyncDirIfDurable(filepath.Dir(src), true); err != nil {
+			return fmt.Errorf("%w: fsync source dir after move: %w", blerrors.ErrWriteIndeterminate, err)
+		}
+	}
+
 	return nil
 }
 

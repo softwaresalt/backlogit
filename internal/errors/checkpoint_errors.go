@@ -67,6 +67,13 @@ var (
 	// non-abandoned status (e.g. "resolved") is a state conflict, not a
 	// silent transition to "abandoned".
 	ErrCheckpointNotActive = errors.New("backlogit: checkpoint is not active; abandon requires an active checkpoint")
+
+	// ErrCheckpointContentChanged indicates that the content of a checkpoint
+	// file changed between the classification read and the quarantine move.
+	// This closes the TOCTOU race in QuarantineCheckpoint: if another process
+	// replaces the malformed file with a valid one before the link executes,
+	// the move is refused so a valid replacement is never quarantined.
+	ErrCheckpointContentChanged = errors.New("backlogit: checkpoint content changed since classification; refusing quarantine move")
 )
 
 
