@@ -11,8 +11,8 @@ import (
 
 func TestMarshalReadable_NoHTMLEscape(t *testing.T) {
 	type payload struct {
-		URL     string `json:"url"`
-		Expr    string `json:"expr"`
+		URL       string `json:"url"`
+		Expr      string `json:"expr"`
 		Ampersand string `json:"ampersand"`
 	}
 
