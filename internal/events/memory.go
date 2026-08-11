@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // memoriesMu serializes concurrent SaveMemory calls on the same process.
@@ -71,7 +73,7 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 			return "", err
 		}
 		var marshalErr error
-		data, marshalErr = json.Marshal(cp)
+		data, marshalErr = jsonutil.MarshalReadable(cp)
 		if marshalErr != nil {
 			return "", fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
 		}

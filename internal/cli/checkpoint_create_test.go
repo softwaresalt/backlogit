@@ -92,3 +92,28 @@ func TestCheckpointCreate_MissingWorkspaceStorageRootFailsClosed(t *testing.T) {
 	require.Error(t, err, "create must fail when no workspace storage root exists")
 	assert.Contains(t, err.Error(), "resolve checkpoint dir")
 }
+
+// TestCheckpointCreate_NoHTMLEscape is a regression test for the checkpoint
+// JSON readability fix (137-F): the CLI's JSON response encoder must not
+// HTML-escape <, >, and & characters.
+func TestCheckpointCreate_NoHTMLEscape(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"sess-esc","phase":"build","resume_hint":"a > b && b < c"}`
+
+	createOut := runCLIStdout(t, root, "checkpoint", "create", "--state-dump", stateDump)
+	assert.NotContains(t, createOut, `\u003e`)
+	assert.NotContains(t, createOut, `\u003c`)
+	assert.NotContains(t, createOut, `\u0026`)
+
+	var created struct {
+		Path string `json:"path"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(createOut), &created))
+	filename := filepath.Base(created.Path)
+
+	getOut := runCLIStdout(t, root, "checkpoint", "get", filename)
+	assert.Contains(t, getOut, "a > b && b < c")
+	assert.NotContains(t, getOut, `\u003e`)
+	assert.NotContains(t, getOut, `\u003c`)
+	assert.NotContains(t, getOut, `\u0026`)
+}
