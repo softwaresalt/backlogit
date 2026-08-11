@@ -5,6 +5,7 @@ package jsonutil
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 )
 
 // MarshalReadable serializes v to JSON without HTML-escaping special characters
@@ -34,4 +35,12 @@ func MarshalReadableIndent(v any, prefix, indent string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// NewEncoder returns a *json.Encoder that writes to w with HTML escaping
+// disabled. Callers may still call SetIndent on the returned encoder.
+func NewEncoder(w io.Writer) *json.Encoder {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc
 }

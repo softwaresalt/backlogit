@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // dispositionVerbAbandon and dispositionVerbQuarantine are the audit "verb"
@@ -102,7 +102,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	cp.DispositionAt = now
 	cp.UpdatedAt = now
 
-	updated, err := json.Marshal(cp)
+	updated, err := jsonutil.MarshalReadable(cp)
 	if err != nil {
 		return fmt.Errorf("abandon checkpoint: marshal %s: %w", baseName, err)
 	}

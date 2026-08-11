@@ -103,6 +103,30 @@ func TestAbandonCheckpoint_MutatesOnlyNamedTarget(t *testing.T) {
 	assert.Equal(t, 1, changed, "exactly one file must have changed")
 }
 
+// TestAbandonCheckpoint_NoHTMLEscape is a regression test for the checkpoint
+// JSON readability fix (137-F): AbandonCheckpoint's in-place rewrite must not
+// HTML-escape <, >, and & characters in the rewritten checkpoint bytes.
+func TestAbandonCheckpoint_NoHTMLEscape(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	cp := validDispositionTestCheckpoint()
+	cp.ResumeHint = "a > b && b < c"
+	writeDispositionCheckpoint(t, dir, "checkpoint-escape.json", cp)
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-escape.json", "test reason", "operator@example.com"))
+
+	data, err := os.ReadFile(filepath.Join(dir, "checkpoint-escape.json"))
+	require.NoError(t, err)
+	s := string(data)
+
+	assert.Contains(t, s, "a > b && b < c")
+	assert.NotContains(t, s, `\u003e`)
+	assert.NotContains(t, s, `\u003c`)
+	assert.NotContains(t, s, `\u0026`)
+}
+
 // TestQuarantineCheckpoint_BytesByteIdentical is a protected-invariant test:
 // the quarantined file's bytes must be byte-identical to the original.
 func TestQuarantineCheckpoint_BytesByteIdentical(t *testing.T) {

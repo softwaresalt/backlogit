@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -34,4 +35,24 @@ func TestCreateCheckpoint_WritesFile(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.FileExists(t, cpPath)
+}
+
+// TestCreateCheckpoint_V1NoHTMLEscape is a regression test for the checkpoint
+// JSON readability fix (137-F): V1 checkpoint creation must not HTML-escape
+// <, >, and & in the rewritten JSON bytes.
+func TestCreateCheckpoint_V1NoHTMLEscape(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","resume_hint":"a > b && b < c"}`
+
+	cpPath, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(cpPath)
+	require.NoError(t, err)
+	s := string(data)
+
+	assert.Contains(t, s, "a > b && b < c")
+	assert.NotContains(t, s, `\u003e`)
+	assert.NotContains(t, s, `\u003c`)
+	assert.NotContains(t, s, `\u0026`)
 }

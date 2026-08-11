@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // NewCheckpointCmd returns the checkpoint command group.
@@ -82,7 +82,7 @@ is returned as JSON.`,
 				return fmt.Errorf("create checkpoint: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]string{"path": path})
 		},
@@ -144,7 +144,7 @@ func newCheckpointListCmd(cwd *string) *cobra.Command {
 				"needs_quarantine": needsQuarantine,
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(result)
 		},
@@ -183,7 +183,7 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 				"valid":      true,
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(result)
 		},
@@ -216,7 +216,7 @@ func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 				"resolved_at": time.Now().UTC(),
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(result)
 		},
@@ -255,7 +255,7 @@ func newCheckpointCleanupCmd(cwd *string) *cobra.Command {
 				return fmt.Errorf("cleanup checkpoints: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(result)
 		},
@@ -329,7 +329,7 @@ disjoint verbs by design.`,
 				return fmt.Errorf("abandon checkpoint: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]string{
 				"filename":    filename,
@@ -391,7 +391,7 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 				return fmt.Errorf("quarantine checkpoint: %w", err)
 			}
 
-			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]string{
 				"filename":    filename,
