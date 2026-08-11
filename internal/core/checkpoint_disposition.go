@@ -310,17 +310,27 @@ func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) er
 		if dstErr := osRemove(dst); dstErr != nil {
 			return errors.Join(unwErr, fmt.Errorf("unwind remove dst %s: %w", dst, dstErr), blerrors.ErrWriteIndeterminate)
 		}
+		// Unwind succeeded; fsync destination dir if durable writes are enabled.
+		durable := ws != nil && WorkspaceDurableWrites(ws)
+		if syncErr := fsyncDirIfDurable(filepath.Dir(dst), durable); syncErr != nil {
+			return errors.Join(unwErr, syncErr, blerrors.ErrWriteIndeterminate)
+		}
 		return unwErr
 	}
 
 	// 136.016-T: After a successful link+remove, fsync both destination and
-	// source directories when durable_writes is enabled.
+	// source directories when durable_writes is enabled. Attempt both fsyncs
+	// regardless of whether the first fails, then join any errors.
 	if ws != nil && WorkspaceDurableWrites(ws) {
+		var fsyncErrs []error
 		if err := fsyncDirIfDurable(filepath.Dir(dst), true); err != nil {
-			return fmt.Errorf("%w: fsync destination dir after move: %w", blerrors.ErrWriteIndeterminate, err)
+			fsyncErrs = append(fsyncErrs, err)
 		}
 		if err := fsyncDirIfDurable(filepath.Dir(src), true); err != nil {
-			return fmt.Errorf("%w: fsync source dir after move: %w", blerrors.ErrWriteIndeterminate, err)
+			fsyncErrs = append(fsyncErrs, err)
+		}
+		if len(fsyncErrs) > 0 {
+			return errors.Join(append(fsyncErrs, blerrors.ErrWriteIndeterminate)...)
 		}
 	}
 
