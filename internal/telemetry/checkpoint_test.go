@@ -193,3 +193,31 @@ func TestHarvestTelemetry_NewLogFile_FullyProcessed(t *testing.T) {
 	assert.Equal(t, 3, r2.SessionsHarvested,
 		"incremental harvest must include the session from the newly added log file")
 }
+
+// TestSaveCheckpoint_NoHTMLEscape verifies that SaveCheckpoint writes JSON
+// without HTML-escaping >, <, and &. Previously json.Marshal was used, which
+// escaped these as \u003e/\u003c/\u0026, making checkpoint files hard to read.
+func TestSaveCheckpoint_NoHTMLEscape(t *testing.T) {
+	ws := newTelemetryStorageRoot(t)
+
+	cp := &telemetry.HarvestCheckpoint{
+		FileOffsets:            map[string]int64{"log-a>b&c<d.jsonl": 42},
+		ProcessedEventSessions: map[string]bool{"sess-a>b": true},
+		LastHarvest:            time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Version:                1,
+	}
+
+	err := telemetry.SaveCheckpoint(ws, cp)
+	require.NoError(t, err)
+
+	data, readErr := os.ReadFile(filepath.Join(ws, ".telemetry-checkpoint.json"))
+	require.NoError(t, readErr)
+	s := string(data)
+
+	assert.Contains(t, s, ">", "greater-than must not be Unicode-escaped")
+	assert.Contains(t, s, "<", "less-than must not be Unicode-escaped")
+	assert.Contains(t, s, "&", "ampersand must not be Unicode-escaped")
+	assert.NotContains(t, s, `\u003e`, "\\u003e must not appear in saved checkpoint")
+	assert.NotContains(t, s, `\u003c`, "\\u003c must not appear in saved checkpoint")
+	assert.NotContains(t, s, `\u0026`, "\\u0026 must not appear in saved checkpoint")
+}

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // HarvestOptions configures a telemetry harvest run.
@@ -89,7 +91,7 @@ func LoadCheckpoint(workspacePath string) (*HarvestCheckpoint, error) {
 // <workspacePath>/.backlogit/.telemetry-checkpoint.json via temp-file-then-rename.
 func SaveCheckpoint(workspacePath string, cp *HarvestCheckpoint) error {
 	path := checkpointPath(workspacePath)
-	data, err := json.Marshal(cp)
+	data, err := jsonutil.MarshalReadable(cp)
 	if err != nil {
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}

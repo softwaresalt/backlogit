@@ -453,3 +453,34 @@ func TestListCheckpoints_RemediationCommandIsShellSafe(t *testing.T) {
 	// The reason placeholder must be quoted so "<" is never live redirection.
 	assert.Contains(t, cmd, "--reason '<reason>'")
 }
+
+// TestResolveCheckpoint_NoHTMLEscape verifies that ResolveCheckpoint writes
+// checkpoint JSON without HTML-escaping special characters. Previously
+// json.Marshal was used, which escaped >, <, and & as \u003e/\u003c/\u0026.
+func TestResolveCheckpoint_NoHTMLEscape(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".backlogit", "checkpoints")
+
+	cp := validCheckpointV1()
+	// Embed characters that json.Marshal HTML-escapes by default.
+	cp.ResumeHint = "URL: https://example.com/a?x=1&y=2, expr: a > b && b < c"
+	cp.Context.Branch = "feat/compare-a>b"
+	cp.Status = "active"
+
+	name := "checkpoint-20260423-999999.json"
+	writeTestCheckpointNamed(t, dir, name, cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+	require.NoError(t, err)
+
+	data, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	s := string(data)
+
+	assert.Contains(t, s, "&", "ampersand must not be Unicode-escaped in resolved checkpoint")
+	assert.Contains(t, s, ">", "greater-than must not be Unicode-escaped in resolved checkpoint")
+	assert.Contains(t, s, "<", "less-than must not be Unicode-escaped in resolved checkpoint")
+	assert.NotContains(t, s, `\u0026`, "\\u0026 must not appear in resolved checkpoint")
+	assert.NotContains(t, s, `\u003e`, "\\u003e must not appear in resolved checkpoint")
+	assert.NotContains(t, s, `\u003c`, "\\u003c must not appear in resolved checkpoint")
+}
