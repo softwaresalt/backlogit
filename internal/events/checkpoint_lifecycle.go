@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // ListCheckpoints returns checkpoint summaries from checkpointDir, applying optional filter.
@@ -175,7 +175,7 @@ func ResolveCheckpoint(_ context.Context, checkpointDir, filename string) error 
 	cp.Status = "resolved"
 	cp.UpdatedAt = time.Now().UTC()
 
-	updated, err := json.Marshal(cp)
+	updated, err := jsonutil.MarshalReadable(cp)
 	if err != nil {
 		return fmt.Errorf("marshal resolved checkpoint: %w", err)
 	}
