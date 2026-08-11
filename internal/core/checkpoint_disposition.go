@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -185,7 +186,7 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 	if err := rejectSymlinkedDir(destDir, "archive checkpoints directory"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := mkdirAllDurable(destDir, WorkspaceDurableWrites(ws)); err != nil {
 		return fmt.Errorf("quarantine checkpoint: create archive dir: %w", err)
 	}
 	destPath := filepath.Join(destDir, baseName)
@@ -213,10 +214,10 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "move-verbatim",
 			Apply: func(context.Context) error {
-				return moveNoReplace(target, destPath)
+				return moveNoReplace(target, destPath, ws, data)
 			},
 			Compensate: func(context.Context) error {
-				if restoreErr := moveNoReplace(destPath, target); restoreErr != nil {
+				if restoreErr := moveNoReplace(destPath, target, ws, nil); restoreErr != nil {
 					slog.Error("quarantine checkpoint: failed to restore after downstream failure",
 						"file", baseName, "error", restoreErr)
 					return fmt.Errorf("restore %s: %w", baseName, restoreErr)
@@ -238,10 +239,22 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
 		}
+		// A combined unwind failure from moveNoReplace means both src and dst
+		// may exist — outcome is indeterminate.
+		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
+			return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
+		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 	}
 	return nil
 }
+
+// osRemove is the seam for os.Remove used in moveNoReplace; tests override it
+// to induce deterministic remove failures without relying on OS-level chmod tricks.
+//
+// Must not run with t.Parallel: tests that swap this seam read on the production
+// write path.
+var osRemove = os.Remove
 
 // moveNoReplace moves src to dst atomically without ever clobbering an
 // existing file at dst, closing a TOCTOU race that a separate
@@ -250,14 +263,77 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 // and no bytes at dst are ever overwritten. Once the link is established the
 // original is removed; if that removal fails the just-created link is
 // unwound so no duplicate is left behind.
-func moveNoReplace(src, dst string) error {
+//
+// classificationData, when non-nil, is the bytes read during the earlier
+// classification pass. moveNoReplace re-hashes the file on disk immediately
+// before the link and refuses with ErrCheckpointContentChanged if the
+// content has changed, closing the TOCTOU classify-then-move race
+// (136.014-T).
+//
+// ws, when non-nil, is used to determine whether durable_writes is enabled.
+// After a successful link+remove, fsyncDirIfDurable is called on both the
+// destination and source directories so the new and removed dirents survive
+// power loss (136.016-T). Any post-mutation fsync failure is classified as
+// ErrWriteIndeterminate: the move succeeded, durability is uncertain.
+//
+// When the source removal fails and the unwind os.Remove(dst) also fails,
+// both errors are joined via errors.Join and returned so neither failure is
+// silently discarded (136.015-T).
+func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) error {
+	// 136.014-T: Re-verify content immediately before the link to close the
+	// TOCTOU classify-then-move race. Compare the file on disk byte-for-byte
+	// against the bytes read at classification time. If they differ (another
+	// process replaced the file), refuse the move.
+	if classificationData != nil {
+		current, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("re-read source for content check %s: %w", src, err)
+		}
+		if !bytes.Equal(classificationData, current) {
+			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointContentChanged, src)
+		}
+		// Residual TOCTOU race (136.014-T, acknowledged): a concurrent writer can
+		// replace the file between the bytes.Equal check above and the os.Link call
+		// below. Full closure requires an advisory lock (future work); the current
+		// content re-verify narrows but does not eliminate the window.
+	}
+
 	if err := os.Link(src, dst); err != nil {
 		return err
 	}
-	if err := os.Remove(src); err != nil {
-		_ = os.Remove(dst)
-		return fmt.Errorf("remove source after link %s: %w", src, err)
+
+	if err := osRemove(src); err != nil {
+		// 136.015-T: Join both errors when the unwind also fails so neither
+		// is silently discarded. Include ErrWriteIndeterminate so callers can
+		// detect the indeterminate state (both src and dst may exist).
+		unwErr := fmt.Errorf("remove source after link %s: %w", src, err)
+		if dstErr := osRemove(dst); dstErr != nil {
+			return errors.Join(unwErr, fmt.Errorf("unwind remove dst %s: %w", dst, dstErr), blerrors.ErrWriteIndeterminate)
+		}
+		// Unwind succeeded; fsync destination dir if durable writes are enabled.
+		durable := ws != nil && WorkspaceDurableWrites(ws)
+		if syncErr := fsyncDirIfDurable(filepath.Dir(dst), durable); syncErr != nil {
+			return errors.Join(unwErr, syncErr, blerrors.ErrWriteIndeterminate)
+		}
+		return unwErr
 	}
+
+	// 136.016-T: After a successful link+remove, fsync both destination and
+	// source directories when durable_writes is enabled. Attempt both fsyncs
+	// regardless of whether the first fails, then join any errors.
+	if ws != nil && WorkspaceDurableWrites(ws) {
+		var fsyncErrs []error
+		if err := fsyncDirIfDurable(filepath.Dir(dst), true); err != nil {
+			fsyncErrs = append(fsyncErrs, err)
+		}
+		if err := fsyncDirIfDurable(filepath.Dir(src), true); err != nil {
+			fsyncErrs = append(fsyncErrs, err)
+		}
+		if len(fsyncErrs) > 0 {
+			return errors.Join(append(fsyncErrs, blerrors.ErrWriteIndeterminate)...)
+		}
+	}
+
 	return nil
 }
 

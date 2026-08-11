@@ -399,6 +399,207 @@ func TestResolveDispositionTarget_RejectsSymlinkedStorageRoot(t *testing.T) {
 }
 
 
+// ── 136.014-T: TOCTOU classify-then-move race ─────────────────────────────────
+
+// TestQuarantineCheckpoint_ContentChangedRefusesMove verifies the TOCTOU fix:
+// if the source file is replaced with valid JSON after classification but before
+// the link, QuarantineCheckpoint must refuse with ErrCheckpointContentChanged.
+// Must not run with t.Parallel: overrides checkpointAuditAppendFn seam.
+func TestQuarantineCheckpoint_ContentChangedRefusesMove(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-racey.json")
+
+	// After classification (but before the move), swap the file for a valid one.
+	orig := checkpointAuditAppendFn
+	checkpointAuditAppendFn = func(ctx context.Context, ew *events.EventWriter, event events.Event) error {
+		if err := orig(ctx, ew, event); err != nil {
+			return err
+		}
+		// Overwrite the source with a valid checkpoint, simulating a race.
+		valid := validDispositionTestCheckpoint()
+		data, _ := json.Marshal(valid)
+		_ = os.WriteFile(filepath.Join(dir, "checkpoint-racey.json"), data, 0o644)
+		return nil
+	}
+	t.Cleanup(func() { checkpointAuditAppendFn = orig })
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-racey.json", "corrupt", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointContentChanged, "must refuse when content changed since classification")
+
+	// Source must NOT have been moved.
+	assert.FileExists(t, filepath.Join(dir, "checkpoint-racey.json"), "source must remain when content changed")
+	destPath := filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", "checkpoint-racey.json")
+	assert.NoFileExists(t, destPath, "nothing must be quarantined when content changed")
+}
+
+// TestQuarantineCheckpoint_StableContentProceedsNormally verifies that when
+// the file content has NOT changed since classification, the hash check passes
+// and quarantine completes normally.
+func TestQuarantineCheckpoint_StableContentProceedsNormally(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-stable.json")
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-stable.json", "corrupt", "operator@example.com"))
+	assert.NoFileExists(t, filepath.Join(dir, "checkpoint-stable.json"))
+	assert.FileExists(t, filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", "checkpoint-stable.json"))
+}
+
+// ── 136.015-T: Surface moveNoReplace unwind failure ───────────────────────────
+
+// TestMoveNoReplace_JoinsBothErrorsWhenUnwindFails verifies that when both the
+// source removal and the dst unwind removal fail, errors.Join is used and both
+// errors are present in the returned error (not one silently discarded), and
+// ErrWriteIndeterminate is included so callers can detect the indeterminate state.
+// Must not run with t.Parallel: overrides osRemove seam.
+func TestMoveNoReplace_JoinsBothErrorsWhenUnwindFails(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	src := filepath.Join(srcDir, "src.json")
+	dst := filepath.Join(dstDir, "dst.json")
+	require.NoError(t, os.WriteFile(src, []byte("payload"), 0o644))
+
+	// Inject seam: first call (Remove src) returns srcErr; second call (unwind
+	// Remove dst) returns dstErr. Both errors must appear in the joined result
+	// alongside ErrWriteIndeterminate.
+	srcErr := fmt.Errorf("injected src remove failure")
+	dstRemoveErr := fmt.Errorf("injected dst remove failure")
+	calls := 0
+	osRemove = func(_ string) error {
+		calls++
+		if calls == 1 {
+			return srcErr
+		}
+		return dstRemoveErr
+	}
+	t.Cleanup(func() { osRemove = os.Remove })
+
+	err := moveNoReplace(src, dst, nil, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, srcErr, "joined error must contain the src remove failure")
+	assert.ErrorIs(t, err, dstRemoveErr, "joined error must contain the dst unwind remove failure")
+	assert.ErrorIs(t, err, blerrors.ErrWriteIndeterminate, "joined error must include ErrWriteIndeterminate sentinel")
+}
+
+// TestQuarantineCheckpoint_UnwindFailureSurfacedAsIndeterminate verifies that
+// when moveNoReplace encounters both src-remove and dst-unwind-remove failures
+// the joined error includes ErrWriteIndeterminate, and that error propagates
+// through QuarantineCheckpoint so callers can detect the indeterminate state.
+// Must not run with t.Parallel: overrides osRemove seam.
+func TestQuarantineCheckpoint_UnwindFailureSurfacedAsIndeterminate(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-unwind.json")
+
+	// Inject seam: all Remove calls return an error, causing both the src and
+	// dst removals in moveNoReplace to fail. The joined error must include
+	// ErrWriteIndeterminate, which MutationEnvelope propagates as "indeterminate"
+	// and QuarantineCheckpoint surfaces to the caller.
+	osRemove = func(_ string) error {
+		return fmt.Errorf("injected remove failure")
+	}
+	t.Cleanup(func() { osRemove = os.Remove })
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-unwind.json", "corrupt", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrWriteIndeterminate,
+		"double remove failure must surface as ErrWriteIndeterminate through QuarantineCheckpoint")
+}
+
+// ── 136.016-T: Durable writes — fsync dirs after move ─────────────────────────
+
+// TestQuarantineCheckpoint_DurableWritesFsyncsBothDirs asserts that when
+// durable_writes is enabled, QuarantineCheckpoint fsyncs both the destination
+// directory and the source directory after the successful link+remove.
+// Must not run with t.Parallel: overrides mkdirDirSyncFn/enabled seams.
+func TestQuarantineCheckpoint_DurableWritesFsyncsBothDirs(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	ws.Config.DurableWrites = true
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-durable.json")
+
+	destDir := filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints")
+
+	synced := recordDirSyncs(t, "")
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-durable.json", "corrupt", "operator@example.com"))
+
+	assert.Contains(t, *synced, destDir, "durable quarantine must fsync the destination directory")
+	assert.Contains(t, *synced, dir, "durable quarantine must fsync the source directory")
+}
+
+// TestQuarantineCheckpoint_DurableOffSkipsDirFsync asserts that when
+// durable_writes is disabled, no directory fsync is performed.
+// Must not run with t.Parallel: overrides mkdirDirSyncFn/enabled seams.
+func TestQuarantineCheckpoint_DurableOffSkipsDirFsync(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	// DurableWrites stays false (default).
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-nondurable.json")
+
+	synced := recordDirSyncs(t, "")
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-nondurable.json", "corrupt", "operator@example.com"))
+
+	assert.Empty(t, *synced, "durable-off quarantine must not fsync any directory")
+}
+
+// TestQuarantineCheckpoint_DurableDstFsyncFailureIsIndeterminate asserts that a
+// destination-dir fsync failure after a successful link+remove is classified as
+// ErrWriteIndeterminate (the move succeeded, durability is uncertain).
+// Must not run with t.Parallel: overrides mkdirDirSyncFn/enabled seams.
+func TestQuarantineCheckpoint_DurableDstFsyncFailureIsIndeterminate(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	ws.Config.DurableWrites = true
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-dst-fsync-fail.json")
+
+	destDir := filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints")
+	// Ensure the archive/checkpoints dir exists before recording syncs (MkdirAll
+	// also fsyncs when durable, and we want to capture only the move-time syncs).
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
+
+	recordDirSyncs(t, destDir) // fail the destination-dir fsync
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-dst-fsync-fail.json", "corrupt", "operator@example.com")
+	require.Error(t, err)
+	assert.True(t, blerrors.IsWriteIndeterminate(err),
+		"destination-dir fsync failure after successful move must be ErrWriteIndeterminate")
+}
+
+// TestQuarantineCheckpoint_DurableSrcFsyncFailureIsIndeterminate asserts that a
+// source-dir fsync failure (after dst-dir fsync succeeded) is also classified as
+// ErrWriteIndeterminate.
+// Must not run with t.Parallel: overrides mkdirDirSyncFn/enabled seams.
+func TestQuarantineCheckpoint_DurableSrcFsyncFailureIsIndeterminate(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	ws.Config.DurableWrites = true
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	writeMalformedCheckpoint(t, dir, "checkpoint-src-fsync-fail.json")
+
+	// Pre-create the archive dir so its fsync during MkdirAll does not interfere.
+	destDir := filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints")
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
+
+	recordDirSyncs(t, dir) // fail the source-dir fsync
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, "checkpoint-src-fsync-fail.json", "corrupt", "operator@example.com")
+	require.Error(t, err)
+	assert.True(t, blerrors.IsWriteIndeterminate(err),
+		"source-dir fsync failure after successful move must be ErrWriteIndeterminate")
+}
+
+// ── Existing test (preserved) ──────────────────────────────────────────────────
+
 // TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus is a U6-contract
 // regression: abandon requires an active checkpoint (the already-abandoned
 // case is the sole idempotent exception). A "resolved" checkpoint must be
