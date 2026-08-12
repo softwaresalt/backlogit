@@ -38,8 +38,17 @@ slow evaluation window with a pre/post `headSHABounded` + `headDriftError` pair
 (lines ~402 and ~545) and refuses on manifest membership drift via
 `manifestItemsUnchanged` before signing. The residual window this task targets
 starts after that post-check and spans the manifest reload, digest computation,
-proof signing, JSONL append, and the status transition in
-`moveShipmentStatusWithTopLevel` — all fast in-process operations.
+proof signing, and JSONL append inside `gateShipmentCompletion`, plus
+everything `ShipShipment` still does after that call returns before it
+persists the shipped status via `moveShipmentStatusWithTopLevel`:
+`completeReleaseScope` over every release-scope item, `returnUnreleasedFeatureItems`
+per covering feature, per-feature `setArtifactStatus` calls, and the
+shipment's own pre/post-move hooks (`shipment_lifecycle.go:247-299`,
+`shipment.go:137-155`). These remain in-process Go operations with no
+external network calls, but their duration can scale with release-scope size
+and hook behavior rather than being uniformly fast, so Ship's design
+assessment should treat the residual window as bounded-but-scaling, not fixed
+and small.
 
 ## Open Design Decision (for Ship)
 
@@ -60,9 +69,9 @@ plus (c) is the likely minimal-risk pairing, but that decision belongs to Ship.
 
 * No source, test, or config files modified (Stage role boundary).
 * No shipment claim, no ship, no implementation PR, no feature branch.
-* Staging artifacts committed directly to the default branch, which is
-  unprotected; no PR merge occurred, so the merge-commit-only policy (P-009)
-  is unaffected.
+* Staging artifacts were published via pull request (PR #357) against the
+  default branch, not committed directly to it; the merge-commit-only policy
+  (P-009) governs that PR's merge like any other.
 
 ## Next Steps
 
