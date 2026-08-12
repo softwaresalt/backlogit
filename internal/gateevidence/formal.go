@@ -35,6 +35,8 @@ type FormalContext struct {
 	HighWaterCounter *int64
 }
 
+var errBaseRefMismatch = errors.New("base_ref does not match verifier context")
+
 // FormalResult is the outcome of a formal-admission check.
 type FormalResult struct {
 	// Admitted is true only when every formal-admission requirement passed.
@@ -123,8 +125,11 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 		return refuse("candidate pass event has ran=false", bkerrors.ErrProofInvalid)
 	}
 
-	env, macHex, err := envelopeFromEvent(candidate, ctx)
+	env, macHex, err := envelopeFromEvent(candidate, ctx, true)
 	if err != nil {
+		if errors.Is(err, errBaseRefMismatch) {
+			return refuse(err.Error(), bkerrors.ErrProofInvalid)
+		}
 		return refuse(err.Error(), bkerrors.ErrProofUnverifiable)
 	}
 
@@ -160,7 +165,7 @@ func FormalAdmit(evs []events.Event, ctx FormalContext) FormalResult {
 // ANY signed event — not just the FormalAdmit candidate — which is required
 // by maxOtherCounter to authenticate "other" (non-candidate) events before
 // trusting their counter claims (106-F F1 review finding F6).
-func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, string, error) {
+func envelopeFromEvent(ev events.Event, ctx FormalContext, requireExpectedBaseRef bool) (gateproof.Envelope, string, error) {
 	delta := ev.Delta
 	proof, ok := delta["proof"].(string)
 	if !ok || proof == "" {
@@ -219,8 +224,8 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 		if baseRef == "" {
 			return gateproof.Envelope{}, "", errMissingField("base_ref")
 		}
-		if ctx.BaseRef == "" || baseRef != ctx.BaseRef {
-			return gateproof.Envelope{}, "", fmt.Errorf("base_ref does not match verifier context")
+		if requireExpectedBaseRef && (ctx.BaseRef == "" || baseRef != ctx.BaseRef) {
+			return gateproof.Envelope{}, "", errBaseRefMismatch
 		}
 	} else if schema == gateproof.SchemaLegacy {
 		baseRef = ""
@@ -401,7 +406,7 @@ func maxOtherCounter(evs []events.Event, excludeIdx int, ctx FormalContext) (int
 		if _, hasCounter := evs[i].Delta["counter"]; !hasCounter {
 			continue
 		}
-		env, macHex, err := envelopeFromEvent(evs[i], ctx)
+		env, macHex, err := envelopeFromEvent(evs[i], ctx, false)
 		if err != nil {
 			return 0, false, fmt.Errorf("other event at index %d claims a counter but is malformed: %w", i, err)
 		}

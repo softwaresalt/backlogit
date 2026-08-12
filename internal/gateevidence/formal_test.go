@@ -143,8 +143,31 @@ func TestFormalAdmit_SchemaV2RequiresTrustedBaseRef(t *testing.T) {
 	if res.Admitted {
 		t.Fatal("FormalAdmit() admitted a proof signed for a different base ref")
 	}
-	if !errors.Is(res.Err, bkerrors.ErrProofUnverifiable) {
-		t.Fatalf("FormalAdmit() error = %v, want ErrProofUnverifiable", res.Err)
+	if !errors.Is(res.Err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("FormalAdmit() error = %v, want ErrProofInvalid", res.Err)
+	}
+
+	env.BaseRef = "refs/heads/release"
+	env.Counter = 2
+	nextProof, err := gateproof.Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign(second schema 2 proof) unexpected error: %v", err)
+	}
+	nextEvent := ev
+	nextEvent.Delta = map[string]any{
+		"ran":           true,
+		"proof":         nextProof,
+		"key_id":        env.KeyID,
+		"proof_schema":  env.Schema,
+		"counter":       env.Counter,
+		"base_ref":      env.BaseRef,
+		"report_digest": env.ReportDigest,
+		"timestamp_utc": env.TimestampUTC,
+	}
+	ctx.BaseRef = env.BaseRef
+	res = gateevidence.FormalAdmit([]events.Event{ev, nextEvent}, ctx)
+	if !res.Admitted {
+		t.Fatalf("FormalAdmit() rejected valid historical proof with a prior base ref: %s", res.Reason)
 	}
 }
 

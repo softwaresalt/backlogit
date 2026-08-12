@@ -92,6 +92,18 @@ func TestVerify_TamperedFieldRejected(t *testing.T) {
 	}
 }
 
+func TestVerify_TamperedBaseRefRejected(t *testing.T) {
+	env := validTaskEnvelope()
+	mac, err := Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign() unexpected error: %v", err)
+	}
+	env.BaseRef = "refs/heads/release"
+	if err := Verify(env, mac, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("Verify(tampered base_ref) error = %v, want ErrProofInvalid", err)
+	}
+}
+
 func TestVerify_WrongKeyRejected(t *testing.T) {
 	env := validTaskEnvelope()
 	mac, err := Sign(env, testKey())
