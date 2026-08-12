@@ -375,9 +375,20 @@ func headDriftError(shipmentID, pre, post string) error {
 // a member whose gate evidence was never checked at all.
 //
 // On refusal it returns a typed gate error and performs NO shipment state change.
-func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, originalManifestItems []string) error {
+//
+// The returned shipmentHead is the head this call's own pre/post drift bracket
+// validated as stable (see the "Stable-head assertion" comment below) — it is
+// "" whenever that bracket did not run at all (broker nil, not enforced) or ran
+// but the guard is legacy-inert (genuine no-repo). Callers use it as a final
+// repository-ref CAS/guard input for the LATER window this function's own
+// bracket cannot see: everything ShipShipment still does after this call
+// returns, up to (and including) its own status-transition persist
+// (106.033-T). moveShipmentStatusWithHeadGuard treats an empty expectedHeadSHA
+// as "guard inert", so this precisely propagates the same no-repo/non-enforced
+// skip semantics this function already applies to its own bracket.
+func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, originalManifestItems []string) (shipmentHead string, err error) {
 	if ws == nil {
-		return nil // no workspace at all; nothing to check or enforce.
+		return "", nil // no workspace at all; nothing to check or enforce.
 	}
 	if ws.GateBroker == nil {
 		// Enumerated early-return #1 (106-F F1/U6): a nil broker means the
@@ -387,9 +398,9 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// proceeding here would let a shipment ship with no enforceable gate
 		// at all — refuse instead.
 		if ws.formalGateEnforced() {
-			return formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
+			return "", formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
 		}
-		return nil
+		return "", nil
 	}
 
 	// Resolve the shipment head ONCE, bounded, before Evaluate so the member
@@ -414,7 +425,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		ws.appendGateErrorEvidence(ctx, shipmentID, class, err.Error(), nil, nil)
 		ge := gateErrorFromClass(class, shipmentID, nil, nil)
 		ge.Message = fmt.Sprintf("shipment %s gate check: %s", shipmentID, err.Error())
-		return ge
+		return "", ge
 	}
 	if !ev.Enforced {
 		// Enumerated early-return #2 (106-F F1/U6): gates are not enforceable
@@ -423,15 +434,15 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// enforcement, a fail-open environment must not be allowed to ship
 		// unauthenticated: refuse instead.
 		if ws.formalGateEnforced() {
-			return formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
+			return "", formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
 		}
-		return nil
+		return "", nil
 	}
 
 	// Enforced: a bounded-read failure on the single pre-resolution (timeout or
 	// cancel) MUST fail closed — never silently skip the staleness guard.
 	if headErr != nil {
-		return headResolveError(shipmentID, headErr)
+		return "", headResolveError(shipmentID, headErr)
 	}
 
 	// 1AEA2B0E: an EMPTY shipment head under enforcement is a LEGACY non-context
@@ -468,10 +479,10 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 					"shipment", shipmentID, "error", aerr)
 			}
 			if probeErr != nil {
-				return headResolveError(shipmentID,
+				return "", headResolveError(shipmentID,
 					fmt.Errorf("cannot determine repository presence: %w", probeErr))
 			}
-			return shipmentHeadUnresolvedInRepoError(shipmentID)
+			return "", shipmentHeadUnresolvedInRepoError(shipmentID)
 		}
 		// !inRepo && probeErr == nil: genuine no-repo -> legacy skip preserved.
 	}
@@ -479,7 +490,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	// (1) member-evidence validation (cheap log scan, no state change), against the
 	// single pre-resolved shipment head.
 	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, shipmentHead, ev.Base.Ref); merr != nil {
-		return merr
+		return "", merr
 	}
 
 	// (2) shipment-diff decision. Redirects have no meaning at the shipment level,
@@ -499,7 +510,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		ws.appendGateErrorEvidence(ctx, shipmentID, class, "", ev.Decision.ReportJSON, ev.Decision.Stderr)
 		ge := gateErrorFromClass(class, shipmentID, ev.Decision.ReportJSON, ev.Decision.Stderr)
 		ge.Message = fmt.Sprintf("shipment %s gate check %s error", shipmentID, class)
-		return ge
+		return "", ge
 	}
 	if ev.Decision.Kind != gate.DecisionProceed {
 		be := &blerrors.GateBlockedError{
@@ -525,7 +536,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 			// failed evidence append must not mask the GateBlockedError below.
 			slog.WarnContext(ctx, "shipment gate: failed to append blocked evidence", "shipment", shipmentID, "error", aerr)
 		}
-		return fmt.Errorf("shipment %s blocked by shipment-level gate check: %w", shipmentID, be)
+		return "", fmt.Errorf("shipment %s blocked by shipment-level gate check: %w", shipmentID, be)
 	}
 
 	// Stable-head assertion — the LAST read before the success path. Re-resolving
@@ -545,10 +556,10 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	if ev.Enforced && shipmentHead != "" {
 		postHead, postErr := ws.headSHABounded(ctx)
 		if postErr != nil {
-			return headResolveError(shipmentID, postErr)
+			return "", headResolveError(shipmentID, postErr)
 		}
 		if derr := headDriftError(shipmentID, shipmentHead, postHead); derr != nil {
-			return derr
+			return "", derr
 		}
 	}
 
@@ -570,7 +581,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 	if ws.formalGateEnforced() {
 		shipment, getErr := GetShipment(ctx, ws, shipmentID)
 		if getErr != nil {
-			return fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
+			return "", fmt.Errorf("%w: resolve shipment for manifest binding: %v", blerrors.ErrFormalGateRequired, getErr)
 		}
 		// TOCTOU guard (106-F F1 review finding F3): validateMemberGateEvidence
 		// (above) already validated every member of originalManifestItems — the
@@ -585,11 +596,11 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// members were actually checked.
 		currentManifestItems := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
 		if !manifestItemsUnchanged(originalManifestItems, currentManifestItems) {
-			return formalGateShipmentRefusal(shipmentID, "shipment manifest membership changed after evidence validation and before signing (concurrent modification) — refusing to bind a proof to unvalidated members")
+			return "", formalGateShipmentRefusal(shipmentID, "shipment manifest membership changed after evidence validation and before signing (concurrent modification) — refusing to bind a proof to unvalidated members")
 		}
 		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, ev.Base.Ref, passDelta)
 		if aerr != nil {
-			return aerr
+			return "", aerr
 		}
 		// unlock MUST be deferred here (covering the manifest self-check and the
 		// real append below), not inside augmentShipmentDeltaWithFormalProof —
@@ -597,7 +608,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// earlier reopens the counter-uniqueness TOCTOU (106-F F1 review finding).
 		defer unlock()
 		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, ev.Base.Ref, passDelta); verr != nil {
-			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
+			return "", fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
 		}
 	}
 	if aerr := ws.appendGateEvent(ctx, shipmentID, EventGatePassed, passDelta); aerr != nil {
@@ -615,11 +626,11 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// as it does for the earlier signing and manifest-binding-verification
 		// failures in this same function.
 		if ws.formalGateEnforced() || ws.gateConfig.EvidenceRequiredValue() {
-			return fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
+			return "", fmt.Errorf("shipment %s gate evidence append failed, refusing ship: %w", shipmentID, aerr)
 		}
 		slog.WarnContext(ctx, "shipment gate pass evidence append failed (evidence not required)", "shipment_id", shipmentID, "error", aerr)
 	}
-	return nil
+	return shipmentHead, nil
 }
 
 // manifestItemsUnchanged reports whether current is IDENTICAL to original —

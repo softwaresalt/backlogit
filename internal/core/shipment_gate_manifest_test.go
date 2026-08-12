@@ -176,7 +176,7 @@ func TestGateShipmentCompletion_ManifestChangedSinceSnapshot_Refused(t *testing.
 	staleOriginalManifest := []string{"106.999-T-never-validated"}
 	releaseScope := []string{taskID}
 
-	gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, staleOriginalManifest)
+	_, gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, staleOriginalManifest)
 	require.Error(t, gerr, "must refuse when the shipment's current manifest differs from the pre-call snapshot")
 	require.True(t, stderrors.Is(gerr, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", gerr)
 	assert.Contains(t, gerr.Error(), "manifest membership changed")
@@ -209,7 +209,7 @@ func TestGateShipmentCompletion_ManifestUnchangedSinceSnapshot_Proceeds(t *testi
 	releaseScope := []string{taskID}
 	unchangedOriginal := []string{taskID} // matches newGatedShipment's actual stored items
 
-	gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, unchangedOriginal)
+	_, gerr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, unchangedOriginal)
 	require.NoError(t, gerr, "an unchanged manifest must not be refused by the TOCTOU guard")
 }
 
