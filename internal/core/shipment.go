@@ -116,8 +116,57 @@ func MoveShipmentStatus(ctx context.Context, ws *Workspace, shipmentID string, n
 
 // moveShipmentStatusWithTopLevel is the internal variant that accepts an explicit
 // topLevel flag. Top-level callers use true; nested callers (e.g. ShipShipment)
-// use false to suppress duplicate post-hook event emission.
+// use false to suppress duplicate post-hook event emission. It carries no
+// repository-ref CAS guard of its own — see moveShipmentStatusWithHeadGuard.
 func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool) error {
+	return moveShipmentStatusWithHeadGuard(ctx, ws, shipmentID, newStatus, topLevel, "")
+}
+
+// moveShipmentStatusWithHeadGuard is moveShipmentStatusWithTopLevel's full
+// variant, additionally accepting expectedHeadSHA: the repository HEAD that
+// the caller's own gate evaluation already validated as stable (106.033-T).
+//
+// gateShipmentCompletion's pre/post headDriftError bracket only covers ITS
+// OWN evaluation window (the shipment-level gate Evaluate call plus the
+// member-evidence scan). Once that call returns, ShipShipment still performs
+// a series of further, in-process operations before this function's own
+// persist — completing the release scope, returning unreleased feature
+// items, cascading feature statuses, and firing this function's own pre-hook
+// — during which a concurrent commit could still advance the repository's
+// real HEAD out from under the completing shipment. A signed manifest-binding
+// proof would then attest to a reviewed commit while the shipment's own
+// declared status transition completes against a HEAD that has already moved
+// on.
+//
+// When expectedHeadSHA is non-empty, this function re-resolves HEAD ONE MORE
+// TIME, immediately before the persist — the last read this function itself
+// performs before calling persistArtifact — and refuses (fail closed) if it
+// has drifted from expectedHeadSHA. This narrows, but does not eliminate, the
+// residual window: git offers no atomic "read HEAD and complete our write"
+// primitive, and persistArtifact itself still performs further non-mutating
+// preparation (artifact validation, FindArtifactPath resolution, registry
+// load, two file snapshots, and potential target-directory creation) before
+// its own first mutating filesystem write. A commit landing anywhere in that
+// remaining interval — not just "a few instructions" — is still a
+// theoretically possible (if narrow, since none of that preparation touches
+// the repository's own HEAD ref) audit-precision gap. Moving this guard
+// inside persistArtifact itself, immediately before its first mutating
+// write, was evaluated and explicitly deferred: persistArtifact is the
+// shared persistence path for every artifact type (tasks, features,
+// shipments), not just this shipment-status transition, so threading a
+// shipment-specific expected-head parameter through it is a materially
+// larger design surface than this CAS/guard's declared scope — comparable to
+// the git-ref-lock option (b) the 126-S stage memory already deferred for
+// the same reason. Accepted as a documented, monitored limitation per
+// 106.033-T option (c); see backlog follow-up 3A649F8E for a dedicated
+// investigation into a repository-wide (not shipment-specific) tightening.
+//
+// An empty expectedHeadSHA (every existing call site other than ShipShipment's
+// active->shipped transition, and that transition itself whenever
+// gateShipmentCompletion's own bracket did not run — broker nil, gate not
+// enforced, or genuine no-repo) leaves this guard inert, identical to
+// moveShipmentStatusWithTopLevel's prior behavior.
+func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool, expectedHeadSHA string) error {
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err
@@ -147,6 +196,48 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 		}
 		if err := ws.HookRunner.FirePre(ctx, hooks.HookMoveShipmentStatus, hookCtx); err != nil {
 			return fmt.Errorf("pre-move-shipment-status hook: %w", err)
+		}
+	}
+
+	// Repository-ref CAS/guard (106.033-T): the last read this function
+	// performs before calling persistArtifact. See this function's doc
+	// comment for the residual window this narrows (including the further,
+	// non-mutating work persistArtifact itself still does afterward).
+	//
+	// review-fix (PR #358): gateShipmentCompletion already recorded a
+	// durable EventGatePassed for this same shipment before returning, so a
+	// refusal here — without its own evidence record — would leave the
+	// audit log showing only a pass even though the shipment never actually
+	// shipped, defeating monitoring of exactly this guard (the scenario it
+	// exists to catch). Append a best-effort EventGateBlocked, carrying the
+	// expected and observed heads, before returning either refusal below.
+	// The append failure itself is intentionally non-fatal here (logged,
+	// not joined into the returned error): the ship is already refused, so
+	// a failed audit write must not mask or replace that refusal.
+	if expectedHeadSHA != "" {
+		currentHead, headErr := ws.headSHABounded(ctx)
+		if headErr != nil {
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":         "shipment",
+				"outcome":       "blocked",
+				"reason":        "head-resolve-error-before-persist",
+				"expected_head": expectedHeadSHA,
+			}); aerr != nil {
+				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
+			}
+			return headResolveError(shipmentID, headErr)
+		}
+		if derr := headDriftError(shipmentID, expectedHeadSHA, currentHead); derr != nil {
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":         "shipment",
+				"outcome":       "blocked",
+				"reason":        "head-drift-before-persist",
+				"expected_head": expectedHeadSHA,
+				"observed_head": currentHead,
+			}); aerr != nil {
+				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
+			}
+			return derr
 		}
 	}
 

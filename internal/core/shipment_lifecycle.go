@@ -244,7 +244,18 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		// concurrent membership mutation landing after this snapshot cannot
 		// ride inside a signed proof whose members were never actually
 		// validated (106-F F1 review finding F3).
-		if err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
+		//
+		// gatedHead is the HEAD gateShipmentCompletion's own pre/post
+		// headDriftError bracket validated as stable -- "" whenever that
+		// bracket did not run or is legacy-inert (no broker, gate not
+		// enforced, genuine no-repo). It is carried through every remaining
+		// in-process step below (release-scope completion, feature
+		// return/status cascades) and re-checked ONE MORE TIME immediately
+		// before this closure's own status-transition persist, narrowing
+		// the residual window a concurrent commit could otherwise land in
+		// between this call returning and that persist (106.033-T).
+		gatedHead, err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+		if err != nil {
 			return err
 		}
 
@@ -296,7 +307,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			}
 		}
 
-		return moveShipmentStatusWithTopLevel(ctx, ws, shipmentID, ShipmentShipped, false)
+		return moveShipmentStatusWithHeadGuard(ctx, ws, shipmentID, ShipmentShipped, false, gatedHead)
 	}()
 	if lockErr != nil {
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
