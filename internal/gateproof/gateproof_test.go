@@ -22,6 +22,7 @@ func validTaskEnvelope() Envelope {
 		Actor:        "backlogit",
 		TimestampUTC: "2026-08-08T00:00:00Z",
 		HeadSHA:      "deadbeef",
+		BaseRef:      "refs/heads/main",
 		ReportDigest: "a" + strings.Repeat("0", 63),
 		Counter:      1,
 	}
@@ -45,12 +46,35 @@ func TestSignVerify_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Sign() unexpected error: %v", err)
 		}
+
 		if mac == "" {
 			t.Fatal("Sign() returned empty MAC")
 		}
 		if err := Verify(env, mac, testKey()); err != nil {
 			t.Fatalf("Verify() unexpected error on valid round-trip: %v", err)
 		}
+	}
+
+}
+
+func TestSignVerify_LegacySchemaRemainsValid(t *testing.T) {
+	env := validTaskEnvelope()
+	env.Schema = SchemaLegacy
+	env.BaseRef = ""
+	mac, err := Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign(legacy) unexpected error: %v", err)
+	}
+	if err := Verify(env, mac, testKey()); err != nil {
+		t.Fatalf("Verify(legacy) unexpected error: %v", err)
+	}
+}
+
+func TestSign_Schema2RequiresBaseRef(t *testing.T) {
+	env := validTaskEnvelope()
+	env.BaseRef = ""
+	if _, err := Sign(env, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("Sign(schema 2 without base_ref) error = %v, want ErrProofInvalid", err)
 	}
 }
 
@@ -65,6 +89,18 @@ func TestVerify_TamperedFieldRejected(t *testing.T) {
 	tampered.Counter = env.Counter + 1
 	if err := Verify(tampered, mac, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
 		t.Fatalf("Verify(tampered) error = %v, want ErrProofInvalid", err)
+	}
+}
+
+func TestVerify_TamperedBaseRefRejected(t *testing.T) {
+	env := validTaskEnvelope()
+	mac, err := Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign() unexpected error: %v", err)
+	}
+	env.BaseRef = "refs/heads/release"
+	if err := Verify(env, mac, testKey()); !stderrors.Is(err, bkerrors.ErrProofInvalid) {
+		t.Fatalf("Verify(tampered base_ref) error = %v, want ErrProofInvalid", err)
 	}
 }
 

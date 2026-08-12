@@ -270,10 +270,14 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 		return noop, wrapFormalGateRequired(counterErr)
 	}
 
+	schema := gateproof.SchemaLegacy
+	if outcome.BaseRef != "" {
+		schema = gateproof.Schema
+	}
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
 		Purpose:      gateproof.PurposeTask,
-		Schema:       gateproof.Schema,
+		Schema:       schema,
 		Alg:          gateproof.AlgHMACSHA256,
 		KeyID:        formalCfg.KeyID,
 		WorkspaceID:  workspaceIdentity(ws.RootPath),
@@ -283,6 +287,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 		Actor:        "backlogit",
 		TimestampUTC: time.Now().UTC().Format(time.RFC3339),
 		HeadSHA:      outcome.HeadSHA,
+		BaseRef:      outcome.BaseRef,
 		ReportDigest: reportDigest,
 		Counter:      counter,
 	}
@@ -295,7 +300,7 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 
 	delta["proof"] = proof
 	delta["key_id"] = formalCfg.KeyID
-	delta["proof_schema"] = gateproof.Schema
+	delta["proof_schema"] = schema
 	delta["counter"] = counter
 	// timestamp_utc and report_digest are bound inside the MAC but are not
 	// otherwise derivable from the rest of the delta (timestamp_utc is a
@@ -305,5 +310,8 @@ func (ws *Workspace) augmentDeltaWithFormalProof(ctx context.Context, itemID, ev
 	// the exact signed envelope later.
 	delta["timestamp_utc"] = env.TimestampUTC
 	delta["report_digest"] = reportDigest
+	if schema == gateproof.Schema {
+		delta["base_ref"] = outcome.BaseRef
+	}
 	return countUnlock, nil
 }

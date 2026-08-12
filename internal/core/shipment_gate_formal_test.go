@@ -28,7 +28,6 @@ const validFormalTestKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123
 // (not merely schema-empty) evidence.
 const validFormalTestReport = `{"reviewers":[{"persona":"Constitution Reviewer","decision":"pass"}]}`
 
-
 // TestShipmentGate_FailOpenAuto_FormalEnforcementRefuses mirrors
 // TestShipmentGate_FailOpenAuto_ShipsWithoutEvidence but with formal gate
 // evidence enforced: the ordinary auto fail-open early return
@@ -181,7 +180,7 @@ func TestShipmentGate_MemberEvidenceTamperedProof_FormalEnforcementRefuses(t *te
 			"head_sha":      "",
 			"proof":         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 			"key_id":        "k1",
-			"proof_schema":  gateproof.Schema,
+			"proof_schema":  gateproof.SchemaLegacy,
 			"counter":       int64(1),
 			"timestamp_utc": time.Now().UTC().Format(time.RFC3339),
 			"report_digest": "",
@@ -329,7 +328,7 @@ func TestValidateMemberGateEvidence_FormalEnforcement_LineageUsesAuthenticatedEv
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
 		Purpose:      gateproof.PurposeTask,
-		Schema:       gateproof.Schema,
+		Schema:       gateproof.SchemaLegacy,
 		Alg:          gateproof.AlgHMACSHA256,
 		KeyID:        "k1",
 		WorkspaceID:  workspaceIdentity(ws.RootPath),

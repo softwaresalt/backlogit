@@ -213,7 +213,6 @@ func TestGateShipmentCompletion_ManifestUnchangedSinceSnapshot_Proceeds(t *testi
 	require.NoError(t, gerr, "an unchanged manifest must not be refused by the TOCTOU guard")
 }
 
-
 // TestVerifyShipmentManifestBinding_TamperedDigestRefused verifies that a
 // recorded manifest_digest which no longer matches a fresh recomputation
 // (simulating the manifest changing between signing and this check) is
@@ -226,14 +225,14 @@ func TestVerifyShipmentManifestBinding_TamperedDigestRefused(t *testing.T) {
 
 	shipment := &models.Artifact{ID: "999-S", CustomFields: map[string]any{"items": []string{"106.001-T"}}}
 	delta := map[string]any{"ran": true}
-	unlock, err := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, "999-S", "deadbeef", delta)
+	unlock, err := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, "999-S", "deadbeef", "refs/heads/main", delta)
 	require.NoError(t, err)
 	defer unlock()
 
 	// Simulate the manifest changing after signing: an additional member appears.
 	shipment.CustomFields["items"] = []string{"106.001-T", "106.002-T"}
 
-	verifyErr := ws.verifyShipmentManifestBinding(ctx, shipment, "999-S", "deadbeef", delta)
+	verifyErr := ws.verifyShipmentManifestBinding(ctx, shipment, "999-S", "deadbeef", "refs/heads/main", delta)
 	require.Error(t, verifyErr, "a changed manifest must be refused, not silently skipped")
 	require.True(t, stderrors.Is(verifyErr, bkerrors.ErrProofInvalid), "err = %v, want ErrProofInvalid", verifyErr)
 }
@@ -249,7 +248,7 @@ func TestVerifyShipmentManifestBinding_MissingProofUnverifiable(t *testing.T) {
 	shipment := &models.Artifact{ID: "999-S", CustomFields: map[string]any{"items": []string{"106.001-T"}}}
 	delta := map[string]any{"ran": true}
 
-	verifyErr := ws.verifyShipmentManifestBinding(ctx, shipment, "999-S", "deadbeef", delta)
+	verifyErr := ws.verifyShipmentManifestBinding(ctx, shipment, "999-S", "deadbeef", "refs/heads/main", delta)
 	require.Error(t, verifyErr)
 	require.True(t, stderrors.Is(verifyErr, bkerrors.ErrProofUnverifiable), "err = %v, want ErrProofUnverifiable", verifyErr)
 }

@@ -54,7 +54,7 @@ func computeManifestDigest(ctx context.Context, ws *Workspace, shipment *models.
 // acquired) and MUST be deferred by the caller AFTER performing the real
 // durable event append — see augmentDeltaWithFormalProof's doc comment for
 // why releasing the lock any earlier reopens the counter-uniqueness TOCTOU.
-func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead string, delta map[string]any) (unlock func(), err error) {
+func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead, baseRef string, delta map[string]any) (unlock func(), err error) {
 	noop := func() {}
 	if !ws.formalGateEnforced() {
 		return noop, nil
@@ -81,10 +81,14 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	ran, _ := delta["ran"].(bool)
 	timestampUTC := time.Now().UTC().Format(time.RFC3339)
+	schema := gateproof.SchemaLegacy
+	if baseRef != "" {
+		schema = gateproof.Schema
+	}
 	env := gateproof.Envelope{
 		Magic:          gateproof.Magic,
 		Purpose:        gateproof.PurposeShipment,
-		Schema:         gateproof.Schema,
+		Schema:         schema,
 		Alg:            gateproof.AlgHMACSHA256,
 		KeyID:          formalCfg.KeyID,
 		WorkspaceID:    workspaceIdentity(ws.RootPath),
@@ -94,6 +98,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 		Actor:          "backlogit",
 		TimestampUTC:   timestampUTC,
 		HeadSHA:        shipmentHead,
+		BaseRef:        baseRef,
 		ReportDigest:   "", // shipment-level evidence has no per-task formal report to bind.
 		Counter:        counter,
 		ManifestDigest: digest,
@@ -107,10 +112,13 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 
 	delta["proof"] = proof
 	delta["key_id"] = formalCfg.KeyID
-	delta["proof_schema"] = gateproof.Schema
+	delta["proof_schema"] = schema
 	delta["counter"] = counter
 	delta["timestamp_utc"] = timestampUTC
 	delta["manifest_digest"] = digest
+	if schema == gateproof.Schema {
+		delta["base_ref"] = baseRef
+	}
 	return countUnlock, nil
 }
 
@@ -124,7 +132,7 @@ func (ws *Workspace) augmentShipmentDeltaWithFormalProof(ctx context.Context, sh
 // computation bug or an unexpected intervening mutation rather than trusting
 // the just-signed proof blindly. It is a no-op when formal admission is not
 // enforced.
-func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead string, delta map[string]any) error {
+func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment *models.Artifact, shipmentID, shipmentHead, baseRef string, delta map[string]any) error {
 	if !ws.formalGateEnforced() {
 		return nil
 	}
@@ -143,6 +151,10 @@ func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment
 	timestampUTC, _ := delta["timestamp_utc"].(string)
 	recordedDigest, _ := delta["manifest_digest"].(string)
 	ran, _ := delta["ran"].(bool)
+	recordedBaseRef, _ := delta["base_ref"].(string)
+	if schemaVal == gateproof.Schema && (recordedBaseRef == "" || recordedBaseRef != baseRef) {
+		return fmt.Errorf("%w: shipment evidence base_ref does not match the resolved base ref", bkerrors.ErrProofInvalid)
+	}
 
 	freshDigest, digestErr := computeManifestDigest(ctx, ws, shipment, shipmentHead)
 	if digestErr != nil {
@@ -166,6 +178,7 @@ func (ws *Workspace) verifyShipmentManifestBinding(ctx context.Context, shipment
 		Actor:          "backlogit",
 		TimestampUTC:   timestampUTC,
 		HeadSHA:        shipmentHead,
+		BaseRef:        recordedBaseRef,
 		ReportDigest:   "",
 		Counter:        counterVal,
 		ManifestDigest: recordedDigest,
