@@ -1,14 +1,14 @@
 package core
 
 import (
+	"context"
 	stderrors "errors"
+	"fmt"
 	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"context"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
@@ -22,7 +22,7 @@ import (
 // headDriftError bracket only covers ITS OWN evaluation window (the
 // shipment-level gate Evaluate call plus the member-evidence scan). A
 // concurrent commit that lands AFTER that bracket returns, but BEFORE
-// ShipShipment's final status-transition persist (moveShipmentStatusWithTopLevel),
+// ShipShipment's final status-transition persist (moveShipmentStatusWithHeadGuard),
 // was previously invisible: the signed manifest-binding proof would still
 // attest to the reviewed head (B), while the shipment's own declared status
 // transition completed with the repository's real HEAD having already
@@ -32,7 +32,9 @@ import (
 // synchronous extension point that runs immediately before the persist --
 // mirroring the existing headChangingRunner pattern used in
 // gate_evidence_formal_test.go to simulate mid-evaluation drift at the
-// task-completion level.
+// task-completion level. The final persist itself now runs through
+// moveShipmentStatusWithHeadGuard (moveShipmentStatusWithTopLevel's
+// full variant, threaded the validated head via ShipShipment).
 func TestShipmentGate_HeadDriftBetweenGateCheckAndPersist_Refuses(t *testing.T) {
 	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", validFormalTestKey)
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
@@ -72,7 +74,10 @@ func TestShipmentGate_HeadDriftBetweenGateCheckAndPersist_Refuses(t *testing.T) 
 			}
 			cmd := exec.Command("git", "checkout", divergent)
 			cmd.Dir = ws.RootPath
-			_ = cmd.Run() // best-effort: the test asserts on ShipShipment's outcome, not this checkout
+			out, checkoutErr := cmd.CombinedOutput()
+			if checkoutErr != nil {
+				return fmt.Errorf("test fixture: checkout divergent branch %s: %w: %s", divergent, checkoutErr, out)
+			}
 			return nil
 		},
 	})

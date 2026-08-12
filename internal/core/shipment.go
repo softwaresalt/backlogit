@@ -188,12 +188,40 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 
 	// Repository-ref CAS/guard (106.033-T): the LAST read before the persist
 	// below. See this function's doc comment for the window it narrows.
+	//
+	// review-fix (PR #358): gateShipmentCompletion already recorded a
+	// durable EventGatePassed for this same shipment before returning, so a
+	// refusal here — without its own evidence record — would leave the
+	// audit log showing only a pass even though the shipment never actually
+	// shipped, defeating monitoring of exactly this guard (the scenario it
+	// exists to catch). Append a best-effort EventGateBlocked, carrying the
+	// expected and observed heads, before returning either refusal below.
+	// The append failure itself is intentionally non-fatal here (logged,
+	// not joined into the returned error): the ship is already refused, so
+	// a failed audit write must not mask or replace that refusal.
 	if expectedHeadSHA != "" {
 		currentHead, headErr := ws.headSHABounded(ctx)
 		if headErr != nil {
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":         "shipment",
+				"outcome":       "blocked",
+				"reason":        "head-resolve-error-before-persist",
+				"expected_head": expectedHeadSHA,
+			}); aerr != nil {
+				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
+			}
 			return headResolveError(shipmentID, headErr)
 		}
 		if derr := headDriftError(shipmentID, expectedHeadSHA, currentHead); derr != nil {
+			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+				"level":         "shipment",
+				"outcome":       "blocked",
+				"reason":        "head-drift-before-persist",
+				"expected_head": expectedHeadSHA,
+				"observed_head": currentHead,
+			}); aerr != nil {
+				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
+			}
 			return derr
 		}
 	}
