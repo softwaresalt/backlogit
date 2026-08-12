@@ -22,6 +22,9 @@ type FormalContext struct {
 	// envelope carries different values is refused.
 	WorkspaceID string
 	ItemID      string
+	// BaseRef is the trusted resolved base ref expected for schema-2 proofs.
+	// Schema-1 proofs remain valid without it.
+	BaseRef string
 	// Key is the resolved formal-gate-evidence HMAC key.
 	Key []byte
 	// HighWaterCounter, when non-nil, is the counter floor read from an
@@ -86,7 +89,7 @@ func classifyProofErr(err error) error {
 //     appears after it (a later block/requeue invalidates a prior pass);
 //   - its delta's "ran" field is true;
 //   - its delta carries proof/key_id/proof_schema/counter/report_digest/
-//     head_sha fields that reconstruct into an Envelope matching ctx's
+//     head_sha/base_ref fields that reconstruct into an Envelope matching ctx's
 //     WorkspaceID and ItemID, and gateproof.Verify succeeds against ctx.Key;
 //   - its counter is strictly greater than every OTHER counter recorded
 //     anywhere in the event slice (the intact-log rollback/duplicate-detection
@@ -208,6 +211,20 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 	if !ok {
 		return gateproof.Envelope{}, "", errMissingField("head_sha")
 	}
+	baseRef, ok := optionalTypedString(delta, "base_ref")
+	if !ok {
+		return gateproof.Envelope{}, "", errMissingField("base_ref")
+	}
+	if schema == gateproof.Schema {
+		if baseRef == "" {
+			return gateproof.Envelope{}, "", errMissingField("base_ref")
+		}
+		if ctx.BaseRef == "" || baseRef != ctx.BaseRef {
+			return gateproof.Envelope{}, "", fmt.Errorf("base_ref does not match verifier context")
+		}
+	} else if schema == gateproof.SchemaLegacy {
+		baseRef = ""
+	}
 
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
@@ -222,6 +239,7 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext) (gateproof.Envelope, 
 		Actor:        ev.Actor,
 		TimestampUTC: timestampUTC,
 		HeadSHA:      headSHA,
+		BaseRef:      baseRef,
 		ReportDigest: reportDigest,
 		Counter:      counter,
 	}

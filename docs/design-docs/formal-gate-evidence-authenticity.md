@@ -44,7 +44,7 @@ serialized via `internal/canonical.Canonicalize` before HMAC-SHA256:
 |---|---|---|
 | `magic` | string | Protocol constant (`backlogit.gate-evidence.v1`); prevents cross-protocol reuse of a MAC. |
 | `purpose` | string | `task` or `shipment`; prevents cross-purpose replay (a task proof can never pass as a shipment proof). |
-| `schema` | int | Envelope schema version (currently `1`); an unknown version is rejected rather than partially trusted. |
+| `schema` | int | Envelope schema version (`1` for legacy proofs, `2` for proofs binding `base_ref`); an unknown version is rejected rather than partially trusted. |
 | `alg` | string | MAC algorithm identifier (`HMAC-SHA256`). |
 | `key_id` | string | Non-secret identifier for the active key, so key rotation is auditable without ever carrying key material. |
 | `workspace_id` | string | Trusted workspace identity, derived deterministically from the absolute workspace root path (`internal/core.workspaceIdentity`) — no new persisted state. |
@@ -54,6 +54,7 @@ serialized via `internal/canonical.Canonicalize` before HMAC-SHA256:
 | `actor` | string | Always `backlogit` today (the evidence appender's fixed actor). |
 | `timestamp_utc` | string | RFC 3339 UTC timestamp. **Audit data only — never used for ordering or replay decisions.** |
 | `head_sha` | string | The resolved HEAD SHA at evidence time. |
+| `base_ref` | string | Required for schema 2; the resolved base ref used by the gate. It is MAC-bound and checked against the verifier's trusted expected base ref. |
 | `report_digest` | string | `internal/canonical.Hash` of the **validated** formal report (task proofs) or empty (shipment proofs, which bind `manifest_digest` instead). |
 | `counter` | int64 | Monotonic per-item counter (rollback/duplicate detection — see Anti-Replay below). |
 | `manifest_digest` | string | **Required** for `purpose: shipment`, **forbidden** for `purpose: task` — see Manifest Binding below. |
@@ -62,7 +63,7 @@ Delta persistence: every envelope field that is not already derivable from
 the base evidence delta (`ran`, `head_sha`) or supplied by the verifier as
 context (`workspace_id`, `item_id`) is persisted verbatim in the event delta
 — `proof`, `key_id`, `proof_schema`, `counter`, `timestamp_utc`,
-`report_digest`, and (shipment only) `manifest_digest` — so a verifier can
+`report_digest`, `base_ref` (schema 2), and (shipment only) `manifest_digest` — so a verifier can
 reconstruct the exact signed envelope later.
 
 Reconstruction strictness: `key_id`, `timestamp_utc`, and `ran` are written
@@ -87,6 +88,9 @@ is, since a genuine signer never writes anything but a string for either.
   into the reconstructed envelope means a proof valid for one item can never
   be accepted as evidence for a different item, and a proof from one
   workspace can never be replayed into another.
+* Schema 1 remains valid for its original guarantee and has no `base_ref`
+  requirement. Schema 2 requires `base_ref` and rejects a proof unless it
+  matches the verifier-supplied expected base ref.
 * `EventGateForced` is **never** formally admissible, regardless of proof
   validity — the formal-admission predicate (`gateevidence.FormalAdmit`)
   only ever considers `EventGatePassed` candidates.

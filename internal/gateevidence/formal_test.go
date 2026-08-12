@@ -24,7 +24,7 @@ func signedPassEvent(t *testing.T, itemID, workspaceID string, counter int64, ra
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
 		Purpose:      gateproof.PurposeTask,
-		Schema:       gateproof.Schema,
+		Schema:       gateproof.SchemaLegacy,
 		Alg:          gateproof.AlgHMACSHA256,
 		KeyID:        "k1",
 		WorkspaceID:  workspaceID,
@@ -62,7 +62,7 @@ func signedForcedEvent(t *testing.T, itemID, workspaceID string, counter int64) 
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
 		Purpose:      gateproof.PurposeTask,
-		Schema:       gateproof.Schema,
+		Schema:       gateproof.SchemaLegacy,
 		Alg:          gateproof.AlgHMACSHA256,
 		KeyID:        "k1",
 		WorkspaceID:  workspaceID,
@@ -98,6 +98,53 @@ func baseCtx() gateevidence.FormalContext {
 		WorkspaceID: "ws-1",
 		ItemID:      "106.099-T",
 		Key:         testKey(),
+	}
+}
+
+func TestFormalAdmit_SchemaV2RequiresTrustedBaseRef(t *testing.T) {
+	env := gateproof.Envelope{
+		Magic:        gateproof.Magic,
+		Purpose:      gateproof.PurposeTask,
+		Schema:       gateproof.Schema,
+		Alg:          gateproof.AlgHMACSHA256,
+		KeyID:        "k1",
+		WorkspaceID:  "ws-1",
+		ItemID:       "106.099-T",
+		EventType:    gateevidence.EventGatePassed,
+		Ran:          true,
+		Actor:        "backlogit",
+		TimestampUTC: "2026-08-08T00:00:00Z",
+		BaseRef:      "refs/heads/main",
+		ReportDigest: "digest123",
+		Counter:      1,
+	}
+	proof, err := gateproof.Sign(env, testKey())
+	if err != nil {
+		t.Fatalf("Sign() unexpected error: %v", err)
+	}
+	ev := events.Event{
+		EventType: gateevidence.EventGatePassed,
+		Actor:     env.Actor,
+		Delta: map[string]any{
+			"ran":           true,
+			"proof":         proof,
+			"key_id":        env.KeyID,
+			"proof_schema":  env.Schema,
+			"counter":       env.Counter,
+			"base_ref":      env.BaseRef,
+			"report_digest": env.ReportDigest,
+			"timestamp_utc": env.TimestampUTC,
+		},
+	}
+
+	ctx := baseCtx()
+	ctx.BaseRef = "refs/heads/release"
+	res := gateevidence.FormalAdmit([]events.Event{ev}, ctx)
+	if res.Admitted {
+		t.Fatal("FormalAdmit() admitted a proof signed for a different base ref")
+	}
+	if !errors.Is(res.Err, bkerrors.ErrProofUnverifiable) {
+		t.Fatalf("FormalAdmit() error = %v, want ErrProofUnverifiable", res.Err)
 	}
 }
 
@@ -425,7 +472,7 @@ func TestFormalAdmit_HeadSHALegitimatelyAbsent_StillAdmitted(t *testing.T) {
 	env := gateproof.Envelope{
 		Magic:        gateproof.Magic,
 		Purpose:      gateproof.PurposeTask,
-		Schema:       gateproof.Schema,
+		Schema:       gateproof.SchemaLegacy,
 		Alg:          gateproof.AlgHMACSHA256,
 		KeyID:        "k1",
 		WorkspaceID:  "ws-1",

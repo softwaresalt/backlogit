@@ -478,7 +478,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 
 	// (1) member-evidence validation (cheap log scan, no state change), against the
 	// single pre-resolved shipment head.
-	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, shipmentHead); merr != nil {
+	if merr := validateMemberGateEvidence(ctx, ws, releaseScope, shipmentHead, ev.Base.Ref); merr != nil {
 		return merr
 	}
 
@@ -587,7 +587,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if !manifestItemsUnchanged(originalManifestItems, currentManifestItems) {
 			return formalGateShipmentRefusal(shipmentID, "shipment manifest membership changed after evidence validation and before signing (concurrent modification) — refusing to bind a proof to unvalidated members")
 		}
-		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, passDelta)
+		unlock, aerr := ws.augmentShipmentDeltaWithFormalProof(ctx, shipment, shipmentID, shipmentHead, ev.Base.Ref, passDelta)
 		if aerr != nil {
 			return aerr
 		}
@@ -596,7 +596,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		// see that function's doc comment for why releasing the counter lock any
 		// earlier reopens the counter-uniqueness TOCTOU (106-F F1 review finding).
 		defer unlock()
-		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, passDelta); verr != nil {
+		if verr := ws.verifyShipmentManifestBinding(ctx, shipment, shipmentID, shipmentHead, ev.Base.Ref, passDelta); verr != nil {
 			return fmt.Errorf("shipment %s manifest binding verification failed, refusing ship: %w", shipmentID, verr)
 		}
 	}
@@ -662,7 +662,7 @@ func manifestItemsUnchanged(original, current []string) bool {
 // shipmentHead branch in gateShipmentCompletion, NOT a precondition of this
 // function. A future caller that passes a non-empty shipmentHead NOT obtained from
 // a resolved HEAD would break this invariant.
-func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string) error {
+func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope []string, shipmentHead string, baseRefs ...string) error {
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
 
 	// 106-F F1/U6: when formal gate evidence is enforced, EVERY member's own
@@ -682,6 +682,10 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			return wrapFormalGateRequired(keyErr)
 		}
 		formalKey = key
+	}
+	expectedBaseRef := ""
+	if len(baseRefs) > 0 {
+		expectedBaseRef = baseRefs[0]
 	}
 
 	for _, id := range releaseScope {
@@ -748,6 +752,7 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			res := gateevidence.FormalAdmit(evs, gateevidence.FormalContext{
 				WorkspaceID: workspaceIdentity(ws.RootPath),
 				ItemID:      id,
+				BaseRef:     expectedBaseRef,
 				Key:         formalKey,
 			})
 			if !res.Admitted {

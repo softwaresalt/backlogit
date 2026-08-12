@@ -30,12 +30,13 @@ import (
 )
 
 // Protocol constants. Magic prevents cross-protocol reuse of a MAC computed
-// for an unrelated purpose; Schema is the current supported envelope version.
+// for an unrelated purpose; Schema is the current envelope version.
 const (
 	Magic           = "backlogit.gate-evidence.v1"
 	PurposeTask     = "task"
 	PurposeShipment = "shipment"
-	Schema          = 1
+	SchemaLegacy    = 1
+	Schema          = 2
 	AlgHMACSHA256   = "HMAC-SHA256"
 
 	// minKeyBytes mirrors config.ResolveFormalGateKey's minimum so a key
@@ -63,6 +64,7 @@ type Envelope struct {
 	// the monotonic Counter is the sole ordering signal.
 	TimestampUTC string `json:"timestamp_utc"`
 	HeadSHA      string `json:"head_sha"`
+	BaseRef      string `json:"base_ref,omitempty"`
 	ReportDigest string `json:"report_digest"`
 	Counter      int64  `json:"counter"`
 	// ManifestDigest is REQUIRED when Purpose == PurposeShipment and FORBIDDEN
@@ -89,7 +91,7 @@ func (e Envelope) validate() error {
 	if e.Magic != Magic {
 		return fmt.Errorf("%w: unknown magic %q", bkerrors.ErrProofInvalid, e.Magic)
 	}
-	if e.Schema != Schema {
+	if e.Schema != SchemaLegacy && e.Schema != Schema {
 		return fmt.Errorf("%w: unknown schema %d", bkerrors.ErrProofInvalid, e.Schema)
 	}
 	if e.Alg != AlgHMACSHA256 {
@@ -106,6 +108,12 @@ func (e Envelope) validate() error {
 		}
 	default:
 		return fmt.Errorf("%w: unknown purpose %q", bkerrors.ErrProofInvalid, e.Purpose)
+	}
+	if e.Schema == Schema && e.BaseRef == "" {
+		return fmt.Errorf("%w: base_ref is required for schema %d", bkerrors.ErrProofInvalid, Schema)
+	}
+	if e.Schema == SchemaLegacy && e.BaseRef != "" {
+		return fmt.Errorf("%w: base_ref must be empty for schema %d", bkerrors.ErrProofInvalid, SchemaLegacy)
 	}
 	return nil
 }
@@ -130,6 +138,9 @@ func (e Envelope) canonicalMap() map[string]any {
 		"head_sha":      e.HeadSHA,
 		"report_digest": e.ReportDigest,
 		"counter":       e.Counter,
+	}
+	if e.Schema == Schema {
+		m["base_ref"] = e.BaseRef
 	}
 	if e.Purpose == PurposeShipment {
 		m["manifest_digest"] = e.ManifestDigest
