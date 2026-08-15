@@ -108,8 +108,8 @@ asserts **behavioral** (not merely surface) parity for governed operations:
 * The governed set is derived from the registry (`governed: true` marker), not a hand-list, so
   newly added governed operations enter the test automatically.
 * The governed set must not be empty (gate 1: no vacuous pass).
-* An operation with `governed_name: commit_association` must be present by name (gate 2: the
-  canonical governed operation cannot be accidentally removed).
+* Every required `governed_name` is asserted against its exact registry operation key (gate 2:
+  canonical governed operation names cannot be moved to an unrelated row or accidentally removed).
 * For each governed operation with both a `mcp_tool` and `cli_command`, both surfaces are executed
   against equivalent fixtures and their observable persisted state is asserted identical.
 * The current governed set covers commit association, checkpoint abandon/quarantine, comment append,

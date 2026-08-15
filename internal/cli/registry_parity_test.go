@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -450,6 +451,17 @@ func runGovernedCLI(t *testing.T, root string, args ...string) {
 	require.NoError(t, cmd.Execute(), "cli %v failed: %s", args, errBuf.String())
 }
 
+func runGovernedMCP(t *testing.T, server *mcpinternal.Server, name string, arguments map[string]any) {
+	t.Helper()
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = name
+	request.Params.Arguments = arguments
+	result, err := server.InvokeTool(context.Background(), name, request)
+	require.NoError(t, err, "MCP tool %s failed", name)
+	require.NotNil(t, result, "MCP tool %s returned no result", name)
+	require.False(t, result.IsError, "MCP tool %s returned an error result", name)
+}
+
 // addGovernedArtifact creates an artifact via CLI and returns its ID.
 func addGovernedArtifact(t *testing.T, root, artifactType, title, parent string) string {
 	t.Helper()
@@ -742,15 +754,16 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 
 			case "backlogit_append_comment":
 				root, ws := setupGovernedWorkspace(t)
-				ctx := context.Background()
 				featID := addGovernedArtifact(t, root, "feature", "Comment parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Comment parity CLI task", featID)
 				taskMCP := addGovernedArtifact(t, root, "task", "Comment parity MCP task", featID)
 				const actor, comment, commitSHA = "gov-parity", "comment parity", "aabbccddeeff00112233445566778899"
 
 				runGovernedCLI(t, root, "comment", "add", taskCLI, "--actor", actor, "--comment", comment, "--commit-sha", commitSHA)
-				ew := core.NewWorkspaceEventWriter(ws, core.WorkspaceLogsRoot(root))
-				require.NoError(t, core.AppendComment(ctx, ws, ew, taskMCP, actor, comment, commitSHA))
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_append_comment", map[string]any{
+					"item_id": taskMCP, "actor": actor, "comment": comment, "commit_sha": commitSHA,
+				})
 
 				cliState := observeGovernedCommentState(t, root, taskCLI, actor, comment, commitSHA)
 				mcpState := observeGovernedCommentState(t, root, taskMCP, actor, comment, commitSHA)
@@ -760,13 +773,15 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 
 			case "backlogit_add_dependency":
 				root, ws := setupGovernedWorkspace(t)
-				ctx := context.Background()
 				featID := addGovernedArtifact(t, root, "feature", "Dependency parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Dependency parity CLI task", featID)
 				taskMCP := addGovernedArtifact(t, root, "task", "Dependency parity MCP task", featID)
 
 				runGovernedCLI(t, root, "dep", "add", taskCLI, featID, "--type", "blocks")
-				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_add_dependency", map[string]any{
+					"item_id": taskMCP, "depends_on": featID, "dep_type": "blocks",
+				})
 
 				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
 				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
@@ -784,7 +799,10 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
 
 				runGovernedCLI(t, root, "dep", "remove", taskCLI, featID)
-				require.NoError(t, core.RemoveDependency(ctx, ws, taskMCP, featID))
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_remove_dependency", map[string]any{
+					"item_id": taskMCP, "depends_on": featID,
+				})
 
 				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
 				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")

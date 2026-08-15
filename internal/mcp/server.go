@@ -46,6 +46,7 @@ type Server struct {
 	mcp           *mcpserver.MCPServer
 	toolNames     []string
 	toolDefs      []mcplib.Tool
+	toolHandlers  map[string]mcpserver.ToolHandlerFunc
 	workspaceMu   sync.Mutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
@@ -72,11 +73,12 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	logsDir := filepath.Join(backlogitDir, "logs")
 	telemetryPath := filepath.Join(backlogitDir, "telemetry.jsonl")
 	s := &Server{
-		RootPath:   rootPath,
-		Workspace:  ws,
-		Events:     core.NewWorkspaceEventWriter(ws, logsDir),
-		Telemetry:  events.NewTelemetryWriter(telemetryPath),
-		HookEvents: events.NewHookEventWriter(backlogitDir),
+		RootPath:     rootPath,
+		Workspace:    ws,
+		Events:       core.NewWorkspaceEventWriter(ws, logsDir),
+		Telemetry:    events.NewTelemetryWriter(telemetryPath),
+		HookEvents:   events.NewHookEventWriter(backlogitDir),
+		toolHandlers: make(map[string]mcpserver.ToolHandlerFunc),
 	}
 	s.mcp = mcpserver.NewMCPServer(
 		"backlogit",
@@ -97,6 +99,21 @@ func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
 	s.mcp.AddTool(tool, handler)
 	s.toolNames = append(s.toolNames, tool.Name)
 	s.toolDefs = append(s.toolDefs, tool)
+	s.toolHandlers[tool.Name] = handler
+}
+
+// InvokeTool invokes a registered tool handler in-process. It is used by
+// contract tests that must exercise MCP argument extraction and validation
+// without starting a transport.
+func (s *Server) InvokeTool(ctx context.Context, name string, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	handler, ok := s.toolHandlers[name]
+	if !ok {
+		return nil, fmt.Errorf("MCP tool %q is not registered", name)
+	}
+	if request.Params.Name == "" {
+		request.Params.Name = name
+	}
+	return handler(ctx, request)
 }
 
 // ToolDefs returns a copy of the registered tool definitions. The returned
