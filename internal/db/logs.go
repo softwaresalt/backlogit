@@ -145,7 +145,10 @@ func ReindexItemLog(ctx context.Context, database *sql.DB, logsDir, itemID strin
 	if itemID == "" {
 		return fmt.Errorf("reindex item log: item_id is required")
 	}
-	lockedCtx, unlock := events.LockItemLog(ctx, logsDir, itemID)
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("lock item log %s: %w", itemID, lockErr)
+	}
 	defer unlock()
 	ctx = lockedCtx
 	eventsList, err := events.ReadAllEvents(ctx, logsDir, itemID)

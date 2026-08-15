@@ -20,6 +20,8 @@ type crossRefUpdate struct {
 	artifact    *models.Artifact
 	filePath    string
 	snapshotRaw []byte
+	oldID       string
+	newID       string
 }
 
 // findCrossArtifactReferences walks all artifact Markdown files in the
@@ -135,6 +137,8 @@ func findCrossArtifactReferences(
 				artifact:    &updated,
 				filePath:    path,
 				snapshotRaw: raw,
+				oldID:       oldID,
+				newID:       newID,
 			})
 			return nil
 		})
@@ -186,6 +190,45 @@ func applyCrossArtifactRewrites(
 	}
 	defer func() { _ = releaseArtifactLocks() }()
 	ctx = lockedCtx
+
+	// Refresh every artifact while its mutation lock is held. The initial scan
+	// is only a candidate list; using its stale clones here could overwrite a
+	// concurrent update that completed before lock acquisition.
+	for i := range updates {
+		u := &updates[i]
+		if u.oldID == "" || u.newID == "" {
+			continue
+		}
+		raw, readErr := os.ReadFile(u.filePath)
+		if readErr != nil {
+			return fmt.Errorf("refresh cross-reference artifact %s: %w", u.artifact.ID, readErr)
+		}
+		fm, body, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil {
+			return fmt.Errorf("parse cross-reference artifact %s: %w", u.artifact.ID, parseErr)
+		}
+		current, artifactErr := models.ArtifactFromFrontmatter(fm, body)
+		if artifactErr != nil {
+			return fmt.Errorf("parse cross-reference artifact %s: %w", u.artifact.ID, artifactErr)
+		}
+		updated := *current
+		updated.UpdatedAt = models.NowUTC()
+		if updated.ParentID == u.oldID {
+			updated.ParentID = u.newID
+		}
+		for j := range updated.Dependencies {
+			if updated.Dependencies[j].ID == u.oldID {
+				updated.Dependencies[j].ID = u.newID
+			}
+		}
+		for j := range updated.Links {
+			if updated.Links[j].TargetID == u.oldID {
+				updated.Links[j].TargetID = u.newID
+			}
+		}
+		u.artifact = &updated
+		u.snapshotRaw = raw
+	}
 
 	written := make([]crossRefUpdate, 0, len(updates))
 

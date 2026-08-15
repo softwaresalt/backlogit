@@ -96,6 +96,13 @@ func WithCascade(cascade bool) ArchiveOpt {
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 // When WithCascade(true) is set, child items are archived bottom-up before the parent.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, opts ...ArchiveOpt) (*ArchiveRecord, error) {
+	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
+	if lockErr != nil {
+		return nil, fmt.Errorf("archive item %s: acquire mutation lock: %w", itemID, lockErr)
+	}
+	defer func() { _ = releaseArtifactLock() }()
+	ctx = lockedCtx
+
 	var cfg archiveConfig
 	for _, opt := range opts {
 		opt(&cfg)
@@ -681,6 +688,13 @@ func canonicalTargetPath(targetPath string) string {
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
+	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
+	if lockErr != nil {
+		return fmt.Errorf("unarchive item %s: acquire mutation lock: %w", itemID, lockErr)
+	}
+	defer func() { _ = releaseArtifactLock() }()
+	ctx = lockedCtx
+
 	backlogDir := workspaceStorageRoot(ws)
 	archivePath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {

@@ -3,7 +3,9 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,10 +30,18 @@ type Event struct {
 }
 
 type itemLogLockContextKey struct{}
+type itemLogFileLockContextKey struct{}
 
 type itemLogLockSet map[string]struct{}
 
+type itemLogFileLockSet map[string]struct{}
+
 var itemLogLockRegistry sync.Map
+
+const (
+	itemLogLockStaleTTL = 60 * time.Second
+	itemLogLockWait     = 3 * time.Second
+)
 
 // EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
 type EventWriter struct {
@@ -137,6 +147,124 @@ func itemLogLockHeld(ctx context.Context, key string) bool {
 	return held
 }
 
+func itemLogFileLockHeld(ctx context.Context, key string) bool {
+	set, ok := ctx.Value(itemLogFileLockContextKey{}).(itemLogFileLockSet)
+	if !ok {
+		return false
+	}
+	_, held := set[key]
+	return held
+}
+
+func withItemLogFileLock(ctx context.Context, key string) context.Context {
+	set := make(itemLogFileLockSet)
+	if existing, ok := ctx.Value(itemLogFileLockContextKey{}).(itemLogFileLockSet); ok {
+		for heldKey := range existing {
+			set[heldKey] = struct{}{}
+		}
+	}
+	set[key] = struct{}{}
+	return context.WithValue(ctx, itemLogFileLockContextKey{}, set)
+}
+
+func itemLogLockSidecarPath(logsDir, itemID string) string {
+	path := LogPathForItem(logsDir, itemID)
+	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
+}
+
+func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func(), error) {
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create item logs directory: %w", err)
+	}
+	lockPath := itemLogLockSidecarPath(logsDir, itemID)
+	deadline := time.Now().Add(itemLogLockWait)
+	backoff := 20 * time.Millisecond
+	for {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_ = file.Close()
+			var once sync.Once
+			stop := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ticker := time.NewTicker(itemLogLockStaleTTL / 3)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stop:
+						return
+					case now := <-ticker.C:
+						if touchErr := os.Chtimes(lockPath, now, now); touchErr != nil && !os.IsNotExist(touchErr) {
+							slog.Warn("item log lock heartbeat failed", "path", lockPath, "error", touchErr)
+						}
+					}
+				}
+			}()
+			return func() {
+				once.Do(func() {
+					close(stop)
+					wg.Wait()
+					if removeErr := os.Remove(lockPath); removeErr != nil && !os.IsNotExist(removeErr) {
+						slog.Warn("failed to remove item log lock", "path", lockPath, "error", removeErr)
+					}
+				})
+			}, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("create item log lock %s: %w", lockPath, err)
+		}
+		info, statErr := os.Stat(lockPath)
+		if statErr == nil && time.Since(info.ModTime()) > itemLogLockStaleTTL {
+			if removeErr := os.Remove(lockPath); removeErr == nil || os.IsNotExist(removeErr) {
+				continue
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("item log lock %s is busy", lockPath)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 250*time.Millisecond {
+			backoff *= 2
+		}
+	}
+}
+
+// LockItemLogCrossProcess serializes a read/restore/reindex sequence with all
+// event appends for one item log, including writers in other processes.
+func LockItemLogCrossProcess(ctx context.Context, logsDir, itemID string) (context.Context, func(), error) {
+	key := itemLogLockKey(logsDir, itemID)
+	if itemLogLockHeld(ctx, key) {
+		if itemLogFileLockHeld(ctx, key) {
+			return ctx, func() {}, nil
+		}
+		fileUnlock, err := acquireItemLogFileLock(ctx, logsDir, itemID)
+		if err != nil {
+			return ctx, nil, err
+		}
+		return withItemLogFileLock(ctx, key), fileUnlock, nil
+	}
+	lockedCtx, processUnlock := LockItemLog(ctx, logsDir, itemID)
+	fileUnlock, err := acquireItemLogFileLock(lockedCtx, logsDir, itemID)
+	if err != nil {
+		processUnlock()
+		return ctx, nil, err
+	}
+	lockedCtx = withItemLogFileLock(lockedCtx, key)
+	var once sync.Once
+	return lockedCtx, func() {
+		once.Do(func() {
+			fileUnlock()
+			processUnlock()
+		})
+	}, nil
+}
+
 // AppendEvent marshals and appends an event to the item's JSONL log file. In
 // durable mode the append is fsynced (file + POSIX parent dir) before returning;
 // a partial write or a post-write file/dir fsync failure is surfaced as
@@ -154,10 +282,21 @@ func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
 		return fmt.Errorf("marshal event: %w", err)
 	}
 	key := itemLogLockKey(w.logsDir, event.ItemID)
-	if !itemLogLockHeld(ctx, key) {
-		mutex := itemLogMutex(key)
-		mutex.Lock()
-		defer mutex.Unlock()
+	if itemLogLockHeld(ctx, key) {
+		if !itemLogFileLockHeld(ctx, key) {
+			fileUnlock, lockErr := acquireItemLogFileLock(ctx, w.logsDir, event.ItemID)
+			if lockErr != nil {
+				return lockErr
+			}
+			defer fileUnlock()
+		}
+	} else {
+		lockedCtx, unlock, lockErr := LockItemLogCrossProcess(ctx, w.logsDir, event.ItemID)
+		if lockErr != nil {
+			return lockErr
+		}
+		ctx = lockedCtx
+		defer unlock()
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

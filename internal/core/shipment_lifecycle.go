@@ -153,7 +153,10 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
 		}
-		_, unlockItemLog := events.LockItemLog(ctx, WorkspaceLogsRoot(ws.RootPath), id)
+		_, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLogsRoot(ws.RootPath), id)
+		if lockErr != nil {
+			return nil, fmt.Errorf("lock artifact %s event log: %w", id, lockErr)
+		}
 		eventLog, err := snapshotFile(events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), id))
 		unlockItemLog()
 		if err != nil {
@@ -178,7 +181,11 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 	}
 	var errs []error
 	for _, id := range depthSortedIDs(ids) {
-		itemCtx, unlockItemLog := events.LockItemLog(ctx, logsDir, id)
+		itemCtx, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+		if lockErr != nil {
+			errs = append(errs, fmt.Errorf("lock artifact %s event log: %w", id, lockErr))
+			continue
+		}
 		snapshot := snapshots[id]
 		currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
 		var preservedEvents []events.Event
@@ -456,6 +463,11 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
 		if artifactLockErr != nil {
 			return fmt.Errorf("lock release scope artifacts: %w", artifactLockErr)
+		}
+		// Re-run the completion gate after acquiring the artifact locks so no
+		// concurrent artifact mutation can land between validation and snapshot.
+		if gatedHead, err = gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
+			return err
 		}
 		shipSnapshots, snapshotErr = snapshotShipArtifacts(ctx, ws, rollbackIDs)
 		if snapshotErr != nil {
