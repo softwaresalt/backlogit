@@ -620,10 +620,12 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 	// Gate 2: each governed operation selected for this wave must be present
 	// under its documented registry key; labels alone are not sufficient.
 	requiredGoverned := map[string]string{
-		"track_commit":      "commit_association",
-		"append_comment":    "comment_append",
-		"add_dependency":    "dependency_add",
-		"remove_dependency": "dependency_remove",
+		"track_commit":          "commit_association",
+		"append_comment":        "comment_append",
+		"add_dependency":        "dependency_add",
+		"remove_dependency":     "dependency_remove",
+		"abandon_checkpoint":    "checkpoint_abandon_disposition",
+		"quarantine_checkpoint": "checkpoint_quarantine_disposition",
 	}
 	for operation, requiredName := range requiredGoverned {
 		op, found := governed[operation]
@@ -652,15 +654,17 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				featID := addGovernedArtifact(t, root, "feature", "Gov parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Gov parity CLI task", featID)
 				taskMCP := addGovernedArtifact(t, root, "task", "Gov parity MCP task", featID)
-				ctx := context.Background()
 
 				// CLI surface: update --commit now routes through AssociateCommit.
 				runGovernedCLI(t, root, "update", taskCLI, "--commit", testSHA)
 
-				// MCP surface (track_commit): call AssociateCommit directly.
-				logsDir := core.WorkspaceLogsRoot(root)
-				ew := core.NewWorkspaceEventWriter(ws, logsDir)
-				require.NoError(t, core.AssociateCommit(ctx, ws, ew, taskMCP, testSHA, "feat: governed parity", "test@example.com"))
+				// MCP surface (track_commit): invoke the registered handler so argument
+				// extraction and validation remain part of the governed contract.
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_track_commit", map[string]any{
+					"item_id": taskMCP, "sha": testSHA,
+					"message": "feat: governed parity", "author": "test@example.com",
+				})
 
 				cliSHA, cliLinks, cliEvent := observeGovernedState(t, root, taskCLI, testSHA)
 				mcpSHA, mcpLinks, mcpEvent := observeGovernedState(t, root, taskMCP, testSHA)
@@ -675,7 +679,6 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 
 			case "backlogit_abandon_checkpoint":
 				root, ws := setupGovernedWorkspace(t)
-				ctx := context.Background()
 				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
 				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
 
@@ -696,9 +699,10 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				const reason, operator = "governed parity", "gov-parity@example.com"
 				runGovernedCLI(t, root, "checkpoint", "abandon", cliFile, "--reason", reason, "--operator", operator)
 
-				logsDir := core.WorkspaceLogsRoot(root)
-				ew := core.NewWorkspaceEventWriter(ws, logsDir)
-				require.NoError(t, core.AbandonCheckpoint(ctx, ws, ew, mcpFile, reason, operator))
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_abandon_checkpoint", map[string]any{
+					"filename": mcpFile, "reason": reason, "operator": operator,
+				})
 
 				cliData, err := os.ReadFile(filepath.Join(checkpointDir, cliFile))
 				require.NoError(t, err)
@@ -719,7 +723,6 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 
 			case "backlogit_quarantine_checkpoint":
 				root, ws := setupGovernedWorkspace(t)
-				ctx := context.Background()
 				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
 				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
 
@@ -731,9 +734,10 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				const reason, operator = "governed parity malformed", "gov-parity@example.com"
 				runGovernedCLI(t, root, "checkpoint", "quarantine", cliFile, "--reason", reason, "--operator", operator)
 
-				logsDir := core.WorkspaceLogsRoot(root)
-				ew := core.NewWorkspaceEventWriter(ws, logsDir)
-				require.NoError(t, core.QuarantineCheckpoint(ctx, ws, ew, mcpFile, reason, operator))
+				server := mcpinternal.NewServer(ws)
+				runGovernedMCP(t, server, "backlogit_quarantine_checkpoint", map[string]any{
+					"filename": mcpFile, "reason": reason, "operator": operator,
+				})
 
 				archiveDir := filepath.Join(root, ".backlogit", "archive", "checkpoints")
 				cliSidecar, err := os.ReadFile(filepath.Join(archiveDir, cliFile+".disposition.json"))
@@ -777,14 +781,15 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				taskCLI := addGovernedArtifact(t, root, "task", "Dependency parity CLI task", featID)
 				taskMCP := addGovernedArtifact(t, root, "task", "Dependency parity MCP task", featID)
 
-				runGovernedCLI(t, root, "dep", "add", taskCLI, featID, "--type", "blocks")
+				const depType = "relates_to"
+				runGovernedCLI(t, root, "dep", "add", taskCLI, featID, "--type", depType)
 				server := mcpinternal.NewServer(ws)
 				runGovernedMCP(t, server, "backlogit_add_dependency", map[string]any{
-					"item_id": taskMCP, "depends_on": featID, "dep_type": "blocks",
+					"item_id": taskMCP, "depends_on": featID, "dep_type": depType,
 				})
 
-				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
-				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				cliState := observeGovernedDependency(t, root, taskCLI, featID, depType)
+				mcpState := observeGovernedDependency(t, root, taskMCP, featID, depType)
 				assert.True(t, cliState.Cache, "op %q: CLI dependency must be persisted in the cache", opName)
 				assert.True(t, cliState.Frontmatter, "op %q: CLI dependency must be persisted in frontmatter", opName)
 				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
@@ -795,8 +800,9 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				featID := addGovernedArtifact(t, root, "feature", "Dependency removal parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Dependency removal CLI task", featID)
 				taskMCP := addGovernedArtifact(t, root, "task", "Dependency removal MCP task", featID)
-				require.NoError(t, core.AddDependency(ctx, ws, taskCLI, featID, "blocks"))
-				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
+				const depType = "relates_to"
+				require.NoError(t, core.AddDependency(ctx, ws, taskCLI, featID, depType))
+				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, depType))
 
 				runGovernedCLI(t, root, "dep", "remove", taskCLI, featID)
 				server := mcpinternal.NewServer(ws)
@@ -804,8 +810,8 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 					"item_id": taskMCP, "depends_on": featID,
 				})
 
-				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
-				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				cliState := observeGovernedDependency(t, root, taskCLI, featID, depType)
+				mcpState := observeGovernedDependency(t, root, taskMCP, featID, depType)
 				assert.False(t, cliState.Cache, "op %q: CLI dependency must be removed from the cache", opName)
 				assert.False(t, cliState.Frontmatter, "op %q: CLI dependency must be removed from frontmatter", opName)
 				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
