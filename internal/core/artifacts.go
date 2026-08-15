@@ -929,7 +929,8 @@ func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, lin
 }
 
 // RemoveArtifactLink removes an outgoing semantic link from the SQLite cache and Markdown.
-// The cache deletion happens first so a failed Markdown write cannot resurrect an explicit removal.
+// Markdown is persisted before clearing its cache row so a failed write leaves both
+// representations unchanged and cannot resurrect an explicit removal.
 func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, linkType string) error {
 	source, err := findArtifact(ctx, ws, sourceID)
 	if err != nil {
@@ -944,10 +945,10 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 		}
 		filtered = append(filtered, link)
 	}
-	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		return fmt.Errorf("remove database link %s→%s (%s): %w", sourceID, targetID, linkType, err)
-	}
 	if !removed {
+		if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
+			return fmt.Errorf("remove database link %s→%s (%s): %w", sourceID, targetID, linkType, err)
+		}
 		return nil
 	}
 
@@ -959,6 +960,9 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	source.UpdatedAt = models.NowUTC()
 	if err := persistArtifactWithoutDBOnlyLinks(ctx, ws, source, false); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
+	}
+	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
+		return fmt.Errorf("remove database link %s→%s (%s) after Markdown persistence: %w", sourceID, targetID, linkType, err)
 	}
 	return nil
 }

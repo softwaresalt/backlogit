@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -221,6 +223,38 @@ func TestRemoveArtifactLinkDeletesDBOnlyLink(t *testing.T) {
 	links, err := db.GetLinks(ctx, ws.DB, source.ID)
 	require.NoError(t, err)
 	assert.Empty(t, links)
+}
+
+func TestRemoveArtifactLinkKeepsCacheWhenMarkdownWriteIsNotApplied(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	storageRoot := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(storageRoot, 0o755))
+	require.NoError(t, config.WriteDefaults(storageRoot))
+
+	ws, err := NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	defer ws.Close()
+
+	source, err := CreateArtifact(ctx, ws, "Write failure source", "feature")
+	require.NoError(t, err)
+	target, err := CreateArtifact(ctx, ws, "Write failure target", "feature")
+	require.NoError(t, err)
+	require.NoError(t, AddArtifactLink(ctx, ws, source.ID, target.ID, "informs"))
+
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(*models.Artifact, string, bool) error {
+		return fmt.Errorf("simulated markdown write failure: %w", blerrors.ErrWriteNotApplied)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	err = RemoveArtifactLink(ctx, ws, source.ID, target.ID, "informs")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrWriteNotApplied)
+	links, err := db.GetLinks(ctx, ws.DB, source.ID)
+	require.NoError(t, err)
+	assert.Len(t, links, 1)
 }
 
 func TestMigrateDBOnlyLinksFailsClosedOnParseFailure(t *testing.T) {
