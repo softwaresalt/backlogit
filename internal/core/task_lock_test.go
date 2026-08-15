@@ -80,6 +80,25 @@ func TestTaskLock_StaleSidecarRecoveredWithWarn(t *testing.T) {
 	require.NoError(t, unlock())
 }
 
+func TestTaskLock_OldOwnerCannotUnlockReplacement(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "100.005-T.md")
+
+	unlock, err := lockTaskFile(taskPath)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	// Simulate stale-lock reclamation by replacing the sidecar contents with a
+	// new owner's token before the original owner releases.
+	sidecar := taskLockSidecarPath(taskPath)
+	require.NoError(t, os.WriteFile(sidecar, []byte("replacement-owner"), 0o644))
+	require.NoError(t, unlock())
+
+	contents, readErr := os.ReadFile(sidecar)
+	require.NoError(t, readErr, "the replacement lock must remain held")
+	assert.Equal(t, "replacement-owner", string(contents))
+}
+
 // TestTaskLock_IOErrorNotClassifiedAsBusy is the regression guard for the
 // exit-code contract: a sidecar-creation failure for a reason OTHER than
 // "already exists" (here, a missing parent directory → ENOENT) must surface as
