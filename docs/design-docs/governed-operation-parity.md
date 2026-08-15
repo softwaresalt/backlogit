@@ -111,7 +111,9 @@ asserts **behavioral** (not merely surface) parity for governed operations:
 * An operation with `governed_name: commit_association` must be present by name (gate 2: the
   canonical governed operation cannot be accidentally removed).
 * For each governed operation with both a `mcp_tool` and `cli_command`, both surfaces are executed
-  against equivalent fixtures and all three representations are asserted identical.
+  against equivalent fixtures and their observable persisted state is asserted identical.
+* The current governed set covers commit association, comment append, and dependency add/remove;
+  each new marker must have a named behavioral fixture before it can be added to the registry.
 * A DENYLIST approach covers output-only fields that differ by design (message/author on the CLI
   fallback) so a newly governed operation enters the covered set automatically.
 
@@ -121,8 +123,11 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 
 | Field | Applies to | Meaning |
 |---|---|---|
-| `governed: true` | `track_commit` | Marks this as a governed operation covered by behavioral parity |
-| `governed_name: commit_association` | `track_commit` | Canonical name for the gate-2 check |
+| `governed: true` | `track_commit`, `append_comment`, `add_dependency`, `remove_dependency` | Marks an operation as covered by behavioral parity |
+| `governed_name: commit_association` | `track_commit` | Canonical name for the commit-association gate |
+| `governed_name: comment_append` | `append_comment` | Requires parity for JSONL and indexed comment events |
+| `governed_name: dependency_add` | `add_dependency` | Requires parity for persisted dependency edges |
+| `governed_name: dependency_remove` | `remove_dependency` | Requires parity for dependency-edge removal |
 | `cli_param_gaps.message` | `track_commit` | Documents that CLI stores empty string |
 | `cli_param_gaps.author` | `track_commit` | Documents that CLI stores empty string |
 | `cli_only_flags.force-gates.human_terminal_only` | `update_task` | Gate-forcing is operator-only |

@@ -509,6 +509,68 @@ func observeGovernedState(t *testing.T, rootPath, itemID, sha string) (frontmatt
 	return frontmatterSHA, hasLinksRow, hasJSONLEvent
 }
 
+type governedCommentState struct {
+	Actor        string
+	Comment      string
+	CommitSHA    string
+	JSONLEvent   bool
+	IndexedEvent bool
+}
+
+// observeGovernedCommentState reads the JSONL event and indexed projection for a
+// comment so the CLI and MCP paths can be compared without relying on timestamps.
+func observeGovernedCommentState(t *testing.T, rootPath, itemID, actor, comment, commitSHA string) governedCommentState {
+	t.Helper()
+	ctx := context.Background()
+	freshWS, err := core.NewWorkspace(ctx, rootPath)
+	require.NoError(t, err)
+	defer freshWS.Close()
+
+	state := governedCommentState{Actor: actor, Comment: comment, CommitSHA: commitSHA}
+	for _, event := range mustReadEvents(t, rootPath, itemID) {
+		if event.EventType == "comment" && event.Actor == actor && event.CommitSHA == commitSHA {
+			if value, ok := event.Delta["comment"].(string); ok && value == comment {
+				state.JSONLEvent = true
+				break
+			}
+		}
+	}
+
+	expectedDelta, err := json.Marshal(map[string]string{"comment": comment})
+	require.NoError(t, err)
+	var count int
+	err = freshWS.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM item_log_entries
+		 WHERE item_id = ? AND actor = ? AND event_type = 'comment' AND delta_json = ?`,
+		itemID, actor, string(expectedDelta)).Scan(&count)
+	require.NoError(t, err)
+	state.IndexedEvent = count > 0
+	return state
+}
+
+func mustReadEvents(t *testing.T, rootPath, itemID string) []events.Event {
+	t.Helper()
+	evs, err := events.ReadAllEvents(context.Background(), core.WorkspaceLogsRoot(rootPath), itemID)
+	require.NoError(t, err)
+	return evs
+}
+
+func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depType string) bool {
+	t.Helper()
+	ctx := context.Background()
+	freshWS, err := core.NewWorkspace(ctx, rootPath)
+	require.NoError(t, err)
+	defer freshWS.Close()
+
+	var count int
+	err = freshWS.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM item_deps
+		 WHERE item_id = ? AND depends_on = ? AND dep_type = ?`,
+		itemID, dependsOn, depType).Scan(&count)
+	require.NoError(t, err)
+	return count > 0
+}
+
 // TestRegistryParity_GovernedOperationBehavioralParity is the F6/U5 behavioral
 // parity assertion. For each governed: true operation in the registry, this test
 // executes both surfaces against equivalent fixtures and asserts identical
@@ -522,16 +584,25 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 	require.NotEmpty(t, governed,
 		"governed operation set must not be empty: add governed: true to at least one operation")
 
-	// Gate 2: commit_association required by name.
-	var foundCommitAssoc bool
-	for _, op := range governed {
-		if op.GovernedName == "commit_association" {
-			foundCommitAssoc = true
-			break
-		}
+	// Gate 2: every governed operation selected for this wave must be present.
+	requiredNames := []string{
+		"commit_association",
+		"comment_append",
+		"dependency_add",
+		"dependency_remove",
 	}
-	require.True(t, foundCommitAssoc,
-		"a governed operation with governed_name: commit_association is required — the test cannot pass vacuously")
+	for _, requiredName := range requiredNames {
+		found := false
+		for _, op := range governed {
+			if op.GovernedName == requiredName {
+				found = true
+				break
+			}
+		}
+		require.Truef(t, found,
+			"a governed operation with governed_name: %s is required — the test cannot pass vacuously",
+			requiredName)
+	}
 
 	const testSHA = "aabbccddee0001000200030004000500060007aabb"
 
@@ -649,6 +720,56 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliRec.Reason, mcpRec.Reason, "op %q: sidecar reason must match across surfaces", opName)
 				assert.Equal(t, cliRec.Operator, mcpRec.Operator, "op %q: sidecar operator must match across surfaces", opName)
 
+			case "backlogit_append_comment":
+				root, ws := setupGovernedWorkspace(t)
+				ctx := context.Background()
+				featID := addGovernedArtifact(t, root, "feature", "Comment parity feature", "")
+				taskCLI := addGovernedArtifact(t, root, "task", "Comment parity CLI task", featID)
+				taskMCP := addGovernedArtifact(t, root, "task", "Comment parity MCP task", featID)
+				const actor, comment, commitSHA = "gov-parity", "comment parity", "aabbccddeeff00112233445566778899"
+
+				runGovernedCLI(t, root, "comment", "add", taskCLI, "--actor", actor, "--comment", comment, "--commit-sha", commitSHA)
+				ew := core.NewWorkspaceEventWriter(ws, core.WorkspaceLogsRoot(root))
+				require.NoError(t, core.AppendComment(ctx, ws, ew, taskMCP, actor, comment, commitSHA))
+
+				cliState := observeGovernedCommentState(t, root, taskCLI, actor, comment, commitSHA)
+				mcpState := observeGovernedCommentState(t, root, taskMCP, actor, comment, commitSHA)
+				assert.Equal(t, cliState, mcpState, "op %q: comment state must match across surfaces", opName)
+				assert.True(t, cliState.JSONLEvent, "op %q: JSONL comment event must be present", opName)
+				assert.True(t, cliState.IndexedEvent, "op %q: indexed comment event must be present", opName)
+
+			case "backlogit_add_dependency":
+				root, ws := setupGovernedWorkspace(t)
+				ctx := context.Background()
+				featID := addGovernedArtifact(t, root, "feature", "Dependency parity feature", "")
+				taskCLI := addGovernedArtifact(t, root, "task", "Dependency parity CLI task", featID)
+				taskMCP := addGovernedArtifact(t, root, "task", "Dependency parity MCP task", featID)
+
+				runGovernedCLI(t, root, "dep", "add", taskCLI, featID, "--type", "blocks")
+				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
+
+				cliPresent := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
+				mcpPresent := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				assert.True(t, cliPresent, "op %q: CLI dependency must be persisted", opName)
+				assert.Equal(t, cliPresent, mcpPresent, "op %q: dependency state must match across surfaces", opName)
+
+			case "backlogit_remove_dependency":
+				root, ws := setupGovernedWorkspace(t)
+				ctx := context.Background()
+				featID := addGovernedArtifact(t, root, "feature", "Dependency removal parity feature", "")
+				taskCLI := addGovernedArtifact(t, root, "task", "Dependency removal CLI task", featID)
+				taskMCP := addGovernedArtifact(t, root, "task", "Dependency removal MCP task", featID)
+				require.NoError(t, core.AddDependency(ctx, ws, taskCLI, featID, "blocks"))
+				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
+
+				runGovernedCLI(t, root, "dep", "remove", taskCLI, featID)
+				require.NoError(t, core.RemoveDependency(ctx, ws, taskMCP, featID))
+
+				cliPresent := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
+				mcpPresent := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				assert.False(t, cliPresent, "op %q: CLI dependency must be removed", opName)
+				assert.Equal(t, cliPresent, mcpPresent, "op %q: dependency state must match across surfaces", opName)
+
 			default:
 				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)
 			}
@@ -693,4 +814,3 @@ func TestRegistryParity_ForceGatesAbsentFromMCPParams(t *testing.T) {
 	assert.True(t, humanTerminalOnly,
 		"registry update_task.cli_only_flags.force-gates.human_terminal_only must be true (F6/U4 deliberate asymmetry documentation)")
 }
-
