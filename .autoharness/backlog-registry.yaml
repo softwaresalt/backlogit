@@ -105,9 +105,13 @@ operations:
     mcp_tool: "backlogit_sync_index"
     cli_command: "backlogit sync"
 
+  # append_comment is governed: CLI and MCP use core.AppendComment and must
+  # persist the same JSONL and indexed event representations.
   append_comment:
     mcp_tool: "backlogit_append_comment"
     cli_command: "backlogit comment add {{item_id}} --actor {{actor}} --comment {{comment}}"
+    governed: true
+    governed_name: "comment_append"
     params:
       item_id: "item_id"
       actor: "actor"
@@ -209,9 +213,14 @@ operations:
       offset: "offset"
       group_by: "group_by"
 
+  # Dependency mutations are governed: generic CLI and MCP paths must leave
+  # identical dependency-edge state. Shipment-specific CLI routing remains a
+  # separate validation path and is intentionally outside this fixture.
   add_dependency:
     mcp_tool: "backlogit_add_dependency"
     cli_command: "backlogit dep add {{task_id}} {{depends_on}} --type {{dep_type}}"
+    governed: true
+    governed_name: "dependency_add"
     params:
       task_id: "item_id"
       depends_on: "depends_on"
@@ -220,6 +229,8 @@ operations:
   remove_dependency:
     mcp_tool: "backlogit_remove_dependency"
     cli_command: "backlogit dep remove {{task_id}} {{depends_on}}"
+    governed: true
+    governed_name: "dependency_remove"
     params:
       task_id: "item_id"
       depends_on: "depends_on"
