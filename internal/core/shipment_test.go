@@ -15,6 +15,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -367,6 +368,8 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	require.NoError(t, err)
 	task, err := CreateArtifact(ctx, ws, "Rollback release task", "task", WithParent(feature.ID))
 	require.NoError(t, err)
+	unreleasedTask, err := CreateArtifact(ctx, ws, "Rollback unreleased task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
 	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", []string{task.ID})
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
@@ -390,6 +393,15 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, shipment.ID))
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, task.ID))
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, feature.ID))
+	assert.Equal(t, string(models.StatusQueued), statusOf(t, ws, unreleasedTask.ID))
+	restoredUnreleasedTask, loadErr := loadArtifact(ctx, ws, unreleasedTask.ID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, feature.ID, restoredUnreleasedTask.ParentID)
+	restoredEvents, readErr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), unreleasedTask.ID)
+	require.NoError(t, readErr)
+	for _, event := range restoredEvents {
+		assert.NotEqual(t, "returned_to_backlog", event.EventType)
+	}
 }
 
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment

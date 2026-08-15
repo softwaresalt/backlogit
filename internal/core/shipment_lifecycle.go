@@ -13,6 +13,7 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -133,6 +134,7 @@ func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string
 type shipArtifactSnapshot struct {
 	artifact *models.Artifact
 	file     fileSnapshot
+	eventLog fileSnapshot
 }
 
 func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (map[string]shipArtifactSnapshot, error) {
@@ -150,7 +152,15 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
 		}
-		snapshots[id] = shipArtifactSnapshot{artifact: cloneArtifact(artifact), file: file}
+		eventLog, err := snapshotFile(events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), id))
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s event log: %w", id, err)
+		}
+		snapshots[id] = shipArtifactSnapshot{
+			artifact: cloneArtifact(artifact),
+			file:     file,
+			eventLog: eventLog,
+		}
 	}
 	return snapshots, nil
 }
@@ -173,6 +183,9 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		}
 		if err := restoreSnapshot(snapshot.file); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s file: %w", id, err))
+		}
+		if err := restoreSnapshot(snapshot.eventLog); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
 		}
 		if err := bldb.UpsertItem(ctx, ws.DB, snapshot.artifact); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))

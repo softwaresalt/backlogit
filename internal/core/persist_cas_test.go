@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,6 +41,36 @@ func TestPersistArtifactWithGuardChecksBeforeFirstWrite(t *testing.T) {
 		require.ErrorIs(t, err, guardErr)
 		assert.Equal(t, []string{"guard"}, sequence, "artifact %s must not write after guard refusal", artifact.ID)
 	}
+}
+
+func TestPersistArtifactWithGuardRejectsRelocationBeforeDirectoryCreation(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "CAS relocation feature", "feature")
+	require.NoError(t, err)
+	feature.Status = models.StatusDone
+	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
+	require.NoError(t, os.RemoveAll(archiveDir))
+
+	var sequence []string
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		sequence = append(sequence, "write")
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	guardErr := errors.New("CAS refused")
+	err = persistArtifactWithGuard(ctx, ws, feature, true, func(context.Context) error {
+		sequence = append(sequence, "guard")
+		return guardErr
+	})
+
+	require.ErrorIs(t, err, guardErr)
+	assert.Equal(t, []string{"guard"}, sequence)
+	_, statErr := os.Stat(archiveDir)
+	assert.ErrorIs(t, statErr, os.ErrNotExist, "guard refusal must not create the relocation target")
 }
 
 func TestPersistArtifactWithGuardAllowsWriteAfterCheck(t *testing.T) {
