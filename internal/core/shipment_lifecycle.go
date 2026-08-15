@@ -169,6 +169,7 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) error {
 	ctx = context.WithoutCancel(ctx)
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	operationID := shipmentOperationID(ctx)
 	ids := make([]string, 0, len(snapshots))
 	for id := range snapshots {
 		ids = append(ids, id)
@@ -177,11 +178,11 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 	for _, id := range depthSortedIDs(ids) {
 		snapshot := snapshots[id]
 		currentEvents, readErr := events.ReadAllEvents(ctx, logsDir, id)
-		var guardEvents []events.Event
+		var preservedEvents []events.Event
 		if readErr != nil {
 			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
-		} else if guardEvents, readErr = guardEventsSinceSnapshot(snapshot.eventLog, id, currentEvents); readErr != nil {
-			errs = append(errs, fmt.Errorf("identify guard evidence for %s: %w", id, readErr))
+		} else if preservedEvents, readErr = eventsSinceSnapshot(snapshot.eventLog, id, currentEvents, operationID); readErr != nil {
+			errs = append(errs, fmt.Errorf("identify concurrent events for %s: %w", id, readErr))
 		}
 		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
 			if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
@@ -197,9 +198,9 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 			errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
 		}
 		writer := NewWorkspaceEventWriter(ws, logsDir)
-		for _, event := range guardEvents {
+		for _, event := range preservedEvents {
 			if err := writer.AppendEvent(ctx, event); err != nil {
-				errs = append(errs, fmt.Errorf("restore artifact %s guard evidence: %w", id, err))
+				errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
 			}
 		}
 		if err := bldb.ReindexItemLog(ctx, ws.DB, logsDir, id); err != nil {
@@ -212,11 +213,30 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 	return errors.Join(errs...)
 }
 
+// eventsSinceSnapshot returns events appended after the ship snapshot that are
+// not part of this ship operation. Ship-generated events carry an operation
+// marker in their delta, allowing unrelated concurrent audit events to survive
+// rollback. Gate-blocked evidence is always retained because it explains why
+// the shipment could not complete even when its writer used a separate path.
 func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event) ([]events.Event, error) {
+	preserved, err := eventsSinceSnapshot(snapshot, itemID, current, "")
+	if err != nil {
+		return nil, err
+	}
+	guards := make([]events.Event, 0, len(preserved))
+	for _, event := range preserved {
+		if event.EventType == EventGateBlocked {
+			guards = append(guards, event)
+		}
+	}
+	return guards, nil
+}
+
+func eventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event, operationID string) ([]events.Event, error) {
 	baseline := make(map[string]int)
 	for _, line := range strings.Split(string(snapshot.Content), "\n") {
 		event, ok, err := events.ParseEventLine(line, itemID)
-		if err != nil || !ok || event.EventType != EventGateBlocked {
+		if err != nil || !ok {
 			continue
 		}
 		key, err := json.Marshal(event)
@@ -228,9 +248,6 @@ func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []ev
 
 	var extras []events.Event
 	for _, event := range current {
-		if event.EventType != EventGateBlocked {
-			continue
-		}
 		key, err := json.Marshal(event)
 		if err != nil {
 			return nil, fmt.Errorf("marshal current event: %w", err)
@@ -240,7 +257,9 @@ func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []ev
 			baseline[keyString]--
 			continue
 		}
-		extras = append(extras, event)
+		if event.EventType == EventGateBlocked || !isShipmentOperationEvent(event, operationID) {
+			extras = append(extras, event)
+		}
 	}
 	return extras, nil
 }
@@ -255,6 +274,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	if shipment.Status != models.StatusActive {
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
+	ctx = withShipmentOperation(ctx, shipmentID)
 
 	// Fire pre-ship hooks (top-level).
 	if ws.HookRunner != nil {
@@ -335,12 +355,24 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}()
 
-	lockErr := func() error {
+	lockErr := func() (closureErr error) {
 		unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 		if lockErr != nil {
 			return fmt.Errorf("acquire membership lock: %w", lockErr)
 		}
 		defer func() { _ = unlock() }()
+		// Roll back before releasing the membership lock. Otherwise a concurrent
+		// membership mutation could land after the failed release and be
+		// overwritten by restoration of the pre-ship snapshot.
+		defer func() {
+			if closureErr == nil || len(shipSnapshots) == 0 {
+				return
+			}
+			shipRollbackAttempted = true
+			if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
+				closureErr = fmt.Errorf("%w; rollback failed: %w", closureErr, rollbackErr)
+			}
+		}()
 
 		explicitScope = uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
 		explicitScopeSet = toIDSet(explicitScope)
@@ -443,12 +475,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return moveShipmentStatusWithHeadGuard(ctx, ws, shipmentID, ShipmentShipped, false, gatedHead)
 	}()
 	if lockErr != nil {
-		if len(shipSnapshots) > 0 {
-			shipRollbackAttempted = true
-			if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
-				return nil, fmt.Errorf("ship shipment %s: %w; rollback failed: %w", shipmentID, lockErr, rollbackErr)
-			}
-		}
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
 	}
 

@@ -427,6 +427,45 @@ func TestGuardEventsSinceSnapshotPreservesOnlyNewEvidence(t *testing.T) {
 	assert.Equal(t, "new", guardEvents[0].Delta["reason"])
 }
 
+func TestEventsSinceSnapshotPreservesConcurrentAuditEvents(t *testing.T) {
+	const baselineLine = `{"timestamp":"2026-08-15T09:00:00Z","item_id":"001-T","event_type":"status_changed","delta":{"to":"done"}}`
+	baselineEvent, ok, err := events.ParseEventLine(baselineLine, "001-T")
+	require.NoError(t, err)
+	require.True(t, ok)
+	shipEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 1, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: "status_changed",
+		Delta: map[string]any{
+			"to":                      "queued",
+			shipmentOperationDeltaKey: "001-S",
+		},
+	}
+	concurrentEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 2, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: "estimate_history",
+		Delta:     map[string]any{"estimate": 3},
+	}
+	blockedEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 3, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: EventGateBlocked,
+		Delta:     map[string]any{"reason": "head drift"},
+	}
+
+	preserved, err := eventsSinceSnapshot(
+		fileSnapshot{Content: []byte(baselineLine + "\n")},
+		"001-T",
+		[]events.Event{baselineEvent, shipEvent, concurrentEvent, blockedEvent},
+		"001-S",
+	)
+	require.NoError(t, err)
+	require.Len(t, preserved, 2)
+	assert.Equal(t, "estimate_history", preserved[0].EventType)
+	assert.Equal(t, EventGateBlocked, preserved[1].EventType)
+}
+
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
 // must fire even when a later step fails and ShipShipment returns an error.
 // moveShipmentStatusWithTopLevel's persistArtifact call (marking the

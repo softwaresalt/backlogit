@@ -55,7 +55,7 @@ func appendItemEventWithActorErr(ctx context.Context, ws *Workspace, itemID, act
 		Actor:     actor,
 		ItemID:    itemID,
 		EventType: eventType,
-		Delta:     delta,
+		Delta:     eventDeltaWithShipmentOperation(ctx, delta),
 	}
 	writer := NewWorkspaceEventWriter(ws, logsDir)
 	if err := writer.AppendEvent(ctx, event); err != nil {

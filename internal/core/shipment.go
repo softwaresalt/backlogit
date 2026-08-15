@@ -494,6 +494,40 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	return nil
 }
 
+type shipmentOperationContextKey struct{}
+
+const shipmentOperationDeltaKey = "_shipment_operation"
+
+func withShipmentOperation(ctx context.Context, operationID string) context.Context {
+	return context.WithValue(ctx, shipmentOperationContextKey{}, operationID)
+}
+
+func shipmentOperationID(ctx context.Context) string {
+	operationID, _ := ctx.Value(shipmentOperationContextKey{}).(string)
+	return operationID
+}
+
+func isShipmentOperationEvent(event events.Event, operationID string) bool {
+	if operationID == "" || event.Delta == nil {
+		return false
+	}
+	value, _ := event.Delta[shipmentOperationDeltaKey].(string)
+	return value == operationID
+}
+
+func eventDeltaWithShipmentOperation(ctx context.Context, delta map[string]any) map[string]any {
+	operationID := shipmentOperationID(ctx)
+	if operationID == "" {
+		return delta
+	}
+	tagged := make(map[string]any, len(delta)+1)
+	for key, value := range delta {
+		tagged[key] = value
+	}
+	tagged[shipmentOperationDeltaKey] = operationID
+	return tagged
+}
+
 func appendItemEvent(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) {
 	appendItemEventWithCommit(ctx, ws, itemID, eventType, delta, "")
 }
@@ -518,7 +552,7 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		Actor:     "backlogit",
 		ItemID:    itemID,
 		EventType: eventType,
-		Delta:     delta,
+		Delta:     eventDeltaWithShipmentOperation(ctx, delta),
 		CommitSHA: commitSHA,
 	}
 
