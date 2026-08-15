@@ -4,7 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -82,23 +87,140 @@ type MigrateDBOnlyLinksResult struct {
 	Checked int `json:"checked"`
 	// Written is the number of link entries written to Markdown frontmatter.
 	Written int `json:"written"`
-	// Skipped is the number of links skipped because the source file was not
-	// found or could not be written.
+	// Skipped is the total number of links that were not written. Use
+	// Unresolved and WriteFailed to distinguish dangling rows from write safety
+	// failures.
 	Skipped int `json:"skipped"`
+	// Unresolved is the number of links whose source artifact is not on disk.
+	Unresolved int `json:"unresolved"`
+	// WriteFailed is the number of links that could not be persisted safely.
+	WriteFailed int `json:"write_failed"`
+	// IndexBuilds is the number of canonical artifact indexes built for this
+	// migration. It should remain one for a complete migration run.
+	IndexBuilds int `json:"index_builds"`
+	// Indexed is the number of parseable artifact files included in the index.
+	Indexed int `json:"indexed"`
+	// ParseFailures is the number of artifact files that could not be parsed.
+	ParseFailures int `json:"parse_failures"`
+	// DurationMS is the total migration duration in milliseconds.
+	DurationMS int64 `json:"duration_ms"`
+}
+
+type canonicalArtifactIndexEntry struct {
+	artifact *models.Artifact
+	path     string
+}
+
+type canonicalArtifactIndex struct {
+	entries       map[string]canonicalArtifactIndexEntry
+	duplicates    map[string][]string
+	parseFailures []string
+	indexed       int
+}
+
+func buildCanonicalArtifactIndex(ctx context.Context, ws *Workspace) (*canonicalArtifactIndex, error) {
+	searchDirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return nil, fmt.Errorf("build canonical artifact index: resolve search directories: %w", err)
+	}
+
+	index := &canonicalArtifactIndex{
+		entries:    make(map[string]canonicalArtifactIndexEntry),
+		duplicates: make(map[string][]string),
+	}
+	for _, dirPath := range searchDirs {
+		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+			continue
+		}
+		walkErr := filepath.WalkDir(dirPath, func(path string, entry fs.DirEntry, walkErr error) error {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || filepath.Ext(path) != ".md" || strings.EqualFold(filepath.Base(path), ".stash.md") {
+				return nil
+			}
+			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+				return guardErr
+			}
+			artifact, _, parseErr := parseFile(path)
+			if parseErr != nil {
+				index.parseFailures = append(index.parseFailures, path)
+				return nil
+			}
+			if artifact.ID == "" {
+				return nil
+			}
+			if existing, exists := index.entries[artifact.ID]; exists {
+				index.duplicates[artifact.ID] = append(index.duplicates[artifact.ID], existing.path, path)
+				return nil
+			}
+			index.entries[artifact.ID] = canonicalArtifactIndexEntry{artifact: artifact, path: path}
+			index.indexed++
+			return nil
+		})
+		if walkErr != nil {
+			return nil, fmt.Errorf("build canonical artifact index: walk %s: %w", dirPath, walkErr)
+		}
+	}
+	return index, nil
+}
+
+func (i *canonicalArtifactIndex) lookup(id string) (canonicalArtifactIndexEntry, bool) {
+	entry, ok := i.entries[id]
+	return entry, ok
+}
+
+func mergeDBOnlyLinksIntoArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact) error {
+	dbLinks, err := db.GetLinks(ctx, ws.DB, artifact.ID)
+	if err != nil {
+		return fmt.Errorf("query database links: %w", err)
+	}
+	if len(dbLinks) == 0 {
+		return nil
+	}
+
+	known := make(map[string]struct{}, len(artifact.Links))
+	for _, link := range artifact.Links {
+		known[link.TargetID+"\x00"+link.LinkType] = struct{}{}
+	}
+	for _, link := range dbLinks {
+		key := link.TargetID + "\x00" + link.LinkType
+		if _, exists := known[key]; exists {
+			continue
+		}
+		artifact.Links = append(artifact.Links, models.ArtifactLink{
+			TargetID: link.TargetID,
+			LinkType: link.LinkType,
+		})
+		known[key] = struct{}{}
+	}
+	return nil
 }
 
 // MigrateDBOnlyLinks reads every row in item_links and writes any link that
 // is not already reflected in the source artifact's Markdown frontmatter.
-// This is a startup migration guard that must be called BEFORE the first
-// db.Rehydrate invocation that clears item_links, ensuring that no links
-// accumulated in the old SQLite-only model are silently dropped during the
-// transition to Markdown-first link storage.
+// Callers that are about to run db.Rehydrate must invoke this maintenance step
+// first so links accumulated in the old SQLite-only model are not silently
+// dropped during the transition to Markdown-first link storage.
 //
 // The function is idempotent and best-effort: source artifacts that cannot be
 // located on disk are logged at Debug level and counted as skipped. Links
 // already present in Markdown frontmatter are never duplicated.
 func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinksResult, error) {
-	result := &MigrateDBOnlyLinksResult{}
+	started := time.Now()
+	result := &MigrateDBOnlyLinksResult{IndexBuilds: 1}
+	defer func() {
+		result.DurationMS = time.Since(started).Milliseconds()
+	}()
+
+	index, err := buildCanonicalArtifactIndex(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	result.Indexed = index.indexed
 
 	rows, err := ws.DB.QueryContext(ctx, `SELECT source_id, target_id, link_type FROM item_links`)
 	if err != nil {
@@ -121,15 +243,26 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("migrate db-only links: iterate rows: %w", err)
 	}
+	result.ParseFailures = len(index.parseFailures)
+	if result.ParseFailures > 0 && len(bySource) > 0 {
+		return nil, fmt.Errorf("build canonical artifact index: %d artifact files failed to parse: %v", result.ParseFailures, index.parseFailures)
+	}
+	for sourceID, paths := range index.duplicates {
+		if _, linked := bySource[sourceID]; linked {
+			return nil, fmt.Errorf("build canonical artifact index: duplicate artifact ID %q in %v", sourceID, paths)
+		}
+	}
 
 	for sourceID, dbLinks := range bySource {
-		artifact, findErr := findArtifact(ctx, ws, sourceID)
-		if findErr != nil {
+		entry, found := index.lookup(sourceID)
+		if !found {
 			slog.DebugContext(ctx, "migrate db-only links: source artifact not on disk; skipping",
 				"source_id", sourceID)
 			result.Skipped += len(dbLinks)
+			result.Unresolved += len(dbLinks)
 			continue
 		}
+		artifact := entry.artifact
 
 		// Build a lookup set from links already present in Markdown frontmatter.
 		inFrontmatter := make(map[string]bool, len(artifact.Links))
@@ -137,7 +270,7 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 			inFrontmatter[l.TargetID+"\x00"+l.LinkType] = true
 		}
 
-		var toWrite bool
+		pendingWrites := 0
 		for _, link := range dbLinks {
 			result.Checked++
 			key := link.targetID + "\x00" + link.linkType
@@ -149,26 +282,58 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 				LinkType: link.linkType,
 			})
 			inFrontmatter[key] = true
-			toWrite = true
-			result.Written++
+			pendingWrites++
 		}
-		if !toWrite {
+		if pendingWrites == 0 {
 			continue
 		}
 
-		filePath, pathErr := FindArtifactPath(ctx, ws, sourceID)
+		filePath, pathErr := resolveContainedArtifactPath(ws, entry.path)
 		if pathErr != nil {
-			slog.WarnContext(ctx, "migrate db-only links: cannot locate artifact file; skipping",
+			slog.WarnContext(ctx, "migrate db-only links: source path failed containment check; skipping",
 				"source_id", sourceID, "error", pathErr)
-			result.Skipped++
+			result.Skipped += pendingWrites
+			result.WriteFailed += pendingWrites
 			continue
 		}
 		artifact.UpdatedAt = models.NowUTC()
 		if writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: file write failed; skipping",
 				"source_id", sourceID, "error", writeErr)
-			result.Skipped++
+			result.Skipped += pendingWrites
+			result.WriteFailed += pendingWrites
+			continue
 		}
+		result.Written += pendingWrites
+	}
+	result.DurationMS = time.Since(started).Milliseconds()
+	slog.InfoContext(ctx, "migrate db-only links completed",
+		"index_builds", result.IndexBuilds,
+		"indexed", result.Indexed,
+		"checked", result.Checked,
+		"written", result.Written,
+		"skipped", result.Skipped,
+		"unresolved", result.Unresolved,
+		"write_failed", result.WriteFailed,
+		"parse_failures", result.ParseFailures,
+		"duration_ms", result.DurationMS)
+	return result, nil
+}
+
+// MigrateDBOnlyLinksBeforeRehydrate preserves database-only links before a
+// rehydrate clears the item_links cache. Dangling source rows are reported and
+// allowed to be discarded; write failures block rehydrate to avoid data loss.
+func MigrateDBOnlyLinksBeforeRehydrate(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinksResult, error) {
+	result, err := MigrateDBOnlyLinks(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	if result.WriteFailed > 0 {
+		return result, fmt.Errorf("migrate db-only links before rehydrate: %d links could not be persisted", result.WriteFailed)
+	}
+	if result.Unresolved > 0 {
+		slog.WarnContext(ctx, "migrate db-only links: dropping unresolved source rows during rehydrate",
+			"unresolved", result.Unresolved)
 	}
 	return result, nil
 }

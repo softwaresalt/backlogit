@@ -971,6 +971,9 @@ func (s *Server) handleSyncIndex(ctx context.Context, _ mcplib.CallToolRequest) 
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
 	}
+	if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, s.Workspace); migrateErr != nil {
+		return InternalError(migrateErr.Error()), nil
+	}
 	count, err := db.Rehydrate(ctx, core.WorkspaceStorageRoot(s.Workspace.RootPath), s.Workspace.DB)
 	if err != nil {
 		return InternalError(fmt.Sprintf("sync index: %v", err)), nil
@@ -985,6 +988,11 @@ func (s *Server) handleMergeSync(ctx context.Context, request mcplib.CallToolReq
 	}
 
 	dryRun, _ := request.Params.Arguments["dry_run"].(bool)
+	if !dryRun {
+		if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
+			return InternalError(migrateErr.Error()), nil
+		}
+	}
 
 	s.manifestMu.RLock()
 	oldManifest := s.manifest
