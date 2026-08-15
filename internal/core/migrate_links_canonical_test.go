@@ -162,11 +162,23 @@ func BenchmarkMigrateDBOnlyLinksCanonicalIndex(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	sourcePaths := make([]string, 0, 32)
+	sourceBytes := make([][]byte, 0, 32)
 	for i := 0; i < 32; i++ {
 		source, createErr := CreateArtifact(ctx, ws, "Benchmark source", "task", WithParent(feature.ID))
 		if createErr != nil {
 			b.Fatal(createErr)
 		}
+		path, pathErr := FindArtifactPath(ctx, ws, source.ID)
+		if pathErr != nil {
+			b.Fatal(pathErr)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			b.Fatal(readErr)
+		}
+		sourcePaths = append(sourcePaths, path)
+		sourceBytes = append(sourceBytes, data)
 		if linkErr := db.AddLink(ctx, ws.DB, source.ID, target.ID, "informs"); linkErr != nil {
 			b.Fatal(linkErr)
 		}
@@ -174,6 +186,13 @@ func BenchmarkMigrateDBOnlyLinksCanonicalIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		for j, path := range sourcePaths {
+			if writeErr := os.WriteFile(path, sourceBytes[j], 0o644); writeErr != nil {
+				b.Fatal(writeErr)
+			}
+		}
+		b.StartTimer()
 		if _, migrateErr := MigrateDBOnlyLinks(ctx, ws); migrateErr != nil {
 			b.Fatal(migrateErr)
 		}
@@ -202,6 +221,32 @@ func TestRemoveArtifactLinkDeletesDBOnlyLink(t *testing.T) {
 	links, err := db.GetLinks(ctx, ws.DB, source.ID)
 	require.NoError(t, err)
 	assert.Empty(t, links)
+}
+
+func TestMigrateDBOnlyLinksFailsClosedOnParseFailure(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	storageRoot := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(filepath.Join(storageRoot, "queue"), 0o755))
+	require.NoError(t, config.WriteDefaults(storageRoot))
+
+	ws, err := NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	defer ws.Close()
+
+	target, err := CreateArtifact(ctx, ws, "Parse failure target", "feature")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(storageRoot, "queue", "malformed.md"),
+		[]byte("---\nid: [malformed\n---\n"),
+		0o644,
+	))
+	require.NoError(t, db.AddLink(ctx, ws.DB, "malformed", target.ID, "informs"))
+
+	_, err = MigrateDBOnlyLinks(ctx, ws)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse")
 }
 
 func TestMigrateDBOnlyLinksIgnoresUnlinkedDuplicateIDs(t *testing.T) {

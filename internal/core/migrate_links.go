@@ -100,6 +100,8 @@ type MigrateDBOnlyLinksResult struct {
 	IndexBuilds int `json:"index_builds"`
 	// Indexed is the number of parseable artifact files included in the index.
 	Indexed int `json:"indexed"`
+	// ParseFailures is the number of artifact files that could not be parsed.
+	ParseFailures int `json:"parse_failures"`
 	// DurationMS is the total migration duration in milliseconds.
 	DurationMS int64 `json:"duration_ms"`
 }
@@ -110,9 +112,10 @@ type canonicalArtifactIndexEntry struct {
 }
 
 type canonicalArtifactIndex struct {
-	entries    map[string]canonicalArtifactIndexEntry
-	duplicates map[string][]string
-	indexed    int
+	entries       map[string]canonicalArtifactIndexEntry
+	duplicates    map[string][]string
+	parseFailures []string
+	indexed       int
 }
 
 func buildCanonicalArtifactIndex(ctx context.Context, ws *Workspace) (*canonicalArtifactIndex, error) {
@@ -143,7 +146,11 @@ func buildCanonicalArtifactIndex(ctx context.Context, ws *Workspace) (*canonical
 				return guardErr
 			}
 			artifact, _, parseErr := parseFile(path)
-			if parseErr != nil || artifact.ID == "" {
+			if parseErr != nil {
+				index.parseFailures = append(index.parseFailures, path)
+				return nil
+			}
+			if artifact.ID == "" {
 				return nil
 			}
 			if existing, exists := index.entries[artifact.ID]; exists {
@@ -236,6 +243,10 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("migrate db-only links: iterate rows: %w", err)
 	}
+	result.ParseFailures = len(index.parseFailures)
+	if result.ParseFailures > 0 && len(bySource) > 0 {
+		return nil, fmt.Errorf("build canonical artifact index: %d artifact files failed to parse: %v", result.ParseFailures, index.parseFailures)
+	}
 	for sourceID, paths := range index.duplicates {
 		if _, linked := bySource[sourceID]; linked {
 			return nil, fmt.Errorf("build canonical artifact index: duplicate artifact ID %q in %v", sourceID, paths)
@@ -304,6 +315,7 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 		"skipped", result.Skipped,
 		"unresolved", result.Unresolved,
 		"write_failed", result.WriteFailed,
+		"parse_failures", result.ParseFailures,
 		"duration_ms", result.DurationMS)
 	return result, nil
 }
