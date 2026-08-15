@@ -2,7 +2,7 @@
 name: _Orchestrator
 description: "Coordinates the Stage → Ship pipeline for continuous iteration: routes stash intake through Stage and queued shipments through Ship, supporting sequential and pipelined execution"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor
+tools: vscode, execute, read, agent, edit, search, todo, write, create, backlogit, agent-engram, graphtor-docs
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 3
