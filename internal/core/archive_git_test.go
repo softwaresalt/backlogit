@@ -412,7 +412,7 @@ func newGitArchiveFixture(t *testing.T, itemID string, opts ...gitArchiveFixture
 	archiveDir := filepath.Join(backlogDir, "archive")
 	require.NoError(t, os.MkdirAll(queueDir, 0o755))
 	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".backlogit/backlogit.db\n.backlogit/backlogit.db*\n.backlogit/logs/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".backlogit/backlogit.db\n.backlogit/backlogit.db*\n.backlogit/logs/\n.backlogit/.locks/\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"), []byte("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "header-def.yaml"), []byte("defaults: {}\ntypes: {}\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "registry.yaml"), []byte("routes: {}\n"), 0o644))

@@ -26,7 +26,7 @@ func TestTaskLock_AcquireReleaseRoundTrip(t *testing.T) {
 
 	require.NoError(t, unlock())
 	_, statErr = os.Stat(sidecar)
-	assert.True(t, os.IsNotExist(statErr), "sidecar must be gone after release")
+	assert.NoError(t, statErr, "stable advisory lock sidecar must remain after release")
 
 	// unlock is idempotent (safe under defer + explicit call).
 	assert.NoError(t, unlock())
@@ -36,10 +36,13 @@ func TestTaskLock_BusyWhenSidecarPresentDoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	taskPath := filepath.Join(dir, "100.002-T.md")
 
-	// Pre-create a FRESH sidecar to simulate a concurrent holder in another
-	// process. lockTaskFile must observe busy without blocking.
+	// Hold the sidecar through the same OS-level advisory primitive used by
+	// another process. lockTaskFile must observe busy without blocking.
 	sidecar := taskLockSidecarPath(taskPath)
-	require.NoError(t, os.WriteFile(sidecar, []byte("held"), 0o644))
+	holder, busy, openErr := openTaskLockHandle(sidecar)
+	require.NoError(t, openErr)
+	require.False(t, busy)
+	defer func() { _ = holder.Close() }()
 
 	done := make(chan struct{})
 	var unlock func() error
@@ -59,25 +62,40 @@ func TestTaskLock_BusyWhenSidecarPresentDoesNotBlock(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrTaskBusy), "busy path must return ErrTaskBusy, got %v", err)
 }
 
-func TestTaskLock_StaleSidecarRecoveredWithWarn(t *testing.T) {
+func TestTaskLock_ExistingSidecarCanBeReused(t *testing.T) {
 	dir := t.TempDir()
 	taskPath := filepath.Join(dir, "100.003-T.md")
 
-	// Age a leftover sidecar beyond the stale TTL (crash residue).
+	// A leftover sidecar is a stable lock inode, not crash residue requiring
+	// path-based reclamation.
 	sidecar := taskLockSidecarPath(taskPath)
 	require.NoError(t, os.WriteFile(sidecar, []byte("stale"), 0o644))
-	old := time.Now().Add(-2 * taskStaleLockTTL)
-	require.NoError(t, os.Chtimes(sidecar, old, old))
 
 	unlock, err := lockTaskFile(taskPath)
-	require.NoError(t, err, "a stale sidecar must be reclaimed, not treated as busy")
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+	require.NoError(t, unlock())
+}
+
+func TestTaskLock_ReleaseClosesOwnedAdvisoryHandle(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "100.005-T.md")
+	sidecar := taskLockSidecarPath(taskPath)
+
+	unlock, err := lockTaskFile(taskPath)
+	require.NoError(t, err)
 	require.NotNil(t, unlock)
 
-	// The reclaimed lock is now held by us.
-	_, statErr := os.Stat(sidecar)
-	assert.NoError(t, statErr)
+	_, busy, err := openTaskLockHandle(sidecar)
+	require.NoError(t, err)
+	assert.True(t, busy, "a second OS-level descriptor must observe the held lock")
 
 	require.NoError(t, unlock())
+	replacement, busy, err := openTaskLockHandle(sidecar)
+	require.NoError(t, err)
+	require.False(t, busy, "the advisory lock must be available after the owner closes its handle")
+	require.NotNil(t, replacement)
+	require.NoError(t, replacement.Close())
 }
 
 // TestTaskLock_IOErrorNotClassifiedAsBusy is the regression guard for the

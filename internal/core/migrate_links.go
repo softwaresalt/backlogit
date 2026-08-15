@@ -262,42 +262,63 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 			result.Unresolved += len(dbLinks)
 			continue
 		}
-		artifact := entry.artifact
-
-		// Build a lookup set from links already present in Markdown frontmatter.
-		inFrontmatter := make(map[string]bool, len(artifact.Links))
-		for _, l := range artifact.Links {
-			inFrontmatter[l.TargetID+"\x00"+l.LinkType] = true
-		}
-
-		pendingWrites := 0
-		for _, link := range dbLinks {
-			result.Checked++
-			key := link.targetID + "\x00" + link.linkType
-			if inFrontmatter[key] {
-				continue
-			}
-			artifact.Links = append(artifact.Links, models.ArtifactLink{
-				TargetID: link.targetID,
-				LinkType: link.linkType,
-			})
-			inFrontmatter[key] = true
-			pendingWrites++
-		}
-		if pendingWrites == 0 {
-			continue
-		}
-
+		result.Checked += len(dbLinks)
 		filePath, pathErr := resolveContainedArtifactPath(ws, entry.path)
 		if pathErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: source path failed containment check; skipping",
 				"source_id", sourceID, "error", pathErr)
-			result.Skipped += pendingWrites
-			result.WriteFailed += pendingWrites
+			result.Skipped += len(dbLinks)
+			result.WriteFailed += len(dbLinks)
+			continue
+		}
+		unlock, lockErr := lockArtifactMutation(ctx, ws, sourceID)
+		if lockErr != nil {
+			slog.WarnContext(ctx, "migrate db-only links: artifact mutation lock unavailable; skipping",
+				"source_id", sourceID, "error", lockErr)
+			result.Skipped += len(dbLinks)
+			result.WriteFailed += len(dbLinks)
+			continue
+		}
+		raw, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			_ = unlock()
+			result.Skipped += len(dbLinks)
+			result.WriteFailed += len(dbLinks)
+			continue
+		}
+		fm, body, parseErr := models.ParseFrontmatter(string(raw))
+		artifact, artifactErr := models.ArtifactFromFrontmatter(fm, body)
+		if parseErr != nil || artifactErr != nil || artifact.ID != sourceID {
+			_ = unlock()
+			result.Skipped += len(dbLinks)
+			result.WriteFailed += len(dbLinks)
+			continue
+		}
+
+		// Rebuild the merge from the artifact read under the mutation lock so a
+		// concurrent writer cannot be overwritten by a stale canonical-index copy.
+		inFrontmatter := make(map[string]bool, len(artifact.Links))
+		for _, l := range artifact.Links {
+			inFrontmatter[l.TargetID+"\x00"+l.LinkType] = true
+		}
+		pendingWrites := 0
+		for _, link := range dbLinks {
+			key := link.targetID + "\x00" + link.linkType
+			if inFrontmatter[key] {
+				continue
+			}
+			artifact.Links = append(artifact.Links, models.ArtifactLink{TargetID: link.targetID, LinkType: link.linkType})
+			inFrontmatter[key] = true
+			pendingWrites++
+		}
+		if pendingWrites == 0 {
+			_ = unlock()
 			continue
 		}
 		artifact.UpdatedAt = models.NowUTC()
-		if writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
+		writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws))
+		_ = unlock()
+		if writeErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: file write failed; skipping",
 				"source_id", sourceID, "error", writeErr)
 			result.Skipped += pendingWrites

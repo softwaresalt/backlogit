@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -33,6 +35,39 @@ func setupShipmentWorkspace(t *testing.T) *Workspace {
 	require.NoError(t, err)
 	t.Cleanup(func() { workspace.Close() })
 	return workspace
+}
+
+func TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feature, err := CreateArtifact(ctx, ws, "Rollback read failure feature", "feature")
+	require.NoError(t, err)
+	artifact, err := CreateArtifact(ctx, ws, "Rollback read failure", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+
+	artifactPath, err := FindArtifactPath(ctx, ws, artifact.ID)
+	require.NoError(t, err)
+	artifactSnapshot, err := snapshotFile(artifactPath)
+	require.NoError(t, err)
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	eventLogPath := events.LogPathForItem(logsDir, artifact.ID)
+	require.NoError(t, os.MkdirAll(filepath.Dir(eventLogPath), 0o755))
+	baseline := []byte(fmt.Sprintf(`{"item_id":%q,"event_type":"baseline"}`+"\n", artifact.ID))
+	current := append(append([]byte(nil), baseline...), []byte(strings.Repeat("x", 1<<20+1)+"\n")...)
+	require.NoError(t, os.WriteFile(eventLogPath, current, 0o644))
+
+	err = restoreShipArtifacts(ctx, ws, map[string]shipArtifactSnapshot{
+		artifact.ID: {
+			artifact: cloneArtifact(artifact),
+			file:     artifactSnapshot,
+			eventLog: fileSnapshot{Path: eventLogPath, Exists: true, Content: baseline},
+		},
+	})
+	require.Error(t, err)
+	got, readErr := os.ReadFile(eventLogPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, current, got)
 }
 
 // T002 / ST012: Create a shipment and verify it exists with queued status.
@@ -355,6 +390,114 @@ func TestShipShipment_BodyPlannedOnlyChildrenShipKeepsFeatureOpen(t *testing.T) 
 	require.NoError(t, pathErr, "covering feature file must still be discoverable")
 	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featureQueuePath)),
 		"covering feature file must remain under .backlogit/queue/, got %s", featureQueuePath)
+}
+
+// TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails verifies that
+// mutations completed before the final shipment status write are compensated.
+func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Rollback covering feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Rollback release task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	unreleasedTask, err := CreateArtifact(ctx, ws, "Rollback unreleased task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	injectedErr := errors.New("injected shipment persist failure")
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		if artifact.ID == shipment.ID {
+			return injectedErr
+		}
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, injectedErr)
+	assert.Nil(t, result)
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, shipment.ID))
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, task.ID))
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, feature.ID))
+	assert.Equal(t, string(models.StatusQueued), statusOf(t, ws, unreleasedTask.ID))
+	restoredUnreleasedTask, loadErr := loadArtifact(ctx, ws, unreleasedTask.ID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, feature.ID, restoredUnreleasedTask.ParentID)
+	restoredEvents, readErr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), unreleasedTask.ID)
+	require.NoError(t, readErr)
+	for _, event := range restoredEvents {
+		assert.NotEqual(t, "returned_to_backlog", event.EventType)
+	}
+	indexedEvents, indexErr := bldb.ListItemLogEntries(ctx, ws.DB, unreleasedTask.ID, 0)
+	require.NoError(t, indexErr)
+	for _, event := range indexedEvents {
+		assert.NotEqual(t, "returned_to_backlog", event.EventType)
+	}
+}
+
+func TestGuardEventsSinceSnapshotPreservesOnlyNewEvidence(t *testing.T) {
+	const baselineLine = `{"timestamp":"2026-08-15T09:00:00Z","item_id":"001-S","event_type":"gate_blocked","delta":{"reason":"old"}}`
+	baselineEvent, ok, err := events.ParseEventLine(baselineLine, "001-S")
+	require.NoError(t, err)
+	require.True(t, ok)
+	newEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 1, 0, 0, time.UTC),
+		ItemID:    "001-S",
+		EventType: EventGateBlocked,
+		Delta:     map[string]any{"reason": "new"},
+	}
+
+	guardEvents, err := guardEventsSinceSnapshot(fileSnapshot{Content: []byte(baselineLine + "\n")}, "001-S", []events.Event{baselineEvent, newEvent})
+	require.NoError(t, err)
+	require.Len(t, guardEvents, 1)
+	assert.Equal(t, "new", guardEvents[0].Delta["reason"])
+}
+
+func TestEventsSinceSnapshotPreservesConcurrentAuditEvents(t *testing.T) {
+	const baselineLine = `{"timestamp":"2026-08-15T09:00:00Z","item_id":"001-T","event_type":"status_changed","delta":{"to":"done"}}`
+	baselineEvent, ok, err := events.ParseEventLine(baselineLine, "001-T")
+	require.NoError(t, err)
+	require.True(t, ok)
+	shipEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 1, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: "status_changed",
+		Delta: map[string]any{
+			"to":                      "queued",
+			shipmentOperationDeltaKey: "001-S",
+		},
+	}
+	concurrentEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 2, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: "estimate_history",
+		Delta:     map[string]any{"estimate": 3},
+	}
+	blockedEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 3, 0, 0, time.UTC),
+		ItemID:    "001-T",
+		EventType: EventGateBlocked,
+		Delta:     map[string]any{"reason": "head drift"},
+	}
+
+	preserved, err := eventsSinceSnapshot(
+		fileSnapshot{Content: []byte(baselineLine + "\n")},
+		"001-T",
+		[]events.Event{baselineEvent, shipEvent, concurrentEvent, blockedEvent},
+		"001-S",
+	)
+	require.NoError(t, err)
+	require.Len(t, preserved, 2)
+	assert.Equal(t, "estimate_history", preserved[0].EventType)
+	assert.Equal(t, EventGateBlocked, preserved[1].EventType)
 }
 
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
@@ -1237,6 +1380,25 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 }
 
 // T002 / ST013: Restore the Markdown file when DB upsert fails after file write.
+func TestPersistArtifact_RejectsConcurrentArtifactMutation(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Locked shipment", nil)
+	require.NoError(t, err)
+	unlock, err := lockArtifactMutation(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	defer func() { _ = unlock() }()
+	shipment.Title = "Concurrent mutation"
+	shipment.UpdatedAt = time.Now()
+
+	// Act
+	err = persistArtifact(ctx, ws, shipment, false)
+
+	// Assert
+	require.ErrorIs(t, err, ErrTaskBusy)
+}
+
 func TestPersistArtifact_RestoresFileOnUpsertFailure(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)

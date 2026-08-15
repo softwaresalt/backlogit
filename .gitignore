@@ -40,6 +40,7 @@ prompt.md
 
 # Advisory file locks (autoharness concurrency protocol)
 .*.lock
+.backlogit/.locks/
 
 # Machine-local telemetry harvest checkpoint (changes per machine/run)
 .backlogit/.telemetry-checkpoint.json

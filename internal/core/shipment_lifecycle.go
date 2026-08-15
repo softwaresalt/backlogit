@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -130,6 +132,154 @@ func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string
 	return fmt.Errorf("claim shipment %s: %w", shipmentID, claimErr)
 }
 
+type shipArtifactSnapshot struct {
+	artifact *models.Artifact
+	file     fileSnapshot
+	eventLog fileSnapshot
+}
+
+func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (map[string]shipArtifactSnapshot, error) {
+	snapshots := make(map[string]shipArtifactSnapshot)
+	for _, id := range uniqueNonEmptyStrings(ids) {
+		artifact, err := findArtifact(ctx, ws, id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s: %w", id, err)
+		}
+		path, err := FindArtifactPath(ctx, ws, id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s path: %w", id, err)
+		}
+		file, err := snapshotFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
+		}
+		_, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLogsRoot(ws.RootPath), id)
+		if lockErr != nil {
+			return nil, fmt.Errorf("lock artifact %s event log: %w", id, lockErr)
+		}
+		eventLog, err := snapshotFile(events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), id))
+		unlockItemLog()
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s event log: %w", id, err)
+		}
+		snapshots[id] = shipArtifactSnapshot{
+			artifact: cloneArtifact(artifact),
+			file:     file,
+			eventLog: eventLog,
+		}
+	}
+	return snapshots, nil
+}
+
+func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) error {
+	ctx = context.WithoutCancel(ctx)
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	operationID := shipmentOperationID(ctx)
+	ids := make([]string, 0, len(snapshots))
+	for id := range snapshots {
+		ids = append(ids, id)
+	}
+	var errs []error
+	for _, id := range depthSortedIDs(ids) {
+		itemCtx, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+		if lockErr != nil {
+			errs = append(errs, fmt.Errorf("lock artifact %s event log: %w", id, lockErr))
+			continue
+		}
+		snapshot := snapshots[id]
+		currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
+		var preservedEvents []events.Event
+		eventLogRestorable := readErr == nil
+		if readErr != nil {
+			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
+		} else if preservedEvents, readErr = eventsSinceSnapshot(snapshot.eventLog, id, currentEvents, operationID); readErr != nil {
+			eventLogRestorable = false
+			errs = append(errs, fmt.Errorf("identify concurrent events for %s: %w", id, readErr))
+		}
+		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
+			if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				errs = append(errs, fmt.Errorf("remove mutated artifact %s: %w", id, removeErr))
+			}
+		} else if err != nil && !errors.Is(err, blerrors.ErrNotFound) {
+			errs = append(errs, fmt.Errorf("locate mutated artifact %s: %w", id, err))
+		}
+		if err := restoreSnapshot(snapshot.file); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s file: %w", id, err))
+		}
+		if eventLogRestorable {
+			if err := restoreSnapshot(snapshot.eventLog); err != nil {
+				errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
+			} else {
+				writer := NewWorkspaceEventWriter(ws, logsDir)
+				for _, event := range preservedEvents {
+					if err := writer.AppendEvent(itemCtx, event); err != nil {
+						errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
+					}
+				}
+				if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
+					errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
+				}
+			}
+		}
+		if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))
+		}
+		unlockItemLog()
+	}
+	return errors.Join(errs...)
+}
+
+// eventsSinceSnapshot returns events appended after the ship snapshot that are
+// not part of this ship operation. Ship-generated events carry an operation
+// marker in their delta, allowing unrelated concurrent audit events to survive
+// rollback. Gate-blocked evidence is always retained because it explains why
+// the shipment could not complete even when its writer used a separate path.
+func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event) ([]events.Event, error) {
+	preserved, err := eventsSinceSnapshot(snapshot, itemID, current, "")
+	if err != nil {
+		return nil, err
+	}
+	guards := make([]events.Event, 0, len(preserved))
+	for _, event := range preserved {
+		if event.EventType == EventGateBlocked {
+			guards = append(guards, event)
+		}
+	}
+	return guards, nil
+}
+
+func eventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event, operationID string) ([]events.Event, error) {
+	baseline := make(map[string]int)
+	for _, line := range strings.Split(string(snapshot.Content), "\n") {
+		event, ok, err := events.ParseEventLine(line, itemID)
+		if err != nil || !ok {
+			continue
+		}
+		key, err := json.Marshal(event)
+		if err != nil {
+			return nil, fmt.Errorf("marshal baseline event: %w", err)
+		}
+		baseline[string(key)]++
+	}
+
+	var extras []events.Event
+	for _, event := range current {
+		key, err := json.Marshal(event)
+		if err != nil {
+			return nil, fmt.Errorf("marshal current event: %w", err)
+		}
+		keyString := string(key)
+		if baseline[keyString] > 0 {
+			baseline[keyString]--
+			continue
+		}
+		if event.EventType == EventGateBlocked || !isShipmentOperationEvent(event, operationID) {
+			extras = append(extras, event)
+		}
+	}
+	return extras, nil
+}
+
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
 func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
@@ -140,6 +290,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	if shipment.Status != models.StatusActive {
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
+	ctx = withShipmentOperation(ctx, shipmentID)
 
 	// Fire pre-ship hooks (top-level).
 	if ws.HookRunner != nil {
@@ -180,6 +331,8 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	var explicitScope, releaseScope, featureIDs, returnedIDs []string
 	var explicitScopeSet map[string]struct{}
 	var nonMemberFeatureSnapshots map[string]featureStatusSnapshot
+	var shipSnapshots map[string]shipArtifactSnapshot
+	shipRollbackAttempted := false
 	// archivedIDs and restored are declared here (rather than at their first
 	// assignment) so both the locked closure below and the deferred fallback
 	// registered immediately after it observe/mutate the same variables.
@@ -210,7 +363,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// only during return unwinding -- strictly after those in-line
 	// statements already ran to completion.
 	defer func() {
-		if restored {
+		if restored || shipRollbackAttempted {
 			return
 		}
 		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
@@ -218,12 +371,31 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}()
 
-	lockErr := func() error {
+	var releaseArtifactLocks func() error
+	defer func() {
+		if releaseArtifactLocks != nil {
+			_ = releaseArtifactLocks()
+		}
+	}()
+
+	lockErr := func() (closureErr error) {
 		unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 		if lockErr != nil {
 			return fmt.Errorf("acquire membership lock: %w", lockErr)
 		}
 		defer func() { _ = unlock() }()
+		// Roll back before releasing the membership lock. Otherwise a concurrent
+		// membership mutation could land after the failed release and be
+		// overwritten by restoration of the pre-ship snapshot.
+		defer func() {
+			if closureErr == nil || len(shipSnapshots) == 0 {
+				return
+			}
+			shipRollbackAttempted = true
+			if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
+				closureErr = fmt.Errorf("%w; rollback failed: %w", closureErr, rollbackErr)
+			}
+		}()
 
 		explicitScope = uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
 		explicitScopeSet = toIDSet(explicitScope)
@@ -254,9 +426,9 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		// before this closure's own status-transition persist, narrowing
 		// the residual window a concurrent commit could otherwise land in
 		// between this call returning and that persist (106.033-T).
-		gatedHead, err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
-		if err != nil {
-			return err
+		_, gateErr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+		if gateErr != nil {
+			return gateErr
 		}
 
 		// 133.004-T: resolve covering-feature ancestry BEFORE completing the
@@ -279,6 +451,33 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		nonMemberFeatureSnapshots, snapshotErr = snapshotNonMemberFeatureStatuses(ctx, ws, featureIDs, explicitScopeSet)
 		if snapshotErr != nil {
 			return fmt.Errorf("snapshot covering feature scope: %w", snapshotErr)
+		}
+
+		rollbackIDs := append([]string{shipmentID}, releaseScope...)
+		rollbackIDs = append(rollbackIDs, featureIDs...)
+		for _, featureID := range featureIDs {
+			descendants, descendantsErr := descendantItems(ctx, ws, featureID)
+			if descendantsErr != nil {
+				return fmt.Errorf("snapshot feature descendants for %s: %w", featureID, descendantsErr)
+			}
+			for _, descendant := range descendants {
+				rollbackIDs = append(rollbackIDs, descendant.ID)
+			}
+		}
+		var artifactLockErr error
+		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
+		if artifactLockErr != nil {
+			return fmt.Errorf("lock release scope artifacts: %w", artifactLockErr)
+		}
+		// Re-run the completion gate after acquiring the artifact locks so no
+		// concurrent artifact mutation can land between validation and snapshot.
+		gatedHead, gateErr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+		if gateErr != nil {
+			return gateErr
+		}
+		shipSnapshots, snapshotErr = snapshotShipArtifacts(ctx, ws, rollbackIDs)
+		if snapshotErr != nil {
+			return fmt.Errorf("snapshot release scope: %w", snapshotErr)
 		}
 
 		if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
@@ -845,12 +1044,43 @@ type AdoptItemResult struct {
 	RewrittenArtifactIDs []string `json:"rewritten_artifact_ids,omitempty"`
 }
 
+func lockAdoptionEventLogs(ctx context.Context, ws *Workspace, oldID, newID string) (context.Context, func(), error) {
+	ids := []string{oldID, newID}
+	sort.Strings(ids)
+	unlocks := make([]func(), 0, len(ids))
+	lockedCtx := ctx
+	for _, id := range ids {
+		var unlock func()
+		var err error
+		lockedCtx, unlock, err = events.LockItemLogCrossProcess(lockedCtx, WorkspaceLogsRoot(ws.RootPath), id)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				unlocks[i]()
+			}
+			return ctx, nil, err
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return lockedCtx, func() {
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
+		}
+	}, nil
+}
+
 // AdoptItem sets an orphaned or unparented item's parent_id to a new feature,
 // atomically rewriting its hierarchical ID, renaming files, updating dependency
 // and link edges, and syncing the index. The return value includes the new ID
 // so callers can update their own references. Adoption rewrites internal
 // backlogit references only; external references are the caller's responsibility.
 func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (*AdoptItemResult, error) {
+	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
+	if lockErr != nil {
+		return nil, fmt.Errorf("adopt item %s: acquire mutation lock: %w", itemID, lockErr)
+	}
+	defer func() { _ = releaseArtifactLocks() }()
+	ctx = lockedCtx
+
 	if newParentID == "" {
 		return nil, fmt.Errorf("adopt item %s: new_parent_id is required", itemID)
 	}
@@ -912,6 +1142,16 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				newID = generatedID
 			}
 		}
+	}
+
+	var releaseEventLocks func()
+	if newID != oldID {
+		lockedCtx, releaseEventLocks, lockErr = lockAdoptionEventLogs(ctx, ws, oldID, newID)
+		if lockErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire event-log locks: %w", itemID, lockErr)
+		}
+		defer releaseEventLocks()
+		ctx = lockedCtx
 	}
 
 	// Update the artifact with new parent and ID.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -139,27 +141,15 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // on.
 //
 // When expectedHeadSHA is non-empty, this function re-resolves HEAD ONE MORE
-// TIME, immediately before the persist — the last read this function itself
-// performs before calling persistArtifact — and refuses (fail closed) if it
-// has drifted from expectedHeadSHA. This narrows, but does not eliminate, the
-// residual window: git offers no atomic "read HEAD and complete our write"
-// primitive, and persistArtifact itself still performs further non-mutating
-// preparation (artifact validation, FindArtifactPath resolution, registry
-// load, two file snapshots, and potential target-directory creation) before
-// its own first mutating filesystem write. A commit landing anywhere in that
-// remaining interval — not just "a few instructions" — is still a
-// theoretically possible (if narrow, since none of that preparation touches
-// the repository's own HEAD ref) audit-precision gap. Moving this guard
-// inside persistArtifact itself, immediately before its first mutating
-// write, was evaluated and explicitly deferred: persistArtifact is the
-// shared persistence path for every artifact type (tasks, features,
-// shipments), not just this shipment-status transition, so threading a
-// shipment-specific expected-head parameter through it is a materially
-// larger design surface than this CAS/guard's declared scope — comparable to
-// the git-ref-lock option (b) the 126-S stage memory already deferred for
-// the same reason. Accepted as a documented, monitored limitation per
-// 106.033-T option (c); see backlog follow-up 3A649F8E for a dedicated
-// investigation into a repository-wide (not shipment-specific) tightening.
+// TIME and passes the guard into the shared persistence path. The persistence
+// path performs validation, link merging, path resolution, and file snapshots
+// first, then invokes the guard immediately before its first artifact-data
+// filesystem operation; lock infrastructure is intentionally prepared before
+// the guard. This narrows, but does not eliminate, the residual
+// window: git offers no atomic "read HEAD and complete our write" primitive,
+// so a commit can still land after the final HEAD check and before the write
+// completes. The guard remains shared across task, feature, and shipment
+// persistence so all callers use the same pre-mutation ordering.
 //
 // An empty expectedHeadSHA (every existing call site other than ShipShipment's
 // active->shipped transition, and that transition itself whenever
@@ -199,51 +189,15 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		}
 	}
 
-	// Repository-ref CAS/guard (106.033-T): the last read this function
-	// performs before calling persistArtifact. See this function's doc
-	// comment for the residual window this narrows (including the further,
-	// non-mutating work persistArtifact itself still does afterward).
-	//
-	// review-fix (PR #358): gateShipmentCompletion already recorded a
-	// durable EventGatePassed for this same shipment before returning, so a
-	// refusal here — without its own evidence record — would leave the
-	// audit log showing only a pass even though the shipment never actually
-	// shipped, defeating monitoring of exactly this guard (the scenario it
-	// exists to catch). Append a best-effort EventGateBlocked, carrying the
-	// expected and observed heads, before returning either refusal below.
-	// The append failure itself is intentionally non-fatal here (logged,
-	// not joined into the returned error): the ship is already refused, so
-	// a failed audit write must not mask or replace that refusal.
-	if expectedHeadSHA != "" {
-		currentHead, headErr := ws.headSHABounded(ctx)
-		if headErr != nil {
-			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
-				"level":         "shipment",
-				"outcome":       "blocked",
-				"reason":        "head-resolve-error-before-persist",
-				"expected_head": expectedHeadSHA,
-			}); aerr != nil {
-				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
-			}
-			return headResolveError(shipmentID, headErr)
-		}
-		if derr := headDriftError(shipmentID, expectedHeadSHA, currentHead); derr != nil {
-			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
-				"level":         "shipment",
-				"outcome":       "blocked",
-				"reason":        "head-drift-before-persist",
-				"expected_head": expectedHeadSHA,
-				"observed_head": currentHead,
-			}); aerr != nil {
-				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
-			}
-			return derr
-		}
-	}
-
 	shipment.Status = models.ArtifactStatus(newStatus)
 	shipment.UpdatedAt = models.NowUTC()
-	if err := persistArtifact(ctx, ws, shipment, true); err != nil {
+	var guard func(context.Context) error
+	if expectedHeadSHA != "" {
+		guard = func(guardCtx context.Context) error {
+			return checkShipmentPersistHeadGuard(guardCtx, ws, shipmentID, expectedHeadSHA)
+		}
+	}
+	if err := persistArtifactWithGuard(ctx, ws, shipment, true, guard); err != nil {
 		return fmt.Errorf("move shipment %s: %w", shipmentID, err)
 	}
 
@@ -269,7 +223,35 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 	return nil
 }
 
-// lockShipmentMembership acquires the per-shipment advisory lock guarding
+func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentID, expectedHeadSHA string) error {
+	currentHead, headErr := ws.headSHABounded(ctx)
+	if headErr != nil {
+		if auditErr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+			"level":         "shipment",
+			"outcome":       "blocked",
+			"reason":        "head-resolve-error-before-persist",
+			"expected_head": expectedHeadSHA,
+		}); auditErr != nil {
+			slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", auditErr)
+		}
+		return headResolveError(shipmentID, headErr)
+	}
+	if driftErr := headDriftError(shipmentID, expectedHeadSHA, currentHead); driftErr != nil {
+		if auditErr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+			"level":         "shipment",
+			"outcome":       "blocked",
+			"reason":        "head-drift-before-persist",
+			"expected_head": expectedHeadSHA,
+			"observed_head": currentHead,
+		}); auditErr != nil {
+			slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", auditErr)
+		}
+		return driftErr
+	}
+	return nil
+}
+
+// Shipment membership lock design notes:
 // shipment.CustomFields["items"] — reusing task_lock.go's per-file-path
 // keyed-mutex-plus-sidecar mechanism (despite its "task" naming, it is
 // generic: keyed by resolved file path, not by artifact type). Every
@@ -296,6 +278,145 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 // finding, third pass). A key derived only from the workspace root and
 // shipment ID never changes, so it keeps contending correctly no matter
 // where the underlying file currently lives.
+type artifactMutationLockContextKey struct{}
+
+type artifactMutationLockSet map[string]struct{}
+
+const artifactMutationLocksDirName = "artifacts"
+
+func withArtifactMutationLocks(ctx context.Context, ids []string) context.Context {
+	set := make(artifactMutationLockSet, len(ids))
+	if existing, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet); ok {
+		for id := range existing {
+			set[id] = struct{}{}
+		}
+	}
+	for _, id := range ids {
+		if id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	return context.WithValue(ctx, artifactMutationLockContextKey{}, set)
+}
+
+func artifactMutationLockHeld(ctx context.Context, id string) bool {
+	set, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet)
+	if !ok {
+		return false
+	}
+	_, ok = set[id]
+	return ok
+}
+
+func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) {
+	storageRoot, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation storage root: %w", err)
+	}
+	storageRoot = filepath.Clean(storageRoot)
+	realStorageRoot, err := filepath.EvalSymlinks(storageRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation storage root symlinks: %w", err)
+	}
+	locksDir := filepath.Join(realStorageRoot, shipmentMembershipLocksDirName)
+	if existing, evalErr := filepath.EvalSymlinks(locksDir); evalErr == nil {
+		if !pathContained(realStorageRoot, existing) {
+			return "", fmt.Errorf("artifact mutation locks parent resolves outside workspace: %w", blerrors.ErrValidation)
+		}
+		locksDir = existing
+	} else if !os.IsNotExist(evalErr) {
+		return "", fmt.Errorf("resolve artifact mutation locks parent: %w", evalErr)
+	}
+	if !pathContained(realStorageRoot, locksDir) {
+		return "", fmt.Errorf("artifact mutation locks parent is outside workspace: %w", blerrors.ErrValidation)
+	}
+	if err := os.MkdirAll(locksDir, 0o755); err != nil {
+		return "", fmt.Errorf("create artifact mutation locks parent: %w", err)
+	}
+	realLocksDir, err := filepath.EvalSymlinks(locksDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation locks parent containment: %w", err)
+	}
+	if !pathContained(realStorageRoot, realLocksDir) {
+		return "", fmt.Errorf("artifact mutation locks parent resolves outside workspace: %w", blerrors.ErrValidation)
+	}
+	artifactLocksDir := filepath.Join(realLocksDir, artifactMutationLocksDirName)
+	if existing, evalErr := filepath.EvalSymlinks(artifactLocksDir); evalErr == nil {
+		if !pathContained(realLocksDir, existing) {
+			return "", fmt.Errorf("artifact mutation locks directory resolves outside parent: %w", blerrors.ErrValidation)
+		}
+		artifactLocksDir = existing
+	} else if !os.IsNotExist(evalErr) {
+		return "", fmt.Errorf("resolve artifact mutation locks directory: %w", evalErr)
+	}
+	if !pathContained(realLocksDir, artifactLocksDir) {
+		return "", fmt.Errorf("artifact mutation locks directory is outside parent: %w", blerrors.ErrValidation)
+	}
+	if err := os.MkdirAll(artifactLocksDir, 0o755); err != nil {
+		return "", fmt.Errorf("create artifact mutation locks directory: %w", err)
+	}
+	realArtifactLocksDir, err := filepath.EvalSymlinks(artifactLocksDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation locks directory containment: %w", err)
+	}
+	// Encode the caller-controlled ID so the synthetic lock key cannot escape
+	// the contained directory even if a future caller passes an unvalidated ID.
+	stableKey := filepath.Join(realArtifactLocksDir, hex.EncodeToString([]byte(artifactID)))
+	if !pathContained(realArtifactLocksDir, stableKey) {
+		return "", fmt.Errorf("artifact ID %q resolves outside the artifact mutation locks directory: %w", artifactID, blerrors.ErrValidation)
+	}
+	return stableKey, nil
+}
+
+func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string) (func() error, error) {
+	if artifactMutationLockHeld(ctx, artifactID) {
+		return func() error { return nil }, nil
+	}
+	stableKey, err := artifactMutationLockPath(ws, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	return lockTaskFile(stableKey)
+}
+
+func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
+	uniqueIDs := uniqueNonEmptyStrings(ids)
+	sort.Strings(uniqueIDs)
+	unlocks := make([]func() error, 0, len(uniqueIDs))
+	for _, id := range uniqueIDs {
+		if artifactMutationLockHeld(ctx, id) {
+			continue
+		}
+		stableKey, err := artifactMutationLockPath(ws, id)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				_ = unlocks[i]()
+			}
+			return ctx, nil, err
+		}
+		unlock, err := lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				_ = unlocks[i]()
+			}
+			return ctx, nil, fmt.Errorf("lock artifact %s: %w", id, err)
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	lockedCtx := withArtifactMutationLocks(ctx, uniqueIDs)
+	return lockedCtx, func() error {
+		var errs []error
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			if err := unlocks[i](); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
+	}, nil
+}
+
+// lockShipmentMembership acquires the stable per-shipment advisory lock used
+// to serialize membership reads and writes across relocation.
 func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID string) (unlock func() error, err error) {
 	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
 	if mkErr := os.MkdirAll(locksDir, 0o755); mkErr != nil {
@@ -502,6 +623,40 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	return nil
 }
 
+type shipmentOperationContextKey struct{}
+
+const shipmentOperationDeltaKey = "_shipment_operation"
+
+func withShipmentOperation(ctx context.Context, operationID string) context.Context {
+	return context.WithValue(ctx, shipmentOperationContextKey{}, operationID)
+}
+
+func shipmentOperationID(ctx context.Context) string {
+	operationID, _ := ctx.Value(shipmentOperationContextKey{}).(string)
+	return operationID
+}
+
+func isShipmentOperationEvent(event events.Event, operationID string) bool {
+	if operationID == "" || event.Delta == nil {
+		return false
+	}
+	value, _ := event.Delta[shipmentOperationDeltaKey].(string)
+	return value == operationID
+}
+
+func eventDeltaWithShipmentOperation(ctx context.Context, delta map[string]any) map[string]any {
+	operationID := shipmentOperationID(ctx)
+	if operationID == "" {
+		return delta
+	}
+	tagged := make(map[string]any, len(delta)+1)
+	for key, value := range delta {
+		tagged[key] = value
+	}
+	tagged[shipmentOperationDeltaKey] = operationID
+	return tagged
+}
+
 func appendItemEvent(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) {
 	appendItemEventWithCommit(ctx, ws, itemID, eventType, delta, "")
 }
@@ -526,16 +681,22 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		Actor:     "backlogit",
 		ItemID:    itemID,
 		EventType: eventType,
-		Delta:     delta,
+		Delta:     eventDeltaWithShipmentOperation(ctx, delta),
 		CommitSHA: commitSHA,
 	}
 
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		slog.WarnContext(ctx, "lock shipment event log", "item_id", itemID, "event_type", eventType, "error", lockErr)
+		return
+	}
+	defer unlock()
 	writer := NewWorkspaceEventWriter(ws, logsDir)
-	if err := writer.AppendEvent(ctx, event); err != nil {
+	if err := writer.AppendEvent(lockedCtx, event); err != nil {
 		slog.WarnContext(ctx, "append shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 		return
 	}
-	if err := bldb.IndexEvent(ctx, ws.DB, logsDir, event); err != nil {
+	if err := bldb.IndexEvent(lockedCtx, ws.DB, logsDir, event); err != nil {
 		slog.WarnContext(ctx, "index shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 	}
 }
@@ -599,14 +760,24 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 var persistArtifactWriteFn = WriteArtifactFileWithOptions
 
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
-	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, true)
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, nil)
 }
 
 func persistArtifactWithoutDBOnlyLinks(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
-	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, false)
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, false, nil)
 }
 
-func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool) error {
+func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool, guard func(context.Context) error) error {
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, guard)
+}
+
+func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
+	unlock, err := lockArtifactMutation(ctx, ws, artifact.ID)
+	if err != nil {
+		return fmt.Errorf("lock artifact %s: %w", artifact.ID, err)
+	}
+	defer func() { _ = unlock() }()
+
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
 	}
@@ -629,7 +800,15 @@ func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact 
 		return fmt.Errorf("snapshot target artifact file: %w", err)
 	}
 
+	if guard != nil {
+		if err := guard(ctx); err != nil {
+			return err
+		}
+	}
 	if currentPath != targetPath {
+		if err := mkdirAllDurable(filepath.Dir(targetPath), WorkspaceDurableWrites(ws)); err != nil {
+			return fmt.Errorf("create directory %s: %w", filepath.Dir(targetPath), err)
+		}
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
@@ -694,9 +873,6 @@ func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *m
 	}
 
 	targetDirAbs := filepath.Join(backlogitDir, targetDir)
-	if err := mkdirAllDurable(targetDirAbs, WorkspaceDurableWrites(ws)); err != nil {
-		return "", "", fmt.Errorf("create directory %s: %w", targetDirAbs, err)
-	}
 	targetPath := filepath.Join(targetDirAbs, filepath.Base(currentPath))
 	return currentPath, targetPath, nil
 }

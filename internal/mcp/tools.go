@@ -631,10 +631,17 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 			},
 			CommitSHA: commitSHA,
 		}
-		if appendErr := s.Events.AppendEvent(ctx, event); appendErr != nil {
-			logger.Warn("move item: failed to append commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", appendErr)
-		} else if indexErr := db.IndexEvent(ctx, s.Workspace.DB, core.WorkspaceLogsRoot(s.Workspace.RootPath), event); indexErr != nil {
-			logger.Warn("move item: failed to index commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", indexErr)
+		logsDir := core.WorkspaceLogsRoot(s.Workspace.RootPath)
+		lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+		if lockErr != nil {
+			logger.Warn("move item: failed to lock commit-traced event log", "item_id", id, "commit_sha", commitSHA, "error", lockErr)
+		} else {
+			defer unlockLog()
+			if appendErr := s.Events.AppendEvent(lockedCtx, event); appendErr != nil {
+				logger.Warn("move item: failed to append commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", appendErr)
+			} else if indexErr := db.IndexEvent(lockedCtx, s.Workspace.DB, logsDir, event); indexErr != nil {
+				logger.Warn("move item: failed to index commit-traced event", "item_id", id, "commit_sha", commitSHA, "error", indexErr)
+			}
 		}
 	}
 

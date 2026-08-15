@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -106,19 +107,23 @@ func TestUpdateSize_MutualExclusionErrorsBeforeWrite(t *testing.T) {
 func TestUpdateSize_BusyReturnsExit4(t *testing.T) {
 	root := setupCLIWorkspace(t)
 	id := createSizeTask(t, root)
-	path := taskFilePath(root, id)
 
-	// Plant a fresh lock sidecar to simulate a concurrent holder.
-	sidecar := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
-	require.NoError(t, os.WriteFile(sidecar, []byte{}, 0o644))
-	t.Cleanup(func() { _ = os.Remove(sidecar) })
+	// Hold the shared artifact lock with the same OS-level advisory primitive
+	// used by production.
+	locksDir := filepath.Join(root, ".backlogit", ".locks", "artifacts")
+	require.NoError(t, os.MkdirAll(locksDir, 0o755))
+	stableKey := filepath.Join(locksDir, hex.EncodeToString([]byte(id)))
+	sidecar := filepath.Join(filepath.Dir(stableKey), "."+filepath.Base(stableKey)+".lock")
+	release, err := holdAdvisoryLock(sidecar)
+	require.NoError(t, err)
+	t.Cleanup(release)
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"--cwd", root, "update", id, "--size", "L"})
-	err := cmd.Execute()
+	err = cmd.Execute()
 	require.Error(t, err)
 	var ee *cli.ExitError
 	require.True(t, errors.As(err, &ee), "expected ExitError, got %T", err)

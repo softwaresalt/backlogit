@@ -16,12 +16,7 @@ import (
 // SetArtifactComplexity sets or clears the task complexity metadata using a
 // body-preserving frontmatter seam.
 func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity string) (artifact *models.Artifact, retErr error) {
-	path, err := FindArtifactPath(ctx, ws, id)
-	if err != nil {
-		return nil, fmt.Errorf("find artifact %s: %w", id, err)
-	}
-
-	unlock, err := lockTaskFile(path)
+	unlock, err := lockArtifactMutation(ctx, ws, id)
 	if err != nil {
 		if errors.Is(err, ErrTaskBusy) {
 			return nil, err
@@ -34,6 +29,10 @@ func SetArtifactComplexity(ctx context.Context, ws *Workspace, id, complexity st
 		}
 	}()
 
+	path, err := FindArtifactPath(ctx, ws, id)
+	if err != nil {
+		return nil, fmt.Errorf("find artifact %s: %w", id, err)
+	}
 	ioPath, err := resolveContainedArtifactPath(ws, path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve contained path for %s: %w", id, err)
