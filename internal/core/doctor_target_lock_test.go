@@ -10,8 +10,8 @@ import (
 )
 
 // TestDoctorTarget_AcquiresAndReleasesLock proves validation takes the per-task
-// lock and releases it: no sidecar leaks afterward, and a second validation of
-// the same file still succeeds (would fail/busy if the lock leaked).
+// lock and releases its advisory handle; a second validation of the same file
+// still succeeds (would fail/busy if the lock leaked).
 func TestDoctorTarget_AcquiresAndReleasesLock(t *testing.T) {
 	ws, queueDir := newTargetTestWorkspace(t)
 	path := filepath.Join(queueDir, "100.001-T.md")
@@ -23,7 +23,7 @@ func TestDoctorTarget_AcquiresAndReleasesLock(t *testing.T) {
 
 	sidecar := taskLockSidecarPath(path)
 	_, statErr := os.Stat(sidecar)
-	assert.True(t, os.IsNotExist(statErr), "lock sidecar must be released after validation")
+	assert.NoError(t, statErr, "stable lock sidecar must remain after validation")
 
 	// Re-validation succeeds → the lock was truly released, not leaked.
 	res2, err := DoctorTarget(ws, path)

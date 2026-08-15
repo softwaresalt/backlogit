@@ -165,15 +165,17 @@ func TestSetArtifactSize_BusyLockReturnsErrTaskBusy(t *testing.T) {
 	ctx := context.Background()
 	ws, id, _ := setupSizeWorkspace(t)
 
-	// Simulate a concurrently held shared artifact lock by planting a fresh sidecar.
+	// Simulate a concurrently held shared artifact lock with the same
+	// OS-level advisory primitive used by production.
 	locksDir := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), ".locks", "artifacts")
 	require.NoError(t, os.MkdirAll(locksDir, 0o755))
 	stableKey := filepath.Join(locksDir, hex.EncodeToString([]byte(id)))
 	sidecar := filepath.Join(filepath.Dir(stableKey), "."+filepath.Base(stableKey)+".lock")
-	require.NoError(t, os.WriteFile(sidecar, []byte{}, 0o644))
-	t.Cleanup(func() { _ = os.Remove(sidecar) })
+	release, err := holdAdvisoryLock(sidecar)
+	require.NoError(t, err)
+	t.Cleanup(release)
 
-	_, err := core.SetArtifactSize(ctx, ws, id, "M")
+	_, err = core.SetArtifactSize(ctx, ws, id, "M")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, core.ErrTaskBusy)
 }

@@ -80,11 +80,11 @@ func TestRunDoctorTargetMode_TimeoutDoesNotStrandLock(t *testing.T) {
 	assert.Equal(t, core.DoctorTargetTimeout, res.Kind)
 
 	// The deferred unlock in runDoctorTargetMode's frame has already run by the
-	// time it returns, so the lock sidecar must not survive the timeout.
+	// time it returns, so a second acquisition must remain possible. The stable
+	// sidecar inode is retained for advisory locking.
 	sidecar := filepath.Join(queueDir, ".100.001-T.md.lock")
 	_, statErr := os.Stat(sidecar)
-	assert.Truef(t, errors.Is(statErr, os.ErrNotExist),
-		"timeout must not strand the lock sidecar (stat err: %v)", statErr)
+	assert.NoError(t, statErr, "stable lock sidecar must remain after timeout")
 }
 
 // TestDoctorTargetCLI_BusyExit4 covers the busy → exit 4 mapping end-to-end
@@ -94,8 +94,11 @@ func TestRunDoctorTargetMode_TimeoutDoesNotStrandLock(t *testing.T) {
 func TestDoctorTargetCLI_BusyExit4(t *testing.T) {
 	root, queueDir := setupDoctorTargetWorkspace(t)
 	require.NoError(t, os.WriteFile(filepath.Join(queueDir, "100.001-T.md"), []byte(cliValidTask), 0o644))
-	// Plant a fresh sidecar to simulate a live concurrent lock holder.
-	require.NoError(t, os.WriteFile(filepath.Join(queueDir, ".100.001-T.md.lock"), []byte("held"), 0o644))
+	// Hold the sidecar with the same OS-level advisory primitive used by
+	// production to simulate a live concurrent lock holder.
+	release, err := holdAdvisoryLock(filepath.Join(queueDir, ".100.001-T.md.lock"))
+	require.NoError(t, err)
+	t.Cleanup(release)
 
 	cmd := NewRootCommand()
 	var buf bytes.Buffer
@@ -103,7 +106,7 @@ func TestDoctorTargetCLI_BusyExit4(t *testing.T) {
 	cmd.SetErr(&buf)
 	cmd.SetArgs([]string{"--cwd", root, "doctor", "--target", ".backlogit/queue/100.001-T.md"})
 
-	err := cmd.Execute()
+	err = cmd.Execute()
 	require.Error(t, err)
 	var ee *ExitError
 	require.True(t, errors.As(err, &ee), "expected ExitError, got %T: %v", err, err)
