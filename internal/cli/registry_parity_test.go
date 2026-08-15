@@ -555,7 +555,12 @@ func mustReadEvents(t *testing.T, rootPath, itemID string) []events.Event {
 	return evs
 }
 
-func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depType string) bool {
+type governedDependencyState struct {
+	Cache       bool
+	Frontmatter bool
+}
+
+func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depType string) governedDependencyState {
 	t.Helper()
 	ctx := context.Background()
 	freshWS, err := core.NewWorkspace(ctx, rootPath)
@@ -568,7 +573,23 @@ func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depTyp
 		 WHERE item_id = ? AND depends_on = ? AND dep_type = ?`,
 		itemID, dependsOn, depType).Scan(&count)
 	require.NoError(t, err)
-	return count > 0
+
+	artPath, err := core.FindArtifactPath(ctx, freshWS, itemID)
+	require.NoError(t, err)
+	data, err := os.ReadFile(artPath)
+	require.NoError(t, err)
+	fm, body, err := models.ParseFrontmatter(string(data))
+	require.NoError(t, err)
+	artifact, err := models.ArtifactFromFrontmatter(fm, body)
+	require.NoError(t, err)
+	frontmatter := false
+	for _, edge := range artifact.Dependencies {
+		if edge.ID == dependsOn && (edge.Type == depType || (edge.Type == "" && depType == "blocks")) {
+			frontmatter = true
+			break
+		}
+	}
+	return governedDependencyState{Cache: count > 0, Frontmatter: frontmatter}
 }
 
 // TestRegistryParity_GovernedOperationBehavioralParity is the F6/U5 behavioral
@@ -576,7 +597,7 @@ func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depTyp
 // executes both surfaces against equivalent fixtures and asserts identical
 // observable state. Two HARD gates:
 //  1. The governed set must not be empty (no vacuous pass).
-//  2. An operation with governed_name "commit_association" must exist.
+//  2. Each required operation key must retain its documented governed_name.
 func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 	governed := governedOperations(t)
 
@@ -584,24 +605,23 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 	require.NotEmpty(t, governed,
 		"governed operation set must not be empty: add governed: true to at least one operation")
 
-	// Gate 2: every governed operation selected for this wave must be present.
-	requiredNames := []string{
-		"commit_association",
-		"comment_append",
-		"dependency_add",
-		"dependency_remove",
+	// Gate 2: each governed operation selected for this wave must be present
+	// under its documented registry key; labels alone are not sufficient.
+	requiredGoverned := map[string]string{
+		"track_commit":      "commit_association",
+		"append_comment":    "comment_append",
+		"add_dependency":    "dependency_add",
+		"remove_dependency": "dependency_remove",
 	}
-	for _, requiredName := range requiredNames {
-		found := false
-		for _, op := range governed {
-			if op.GovernedName == requiredName {
-				found = true
-				break
-			}
-		}
+	for operation, requiredName := range requiredGoverned {
+		op, found := governed[operation]
 		require.Truef(t, found,
-			"a governed operation with governed_name: %s is required — the test cannot pass vacuously",
-			requiredName)
+			"registry operation %q must be governed with governed_name: %s — the test cannot pass vacuously",
+			operation, requiredName)
+		if found {
+			require.Equalf(t, requiredName, op.GovernedName,
+				"registry operation %q must retain its governed_name contract", operation)
+		}
 	}
 
 	const testSHA = "aabbccddee0001000200030004000500060007aabb"
@@ -748,10 +768,11 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				runGovernedCLI(t, root, "dep", "add", taskCLI, featID, "--type", "blocks")
 				require.NoError(t, core.AddDependency(ctx, ws, taskMCP, featID, "blocks"))
 
-				cliPresent := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
-				mcpPresent := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
-				assert.True(t, cliPresent, "op %q: CLI dependency must be persisted", opName)
-				assert.Equal(t, cliPresent, mcpPresent, "op %q: dependency state must match across surfaces", opName)
+				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
+				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				assert.True(t, cliState.Cache, "op %q: CLI dependency must be persisted in the cache", opName)
+				assert.True(t, cliState.Frontmatter, "op %q: CLI dependency must be persisted in frontmatter", opName)
+				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
 
 			case "backlogit_remove_dependency":
 				root, ws := setupGovernedWorkspace(t)
@@ -765,10 +786,11 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				runGovernedCLI(t, root, "dep", "remove", taskCLI, featID)
 				require.NoError(t, core.RemoveDependency(ctx, ws, taskMCP, featID))
 
-				cliPresent := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
-				mcpPresent := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
-				assert.False(t, cliPresent, "op %q: CLI dependency must be removed", opName)
-				assert.Equal(t, cliPresent, mcpPresent, "op %q: dependency state must match across surfaces", opName)
+				cliState := observeGovernedDependency(t, root, taskCLI, featID, "blocks")
+				mcpState := observeGovernedDependency(t, root, taskMCP, featID, "blocks")
+				assert.False(t, cliState.Cache, "op %q: CLI dependency must be removed from the cache", opName)
+				assert.False(t, cliState.Frontmatter, "op %q: CLI dependency must be removed from frontmatter", opName)
+				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
 
 			default:
 				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)

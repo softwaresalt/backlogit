@@ -112,8 +112,9 @@ asserts **behavioral** (not merely surface) parity for governed operations:
   canonical governed operation cannot be accidentally removed).
 * For each governed operation with both a `mcp_tool` and `cli_command`, both surfaces are executed
   against equivalent fixtures and their observable persisted state is asserted identical.
-* The current governed set covers commit association, comment append, and dependency add/remove;
-  each new marker must have a named behavioral fixture before it can be added to the registry.
+* The current governed set covers commit association, checkpoint abandon/quarantine, comment append,
+  and dependency add/remove; each new marker must have a named behavioral fixture before it can be
+  added to the registry.
 * A DENYLIST approach covers output-only fields that differ by design (message/author on the CLI
   fallback) so a newly governed operation enters the covered set automatically.
 
@@ -123,7 +124,7 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 
 | Field | Applies to | Meaning |
 |---|---|---|
-| `governed: true` | `track_commit`, `append_comment`, `add_dependency`, `remove_dependency` | Marks an operation as covered by behavioral parity |
+| `governed: true` | `track_commit`, `append_comment`, `add_dependency`, `remove_dependency`, `abandon_checkpoint`, `quarantine_checkpoint` | Marks an operation as covered by behavioral parity |
 | `governed_name: commit_association` | `track_commit` | Canonical name for the commit-association gate |
 | `governed_name: comment_append` | `append_comment` | Requires parity for JSONL and indexed comment events |
 | `governed_name: dependency_add` | `add_dependency` | Requires parity for persisted dependency edges |
