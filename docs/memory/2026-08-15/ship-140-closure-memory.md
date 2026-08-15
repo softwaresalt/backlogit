@@ -33,8 +33,10 @@ Feature `140-F` shipped through PR #362 with merge commit `fa54a35ba2c7f2147e8cb
 * Merge commit was associated with all three backlog items
 * Feature closure comment recorded PR, merge SHA, review, CI, and remediation evidence
 
-## Deferred Work
+## Subsequent Ship Progress
 
-* Features `141-F` and `142-F` remain queued for the next Ship execution unit
+* Feature `141-F` shipped through PR #363 with merge commit `22827b1eedeed7e6cbc31ff870f33950dbefb1ee`
+* The feature `141-F` and task `141.001-T` backlog items are `done` with merge-commit traceability
+* Feature `142-F` remains queued for the next Ship execution unit
 * Feature `138-F` remains blocked because its tasks require external-repository writes; stash entries `7F0A6E89` and `6FA0829B` remain active
 * No formal release was created or published
