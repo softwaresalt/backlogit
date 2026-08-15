@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -137,6 +138,42 @@ func InsertItemLogEntry(ctx context.Context, database *sql.DB, logPath string, e
 // DeleteAllItemLogs clears indexed item log relationships and entries before rehydration.
 func DeleteAllItemLogs(ctx context.Context, database *sql.DB) error {
 	return deleteAllItemLogs(ctx, database)
+}
+
+// ReindexItemLog rebuilds one item's indexed event projection from its JSONL log.
+func ReindexItemLog(ctx context.Context, database *sql.DB, logsDir, itemID string) error {
+	if itemID == "" {
+		return fmt.Errorf("reindex item log: item_id is required")
+	}
+	eventsList, err := events.ReadAllEvents(ctx, logsDir, itemID)
+	if err != nil {
+		return fmt.Errorf("read item log %s: %w", itemID, err)
+	}
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin item log reindex %s: %w", itemID, err)
+	}
+	rollback := func(reindexErr error) error {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			return fmt.Errorf("%w; rollback item log reindex %s: %v", reindexErr, itemID, rollbackErr)
+		}
+		return reindexErr
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_log_entries WHERE item_id = ?`, itemID); err != nil {
+		return rollback(fmt.Errorf("clear item log entries %s: %w", itemID, err))
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_logs WHERE item_id = ?`, itemID); err != nil {
+		return rollback(fmt.Errorf("clear item log %s: %w", itemID, err))
+	}
+	for _, event := range eventsList {
+		if err := indexEventTx(ctx, tx, logsDir, event); err != nil {
+			return rollback(fmt.Errorf("index item log event %s: %w", itemID, err))
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit item log reindex %s: %w", itemID, err)
+	}
+	return nil
 }
 
 func deleteAllItemLogs(ctx context.Context, execer execContexter) error {

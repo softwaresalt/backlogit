@@ -402,6 +402,11 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	for _, event := range restoredEvents {
 		assert.NotEqual(t, "returned_to_backlog", event.EventType)
 	}
+	indexedEvents, indexErr := bldb.ListItemLogEntries(ctx, ws.DB, unreleasedTask.ID, 0)
+	require.NoError(t, indexErr)
+	for _, event := range indexedEvents {
+		assert.NotEqual(t, "returned_to_backlog", event.EventType)
+	}
 }
 
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment

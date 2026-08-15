@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -167,6 +168,7 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 
 func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) error {
 	ctx = context.WithoutCancel(ctx)
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	ids := make([]string, 0, len(snapshots))
 	for id := range snapshots {
 		ids = append(ids, id)
@@ -174,6 +176,13 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 	var errs []error
 	for _, id := range depthSortedIDs(ids) {
 		snapshot := snapshots[id]
+		currentEvents, readErr := events.ReadAllEvents(ctx, logsDir, id)
+		var guardEvents []events.Event
+		if readErr != nil {
+			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
+		} else if guardEvents, readErr = guardEventsSinceSnapshot(snapshot.eventLog, id, currentEvents); readErr != nil {
+			errs = append(errs, fmt.Errorf("identify guard evidence for %s: %w", id, readErr))
+		}
 		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
 			if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
 				errs = append(errs, fmt.Errorf("remove mutated artifact %s: %w", id, removeErr))
@@ -187,11 +196,53 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		if err := restoreSnapshot(snapshot.eventLog); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
 		}
+		writer := NewWorkspaceEventWriter(ws, logsDir)
+		for _, event := range guardEvents {
+			if err := writer.AppendEvent(ctx, event); err != nil {
+				errs = append(errs, fmt.Errorf("restore artifact %s guard evidence: %w", id, err))
+			}
+		}
+		if err := bldb.ReindexItemLog(ctx, ws.DB, logsDir, id); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
+		}
 		if err := bldb.UpsertItem(ctx, ws.DB, snapshot.artifact); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event) ([]events.Event, error) {
+	baseline := make(map[string]int)
+	for _, line := range strings.Split(string(snapshot.Content), "\\n") {
+		event, ok, err := events.ParseEventLine(line, itemID)
+		if err != nil || !ok || event.EventType != EventGateBlocked {
+			continue
+		}
+		key, err := json.Marshal(event)
+		if err != nil {
+			return nil, fmt.Errorf("marshal baseline event: %w", err)
+		}
+		baseline[string(key)]++
+	}
+
+	var extras []events.Event
+	for _, event := range current {
+		if event.EventType != EventGateBlocked {
+			continue
+		}
+		key, err := json.Marshal(event)
+		if err != nil {
+			return nil, fmt.Errorf("marshal current event: %w", err)
+		}
+		keyString := string(key)
+		if baseline[keyString] > 0 {
+			baseline[keyString]--
+			continue
+		}
+		extras = append(extras, event)
+	}
+	return extras, nil
 }
 
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
