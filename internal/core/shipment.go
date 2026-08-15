@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -261,7 +264,7 @@ func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentI
 	return nil
 }
 
-// lockShipmentMembership acquires the per-shipment advisory lock guarding
+// Shipment membership lock design notes:
 // shipment.CustomFields["items"] — reusing task_lock.go's per-file-path
 // keyed-mutex-plus-sidecar mechanism (despite its "task" naming, it is
 // generic: keyed by resolved file path, not by artifact type). Every
@@ -288,6 +291,113 @@ func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentI
 // finding, third pass). A key derived only from the workspace root and
 // shipment ID never changes, so it keeps contending correctly no matter
 // where the underlying file currently lives.
+type artifactMutationLockContextKey struct{}
+
+type artifactMutationLockSet map[string]struct{}
+
+const artifactMutationLocksDirName = "artifacts"
+
+var artifactMutationLocksDirCache sync.Map
+
+func withArtifactMutationLocks(ctx context.Context, ids []string) context.Context {
+	set := make(artifactMutationLockSet, len(ids))
+	if existing, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet); ok {
+		for id := range existing {
+			set[id] = struct{}{}
+		}
+	}
+	for _, id := range ids {
+		if id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	return context.WithValue(ctx, artifactMutationLockContextKey{}, set)
+}
+
+func artifactMutationLockHeld(ctx context.Context, id string) bool {
+	set, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet)
+	if !ok {
+		return false
+	}
+	_, ok = set[id]
+	return ok
+}
+
+func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) {
+	artifactLocksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName, artifactMutationLocksDirName)
+	cacheKey, err := filepath.Abs(artifactLocksDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation locks directory: %w", err)
+	}
+	var realLocksDir string
+	if cached, ok := artifactMutationLocksDirCache.Load(cacheKey); ok {
+		realLocksDir = cached.(string)
+	} else {
+		if err := os.MkdirAll(artifactLocksDir, 0o755); err != nil {
+			return "", fmt.Errorf("create artifact mutation locks directory: %w", err)
+		}
+		realLocksDir, err = resolveContainedArtifactPath(ws, artifactLocksDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve artifact mutation locks directory containment: %w", err)
+		}
+		cached, _ := artifactMutationLocksDirCache.LoadOrStore(cacheKey, realLocksDir)
+		realLocksDir = cached.(string)
+	}
+	// Encode the caller-controlled ID so the synthetic lock key cannot escape
+	// the contained directory even if a future caller passes an unvalidated ID.
+	stableKey := filepath.Join(realLocksDir, hex.EncodeToString([]byte(artifactID)))
+	if !pathContained(realLocksDir, stableKey) {
+		return "", fmt.Errorf("artifact ID %q resolves outside the artifact mutation locks directory: %w", artifactID, blerrors.ErrValidation)
+	}
+	return stableKey, nil
+}
+
+func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string) (func() error, error) {
+	if artifactMutationLockHeld(ctx, artifactID) {
+		return func() error { return nil }, nil
+	}
+	stableKey, err := artifactMutationLockPath(ws, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	return lockTaskFile(stableKey)
+}
+
+func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
+	uniqueIDs := uniqueNonEmptyStrings(ids)
+	sort.Strings(uniqueIDs)
+	unlocks := make([]func() error, 0, len(uniqueIDs))
+	for _, id := range uniqueIDs {
+		stableKey, err := artifactMutationLockPath(ws, id)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				_ = unlocks[i]()
+			}
+			return ctx, nil, err
+		}
+		unlock, err := lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				_ = unlocks[i]()
+			}
+			return ctx, nil, fmt.Errorf("lock artifact %s: %w", id, err)
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	lockedCtx := withArtifactMutationLocks(ctx, uniqueIDs)
+	return lockedCtx, func() error {
+		var errs []error
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			if err := unlocks[i](); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
+	}, nil
+}
+
+// lockShipmentMembership acquires the stable per-shipment advisory lock used
+// to serialize membership reads and writes across relocation.
 func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID string) (unlock func() error, err error) {
 	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
 	if mkErr := os.MkdirAll(locksDir, 0o755); mkErr != nil {
@@ -637,6 +747,12 @@ func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *mode
 }
 
 func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
+	unlock, err := lockArtifactMutation(ctx, ws, artifact.ID)
+	if err != nil {
+		return fmt.Errorf("lock artifact %s: %w", artifact.ID, err)
+	}
+	defer func() { _ = unlock() }()
+
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
 	}

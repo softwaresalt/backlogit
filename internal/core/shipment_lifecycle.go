@@ -355,6 +355,13 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 	}()
 
+	var releaseArtifactLocks func() error
+	defer func() {
+		if releaseArtifactLocks != nil {
+			_ = releaseArtifactLocks()
+		}
+	}()
+
 	lockErr := func() (closureErr error) {
 		unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 		if lockErr != nil {
@@ -440,6 +447,11 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			for _, descendant := range descendants {
 				rollbackIDs = append(rollbackIDs, descendant.ID)
 			}
+		}
+		var artifactLockErr error
+		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
+		if artifactLockErr != nil {
+			return fmt.Errorf("lock release scope artifacts: %w", artifactLockErr)
 		}
 		shipSnapshots, snapshotErr = snapshotShipArtifacts(ctx, ws, rollbackIDs)
 		if snapshotErr != nil {

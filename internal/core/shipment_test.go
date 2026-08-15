@@ -1346,6 +1346,25 @@ func TestPersistReturnedBlockedArtifacts_RollsBackOnItemFailure(t *testing.T) {
 }
 
 // T002 / ST013: Restore the Markdown file when DB upsert fails after file write.
+func TestPersistArtifact_RejectsConcurrentArtifactMutation(t *testing.T) {
+	// Arrange
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, "Locked shipment", nil)
+	require.NoError(t, err)
+	unlock, err := lockArtifactMutation(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	defer func() { _ = unlock() }()
+	shipment.Title = "Concurrent mutation"
+	shipment.UpdatedAt = time.Now()
+
+	// Act
+	err = persistArtifact(ctx, ws, shipment, false)
+
+	// Assert
+	require.ErrorIs(t, err, ErrTaskBusy)
+}
+
 func TestPersistArtifact_RestoresFileOnUpsertFailure(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
