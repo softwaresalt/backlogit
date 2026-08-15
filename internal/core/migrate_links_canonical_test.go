@@ -138,6 +138,48 @@ func TestNewWorkspaceDefersDBOnlyLinkMigration(t *testing.T) {
 	assert.Equal(t, "informs", artifact.Links[0].LinkType)
 }
 
+func BenchmarkMigrateDBOnlyLinksCanonicalIndex(b *testing.B) {
+	ctx := context.Background()
+	root := b.TempDir()
+	storageRoot := filepath.Join(root, ".backlogit")
+	if err := os.MkdirAll(storageRoot, 0o755); err != nil {
+		b.Fatal(err)
+	}
+	if err := config.WriteDefaults(storageRoot); err != nil {
+		b.Fatal(err)
+	}
+	ws, err := NewWorkspace(ctx, root)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer ws.Close()
+
+	feature, err := CreateArtifact(ctx, ws, "Benchmark feature", "feature")
+	if err != nil {
+		b.Fatal(err)
+	}
+	target, err := CreateArtifact(ctx, ws, "Benchmark target", "task", WithParent(feature.ID))
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < 32; i++ {
+		source, createErr := CreateArtifact(ctx, ws, "Benchmark source", "task", WithParent(feature.ID))
+		if createErr != nil {
+			b.Fatal(createErr)
+		}
+		if linkErr := db.AddLink(ctx, ws.DB, source.ID, target.ID, "informs"); linkErr != nil {
+			b.Fatal(linkErr)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, migrateErr := MigrateDBOnlyLinks(ctx, ws); migrateErr != nil {
+			b.Fatal(migrateErr)
+		}
+	}
+}
+
 func TestRemoveArtifactLinkDeletesDBOnlyLink(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
