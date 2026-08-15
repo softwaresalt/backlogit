@@ -619,22 +619,48 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 
 	// Gate 2: each governed operation selected for this wave must be present
 	// under its documented registry key; labels alone are not sufficient.
-	requiredGoverned := map[string]string{
-		"track_commit":          "commit_association",
-		"append_comment":        "comment_append",
-		"add_dependency":        "dependency_add",
-		"remove_dependency":     "dependency_remove",
-		"abandon_checkpoint":    "checkpoint_abandon_disposition",
-		"quarantine_checkpoint": "checkpoint_quarantine_disposition",
+	requiredGoverned := map[string]struct {
+		name string
+		mcp  string
+		cli  string
+	}{
+		"track_commit": {
+			name: "commit_association", mcp: "backlogit_track_commit",
+			cli: "backlogit update {{task_id}} --commit {{sha}}",
+		},
+		"append_comment": {
+			name: "comment_append", mcp: "backlogit_append_comment",
+			cli: "backlogit comment add {{item_id}} --actor {{actor}} --comment {{comment}}",
+		},
+		"add_dependency": {
+			name: "dependency_add", mcp: "backlogit_add_dependency",
+			cli: "backlogit dep add {{task_id}} {{depends_on}} --type {{dep_type}}",
+		},
+		"remove_dependency": {
+			name: "dependency_remove", mcp: "backlogit_remove_dependency",
+			cli: "backlogit dep remove {{task_id}} {{depends_on}}",
+		},
+		"abandon_checkpoint": {
+			name: "checkpoint_abandon_disposition", mcp: "backlogit_abandon_checkpoint",
+			cli: "backlogit checkpoint abandon {{filename}} --reason {{reason}} --operator {{operator}}",
+		},
+		"quarantine_checkpoint": {
+			name: "checkpoint_quarantine_disposition", mcp: "backlogit_quarantine_checkpoint",
+			cli: "backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}",
+		},
 	}
-	for operation, requiredName := range requiredGoverned {
+	for operation, contract := range requiredGoverned {
 		op, found := governed[operation]
 		require.Truef(t, found,
 			"registry operation %q must be governed with governed_name: %s — the test cannot pass vacuously",
-			operation, requiredName)
+			operation, contract.name)
 		if found {
-			require.Equalf(t, requiredName, op.GovernedName,
+			require.Equalf(t, contract.name, op.GovernedName,
 				"registry operation %q must retain its governed_name contract", operation)
+			require.Equalf(t, contract.mcp, op.MCPTool,
+				"registry operation %q must retain its MCP tool mapping", operation)
+			require.Equalf(t, contract.cli, op.CLICommand,
+				"registry operation %q must retain its CLI command mapping", operation)
 		}
 	}
 
@@ -647,8 +673,8 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				t.Skipf("operation %q has no CLI surface; skipping behavioral parity", opName)
 			}
 
-			switch op.MCPTool {
-			case "backlogit_track_commit":
+			switch opName {
+			case "track_commit":
 				root, ws := setupGovernedWorkspace(t)
 
 				featID := addGovernedArtifact(t, root, "feature", "Gov parity feature", "")
@@ -677,7 +703,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliLinks, mcpLinks, "op %q: commit_links row presence must match", opName)
 				assert.Equal(t, cliEvent, mcpEvent, "op %q: JSONL event presence must match", opName)
 
-			case "backlogit_abandon_checkpoint":
+			case "abandon_checkpoint":
 				root, ws := setupGovernedWorkspace(t)
 				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
 				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
@@ -721,7 +747,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliCP.DispositionOperator, mcpCP.DispositionOperator, "op %q: disposition operator must match across surfaces", opName)
 				assert.Equal(t, cliCP.Status, mcpCP.Status, "op %q: status must match across surfaces", opName)
 
-			case "backlogit_quarantine_checkpoint":
+			case "quarantine_checkpoint":
 				root, ws := setupGovernedWorkspace(t)
 				checkpointDir := filepath.Join(root, ".backlogit", "checkpoints")
 				require.NoError(t, os.MkdirAll(checkpointDir, 0o755))
@@ -756,7 +782,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliRec.Reason, mcpRec.Reason, "op %q: sidecar reason must match across surfaces", opName)
 				assert.Equal(t, cliRec.Operator, mcpRec.Operator, "op %q: sidecar operator must match across surfaces", opName)
 
-			case "backlogit_append_comment":
+			case "append_comment":
 				root, ws := setupGovernedWorkspace(t)
 				featID := addGovernedArtifact(t, root, "feature", "Comment parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Comment parity CLI task", featID)
@@ -775,7 +801,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.True(t, cliState.JSONLEvent, "op %q: JSONL comment event must be present", opName)
 				assert.True(t, cliState.IndexedEvent, "op %q: indexed comment event must be present", opName)
 
-			case "backlogit_add_dependency":
+			case "add_dependency":
 				root, ws := setupGovernedWorkspace(t)
 				featID := addGovernedArtifact(t, root, "feature", "Dependency parity feature", "")
 				taskCLI := addGovernedArtifact(t, root, "task", "Dependency parity CLI task", featID)
@@ -794,7 +820,7 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.True(t, cliState.Frontmatter, "op %q: CLI dependency must be persisted in frontmatter", opName)
 				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
 
-			case "backlogit_remove_dependency":
+			case "remove_dependency":
 				root, ws := setupGovernedWorkspace(t)
 				ctx := context.Background()
 				featID := addGovernedArtifact(t, root, "feature", "Dependency removal parity feature", "")
