@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -162,10 +163,13 @@ func TestSetArtifactSize_Idempotent(t *testing.T) {
 
 func TestSetArtifactSize_BusyLockReturnsErrTaskBusy(t *testing.T) {
 	ctx := context.Background()
-	ws, id, path := setupSizeWorkspace(t)
+	ws, id, _ := setupSizeWorkspace(t)
 
-	// Simulate a concurrently held lock by planting a fresh sidecar.
-	sidecar := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
+	// Simulate a concurrently held shared artifact lock by planting a fresh sidecar.
+	locksDir := filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), ".locks", "artifacts")
+	require.NoError(t, os.MkdirAll(locksDir, 0o755))
+	stableKey := filepath.Join(locksDir, hex.EncodeToString([]byte(id)))
+	sidecar := filepath.Join(filepath.Dir(stableKey), "."+filepath.Base(stableKey)+".lock")
 	require.NoError(t, os.WriteFile(sidecar, []byte{}, 0o644))
 	t.Cleanup(func() { _ = os.Remove(sidecar) })
 

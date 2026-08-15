@@ -2,6 +2,8 @@ package events
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,6 +174,19 @@ func itemLogLockSidecarPath(logsDir, itemID string) string {
 	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
 }
 
+func newItemLogLockToken() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate item log lock token: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func itemLogFileLockOwned(lockPath, token string) bool {
+	data, err := os.ReadFile(lockPath)
+	return err == nil && string(data) == token
+}
+
 func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func(), error) {
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create item logs directory: %w", err)
@@ -182,7 +197,21 @@ func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func()
 	for {
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
-			_ = file.Close()
+			token, tokenErr := newItemLogLockToken()
+			if tokenErr != nil {
+				_ = file.Close()
+				_ = os.Remove(lockPath)
+				return nil, tokenErr
+			}
+			if _, writeErr := file.WriteString(token); writeErr != nil {
+				_ = file.Close()
+				_ = os.Remove(lockPath)
+				return nil, fmt.Errorf("write item log lock token: %w", writeErr)
+			}
+			if closeErr := file.Close(); closeErr != nil {
+				_ = os.Remove(lockPath)
+				return nil, fmt.Errorf("close item log lock: %w", closeErr)
+			}
 			var once sync.Once
 			stop := make(chan struct{})
 			var wg sync.WaitGroup
@@ -196,6 +225,9 @@ func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func()
 					case <-stop:
 						return
 					case now := <-ticker.C:
+						if !itemLogFileLockOwned(lockPath, token) {
+							return
+						}
 						if touchErr := os.Chtimes(lockPath, now, now); touchErr != nil && !os.IsNotExist(touchErr) {
 							slog.Warn("item log lock heartbeat failed", "path", lockPath, "error", touchErr)
 						}
@@ -206,8 +238,10 @@ func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func()
 				once.Do(func() {
 					close(stop)
 					wg.Wait()
-					if removeErr := os.Remove(lockPath); removeErr != nil && !os.IsNotExist(removeErr) {
-						slog.Warn("failed to remove item log lock", "path", lockPath, "error", removeErr)
+					if itemLogFileLockOwned(lockPath, token) {
+						if removeErr := os.Remove(lockPath); removeErr != nil && !os.IsNotExist(removeErr) {
+							slog.Warn("failed to remove item log lock", "path", lockPath, "error", removeErr)
+						}
 					}
 				})
 			}, nil

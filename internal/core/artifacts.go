@@ -504,6 +504,13 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		return nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
 	}
 
+	lockedCtx, unlock, lockErr := lockArtifactMutations(ctx, ws, []string{id})
+	if lockErr != nil {
+		return nil, fmt.Errorf("lock artifact %s: %w", id, lockErr)
+	}
+	defer func() { _ = unlock() }()
+	ctx = lockedCtx
+
 	artifact, err := findArtifact(ctx, ws, id)
 	if err != nil {
 		return nil, fmt.Errorf("find artifact %s: %w", id, err)

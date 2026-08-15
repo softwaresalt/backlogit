@@ -309,19 +309,53 @@ func artifactMutationLockHeld(ctx context.Context, id string) bool {
 }
 
 func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) {
-	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	storageRoot, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation storage root: %w", err)
+	}
+	storageRoot = filepath.Clean(storageRoot)
+	realStorageRoot, err := filepath.EvalSymlinks(storageRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation storage root symlinks: %w", err)
+	}
+	locksDir := filepath.Join(realStorageRoot, shipmentMembershipLocksDirName)
+	if existing, evalErr := filepath.EvalSymlinks(locksDir); evalErr == nil {
+		if !pathContained(realStorageRoot, existing) {
+			return "", fmt.Errorf("artifact mutation locks parent resolves outside workspace: %w", blerrors.ErrValidation)
+		}
+		locksDir = existing
+	} else if !os.IsNotExist(evalErr) {
+		return "", fmt.Errorf("resolve artifact mutation locks parent: %w", evalErr)
+	}
+	if !pathContained(realStorageRoot, locksDir) {
+		return "", fmt.Errorf("artifact mutation locks parent is outside workspace: %w", blerrors.ErrValidation)
+	}
 	if err := os.MkdirAll(locksDir, 0o755); err != nil {
 		return "", fmt.Errorf("create artifact mutation locks parent: %w", err)
 	}
-	realLocksDir, err := resolveContainedArtifactPath(ws, locksDir)
+	realLocksDir, err := filepath.EvalSymlinks(locksDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve artifact mutation locks parent containment: %w", err)
 	}
+	if !pathContained(realStorageRoot, realLocksDir) {
+		return "", fmt.Errorf("artifact mutation locks parent resolves outside workspace: %w", blerrors.ErrValidation)
+	}
 	artifactLocksDir := filepath.Join(realLocksDir, artifactMutationLocksDirName)
+	if existing, evalErr := filepath.EvalSymlinks(artifactLocksDir); evalErr == nil {
+		if !pathContained(realLocksDir, existing) {
+			return "", fmt.Errorf("artifact mutation locks directory resolves outside parent: %w", blerrors.ErrValidation)
+		}
+		artifactLocksDir = existing
+	} else if !os.IsNotExist(evalErr) {
+		return "", fmt.Errorf("resolve artifact mutation locks directory: %w", evalErr)
+	}
+	if !pathContained(realLocksDir, artifactLocksDir) {
+		return "", fmt.Errorf("artifact mutation locks directory is outside parent: %w", blerrors.ErrValidation)
+	}
 	if err := os.MkdirAll(artifactLocksDir, 0o755); err != nil {
 		return "", fmt.Errorf("create artifact mutation locks directory: %w", err)
 	}
-	realArtifactLocksDir, err := resolveContainedArtifactPath(ws, artifactLocksDir)
+	realArtifactLocksDir, err := filepath.EvalSymlinks(artifactLocksDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve artifact mutation locks directory containment: %w", err)
 	}
@@ -651,12 +685,18 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		CommitSHA: commitSHA,
 	}
 
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		slog.WarnContext(ctx, "lock shipment event log", "item_id", itemID, "event_type", eventType, "error", lockErr)
+		return
+	}
+	defer unlock()
 	writer := NewWorkspaceEventWriter(ws, logsDir)
-	if err := writer.AppendEvent(ctx, event); err != nil {
+	if err := writer.AppendEvent(lockedCtx, event); err != nil {
 		slog.WarnContext(ctx, "append shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 		return
 	}
-	if err := bldb.IndexEvent(ctx, ws.DB, logsDir, event); err != nil {
+	if err := bldb.IndexEvent(lockedCtx, ws.DB, logsDir, event); err != nil {
 		slog.WarnContext(ctx, "index shipment event", "item_id", itemID, "event_type", eventType, "error", err)
 	}
 }

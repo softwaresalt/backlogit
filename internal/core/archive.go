@@ -282,19 +282,28 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
 	// Errors are logged for diagnosability, matching the pattern in commits.go.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	ew := NewWorkspaceEventWriter(ws, logsDir)
-	event := events.Event{
-		Timestamp: time.Now(),
-		Actor:     "backlogit",
-		ItemID:    itemID,
-		EventType: "archived",
-		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
-		CommitSHA: cfg.commitSHA,
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		slog.Warn("archive item: failed to lock item log", "item_id", itemID, "error", lockErr)
+	} else {
+		defer unlockLog()
+		ctx = lockedCtx
 	}
-	if evErr := ew.AppendEvent(ctx, event); evErr != nil {
-		slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
-	} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
-		slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
+	if lockErr == nil {
+		ew := NewWorkspaceEventWriter(ws, logsDir)
+		event := events.Event{
+			Timestamp: time.Now(),
+			Actor:     "backlogit",
+			ItemID:    itemID,
+			EventType: "archived",
+			Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
+			CommitSHA: cfg.commitSHA,
+		}
+		if evErr := ew.AppendEvent(ctx, event); evErr != nil {
+			slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
+		} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
+			slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
+		}
 	}
 
 	// Fire post-archive hooks.

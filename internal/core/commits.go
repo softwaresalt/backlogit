@@ -99,6 +99,12 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	}
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("associate commit: lock item log: %w", lockErr)
+	}
+	defer unlockLog()
+	ctx = lockedCtx
 	event := events.Event{
 		Actor:     "backlogit",
 		ItemID:    itemID,
@@ -218,6 +224,12 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 
 	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("link commit: lock item log: %w", lockErr)
+	}
+	defer unlockLog()
+	ctx = lockedCtx
 	ew := NewWorkspaceEventWriter(ws, logsDir)
 	event := events.Event{
 		Timestamp: time.Now(),
@@ -261,6 +273,12 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 // behavior. Errors are wrapped with %w so callers can use errors.Is/As.
 func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, itemID, actor, comment, commitSHA string) error {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("append comment: lock item log: %w", lockErr)
+	}
+	defer unlockLog()
+	ctx = lockedCtx
 	if ew == nil {
 		ew = NewWorkspaceEventWriter(ws, logsDir)
 	}
@@ -344,8 +362,3 @@ func AutoLinkCommits(ctx context.Context, db *sql.DB, ws *Workspace, depth int) 
 	}
 	return linked, nil
 }
-
-
-
-
-

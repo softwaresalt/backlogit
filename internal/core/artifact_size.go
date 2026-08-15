@@ -108,14 +108,10 @@ var sizeSeamWriteFailureHook func() error
 // row, so a partial stub would null non-size columns and re-open markdown<->DB
 // drift).
 func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string, m SizeMutation) (*models.Artifact, error) {
-	path, err := FindArtifactPath(ctx, ws, id)
-	if err != nil {
-		return nil, fmt.Errorf("find artifact %s: %w", id, err)
-	}
-
-	// Acquire the per-task lock before any read/write. Non-blocking: a concurrent
-	// holder yields ErrTaskBusy so gate consumers get deterministic contention.
-	unlock, err := lockTaskFile(path)
+	// Acquire the shared stable artifact lock before any read/write. Non-blocking:
+	// a concurrent holder yields ErrTaskBusy so gate consumers get deterministic
+	// contention, and shipment operations coordinate with this writer.
+	unlock, err := lockArtifactMutation(ctx, ws, id)
 	if err != nil {
 		if errors.Is(err, ErrTaskBusy) {
 			return nil, err
@@ -123,6 +119,11 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 		return nil, fmt.Errorf("lock task %s: %w", id, err)
 	}
 	defer func() { _ = unlock() }()
+
+	path, err := FindArtifactPath(ctx, ws, id)
+	if err != nil {
+		return nil, fmt.Errorf("find artifact %s: %w", id, err)
+	}
 
 	// Bind the mutation's I/O to the symlink-resolved real path UNDER THE LOCK. The
 	// walk-time containment check in FindArtifactPath validated a lexical pathname,
