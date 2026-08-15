@@ -602,10 +602,6 @@ func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *mode
 	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, guard)
 }
 
-func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool) error {
-	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, preserveDBOnlyLinks, nil)
-}
-
 func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
