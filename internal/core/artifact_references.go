@@ -176,6 +176,16 @@ func applyCrossArtifactRewrites(
 	if len(updates) == 0 {
 		return nil
 	}
+	ids := make([]string, 0, len(updates))
+	for _, update := range updates {
+		ids = append(ids, update.artifact.ID)
+	}
+	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, ids)
+	if lockErr != nil {
+		return fmt.Errorf("lock cross-artifact rewrites: %w", lockErr)
+	}
+	defer func() { _ = releaseArtifactLocks() }()
+	ctx = lockedCtx
 
 	written := make([]crossRefUpdate, 0, len(updates))
 

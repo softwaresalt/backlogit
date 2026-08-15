@@ -297,7 +297,17 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 			continue
 		}
 		artifact.UpdatedAt = models.NowUTC()
-		if writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws)); writeErr != nil {
+		unlock, lockErr := lockArtifactMutation(ctx, ws, sourceID)
+		if lockErr != nil {
+			slog.WarnContext(ctx, "migrate db-only links: artifact mutation lock unavailable; skipping",
+				"source_id", sourceID, "error", lockErr)
+			result.Skipped += pendingWrites
+			result.WriteFailed += pendingWrites
+			continue
+		}
+		writeErr := WriteArtifactFileWithOptions(artifact, filePath, WorkspaceDurableWrites(ws))
+		_ = unlock()
+		if writeErr != nil {
 			slog.WarnContext(ctx, "migrate db-only links: file write failed; skipping",
 				"source_id", sourceID, "error", writeErr)
 			result.Skipped += pendingWrites

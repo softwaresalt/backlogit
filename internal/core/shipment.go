@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -144,8 +143,9 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // When expectedHeadSHA is non-empty, this function re-resolves HEAD ONE MORE
 // TIME and passes the guard into the shared persistence path. The persistence
 // path performs validation, link merging, path resolution, and file snapshots
-// first, then invokes the guard immediately before its first mutating
-// filesystem operation. This narrows, but does not eliminate, the residual
+// first, then invokes the guard immediately before its first artifact-data
+// filesystem operation; lock infrastructure is intentionally prepared before
+// the guard. This narrows, but does not eliminate, the residual
 // window: git offers no atomic "read HEAD and complete our write" primitive,
 // so a commit can still land after the final HEAD check and before the write
 // completes. The guard remains shared across task, feature, and shipment
@@ -284,8 +284,6 @@ type artifactMutationLockSet map[string]struct{}
 
 const artifactMutationLocksDirName = "artifacts"
 
-var artifactMutationLocksDirCache sync.Map
-
 func withArtifactMutationLocks(ctx context.Context, ids []string) context.Context {
 	set := make(artifactMutationLockSet, len(ids))
 	if existing, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet); ok {
@@ -311,29 +309,26 @@ func artifactMutationLockHeld(ctx context.Context, id string) bool {
 }
 
 func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) {
-	artifactLocksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName, artifactMutationLocksDirName)
-	cacheKey, err := filepath.Abs(artifactLocksDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve artifact mutation locks directory: %w", err)
+	locksDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), shipmentMembershipLocksDirName)
+	if err := os.MkdirAll(locksDir, 0o755); err != nil {
+		return "", fmt.Errorf("create artifact mutation locks parent: %w", err)
 	}
-	var realLocksDir string
-	if cached, ok := artifactMutationLocksDirCache.Load(cacheKey); ok {
-		realLocksDir = cached.(string)
-	} else {
-		if err := os.MkdirAll(artifactLocksDir, 0o755); err != nil {
-			return "", fmt.Errorf("create artifact mutation locks directory: %w", err)
-		}
-		realLocksDir, err = resolveContainedArtifactPath(ws, artifactLocksDir)
-		if err != nil {
-			return "", fmt.Errorf("resolve artifact mutation locks directory containment: %w", err)
-		}
-		cached, _ := artifactMutationLocksDirCache.LoadOrStore(cacheKey, realLocksDir)
-		realLocksDir = cached.(string)
+	realLocksDir, err := resolveContainedArtifactPath(ws, locksDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation locks parent containment: %w", err)
+	}
+	artifactLocksDir := filepath.Join(realLocksDir, artifactMutationLocksDirName)
+	if err := os.MkdirAll(artifactLocksDir, 0o755); err != nil {
+		return "", fmt.Errorf("create artifact mutation locks directory: %w", err)
+	}
+	realArtifactLocksDir, err := resolveContainedArtifactPath(ws, artifactLocksDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact mutation locks directory containment: %w", err)
 	}
 	// Encode the caller-controlled ID so the synthetic lock key cannot escape
 	// the contained directory even if a future caller passes an unvalidated ID.
-	stableKey := filepath.Join(realLocksDir, hex.EncodeToString([]byte(artifactID)))
-	if !pathContained(realLocksDir, stableKey) {
+	stableKey := filepath.Join(realArtifactLocksDir, hex.EncodeToString([]byte(artifactID)))
+	if !pathContained(realArtifactLocksDir, stableKey) {
 		return "", fmt.Errorf("artifact ID %q resolves outside the artifact mutation locks directory: %w", artifactID, blerrors.ErrValidation)
 	}
 	return stableKey, nil
@@ -355,6 +350,9 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 	sort.Strings(uniqueIDs)
 	unlocks := make([]func() error, 0, len(uniqueIDs))
 	for _, id := range uniqueIDs {
+		if artifactMutationLockHeld(ctx, id) {
+			continue
+		}
 		stableKey, err := artifactMutationLockPath(ws, id)
 		if err != nil {
 			for i := len(unlocks) - 1; i >= 0; i-- {

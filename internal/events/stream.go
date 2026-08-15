@@ -27,13 +27,13 @@ type Event struct {
 	CommitSHA string         `json:"commit_sha,omitempty"`
 }
 
-// EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
 type itemLogLockContextKey struct{}
 
 type itemLogLockSet map[string]struct{}
 
 var itemLogLockRegistry sync.Map
 
+// EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
 type EventWriter struct {
 	logsDir string
 	mu      sync.Mutex

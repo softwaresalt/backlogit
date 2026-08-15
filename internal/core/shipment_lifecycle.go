@@ -1030,6 +1030,13 @@ type AdoptItemResult struct {
 // so callers can update their own references. Adoption rewrites internal
 // backlogit references only; external references are the caller's responsibility.
 func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (*AdoptItemResult, error) {
+	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
+	if lockErr != nil {
+		return nil, fmt.Errorf("adopt item %s: acquire mutation lock: %w", itemID, lockErr)
+	}
+	defer func() { _ = releaseArtifactLocks() }()
+	ctx = lockedCtx
+
 	if newParentID == "" {
 		return nil, fmt.Errorf("adopt item %s: new_parent_id is required", itemID)
 	}
