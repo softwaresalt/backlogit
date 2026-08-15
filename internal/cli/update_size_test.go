@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -106,10 +107,12 @@ func TestUpdateSize_MutualExclusionErrorsBeforeWrite(t *testing.T) {
 func TestUpdateSize_BusyReturnsExit4(t *testing.T) {
 	root := setupCLIWorkspace(t)
 	id := createSizeTask(t, root)
-	path := taskFilePath(root, id)
 
-	// Plant a fresh lock sidecar to simulate a concurrent holder.
-	sidecar := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
+	// Plant a fresh shared artifact lock sidecar to simulate a concurrent holder.
+	locksDir := filepath.Join(root, ".backlogit", ".locks", "artifacts")
+	require.NoError(t, os.MkdirAll(locksDir, 0o755))
+	stableKey := filepath.Join(locksDir, hex.EncodeToString([]byte(id)))
+	sidecar := filepath.Join(filepath.Dir(stableKey), "."+filepath.Base(stableKey)+".lock")
 	require.NoError(t, os.WriteFile(sidecar, []byte{}, 0o644))
 	t.Cleanup(func() { _ = os.Remove(sidecar) })
 
