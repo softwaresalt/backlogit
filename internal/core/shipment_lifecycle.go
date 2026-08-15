@@ -214,7 +214,7 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 
 func guardEventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.Event) ([]events.Event, error) {
 	baseline := make(map[string]int)
-	for _, line := range strings.Split(string(snapshot.Content), "\\n") {
+	for _, line := range strings.Split(string(snapshot.Content), "\n") {
 		event, ok, err := events.ParseEventLine(line, itemID)
 		if err != nil || !ok || event.EventType != EventGateBlocked {
 			continue

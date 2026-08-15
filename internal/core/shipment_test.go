@@ -409,6 +409,24 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	}
 }
 
+func TestGuardEventsSinceSnapshotPreservesOnlyNewEvidence(t *testing.T) {
+	const baselineLine = `{"timestamp":"2026-08-15T09:00:00Z","item_id":"001-S","event_type":"gate_blocked","delta":{"reason":"old"}}`
+	baselineEvent, ok, err := events.ParseEventLine(baselineLine, "001-S")
+	require.NoError(t, err)
+	require.True(t, ok)
+	newEvent := events.Event{
+		Timestamp: time.Date(2026, 8, 15, 9, 1, 0, 0, time.UTC),
+		ItemID:    "001-S",
+		EventType: EventGateBlocked,
+		Delta:     map[string]any{"reason": "new"},
+	}
+
+	guardEvents, err := guardEventsSinceSnapshot(fileSnapshot{Content: []byte(baselineLine + "\n")}, "001-S", []events.Event{baselineEvent, newEvent})
+	require.NoError(t, err)
+	require.Len(t, guardEvents, 1)
+	assert.Equal(t, "new", guardEvents[0].Delta["reason"])
+}
+
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
 // must fire even when a later step fails and ShipShipment returns an error.
 // moveShipmentStatusWithTopLevel's persistArtifact call (marking the
