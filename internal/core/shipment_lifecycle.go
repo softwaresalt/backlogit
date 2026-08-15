@@ -1044,13 +1044,37 @@ type AdoptItemResult struct {
 	RewrittenArtifactIDs []string `json:"rewritten_artifact_ids,omitempty"`
 }
 
+func lockAdoptionEventLogs(ctx context.Context, ws *Workspace, oldID, newID string) (context.Context, func(), error) {
+	ids := []string{oldID, newID}
+	sort.Strings(ids)
+	unlocks := make([]func(), 0, len(ids))
+	lockedCtx := ctx
+	for _, id := range ids {
+		var unlock func()
+		var err error
+		lockedCtx, unlock, err = events.LockItemLogCrossProcess(lockedCtx, WorkspaceLogsRoot(ws.RootPath), id)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				unlocks[i]()
+			}
+			return ctx, nil, err
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return lockedCtx, func() {
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
+		}
+	}, nil
+}
+
 // AdoptItem sets an orphaned or unparented item's parent_id to a new feature,
 // atomically rewriting its hierarchical ID, renaming files, updating dependency
 // and link edges, and syncing the index. The return value includes the new ID
 // so callers can update their own references. Adoption rewrites internal
 // backlogit references only; external references are the caller's responsibility.
 func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (*AdoptItemResult, error) {
-	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
+	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
 	if lockErr != nil {
 		return nil, fmt.Errorf("adopt item %s: acquire mutation lock: %w", itemID, lockErr)
 	}
@@ -1118,6 +1142,16 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 				newID = generatedID
 			}
 		}
+	}
+
+	var releaseEventLocks func()
+	if newID != oldID {
+		lockedCtx, releaseEventLocks, lockErr = lockAdoptionEventLogs(ctx, ws, oldID, newID)
+		if lockErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire event-log locks: %w", itemID, lockErr)
+		}
+		defer releaseEventLocks()
+		ctx = lockedCtx
 	}
 
 	// Update the artifact with new parent and ID.
