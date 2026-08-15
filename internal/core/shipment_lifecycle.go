@@ -421,9 +421,9 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		// before this closure's own status-transition persist, narrowing
 		// the residual window a concurrent commit could otherwise land in
 		// between this call returning and that persist (106.033-T).
-		gatedHead, err := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
-		if err != nil {
-			return err
+		_, gateErr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+		if gateErr != nil {
+			return gateErr
 		}
 
 		// 133.004-T: resolve covering-feature ancestry BEFORE completing the
@@ -466,8 +466,9 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 		// Re-run the completion gate after acquiring the artifact locks so no
 		// concurrent artifact mutation can land between validation and snapshot.
-		if gatedHead, err = gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope); err != nil {
-			return err
+		gatedHead, gateErr := gateShipmentCompletion(ctx, ws, shipmentID, releaseScope, explicitScope)
+		if gateErr != nil {
+			return gateErr
 		}
 		shipSnapshots, snapshotErr = snapshotShipArtifacts(ctx, ws, rollbackIDs)
 		if snapshotErr != nil {

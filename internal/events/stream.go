@@ -291,11 +291,10 @@ func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
 			defer fileUnlock()
 		}
 	} else {
-		lockedCtx, unlock, lockErr := LockItemLogCrossProcess(ctx, w.logsDir, event.ItemID)
+		_, unlock, lockErr := LockItemLogCrossProcess(ctx, w.logsDir, event.ItemID)
 		if lockErr != nil {
 			return lockErr
 		}
-		ctx = lockedCtx
 		defer unlock()
 	}
 	w.mu.Lock()
