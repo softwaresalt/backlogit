@@ -25,9 +25,9 @@ func TestPersistArtifactWithGuardChecksBeforeFirstWrite(t *testing.T) {
 	for _, artifact := range []*models.Artifact{feature, task, shipment} {
 		var sequence []string
 		originalWriter := persistArtifactWriteFn
-		persistArtifactWriteFn = func(*models.Artifact, string, bool) error {
+		persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
 			sequence = append(sequence, "write")
-			return originalWriter(feature, findArtifactPathDirect(ws, feature.ID), false)
+			return originalWriter(artifact, filePath, durable)
 		}
 		guardErr := errors.New("CAS refused")
 		err := persistArtifactWithGuard(ctx, ws, artifact, false, func(context.Context) error {
