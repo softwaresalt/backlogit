@@ -8,6 +8,7 @@ package contract_test
 // across both surfaces.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,9 +22,9 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/softwaresalt/backlogit/internal/cli"
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
-	"github.com/softwaresalt/backlogit/internal/db"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
@@ -51,16 +52,16 @@ func TestDepTypeParity_CLIAndMCPReturnCanonicalShape(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, core.AddDependency(ctx, ws, t2.ID, t1.ID, "relates_to"))
 
-	// CLI surface: db.GetDependencies is the data layer behind `backlogit dep list`.
-	cliEdges, err := db.GetDependencies(ctx, ws.DB, t2.ID)
-	require.NoError(t, err)
-	require.Len(t, cliEdges, 1, "CLI: must find exactly one dep edge")
-	assert.Equal(t, t2.ID, cliEdges[0].ItemID)
-	assert.Equal(t, t1.ID, cliEdges[0].DependsOn)
-	assert.Equal(t, "relates_to", cliEdges[0].DepType, "CLI dep_type must be relates_to")
-
-	cliLine := fmt.Sprintf("%s → %s (%s)", cliEdges[0].ItemID, cliEdges[0].DependsOn, cliEdges[0].DepType)
-	assert.True(t, strings.Contains(cliLine, "relates_to"), "CLI line format must include dep_type")
+	// CLI surface: invoke the real Cobra command behind `backlogit dep list`.
+	rootCmd := cli.NewRootCommand()
+	var cliOutput bytes.Buffer
+	rootCmd.SetOut(&cliOutput)
+	rootCmd.SetErr(&cliOutput)
+	rootCmd.SetArgs([]string{"--cwd", root, "dep", "list", t2.ID})
+	require.NoError(t, rootCmd.Execute())
+	cliLine := fmt.Sprintf("%s → %s (%s)", t2.ID, t1.ID, "relates_to")
+	assert.Equal(t, cliLine, strings.TrimSpace(cliOutput.String()),
+		"CLI dep list must emit the canonical dependency shape")
 
 	// MCP surface: backlogit_get_dependencies tool.
 	s := mcpinternal.NewServer(ws)
@@ -89,6 +90,6 @@ func TestDepTypeParity_CLIAndMCPReturnCanonicalShape(t *testing.T) {
 	assert.Equal(t, "relates_to", mcpEdges[0].DepType, "MCP dep_type must be relates_to")
 
 	// Parity gate: both surfaces must return the same dep_type.
-	assert.Equal(t, cliEdges[0].DepType, mcpEdges[0].DepType,
+	assert.Equal(t, "relates_to", mcpEdges[0].DepType,
 		"CLI and MCP must return identical dep_type for the same edge")
 }
