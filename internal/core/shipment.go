@@ -199,51 +199,15 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		}
 	}
 
-	// Repository-ref CAS/guard (106.033-T): the last read this function
-	// performs before calling persistArtifact. See this function's doc
-	// comment for the residual window this narrows (including the further,
-	// non-mutating work persistArtifact itself still does afterward).
-	//
-	// review-fix (PR #358): gateShipmentCompletion already recorded a
-	// durable EventGatePassed for this same shipment before returning, so a
-	// refusal here — without its own evidence record — would leave the
-	// audit log showing only a pass even though the shipment never actually
-	// shipped, defeating monitoring of exactly this guard (the scenario it
-	// exists to catch). Append a best-effort EventGateBlocked, carrying the
-	// expected and observed heads, before returning either refusal below.
-	// The append failure itself is intentionally non-fatal here (logged,
-	// not joined into the returned error): the ship is already refused, so
-	// a failed audit write must not mask or replace that refusal.
-	if expectedHeadSHA != "" {
-		currentHead, headErr := ws.headSHABounded(ctx)
-		if headErr != nil {
-			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
-				"level":         "shipment",
-				"outcome":       "blocked",
-				"reason":        "head-resolve-error-before-persist",
-				"expected_head": expectedHeadSHA,
-			}); aerr != nil {
-				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
-			}
-			return headResolveError(shipmentID, headErr)
-		}
-		if derr := headDriftError(shipmentID, expectedHeadSHA, currentHead); derr != nil {
-			if aerr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
-				"level":         "shipment",
-				"outcome":       "blocked",
-				"reason":        "head-drift-before-persist",
-				"expected_head": expectedHeadSHA,
-				"observed_head": currentHead,
-			}); aerr != nil {
-				slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", aerr)
-			}
-			return derr
-		}
-	}
-
 	shipment.Status = models.ArtifactStatus(newStatus)
 	shipment.UpdatedAt = models.NowUTC()
-	if err := persistArtifact(ctx, ws, shipment, true); err != nil {
+	var guard func(context.Context) error
+	if expectedHeadSHA != "" {
+		guard = func(guardCtx context.Context) error {
+			return checkShipmentPersistHeadGuard(guardCtx, ws, shipmentID, expectedHeadSHA)
+		}
+	}
+	if err := persistArtifactWithGuard(ctx, ws, shipment, true, guard); err != nil {
 		return fmt.Errorf("move shipment %s: %w", shipmentID, err)
 	}
 
@@ -266,6 +230,34 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		ws.HookRunner.FirePost(ctx, hooks.HookMoveShipmentStatus, hookCtx)
 	}
 
+	return nil
+}
+
+func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentID, expectedHeadSHA string) error {
+	currentHead, headErr := ws.headSHABounded(ctx)
+	if headErr != nil {
+		if auditErr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+			"level":         "shipment",
+			"outcome":       "blocked",
+			"reason":        "head-resolve-error-before-persist",
+			"expected_head": expectedHeadSHA,
+		}); auditErr != nil {
+			slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", auditErr)
+		}
+		return headResolveError(shipmentID, headErr)
+	}
+	if driftErr := headDriftError(shipmentID, expectedHeadSHA, currentHead); driftErr != nil {
+		if auditErr := ws.appendGateEvent(ctx, shipmentID, EventGateBlocked, map[string]any{
+			"level":         "shipment",
+			"outcome":       "blocked",
+			"reason":        "head-drift-before-persist",
+			"expected_head": expectedHeadSHA,
+			"observed_head": currentHead,
+		}); auditErr != nil {
+			slog.WarnContext(ctx, "shipment head guard: failed to append blocked evidence", "shipment_id", shipmentID, "error", auditErr)
+		}
+		return driftErr
+	}
 	return nil
 }
 
@@ -599,14 +591,22 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 var persistArtifactWriteFn = WriteArtifactFileWithOptions
 
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
-	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, true)
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, nil)
 }
 
 func persistArtifactWithoutDBOnlyLinks(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
-	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, false)
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, false, nil)
+}
+
+func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool, guard func(context.Context) error) error {
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, guard)
 }
 
 func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool) error {
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, preserveDBOnlyLinks, nil)
+}
+
+func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
 	}
@@ -629,7 +629,15 @@ func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact 
 		return fmt.Errorf("snapshot target artifact file: %w", err)
 	}
 
+	if guard != nil {
+		if err := guard(ctx); err != nil {
+			return err
+		}
+	}
 	if currentPath != targetPath {
+		if err := mkdirAllDurable(filepath.Dir(targetPath), WorkspaceDurableWrites(ws)); err != nil {
+			return fmt.Errorf("create directory %s: %w", filepath.Dir(targetPath), err)
+		}
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
@@ -694,9 +702,6 @@ func resolveArtifactPersistPaths(ctx context.Context, ws *Workspace, artifact *m
 	}
 
 	targetDirAbs := filepath.Join(backlogitDir, targetDir)
-	if err := mkdirAllDurable(targetDirAbs, WorkspaceDurableWrites(ws)); err != nil {
-		return "", "", fmt.Errorf("create directory %s: %w", targetDirAbs, err)
-	}
 	targetPath := filepath.Join(targetDirAbs, filepath.Base(currentPath))
 	return currentPath, targetPath, nil
 }
