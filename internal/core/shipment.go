@@ -599,8 +599,21 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 var persistArtifactWriteFn = WriteArtifactFileWithOptions
 
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
+	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, true)
+}
+
+func persistArtifactWithoutDBOnlyLinks(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
+	return persistArtifactWithLinkPolicy(ctx, ws, artifact, relocate, false)
+}
+
+func persistArtifactWithLinkPolicy(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool) error {
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
+	}
+	if preserveDBOnlyLinks {
+		if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, artifact); err != nil {
+			return fmt.Errorf("preserve database-only links: %w", err)
+		}
 	}
 
 	currentPath, targetPath, err := resolveArtifactPersistPaths(ctx, ws, artifact, relocate)
@@ -994,4 +1007,3 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, journalPath
 	removeReturnBlockedJournal(ctx, ws.RootPath, journal.Shipment.ID, journal.Item.ID)
 	return nil
 }
-

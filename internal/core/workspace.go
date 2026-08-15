@@ -104,6 +104,7 @@ func workspaceStorageRoot(ws *Workspace) string {
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
+	started := time.Now()
 	backlogitDir, err := ResolveStorageRoot(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace root: %w", err)
@@ -209,6 +210,8 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 			return nil, fmt.Errorf("ensure schema: %w", err)
 		}
 	}
+	slog.DebugContext(ctx, "workspace initialization phase complete",
+		"phase", "schema", "duration_ms", time.Since(started).Milliseconds())
 
 	workspace := &Workspace{
 		StorageRoot:                 backlogitDir,
@@ -240,17 +243,15 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 		}
 	}
 
-	// F-7 migration guard: write any DB-only links to Markdown frontmatter
-	// BEFORE any rehydration that would clear item_links. This is idempotent
-	// and best-effort — failures are logged but do not abort initialization.
-	if _, migrateErr := MigrateDBOnlyLinks(ctx, workspace); migrateErr != nil {
-		slog.WarnContext(ctx, "migrate db-only links failed during workspace init", "error", migrateErr)
-	}
-
+	// DB-only link migration is intentionally not part of workspace construction.
+	// Rehydrate callers invoke MigrateDBOnlyLinks immediately before clearing the
+	// item_links cache, keeping the MCP handshake free of filesystem-wide scans.
 	if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
 		database.Close()
 		return nil, fmt.Errorf("recover shipment operations: %w", err)
 	}
+	slog.InfoContext(ctx, "workspace initialized",
+		"storage_root", backlogitDir, "duration_ms", time.Since(started).Milliseconds())
 	return workspace, nil
 }
 

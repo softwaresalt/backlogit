@@ -350,6 +350,10 @@ force the disposable cache to match the file-backed source of truth.`,
 			}
 			defer ws.Close()
 
+			if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
+				return migrateErr
+			}
+
 			// 070.002-T: thread the CLI's configured logger through Rehydrate's
 			// dependency-injection seam. applyLogLevel has already installed the
 			// level/format-configured handler as the slog default, so this passes

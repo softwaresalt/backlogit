@@ -3,6 +3,7 @@ title: "ShipShipment late-failure rollback and persistArtifact-level CAS hardeni
 description: "Implementation plan for partial-release prevention and repository-wide CAS boundary tightening deferred from 106.033-T"
 source: ".backlogit/archive/057-DL.md"
 doc_type: plan
+chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 ---
 

@@ -3,6 +3,7 @@ title: "Optimize backlogit MCP startup by canonical artifact indexing"
 description: "Implementation plan for engram workspace MCP startup timeout caused by O(link-sources × artifact-scan) migration behavior"
 source: ".backlogit/archive/056-DL.md"
 doc_type: plan
+chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 ---
 

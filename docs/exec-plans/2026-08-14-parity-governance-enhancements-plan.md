@@ -3,6 +3,7 @@ title: "Parity test realism and governed-operation expansion follow-ups"
 description: "Low-priority plan for 118-S parity realism and F6 governed:true scope extension"
 source: ".backlogit/archive/058-DL.md"
 doc_type: plan
+chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 ---
 

@@ -95,6 +95,9 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d files, %d skipped\n",
 					report.FilesMoved, report.FilesSkipped)
+				if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
+					return migrateErr
+				}
 				count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 				if rehydErr != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
@@ -183,6 +186,9 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 		}
 	}
 
+	if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
+		return migrateErr
+	}
 	count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	if rehydErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
