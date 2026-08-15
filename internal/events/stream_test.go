@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,34 @@ func TestEventWriter_AppendEvent(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(dir, "T001.jsonl"))
+}
+
+func TestEventWriter_AppendEvent_RespectsSharedItemLogLock(t *testing.T) {
+	// Arrange
+	dir := t.TempDir()
+	writer := events.NewEventWriter(dir)
+	baseCtx := context.Background()
+	_, unlock := events.LockItemLog(baseCtx, dir, "T001")
+	defer unlock()
+	event := events.Event{Actor: "test-agent", ItemID: "T001", EventType: "state_change"}
+	completed := make(chan error, 1)
+
+	// Act
+	go func() { completed <- writer.AppendEvent(baseCtx, event) }()
+
+	// Assert
+	select {
+	case err := <-completed:
+		t.Fatalf("append completed while item log lock was held: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case err := <-completed:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("append did not complete after item log lock was released")
+	}
 }
 
 func TestEventWriter_AppendEvent_WithCommitSHA(t *testing.T) {

@@ -176,8 +176,9 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 	}
 	var errs []error
 	for _, id := range depthSortedIDs(ids) {
+		itemCtx, unlockItemLog := events.LockItemLog(ctx, logsDir, id)
 		snapshot := snapshots[id]
-		currentEvents, readErr := events.ReadAllEvents(ctx, logsDir, id)
+		currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
 		var preservedEvents []events.Event
 		if readErr != nil {
 			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
@@ -199,16 +200,17 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		}
 		writer := NewWorkspaceEventWriter(ws, logsDir)
 		for _, event := range preservedEvents {
-			if err := writer.AppendEvent(ctx, event); err != nil {
+			if err := writer.AppendEvent(itemCtx, event); err != nil {
 				errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
 			}
 		}
-		if err := bldb.ReindexItemLog(ctx, ws.DB, logsDir, id); err != nil {
+		if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
 		}
-		if err := bldb.UpsertItem(ctx, ws.DB, snapshot.artifact); err != nil {
+		if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))
 		}
+		unlockItemLog()
 	}
 	return errors.Join(errs...)
 }

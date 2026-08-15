@@ -28,6 +28,12 @@ type Event struct {
 }
 
 // EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
+type itemLogLockContextKey struct{}
+
+type itemLogLockSet map[string]struct{}
+
+var itemLogLockRegistry sync.Map
+
 type EventWriter struct {
 	logsDir string
 	mu      sync.Mutex
@@ -84,12 +90,59 @@ func LogPathForItem(logsDir, itemID string) string {
 // callers and diagnostics can observe the writer's durability mode.
 func (w *EventWriter) Durable() bool { return w.durable }
 
+func itemLogLockKey(logsDir, itemID string) string {
+	return filepath.Clean(LogPathForItem(logsDir, itemID))
+}
+
+func itemLogMutex(key string) *sync.Mutex {
+	if existing, ok := itemLogLockRegistry.Load(key); ok {
+		return existing.(*sync.Mutex)
+	}
+	created := &sync.Mutex{}
+	actual, _ := itemLogLockRegistry.LoadOrStore(key, created)
+	return actual.(*sync.Mutex)
+}
+
+// LockItemLog serializes a read/restore/reindex sequence with all event appends
+// for one item log. The returned context carries ownership so AppendEvent and
+// ReindexItemLog can participate in the same critical section without
+// attempting to lock the non-reentrant mutex a second time.
+func LockItemLog(ctx context.Context, logsDir, itemID string) (context.Context, func()) {
+	key := itemLogLockKey(logsDir, itemID)
+	if existing, ok := ctx.Value(itemLogLockContextKey{}).(itemLogLockSet); ok {
+		if _, held := existing[key]; held {
+			return ctx, func() {}
+		}
+	}
+	mutex := itemLogMutex(key)
+	mutex.Lock()
+	set := make(itemLogLockSet)
+	if existing, ok := ctx.Value(itemLogLockContextKey{}).(itemLogLockSet); ok {
+		for heldKey := range existing {
+			set[heldKey] = struct{}{}
+		}
+	}
+	set[key] = struct{}{}
+	lockedCtx := context.WithValue(ctx, itemLogLockContextKey{}, set)
+	var once sync.Once
+	return lockedCtx, func() { once.Do(mutex.Unlock) }
+}
+
+func itemLogLockHeld(ctx context.Context, key string) bool {
+	set, ok := ctx.Value(itemLogLockContextKey{}).(itemLogLockSet)
+	if !ok {
+		return false
+	}
+	_, held := set[key]
+	return held
+}
+
 // AppendEvent marshals and appends an event to the item's JSONL log file. In
 // durable mode the append is fsynced (file + POSIX parent dir) before returning;
 // a partial write or a post-write file/dir fsync failure is surfaced as
 // ErrWriteIndeterminate because an append is not atomic and is not safe to
 // blindly retry.
-func (w *EventWriter) AppendEvent(_ context.Context, event Event) error {
+func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
 	if event.ItemID == "" {
 		return fmt.Errorf("append event: item_id is required")
 	}
@@ -99,6 +152,12 @@ func (w *EventWriter) AppendEvent(_ context.Context, event Event) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)
+	}
+	key := itemLogLockKey(w.logsDir, event.ItemID)
+	if !itemLogLockHeld(ctx, key) {
+		mutex := itemLogMutex(key)
+		mutex.Lock()
+		defer mutex.Unlock()
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

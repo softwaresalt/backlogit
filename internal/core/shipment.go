@@ -142,27 +142,14 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // on.
 //
 // When expectedHeadSHA is non-empty, this function re-resolves HEAD ONE MORE
-// TIME, immediately before the persist — the last read this function itself
-// performs before calling persistArtifact — and refuses (fail closed) if it
-// has drifted from expectedHeadSHA. This narrows, but does not eliminate, the
-// residual window: git offers no atomic "read HEAD and complete our write"
-// primitive, and persistArtifact itself still performs further non-mutating
-// preparation (artifact validation, FindArtifactPath resolution, registry
-// load, two file snapshots, and potential target-directory creation) before
-// its own first mutating filesystem write. A commit landing anywhere in that
-// remaining interval — not just "a few instructions" — is still a
-// theoretically possible (if narrow, since none of that preparation touches
-// the repository's own HEAD ref) audit-precision gap. Moving this guard
-// inside persistArtifact itself, immediately before its first mutating
-// write, was evaluated and explicitly deferred: persistArtifact is the
-// shared persistence path for every artifact type (tasks, features,
-// shipments), not just this shipment-status transition, so threading a
-// shipment-specific expected-head parameter through it is a materially
-// larger design surface than this CAS/guard's declared scope — comparable to
-// the git-ref-lock option (b) the 126-S stage memory already deferred for
-// the same reason. Accepted as a documented, monitored limitation per
-// 106.033-T option (c); see backlog follow-up 3A649F8E for a dedicated
-// investigation into a repository-wide (not shipment-specific) tightening.
+// TIME and passes the guard into the shared persistence path. The persistence
+// path performs validation, link merging, path resolution, and file snapshots
+// first, then invokes the guard immediately before its first mutating
+// filesystem operation. This narrows, but does not eliminate, the residual
+// window: git offers no atomic "read HEAD and complete our write" primitive,
+// so a commit can still land after the final HEAD check and before the write
+// completes. The guard remains shared across task, feature, and shipment
+// persistence so all callers use the same pre-mutation ordering.
 //
 // An empty expectedHeadSHA (every existing call site other than ShipShipment's
 // active->shipped transition, and that transition itself whenever
