@@ -153,7 +153,9 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
 		}
+		_, unlockItemLog := events.LockItemLog(ctx, WorkspaceLogsRoot(ws.RootPath), id)
 		eventLog, err := snapshotFile(events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), id))
+		unlockItemLog()
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s event log: %w", id, err)
 		}
