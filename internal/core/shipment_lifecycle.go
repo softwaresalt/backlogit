@@ -189,9 +189,11 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		snapshot := snapshots[id]
 		currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
 		var preservedEvents []events.Event
+		eventLogRestorable := readErr == nil
 		if readErr != nil {
 			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
 		} else if preservedEvents, readErr = eventsSinceSnapshot(snapshot.eventLog, id, currentEvents, operationID); readErr != nil {
+			eventLogRestorable = false
 			errs = append(errs, fmt.Errorf("identify concurrent events for %s: %w", id, readErr))
 		}
 		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
@@ -204,17 +206,20 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		if err := restoreSnapshot(snapshot.file); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s file: %w", id, err))
 		}
-		if err := restoreSnapshot(snapshot.eventLog); err != nil {
-			errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
-		}
-		writer := NewWorkspaceEventWriter(ws, logsDir)
-		for _, event := range preservedEvents {
-			if err := writer.AppendEvent(itemCtx, event); err != nil {
-				errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
+		if eventLogRestorable {
+			if err := restoreSnapshot(snapshot.eventLog); err != nil {
+				errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
+			} else {
+				writer := NewWorkspaceEventWriter(ws, logsDir)
+				for _, event := range preservedEvents {
+					if err := writer.AppendEvent(itemCtx, event); err != nil {
+						errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
+					}
+				}
+				if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
+					errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
+				}
 			}
-		}
-		if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
-			errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
 		}
 		if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
 			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))

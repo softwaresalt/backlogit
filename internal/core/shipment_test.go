@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,39 @@ func setupShipmentWorkspace(t *testing.T) *Workspace {
 	require.NoError(t, err)
 	t.Cleanup(func() { workspace.Close() })
 	return workspace
+}
+
+func TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feature, err := CreateArtifact(ctx, ws, "Rollback read failure feature", "feature")
+	require.NoError(t, err)
+	artifact, err := CreateArtifact(ctx, ws, "Rollback read failure", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+
+	artifactPath, err := FindArtifactPath(ctx, ws, artifact.ID)
+	require.NoError(t, err)
+	artifactSnapshot, err := snapshotFile(artifactPath)
+	require.NoError(t, err)
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	eventLogPath := events.LogPathForItem(logsDir, artifact.ID)
+	require.NoError(t, os.MkdirAll(filepath.Dir(eventLogPath), 0o755))
+	baseline := []byte(fmt.Sprintf(`{"item_id":%q,"event_type":"baseline"}`+"\n", artifact.ID))
+	current := append(append([]byte(nil), baseline...), []byte(strings.Repeat("x", 1<<20+1)+"\n")...)
+	require.NoError(t, os.WriteFile(eventLogPath, current, 0o644))
+
+	err = restoreShipArtifacts(ctx, ws, map[string]shipArtifactSnapshot{
+		artifact.ID: {
+			artifact: cloneArtifact(artifact),
+			file:     artifactSnapshot,
+			eventLog: fileSnapshot{Path: eventLogPath, Exists: true, Content: baseline},
+		},
+	})
+	require.Error(t, err)
+	got, readErr := os.ReadFile(eventLogPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, current, got)
 }
 
 // T002 / ST012: Create a shipment and verify it exists with queued status.
