@@ -357,6 +357,41 @@ func TestShipShipment_BodyPlannedOnlyChildrenShipKeepsFeatureOpen(t *testing.T) 
 		"covering feature file must remain under .backlogit/queue/, got %s", featureQueuePath)
 }
 
+// TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails verifies that
+// mutations completed before the final shipment status write are compensated.
+func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Rollback covering feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Rollback release task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	injectedErr := errors.New("injected shipment persist failure")
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		if artifact.ID == shipment.ID {
+			return injectedErr
+		}
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, injectedErr)
+	assert.Nil(t, result)
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, shipment.ID))
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, task.ID))
+	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, feature.ID))
+}
+
 // 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
 // must fire even when a later step fails and ShipShipment returns an error.
 // moveShipmentStatusWithTopLevel's persistArtifact call (marking the

@@ -130,6 +130,57 @@ func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string
 	return fmt.Errorf("claim shipment %s: %w", shipmentID, claimErr)
 }
 
+type shipArtifactSnapshot struct {
+	artifact *models.Artifact
+	file     fileSnapshot
+}
+
+func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (map[string]shipArtifactSnapshot, error) {
+	snapshots := make(map[string]shipArtifactSnapshot)
+	for _, id := range uniqueNonEmptyStrings(ids) {
+		artifact, err := findArtifact(ctx, ws, id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s: %w", id, err)
+		}
+		path, err := FindArtifactPath(ctx, ws, id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s path: %w", id, err)
+		}
+		file, err := snapshotFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
+		}
+		snapshots[id] = shipArtifactSnapshot{artifact: cloneArtifact(artifact), file: file}
+	}
+	return snapshots, nil
+}
+
+func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) error {
+	ctx = context.WithoutCancel(ctx)
+	ids := make([]string, 0, len(snapshots))
+	for id := range snapshots {
+		ids = append(ids, id)
+	}
+	var errs []error
+	for _, id := range depthSortedIDs(ids) {
+		snapshot := snapshots[id]
+		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
+			if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				errs = append(errs, fmt.Errorf("remove mutated artifact %s: %w", id, removeErr))
+			}
+		} else if err != nil && !errors.Is(err, blerrors.ErrNotFound) {
+			errs = append(errs, fmt.Errorf("locate mutated artifact %s: %w", id, err))
+		}
+		if err := restoreSnapshot(snapshot.file); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s file: %w", id, err))
+		}
+		if err := bldb.UpsertItem(ctx, ws.DB, snapshot.artifact); err != nil {
+			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
 func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
@@ -180,6 +231,8 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	var explicitScope, releaseScope, featureIDs, returnedIDs []string
 	var explicitScopeSet map[string]struct{}
 	var nonMemberFeatureSnapshots map[string]featureStatusSnapshot
+	var shipSnapshots map[string]shipArtifactSnapshot
+	shipRollbackAttempted := false
 	// archivedIDs and restored are declared here (rather than at their first
 	// assignment) so both the locked closure below and the deferred fallback
 	// registered immediately after it observe/mutate the same variables.
@@ -210,7 +263,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// only during return unwinding -- strictly after those in-line
 	// statements already ran to completion.
 	defer func() {
-		if restored {
+		if restored || shipRollbackAttempted {
 			return
 		}
 		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
@@ -281,6 +334,22 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			return fmt.Errorf("snapshot covering feature scope: %w", snapshotErr)
 		}
 
+		rollbackIDs := append([]string{shipmentID}, releaseScope...)
+		rollbackIDs = append(rollbackIDs, featureIDs...)
+		for _, featureID := range featureIDs {
+			descendants, descendantsErr := descendantItems(ctx, ws, featureID)
+			if descendantsErr != nil {
+				return fmt.Errorf("snapshot feature descendants for %s: %w", featureID, descendantsErr)
+			}
+			for _, descendant := range descendants {
+				rollbackIDs = append(rollbackIDs, descendant.ID)
+			}
+		}
+		shipSnapshots, snapshotErr = snapshotShipArtifacts(ctx, ws, rollbackIDs)
+		if snapshotErr != nil {
+			return fmt.Errorf("snapshot release scope: %w", snapshotErr)
+		}
+
 		if err := completeReleaseScope(ctx, ws, releaseScope); err != nil {
 			return fmt.Errorf("complete release scope: %w", err)
 		}
@@ -310,6 +379,12 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return moveShipmentStatusWithHeadGuard(ctx, ws, shipmentID, ShipmentShipped, false, gatedHead)
 	}()
 	if lockErr != nil {
+		if len(shipSnapshots) > 0 {
+			shipRollbackAttempted = true
+			if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
+				return nil, fmt.Errorf("ship shipment %s: %w; rollback failed: %w", shipmentID, lockErr, rollbackErr)
+			}
+		}
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
 	}
 
