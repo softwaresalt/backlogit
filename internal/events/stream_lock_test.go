@@ -4,26 +4,23 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestAcquireItemLogFileLock_DoesNotRemoveReplacementAfterStaleReclaim(t *testing.T) {
+func TestAcquireItemLogFileLockUsesStableAdvisorySidecar(t *testing.T) {
 	logsDir := t.TempDir()
 	firstUnlock, err := acquireItemLogFileLock(context.Background(), logsDir, "T001")
 	require.NoError(t, err)
 	lockPath := itemLogLockSidecarPath(logsDir, "T001")
-	staleTime := time.Now().Add(-itemLogLockStaleTTL - time.Second)
-	require.NoError(t, os.Chtimes(lockPath, staleTime, staleTime))
+
+	_, err = acquireItemLogFileLock(context.Background(), logsDir, "T001")
+	require.Error(t, err, "a held advisory lock must remain busy without stale reclamation")
+	firstUnlock()
 
 	secondUnlock, err := acquireItemLogFileLock(context.Background(), logsDir, "T001")
 	require.NoError(t, err)
-	firstUnlock()
-	_, statErr := os.Stat(lockPath)
-	require.NoError(t, statErr, "the original owner must not remove a replacement lock")
-
 	secondUnlock()
-	_, statErr = os.Stat(lockPath)
-	require.ErrorIs(t, statErr, os.ErrNotExist)
+	_, statErr := os.Stat(lockPath)
+	require.NoError(t, statErr, "the stable advisory sidecar must remain after release")
 }
