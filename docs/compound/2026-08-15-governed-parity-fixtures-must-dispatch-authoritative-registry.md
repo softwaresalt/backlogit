@@ -1,15 +1,17 @@
 ---
 chunk_strategy: h1-h2-h3
-title: "Governed parity fixtures must dispatch through the authoritative registry"
-date: 2026-08-15
+description: "Governed parity fixtures must exercise authoritative registry mappings and registered handlers instead of bypassing production routing contracts."
 doc_type: learning
+docline:
+    date: 2026-08-15T00:00:00Z
+    tags:
+        - governed-operations
+        - registry
+        - parity-tests
+        - mcp
 schema_version: "1.0"
 source: docs/compound/2026-08-15-governed-parity-fixtures-must-dispatch-authoritative-registry.md
-tags:
-  - governed-operations
-  - registry
-  - parity-tests
-  - mcp
+title: "Governed parity fixtures must dispatch through the authoritative registry"
 ---
 
 # Governed parity fixtures must dispatch through the authoritative registry

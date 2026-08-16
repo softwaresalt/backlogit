@@ -30,8 +30,9 @@ title: "Features 139-F through 142-F — Operational Closure"
 **READY WITH CONDITIONS.** The four eligible features are merged, tested,
 reviewed, and archived. The conditions are disclosed operational boundaries:
 
-1. Feature 138-F remains blocked because it requires writes to the external
-autoharness repository. Stash entries `7F0A6E89` and `6FA0829B` remain active.
+1. Feature 138-F and its stash entries are administratively closed and
+archived in this workspace. The upstream template changes still belong in the
+external autoharness repository and were not performed here.
 2. The installed dogfood binary may require an independent rebuild before the
 new source behavior is operative in local automation.
 3. Shipment-specific dependency routing remains outside the bounded 142-F
@@ -95,6 +96,7 @@ do not revert unrelated reliability fixes or create a formal release.
 
 Features 139-F through 142-F and their tasks are done and archived. Merge
 commit `17530fe30f68034bff502362e489eff82fb86fe7` is associated with the final
-142-F closure. Feature 138-F is still blocked and its two stash entries remain
-active. No follow-up backlog item was created during this bounded closure;
+142-F closure. Feature 138-F and its two stash entries are closed and archived
+in this workspace, while their external autoharness implementation remains out
+of scope. No follow-up backlog item was created during this bounded closure;
 shipment-specific dependency routing is a recorded scope boundary.

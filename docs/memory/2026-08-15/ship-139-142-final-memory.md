@@ -25,14 +25,14 @@ completed successfully. No formal release was created.
 
 ## Remaining state
 
-Feature 138-F remains blocked because it requires external autoharness writes.
-Stash entries `7F0A6E89` and `6FA0829B` remain active. No follow-up item was
-created; shipment-specific dependency routing remains a documented scope
-boundary.
+Feature 138-F and stash entries `7F0A6E89` and `6FA0829B` were
+administratively closed and archived in this workspace. Their upstream
+autoharness implementation remains external and was not performed here. No
+follow-up item was created; shipment-specific dependency routing remains a
+documented scope boundary.
 
 ## Verification
 
 Targeted and full CLI tests, race-enabled all-package tests, `go vet ./...`,
 `golangci-lint run --timeout=5m`, documentation lint, and PR #364 CI passed.
-The final closure commit must be pushed to `origin/main` after backlog archive
-and closure documents are committed.
+The closure artifacts are included in PR #365 for protected-main integration.

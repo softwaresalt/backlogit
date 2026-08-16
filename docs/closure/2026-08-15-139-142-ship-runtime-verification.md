@@ -71,5 +71,6 @@ projections.
 The installed backlogit binary used for day-to-day operations may lag the
 merged source until it is independently rebuilt and pinned. This is an
 operational deployment concern, not a failure of the merged source or its
-verification gates. Feature 138-F remains blocked because its approved work
-requires changes in the external autoharness repository.
+verification gates. Feature 138-F is administratively closed in this
+workspace, but its approved implementation still requires changes in the
+external autoharness repository and was not verified here.
