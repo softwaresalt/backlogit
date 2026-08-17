@@ -104,3 +104,32 @@ remediation recorded. `LOCAL_REVIEW_READY` is deferred pending final review.
 * Ship (not Stage) owns implementation of the rebaselined tasks from a clean
   committed baseline, honoring the 143.001-T RED -> 143.002-T green ->
   143.003-T regression sequence.
+
+## DARK_MODE_HALTED (2026-08-17T15:44:19-07:00)
+
+Final clean adversarial review (reviewed HEAD `e7f3fbcf`, clean worktree
+`127-s-final-review`) returned verdict **BLOCK**. The dark session is HALTED, not
+complete.
+
+* **Scope**: stash `0115F71F` / feature `143-F` / shipment `127-S`.
+* **Halt reason (unresolved P1)**: committed source at `e7f3fbcf` contains zero
+  references to `ws.shipmentEventAppend` / `shipmentEventAppendError`, yet Stage
+  artifacts (primarily `.backlogit/queue/143.001-T.md` ~line 23 and its
+  Acceptance Criteria / Implementation Notes) still assign and describe seam
+  ownership inconsistently, asserting the seam already exists. Plan cannot
+  converge on a valid TDD baseline.
+* **Violated stop condition**: review-fix cycle limit (3) reached without
+  convergence; universal same-error breaker also applies (same contradictory
+  seam-ownership baseline across all cycles).
+* **Root cause**: baseline contamination — earlier cycles reviewed against the
+  `127-s-reconcile` implementation worktree, which carries unrelated uncommitted
+  Ship source. That worktree is preserved untouched and MUST NOT be used as a
+  review baseline.
+* **Gate state**: no PR opened, no merge attempted, Ship not invoked.
+  `LOCAL_REVIEW_READY` NOT emitted. `DARK_MODE_MERGE_AUTHORIZED` NOT emitted.
+  `DARK_MODE_COMPLETE` NOT emitted.
+* **Backlog state**: 143-F / 127-S and child tasks left queued with a blocker
+  note; no status forced.
+* **Operator action needed**: authorize a fresh Stage replan from a clean,
+  current `main` committed baseline (do NOT reuse the dirty implementation
+  worktree). See `docs/memory/2026-08-17/circuit-break-stage-127-review-fix.md`.
