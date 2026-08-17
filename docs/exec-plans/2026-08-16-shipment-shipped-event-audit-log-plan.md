@@ -165,7 +165,10 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   construction (single shared core) and needs no separate surface-level ship tests.
   The pre-append and other-error rollback is unchanged and stays covered by the
   existing `TestShipShipment_RollsBack*` tests.
-* Execution posture: test-first (these tests define the red state for Units 1-2).
+* Execution posture: test-first at the integration level. Units 1 and 2 each land
+  their own unit-level failing (red) assertions; Unit 3 sequences after them
+  (depends on Units 1 and 2) and adds the broader cross-cutting integration
+  scenarios that exercise the combined append-plus-rollback behavior.
 * Acceptance criteria:
   * The three scenarios pass against the shared `ShipShipment` core path.
   * The success test asserts event ordering (shipped event before archival), not
@@ -348,7 +351,9 @@ Units 1 and 2 land together (Unit 1 is not independently releasable).
   with `%w`; no `unsafe`; the change replaces a swallowed error with a handled
   one.
 * II. Test-First Development (NON-NEGOTIABLE): pass. Each unit lands a failing
-  harness before production code; Unit 3 defines the red state for Units 1-2.
+  harness before production code (Unit 1 lands the append-return red assertion,
+  Unit 2 the classification red assertions); Unit 3 adds integration-level coverage
+  over the combined behavior and therefore sequences after Units 1-2.
 * III. Workspace Isolation and Security Boundaries: pass. All reads and writes
   resolve within the workspace root; the doctor audit only reads.
 * IV. CLI Workspace Containment (NON-NEGOTIABLE): pass. No out-of-tree writes.

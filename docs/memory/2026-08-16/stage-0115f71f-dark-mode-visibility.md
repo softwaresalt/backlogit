@@ -74,3 +74,16 @@ artifacts in place of broadcasts.
 * Unrelated changes preserved: the two untracked checkpoint files are never
   staged; existing worktrees and branches are never altered; the `main` ref is
   never moved.
+
+## Reconciliation Addendum (2026-08-17)
+
+The git-base decision above (base on root HEAD `17530fe3`, keep `7F0A6E89`/
+`6FA0829B` active) is superseded: the staging work was reconciled onto
+`origin/main` in commit `f175b9ae`, and `7F0A6E89`/`6FA0829B` are now archived. A
+pre-PR adversarial-review remediation on branch
+`chore/stage-143-shipment-audit-log-reconciled` completed the previously blocked
+dependency edges (`143.003-T -> 143.001-T`, `143.003-T -> 143.002-T`,
+`143.006-T -> 143.004-T`) and the explicit shipment `127-S` task membership, and
+reconciled the `143.003-T` test-first sequencing. See
+`docs/memory/2026-08-16/stage-0115f71f-session-memory.md` (Reconciliation Addendum)
+for the full record.

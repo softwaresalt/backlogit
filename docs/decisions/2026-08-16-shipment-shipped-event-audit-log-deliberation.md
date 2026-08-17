@@ -95,8 +95,10 @@ docs/exec-plans, docs/closure) returned HIGH confidence prior art:
   (`docs/closure/2026-08-01-133-shipshipment-cascade-fix-closure.md`). It is a
   check-only audit cross-referencing shipment manifests against event provenance,
   registered through `DoctorOptions`, and reads authoritative archived state from
-  raw Markdown (`findArtifact`), never the DB projection (`loadArtifact` omits
-  `archived_status`).
+  raw Markdown, never the DB projection (`loadArtifact` omits `archived_status`).
+  This plan applies the same read-raw-Markdown principle but via the full
+  canonical queue-and-archive artifact scan (parsing each path once) rather than a
+  per-ID `findArtifact` lookup, to stay duplicate-ID safe.
 * Test-seam patterns:
   `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md` (package-level
   `var` seams to inject `ErrWriteIndeterminate`, `t.Cleanup` restore, and tests
@@ -226,8 +228,11 @@ machinery) and reuses existing, tested primitives instead of new infrastructure.
   surgical inside the existing snapshot/rollback machinery; do not restructure the
   membership lock or the release-scope flow.
 * Risk: doctor audit reads the DB projection and misses `archived_status`.
-  Mitigation: read raw Markdown frontmatter via `findArtifact`, per the 133-F
-  precedent.
+  Mitigation: read raw Markdown frontmatter via the full canonical
+  queue-and-archive artifact scan (parsing each path once, `artifactRef` extended
+  to carry `archived_status`), not a per-ID `findArtifact` second lookup; this
+  follows the 133-F report-only precedent while avoiding the duplicate-ID mismatch
+  a per-ID lookup would risk.
 * Risk: CLI/MCP divergence. Mitigation: route through the shared
   `appendItemEventErr(ctx, ws, ...)` so both surfaces use the same ws-configured
   writer; do not add an EventWriter parameter or mint a fresh writer.

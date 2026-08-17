@@ -87,3 +87,61 @@ attempts. Not circumvented (no CLI workaround).
   build-feature (test-first), respecting the documented dependency order.
 * Later cycle: `142-F` / `142.001-T` (explicitly out of scope this cycle) and the
   prevention hardening follow-up `47B48DB0`.
+
+## Reconciliation Addendum (2026-08-17)
+
+This addendum is append-only; it supersedes -- without rewriting -- the stale
+git-base and stash-state notes above. It records the pre-PR adversarial-review
+remediation of commit `f175b9ae` performed on branch
+`chore/stage-143-shipment-audit-log-reconciled` (worktree
+`.worktrees/127-s-reconcile`).
+
+### Base and stash state (current, reconciled)
+
+* Base: the staging work was reconciled onto `origin/main` in commit `f175b9ae`
+  ("reconcile 143-F/127-S stage publication onto origin/main"). The earlier
+  decision to base on root HEAD `17530fe3` (4 commits behind `origin/main`, to keep
+  `7F0A6E89`/`6FA0829B` active) is superseded.
+* Stash (current worktree): `0115F71F` archived (harvested into `143-F` / `059-DL`);
+  `7F0A6E89` and `6FA0829B` are now archived via the `origin/main` reconciliation,
+  no longer active as the earlier note stated; `47B48DB0` remains active (deferred
+  prevention-hardening follow-up).
+
+### Blocked edges and shipment task-adds now completed
+
+The environment scope guard that previously blocked a subset of MCP mutations no
+longer applies. This remediation edited the worktree artifacts directly, because
+the MCP server binds the repository root and root-targeted tools were out of scope
+for this worktree. All previously documented gaps are now closed:
+
+* Dependency edge `143.003-T -> 143.001-T`: added to `143.003-T` frontmatter.
+* Dependency edge `143.003-T -> 143.002-T`: added to `143.003-T` frontmatter.
+* Dependency edge `143.006-T -> 143.004-T`: added to `143.006-T` frontmatter.
+* Shipment `127-S` now lists all members explicitly in dependency-safe order:
+  `143-F, 143.001-T, 143.002-T, 143.003-T, 143.004-T, 143.005-T, 143.006-T,
+  143.007-T`.
+
+### Other remediation applied
+
+* Test-first sequencing for `143.003-T` reconciled: narrowed to an integration-level
+  test layer that depends on `143.001-T`/`143.002-T` (each of which lands its own
+  unit-level red assertions), removing the "defines the red state for Units 1-2"
+  contradiction while keeping an acyclic graph. Plan Unit 3 and its Constitution
+  Check updated to match.
+* Deliberation mitigation aligned to the accepted plan: the doctor audit reads raw
+  Markdown via the full canonical queue-and-archive scan (parsing each path once),
+  not a per-ID `findArtifact` lookup.
+* Deliberation `059-DL` transitioned `queued -> done` (decided, planned, and
+  harvested; traceability preserved via `linked_stash_id` and the harvest link).
+
+### Authoritative dependency graph (post-reconciliation)
+
+```text
+143.001-T            (no deps)
+143.004-T            (no deps)
+143.002-T  -> 143.001-T
+143.003-T  -> 143.001-T, 143.002-T
+143.005-T  -> 143.004-T
+143.006-T  -> 143.004-T
+143.007-T  -> 143.002-T
+```
