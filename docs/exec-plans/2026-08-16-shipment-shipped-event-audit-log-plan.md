@@ -15,7 +15,8 @@ Source document: `docs/decisions/2026-08-16-shipment-shipped-event-audit-log-del
 (deliberation `059-DL`, stash `0115F71F`).
 
 A shipment can persist `archived_status: shipped` while its append-only JSONL
-event log omits the `shipment_status_changed: shipped` event. In current code:
+event log omits the `shipment_status_changed: shipped` event. As originally
+observed (the defect this plan addresses):
 
 * `internal/core/shipment.go` `moveShipmentStatusWithHeadGuard` persists the
   status transition through `persistArtifactWithGuard`, then emits the audit
@@ -36,11 +37,31 @@ two-class durable-write contract, reuses the existing `ShipShipment`
 snapshot/rollback machinery for compensation, threads the caller EventWriter for
 CLI/MCP parity, and adds a report-only doctor audit.
 
+### Baseline reconciliation (review-fix cycle 3, 2026-08-17)
+
+Current source has since introduced the error-returning per-`ws` append seam
+(`ws.shipmentEventAppend`, defaulting to `appendItemEventErr`) and propagates a
+shipped-append failure via the privately-typed `shipmentEventAppendError` from
+`moveShipmentStatusWithHeadGuard`, so the shipped transition is no longer
+fire-and-forget. That seam is therefore the characterized baseline, not new work
+in this plan, and a task to "introduce" it cannot have a failing red test. The
+plan is rebaselined accordingly: Unit 1 becomes the RED harness that
+characterizes the existing seam and lands the failing assertions for the
+remaining failure taxonomy and rollback; Unit 2 is the implementation that makes
+them green; Unit 3 is later integration/regression coverage rather than the owner
+of pre-implementation red tests. The remaining gaps delivered here are: untagged
+lock-acquisition safe-default (and clean pre-append event-log lock-acquisition
+NotApplied tagging), class-aware NotApplied vs Indeterminate handling of the
+captured shipped-append error, synchronous under-lock covering-feature rollup
+restoration for indeterminate outcomes with a `MutationPartialError` return,
+event-ordering/compensation coverage, the report-only doctor audit and its
+CLI/MCP surfaces, and CLI/MCP parity.
+
 ## Requirements Trace
 
 | Stash requirement | Implementation action | Unit |
 |---|---|---|
-| (1) Integrate the shipped-event append into the shipment mutation/rollback envelope using an error-returning writer; archival must not continue without that durable event | Route the shipped transition through the error-returning `appendItemEventErr(ctx, ws, ...)`, scoped to `newStatus == ShipmentShipped`; return the append error from `moveShipmentStatusWithHeadGuard` so the locked closure aborts before `archiveItems` | Unit 1 |
+| (1) Integrate the shipped-event append into the shipment mutation/rollback envelope using an error-returning writer; archival must not continue without that durable event | The error-returning shipped-scoped seam already exists (`ws.shipmentEventAppend` -> `appendItemEventErr`, returning `shipmentEventAppendError` from `moveShipmentStatusWithHeadGuard`) and is characterized by Unit 1; Unit 2 makes the locked closure abort before `archiveItems` on a durability-uncertain append | Unit 1 (characterize), Unit 2 |
 | (2) Restore active/unarchived shipment and release-scope state on append failure, or return an explicit indeterminate reconciliation error | Make the closure rollback class-aware: `ErrWriteNotApplied` (and any clean pre-durable failure) compensates via the existing snapshot rollback; `ErrWriteIndeterminate` (and any untagged/unknown failure, treated as indeterminate by safe default) is never rolled back, halts archival, restores transient covering-feature rollups while locks are held, and returns a `MutationPartialError` | Unit 2 |
 | (3) Test successful active -> shipped -> archived ordering and injected append failure across the shared CLI/MCP core path | Use a per-`ws` append seam; assert success ordering (shipped event before archival), injected NotApplied compensation, and injected Indeterminate/untagged no-rollback plus reconciliation error plus halted archival, against the shared `ShipShipment` core | Unit 3 |
 | (4) Add a doctor audit detecting historical archived shipments with archived_status: shipped but no shipped event; report only, never rewrite historical JSONL | Add `FindingMissingShippedEvent` and `FindingShippedUnarchivedResidue` plus `DoctorOptions.CheckShippedEventCompleteness`; scan the full canonical queue-and-archive raw-Markdown refs (queue for the shipped-but-unarchived residue, archive for the archived state), detect the archived `archived_status: shipped` missing-event state (`missing_shipped_event`) and the shipped-but-unarchived residue anomalous regardless of event presence (`shipped_unarchived_residue`); advisory, never writes JSONL | Unit 4 |
@@ -53,45 +74,57 @@ fewer than 4 test scenarios), width isolation (single domain), and produces an
 atomic, verifiable milestone. Execution posture is test-first for all units
 (Constitution Principle II).
 
-### Unit 1: Error-returning shipped-event append scoped to the shipped transition
+### Unit 1: RED harness -- characterize the existing append seam and land failing taxonomy/rollback assertions
 
-* Changes: in `moveShipmentStatusWithHeadGuard`, route the
-  `shipment_status_changed` emission through the error-returning
-  `appendItemEventErr(ctx, ws, ...)` and return its error, but ONLY for the
-  active-to-shipped transition (gate on `newStatus == ShipmentShipped`) so the
-  claim (queued-to-active) and abandon transitions keep their current best-effort
-  semantics and are not destabilized. Parity comes from passing the same `ws` (the
-  ws-configured, durable-aware writer); do not add an EventWriter parameter to
-  `ShipShipment` or mint a fresh writer. Introduce a per-`ws` append seam (mirroring
-  `ws.gateEvidenceAppend`, for example `ws.shipmentEventAppend`) so the append is
-  injectable in tests without a package-global.
-* Files: `internal/core/shipment.go` plus the per-`ws` seam field on the
-  `Workspace` type (one small field and its default wiring).
-* Tests: Unit 1 lands the per-`ws` seam and a failing red assertion that an injected
-  shipped-append failure makes `moveShipmentStatusWithHeadGuard` return a non-nil
-  error for the shipped transition; broader scenarios are Unit 3.
-* Verification: an injected shipped-event append failure causes
-  `moveShipmentStatusWithHeadGuard` to return a non-nil error on the shipped
-  transition; claim and abandon transitions are unchanged; the success path writes
-  the shipped event before the closure returns.
-* Execution posture: test-first. Unit 1 is NOT independently releasable; it is
-  unsafe without Unit 2 (which makes the rollback class-aware) and must land with
-  it.
+* Changes: the error-returning per-`ws` append seam (`ws.shipmentEventAppend`,
+  defaulting to `appendItemEventErr`) and its captured boundary error
+  (`shipmentEventAppendError`) already exist in `moveShipmentStatusWithHeadGuard`;
+  this unit does NOT introduce them. It authors the failing (red) unit-level test
+  harness for the remaining failure taxonomy and rollback, plus characterization
+  tests that pin the existing seam behavior (explicitly labeled characterization).
+  Characterization (passes against current source): the shipped transition routes
+  `shipment_status_changed` through the error-returning seam and an injected append
+  error propagates out of `moveShipmentStatusWithHeadGuard` as
+  `shipmentEventAppendError`; claim (queued-to-active) and abandon keep best-effort
+  semantics. Failing red assertions (kept red until Unit 2 lands): a captured
+  shipped-append `ErrWriteNotApplied` (and a clean pre-append event-log
+  lock-acquisition failure tagged NotApplied) compensates via `restoreShipArtifacts`
+  back to active/unarchived; a post-append `ErrWriteIndeterminate`, and any untagged
+  shipped-append error treated as indeterminate by safe default, never rolls back,
+  halts archival, and returns `MutationPartialError{Class: "indeterminate",
+  FailedStep: "shipped-event-append", CompensationState: "not-compensated"}`
+  wrapping the cause with `%w`; on the indeterminate branch a transient non-member
+  covering-feature rollup is restored synchronously under lock with the outer
+  fallback marked consumed.
+* Files: `internal/core/shipment_test.go` and/or
+  `internal/core/shipment_lifecycle_test.go` (tests only; no production change).
+* Tests: the characterization tests pass against current source; the
+  taxonomy/rollback assertions are observed to FAIL (red) against the
+  pre-implementation baseline before Unit 2. Inject through the existing per-`ws`
+  seam restored with `t.Cleanup` so tests stay parallel-safe.
+* Verification: the red assertions fail on the pre-implementation baseline; the
+  characterization tests pin the existing seam behavior without asserting it as new.
+* Execution posture: test-first. Unit 1 is NOT independently releasable; it pairs
+  with Unit 2 (which makes the assertions green).
 * Acceptance criteria:
-  * The shipped transition emits `shipment_status_changed` through
-    `appendItemEventErr(ctx, ws, ...)` whose error is returned to the caller.
-  * The change is scoped to `newStatus == ShipmentShipped`; claim and abandon
-    semantics are unchanged and asserted so.
-  * The append is injectable through a per-`ws` seam, not a package-global var.
+  * Characterization tests pin the existing seam (`ws.shipmentEventAppend` /
+    `shipmentEventAppendError`) and the unchanged claim/abandon best-effort
+    semantics, labeled characterization rather than new-behavior red.
+  * Failing red assertions exist for NotApplied compensation, post-append
+    Indeterminate/untagged no-rollback with a `MutationPartialError` return, and
+    synchronous under-lock covering-feature rollup restoration.
+  * All injection uses the existing per-`ws` seam restored with `t.Cleanup`; tests
+    are parallel-safe and observed red before Unit 2.
 
 ### Unit 2: Class-aware rollback, two-class classification, and reconciliation error
 
 * Changes: make the `ShipShipment` locked-closure rollback CLASS-AWARE for the
   shipped-event-append failure SPECIFICALLY (an explicit, tested change to the
-  hardened closure, not a no-op reuse). Capture the shipped-append error at its
-  source -- the ship-transition return site in `moveShipmentStatusWithHeadGuard` --
-  as a distinct, privately-typed boundary (for example a `shipEventAppendError`
-  wrapper) rather than inspecting the generic `closureErr`. Only that captured
+  hardened closure that turns the Unit 1 red assertions green, not a no-op reuse).
+  The shipped-append error is already captured at its source -- the ship-transition
+  return site in `moveShipmentStatusWithHeadGuard` -- as the distinct,
+  privately-typed `shipmentEventAppendError` boundary; classify that captured error
+  rather than inspecting the generic `closureErr`. Only that captured
   shipped-append error is classified: `ErrWriteNotApplied` (and a clean pre-append
   failure such as event-log lock acquisition) compensates via the existing deferred
   `restoreShipArtifacts` over `shipSnapshots` back to active/unarchived; a
@@ -124,12 +157,12 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   failure, tag that failure as `ErrWriteNotApplied` at the appender (a small addition
   to `appendItemEventWithActorErr`); absent that tag it safely degrades to the
   indeterminate branch and the Unit 4 doctor audit detects the residue.
-* Tests: Unit 2 lands its own unit-level failing (red) classification assertions
-  before the production change -- NotApplied (and clean pre-append lock-acquisition)
-  compensates, post-append Indeterminate/untagged never rolls back, and all
-  other/pre-append closure errors keep the existing unconditional rollback. The
-  broader integration scenarios (success ordering, combined append-plus-rollback,
-  covering-feature restore) are added in Unit 3.
+* Tests: the unit-level failing (red) classification assertions are owned by the
+  Unit 1 harness -- NotApplied (and clean pre-append lock-acquisition) compensates,
+  post-append Indeterminate/untagged never rolls back, and all other/pre-append
+  closure errors keep the existing unconditional rollback -- and Unit 2 makes them
+  green. The broader integration scenarios (success ordering, combined
+  append-plus-rollback, covering-feature restore) are added in Unit 3.
 * Verification: NotApplied (and clean pre-append lock-acquisition) compensates to
   active/unarchived with no shipped event and no archival; post-append Indeterminate
   (and untagged) leaves the shipment shipped and unarchived, restores covering-feature
@@ -170,10 +203,11 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   construction (single shared core) and needs no separate surface-level ship tests.
   The pre-append and other-error rollback is unchanged and stays covered by the
   existing `TestShipShipment_RollsBack*` tests.
-* Execution posture: test-first at the integration level. Units 1 and 2 each land
-  their own unit-level failing (red) assertions; Unit 3 sequences after them
-  (depends on Units 1 and 2) and adds the broader cross-cutting integration
-  scenarios that exercise the combined append-plus-rollback behavior.
+* Execution posture: integration/regression coverage, not a pre-implementation red
+  gate -- the failing taxonomy/rollback assertions are owned by Unit 1. Unit 3
+  sequences after Units 1 and 2 (depends on both) and adds the broader cross-cutting
+  integration/regression scenarios that exercise the combined append-plus-rollback
+  behavior.
 * Acceptance criteria:
   * The three scenarios pass against the shared `ShipShipment` core path.
   * The success test asserts event ordering (shipped event before archival), not
@@ -286,12 +320,12 @@ atomic, verifiable milestone. Execution posture is test-first for all units
 ## Dependency Graph
 
 ```text
-Unit 1 (error-returning shipped-scoped append + per-ws seam)
+Unit 1 (RED harness: characterize seam + failing taxonomy/rollback assertions)
   -> Unit 2 (class-aware rollback + classification + reconciliation error)
 Unit 1 + Unit 2
-  -> Unit 3 (failure-injection + ordering tests)
-Unit 2
-  -> Unit 6 (MCP indeterminate error mapping)
+  -> Unit 3 (integration/regression: failure-injection + ordering)
+Unit 2 + Unit 5a
+  -> Unit 6 (MCP indeterminate error mapping + recovery guidance)
 Unit 4 (doctor core audit)          [independent of Units 1-3]
   -> Unit 5a (doctor CLI surface)
        -> Unit 5b (doctor MCP surface + registry parity)
@@ -299,10 +333,12 @@ Unit 4 (doctor core audit)          [independent of Units 1-3]
 ```
 
 No cycles. Units 1 and 4 can start in parallel. Unit 2 depends on Unit 1; Unit 3
-depends on Units 1 and 2; Unit 6 depends on Unit 2; Unit 5a depends on Unit 4; Unit 5b
-depends on Unit 4 and Unit 5a (its CLI/MCP parity assertion compares against the Unit
-5a CLI flag, so the CLI surface must land first). Units 1 and 2 land together (Unit 1
-is not independently releasable).
+depends on Units 1 and 2; Unit 6 depends on Unit 2 AND Unit 5a (its recovery
+guidance names the `doctor --check-shipped-event-completeness` CLI flag that Unit
+5a adds); Unit 5a depends on Unit 4; Unit 5b depends on Unit 4 and Unit 5a (its
+CLI/MCP parity assertion compares against the Unit 5a CLI flag, so the CLI surface
+must land first). Units 1 and 2 land together (Unit 1 is not independently
+releasable).
 
 ## Decisions and Rationale
 
@@ -375,10 +411,11 @@ is not independently releasable).
 * I. Safety-First Go: pass. Production stays in Go; the append error is wrapped
   with `%w`; no `unsafe`; the change replaces a swallowed error with a handled
   one.
-* II. Test-First Development (NON-NEGOTIABLE): pass. Each unit lands a failing
-  harness before production code (Unit 1 lands the append-return red assertion,
-  Unit 2 the classification red assertions); Unit 3 adds integration-level coverage
-  over the combined behavior and therefore sequences after Units 1-2.
+* II. Test-First Development (NON-NEGOTIABLE): pass. Unit 1 is the RED harness that
+  characterizes the existing append seam and lands the failing taxonomy/rollback
+  assertions; Unit 2 is the production implementation that makes them green; Unit 3
+  adds integration-level regression coverage over the combined behavior and
+  therefore sequences after Units 1-2. Units 4-6 each stay test-first.
 * III. Workspace Isolation and Security Boundaries: pass. All reads and writes
   resolve within the workspace root; the doctor audit only reads.
 * IV. CLI Workspace Containment (NON-NEGOTIABLE): pass. No out-of-tree writes.
@@ -698,3 +735,22 @@ guidance to the new doctor check; Unit 3 covering-feature-restore assertion; Uni
 full queue-and-archive scan) or handled by a policy-compliant defer with an
 actionable backlog ID (prevention hardening -> stash `47B48DB0`, broadened to cover
 the `ArchiveItem` path). Adversarial review result: PASS. Cleared for harvest.
+
+### Baseline reconciliation (review-fix cycle 3, 2026-08-17)
+
+Review-fix cycle 3 substantiated a P1 stale-baseline finding: current source already
+contains the error-returning shipped-event append seam (`ws.shipmentEventAppend`,
+propagating `shipmentEventAppendError` from `moveShipmentStatusWithHeadGuard`), so a
+task to "introduce" that seam could not have a failing red test. The plan and backlog
+were rebaselined honestly around the remaining gaps (untagged lock-acquisition
+handling, class-aware NotApplied vs Indeterminate handling, synchronous under-lock
+rollup restoration, event-ordering/compensation coverage, doctor audit/surfaces, and
+CLI/MCP parity) while preserving TDD: Unit 1 (task 143.001-T) is now the RED harness
+that characterizes the existing seam and lands the failing taxonomy/rollback
+assertions; Unit 2 (143.002-T) is the implementation that makes them green; Unit 3
+(143.003-T) is later integration/regression coverage. Unit 6 (143.007-T) now also
+depends on Unit 5a (143.005-T) because its recovery guidance names the
+`doctor --check-shipped-event-completeness` CLI flag. The dependency graph remains
+acyclic. This reconciliation adjusts the Problem Frame, Requirements Trace, Units 1-3,
+the Dependency Graph, and the Constitution Check above; the original gate and
+adversarial-review history is retained for provenance.

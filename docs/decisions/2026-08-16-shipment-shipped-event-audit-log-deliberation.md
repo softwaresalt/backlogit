@@ -28,7 +28,7 @@ event log omits the `shipment_status_changed: shipped` event. The audit trail is
 then incomplete: durable frontmatter says the shipment shipped, but no shipped
 event records the transition.
 
-Technical root cause (grounded in current code):
+Technical root cause (as originally observed):
 
 * `internal/core/shipment.go` `moveShipmentStatusWithHeadGuard` persists the
   shipment status transition through `persistArtifactWithGuard`, then emits the
@@ -43,6 +43,16 @@ Technical root cause (grounded in current code):
   then, after the closure returns, calls `archiveItems`, which stamps
   `archived_status: shipped`. If the shipped-event append failed silently, the
   archival still proceeds, producing the exact reported inconsistency.
+
+> [!NOTE]
+> Baseline reconciliation (review-fix cycle 3, 2026-08-17): current source has since
+> introduced the error-returning per-`ws` append seam (`ws.shipmentEventAppend`,
+> defaulting to `appendItemEventErr`) that returns shipped-append failure via
+> `shipmentEventAppendError` from `moveShipmentStatusWithHeadGuard`, so the shipped
+> transition is no longer fire-and-forget. The best-effort description above is
+> retained as the original observed root cause for provenance. The remaining planned
+> work is the failure taxonomy and rollback around that seam plus the report-only
+> doctor audit and CLI/MCP surfaces; see the plan's "Baseline reconciliation" section.
 
 Success criteria:
 
