@@ -145,3 +145,88 @@ for this worktree. All previously documented gaps are now closed:
 143.006-T  -> 143.004-T
 143.007-T  -> 143.002-T
 ```
+
+## Reconciliation Addendum 2 -- Review-Fix Cycle 2 (2026-08-17)
+
+Append-only; supersedes nothing above. Records the Stage review-fix cycle 2
+remediation on branch `chore/stage-143-shipment-audit-log-reconciled` (worktree
+`.worktrees/127-s-reconcile`, base `35acb653`). Overall dark session stays ACTIVE;
+`DARK_MODE_COMPLETE` not emitted; `LOCAL_REVIEW_READY` deferred until this remediation
+is re-reviewed.
+
+### Real vs stale findings
+
+Verified against the exact worktree files/index (not the root MCP/index, which binds a
+different branch): the deps `143.003-T -> 143.001/143.002`, `143.006-T -> 143.004`, and
+`127-S` explicit membership of `143-F` + all seven tasks were ALREADY present (the
+adversarial review was stale on those). They were neither removed nor duplicated. All
+other findings were substantiated and fixed.
+
+### Files changed
+
+* Backlog: `143-F.md` (priority, provenance custom_fields, narrowed guarantee),
+  `143.002-T.md` (mandatory NotApplied tagging), `143.004-T.md` (distinct residue
+  finding type), `143.005-T.md` (finding-type wording), `143.006-T.md` (dep on
+  143.005-T, parity wording), `127-S.md` (template Description/Items/Blocked-Returns),
+  `059-DL.md` (informs link to 143-F).
+* Plan: `docs/exec-plans/2026-08-16-shipment-shipped-event-audit-log-plan.md`
+  (Requirements Trace, Unit 2 red tests, Unit 4 finding types, Decisions bullet,
+  Dependency Graph 5b->5a, new Release Observability section).
+* Memory: this file and `stage-0115f71f-dark-mode-visibility.md`.
+
+### Provenance mechanism (machine-rebuildable, forward-only)
+
+* Root cause: stash `0115F71F` was retired via `ArchiveStashEntry` (reason `archived`,
+  no `harvested_artifact_id`) rather than the harvest flow, and the feature was created
+  separately -- so no machine-rebuildable stash->feature linkage existed.
+* Rehydrate (`internal/db/rehydration.go`) builds the harvested-stash map purely from
+  each artifact's `custom_fields.source_stash_id` (+ `source_stash_kind`/`_priority`/
+  `_text`/`_path`/`source_deliberation_id`) via `stashRecordFromArtifact`; it does NOT
+  read `archive/stash.jsonl` for harvest provenance. Adding those fields to `143-F`
+  makes sync rebuild `stash_entries` (state `harvested`) and `stash_links`
+  (`0115F71F` -> `143-F`). Verified post-sync.
+* Irreducible archive-line limitation: the append-only `archive/stash.jsonl` line for
+  `0115F71F` will forever read `reason: "archived"` with no `harvested_artifact_id`,
+  because append-only history must not be rewritten. This is cosmetic/historical only
+  -- it does NOT affect index rebuildability, since rehydrate derives harvest
+  provenance from artifact custom_fields, not from the archive line. An `informs`
+  semantic link `059-DL` -> `143-F` (frontmatter `links:`, rebuilt into `item_links`)
+  adds the deliberation->feature linkage.
+
+### Hook / event trace reconciliation (F7)
+
+* `hooks_queue.jsonl` seq 1-2137 untouched. The `143-F` priority update appended
+  seq 2138 (`update_artifact`, changed_fields `["priority"]`).
+* Gotcha: `backlogit dep add` in the prebuilt v1.2.0 CLI binary writes the edge only to
+  the disposable SQLite cache, NOT the Markdown frontmatter (it would be lost on the
+  next sync). The `143.006-T -> 143.005-T` edge was therefore written to frontmatter
+  directly; sync then rebuilt `item_deps` authoritatively from frontmatter.
+* `dep add` and shipment-section `update` do not emit `hooks_queue` events in this
+  workspace (only certain event types, e.g. `update_artifact` priority/status, do);
+  no events were fabricated. The deps/membership reconciled in cycle 1 were file edits
+  and legitimately carry no hook events.
+
+### Authoritative dependency graph (post cycle 2)
+
+```text
+143.001-T            (no deps)
+143.004-T            (no deps)
+143.002-T  -> 143.001-T
+143.003-T  -> 143.001-T, 143.002-T
+143.005-T  -> 143.004-T
+143.006-T  -> 143.004-T, 143.005-T
+143.007-T  -> 143.002-T
+```
+
+Acyclic. `127-S` membership: `143-F` + `143.001-T` .. `143.007-T` (explicit).
+
+### Integrity check (F14)
+
+* Post-remediation `backlogit doctor` (report-only) and `docs lint` are clean for the
+  in-scope artifacts: no orphan, duplicate-ID, or archived-from finding touches any
+  `143-*`, `127-S`, or `059-DL` item. Every `143.NNN-T` retains `parent_id: 143-F`.
+* Pre-existing, out-of-scope (NOT causally connected to this work, left untouched):
+  doctor reports orphaned `016.001-R` and the `106.012-T` .. `106.033-T` batch (the
+  106-F family, including the `106.033-T` this work was deferred from). Repairing them
+  is a separate maintenance task and `--fix-orphans` is destructive; not performed
+  under the Stage boundary without a dedicated approved cycle.

@@ -43,7 +43,7 @@ CLI/MCP parity, and adds a report-only doctor audit.
 | (1) Integrate the shipped-event append into the shipment mutation/rollback envelope using an error-returning writer; archival must not continue without that durable event | Route the shipped transition through the error-returning `appendItemEventErr(ctx, ws, ...)`, scoped to `newStatus == ShipmentShipped`; return the append error from `moveShipmentStatusWithHeadGuard` so the locked closure aborts before `archiveItems` | Unit 1 |
 | (2) Restore active/unarchived shipment and release-scope state on append failure, or return an explicit indeterminate reconciliation error | Make the closure rollback class-aware: `ErrWriteNotApplied` (and any clean pre-durable failure) compensates via the existing snapshot rollback; `ErrWriteIndeterminate` (and any untagged/unknown failure, treated as indeterminate by safe default) is never rolled back, halts archival, restores transient covering-feature rollups while locks are held, and returns a `MutationPartialError` | Unit 2 |
 | (3) Test successful active -> shipped -> archived ordering and injected append failure across the shared CLI/MCP core path | Use a per-`ws` append seam; assert success ordering (shipped event before archival), injected NotApplied compensation, and injected Indeterminate/untagged no-rollback plus reconciliation error plus halted archival, against the shared `ShipShipment` core | Unit 3 |
-| (4) Add a doctor audit detecting historical archived shipments with archived_status: shipped but no shipped event; report only, never rewrite historical JSONL | Add `FindingMissingShippedEvent` plus `DoctorOptions.CheckShippedEventCompleteness`; scan via the canonical archived refs (raw Markdown), detect both archived `archived_status: shipped` and shipped-but-unarchived shipments lacking the shipped event; advisory, never writes JSONL | Unit 4 |
+| (4) Add a doctor audit detecting historical archived shipments with archived_status: shipped but no shipped event; report only, never rewrite historical JSONL | Add `FindingMissingShippedEvent` and `FindingShippedUnarchivedResidue` plus `DoctorOptions.CheckShippedEventCompleteness`; scan the full canonical queue-and-archive raw-Markdown refs (queue for the shipped-but-unarchived residue, archive for the archived state), detect the archived `archived_status: shipped` missing-event state (`missing_shipped_event`) and the shipped-but-unarchived residue anomalous regardless of event presence (`shipped_unarchived_residue`); advisory, never writes JSONL | Unit 4 |
 | MCP structured surfacing of the new indeterminate error and dual-surface doctor exposure | Map the indeterminate `MutationPartialError` in MCP `handleShipShipment` to a structured `mutation_partial` result; expose the doctor check via CLI flag, MCP parameter, and registry | Units 5a, 5b, 6 |
 
 ## Implementation Units
@@ -124,7 +124,12 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   failure, tag that failure as `ErrWriteNotApplied` at the appender (a small addition
   to `appendItemEventWithActorErr`); absent that tag it safely degrades to the
   indeterminate branch and the Unit 4 doctor audit detects the residue.
-* Tests: covered by Unit 3.
+* Tests: Unit 2 lands its own unit-level failing (red) classification assertions
+  before the production change -- NotApplied (and clean pre-append lock-acquisition)
+  compensates, post-append Indeterminate/untagged never rolls back, and all
+  other/pre-append closure errors keep the existing unconditional rollback. The
+  broader integration scenarios (success ordering, combined append-plus-rollback,
+  covering-feature restore) are added in Unit 3.
 * Verification: NotApplied (and clean pre-append lock-acquisition) compensates to
   active/unarchived with no shipped event and no archival; post-append Indeterminate
   (and untagged) leaves the shipment shipped and unarchived, restores covering-feature
@@ -178,7 +183,8 @@ atomic, verifiable milestone. Execution posture is test-first for all units
 ### Unit 4: Report-only doctor audit for missing shipped events (core)
 
 * Changes: add `FindingMissingShippedEvent DoctorFindingType = "missing_shipped_event"`
-  and `DoctorOptions.CheckShippedEventCompleteness bool`; in `Doctor`, gate a new
+  and `FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"`,
+  plus `DoctorOptions.CheckShippedEventCompleteness bool`; in `Doctor`, gate a new
   check (off by default, advisory and exit-code-neutral like
   `FindingOverArchivedCoveringFeature`) that walks the FULL canonical artifact scan
   already used by `Doctor` (both `queue/` and `archive/`, since a shipped-but-unarchived
@@ -186,10 +192,13 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   parsing each exact path raw Markdown once (extend `artifactRef` to carry
   `archived_status`), not a per-ID `findArtifact` second lookup, and flags a shipment when
   EITHER (a) it is archived with `archived_status: shipped` and its item JSONL log has
-  no `shipment_status_changed` event with `status == shipped`, OR (b) it has
-  `status: shipped` but is not archived (the indeterminate residue from Unit 2), which
-  is anomalous regardless of event presence because a shipped shipment normally
-  archives; record whether the shipped event is present in the finding detail. Carry
+  no `shipment_status_changed` event with `status == shipped` -> `FindingMissingShippedEvent`,
+  OR (b) it has `status: shipped` but is not archived (the indeterminate residue from
+  Unit 2) -> `FindingShippedUnarchivedResidue`, which is anomalous regardless of event
+  presence because a shipped shipment normally archives, so an event-present residue is
+  reported truthfully as `shipped_unarchived_residue` and never mislabeled
+  `missing_shipped_event`; record whether the shipped event is present in the finding
+  detail in both cases. Carry
   the same "verify actual history; may be transient during an in-flight ship" caveat
   that `FindingOverArchivedCoveringFeature` uses so a doctor run racing the brief
   window between the status persist and the shipped-event append does not false
@@ -197,18 +206,23 @@ atomic, verifiable milestone. Execution posture is test-first for all units
 * Files: `internal/core/doctor.go` (mirrors the 133-F `CheckOverArchivedFeatures`
   registration at doctor.go:522) plus a small helper if needed.
 * Tests: `internal/core/doctor_test.go` (three scenarios): archived
-  `archived_status: shipped` with no shipped event -> one finding; the same with the
-  shipped event present -> none; a `status: shipped` unarchived shipment -> one
-  finding (the residue state). Assert the run modifies no JSONL bytes.
+  `archived_status: shipped` with no shipped event -> one `missing_shipped_event`
+  finding; the same with the shipped event present -> none; a `status: shipped`
+  unarchived shipment -> one `shipped_unarchived_residue` finding (the residue state),
+  asserted even when the shipped event is present so the distinct type is exercised.
+  Assert the run modifies no JSONL bytes.
 * Verification: findings are correct for both detected states and the check performs
   no writes.
 * Execution posture: test-first.
 * Acceptance criteria:
-  * A new advisory, off-by-default finding type and option exist; the check never
+  * Two advisory, off-by-default finding types (`missing_shipped_event` and
+    `shipped_unarchived_residue`) and one option exist; the check never
     changes the doctor exit code.
   * Detection reads authoritative archived state from the canonical raw-Markdown scan,
-    not the DB projection, and covers both the archived and the shipped-but-unarchived
-    states.
+    not the DB projection, and covers both the archived missing-event state and the
+    shipped-but-unarchived residue state.
+  * The event-present shipped-but-unarchived residue is reported as
+    `shipped_unarchived_residue`, never mislabeled `missing_shipped_event`.
   * The check never writes or rewrites historical JSONL (asserted by unchanged log
     bytes).
 
@@ -232,15 +246,19 @@ atomic, verifiable milestone. Execution posture is test-first for all units
   registry. Justify read-only MCP exposure explicitly: this check is read-only and
   never writes, so exposing it to the agent surface is appropriate even though the
   CLI-only `CheckOverArchivedFeatures` is not exposed. Do not cite a
-  `CheckGateEvidence` MCP precedent (that check is CLI-only).
+  `CheckGateEvidence` MCP precedent (that check is CLI-only). Sequences after Unit 5a
+  (depends on it): the CLI/MCP parity assertion compares this MCP surface against the
+  Unit 5a CLI flag, so the CLI flag must already exist.
 * Files: `internal/mcp/tools.go` and `.autoharness/backlog-registry.yaml` (doctor
   operation params) plus an `internal/mcp` contract test.
-* Tests: a shared fixture yields identical `missing_shipped_event` findings through
-  the CLI and the MCP tool (CLI/MCP parity).
+* Tests: a shared fixture yields identical `missing_shipped_event` and
+  `shipped_unarchived_residue` findings through the CLI and the MCP tool (CLI/MCP
+  parity).
 * Execution posture: test-first.
 * Acceptance criteria:
   * The MCP parameter enables the check and is recorded in the registry metadata.
-  * A shared fixture yields identical findings through CLI and MCP.
+  * A shared fixture yields identical findings (both `missing_shipped_event` and
+    `shipped_unarchived_residue`) through CLI and MCP.
 
 ### Unit 6: MCP structured surfacing of the indeterminate ship error
 
@@ -276,12 +294,15 @@ Unit 2
   -> Unit 6 (MCP indeterminate error mapping)
 Unit 4 (doctor core audit)          [independent of Units 1-3]
   -> Unit 5a (doctor CLI surface)
+       -> Unit 5b (doctor MCP surface + registry parity)
   -> Unit 5b (doctor MCP surface + registry parity)
 ```
 
 No cycles. Units 1 and 4 can start in parallel. Unit 2 depends on Unit 1; Unit 3
-depends on Units 1 and 2; Unit 6 depends on Unit 2; Units 5a and 5b depend on Unit 4.
-Units 1 and 2 land together (Unit 1 is not independently releasable).
+depends on Units 1 and 2; Unit 6 depends on Unit 2; Unit 5a depends on Unit 4; Unit 5b
+depends on Unit 4 and Unit 5a (its CLI/MCP parity assertion compares against the Unit
+5a CLI flag, so the CLI surface must land first). Units 1 and 2 land together (Unit 1
+is not independently releasable).
 
 ## Decisions and Rationale
 
@@ -306,10 +327,14 @@ Units 1 and 2 land together (Unit 1 is not independently releasable).
 * Return a concrete `MutationPartialError{Class: "indeterminate", ...}` and map it
   in MCP `handleShipShipment`. Rationale: preserve a structured, reconcilable
   signal for agent callers instead of a flattened generic error.
-* Broaden the doctor audit to detect both archived `archived_status: shipped`
-  without a shipped event and the shipped-but-unarchived indeterminate residue,
-  scanning via the canonical archived refs (raw Markdown, parsed once). Rationale:
-  the indeterminate state Unit 2 can produce must be detectable; `loadArtifact`
+* Broaden the doctor audit to detect both the archived `archived_status: shipped`
+  without a shipped event (`missing_shipped_event`) and the shipped-but-unarchived
+  indeterminate residue (`shipped_unarchived_residue`, a distinct truthful finding
+  type reported regardless of event presence), scanning the full canonical
+  queue-and-archive refs (raw Markdown, parsed once). Rationale:
+  the indeterminate state Unit 2 can produce must be detectable; a single
+  `missing_shipped_event` type would mislabel an event-present residue, so the residue
+  gets its own type; `loadArtifact`
   omits `archived_status`, and a per-ID second lookup risks a duplicate-ID mismatch.
 * Achieve CLI/MCP parity by passing the same `ws` through the shared core, not by
   adding an EventWriter parameter to `ShipShipment`. Rationale: the ws-configured
@@ -421,6 +446,84 @@ Changed runtime surfaces: the `backlogit shipment ship` CLI command and the
     indeterminate errors in normal operation), revert the envelope change; the doctor
     audit remains valid independently.
   * Owner and validation window: the Ship agent during post-merge closure.
+
+## Release Observability
+
+Release-observability evidence for this release unit (a local Go CLI plus MCP tool;
+the monitoring surface is the doctor command and the test suite, not a live service).
+Produced here once and carried into operational closure.
+
+### Monitoring plan
+
+* SLI / key metrics: (1) shipment ship success rate -- successful `backlogit shipment
+  ship` / `backlogit_ship_shipment` completions without a spurious indeterminate
+  `MutationPartialError` in normal (non-injected) operation; (2) the count of
+  shipped-event-completeness doctor findings (`missing_shipped_event` +
+  `shipped_unarchived_residue`) over the shipment corpus.
+* Concrete local command/query:
+  * `backlogit doctor --check-shipped-event-completeness` -- counts
+    `missing_shipped_event` and `shipped_unarchived_residue` findings (report-only).
+  * `backlogit query "SELECT COUNT(*) FROM items WHERE artifact_type='shipment' AND status='shipped'"`
+    -- the shipped-but-unarchived residue count (expected 0 in steady state).
+  * `go test ./internal/core/... ./internal/cli/... ./internal/mcp/...` -- the ship
+    and doctor regression suites (green gate).
+* Baseline (pre-change): ship success rate 100% on the current corpus;
+  `shipped_unarchived_residue` count = 0 (the indeterminate branch does not yet
+  exist, so no residue is possible today); the first audit run over the existing
+  archived-shipment corpus fixes the historical `missing_shipped_event` count, which
+  must not grow for any shipment shipped after the change.
+* Failure threshold / alert condition: any shipment shipped after the change that
+  surfaces a `missing_shipped_event` or `shipped_unarchived_residue` finding, OR ship
+  success rate < 100% in normal (non-injected) operation.
+* Owner / role: the Ship agent during post-merge closure, escalating to the
+  repository operator on any threshold breach.
+* Observation window / duration: the first three post-merge ships OR seven days after
+  merge, whichever comes first; the Ship agent runs
+  `doctor --check-shipped-event-completeness` at the start and end of the window
+  rather than assuming silence means success.
+
+### Pre-deploy audit checklist
+
+* Feature flags / rollout gates: none required; the error-returning append is
+  always-on but scoped to the governed `newStatus == ShipmentShipped` transition, so
+  claim and abandon are unaffected.
+* Rollback path documented and actionable: yes (see below) -- revert the single
+  envelope-change commit; the report-only doctor audit is independent and remains
+  valid after revert.
+* Data migration / schema change: none. The doctor audit is report-only; append-only
+  historical JSONL is never rewritten; the new `DoctorFindingType` values, the
+  `DoctorOptions` field, the CLI flag, the MCP parameter, and the registry entry are
+  all additive.
+* Backward compatibility: no existing contract changed.
+* Dependent services / cross-boundary: none; the change is internal to the backlogit
+  CLI and MCP core.
+* Monitoring plan complete: yes (above).
+
+### Rollback trigger and procedure
+
+* Rollback trigger (named metric + threshold): normal (non-injected) ships begin
+  failing OR emit spurious indeterminate `MutationPartialError`s (ship success rate
+  < 100%), OR a shipment shipped after the change surfaces a `missing_shipped_event`
+  or `shipped_unarchived_residue` doctor finding.
+* Rollback procedure: revert the envelope-change commit (the Unit 1/Unit 2 change to
+  `moveShipmentStatusWithHeadGuard` and the `ShipShipment` class-aware rollback); the
+  shipped-event append reverts to best-effort and behavior returns to the pre-change
+  baseline. The Unit 4 doctor audit and its CLI/MCP surfaces are report-only and
+  independent; they may remain or be reverted separately without affecting the
+  envelope revert.
+
+### Releasability evidence contract
+
+Evidence entries for operational-closure to mark READY / READY_WITH_CONDITIONS /
+BLOCKED:
+
+* Validator evidence (pre-merge, Ship-run): `go test ./...`, `go vet ./...`,
+  `golangci-lint run`, `gofmt -l .` clean.
+* Runtime evidence: the Runtime Verification scenarios above proven on fixtures
+  (event ordering, NotApplied compensation, Indeterminate halt, doctor detection of
+  both states, CLI/MCP parity).
+* Post-deploy evidence: the observation-window doctor runs recorded with finding
+  counts and the outcome (healthy / degraded / rolled back).
 
 ## Plan Hardening
 

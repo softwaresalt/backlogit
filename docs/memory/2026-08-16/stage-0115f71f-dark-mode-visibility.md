@@ -87,3 +87,53 @@ dependency edges (`143.003-T -> 143.001-T`, `143.003-T -> 143.002-T`,
 reconciled the `143.003-T` test-first sequencing. See
 `docs/memory/2026-08-16/stage-0115f71f-session-memory.md` (Reconciliation Addendum)
 for the full record.
+
+## Review-Fix Cycle 2 Remediation (2026-08-17)
+
+This append-only section records the Stage review-fix **cycle 2** remediation on
+branch `chore/stage-143-shipment-audit-log-reconciled` (worktree
+`.worktrees/127-s-reconcile`, base HEAD `35acb653`). The overall dark session
+remains **ACTIVE** (`status: active` retained). `DARK_MODE_COMPLETE` is deliberately
+NOT emitted, and `LOCAL_REVIEW_READY` is deliberately NOT appended here: this
+remediation must itself be reviewed (a subsequent review pass) before local review
+readiness can be asserted.
+
+### Accurate cycle / review state
+
+* Stage cycle: review-fix cycle 2 (remediation of the latest adversarial review).
+* Review state: remediation applied; **awaiting re-review**. Not review-ready yet.
+* Merge authority unchanged: `merge_approval_pre_authorized = true` for the later
+  Ship PR; `admin_fallback_pre_authorized = false`. Stage never creates or merges a PR.
+* Stale-finding note: the latest adversarial review was partly stale -- the exact
+  worktree files already carried the 143.003-T deps on 143.001/143.002, the
+  143.006-T dep on 143.004, and shipment 127-S explicit membership of 143-F plus all
+  seven tasks. Those were verified against the exact worktree files/index and were
+  neither removed nor duplicated.
+
+### Remediation applied (verified against exact worktree files/index)
+
+* Added dependency `143.006-T -> 143.005-T` (CLI/MCP doctor parity needs the CLI
+  surface). Persisted to frontmatter; survives sync.
+* Restored machine-rebuildable stash provenance for `0115F71F` -> `143-F` by adding
+  `source_stash_id`/`source_stash_kind`/`source_stash_priority`/`source_stash_text`/
+  `source_stash_path`/`source_deliberation_id` to `143-F` custom_fields; sync now
+  rebuilds `stash_entries` (state `harvested`) and `stash_links` (`0115F71F` ->
+  `143-F`) plus an `informs` semantic link `059-DL` -> `143-F`. The append-only
+  archive line stays untouched.
+* Narrowed the `143-F` "can never occur" guarantee to the governed ShipShipment path
+  plus the report-only doctor detection net; generic bypass prevention stays deferred
+  to stash `47B48DB0`.
+* Made the `ErrWriteNotApplied` lock-acquisition tagging mandatory in `143.002-T`.
+* Added a distinct `shipped_unarchived_residue` doctor finding type in `143.004-T`
+  (and plan Unit 4) so an event-present residue is never mislabeled
+  `missing_shipped_event`.
+* Completed release-observability evidence in the plan (command/query, baseline,
+  threshold, owner, observation window, rollback trigger/procedure, pre-deploy audit).
+* Reconciled TDD ordering in plan Unit 2 (its own red assertions) and the Requirements
+  Trace (full queue-and-archive residue detection).
+* Added the template-required Description section (plus Items and Blocked Returns) to
+  `127-S`.
+* Propagated `priority: medium` to `143-F` (hook event seq 2138 appended; seq 1-2137
+  untouched).
+* Reconfirmed `059-DL` status `done` as appropriate pre-ship (decided, planned,
+  harvested); preserved.
