@@ -17,7 +17,6 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
-	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -137,22 +136,6 @@ func requireShippedAppendPartial(t *testing.T, err error) *blerrors.MutationPart
 	require.ErrorAs(t, err, &partial, "a shipped-event append failure must be a structured MutationPartialError")
 	assert.Equal(t, shippedEventAppendStep, partial.FailedStep)
 	return partial
-}
-
-func hasShippedEvent(t *testing.T, ws *Workspace, shipmentID string) bool {
-	t.Helper()
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	itemEvents, err := events.ReadAllEvents(context.Background(), logsDir, shipmentID)
-	require.NoError(t, err)
-	for _, event := range itemEvents {
-		if event.EventType != "shipment_status_changed" {
-			continue
-		}
-		if status, ok := event.Delta["status"].(string); ok && status == string(ShipmentShipped) {
-			return true
-		}
-	}
-	return false
 }
 
 // Scenario 1: a PROVEN not-applied append outcome compensates. The lock failure
