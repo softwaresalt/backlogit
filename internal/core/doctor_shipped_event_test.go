@@ -195,3 +195,62 @@ func TestDoctorShippedEventCompleteness_ShippedUnarchivedResidue(t *testing.T) {
 	assert.Contains(t, findings[0].Description, task.ID,
 		"the finding must enumerate the archive candidates stranded alongside the shipment")
 }
+
+// 143.006-T (Unit 6) non-mutation guard: the audit is report-only by contract.
+// Running it must leave every file under the workspace logs directory
+// byte-identical. This is green from the moment the check exists, so it is a
+// guard rather than a red scenario. Doctor EXIT-CODE neutrality is asserted in
+// the CLI unit, because core.Doctor returns a report and an error, not a code.
+func TestDoctorShippedEventCompleteness_NeverMutatesItemLogs(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	task, err := CreateArtifact(ctx, ws, "Non-mutation task", "task", WithParent(mustFeature(t, ws, "Non-mutation feature")))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+
+	archived := seedShippedShipment(t, ws, "Non-mutation archived shipment", []string{task.ID})
+	removeShippedEvent(t, ws, archived.ID)
+	_, err = ArchiveItem(ctx, ws.DB, ws, archived.ID)
+	require.NoError(t, err)
+
+	residueTask, err := CreateArtifact(ctx, ws, "Non-mutation residue task", "task", WithParent(mustFeature(t, ws, "Non-mutation residue feature")))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, residueTask))
+	seedShippedShipment(t, ws, "Non-mutation residue shipment", []string{residueTask.ID})
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	before := snapshotLogsTree(t, logsDir)
+
+	report := runShippedEventAudit(t, ws)
+	require.NotEmpty(t, report.Findings, "the fixture must actually produce findings for the guard to be meaningful")
+
+	after := snapshotLogsTree(t, logsDir)
+	assert.Equal(t, before, after, "the shipped-event audit must never write, synthesize, or rewrite JSONL")
+}
+
+// snapshotLogsTree returns a recursive path-to-bytes map of the logs directory.
+func snapshotLogsTree(t *testing.T, logsDir string) map[string]string {
+	t.Helper()
+	tree := make(map[string]string)
+	walkErr := filepath.WalkDir(logsDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		rel, relErr := filepath.Rel(logsDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		tree[filepath.ToSlash(rel)] = string(raw)
+		return nil
+	})
+	require.NoError(t, walkErr)
+	return tree
+}
