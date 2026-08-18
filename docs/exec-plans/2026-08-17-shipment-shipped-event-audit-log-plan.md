@@ -1,6 +1,6 @@
 ---
 title: "Shipment shipped-event audit-log durability and doctor reconciliation"
-description: "Implementation plan rebaselined onto clean origin/main 3ec95ee3 for a durable shipped-event append on the active-to-shipped transition, class-aware rollback with all-or-nothing compensation, a report-only doctor reconciliation audit, and the surface and policy coherence those changes require"
+description: "Implementation plan rebaselined onto clean origin/main 3ec95ee3 for a durable shipped-event append on the governed ShipShipment active-to-shipped transition, a conservative append-error classification contract that never compensates over an unproven write, class-aware rollback with all-or-nothing compensation, a report-only doctor reconciliation audit, and the surface and policy coherence those changes require"
 source: ".backlogit/queue/059-DL.md"
 doc_type: plan
 chunk_strategy: h1-h2-h3
@@ -36,22 +36,29 @@ mechanically after two review cycles found hand-written anchors drifting by a fe
 | Defer registration order makes the non-member-feature fallback unwind AFTER the artifact-lock release | fallback registered at `:365`, `releaseArtifactLocks` at `:375`; LIFO means release runs first |
 | `ctx` is reassigned in place when artifact locks are taken, so the lock markers persist after release | `:468`; reentrancy short-circuit at `internal/core/shipment.go:372-378` |
 | `rollbackIDs` covers shipment, release scope, feature roots, and descendants - but not cascade ancestors | `internal/core/shipment_lifecycle.go:454-466`; `cascadePersistedParentStatuses` recurses above the feature roots at `:983-1010` |
-| `lockArtifactMutation` is non-blocking `TryLock` and fails fast with a busy error | `internal/core/shipment.go:747-752`; `internal/core/task_lock.go:67-80` |
+| `lockArtifactMutation` is non-blocking `TryLock` and fails fast with a busy error | `internal/core/shipment.go:371-380`; `internal/core/task_lock.go:67-80` |
 | The two-class durability contract exists | `blerrors.ErrWriteNotApplied` / `ErrWriteIndeterminate` produced by `internal/atomicfile/atomicfile.go:82-129` |
 | `MutationEnvelope` classifies an untagged plain error as `not-applied`, not indeterminate | `internal/core/mutation_envelope.go:25-30` (contract) and `:83-90` (implementation) |
 | An append is NOT safe to blindly retry once it may have partially written | `internal/events/stream.go` `AppendEvent` / `appendDurable` doc contract: partial write or post-write fsync failure surfaces `ErrWriteIndeterminate` |
 | Durable writes are opt-in and off by default, so the non-durable append path returns untagged errors | `internal/core/events_writer.go:12-22`; `internal/events/stream.go` `appendFast` |
-| The item-log lock wait is bounded at 3 seconds, then fails | `internal/events/stream.go:40` (`itemLogLockWait`), `:177` (deadline) |
+| The item-log lock wait is bounded at 3 seconds **only for the cross-process sidecar lock**; the in-process lock is uncancellable | bounded path: `internal/events/stream.go:40` (`itemLogLockWait`), `:177` (deadline), reached through `LockItemLogCrossProcess`; unbounded path: `LockItemLog` performs a plain `mutex.Lock()` at `:125` inside `:117-136`, with no deadline and no context check |
+| `EventWriter.AppendEvent` exposes only `error`, and the default non-durable path discards its write byte count | signature `func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error` at `internal/events/stream.go:243`; `appendFast` ends `_, err = fmt.Fprintf(f, "%s\n", data); return err` (`:280-292`), so a short write and a pre-write `open` failure are indistinguishable to any caller |
+| The durable path, when enabled, DOES tag both classes explicitly | `appendDurable` doc contract at `internal/events/stream.go:294-304`: mkdir/open failures are `ErrWriteNotApplied`; partial write or post-write fsync failure is `ErrWriteIndeterminate` |
+| `MutationPartialError.CompensationState` is documented as a closed three-value set | `internal/errors/mutation_errors.go:26` enumerates `"compensated"`, `"not-compensated"`, `"unknown"` only |
+| The shipped transition is reachable from a second, non-governed caller, distinguished by the `topLevel` flag | exported `MoveShipmentStatus` passes `topLevel=true` (`internal/core/shipment.go:115-117`) through `moveShipmentStatusWithTopLevel` (`:123-125`); `ShipShipment` is the only caller passing `topLevel=false` for `ShipmentShipped` (`internal/core/shipment_lifecycle.go:509`). Non-test callers of the exported form: `ClaimShipment` for `ShipmentActive` only (`internal/core/shipment_lifecycle.go:54`). Test callers that move to `shipped` through the exported form: `internal/core/shipment_test.go:176`, `:960`, `:1214`, `internal/core/queue_test.go:369`; through the nested form: `internal/core/shipment_test.go:1068` |
+| `restoreShipArtifacts` releases its per-item log lock with a plain statement, not a `defer`, and the cross-process helper returns a nil unlock on error | `unlockItemLog()` at `internal/core/shipment_lifecycle.go:227`; nil-unlock returns at `internal/events/stream.go:218`, `:226` |
+| `AppendEvent` re-acquires the item-log lock unless the caller's context already carries the ownership markers | `internal/events/stream.go:254-269`; both existing appenders pass the locked context forward (`internal/core/gate_evidence.go:53`, `:58`; `internal/core/shipment.go:688`, `:695`) |
+| The existing best-effort appender also indexes the event into SQLite after appending | `internal/core/shipment.go:688-700` |
 | `LockItemLogCrossProcess` short-circuits to a no-op when both markers are already in `ctx` | `internal/events/stream.go:210-220` |
-| Multi-item item-log locks are taken in sorted order elsewhere | `lockAdoptionEventLogs` at `internal/core/shipment_lifecycle.go:1041-1058` (`sort.Strings` then nested acquisition) |
+| Multi-item item-log locks are taken in sorted order elsewhere | `lockAdoptionEventLogs` at `internal/core/shipment_lifecycle.go:1047-1068` (`sort.Strings` then nested acquisition) |
 | Item logs are flat, one file per item | `internal/events/stream.go:91` `LogPathForItem`; `WorkspaceLogsRoot` at `internal/core/workspace.go:91-93` |
-| `internal/core` tests already override package-global write seams | `internal/core/dependencies_indeterminate_test.go`, `archive_durable_write_test.go`, `artifact_size_durable_retry_test.go`; `persistArtifactWriteFn` read at `internal/core/shipment.go:762` |
+| `internal/core` tests already override package-global write seams | `internal/core/dependencies_indeterminate_test.go`, `archive_durable_write_test.go`, `artifact_size_durable_retry_test.go`; `persistArtifactWriteFn` declared at `internal/core/shipment.go:760` and read at `:816` |
 | Existing ship rollback coverage lives in `shipment_test.go`; `shipment_lifecycle_test.go` does not exist | `TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails` at `internal/core/shipment_test.go:397`; `TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup` at `:512`; `TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt` at `:892`; `TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched` at `:40` |
 | No transition out of `shipped` is permitted | `isValidShipmentTransition` at `internal/core/shipment.go:713-722` |
 | `ShipShipment` refuses a non-active shipment | `internal/core/shipment_lifecycle.go:290-292` |
 | A report-only advisory doctor finding precedent exists | `FindingOverArchivedCoveringFeature` at `internal/core/doctor.go:94`, option at `:186`, registration at `:522`, `refs`-direct consumption at `:523`, caveat wording at `:545` |
 | The doctor check loop ranges over a doctor-local struct, not `artifactRef` | `internal/core/doctor.go:230-236`, `:253-260`; `artifactRef` at `internal/core/canonical_scan.go:21`, `scanCanonicalArtifacts` at `:38`, `parseFile` at `:88` |
-| `models.Artifact.ArchivedStatus` already exists | `internal/models/artifact.go:70` |
+| `models.Artifact.ArchivedStatus` already exists | `internal/models/artifact.go:69` |
 | The workspace routing registry lists neither `shipped` in its archive nor its queue status set | `.backlogit/registry.yaml`: archive routes `done\|accepted\|rejected\|archived`; queue routes `queued\|active\|blocked\|review` |
 | A read-only doctor check IS already MCP-exposed, with contract tests | `check_partial_mutations` at `internal/mcp/tools.go:484`, `check_workspace_root_conflict` at `:485`; tests `internal/mcp/doctor_partial_mutations_test.go:28`, `doctor_workspace_root_conflict_test.go:30` |
 | Gate-evidence is the CLI-only doctor check and is NOT a valid MCP precedent | `--check-gate-evidence` var at `internal/cli/doctor.go:33`, wiring at `:129`, registration at `:167`; absent from `internal/mcp/tools.go:480-487` |
@@ -114,12 +121,66 @@ an explicit "reconcile before archiving" instruction.
 
 ### Scope of the durability guarantee
 
-Only the **shipment's own terminal status transition** becomes durability-gated. The same call
-also appends best-effort item-level events - `status_changed` via `setArtifactStatus`
-(`internal/core/shipment_lifecycle.go:966`), `returned_to_backlog` (`:611`), and parent cascades
-(`:1010`). Those stay best-effort by design and are **not** covered by stash `47B48DB0`, which
-is scoped to non-`ShipShipment` producers. The gap is named here, restated in the code doc
-comment required by Unit 4, and raised as a closure follow-up.
+The guarantee this plan delivers is **path-scoped, not universal**. Stated precisely:
+
+> On the governed `ShipShipment` archival path, a shipment cannot reach `archived_status: shipped`
+> unless the `shipment_status_changed: shipped` event was durably appended first, or the append
+> outcome was unknown - in which case archival is halted and a `MutationPartialError` is returned
+> rather than archival proceeding.
+
+Everything outside that sentence is detection-only. Generic `UpdateArtifactWithGate` and generic
+`ArchiveItem` callers can still drive a shipment to `shipped` and then to
+`archived_status: shipped` without any shipped event; closing those producers is **prevention**,
+deferred to active stash `47B48DB0`. This plan covers those producers report-only, through the
+doctor audit, which flags the residue regardless of which producer created it. No unit here may
+claim universal prevention.
+
+Within the governed path the guarantee is narrower still: only the **shipment's own terminal
+status transition** becomes durability-gated. The same call also appends best-effort item-level
+events - `status_changed` via `setArtifactStatus` (`internal/core/shipment_lifecycle.go:971`),
+`returned_to_backlog` (`:611`), and parent cascades (`:1010`). Those stay best-effort by design and
+are **not** covered by stash `47B48DB0`, which is scoped to non-`ShipShipment` producers. The gap is
+named here, restated in the code doc comment required by Unit 4, and raised as a closure follow-up.
+
+### Shipped-append classification contract
+
+This is the plan's central error-model decision and every unit, task, test, and observability row
+below is derived from it.
+
+`EventWriter.AppendEvent` exposes only `error` (`internal/events/stream.go:243`), and the default
+non-durable `appendFast` path discards the byte count from `fmt.Fprintf` (`:290-291`). A core-side
+wrapper therefore **cannot** distinguish a pre-write `open` failure from a short or partial write
+that already put bytes into the append-only log. The plan does not pretend otherwise.
+
+| Observed append outcome | Pre-write status | Class | Rollback |
+|---|---|---|---|
+| Item-log lock acquisition fails inside `appendShipmentEventErr`, before any writer call | proven not-applied | `not-applied` | compensate |
+| Writer error explicitly tagged `blerrors.ErrWriteNotApplied` (durable path mkdir/open, contract at `internal/events/stream.go:294-304`) | proven not-applied | `not-applied` | compensate |
+| Writer error explicitly tagged `blerrors.ErrWriteIndeterminate` | proven unknown | `indeterminate` | suppress |
+| **Any other append error, including every untagged error from the default non-durable path** | **not proven** | `indeterminate` | suppress |
+
+Two design choices follow, and both are deliberate:
+
+1. **The writer API is not expanded.** Returning a byte count or a richer outcome from
+   `AppendEvent` was evaluated and **rejected**: it changes a shared primitive used by every event
+   producer and both append paths, to recover a distinction the fail-closed branch does not
+   actually need. This plan touches no file under `internal/events/`.
+2. **Unclassified means indeterminate, not not-applied.** Only an outcome whose pre-write status is
+   explicitly proven may compensate. This is the inverse of the untagged default in
+   `MutationEnvelope` (`internal/core/mutation_envelope.go:25-30`, `:83-90`), and the difference is
+   justified: the envelope classifies its own persist step, whose write primitive tags both classes
+   explicitly (`internal/atomicfile/atomicfile.go:82-129`). The shipped-event append has no such
+   guarantee on the default non-durable path, and compensating over a possibly-applied append to an
+   append-only log is the one outcome the `AppendEvent` contract forbids.
+
+**Accepted cost, stated plainly.** In the default non-durable configuration a genuinely
+not-applied `open` failure is classified `indeterminate`, so the shipment is left
+`shipped`-and-unarchived and needs the documented manual reconciliation instead of an automatic
+revert. That cost is bounded: the residue is detected by `shipped_unarchived_residue`, measured by
+SLI 2 and SLI 3, and resolved by the named-limitation procedure. Enabling `Config.DurableWrites`
+narrows it further, because the durable path tags `not-applied` explicitly and those failures then
+compensate. No unit in this plan may promise short-write detection, and no test may assert it.
+
 
 ### What this plan does not do
 
@@ -165,250 +226,418 @@ carries an explicit accept/reject decision.
 
 | Requirement | Source | Implementation action | Unit |
 |---|---|---|---|
-| Integrate the shipped-event append into the shipment mutation/rollback envelope using an error-returning writer; archival must not continue without that durable event | stash `0115F71F` (1) | Shipment-scoped error-returning appender (Unit 1); fail-closed routing gated on `ShipmentShipped` (Unit 3) | 1, 3 |
-| Restore active/unarchived shipment and release-scope state on append failure | stash `0115F71F` (2) | `ErrWriteNotApplied` and untagged append errors compensate through the existing snapshot rollback | 4 |
-| Or return an explicit indeterminate reconciliation error | stash `0115F71F` (2) | Only `blerrors.IsWriteIndeterminate` suppresses rollback and returns `*blerrors.MutationPartialError{Class:"indeterminate"}` | 4 |
-| Test success ordering and injected append failure across the shared core path | stash `0115F71F` (3) | RED harness injecting through the per-workspace seam | 2 |
-| Report-only doctor audit for archived shipments missing the shipped event; never synthesize or rewrite historical JSONL | stash `0115F71F` (4) | Declarations (Unit 5), RED harness (Unit 6), canonical queue-plus-archive audit (Unit 7) | 5, 6, 7 |
-| Compensation must be all-or-nothing, or must honestly report partial compensation | **plan-added, accepted - correctness of stash requirement (2)** - `restoreShipArtifacts` silently `continue`s past an item whose log lock it cannot re-acquire (`internal/core/shipment_lifecycle.go:184-188`), so "restore state" would otherwise be a promise the code does not keep | Bounded retry on re-acquisition, then `CompensationState: "partially-compensated"` naming un-restored IDs | 4 |
+| Integrate the shipped-event append into the shipment mutation/rollback envelope using an error-returning writer; archival must not continue without that durable event | stash `0115F71F` (1) | Shipment-scoped error-returning appender (Unit 2); fail-closed routing gated on `ShipmentShipped` (Unit 3) | 2, 3 |
+| Restore active/unarchived shipment and release-scope state on append failure | stash `0115F71F` (2) | Only a **proven** not-applied outcome compensates through the existing snapshot rollback: the lock failure raised inside `appendShipmentEventErr`, and any writer error explicitly tagged `blerrors.ErrWriteNotApplied` | 4 |
+| Or return an explicit indeterminate reconciliation error | stash `0115F71F` (2) | Tagged `ErrWriteIndeterminate` **and every unclassified append error** suppress rollback and return `*blerrors.MutationPartialError{Class:"indeterminate"}` | 4 |
+| Test success ordering and injected append failure across the shared core path | stash `0115F71F` (3) | RED harness injecting through the per-workspace seam it declares | 1 |
+| Report-only doctor audit for archived shipments missing the shipped event; never synthesize or rewrite historical JSONL | stash `0115F71F` (4) | RED harness plus its declarations (Unit 5), `missing_shipped_event` detection (Unit 6), `shipped_unarchived_residue` detection (Unit 7) | 5, 6, 7 |
+| Compensation must be all-or-nothing, or must honestly report partial compensation | **plan-added, accepted - correctness of stash requirement (2)** - `restoreShipArtifacts` silently `continue`s past an item whose log lock it cannot re-acquire (`internal/core/shipment_lifecycle.go:184-188`), so "restore state" would otherwise be a promise the code does not keep | Bounded retry on re-acquisition, then `CompensationState: "partially-compensated"` naming un-restored IDs, plus the enum doc amendment in `internal/errors` | 2, 4 |
 | The non-member covering-feature restore must survive post-closure failures | **plan-added, accepted - pre-existing hazard the plan would otherwise worsen** - LIFO defer order (`:365` vs `:375`) already runs the fallback after the artifact locks are released, and Unit 4 depends on that fallback being live | Swap the two defer registrations so the release unwinds last | 4 |
-| Second finding `shipped_unarchived_residue` and a queue-plus-archive scan | **plan-added, accepted** - the indeterminate branch creates exactly this residue; detecting only the archived form would fail to report the plan's own output | Two distinct finding types | 5, 7 |
+| Second finding `shipped_unarchived_residue` and a queue-plus-archive scan | **plan-added, accepted** - the indeterminate branch creates exactly this residue; detecting only the archived form would fail to report the plan's own output | Two distinct finding types | 5, 6, 7 |
 | CLI surface for the audit | **plan-added, accepted** - requirement (4) asks for an audit an operator can run; the named-limitation procedure, SLI 1, SLI 2, and the pre-deploy checklist are all unexecutable without it | `--check-shipped-event-completeness` plus the CI-required regenerated reference doc | 8 |
 | MCP parameter for the audit | **plan-added, accepted** - Unit 4 returns `mutation_partial` to `backlogit_ship_shipment` MCP callers and Unit 10 tells that caller to run the audit; an MCP-only agent cannot invoke a CLI flag | MCP parameter, doctor registry row, MCP contract test | 9 |
 | Producer-scoped recovery guidance | **plan-added, accepted** - without it the new residue ships with guidance (`check_partial_mutations`) that provably cannot detect it | Key guidance on `FailedStep`, not on `Class` | 10 |
 | Contract, policy, skill, and Ship-agent coherence | **plan-added, accepted - required for correctness** - Unit 4 breaks the P-007 "ship always archives" postcondition, so stale policy, the reconcile skill, and the Ship agent would instruct `git restore` and mask the reconciliation | Update the governed-recovery contract doc, P-007, the reconcile skill, the Ship agent, and the drift-ignore record | 11 |
 | Integration/regression unit proving CLI and MCP parity from `internal/core` | **plan-added, REJECTED at review** - an `internal/core` test cannot reach `internal/cli` or `internal/mcp`, so the parity claim would restate its premise | Deleted; surface behavior is proven by surface-local tests | - |
 | Retry/backoff on item-log lock contention at the append site | **plan-added, REJECTED at review** - an append is not safe to blindly retry (`internal/events/stream.go` `AppendEvent` contract), and a pre-append lock failure is already correctly classified `not-applied` and compensates | Deleted | - |
-| Hoisting the shipment item-log lock to the top of the locked closure | **plan-added, REJECTED at review** - it makes the marker in `ctx` outlive the lock, exposes archival appends and the rollback log rewrite to lock-free execution, inverts the lock order against `lockArtifactMutations`, and extends a 3-second-starving lock across two gate-broker evaluations | Deleted | - |
+| Hoisting the shipment item-log lock to the top of the locked closure | **plan-added, REJECTED at review** - it makes the marker in `ctx` outlive the lock, exposes archival appends and the rollback log rewrite to lock-free execution, inverts the lock order against `lockArtifactMutations`, and extends a starving lock across two gate-broker evaluations | Deleted | - |
+| Detection and classification of short or partial writes as `not-applied` | **plan-added, REJECTED at PR review cycle 1** - `AppendEvent` exposes only `error` and `appendFast` discards the `fmt.Fprintf` byte count (`internal/events/stream.go:243`, `:290-291`), so no core-side wrapper can observe the distinction. Expanding the writer API was rejected as disproportionate blast radius on a shared primitive | Deleted. Replaced by the classification contract: unproven pre-write status is `indeterminate` | - |
 | Repo-wide registry `params`-to-`InputSchema` parity assertion and reconciliation of two pre-existing drifted params | **plan-added, DEFERRED** - a new global invariant over roughly forty registry operations whose current pass/fail state this plan has not verified; unrelated to this defect | Named closure follow-up | - |
+| Universal prevention of `archived_status: shipped` without a shipped event, across all producers | **stash-implied, EXPLICITLY DEFERRED** - generic `UpdateArtifactWithGate` and `ArchiveItem` callers remain able to produce the residue; this plan covers them report-only | Prevention deferred to active stash `47B48DB0`; detection ships here | - |
 
 ## Implementation Units
 
-Eleven units map one-to-one onto tasks `143.001-T` through `143.011-T`. Both core tracks open
-with a purely additive scaffold, then a test-only RED harness, then implementation.
+Twelve units map one-to-one onto tasks `143.001-T` through `143.012-T`. Both core tracks open with a
+**RED harness task**, and every production change in this plan follows a compiling, observed-failing
+test. There is no production-scaffold task and no "scaffold exception": where a harness needs a
+declaration to compile, that declaration is delivered **inside the harness task itself**, carries no
+behavior, and is exercised only by the failing test - the pattern
+`.github/skills/harness-architect/SKILL.md` Step 4.3 already prescribes ("matching production stubs
+... so the module compiles while the tests still fail for the intended reason").
 
-### Unit 1 - Shipment-scoped append seam and error-returning appender (`143.001-T`)
+Every scenario in a harness task must be red on the tree that task produces, because P-002 and P-004
+gate the `harness-ready` label on "all tests fail" and `harness-architect` Step 5.2 rejects a passing
+harness test as a false positive. Characterization assertions that are already green on the baseline
+therefore live in the first implementation unit of their track, not in the harness.
 
-* Posture: **characterization-first**. Additive plus one behavior-preserving call-site change.
+Unit 12 is described immediately after Unit 4 because it continues the same file and the same
+contract; its task ID is `143.012-T` and it sorts last in the ID space.
+
+### Unit 1 - RED harness for shipped-event durability (`143.001-T`)
+
+* Posture: **test-first (red phase)**. Delivers the failing harness plus the one declaration it
+  needs to compile. No behavior, no call-site change, no dispatcher, no appender. Every scenario is
+  red on the tree this unit produces.
+* Compile enablement (declaration only)
+  * Add the per-workspace seam field `shipmentEventAppend` to `Workspace`, mirroring
+    `gateEvidenceAppend` (`internal/core/workspace.go:55-59`). Nothing in production reads it on
+    this tree; the harness file is its only consumer. `staticcheck`'s `unused` counts a field write
+    as a use and golangci-lint includes test files by default, so the declaration is lint-clean.
+    Pin the exact signature here - Unit 2 consumes it and does not re-touch `workspace.go`.
+* Injection: through that seam. Real-filesystem injection **at the append** was evaluated and
+  **rejected**: a directory planted at the item log or lock path before the call aborts earlier in
+  `snapshotShipArtifacts` (`internal/core/shipment_lifecycle.go:152-164`, called at `:478`, before
+  the transition at `:509`), leaving `shipSnapshots` empty so the rollback defer short-circuits at
+  `:391` - the scenarios could never fail for the right reason.
+* Files: `internal/core/shipment_shipped_event_durability_test.go` (new, test-only),
+  `internal/core/workspace.go` (one field)
+* Scenarios (3, each a table-driven `t.Run` group, all red)
+  1. **Proven not-applied compensates** - a seam error wrapping `blerrors.ErrWriteNotApplied`
+     returns non-nil, restores the shipment to `active`, leaves the release scope not completed, and
+     archives nothing. The returned error satisfies
+     `errors.As(&*blerrors.MutationPartialError)` with `Class == "not-applied"`,
+     `CompensationState == "compensated"`, and `FailedStep == "shipped-event-append"`, so a fully
+     compensated refusal is a structured result rather than an opaque internal error.
+  2. **Indeterminate and unclassified never roll back** - subtests: a seam error wrapping
+     `blerrors.ErrWriteIndeterminate`; a bare untagged `errors.New`; an error wrapping **both**
+     sentinels, which must classify `indeterminate` because indeterminate dominates. All use a
+     fixture whose ship would roll up a non-member covering feature and assert the same outcome: the
+     release scope is NOT rolled back, the covering feature is restored to its pre-ship status
+     (re-read through `loadArtifact`, not the in-memory value), archival is halted, the shipment is
+     left shipped-and-unarchived, and the error satisfies `errors.As(&*blerrors.MutationPartialError)`
+     with `Class == "indeterminate"`, `CompensationState == "not-compensated"`, and
+     `FailedStep == "shipped-event-append"`.
+  3. **Compensation reports itself when it cannot complete** - a seam error wrapping
+     `blerrors.ErrWriteNotApplied` **plus** one release-scope item whose log lock cannot be
+     re-acquired during compensation. Result: `*blerrors.MutationPartialError{Class: "not-applied",
+     CompensationState: "partially-compensated"}` naming the un-restored ID - never a silently
+     skipped item.
+* Injection mechanics for scenario 3 (mandatory, and the only sanctioned mechanism)
+  * Arm the failure **from inside the seam callback**, which runs after `snapshotShipArtifacts` has
+    already taken and released its own locks (`internal/core/shipment_lifecycle.go:156-161`), by
+    planting a **directory** at that item's lock sidecar path so
+    `openItemLogLockHandle` fails immediately (`internal/events/item_log_lock_unix.go`,
+    `item_log_lock_windows.go`) instead of waiting.
+  * The harness MUST NOT call `events.LockItemLog` or `events.LockItemLogCrossProcess` to create the
+    contention. Holding the in-process mutex would block `restoreShipArtifacts` at
+    `internal/events/stream.go:125` with no deadline and with cancellation already stripped
+    (`internal/core/shipment_lifecycle.go:175`), producing a test-binary hang instead of a
+    deterministic red.
+  * Every scenario carries a watchdog (`t.Deadline` or an explicit timer) so a lock regression
+    surfaces as a failure, not as a suite timeout.
+* Constraints
+  * Assert `FailedStep` against the **string literal** `"shipped-event-append"`. The exported
+    constant `blerrors.StepShippedEventAppend` lands in Unit 2; Unit 2's acceptance criterion is
+    that the constant equals this literal, so the harness never depends on a symbol it predates.
+  * No scenario may assert short-write or partial-write detection. That distinction is
+    unobservable - see the classification contract.
+  * MUST NOT call `t.Parallel()`: `ShipShipment` reads the package globals `persistArtifactWriteFn`
+    (declared at `internal/core/shipment.go:760`, read at `:816`) and `mkdirDirSyncFn`, which other
+    `internal/core` tests override.
+  * Every fixture MUST pin `Config.DurableWrites` explicitly so classification never depends
+    silently on workspace configuration.
+* Verification: the package compiles (`go test -run=^$ -count=1 ./internal/core/`). All three
+  scenarios MUST fail on this tree, and must fail from the ship path: on this tree `ShipShipment`
+  returns `nil` and archives, so each scenario fails on its "expected an error" assertion. The
+  "not a `snapshot release scope` failure" guard becomes meaningful from Unit 3 onward and is
+  asserted there.
+
+### Unit 2 - Shipment-scoped error-returning appender (`143.002-T`)
+
+* Posture: **implementation with colocated tests**. Depends on Unit 1 being red. Behavior-preserving
+  at the ship path by design: this unit makes the append routable and classifiable without yet
+  changing what `ShipShipment` does with the result.
 * Changes
-  1. Add the per-workspace seam field `shipmentEventAppend` to `Workspace`, mirroring
-     `gateEvidenceAppend` (`internal/core/workspace.go:55-59`).
-  2. Add `appendShipmentEventErr`: a shipment-scoped, error-returning appender that acquires the
+  1. Add `appendShipmentEventErr` in a new file `internal/core/shipment_events.go`, mirroring the
+     `internal/core/gate_evidence.go` precedent rather than growing `shipment.go`. It acquires the
      item-log lock itself so a lock failure and an append failure arise in two distinguishable
      statements, and so the message reads "shipment event log", not "gate evidence". Tag the lock
      failure `fmt.Errorf("lock shipment event log %s: %w: %w", itemID, blerrors.ErrWriteNotApplied, lockErr)` -
      nothing was written, so `not-applied` is the honest class and compensation is safe.
-     Tag a **short or partial write** `blerrors.ErrWriteIndeterminate`. The default non-durable
-     path (`internal/events/stream.go` `appendFast`) writes with `fmt.Fprintf`, which returns an
-     untagged error on a short write (for example a full disk) after bytes have already reached
-     the file. Classifying that as `not-applied` would compensate over a log that was in fact
-     partially written, which the `AppendEvent` contract forbids.
-  3. Add the dispatcher `(*Workspace).appendShipmentEvent`, mirroring `appendGateEvent`.
-     Also declare the private boundary type `shipmentEventAppendError` here, so the type exists in
-     the same package as the call site that wraps it (Unit 3) and the closure that classifies it
-     (Unit 4). Declaring it in Unit 4 would be unimplementable: the wrap happens at
-     `internal/core/shipment.go:205`, which Unit 4 does not touch.
-  4. Route the `shipment_status_changed` call site (`internal/core/shipment.go:205`) through the
+  2. **Pass the locked context forward.** `events.LockItemLogCrossProcess` returns a context
+     carrying the ownership markers; that context - not the caller's original `ctx` - MUST be handed
+     to `writer.AppendEvent` and to the SQLite index call. `LockItemLog` is a non-reentrant,
+     uncancellable `mutex.Lock()` (`internal/events/stream.go:125`) that short-circuits **only** on
+     the ctx marker (`:118-123`), and `AppendEvent` re-locks when the marker is absent (`:254-269`).
+     Dropping the locked context self-deadlocks the ship goroutine permanently while it holds the
+     membership lock and every artifact lock. Both existing appenders do this correctly
+     (`internal/core/gate_evidence.go:53`, `:58`; `internal/core/shipment.go:688`, `:695`).
+  3. Wrap the writer error with `%w` and **add no class of its own**: any `ErrWriteNotApplied` or
+     `ErrWriteIndeterminate` the durable path already attached must survive unwrapping, and an
+     untagged error must stay untagged so Unit 4 can treat it as unproven. Do **not** attempt to
+     detect a short or partial write.
+  4. Preserve the SQLite projection parity the existing appender has: after a successful append,
+     index the event best-effort exactly as `internal/core/shipment.go:688-700` does. An index
+     failure warns and never reclassifies the durable append outcome.
+  5. Add the dispatcher `(*Workspace).appendShipmentEvent`, mirroring `appendGateEvent`
+     (`internal/core/gate_evidence.go:81-86`): use `shipmentEventAppend` when set, otherwise
+     `appendShipmentEventErr`.
+  6. Route the `shipment_status_changed` call site (`internal/core/shipment.go:205`) through the
      dispatcher while **preserving best-effort semantics**:
      `if appendErr := ws.appendShipmentEvent(...); appendErr != nil { slog.WarnContext(...) }`.
-     Behavior is unchanged in this unit.
-  5. Declare the failed-step name once as an exported constant beside `MutationPartialError` in
-     `internal/errors` (`StepShippedEventAppend = "shipped-event-append"`) so core and MCP share
-     one literal.
-* Files: `internal/core/workspace.go`, `internal/core/shipment.go`, `internal/errors/` (one const)
+     Ship behavior is unchanged in this unit.
+  7. Declare the failed-step name once as an exported constant beside `MutationPartialError` in
+     `internal/errors` (`StepShippedEventAppend = "shipped-event-append"`) so core and MCP share one
+     literal, and **amend the `CompensationState` doc comment** at
+     `internal/errors/mutation_errors.go:26`, which today enumerates a closed set of
+     `"compensated"`, `"not-compensated"`, `"unknown"` and would otherwise be falsified by Unit 12's
+     `"partially-compensated"`.
+* Colocated tests (`internal/core/shipment_events_test.go`, new). The appender's own contract cannot
+  be tested before the appender's signature exists, so it is tested here rather than in Unit 1, and
+  the task requires writing the test first and observing it fail - first as a compile failure, then
+  as an assertion failure once the signature lands - before the body is implemented.
+  1. A lock failure returns an error satisfying `blerrors.IsWriteNotApplied` and mentioning
+     "shipment event log".
+  2. With `Config.DurableWrites` enabled, a writer error tagged `ErrWriteIndeterminate` survives
+     unwrapping through the appender, and an untagged writer error stays untagged (neither
+     `IsWriteNotApplied` nor `IsWriteIndeterminate` matches).
+  3. **Success ordering** (moved here from the harness because it is green on the baseline):
+     `active -> shipped -> archived` persists AND the `shipment_status_changed` event with
+     `status == shipped` is present in `.backlogit/logs/{shipment-id}.jsonl` AND ordered before the
+     archival records, with the append now flowing through `appendShipmentEventErr`.
+* Files: `internal/core/shipment_events.go` (new), `internal/core/shipment_events_test.go` (new),
+  `internal/core/shipment.go`, `internal/errors/mutation_errors.go`
 * Verification: run the named selectors, not the whole package - the sibling track's harness
-  (`143.006-T`) may legitimately be red in `internal/core` at the same time:
-  `go test ./internal/core/ -run 'TestShipShipment|TestClaimShipment|TestRestoreShipArtifacts'`
-  green with no test edits, specifically
+  (`143.005-T`) may legitimately be red in `internal/core` at the same time:
+  `go test ./internal/core/ -run 'TestShipShipment|TestClaimShipment|TestRestoreShipArtifacts|TestAppendShipmentEvent'`
+  green with no edits to existing tests, specifically
   `TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails`,
   `TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup`,
   `TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt`, and
-  `TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched`.
+  `TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched`. All three Unit 1 scenarios must
+  still be red, because best-effort semantics are unchanged. A green Unit 1 scenario here means the
+  routing was flipped early and the unit boundary was violated: halt.
 
-### Unit 2 - RED harness for shipped-event durability (`143.002-T`)
+### Unit 3 - Fail-closed shipped routing on the governed path (`143.003-T`)
 
-* Posture: **test-first (red phase)**. Test-only; no production file.
-* Injection: through the per-workspace `ws.shipmentEventAppend` seam from Unit 1. Real-filesystem
-  injection was evaluated and **rejected**: a directory planted at the item log or lock path aborts
-  earlier in `snapshotShipArtifacts` (`internal/core/shipment_lifecycle.go:156-164`, called at
-  `:478`, before the transition at `:509`), leaving `shipSnapshots` empty so the rollback defer
-  short-circuits at `:391` - the scenarios could never fail for the right reason.
-* Files: `internal/core/shipment_shipped_event_durability_test.go` (new, test-only)
-* Scenarios (3, each a table-driven `t.Run` group)
-  1. **Success ordering** - `active -> shipped -> archived` persists AND the
-     `shipment_status_changed` event with `status == shipped` is present in
-     `.backlogit/logs/{shipment-id}.jsonl` AND ordered before the archival records.
-  2. **NotApplied and untagged compensate, honestly** - subtests: a seam error wrapping
-     `blerrors.ErrWriteNotApplied`; a bare untagged `errors.New`. Each returns non-nil, restores the
-     shipment to `active`, leaves the release scope not completed, and archives nothing. A third
-     subtest makes one release-scope item's log lock unavailable during compensation and asserts the
-     result is `*blerrors.MutationPartialError{Class: "not-applied", CompensationState:
-     "partially-compensated"}` naming the un-restored ID - never a silently skipped item.
-  3. **Indeterminate never rolls back** - a seam error wrapping `blerrors.ErrWriteIndeterminate`,
-     using a fixture whose ship would roll up a non-member covering feature: the release scope is NOT
-     rolled back, the covering feature is restored to its pre-ship status (re-read through
-     `loadArtifact`, not the in-memory value), archival is halted, the shipment is left
-     shipped-and-unarchived, and the error satisfies `errors.As(&*blerrors.MutationPartialError)`
-     with `Class == "indeterminate"` and `FailedStep == blerrors.StepShippedEventAppend`.
-* Constraints
-  * MUST NOT call `t.Parallel()`: `ShipShipment` reads the package globals `persistArtifactWriteFn`
-    (`internal/core/shipment.go:762`) and `mkdirDirSyncFn`, which other `internal/core` tests override.
-  * Every fixture MUST pin `Config.DurableWrites` explicitly so classification never depends
-    silently on workspace configuration.
-* Verification: all three scenarios compile on the Unit 1 tree. Scenarios 2 and 3 MUST fail there,
-  and must fail from the ship path - assert the failure is not `"snapshot release scope"`.
-  Scenario 1 characterizes behavior that is already correct on the baseline (the event is appended
-  at `internal/core/shipment.go:205` before archival) and is expected to pass; it is present to lock
-  the ordering contract against regression, not to establish the red state.
-
-### Unit 3 - Fail-closed shipped routing (`143.003-T`)
-
-* Posture: **implementation**. Depends on Unit 2 being red.
+* Posture: **implementation**. Depends on Unit 2.
 * Changes
-  1. In `moveShipmentStatusWithHeadGuard`, gate on `newStatus == ShipmentShipped`: return the append
-     error instead of only warning. Every other transition (`claim`, `abandon`) keeps the existing
-     best-effort call and semantics.
-  2. Wrap the returned append failure in the `shipmentEventAppendError` boundary type declared in
-     Unit 1.3, at the call site, so the closure in Unit 4 classifies only that error.
+  1. In `moveShipmentStatusWithHeadGuard`, gate on **`newStatus == ShipmentShipped && !topLevel`**:
+     return the append error instead of only warning. The `topLevel` flag is what distinguishes the
+     governed path from the ungoverned one - `ShipShipment` is the only caller that passes
+     `topLevel=false` for `ShipmentShipped` (`internal/core/shipment_lifecycle.go:509`), while the
+     exported `MoveShipmentStatus` passes `true` (`internal/core/shipment.go:115-117`). Gating on the
+     status alone would make the exported entry point fail closed **without** any of Unit 4's
+     classification or compensation, persisting the status and then returning a bare error - an
+     uncompensated residue on a path this plan declares ungoverned. Every other transition (`claim`,
+     `abandon`) and every top-level caller keeps the existing best-effort call and semantics.
+  2. Declare the private boundary type `shipmentEventAppendError` here, in the unit that constructs
+     it, and wrap the returned append failure in it at the call site so the closure in Unit 4
+     classifies only that error. Declaring it a unit earlier would leave an unexported type with no
+     constructor, which `staticcheck`'s `unused` reports.
   3. Do **not** retry the append. `AppendEvent`'s contract is that a partial write or post-write
      fsync failure is `ErrWriteIndeterminate` and is not safe to retry blindly; a pre-append lock
-     failure is already tagged `not-applied` by Unit 1.2 and compensates. There is no third outcome
+     failure is already tagged `not-applied` by Unit 2.1 and compensates. There is no third outcome
      class.
   4. Record in the doc comment that the fail-closed shipped path intentionally suppresses the
      `HookMoveShipmentStatus` post-hook, which today always fires because the append error is
      swallowed. Firing a "status changed to shipped" post-hook for a transition that is about to be
-     compensated would misinform external integrations.
+     compensated would misinform external integrations. Assert the suppression with a recording hook
+     runner rather than leaving it to the doc comment.
 * Files: `internal/core/shipment.go`
-* Verification: Unit 2 scenario 1 green; scenarios 2 and 3 now fail on classification assertions
-  rather than on "no error returned". `TestClaimShipment_ActivatesIncludedScope`
+* Verification: Unit 1 scenarios now fail on classification assertions rather than on "no error
+  returned", and the "not a `snapshot release scope` failure" guard becomes meaningful and is
+  asserted from here on. `TestClaimShipment_ActivatesIncludedScope`
   (`internal/core/shipment_test.go:136`), `TestClaimShipment_RollsBackOnMidFlightActivationFailure`
   (`internal/core/shipment_state_integrity_test.go:28`), and `TestClaimShipment_SuccessActivatesAllItems`
-  (`:84`) stay green unchanged, proving non-shipped transitions are untouched.
+  (`:84`) stay green unchanged, proving non-shipped transitions are untouched. The exported-path
+  tests that move a shipment to `shipped` (`internal/core/shipment_test.go:176`, `:960`, `:1214`,
+  `internal/core/queue_test.go:369`) stay green unchanged, proving the gate is path-scoped; the one
+  test that uses the nested form directly (`internal/core/shipment_test.go:1068`) is the expected
+  behavior boundary and must be checked explicitly rather than edited.
 
-### Unit 4 - Class-aware rollback, honest compensation, and defer ordering (`143.004-T`)
+### Unit 4 - Classify the shipped-append failure and halt archival on indeterminate (`143.004-T`)
 
 * Posture: **implementation**. Depends on Unit 3.
 * Changes
-  1. Classify only the `shipmentEventAppendError` boundary value declared in Unit 1.3 and wrapped
-     in Unit 3.2. Every other closure error - including untagged pre-append failures from
-     `completeReleaseScope`, `returnUnreleasedFeatureItems`, and the cascades - keeps the existing
-     unconditional rollback.
-  2. Classification, matching the precedence `MutationEnvelope` already uses
-     (`internal/core/mutation_envelope.go:25-30`, `:83-90`): `blerrors.IsWriteIndeterminate`
-     suppresses rollback; **everything else, including untagged plain errors, compensates**.
-     Treating untagged errors as indeterminate was evaluated and rejected: it contradicts the sibling
-     policy in the same package, and because durable writes are off by default a definitively
-     not-applied `open` failure would be misclassified and strand the shipment permanently.
-  3. Place the classification branch and the `restoreRolledUpNonMemberFeatures` call **before** the
-     existing `if closureErr == nil || len(shipSnapshots) == 0 { return }` guard
-     (`internal/core/shipment_lifecycle.go:391-393`). Only the `restoreShipArtifacts` call stays
-     behind that guard; placing the new branch after it would make it dead code whenever snapshotting
-     did not populate the map.
-  4. Make compensation honest rather than silently partial. In `restoreShipArtifacts`
-     (`:184-188`), apply a **per-call** bounded retry budget to the per-item log-lock
-     re-acquisition; if an item still cannot be restored, do not merely `continue` - promote the
-     outcome to `*blerrors.MutationPartialError{Class: "not-applied", CompensationState:
-     "partially-compensated"}` listing the un-restored IDs. This closes a real torn-state hazard:
-     today an item-log lock failure for any release-scope item skips both the file restore and the
-     DB upsert while the shipment reverts to `active`. Apply the same promotion to **every**
-     rollback stage that can fail per item, not only lock acquisition - the read, the file restore,
-     the log restore, the event replay, the reindex, and the DB upsert
-     (`internal/core/shipment_lifecycle.go:194`, `:207`, `:211`, `:216`, `:220`, `:225`). The retry
-     budget is per call, not per item, because this loop runs inside the closure's rollback defer
-     with the membership lock and all artifact locks held.
-  5. On the indeterminate branch: suppress `restoreShipArtifacts`, synchronously call
+  1. Classify only the `shipmentEventAppendError` boundary value declared in Unit 3.2. Every other
+     closure error - including untagged pre-append failures from `completeReleaseScope`,
+     `returnUnreleasedFeatureItems`, and the cascades - keeps the existing unconditional rollback.
+  2. Classification precedence, in this order: **`blerrors.IsWriteIndeterminate` first**, then
+     `blerrors.IsWriteNotApplied`, then everything else as `indeterminate`. Indeterminate dominates,
+     matching `internal/core/mutation_envelope.go:28-38`, so an error that carries both sentinels
+     can never be compensated. Only the second arm - a **proven** not-applied outcome - compensates.
+     The append site cannot prove pre-write status, because `AppendEvent` exposes only `error` and
+     `appendFast` discards the `fmt.Fprintf` byte count (`internal/events/stream.go:243`,
+     `:290-291`); compensating over a possibly-applied append to an append-only log is what the
+     `AppendEvent` contract forbids, while leaving a detectable documented residue is not. Record in
+     the doc comment both divergences from `MutationEnvelope`: untagged is treated as unproven here,
+     and this branch **halts** rather than continuing the remaining steps, so a later reader does not
+     "fix" either back.
+  3. Evaluate the **classification branch** before the existing
+     `if closureErr == nil || len(shipSnapshots) == 0 { return }` guard
+     (`internal/core/shipment_lifecycle.go:391-393`); placing it after would make it dead code
+     whenever snapshotting did not populate the map. `restoreShipArtifacts` stays behind that guard.
+     `restoreRolledUpNonMemberFeatures` is called from **inside the indeterminate branch only** - the
+     existing success-path call at `:536` and the outer fallback are untouched, so the 133.004-T
+     ordering guarantee (restore after `archiveItems`, with the real `archivedIDs` skip set) is
+     preserved.
+  4. On the **indeterminate** branch: suppress `restoreShipArtifacts`, synchronously call
      `restoreRolledUpNonMemberFeatures` while the artifact locks are still held, halt archival, and
      return `*blerrors.MutationPartialError{Class: "indeterminate", FailedStep:
-     blerrors.StepShippedEventAppend, CompensationState: "not-compensated", Cause: err}` wrapping with
-     `%w` and populating `Completed` with the steps that did land. Join any restore failure onto the
-     returned error; indeterminate dominates.
-  6. Track `restoreAttempted` and `restoreSucceeded` separately instead of a single `restored` flag,
-     and allow the outer fallback exactly one retry when the in-lock attempt failed. A single
-     transient busy-lock on a cascade ancestor (which `lockArtifactMutation` reports immediately via
-     non-blocking `TryLock`, `internal/core/task_lock.go:67-80`) must not permanently abandon the
-     compensation.
-  7. **Swap the two defer registrations** at `internal/core/shipment_lifecycle.go:365` and `:375`:
+     blerrors.StepShippedEventAppend, CompensationState: "not-compensated"}` with
+     `Cause: errors.Join(appendErr, restoreErr)` - the join goes **inside** `Cause`, because
+     `internal/mcp/errors.go:116-118` extracts the `*MutationPartialError` and renders only that
+     value, so a joined outer error would drop the restore failure from every MCP response. Populate
+     `Completed` with the steps that did land.
+  5. On the **proven not-applied** branch: compensate through the existing snapshot rollback and
+     return `*blerrors.MutationPartialError{Class: "not-applied", FailedStep:
+     blerrors.StepShippedEventAppend, CompensationState: "compensated", Cause: appendErr}` rather
+     than a bare wrapped error. Without this, a compensated refusal reaches
+     `internal/mcp/errors.go` through the `default` arm as a generic internal error with no
+     classification, and SLI 4 has no structured surface. Unit 12 replaces `"compensated"` with
+     `"partially-compensated"` when compensation could not complete.
+  6. Emit `slog` on both branches with a fixed, greppable shape:
+     `slog.ErrorContext(ctx, "shipment shipped-event append failed", "shipment_id", id, "class",
+     "indeterminate"|"not-applied", "failed_step", blerrors.StepShippedEventAppend,
+     "compensation_state", state, "unrestored_ids", ids, "cause", err)`. `compensation_state` and
+     `unrestored_ids` are required because `MutationPartialError.Error()` does not render
+     `CompensationState`, so the log is the only non-MCP measurement surface for SLI 5. Assert the
+     shape with a log-capture assertion, not by inspection.
+  7. Add the doc comment recording two invariants: the durability guarantee covers the governed
+     `ShipShipment` path and, within it, the shipment's own terminal transition only - item-level
+     events inside the same call remain best-effort, and non-`ShipShipment` producers are not
+     prevented at all (deferred to stash `47B48DB0`, detected report-only by the doctor audit).
+* Files: `internal/core/shipment_lifecycle.go`
+* Verification: Unit 1 scenarios 1 and 2 green. Scenario 3 stays red - its `partially-compensated`
+  result is Unit 12's contract. The four existing ship tests named in Unit 2 stay green unchanged.
+
+### Unit 12 - Honest compensation and defer ordering (`143.012-T`)
+
+* Posture: **implementation with colocated tests**. Depends on Unit 4. Split out of Unit 4 at PR
+  review cycle 1: the combined unit changed more than five functions and breached the 2-hour rule.
+* Changes
+  1. Make compensation honest rather than silently partial. In `restoreShipArtifacts`
+     (`internal/core/shipment_lifecycle.go:174-230`), apply a **per-call** bounded retry budget to
+     the per-item log-lock re-acquisition; if an item still cannot be restored, do not merely
+     `continue` - promote the outcome to `*blerrors.MutationPartialError{Class: "not-applied",
+     CompensationState: "partially-compensated"}` listing the un-restored IDs. Apply the promotion
+     to **every** per-item failure the loop already records into `errs` - enumerated by construction
+     from the loop body, not by anchor list: lock acquisition (`:184-188`), the read (`:194`), the
+     concurrent-event identification (`:197`), the mutated-path removal (`:201`), the file restore
+     (`:207`), the log restore (`:211`), the event replay (`:216`), the reindex (`:220`), and the DB
+     upsert (`:225`).
+  2. **Do not introduce an early `return` inside the per-item loop.** `unlockItemLog()` is a plain
+     statement at `:227`, not a `defer`, so any early return leaks a process-global item-log mutex
+     that has no deadline (`internal/events/stream.go:125`). A blanket `defer unlockItemLog()` is
+     also unsafe because `LockItemLogCrossProcess` returns a **nil** unlock on error
+     (`internal/events/stream.go:218`, `:226`). Wrap the per-item body in a closure with a
+     nil-guarded `defer`, accumulate failures, and assemble the promotion after the loop.
+  3. The retry budget is per call, not per item, because this loop runs inside the closure's
+     rollback defer with the membership lock and all artifact locks held. Express it as **attempts
+     plus a wall-clock deadline** (a total of at most two `itemLogLockWait` periods), and record in
+     the doc comment that the in-process acquisition inside `LockItemLogCrossProcess` is itself
+     unbounded, so the deadline is a best-effort bound on the retry loop rather than a hard bound on
+     any single acquisition.
+  4. Track `restoreAttempted` and `restoreSucceeded` separately instead of a single `restored` flag
+     (`:352`), and allow the outer fallback exactly one retry when the in-lock attempt failed. State
+     the full truth table for the interaction with `shipRollbackAttempted` (`:394`) across the
+     success, not-applied, partially-compensated, and indeterminate outcomes, so the non-member
+     restore neither runs twice nor is skipped.
+  5. **Swap the two defer registrations** at `internal/core/shipment_lifecycle.go:365` and `:375`:
      register `releaseArtifactLocks` **first** so it unwinds **last**, and the non-member-feature
      fallback second so it unwinds first, with the artifact locks genuinely held and the `ctx`
      markers truthful. Today LIFO runs the release before the fallback, so the fallback performs
      status writes and file relocations with a `ctx` that falsely asserts the locks are held
      (`ctx` is reassigned in place at `:468`). Nilling the releaser was evaluated and **rejected**:
      it would make the fallback unconditionally dead and silently delete the 133.004-T guarantee for
-     the `collectArchiveCandidateIDs` (`:515`), `attachCommitToItems` (`:519`), and `archiveItems`
-     (`:523`) failure paths.
-  8. Emit `slog` on both branches with a fixed, greppable shape:
-     `slog.ErrorContext(ctx, "shipment shipped-event append failed", "shipment_id", id, "class",
-     "indeterminate"|"not-applied", "failed_step", blerrors.StepShippedEventAppend,
-     "compensation_state", state, "unrestored_ids", ids, "error", err)`. `compensation_state` and
-     `unrestored_ids` are required because `MutationPartialError.Error()` does not render
-     `CompensationState`, so the log is the only non-MCP measurement surface for SLI 5.
-  9. Add the doc comment recording the invariant: the durability guarantee covers the shipment's own
-     terminal transition only; item-level events inside the same call remain best-effort.
-* Files: `internal/core/shipment_lifecycle.go`
-* Verification: all three Unit 2 scenarios green; the four existing ship tests named in Unit 1 still
-  green unchanged; plus a new regression assertion that a post-closure `archiveItems` failure still
-  restores the non-member covering feature (the path the defer swap protects).
+     the `collectArchiveCandidateIDs` (`:515`), `attachCommitToItems` (`:520`), and `archiveItems`
+     (`:524`) failure paths.
+* Colocated tests (`internal/core/shipment_lifecycle_test.go`, new), written first and observed red
+  before the corresponding change:
+  1. **Defer ordering is discriminating.** Assert the order directly - record the sequence in which
+     the fallback and the lock release run (for example by observing that the artifact lock is still
+     held when the fallback executes, or by recording both events in a spy) and require the fallback
+     to precede the release. A test that only asserts "a post-closure `archiveItems` failure still
+     restores the non-member covering feature" passes identically before and after the swap and is
+     therefore not a regression test for this change.
+  2. **Un-restorable item promotion.** Every per-item failure source listed in change 1 yields
+     `partially-compensated` with the offending ID named, and no rollback path returns early while a
+     lock is held.
+* Files: `internal/core/shipment_lifecycle.go`, `internal/core/shipment_lifecycle_test.go` (new)
+* Verification: all three Unit 1 scenarios green, including scenario 3; the four existing ship tests
+  stay green unchanged; both colocated tests were observed red before their change and are green
+  after.
 
-### Unit 5 - Doctor finding types, option, and inert registration (`143.005-T`)
+### Unit 5 - RED harness for the doctor reconciliation audit (`143.005-T`)
 
-* Posture: **scaffold**, purely additive. Exists so the Unit 6 harness can compile without importing
-  production behavior into a test-only task - the compile-order cycle a two-unit split would create.
-* Changes
+* Posture: **test-first (red phase)**. Delivers the failing harness plus the declarations it needs
+  to compile. No check registration, no check body, no behavior. Every scenario is red on the tree
+  this unit produces.
+* Compile enablement (declarations only)
   * Add `FindingMissingShippedEvent DoctorFindingType = "missing_shipped_event"` and
     `FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"`.
   * Add `DoctorOptions.CheckShippedEventCompleteness bool`, off by default.
-  * Register an inert check beside the `opts.CheckOverArchivedFeatures` block
-    (`internal/core/doctor.go:522`) that produces no findings yet and does not touch the exit code.
-* Files: `internal/core/doctor.go`
-* Verification: run the named selector, not the whole package - the sibling track's harness
-  (`143.002-T`) may legitimately be red in `internal/core` at the same time:
-  `go test ./internal/core/ -run TestDoctor` green with no behavior change and no test edits.
-
-### Unit 6 - RED harness for the doctor reconciliation audit (`143.006-T`)
-
-* Posture: **test-first (red phase)**. Test-only; no production file. Depends on Unit 5.
-* Files: `internal/core/doctor_shipped_event_test.go` (new, test-only)
-* Scenarios (3)
+  * Do **not** register an inert check. Absence of any registration is what makes the harness fail
+    for the right reason: the option is set, the scan runs, and zero findings come back.
+  * `DoctorFinding` keeps its current shape (`internal/core/doctor.go:115-119`): there is no
+    structured detail field, and none is added. Finding detail is carried in `Description`, as the
+    existing findings do, so the harness asserts on `Description` content.
+* Files: `internal/core/doctor_shipped_event_test.go` (new, test-only), `internal/core/doctor.go`
+  (two constants and one option field)
+* Scenarios (2, both red)
   1. An archived shipment with `archived_status: shipped` and no shipped event yields exactly one
      `missing_shipped_event` finding; the same fixture with the shipped event present yields none;
      and an archived shipment whose `archived_status` is **not** `shipped` (for example `abandoned`)
      yields none, proving the check filters on `archived_status` rather than on "archived".
   2. A `status: shipped`, unarchived shipment yields exactly one `shipped_unarchived_residue`
-     finding whose detail records whether the shipped event is present and enumerates the
-     release-scope items left `done`-and-unarchived alongside it. The scenario asserts the
-     **actually resolved** artifact path produced by the routing registry for the `shipped` status
-     rather than assuming `queue/`.
-  3. Running the audit leaves every file under `.backlogit/logs/` byte-identical (recursive compare,
-     `fix_orphans` off). Doctor **exit-code** neutrality is asserted in Unit 8, because `core.Doctor`
-     returns a report and an error, not an exit code - the exit mapping lives in
-     `internal/cli/doctor.go`.
-* Verification: all three compile against Unit 5's declarations and fail because the inert check
-  produces no findings.
+     finding whose `Description` records whether the shipped event is present and enumerates the
+     archive candidates left behind alongside it. The scenario asserts the **actually resolved**
+     artifact path produced by the routing registry for the `shipped` status rather than assuming
+     `queue/`.
+* Verification: the package compiles (`go test -run=^$ -count=1 ./internal/core/`). Both scenarios
+  MUST fail on this tree because no check is registered; if either passes, the declarations carried
+  behavior they were not supposed to carry - halt. Run the named selector, not the whole package -
+  the sibling track's harness (`143.001-T`) may legitimately be red in `internal/core` at the same
+  time: `go test ./internal/core/ -run 'TestDoctor'`.
 
-### Unit 7 - Report-only doctor reconciliation audit (`143.007-T`)
+### Unit 6 - `missing_shipped_event` detection and `archived_status` plumbing (`143.006-T`)
 
-* Posture: **implementation**. Depends on Unit 6.
+* Posture: **implementation with one colocated non-mutation guard**. Depends on Unit 5.
 * Changes
-  * Replace the inert registration with the real check. The check MUST read `archived_status`, not
-    just `status`: `ArchiveItem` sets `status: archived` and stores the pre-archive status in
-    `archived_status` (`internal/core/archive.go:223`), so an archived shipped shipment presents as
-    `status: archived`. Neither `artifactRef` (`internal/core/canonical_scan.go:21`) nor the
-    doctor-local struct (`internal/core/doctor.go:230-236`, `:253-260`) carries `archived_status`
-    today, so **both** must be extended, or the check must re-read the shipment frontmatter from the
-    exact path already in `refs`. Without that filter the audit false-positives on shipments
-    archived from `abandoned` or any other status. Widening `artifactRef` is not optional; it is
-    shared with the create-time uniqueness guard, so the added field must be additive and unused
-    elsewhere.
-  * Scan queue and archive.
-  * For `shipped_unarchived_residue`, also enumerate the shipment's release-scope items that were
-    left terminal-but-unarchived by the halted archival, because the indeterminate branch returns
-    before `collectArchiveCandidateIDs` (`internal/core/shipment_lifecycle.go:515`) and therefore
-    strands the whole archive set, not the shipment alone.
+  * Register the check, gated on `opts.CheckShippedEventCompleteness`, beside the
+    `opts.CheckOverArchivedFeatures` block (`internal/core/doctor.go:522`), extracting the body into
+    a `detectMissingShippedEvents(...) ([]DoctorFinding, error)` helper rather than inlining it, per
+    the newest in-file precedent (`detectPartialCommitAssociations`,
+    `detectInconsistentShipmentMembership`).
+  * The check MUST read `archived_status`, not just `status`: `ArchiveItem` sets `status: archived`
+    and stores the pre-archive status in `archived_status` (`internal/core/archive.go:223`), so an
+    archived shipped shipment presents as `status: archived`. Neither `artifactRef`
+    (`internal/core/canonical_scan.go:21`) nor the doctor-local struct
+    (`internal/core/doctor.go:230-236`, `:253-260`) carries `archived_status` today, so **both**
+    must be extended. Widening `artifactRef` is not optional; it is shared with the create-time
+    uniqueness guard, so the added field must be additive and unused elsewhere.
+  * Scan queue **and** archive, from the canonical raw-Markdown scan, not the SQLite projection.
+  * Emit `missing_shipped_event` for an archived shipment whose `archived_status` is `shipped` and
+    whose item JSONL carries no `shipment_status_changed` event with `status == shipped`.
+  * An item log that cannot be read at all (open or scan failure, as distinct from "absent" or
+    "malformed line skipped") MUST NOT be reported as a missing event. Report it as the same finding
+    type with an explicit "log unreadable, event presence unknown" `Description` so a false negative
+    can never masquerade as a clean result, and never abort the whole doctor run for one unreadable
+    file.
   * Carry the "verify the actual history; this can be transient during an in-flight ship" caveat
     wording from `internal/core/doctor.go:545`.
   * Never write, synthesize, or rewrite JSONL.
-* Files: `internal/core/doctor.go`, `internal/core/canonical_scan.go`
-* Verification: all three Unit 6 scenarios green.
+* Colocated test (added to the Unit 5 file): running the audit leaves every file under
+  `.backlogit/logs/` byte-identical (recursive compare, `fix_orphans` off). This assertion is green
+  from the moment the check exists and is a guard, not a red scenario, which is why it lives here
+  rather than in the harness. Doctor **exit-code** neutrality is asserted in Unit 8, because
+  `core.Doctor` returns a report and an error, not an exit code.
+* Files: `internal/core/doctor.go`, `internal/core/canonical_scan.go`,
+  `internal/core/doctor_shipped_event_test.go`
+* Verification: Unit 5 scenario 1 green, including both negative subtests; the non-mutation guard
+  green; Unit 5 scenario 2 still red because the second finding does not exist yet.
+
+### Unit 7 - `shipped_unarchived_residue` detection with stranded-scope enumeration (`143.007-T`)
+
+* Posture: **implementation**. Depends on Unit 6.
+* Changes
+  * Emit `shipped_unarchived_residue` for a shipment whose `status` is `shipped` and which is not
+    archived, reporting the path the canonical scan actually observed (`artifactRef.path`) rather
+    than re-deriving it; the harness owns the routing-registry expectation.
+  * Record in the finding `Description` whether the shipped event is present, because that
+    determines which branch of the named-limitation procedure the operator follows.
+  * Enumerate the archive candidates left behind, matching what `collectArchiveCandidateIDs`
+    (`internal/core/shipment_lifecycle.go:664-673`, called at `:515`) would have archived - the
+    release-scope items **and** any linked deliberations - because the indeterminate branch returns
+    before that call and strands the whole archive set, not the shipment alone. Derive membership by
+    re-reading the shipment artifact from the canonical scan, following the
+    `detectInconsistentShipmentMembership` precedent, not from the SQLite projection.
+  * Apply the same unreadable-log rule as Unit 6.
+  * Carry the same transient-during-an-in-flight-ship caveat.
+  * Never write, synthesize, or rewrite JSONL.
+* Files: `internal/core/doctor.go`
+* Verification: both Unit 5 scenarios green and the Unit 6 non-mutation guard still green.
 
 ### Unit 8 - CLI surface and regenerated reference documentation (`143.008-T`)
 
@@ -427,7 +656,10 @@ with a purely additive scaffold, then a test-only RED harness, then implementati
 * Files: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`,
   `docs/cli-reference/backlogit_doctor.md` (generated)
 * Scenarios (2): the flag enables the check and surfaces both finding types for a seeded fixture;
-  defaults are unchanged when the flag is absent.
+  defaults are unchanged when the flag is absent. Doctor exit-code neutrality is asserted here.
+* Test-first discipline: both scenarios are written and observed failing before the flag is wired,
+  and the red output is recorded in the task's implementation notes. Surface units carry no
+  `harness-ready` label, so this record is the only red-phase evidence they produce.
 * Verification: `go test ./internal/cli/...` green and `git diff --exit-code docs/cli-reference/`
   clean after `make docs`.
 
@@ -455,49 +687,75 @@ with a purely additive scaffold, then a test-only RED harness, then implementati
   surfaces, since `internal/mcp` cannot import `internal/cli`. That file currently asserts registry
   mapping and governed-mutation parity only, so this adds a new fixture rather than extending an
   existing one.
+* Test-first discipline: all three scenarios are written and observed failing before the parameter
+  is wired, and the red output is recorded in the task's implementation notes.
 
 ### Unit 10 - Producer-scoped recovery guidance (`143.010-T`)
 
-* Posture: **test-first**. Depends on Unit 4 (the error must exist) and Unit 9 (the MCP parameter
-  named in the guidance must exist).
+* Posture: **test-first**. Depends on Unit 12 (the `partially-compensated` result must exist) and
+  Unit 9 (the MCP parameter named in the guidance must exist). The `Retryable` correction and the
+  results it describes therefore land in the same pull request, so no released state advertises the
+  wrong retryability.
 * Changes
   * `mutationPartialRecovery` (`internal/mcp/errors.go:165-176`) is keyed on `Class` **only** and is
     reached from `domainError` (`:116-119`), `handleTrackCommit` (`internal/mcp/tools.go:1595`,
     dispatch `:1613-1616`), and `checkpointDispositionError` (`internal/mcp/errors.go:229`, dispatch
     `:230-233`). Repointing the `"indeterminate"` case would mis-advise all three. Instead pass
-    `err.FailedStep` - already in scope at `internal/mcp/errors.go:153`, `:156` - and branch on
-    `blerrors.StepShippedEventAppend`, leaving the class-only default text untouched.
+    `err.FailedStep` **and** `err.CompensationState` - both already in scope at
+    `internal/mcp/errors.go:153`, `:154`, `:156` - and branch on `blerrors.StepShippedEventAppend`,
+    leaving the class-only default text untouched.
   * The shipped-event guidance must be **dual-surface**, naming both
     `check_shipped_event_completeness` (MCP) and `--check-shipped-event-completeness` (CLI), and must
     carry the "reconcile before archiving" instruction.
+  * The guidance must differ by compensation state, because the operator's next action does:
+    `compensated` means the ship can be retried; `partially-compensated` means the named un-restored
+    IDs must be reconciled first, and the doctor audit may report **clean** while those items remain
+    torn, so the un-restored IDs must be surfaced in the structured result rather than only in the
+    prose; `not-compensated` means the shipment is shipped-and-unarchived and the named-limitation
+    procedure applies.
   * Correct the structured `Retryable` field alongside the text. `internal/mcp/errors.go:155` sets
-    `Retryable: err.Class == "not-applied"`, so Unit 4.4's new
+    `Retryable: err.Class == "not-applied"`, so Unit 12's new
     `Class: "not-applied", CompensationState: "partially-compensated"` result would advertise
-    itself as safe to retry while release-scope items remain un-restored. Gate `Retryable` on class
-    **and** compensation state so a partially-compensated result is never retryable.
+    itself as safe to retry while release-scope items remain un-restored. Gate it as
+    `Class == "not-applied" && CompensationState == "compensated"`.
   * Keep the single dispatch site in `handleShipShipment`. `gateErrorResult` runs first but cannot
     match `*MutationPartialError` (`internal/mcp/gate_errors.go:22-38`), so no collision exists today;
     add a regression guard asserting that rather than restructuring the dispatch.
 * Files: `internal/mcp/errors.go`, plus an `internal/mcp` contract test
 * Scenarios (3): the ship-path indeterminate result names both tokens and preserves `Class` and
-  `FailedStep`; `internal/mcp/error_mapping_test.go:200`'s existing `track_commit` assertion still
-  passes; the indeterminate result is not consumed by `gateErrorResult`.
+  `FailedStep`; a `partially-compensated` result is not retryable and carries its un-restored IDs;
+  `internal/mcp/error_mapping_test.go:200`'s existing `track_commit` assertion still passes and the
+  indeterminate result is not consumed by `gateErrorResult`.
+* Test-first discipline: all three scenarios are written and observed failing before the guidance
+  change, and the red output is recorded in the task's implementation notes.
 
 ### Unit 11 - Contract, policy, skill, and Ship-agent coherence (`143.011-T`)
 
-* Posture: **documentation and policy only**. Depends on Units 4, 7, 8, 9, and 10.
+* Posture: **documentation and policy only**. Depends on Units 4, 12, 7, 8, 9, and 10.
 * Changes
   * `docs/design-docs/governed-mutation-recovery-contract.md`: add the shipment ship path as a
     governed `MutationPartialError` producer; add `CheckShippedEventCompleteness` and both finding
     names to the recovery-discovery enumeration; document `FailedStep` (via the shared constant),
     `CompensationState: "not-compensated"` and `"partially-compensated"`, and the producer-scoped
-    `recovery` semantics.
+    `recovery` semantics. **Amend the two sections that would otherwise mis-describe the newly
+    listed producer**: the "Classification precedence" section, which states that an untagged plain
+    error compensates, and the "Failure branches / Not applied" section, which describes the same
+    default - both must carry an explicit producer-scoped carve-out for the shipped-event append,
+    stating that an unproven outcome is `indeterminate` and never compensates and that this branch
+    halts rather than continuing. Also widen that document's closed `CompensationState`
+    enumeration to include `partially-compensated`, mirroring the Unit 2.7 code-comment change.
+    Leaving those sections stale would put the authoritative contract in direct conflict with the
+    behavior, which is the exact drift this unit exists to prevent.
   * `.github/policies/workflow-policies.md` P-007: add a third branch. When
     `backlogit_ship_shipment` returned `mutation_partial` with `classification: indeterminate` and
     `failed_step: shipped-event-append`, do **not** run `git restore .backlogit/archive/`; run the
     doctor audit and reconcile per the named-limitation procedure.
-  * `.github/skills/shipment-reconcile/SKILL.md` post-mode: the same third branch, so the gate does
-    not emit `HALT - restore archives` for an intended outcome.
+  * `.github/skills/shipment-reconcile/SKILL.md` post-mode: the same third branch, and the three
+    dependent surfaces in the same file that would otherwise contradict it - the `recommendation`
+    enumeration, the two post-mode steps that flag missing archive files (which fire on every
+    halted-archival result, before the gate decision is reached), and the gate decision itself. Fix
+    the two dangling `.github/agents/ship.agent.md` / `stage.agent.md` references in that file's
+    Related Artifacts section while it is open; the files are dot-prefixed.
   * `.github/agents/.ship.agent.md` Step 6 §1.b, §1.c, §1.d (`:521`, `:533`, `:537`): the same third
     branch. This is the surface that actually executes the sequence the policy and skill describe;
     leaving it stale would have the Ship agent `git restore` over the intended residue.
@@ -509,37 +767,67 @@ with a purely additive scaffold, then a test-only RED harness, then implementati
     overwriting the third branch, so also add "re-apply the P-007 / Ship-agent third branch after
     any autoharness template adoption" to the closure follow-ups.
 * Files: the five listed above
-* Verification: `backlogit docs lint` clean; markdownlint clean; no code change.
+* Verification: `backlogit docs lint` clean; markdownlint clean; no source, test, or build-config
+  change. The `.autoharness/drift-ignore` and registry-adjacent edits in this unit are harness
+  metadata, not build configuration.
 
 ## Dependency Graph
 
 The edge list is **authoritative**. No diagram is provided, deliberately.
 
-| Task | Depends on |
-|---|---|
-| `143.001-T` | - (root) |
-| `143.002-T` | `143.001-T` |
-| `143.003-T` | `143.002-T` |
-| `143.004-T` | `143.003-T` |
-| `143.005-T` | - (root) |
-| `143.006-T` | `143.005-T` |
-| `143.007-T` | `143.006-T` |
-| `143.008-T` | `143.007-T` |
-| `143.009-T` | `143.007-T`, `143.008-T` |
-| `143.010-T` | `143.004-T`, `143.009-T` |
-| `143.011-T` | `143.004-T`, `143.007-T`, `143.008-T`, `143.009-T`, `143.010-T` |
+| Task | Unit role | Depends on |
+|---|---|---|
+| `143.001-T` | RED harness, durability | - (root) |
+| `143.002-T` | implementation: appender, dispatcher, shared constant, colocated appender tests | `143.001-T` |
+| `143.003-T` | implementation: governed-path fail-closed routing, boundary type | `143.002-T` |
+| `143.004-T` | implementation: classification and the indeterminate branch | `143.003-T` |
+| `143.012-T` | implementation: honest compensation, defer ordering, colocated regressions | `143.004-T` |
+| `143.005-T` | RED harness, detection | - (root) |
+| `143.006-T` | implementation: `missing_shipped_event` and `archived_status` plumbing | `143.005-T` |
+| `143.007-T` | implementation: `shipped_unarchived_residue` | `143.006-T` |
+| `143.008-T` | implementation plus colocated tests: CLI surface | `143.007-T` |
+| `143.009-T` | implementation plus colocated tests: MCP surface | `143.007-T`, `143.008-T` |
+| `143.010-T` | implementation plus colocated tests: recovery guidance | `143.012-T`, `143.009-T` |
+| `143.011-T` | documentation and policy | `143.004-T`, `143.012-T`, `143.007-T`, `143.008-T`, `143.009-T`, `143.010-T` |
 
-All edges are typed `blocks`. The graph is acyclic with two roots (`143.001-T`, `143.005-T`) and
-one sink (`143.011-T`). Red-before-green is structural on both core tracks: `143.003-T` cannot
-start before harness `143.002-T`, and `143.007-T` cannot start before harness `143.006-T`. Both
-harnesses are preceded by an additive scaffold so neither harness carries production code and
-neither pair forms a compile-order cycle. No external dependency blocks Stage harvest or Ship
-execution.
+Seventeen edges, all typed `blocks`. The graph is acyclic with two roots (`143.001-T`,
+`143.005-T`) and one sink (`143.011-T`).
+
+**Red-before-green is structural, and no production change precedes a failing test.** Each core
+track begins with its RED harness task: `143.002-T`, `143.003-T`, `143.004-T`, and `143.012-T`
+cannot start before `143.001-T` is red, and `143.006-T` and `143.007-T` cannot start before
+`143.005-T` is red. Each harness task carries only the declarations its own failing test needs to
+compile - a seam field on `Workspace` in `143.001-T`, two finding-type constants and one options
+field in `143.005-T` - which is the compile-then-fail pattern
+`.github/skills/harness-architect/SKILL.md` Step 4.3 prescribes. Neither declaration changes
+behavior, neither is read by production code on the harness tree, and both are exercised by the
+failing test, so the `unused` linter is satisfied. There is no separate production-scaffold task and
+no scaffold exception. Units 2, 6, 8, 9, 10, and 12 carry colocated tests that cannot exist before
+the symbols they exercise; each requires its tests to be written and observed failing before the
+corresponding implementation, with the red output recorded in the task. No external dependency
+blocks Stage harvest or Ship execution.
 
 ## Decisions and Rationale
 
-* **Red before green is enforced by the graph, on both tracks**, with an additive scaffold in front
-  of each harness so no harness task carries production code and no pair deadlocks on compilation.
+* **Red before green is enforced by the graph, on both tracks.** Each track opens with its RED
+  harness task, which carries only the declarations its own failing test needs to compile. No task
+  in this plan changes production behavior before a failing harness exists, and there is no
+  scaffold task.
+* **The writer API is not expanded, and short-write detection is not promised.**
+  `EventWriter.AppendEvent` exposes only `error` and `appendFast` discards the `fmt.Fprintf` byte
+  count (`internal/events/stream.go:243`, `:290-291`). Rather than change a shared primitive used by
+  every event producer, the plan classifies conservatively: only a **proven** pre-write failure
+  compensates; every other append outcome is `indeterminate`.
+* **Unclassified means indeterminate.** This inverts the untagged default in `MutationEnvelope`
+  (`internal/core/mutation_envelope.go:25-30`) on purpose. The envelope's default is safe because
+  its persist step routes through a primitive that tags both classes
+  (`internal/atomicfile/atomicfile.go:82-129`); the default non-durable append path does not tag at
+  all. Compensating over a possibly-applied append to an append-only log is the one outcome the
+  `AppendEvent` contract forbids; a detectable, documented residue is not.
+* **The guarantee is path-scoped, not universal.** Only the governed `ShipShipment` archival path is
+  prevented from producing `archived_status: shipped` without a durable event. Generic update and
+  archive producers stay reachable and are covered report-only, with prevention deferred to stash
+  `47B48DB0`.
 * **Injection goes through the per-workspace seam, not the filesystem.** Filesystem injection cannot
   reach the append because `snapshotShipArtifacts` takes the same lock and snapshots the same log
   file at `internal/core/shipment_lifecycle.go:478`, before the transition at `:509`.
@@ -547,9 +835,9 @@ execution.
   locked context in place makes the ownership markers outlive the lock, so `restoreShipArtifacts`
   would rewrite an append-only log and `archiveItems` / `attachCommitToItems` would append with no
   in-process or cross-process exclusion; it also inverts the lock order against `lockArtifactMutations`
-  (`:468`) and would hold a 3-second-starving lock across two `gateShipmentCompletion` evaluations
-  whose broker timeout defaults to 600 seconds. The torn-state hazard it was meant to fix is instead
-  fixed locally and completely by Unit 4.4.
+  (`:468`) and would hold a starving lock across two `gateShipmentCompletion` evaluations whose
+  broker timeout defaults to 600 seconds. The torn-state hazard it was meant to fix is instead
+  fixed locally and completely by Unit 12.1.
 * **No retry at the append site.** `AppendEvent` is explicitly not safe to blindly retry; retrying
   would risk a duplicate `shipment_status_changed: shipped` line in the very log this plan protects.
   A pre-append lock failure is already `not-applied` and compensates.
@@ -558,8 +846,6 @@ execution.
 * **The defer registrations are swapped, not nilled.** Nilling the releaser would make the
   non-member-feature fallback unconditionally dead and delete the 133.004-T guarantee for three
   post-closure failure paths.
-* **Untagged append errors compensate; only tagged indeterminate suppresses rollback.** This matches
-  `MutationEnvelope`'s precedence and keeps the contract total in the default configuration.
 * **Two distinct doctor findings.** Different causes, different operator responses, and one is
   residue this plan itself creates.
 * **The integration/regression unit was deleted, not deferred.**
@@ -578,15 +864,26 @@ execution.
 Safety modes in force: **freeze-scope** and **careful**.
 
 Freeze-scope path boundary. Ship may modify only: `internal/core/workspace.go`,
-`internal/core/shipment.go`, `internal/core/shipment_lifecycle.go`, `internal/core/doctor.go`,
-`internal/core/canonical_scan.go`, `internal/errors/` (one exported constant), the new test files
-named in Units 2 and 6, `internal/cli/doctor.go`, `internal/cli/doctor_test.go`,
+`internal/core/shipment.go`, `internal/core/shipment_events.go` (new),
+`internal/core/shipment_lifecycle.go`, `internal/core/doctor.go`,
+`internal/core/canonical_scan.go`, `internal/errors/mutation_errors.go` (one exported constant plus
+one doc-comment amendment), the four new test files -
+`internal/core/shipment_shipped_event_durability_test.go` (Unit 1),
+`internal/core/shipment_events_test.go` (Unit 2),
+`internal/core/shipment_lifecycle_test.go` (Unit 12),
+`internal/core/doctor_shipped_event_test.go` (Units 5 and 6) -
+plus `internal/cli/doctor.go`, `internal/cli/doctor_test.go`,
 `internal/cli/registry_parity_test.go`, `internal/mcp/tools.go`, `internal/mcp/errors.go`, the new
 `internal/mcp` contract tests, `.autoharness/backlog-registry.yaml`, `.autoharness/drift-ignore`,
 `docs/cli-reference/backlogit_doctor.md` (generated),
 `docs/design-docs/governed-mutation-recovery-contract.md`,
 `.github/policies/workflow-policies.md`, `.github/skills/shipment-reconcile/SKILL.md`,
-`.github/agents/.ship.agent.md`.
+`.github/agents/.ship.agent.md`, and the Stage-owned plan, decision, review, memory, and
+`.backlogit/` artifacts that record execution state.
+
+**`internal/events/` is explicitly outside the boundary.** No unit may change `AppendEvent`,
+`appendFast`, `appendDurable`, or any writer signature. That exclusion is what forces the
+conservative classification contract, and it is deliberate.
 
 ```text
 ProposedAction:
@@ -612,29 +909,38 @@ automated forward transition can be created.
 | Risk | Mitigation |
 |---|---|
 | Fail-closed append refuses a ship that previously succeeded | Intent, and bounded: only `ShipmentShipped` is affected, asserted by the untouched claim/abandon tests |
-| Item-log lock contention at the append surfaces as a hard failure | It is classified `not-applied` and compensates; nothing is written, so the shipment reverts cleanly. Note the wait is bounded at 3 seconds only for the cross-process file lock (`internal/events/stream.go:40`, `:177`); the in-process `mutex.Lock()` (`:117-125`) is uncancellable, so the honest statement is "bounded for cross-process contention, serialized for in-process contention" |
-| Compensation silently skips an item whose log lock cannot be re-acquired | Unit 4.4: bounded retry, then an explicit `partially-compensated` result naming the un-restored IDs |
-| Untagged errors misclassified, stranding a shipment in the default non-durable configuration | Unit 4.2 compensates on untagged, matching `MutationEnvelope` |
+| Item-log lock contention at the append surfaces as a hard failure | It is classified `not-applied` and compensates; the lock failure is raised inside `appendShipmentEventErr` before any writer call, so nothing is written and the shipment reverts cleanly. The wait is bounded at 3 seconds **only** for the cross-process sidecar lock (`internal/events/stream.go:40`, `:177`, reached through `LockItemLogCrossProcess`); the in-process `LockItemLog` performs a plain uncancellable `mutex.Lock()` (`:125`, inside `:117-136`), so the honest statement is "bounded for cross-process contention, serialized without a deadline for in-process contention" |
+| Compensation silently skips an item whose log lock cannot be re-acquired | Unit 12.1: bounded retry, then an explicit `partially-compensated` result naming the un-restored IDs, applied to every per-item failure the loop records |
+| A promotion path returns early from the rollback loop and leaks the item-log mutex | Unit 12.2 forbids an early `return` inside the loop and requires a nil-guarded `defer` in a per-item closure, because `unlockItemLog()` is a plain statement at `internal/core/shipment_lifecycle.go:227` and `LockItemLogCrossProcess` returns a nil unlock on error (`internal/events/stream.go:218`, `:226`) |
+| The new appender drops the locked context and self-deadlocks the ship goroutine | Unit 2.2 requires the context returned by `LockItemLogCrossProcess` to be passed to `AppendEvent` and the index call, mirroring `internal/core/gate_evidence.go:53`, `:58`; a hang rather than a failure in Unit 2's success-ordering test is the stop signal |
+| The fail-closed gate leaks onto the ungoverned exported path | Unit 3.1 gates on `newStatus == ShipmentShipped && !topLevel`; the exported `MoveShipmentStatus` passes `topLevel=true` and stays best-effort, asserted by the untouched exported-path tests |
+| A genuinely not-applied `open` failure is classified `indeterminate` in the default non-durable configuration, leaving a shipment `shipped`-and-unarchived instead of reverting it | Accepted and declared. It is the direct cost of not being able to observe pre-write status through `AppendEvent`; the alternative - compensating over a possibly-applied append - is forbidden by the writer contract. Bounded by `shipped_unarchived_residue` detection, SLI 2 and SLI 3, and the named-limitation procedure; narrowed further wherever `Config.DurableWrites` is enabled, because that path tags `not-applied` explicitly |
+| A future contributor "fixes" the classification back to the `MutationEnvelope` untagged default | Unit 4.2 requires the divergence and its reason in the doc comment; a Plan Hardening guardrail forbids compensating on an unproven outcome; Unit 1 scenario 3 asserts the untagged case does not roll back |
+| `CompensationState: "partially-compensated"` falsifies the closed enum documented at `internal/errors/mutation_errors.go:26` | Unit 2.5 amends that doc comment in the same task that introduces the shared constant |
 | The classification branch becomes dead code behind the `len(shipSnapshots)` guard | Unit 4.3 places it before the guard explicitly |
-| The non-member-feature fallback runs without locks, or is deleted outright | Unit 4.7 swaps the defer registrations so the release unwinds last and the fallback runs with locks held |
-| A transient busy-lock permanently abandons the covering-feature compensation | Unit 4.6 tracks attempt and success separately and permits one fallback retry |
+| Compensation itself re-contends the very lock whose failure triggered it, so the class advertised as "reverts cleanly" degrades into `partially-compensated` | Accepted and named: `restoreShipArtifacts` re-acquires each item log at `internal/core/shipment_lifecycle.go:184`, including the shipment's own. SLI 4 and SLI 5 are expected to correlate; the bounded budget in Unit 12.3 keeps the hold time finite and the result is reported honestly rather than hidden |
+| A platform without item-log file-lock support turns every ship into a hard failure | `internal/events/item_log_lock_other.go` always errors, so the fail-closed branch would refuse every ship there. Windows and Unix are the supported build targets; Unit 3 records the consequence so an unsupported-platform build fails loudly rather than mysteriously |
+| The longer rollback hold increases silent audit-event loss for concurrent best-effort appenders | Named: peers warn and return after their bounded wait (`internal/core/shipment.go:688-691`). The `"lock shipment event log"` warning is added to the SLI 3 grep set so the cost is measured rather than invisible |
+| The non-member-feature fallback runs without locks, or is deleted outright | Unit 12.5 swaps the defer registrations so the release unwinds last and the fallback runs with locks held, asserted by an ordering-discriminating regression rather than by a test that passes either way |
+| A transient busy-lock permanently abandons the covering-feature compensation | Unit 12.4 tracks attempt and success separately, permits one fallback retry, and pins the full flag truth table so the restore neither runs twice nor is skipped |
 | The `shipped_unarchived_residue` escalates into `missing_shipped_event` via a later archive | Unit 10 guidance carries "reconcile before archiving"; Unit 7 records event presence in the finding detail |
 | No forward transition out of `shipped` | Declared limitation with a documented manual procedure; a supported transition is a named closure follow-up |
-| Item-level events inside `ShipShipment` remain best-effort and are owned by no follow-up | Named in the Problem Frame, restated in the Unit 4.9 doc comment, raised at closure |
+| Item-level events inside `ShipShipment` remain best-effort and are owned by no follow-up | Named in the Problem Frame, restated in the Unit 4.7 doc comment, raised at closure |
 | A CI `cli-reference-drift` failure blocks every unit, not just Unit 8 | Unit 8 owns the regenerated doc; the pre-deploy checklist re-verifies `make docs` |
 | Registry asymmetry during the Unit 8 to Unit 9 window | One task wide, forward-only, and no misleading permanent-asymmetry marker is written |
 | Guidance change mis-advises unrelated partial-mutation producers | Unit 10 keys on `FailedStep`; the existing `track_commit` assertion is kept as a regression guard |
 | Stale P-007, reconcile skill, or Ship agent instruct `git restore` and mask the residue | Unit 11 adds the third branch to all three and records the files in `.autoharness/drift-ignore` |
+| The feature is read as universal prevention, so a residue produced by a generic update or archive path is treated as a regression of this work | The guarantee is stated path-scoped in the Problem Frame, in `143-F`, and in the decision record; the audit detects residue from any producer, and prevention for other producers is named and deferred to stash `47B48DB0` |
 
 ## Constitution Check
 
 | Principle | Assessment |
 |---|---|
 | I. Safety-First Go | All new errors wrapped with `%w`; `errors.Join` for combined failures; no `unsafe`; `go vet`, `golangci-lint`, `gofmt` are Ship gates |
-| II. Test-First Development (NON-NEGOTIABLE) | Structural on both core tracks: `143.003-T` depends on harness `143.002-T`; `143.007-T` depends on harness `143.006-T`. Each harness is preceded by an additive scaffold (`143.001-T`, `143.005-T`) that changes no behavior. Units 8-10 are surface units whose tests are colocated per repository convention and are gated by the P-002 `harness-ready` label plus P-004 red-phase confirmation. Unit 11 is documentation only. |
+| II. Test-First Development (NON-NEGOTIABLE) | Structural on both core tracks and on every production change. `143.001-T` and `143.005-T` are RED harness tasks; `143.002-T`, `143.003-T`, `143.004-T`, and `143.012-T` each depend transitively on `143.001-T`, and `143.006-T` and `143.007-T` each depend transitively on `143.005-T`, so no production behavior lands before a compiling, observed-failing test. The only production edits inside a harness task are the declarations that test needs to compile (one seam field; two constants and one options field), which carry no behavior - the pattern `.github/skills/harness-architect/SKILL.md` Step 4.3 prescribes, and every harness scenario is red so the P-002 / P-004 "all tests fail" precondition for the `harness-ready` label holds. There is no scaffold task and no scaffold exception. Units 2, 6, 8, 9, 10, and 12 carry colocated tests for symbols that cannot exist before them; each requires those tests to be written and observed failing before the corresponding implementation, with the red output recorded in the task (see deviation 1). Unit 11 is documentation only. |
 | III. Workspace Isolation | All paths resolve inside the workspace root; fixtures use `t.TempDir()` |
 | IV. CLI Workspace Containment | No out-of-tree writes |
-| V. Structured Observability | Fixed greppable `slog` shape (Unit 4.8); two named finding types; structured MCP `mutation_partial` result |
+| V. Structured Observability | Fixed greppable `slog` shape asserted by a log-capture test (Unit 4.6); two named finding types; structured MCP `mutation_partial` result on every failure branch, including the fully compensated one |
 | VI. Single Responsibility | No new dependency; every primitive reused already exists on the baseline |
 | VII. Destructive Command Approval | No destructive action; the audit is read-only by contract, asserted by recursive byte comparison |
 | VIII. Explicit Safety Modes | Declared above: freeze-scope plus careful, with `ProposedAction` / `ActionRisk: high` / `ActionResult: planned` |
@@ -646,34 +952,54 @@ automated forward transition can be created.
 
 Each entry names the principle, the justification, and the simpler alternative that was rejected.
 
-1. **Width Isolation - Units 7, 8, 9, 10 combine production code with colocated tests.**
+1. **Width Isolation - Units 2, 6, 8, 9, 10, and 12 combine production code with colocated tests.**
    Justification: the repository colocates `*_test.go` beside its source
    (`internal/cli/doctor.go` / `doctor_test.go`; `internal/mcp/doctor_partial_mutations_test.go`),
-   and each is a single surface change with a two-to-three assertion contract test. Rejected
-   alternative: splitting each into harness plus implementation, producing eighteen tasks for four
-   small surface changes and fragmenting single-file contracts across two commits. The units where
-   production risk is real - the core durability change and the core doctor change - **are** split
-   into scaffold, harness, and implementation.
+   and a test for a function's own contract cannot be written before that function's signature
+   exists - the appender contract (Unit 2), the ordering-discriminating defer regression (Unit 12),
+   the non-mutation guard (Unit 6), and the three surface contracts (Units 8, 9, 10) all fall in
+   that class. Each such unit requires its tests to be written first and observed failing - as a
+   compile failure, then as an assertion failure - before the implementation, with the red output
+   recorded in the task. Rejected alternative: forcing them into the harness tasks, which would
+   either make the harness non-compiling (Step 5.1 forbids it) or push a passing test into a
+   red-phase gate (Step 5.2 and P-002 / P-004 forbid that). The units where production risk is
+   highest - the core durability change and the core doctor change - **are** split into a RED
+   harness followed by implementation units.
 2. **Width Isolation - Unit 8 also commits a generated documentation file.**
    Justification: CI requires `docs/cli-reference/backlogit_doctor.md` to be regenerated in the same
    commit as any CLI change (`.github/workflows/ci.yml:152-182`), so separating them guarantees a red
    build. The file is generated, never hand-authored. Rejected alternative: a separate docs task.
-3. **2-Hour Rule file heuristic - Unit 1 touches three files.**
-   Justification: two are one-to-three-line additions (the `Workspace` seam field, one exported
-   constant in `internal/errors`); the substantive change is confined to `internal/core/shipment.go`.
-   Rejected alternative: leaving the failed-step name as a duplicated string literal in two packages,
-   which reintroduces the stringly-typed coupling review flagged.
-4. **2-Hour Rule file heuristic - Unit 8 touches three files and Unit 11 touches five.**
-   Justification: Unit 8's third file is generated and CI-mandated (see deviation 2). Unit 11 is
-   documentation and policy only, with no functions and no tests; each edit is the same three-sentence
-   third branch applied to the four surfaces that carry the broken postcondition, plus one
-   `.autoharness/drift-ignore` line. Rejected alternative: splitting Unit 11 per file, which would
-   allow an intermediate state where policy and the Ship agent disagree about whether to `git restore`.
-5. **2-Hour Rule scenario heuristic.** Every unit is at three scenarios or fewer. No deviation.
-6. **Task count.** Eleven tasks at roughly two hours each is about twenty-two hours of
+3. **Test-First mechanics - Units 1 and 5 add production declarations inside a harness task.**
+   Justification: a harness must compile before it can be observed failing, and the seam field
+   (Unit 1) and the two constants plus one options field (Unit 5) are the minimum declarations their
+   tests need. They carry no behavior, no production code reads them on the harness tree, and the
+   failing test is their only consumer. `.github/skills/harness-architect/SKILL.md` Step 4.3
+   prescribes exactly this. Rejected alternative: a separate scaffold task ahead of each harness,
+   which is what PR review correctly flagged as production-before-test; also rejected: omitting the
+   declarations, which yields a non-compiling harness that Step 5.1 forbids.
+4. **Width Isolation - Unit 9 pairs an MCP handler change with a registry metadata row.**
+   Justification: the registry row and the tool parameter are one contract; landing either alone
+   publishes an advertised-but-unwired parameter or a wired-but-unadvertised one, and the parity
+   fixture asserts them together. Rejected alternative: a separate registry task, which would leave
+   a one-task window where `.autoharness/backlog-registry.yaml` disagrees with the running server.
+5. **2-Hour Rule file heuristic - Unit 2 touches four files, Unit 8 three, Unit 9 four, Unit 12 two,
+   Unit 11 five.**
+   Justification: Unit 2's substantive change is one new file plus a two-line edit in
+   `internal/errors/mutation_errors.go` and a one-line call-site reroute; Unit 8's third file is
+   generated and CI-mandated (deviation 2); Unit 9's fourth file is the cross-surface parity fixture
+   that only the `internal/cli` package can host; Unit 11 is documentation and policy only, with no
+   functions and no tests, applying the same third branch to the three surfaces that carry the broken
+   postcondition plus the contract doc and one `.autoharness/drift-ignore` line. Rejected
+   alternative for Unit 2: leaving the failed-step name as a duplicated string literal in two
+   packages. Rejected alternative for Unit 11: splitting it per file, which would allow an
+   intermediate state where policy and the Ship agent disagree about whether to `git restore`.
+6. **2-Hour Rule scenario heuristic.** Every unit is at three scenarios or fewer. No deviation.
+7. **Task count.** Twelve tasks at roughly two hours each is about twenty-four hours of
    human-equivalent effort, spread across at least two Ship sessions. Each task is individually
    atomic and the graph permits two parallel tracks. The twenty-task session stop condition is a
-   per-session limit, not a per-shipment limit.
+   per-session limit, not a per-shipment limit. The split of the original Unit 4 into Units 4 and 12
+   was made at PR review cycle 1 because the combined unit changed more than five functions and
+   breached the 2-hour heuristic on the riskiest change in the plan.
 
 ## Plan Hardening Signals
 
@@ -690,57 +1016,120 @@ Requires plan hardening: **yes**
 ### Guardrails carried into execution
 
 * Classification must operate on the source-captured `shipmentEventAppendError` only.
+* Classification precedence is **indeterminate first**: `IsWriteIndeterminate`, then
+  `IsWriteNotApplied`, then everything else as indeterminate. An error carrying both sentinels must
+  classify indeterminate and must never be compensated.
 * The indeterminate branch must never call `restoreShipArtifacts`.
-* The classification branch must sit **before** the `len(shipSnapshots)` guard.
-* Untagged append errors must compensate, never suppress rollback.
+* The classification branch must sit **before** the `len(shipSnapshots)` guard, and
+  `restoreRolledUpNonMemberFeatures` must be called only from inside the indeterminate branch - the
+  success-path call at `internal/core/shipment_lifecycle.go:536` and the outer fallback stay as they
+  are, preserving the 133.004-T ordering guarantee.
+* Only a **proven** not-applied outcome may compensate: the lock failure raised inside
+  `appendShipmentEventErr` before any writer call, or a writer error explicitly tagged
+  `blerrors.ErrWriteNotApplied`. Every other append error, including every untagged error, must be
+  treated as `indeterminate` and must suppress rollback. Compensating over a possibly-applied
+  append to an append-only log is the one outcome the `AppendEvent` contract explicitly forbids.
+* Every failure branch must return a `*blerrors.MutationPartialError` carrying `Class`,
+  `FailedStep`, and `CompensationState`, including the fully compensated one; a bare wrapped error
+  reaches MCP as an unclassified internal error and is unmeasurable.
+* Any joined restore failure must live inside `MutationPartialError.Cause`, never wrapped around
+  the `MutationPartialError`, because `internal/mcp/errors.go:116-118` renders only the extracted
+  partial error.
+* `appendShipmentEventErr` must pass the context returned by `LockItemLogCrossProcess` to
+  `AppendEvent` and to the index call. Passing the caller's original context re-enters a
+  non-reentrant, uncancellable `mutex.Lock()` (`internal/events/stream.go:125`, reached from
+  `:254-269`) and permanently deadlocks the ship goroutine while it holds the membership lock and
+  every artifact lock.
+* The fail-closed branch must be gated on the governed path (`newStatus == ShipmentShipped &&
+  !topLevel`), never on the status alone.
+* The rollback loop in `restoreShipArtifacts` must not gain an early `return`; per-item failures are
+  accumulated and promoted after the loop, and any `defer`-based unlock must nil-guard the unlock
+  returned by `LockItemLogCrossProcess` (`internal/events/stream.go:218`, `:226`).
+* The compensation retry budget is per call and must carry a wall-clock bound as well as an attempt
+  count, and its doc comment must record that the in-process acquisition inside
+  `LockItemLogCrossProcess` is itself unbounded.
+* No unit may claim, test, or rely on detection of a short or partial write. `AppendEvent` returns
+  only `error` and `appendFast` discards the `fmt.Fprintf` byte count, so the distinction is not
+  observable from `internal/core`.
+* No file under `internal/events/` may be modified. If a unit believes it needs a wider writer
+  contract, halt and return to Stage.
+* No harness may create lock contention by calling `events.LockItemLog` or
+  `events.LockItemLogCrossProcess`; contention is armed by planting a directory at the lock sidecar
+  path from inside the seam callback, and every scenario carries a watchdog.
 * The append must never be retried.
-* A short or partial write from the non-durable append path must be classified
-  `ErrWriteIndeterminate`, never `not-applied`. Compensating over a partially written append-only
-  log is the one outcome the `AppendEvent` contract explicitly forbids.
-* A `partially-compensated` result must never be reported as `Retryable: true`.
+* A `partially-compensated` result must never be reported as `Retryable: true`; retryability is
+  `Class == "not-applied" && CompensationState == "compensated"`.
 * The item-log lock must not be hoisted out of `appendShipmentEventErr`; the ownership markers in
   `ctx` must never outlive the lock that set them.
 * `releaseArtifactLocks` must be registered before the non-member-feature fallback so it unwinds
-  after it. The fallback must remain reachable.
+  after it. The fallback must remain reachable, and the regression that proves the swap must
+  discriminate the ordering rather than assert an outcome that holds either way.
 * Compensation must never silently skip an item; an un-restored item must surface as
   `CompensationState: "partially-compensated"` naming the ID.
-* The doctor audit must be proven non-mutating by recursive byte comparison.
+* The doctor audit must be proven non-mutating by recursive byte comparison, and an unreadable item
+  log must be reported explicitly rather than counted as a missing event.
 * **`.backlogit/reconcile/` sidecar: decided NO.** The indeterminate branch returns the
   `MutationPartialError` only. Deliberation `059-DL` deferred this question to plan hardening; the
-  answer is that the plan does not write to a path it otherwise never touches.
+  answer is that the typed error plus the doctor audit already carry every fact a sidecar would, so
+  a second, non-authoritative copy of reconciliation state is not worth writing. (The
+  `shipment-reconcile` skill does write its own report under `.backlogit/reconcile/`; this plan does
+  not add to it.)
 * Lock-order invariant, stated honestly for the code as it exists: **no blocking artifact-lock
-  acquisition while an item-log lock is held.** `lockArtifactMutation` uses non-blocking `TryLock`
-  (`internal/core/task_lock.go:67-80`) and its busy error must surface as a retryable refusal, not a
-  hang. Any path holding two or more item-log locks simultaneously must take them in `sort.Strings`
-  order, as `lockAdoptionEventLogs` (`internal/core/shipment_lifecycle.go:1041-1058`) already does.
+  acquisition while an item-log lock is held.** The singular `lockArtifactMutation` uses
+  non-blocking `TryLock` (`internal/core/shipment.go:371-380`, `internal/core/task_lock.go:67-80`)
+  and its busy error must surface as a retryable refusal, not a hang; the plural
+  `lockArtifactMutations` does block for a bounded period, and the invariant holds today only
+  because every path that takes both - `ShipShipment` (`:468` before `:478`/`:509`) and `AdoptItem`
+  - takes artifact locks first. Any path holding two or more item-log locks simultaneously must
+  take them in `sort.Strings` order, as `lockAdoptionEventLogs`
+  (`internal/core/shipment_lifecycle.go:1047-1068`) already does.
 
-### Failure-injection matrix required before Unit 4 is considered green
+### Failure-injection matrix required before Unit 12 is considered green
 
-Every row is injected through the `ws.shipmentEventAppend` seam, so each fault lands at exactly one
-call site.
+Rows 1 through 5 are injected through the `ws.shipmentEventAppend` seam, so each fault lands at
+exactly one call site. Row 3 additionally arms a compensation-side failure from inside that seam
+callback, because the seam cannot reach the compensation path on its own.
 
-| Injected seam error | Expected class | Expected outcome | Owning scenario |
+| Injected fault | Expected class | Expected outcome | Owning scenario |
 |---|---|---|---|
-| `nil` (no injection) | none | Shipped event present and ordered before archival | Unit 2, scenario 1 |
-| wraps `blerrors.ErrWriteNotApplied` | not-applied | Compensate to `active`; nothing archived; release scope not completed | Unit 2, scenario 2a |
-| bare `errors.New` (untagged) | not-applied | Identical to the tagged not-applied case | Unit 2, scenario 2b |
-| `ErrWriteNotApplied` plus one un-restorable release-scope item | not-applied, partial | `CompensationState: "partially-compensated"` naming the un-restored ID | Unit 2, scenario 2c |
-| wraps `blerrors.ErrWriteIndeterminate` | indeterminate | No release-scope rollback; covering feature restored in-lock and re-read from disk; archival halted; `MutationPartialError` returned | Unit 2, scenario 3 |
+| `nil` (no injection) | none | Shipped event present and ordered before archival | Unit 2, colocated test 3 |
+| wraps `blerrors.ErrWriteNotApplied` | not-applied, compensated | Compensate to `active`; nothing archived; release scope not completed; `MutationPartialError` with `CompensationState: "compensated"` | Unit 1, scenario 1 |
+| `ErrWriteNotApplied` plus one release-scope item whose lock sidecar is a directory, armed inside the seam callback | not-applied, partial | `CompensationState: "partially-compensated"` naming the un-restored ID | Unit 1, scenario 3 |
+| wraps `blerrors.ErrWriteIndeterminate` | indeterminate | No release-scope rollback; covering feature restored in-lock and re-read from disk; archival halted; `MutationPartialError` returned | Unit 1, scenario 2a |
+| bare `errors.New` (untagged, pre-write status unproven), and an error wrapping both sentinels | indeterminate | Identical to the tagged indeterminate case | Unit 1, scenario 2b and 2c |
+| lock failure and sentinel passthrough at the appender itself, with the seam unset | not-applied / passthrough | Lock failure tagged `not-applied`; durable sentinels survive unwrapping; untagged stays untagged | Unit 2, colocated tests 1 and 2 |
 | failure in `completeReleaseScope` (unrelated, pre-append) | not an append error | Existing unconditional rollback unchanged | existing `TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails` |
-| post-closure `archiveItems` failure | not an append error | Non-member covering feature still restored (defer-swap regression) | Unit 4 verification |
+| post-closure `archiveItems` failure, with the defer order observed | not an append error | Non-member covering feature restored **and** the fallback observed to run before the lock release | Unit 12, colocated test 1 |
+
+Short or partial writes appear in no row, deliberately: they are indistinguishable from any other
+untagged writer error at this boundary and are therefore already covered by the untagged row.
 
 ### Stop conditions
 
-* If Unit 2's scenarios cannot be made to fail on the Unit 1 tree **for the right reason** - the
-  failure must surface from the ship path, not from `"snapshot release scope"` - halt.
+* If Unit 1's scenarios cannot be made to fail on the harness tree, halt. On that tree the ship
+  returns `nil`, so each scenario must fail on its "expected an error" assertion; from Unit 3 onward
+  the failure must additionally surface from the ship path, not from `"snapshot release scope"`.
+* If any Unit 1 or Unit 5 scenario **passes** on its harness tree, halt: the declarations carried
+  behavior they were not supposed to carry, and the `harness-ready` label cannot be applied.
+* If a harness scenario hangs rather than fails, halt: the item-log lock was taken by the test
+  instead of armed at the sidecar path, or the appender dropped its locked context.
+* If Unit 2 turns Unit 1 scenario 1 or 2 green, halt: the fail-closed routing was flipped a unit
+  early and the red state was consumed without its own verification step.
 * If Unit 3 or Unit 4 turns any of `TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails`,
   `TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup`,
   `TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt`, or
   `TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched` red, halt and re-derive the
   classification boundary rather than editing the existing test.
+* If Unit 3 turns any exported-path shipped-transition test red
+  (`internal/core/shipment_test.go:176`, `:960`, `:1214`, `internal/core/queue_test.go:369`), halt:
+  the gate leaked off the governed path onto `MoveShipmentStatus`.
+* If `143.003-T` would merge without `143.012-T`, halt. Between the fail-closed routing and the
+  class-aware rollback the existing unconditional rollback compensates over an unproven append,
+  which the guardrails forbid; the two must ship in the same pull request and be reverted together.
 * If `internal/mcp/error_mapping_test.go:200` goes red in Unit 10, halt: the guidance change has
   leaked out of the shipped-event producer.
-* If any unit requires touching a path outside the freeze-scope list, halt and return to Stage.
+* If any unit requires touching a path outside the freeze-scope list - `internal/events/` above
+  all - halt and return to Stage.
 
 ## Release Observability
 
@@ -756,16 +1145,16 @@ call site.
 | SLI 2 query | Same command; cross-check with `backlogit query "SELECT id, status FROM items WHERE artifact_type='shipment' AND status='shipped'"` |
 | SLI 2 baseline | `0` |
 | SLI 2 alert threshold | Any value greater than `0` persisting past one completed ship cycle |
-| SLI 3 | Count of indeterminate shipped-event append failures |
-| SLI 3 query | Grep session and CI logs for the literal `slog` message `shipment shipped-event append failed` with `class=indeterminate` and `failed_step=shipped-event-append` (shape fixed by Unit 4.8); corroborate with MCP `mutation_partial` results carrying the same `failed_step` |
+| SLI 3 | Count of indeterminate shipped-event append failures. Under the classification contract this class also absorbs every untagged append failure, so it is expected to be the **dominant** failure signal in the default non-durable configuration |
+| SLI 3 query | Grep session and CI logs for the literal `slog` message `shipment shipped-event append failed` with `class=indeterminate` and `failed_step=shipped-event-append` (shape fixed by Unit 4.6); corroborate with MCP `mutation_partial` results carrying the same `failed_step` |
 | SLI 3 baseline | `0` |
-| SLI 3 alert threshold | Any occurrence; each is an operator-actionable reconciliation event |
-| SLI 4 | Count of ship refusals caused by the new gate |
+| SLI 3 alert threshold | Any occurrence; each is an operator-actionable reconciliation event, and each is expected to be accompanied by a matching SLI 2 finding until it is reconciled |
+| SLI 4 | Count of compensated ship refusals - the proven not-applied class, in practice an item-log lock failure or, where `Config.DurableWrites` is enabled, a tagged pre-write failure |
 | SLI 4 query | The same `slog` message with `class=not-applied`, counted over the observation window |
 | SLI 4 baseline | `0` |
-| SLI 4 alert threshold | Any occurrence whose `slog` record carries no underlying `os` error cause |
+| SLI 4 alert threshold | Any occurrence whose `slog` record carries no underlying `os` or lock error in its `cause` attribute. Expect SLI 4 and SLI 5 to correlate: the dominant not-applied trigger is item-log lock contention, and compensation re-acquires the same locks |
 | SLI 5 | Count of partially-compensated ship failures |
-| SLI 5 query | MCP `mutation_partial` JSON results carrying `compensation_state: "partially-compensated"`, and the Unit 4.8 `slog` record, which MUST include `compensation_state` and the un-restored IDs. `MutationPartialError.Error()` does not render `CompensationState`, so plain error text is not a measurement surface |
+| SLI 5 query | MCP `mutation_partial` JSON results carrying `compensation_state: "partially-compensated"`, and the Unit 4.6 `slog` record, which MUST include `compensation_state` and the un-restored IDs. `MutationPartialError.Error()` does not render `CompensationState`, so plain error text is not a measurement surface |
 | SLI 5 baseline | `0` |
 | SLI 5 alert threshold | Any occurrence; the named un-restored IDs must be reconciled before the next ship |
 | Owner | Ship execution agent during the implementation cycle; repository operator `@softwaresalt` thereafter |
@@ -795,9 +1184,10 @@ executed by the owner during the window above and carried into the operational-c
 
 | Trigger | Metric and threshold | Action |
 |---|---|---|
-| Ship refuses without a real append failure | SLI 4 greater than `0` with no underlying `os` error in the `slog` record | Revert the merge; re-open `143.003-T` and `143.004-T` |
+| Ship refuses without a real append failure | SLI 4 greater than `0` with no underlying `os` or lock error in the `slog` record | Revert the merge; re-open `143.003-T`, `143.004-T`, and `143.012-T` together - `143.003-T` must never be left in `main` without its classifier |
 | Indeterminate residue accumulates | SLI 2 greater than `0` across more than one ship cycle, or SLI 3 greater than `1` in the window | Halt further ships, run the audit, reconcile per the named-limitation procedure, then decide revert versus forward fix |
-| Compensation reports partial | SLI 5 greater than `0` | Reconcile the named IDs immediately; if it recurs, revert `143.004-T` |
+| The conservative classification proves too costly in practice | SLI 3 occurrences whose underlying cause is repeatedly a definitively pre-write `open` or `mkdir` failure | Do **not** loosen the classification. Enable `Config.DurableWrites` so those failures arrive tagged `not-applied` and compensate, or re-open the writer-contract question as a new Stage item; loosening to untagged-compensates is forbidden by the Plan Hardening guardrails |
+| Compensation reports partial | SLI 5 greater than `0` | Reconcile the named IDs immediately; if it recurs, revert `143.003-T`, `143.004-T`, and `143.012-T` together |
 | The audit mutates JSONL | Any non-zero byte delta under `.backlogit/logs/` (recursive `**/*.jsonl` compare) attributable to a doctor run | Immediate revert; this violates the report-only contract |
 | Existing ship rollback regression | Any of the four named existing ship tests fails post-merge | Immediate revert |
 | Unrelated recovery guidance changed | `internal/mcp/error_mapping_test.go` red, or a `track_commit` or checkpoint caller reports doctor guidance naming the shipped-event flag | Revert `143.010-T` only |
@@ -805,7 +1195,7 @@ executed by the owner during the window above and carried into the operational-c
 ### Rollback procedure
 
 1. Identify the merge commit for the PR landing the shipment allocated at Stage harvest for feature
-   `143-F` (tasks `143.001-T` through `143.011-T`). The concrete shipment ID is recorded in the
+   `143-F` (tasks `143.001-T` through `143.012-T`). The concrete shipment ID is recorded in the
    closure artifact.
 2. `git revert -m 1 <merge-sha>` on a fresh branch from `main`.
 3. Run `go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .`, and `make docs`.
@@ -825,8 +1215,8 @@ executed by the owner during the window above and carried into the operational-c
   * `backlogit_ship_shipment` MCP error result recovery guidance
   * Workflow policy P-007, the `shipment-reconcile` skill post-mode gate, and the Ship agent Step 6
 * Verification steps
-  * Execute the full seam-injected failure matrix, including the partially-compensated row and the
-    post-closure `archiveItems` defer-swap regression
+  * Execute the full failure matrix, including the partially-compensated row, the appender-level
+    rows with the seam unset, and the ordering-discriminating defer-swap regression
   * Run `backlogit doctor --check-shipped-event-completeness` against the real workspace and confirm
     both finding types render with byte-identical `.backlogit/logs/` before and after
   * Confirm CLI and MCP produce identical findings for a shared fixture, from
@@ -843,6 +1233,10 @@ executed by the owner during the window above and carried into the operational-c
 * Named closure follow-ups
   * Stash `47B48DB0` remains active as the prevention complement and now also carries the
     deliberation's `UpdateArtifactWithGate` minimum floor
+  * Whether `internal/events` should expose a richer append outcome (for example a written-byte
+    count or an explicit applied/not-applied result) so unproven-pre-write failures can be narrowed
+    below the conservative `indeterminate` default. Deliberately out of scope here: it changes a
+    shared primitive used by every event producer
   * A supported reconciliation transition out of `shipped`
   * Durability of the item-level events inside `ShipShipment` (`status_changed`,
     `returned_to_backlog`, parent cascades), which no current item owns
@@ -853,13 +1247,13 @@ executed by the owner during the window above and carried into the operational-c
 
 ## Plan Review
 
-<!-- plan-review-attempt: 3 -->
+<!-- plan-review-attempt: 4 -->
 
 dispatch_mode: multi-agent-dispatch
 
 decision: PASS
 
-Three review cycles ran against this plan in a clean worktree at `3ec95ee3`. Personas dispatched:
+Four review cycles ran against this plan in a clean worktree at `3ec95ee3`. Personas dispatched:
 Architecture Strategist, Scope Boundary Auditor, Constitution Reviewer, Concurrency Reviewer,
 Schema-CLI-Docs Coupling Reviewer.
 
@@ -870,6 +1264,41 @@ Schema-CLI-Docs Coupling Reviewer.
 | 1 | FAIL | P0=3, P1=16 across five personas | Rewritten: 7 units to 10; both core tracks split into harness plus implementation; safety-mode declaration added; policy and contract coherence brought in scope |
 | 2 | FAIL | P0=2, P1=12 | The item-log lock hoist and the append-site retry, both introduced in cycle 1, were reviewed and DELETED; the defer-nil idea was replaced with a defer-registration swap; scaffold units added ahead of both harnesses; all source anchors regenerated |
 | 3 | PASS | P0=0, P1=0 from the two personas whose blocking findings drove the cycle-2 revision | Remaining adversarial findings remediated in place |
+| 4 | FAIL then PASS | P0=0, P1=11 across five personas on revision 4 | Every P1 remediated in revision 5, recorded below |
+
+### Cycle 4 records (revision 4, after the PR #366 Copilot review rewrite)
+
+Five personas were dispatched against the revision produced in response to the nine PR #366
+comments. All five verified their claims against the worktree sources rather than against the plan's
+own citations.
+
+| Persona | Verdict | P0 | P1 | Blocking findings |
+|---|---|---|---|---|
+| Constitution Reviewer | FAIL | 0 | 3 | Appender contract untested; Unit 4 breached the 2-hour rule at more than five functions; the defer-swap regression passed with or without the swap |
+| Architecture Strategist | FAIL | 0 | 2 | The appender's locked context was never required to reach `AppendEvent`; `143.003-T` without `143.004-T` compensates over an unproven append, and the rollback table prescribed exactly that revert |
+| Concurrency Reviewer | FAIL | 0 | 3 | Same locked-context hazard; an early `return` in the rollback loop would leak the process-global item-log mutex because `unlockItemLog()` is not deferred; the partial-compensation scenario could not be injected through the seam and would hang if the test took the lock itself |
+| Schema-CLI-Docs Coupling Reviewer | FAIL | 0 | 2 | Harness tasks shipped a passing scenario, which P-002 / P-004 and `harness-architect` Step 5.2 reject for the `harness-ready` label; Unit 11 did not amend the two contract-doc sections that would then contradict the new classification |
+| Scope Boundary Auditor | FAIL | 0 | 1 | The fail-closed gate sat on the shared transition function reachable from the exported `MoveShipmentStatus`, so prevention exceeded the declared path-scoped guarantee without any compensating half |
+
+Remediation applied in revision 5, each traceable to a unit:
+
+* Locked-context propagation is now a Unit 2 change, a guardrail, and a stop condition.
+* The gate is scoped to `newStatus == ShipmentShipped && !topLevel`, with the caller enumeration
+  added to the Baseline Verification table and the exported-path tests named as the boundary check.
+* Unit 4 was split: Unit 4 classifies and halts; new Unit 12 (`143.012-T`) owns honest compensation,
+  the defer swap, and the flag truth table, with an ordering-discriminating regression.
+* The no-early-return rule and the nil-guarded deferred unlock are now explicit.
+* The partial-compensation scenario has a sanctioned injection mechanism (a directory at the lock
+  sidecar path, armed inside the seam callback) and a prohibition on the harness taking the lock.
+* Both always-green scenarios moved out of the harness tasks into the first implementation unit of
+  their track, so every harness scenario is red and the `harness-ready` gate is satisfiable.
+* The appender's own contract gained colocated tests in Unit 2, written first and observed failing.
+* Unit 11 now amends the contract doc's classification-precedence and failure-branch sections and
+  its closed `CompensationState` enumeration.
+* Classification precedence is indeterminate-first; every failure branch returns a
+  `MutationPartialError`; joined restore failures go inside `Cause`; `Retryable` requires
+  `compensated`.
+* Six drifted source anchors were corrected against the worktree.
 
 ### Cycle 3 records
 
@@ -891,9 +1320,10 @@ Schema-CLI-Docs Coupling Reviewer.
   the unit level; its scope-down recommendations (drop the transient `cli_only_flags` entry, defer
   the pre-existing registry drift and the repo-wide parity invariant) are adopted and recorded in
   the Requirements Trace as DEFERRED.
-* Constitution Reviewer (cycle 2) - its four cycle-1 P1s are addressed by the scaffold-plus-harness
-  splits on both core tracks, the three-scenario cap, the safety-mode declaration, and the six-entry
-  documented-deviations list.
+* Constitution Reviewer (cycle 2) - its four cycle-1 P1s were addressed by the two-track split, the
+  three-scenario cap, the safety-mode declaration, and the documented-deviations list. The
+  scaffold-before-harness shape it accepted at that time was later rejected at PR review cycle 1 and
+  replaced by the harness-with-minimal-declarations pattern recorded in deviation 3.
 
 Blocking findings outstanding: none.
 
@@ -905,16 +1335,36 @@ decision: PASS
 
 Full report: `docs/reviews/2026-08-17-shipment-shipped-event-audit-log-adversarial-review.md`
 
-Three independent reviewers on three different model families reviewed the third revision against
-the clean `3ec95ee3` worktree, with deliberately different emphases and without seeing each other's
-findings.
+Two adversarial panels have run, each with three independent reviewers on three different model
+families, against the clean `3ec95ee3` worktree, with deliberately different emphases and without
+seeing each other's findings. Panel 1 reviewed revision 3; panel 2 reviewed revision 4 alongside the
+cycle-4 plan-review personas.
+
+### Panel 1 (revision 3)
 
 | Confidence | Definition | Count | Disposition |
 |---|---|---|---|
 | HIGH | identified by all three reviewers | **0** | - |
-| MEDIUM | identified by two of three | 2 | Both fixed in this revision |
-| LOW | identified by one reviewer | 11 | 9 fixed, 2 rejected with recorded rationale |
+| MEDIUM | identified by two of three | 2 | Both fixed |
+| LOW | identified by one reviewer | 15 | 13 fixed, 2 rejected with recorded rationale |
 
-No HIGH-confidence P0 or P1 finding exists, so the adversarial gate is not blocked. Both
-MEDIUM-confidence findings were fixed rather than deferred. The two rejected LOW-confidence
-findings, and the reasons, are recorded in the report.
+### Panel 2 (revision 4)
+
+| Reviewer | Model family | Verdict | P0 | P1 |
+|---|---|---|---|---|
+| A | Anthropic (Tier 3) | PASS | 0 | 0 |
+| B | OpenAI (Tier 3) | FAIL | 0 | 8 |
+| C | Google (Tier 3) | PASS | 0 | 0 |
+
+| Confidence | Definition | Count | Disposition |
+|---|---|---|---|
+| HIGH | identified by all three reviewers | **0** | - |
+| MEDIUM | identified by two or more independent reviewers, counting the five plan-review personas | 5 | All fixed in revision 5 |
+| LOW | identified by one reviewer | 15 | 13 fixed, 2 accepted as declared risk |
+
+No HIGH-confidence P0 or P1 finding exists in either panel, so the adversarial gate is not blocked.
+Every MEDIUM finding was fixed rather than deferred. The two accepted risks - that the conservative
+classification will strand a shipment on a genuinely pre-write failure in the default non-durable
+configuration, and that SLI 4 and SLI 5 will correlate because compensation re-contends the lock
+whose failure triggered it - are recorded in the Risks table with their mitigations rather than
+silently absorbed.

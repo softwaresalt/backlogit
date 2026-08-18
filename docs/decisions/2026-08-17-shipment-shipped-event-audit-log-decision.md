@@ -40,18 +40,35 @@ staging attempt failed review three times largely because it blurred them.
 | No transition out of `shipped` is permitted | `isValidShipmentTransition` at `internal/core/shipment.go:713-722` |
 | `restoreShipArtifacts` silently skips an item whose log lock it cannot re-acquire | `internal/core/shipment_lifecycle.go:184-188` |
 | LIFO defer order runs the non-member covering-feature fallback **after** the artifact locks are released | registration at `:365` and `:375` |
+| `EventWriter.AppendEvent` returns only `error`, and the default non-durable `appendFast` path discards the `fmt.Fprintf` byte count | `internal/events/stream.go:243`, `:280-292` - a caller cannot tell a pre-write `open` failure from a short write |
+| The durable append path, when enabled, does tag both durability classes | `appendDurable` contract at `internal/events/stream.go:294-304` |
+| The in-process item-log lock is uncancellable; only the cross-process sidecar lock is bounded | `LockItemLog` `mutex.Lock()` at `internal/events/stream.go:125`; bounded path at `:40`, `:177` |
 
 ### B. What this decision plans to change
 
 * Introduce a per-workspace `shipmentEventAppend` seam and a shipment-scoped
-  `appendShipmentEventErr` that owns the item-log lock, tags a pre-append lock failure
-  `ErrWriteNotApplied`, and tags a short or partial write `ErrWriteIndeterminate`.
-* Route **only** the `active -> shipped` transition through it fail-closed. Claim and abandon keep
-  best-effort semantics.
-* Classify the captured append error per the precedence `MutationEnvelope` already uses: tagged
-  indeterminate suppresses rollback; everything else, including untagged plain errors, compensates.
+  `appendShipmentEventErr` that owns the item-log lock and tags **only what it can prove**: a
+  pre-write lock failure is tagged `ErrWriteNotApplied`; any writer error is wrapped with `%w` and
+  given no class of its own, so a durability sentinel the writer already attached survives and an
+  untagged error stays untagged.
+* Route **only** the `active -> shipped` transition through it fail-closed, and only on the governed
+  `ShipShipment` path: the gate is `newStatus == ShipmentShipped && !topLevel`, because
+  `ShipShipment` is the sole caller passing `topLevel=false` for that status
+  (`internal/core/shipment_lifecycle.go:509`) while the exported `MoveShipmentStatus` passes `true`
+  (`internal/core/shipment.go:115-117`). Gating on the status alone would make the exported entry
+  point fail closed with no compensating half. Claim and abandon keep best-effort semantics. Generic
+  update and archive producers are **not** gated; they are covered report-only by the audit.
+* Classify conservatively, indeterminate-first: tagged `ErrWriteIndeterminate` **and every
+  unclassified append error** suppress rollback and return a `MutationPartialError`; only a
+  **proven** not-applied outcome compensates, and an error carrying both sentinels classifies
+  indeterminate. Every failure branch returns a `MutationPartialError`, including the fully
+  compensated one, so the outcome is measurable rather than an opaque internal error. This deliberately inverts the untagged default in `MutationEnvelope`,
+  because the envelope's persist step routes through a primitive that tags both classes
+  (`internal/atomicfile/atomicfile.go:82-129`) while the default non-durable append path tags
+  nothing. The writer API is not expanded; `internal/events/` is out of scope.
 * Make compensation honest: an item that cannot be restored surfaces as
-  `CompensationState: "partially-compensated"` naming the un-restored IDs, never a silent skip.
+  `CompensationState: "partially-compensated"` naming the un-restored IDs, never a silent skip, and
+  the `CompensationState` doc comment is amended to admit that fourth value.
 * Correct the adjacent defer ordering so the non-member covering-feature fallback runs with the
   artifact locks genuinely held.
 * Add a report-only doctor audit emitting two distinct findings, `missing_shipped_event` and
@@ -69,7 +86,13 @@ staging attempt failed review three times largely because it blurred them.
 | Prevention: closing non-`ShipShipment` paths that can also produce `archived_status: shipped`, including the deliberation's minimum floor that `UpdateArtifactWithGate` must not drive a shipment to `shipped` bypassing the durable event | active stash `47B48DB0` |
 | A supported reconciliation transition out of `shipped` | named closure follow-up |
 | Durability of the item-level events inside `ShipShipment` (`status_changed`, `returned_to_backlog`, parent cascades) | named closure follow-up |
+| A richer append outcome from `internal/events` (byte count or explicit applied/not-applied result) that would let the ship path narrow unproven failures below `indeterminate` | named closure follow-up |
 | Reconciling the two pre-existing drifted registry doctor params and adding a repo-wide `params`-to-`InputSchema` parity assertion | named closure follow-up |
+
+The guarantee this decision buys is therefore **path-scoped**: on the governed `ShipShipment`
+archival path a shipment cannot reach `archived_status: shipped` unless the shipped event was
+durably appended, or archival was halted with a `MutationPartialError`. It is **not** a universal
+prevention claim, and no artifact derived from this record may state one.
 
 Detection ships now because historical residue already exists and the forward fix cannot repair it.
 Prevention waits because closing those paths is a different concern with a different blast radius,
@@ -85,15 +108,33 @@ and the report-only audit already flags residue regardless of which producer cre
 | D. Hoist the shipment item-log lock to the top of the locked closure | Rejected at review cycle 2: the ownership marker in `ctx` would outlive the lock, exposing the rollback log rewrite and the archival appends to lock-free execution, inverting the lock order against `lockArtifactMutations`, and holding a starving lock across two gate-broker evaluations |
 | E. Retry the append before classifying | Rejected at review cycle 2: an append is explicitly not safe to blindly retry, and retrying risks a duplicate shipped event in the log this change exists to protect |
 | F. Keep the append best-effort and only warn more loudly | Rejected at adversarial review: this is the status quo the bug report is about and it contradicts the stash's explicit "archival must not continue without that durable event" |
+| G. Expand `EventWriter.AppendEvent` to report a write byte count or an explicit applied/not-applied outcome, so the ship path could compensate on a proven-not-applied non-durable failure | Rejected at PR review cycle 1: it changes a shared primitive used by every event producer and both append paths to recover a distinction the fail-closed branch does not need. The conservative classification achieves the safety property with no writer change; narrowing the class is a named closure follow-up |
+| H. Keep the earlier compromise - classify untagged append errors `not-applied` and promise to tag short writes `ErrWriteIndeterminate` | Rejected at PR review cycle 1 as unimplementable: `AppendEvent` returns only `error` and `appendFast` discards the byte count (`internal/events/stream.go:243`, `:290-291`), so nothing in `internal/core` can observe a short write. The promise would have shipped as an untested, unenforceable claim |
+
+## Chosen classification contract
+
+| Observed append outcome | Pre-write status | Class | Rollback |
+|---|---|---|---|
+| Lock acquisition fails inside `appendShipmentEventErr`, before any writer call | proven not-applied | `not-applied` | compensate |
+| Writer error explicitly tagged `blerrors.ErrWriteNotApplied` | proven not-applied | `not-applied` | compensate |
+| Writer error explicitly tagged `blerrors.ErrWriteIndeterminate` | proven unknown | `indeterminate` | suppress |
+| Any other append error, including every untagged error from the default non-durable path | not proven | `indeterminate` | suppress |
 
 ## Accepted consequences
 
 * A ship that previously succeeded can now refuse. That is the intent, scoped to the shipped
-  transition only.
+  transition on the governed `ShipShipment` path only.
+* Because pre-write status is unobservable on the default non-durable append path, a genuinely
+  not-applied `open` failure is classified `indeterminate`. The shipment is then left `shipped`
+  and unarchived and needs the documented manual reconciliation rather than an automatic revert.
+  This is the accepted cost of never compensating over a possibly-applied append; enabling
+  `Config.DurableWrites` narrows it, because that path tags `not-applied` explicitly.
 * A new end state exists - `shipped` and unarchived - with **no automated forward transition**. This
   is declared, monitored by SLI 2 and SLI 3, and has a documented manual recovery procedure.
+* The guarantee is path-scoped. Generic update and archive producers can still create the residue
+  until stash `47B48DB0` lands; they are detected, not prevented.
 * Historical residue is reported, never repaired. The audit never synthesizes a missing event.
-* Eleven tasks, roughly twenty-two hours. The decomposition was independently judged proportionate
+* Twelve tasks, roughly twenty-four hours. The decomposition was independently judged proportionate
   by the Architecture Strategist and the Scope Boundary Auditor after two prior review cycles.
 
 ## Gate record
@@ -103,14 +144,17 @@ and the report-only audit already flags residue regardless of which producer cre
 | Plan review, cycle 1 | FAIL - P0=3, P1=16 across five personas |
 | Plan review, cycle 2 | FAIL - P0=2, P1=12 |
 | Plan review, cycle 3 | **PASS** - P0=0, P1=0 |
-| Adversarial multi-model review, 3 reviewers on 3 model families | **PASS** - HIGH-confidence P0/P1 = 0; 2 MEDIUM findings fixed; 11 of 13 LOW findings fixed, 2 rejected with rationale |
+| Adversarial multi-model review, 3 reviewers on 3 model families | **PASS** - HIGH-confidence P0/P1 = 0; 2 MEDIUM findings fixed; of 15 LOW findings, 13 fixed and 2 rejected with rationale |
+| PR #366 Copilot review, cycle 1 | 9 comments, all accepted; revision 4 replaced the short-write promise with the conservative classification contract, moved both core tracks to harness-first ownership, corrected the lock-bound and review-count claims, reconciled `059-DL`, and narrowed the feature guarantee to the governed path |
+| Plan review, cycle 4 (revision 4) | FAIL - P0=0, P1=11 across five personas; all remediated in revision 5: locked-context propagation, governed-path gating, the Unit 4 split into `143.004-T` and `143.012-T`, the no-early-return rollback rule, a sanctioned partial-compensation injection mechanism, all-red harness scenarios, colocated appender tests, and the contract-doc carve-out |
+| Adversarial review, panel 2 (revision 4) | **PASS** - HIGH-confidence P0/P1 = 0 across three model families (A PASS, B FAIL with 8 P1s, C PASS); 5 MEDIUM findings fixed, 2 LOW findings accepted as declared risk |
 
 ## Superseded lesson
 
 The prior staging attempt tripped a three-cycle circuit breaker. The cause was not reviewer
 disagreement; it was that the plan asserted a baseline the committed tree did not contain - most
 importantly a shipment-scoped append seam and an error-returning shipped path that do not exist on
-`origin/main`. Two durable lessons carried into this record:
+`origin/main`. Four durable lessons carried into this record:
 
 1. Baseline claims must be re-derived in a clean worktree at a named SHA, and the anchors must be
    regenerated mechanically rather than transcribed. Both cycle-1 and cycle-2 reviews found
@@ -118,6 +162,15 @@ importantly a shipment-scoped append seam and an error-returning shipped path th
 2. Red-before-green must be expressed as a dependency edge, not as prose. The prior plan gave the
    production seam to the first task and the failing tests to the third, which inverted the
    constitutional order while reading as if it complied.
+3. A "purely additive scaffold" task ahead of a harness is still production before test. PR review
+   cycle 1 caught the second-order version of lesson 2: the scaffold units were inert, but they
+   changed production files - including a call site - before any failing test existed. The correct
+   shape is a harness task that carries the declarations its own failing test needs to compile, which
+   is what `.github/skills/harness-architect/SKILL.md` Step 4.3 already prescribes.
+4. A plan may not promise a distinction the code cannot observe. The earlier revision required
+   classifying short and partial writes as indeterminate, but `AppendEvent` returns only `error` and
+   `appendFast` discards its byte count. The rule that replaced it - only a proven pre-write failure
+   may compensate - is enforceable at the boundary the plan actually controls.
 
 ## References
 

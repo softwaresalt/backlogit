@@ -54,18 +54,23 @@ fresh replan from a clean baseline with corrected test-first ownership.
 ## Corrected test-first ownership
 
 The operator's central correction was that the prior decomposition inverted the constitutional
-red-before-green order. The corrected graph makes it structural on **both** tracks, with an additive
-scaffold in front of each harness so no harness task carries production code and no pair deadlocks on
-compilation:
+red-before-green order. PR review cycle 1 on PR #366 found the first fix was still inverted at
+second order: each track opened with a "purely additive scaffold" task that changed production files
+before any failing test existed, and one of those scaffolds also changed the shipped call site. The
+corrected graph makes red-before-green structural on **both** tracks with no scaffold task at all -
+each track opens with its RED harness, and the harness task carries only the declarations its own
+failing test needs to compile:
 
 ```text
-Durability: 143.001-T (seam scaffold) -> 143.002-T (RED harness) -> 143.003-T (routing) -> 143.004-T (rollback)
-Detection:  143.005-T (doctor scaffold) -> 143.006-T (RED harness) -> 143.007-T (doctor audit)
+Durability: 143.001-T (RED harness + seam declaration) -> 143.002-T (appender, dispatcher, boundary type, constant) -> 143.003-T (fail-closed routing) -> 143.004-T (class-aware rollback)
+Detection:  143.005-T (RED harness + finding-type and option declarations) -> 143.006-T (missing_shipped_event + archived_status plumbing) -> 143.007-T (shipped_unarchived_residue)
 Surfaces:   143.008-T (CLI) -> 143.009-T (MCP) -> 143.010-T (recovery guidance)
 Coherence:  143.011-T (contract doc, P-007, reconcile skill, Ship agent, drift-ignore)
 ```
 
-Fifteen `blocks` edges, acyclic, two roots (`143.001-T`, `143.005-T`), one sink (`143.011-T`).
+Fifteen `blocks` edges, acyclic, two roots (`143.001-T`, `143.005-T`), one sink (`143.011-T`). The
+edge set did not change between the original harvest and the cycle-1 correction; only the content
+each task owns did.
 
 ## Decisions and rationale
 
@@ -73,11 +78,15 @@ Fifteen `blocks` edges, acyclic, two roots (`143.001-T`, `143.005-T`), one sink 
   `archived_status: shipped` and no shipped event, and `shipped_unarchived_residue` for a shipment
   that is `shipped` but unarchived. Different causes, different operator responses, and the second is
   residue this plan itself creates.
-* **Untagged append errors compensate**, matching the precedence `MutationEnvelope` already uses
-  (`internal/core/mutation_envelope.go:25-30`). Treating them as indeterminate would strand shipments
-  in the default non-durable configuration.
+* **Untagged append errors are indeterminate, not compensatable.** Corrected at PR review cycle 1.
+  The original harvest matched the untagged default in `MutationEnvelope`
+  (`internal/core/mutation_envelope.go:25-30`), but that default is only safe where the write
+  primitive tags both classes. `EventWriter.AppendEvent` returns just `error` and `appendFast`
+  discards the `fmt.Fprintf` byte count (`internal/events/stream.go:243`, `:290-291`), so pre-write
+  status is unobservable and only a proven not-applied outcome may compensate.
 * **Detection ships now, prevention is deferred** to active stash `47B48DB0`, which also absorbs the
-  deliberation's `UpdateArtifactWithGate` minimum floor.
+  deliberation's `UpdateArtifactWithGate` minimum floor. The guarantee is therefore path-scoped to
+  the governed `ShipShipment` archival path and must not be written as universal prevention.
 
 ## Designs proposed then rejected during review
 
@@ -107,7 +116,8 @@ These are the most valuable artifacts of the session: each was proposed by me an
 | Plan review cycle 1 | FAIL - P0=3, P1=16 across five personas |
 | Plan review cycle 2 | FAIL - P0=2, P1=12 |
 | Plan review cycle 3 | **PASS** - Concurrency P0=0 P1=0; Coupling P0=0 P1=0 |
-| Adversarial review, 3 models on 3 families | **PASS** - HIGH-confidence P0/P1 = 0; 2 MEDIUM fixed; 11 of 13 LOW fixed; 2 rejected with rationale |
+| Adversarial review, 3 models on 3 families | **PASS** - HIGH-confidence P0/P1 = 0; 2 MEDIUM fixed; of 15 LOW findings, 13 fixed and 2 rejected with rationale |
+| PR #366 Copilot review, cycle 1 | 9 comments, all accepted; see `docs/memory/2026-08-17/stage-pr366-review-cycle1-memory.md` |
 
 ## Validation performed
 
