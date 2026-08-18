@@ -154,6 +154,32 @@ If the impl-plan output does not contain a `Requires plan hardening` conclusion,
 4. Proceed to the commit step only after verification passes
 5. If restoration fails, halt and prompt the operator. Broadcast a P-005 violation event.
 
+**Third branch — halted archival is not lost archives (143-F)**: The postcondition above assumes
+`backlogit_ship_shipment` reached its archival step. It no longer always does. When
+`backlogit_ship_shipment` returns `mutation_partial` with `classification: indeterminate` and
+`failed_step: shipped-event-append`, the governed ship path deliberately halted BEFORE the archive
+collector ran, because the shipped-event append outcome could not be proven. Missing archive files
+in that case are the intended output, not a lost-file quirk.
+
+In that case:
+
+1. Do **not** run `git restore .backlogit/archive/`. There is nothing to restore, and running it
+   would mask the reconciliation signal.
+2. Run the shipped-event reconciliation audit: `backlogit doctor --check-shipped-event-completeness`
+   (or `backlogit_doctor` with `check_shipped_event_completeness`).
+3. Follow the named-limitation procedure: read `.backlogit/logs/{shipment-id}.jsonl` to determine
+   whether the `shipment_status_changed: shipped` event actually landed. If it landed, complete
+   archival for the shipment **and** every stranded release-scope item the finding enumerates, then
+   re-run the audit to confirm the finding clears. If it did not land, the audit-log gap is
+   permanent — record it and **never synthesize the event**.
+4. There is no supported forward transition out of `shipped`. Treat the shipment as requiring
+   operator reconciliation rather than an automated retry.
+
+A `classification: not-applied` result with `compensation_state: compensated` reverted the ship
+cleanly and is safe to retry. A `compensation_state: partially-compensated` result names the
+release-scope items compensation could not restore; reconcile those IDs before retrying, and note
+the audit may report clean while they remain torn.
+
 ---
 
 ## P-008: Markdown Conformance
