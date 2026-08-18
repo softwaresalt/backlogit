@@ -202,9 +202,15 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 	}
 
 	slog.InfoContext(ctx, "shipment status changed", "shipment_id", shipmentID, "new_status", newStatus)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_status_changed", map[string]any{
+	// 143.002-T: the shipment's own status event now flows through the
+	// shipment-scoped, error-returning appender so the outcome is routable and
+	// classifiable. Semantics are unchanged in this unit: the error is still
+	// only warned about. 143.003-T gates the governed shipped transition on it.
+	if appendErr := ws.appendShipmentEvent(ctx, shipmentID, "shipment_status_changed", map[string]any{
 		"status": string(newStatus),
-	})
+	}); appendErr != nil {
+		slog.WarnContext(ctx, "append shipment status event", "shipment_id", shipmentID, "new_status", newStatus, "error", appendErr)
+	}
 
 	// Fire post-move-shipment-status hooks.
 	if ws.HookRunner != nil {
