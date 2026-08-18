@@ -152,14 +152,42 @@ func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcpli
 		CompletedSteps:    append([]string(nil), err.Completed...),
 		FailedStep:        err.FailedStep,
 		CompensationState: err.CompensationState,
-		Retryable:         err.Class == "not-applied",
-		Recovery:          mutationPartialRecovery(err.Class),
+		// 143.010-T: a partially-compensated result must never advertise itself
+		// as safe to retry while release-scope items remain un-restored.
+		Retryable: err.Class == "not-applied" && err.CompensationState == "compensated",
+		Recovery:  mutationPartialRecoveryFor(err.Class, err.FailedStep, err.CompensationState),
 	}
 	data, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {
 		return InternalError(fmt.Sprintf("marshal mutation partial response: %v", marshalErr))
 	}
 	return mcplib.NewToolResultError(string(data))
+}
+
+// mutationPartialRecoveryFor selects recovery guidance by PRODUCER first and
+// class second.
+//
+// mutationPartialRecovery is keyed on class only and is shared by three
+// producers (domainError, handleTrackCommit, checkpointDispositionError), so
+// repointing its "indeterminate" case at the shipped-event audit would
+// mis-advise all three. The shipped-event branch is therefore selected on
+// FailedStep, leaving the class-only default text untouched for every other
+// producer.
+func mutationPartialRecoveryFor(classification, failedStep, compensationState string) string {
+	if failedStep != corerrors.StepShippedEventAppend {
+		return mutationPartialRecovery(classification)
+	}
+	const audit = "run the shipped-event reconciliation audit (MCP: backlogit_doctor with check_shipped_event_completeness; CLI: backlogit doctor --check-shipped-event-completeness)"
+	switch compensationState {
+	case "compensated":
+		return "safe to retry the ship; compensation restored the release scope. " + audit + " to confirm the clean state"
+	case "partially-compensated":
+		return "do not retry the ship yet; compensation could not restore every release-scope item and the un-restored IDs named in this message must be reconciled first. " + audit +
+			" -- note it may report clean while those items remain torn, so verify each named ID directly. Reconcile before archiving"
+	default:
+		return "do not retry the ship; the shipped-event append outcome is unknown, so the shipment is left shipped and unarchived. " + audit +
+			", read .backlogit/logs/{shipment-id}.jsonl to determine whether the shipped event actually landed, and never synthesize it. Reconcile before archiving"
+	}
 }
 
 func mutationPartialRecovery(classification string) string {
