@@ -278,3 +278,107 @@ func TestDoctorCommand_CheckWorkspaceRootConflictFlag(t *testing.T) {
 	assert.Contains(t, buf.String(), ".backlog")
 	assert.Contains(t, buf.String(), ".backlogit")
 }
+
+// 143.008-T (Unit 8): the --check-shipped-event-completeness flag enables the
+// report-only audit and surfaces both finding types. Defaults are unchanged
+// when the flag is absent, and the audit is exit-code neutral.
+//
+// These scenarios were written and observed failing before the flag was wired:
+// cobra rejected the unknown flag with "unknown flag:
+// --check-shipped-event-completeness".
+func seedShippedEventFixture(t *testing.T, root string) {
+	t.Helper()
+	queue := filepath.Join(root, ".backlogit", "queue")
+	archive := filepath.Join(root, ".backlogit", "archive")
+	logs := filepath.Join(root, ".backlogit", "logs")
+	require.NoError(t, os.MkdirAll(queue, 0o755))
+	require.NoError(t, os.MkdirAll(archive, 0o755))
+	require.NoError(t, os.MkdirAll(logs, 0o755))
+
+	// Archived shipment with archived_status: shipped and no shipped event.
+	archivedShipment := `---
+id: 900-S
+title: Archived shipment without shipped event
+artifact_type: shipment
+status: archived
+archived_status: shipped
+archived_from: .backlogit/queue/900-S.md
+level: 1
+custom_fields:
+    items:
+        - 900.001-T
+---
+
+# Archived shipment without shipped event
+`
+	require.NoError(t, os.WriteFile(filepath.Join(archive, "900-S.md"), []byte(archivedShipment), 0o644))
+
+	// Shipped-but-unarchived shipment, with one unarchived manifest member.
+	residueShipment := `---
+id: 901-S
+title: Shipped but unarchived shipment
+artifact_type: shipment
+status: shipped
+level: 1
+custom_fields:
+    items:
+        - 901.001-T
+---
+
+# Shipped but unarchived shipment
+`
+	require.NoError(t, os.WriteFile(filepath.Join(queue, "901-S.md"), []byte(residueShipment), 0o644))
+
+	member := `---
+id: 901.001-T
+title: Stranded release scope task
+artifact_type: task
+status: done
+parent_id: 901-F
+level: 2
+---
+
+# Stranded release scope task
+`
+	require.NoError(t, os.WriteFile(filepath.Join(queue, "901.001-T.md"), []byte(member), 0o644))
+}
+
+func TestDoctorCommand_ShippedEventCompletenessFlagSurfacesBothFindings(t *testing.T) {
+	tmp := t.TempDir()
+	initTestWorkspace(t, tmp)
+	seedShippedEventFixture(t, tmp)
+
+	buf := new(bytes.Buffer)
+	cmd := cli.NewRootCommand()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--cwd", tmp, "--check-shipped-event-completeness", "--check-orphans=false", "--check-duplicates=false", "--check-archived-from=false"})
+
+	// Exit-code neutrality: an advisory finding must not fail the command.
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.Contains(t, out, "missing_shipped_event")
+	assert.Contains(t, out, "900-S")
+	assert.Contains(t, out, "shipped_unarchived_residue")
+	assert.Contains(t, out, "901-S")
+	assert.Contains(t, out, "901.001-T", "the stranded archive candidate must be enumerated")
+}
+
+func TestDoctorCommand_ShippedEventCompletenessIsOffByDefault(t *testing.T) {
+	tmp := t.TempDir()
+	initTestWorkspace(t, tmp)
+	seedShippedEventFixture(t, tmp)
+
+	buf := new(bytes.Buffer)
+	cmd := cli.NewRootCommand()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--cwd", tmp, "--check-orphans=false", "--check-duplicates=false", "--check-archived-from=false"})
+
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.NotContains(t, out, "missing_shipped_event")
+	assert.NotContains(t, out, "shipped_unarchived_residue")
+}

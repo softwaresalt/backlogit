@@ -27,18 +27,19 @@ type doctorTargetFunc func(ws *core.Workspace, target, absTarget string) *core.D
 
 func newDoctorCommand(cwd *string) *cobra.Command {
 	var (
-		checkOrphans               bool
-		checkDuplicates            bool
-		checkArchivedFrom          bool
-		checkGateEvidence          bool
-		checkOverArchivedFeatures  bool
-		checkPartialMutations      bool
-		checkWorkspaceRootConflict bool
-		fixOrphans                 bool
-		fixArchivedFrom            bool
-		fixMalformed               bool
-		outputFormatFlag           string
-		targetFlag                 string
+		checkOrphans                  bool
+		checkDuplicates               bool
+		checkArchivedFrom             bool
+		checkGateEvidence             bool
+		checkOverArchivedFeatures     bool
+		checkPartialMutations         bool
+		checkWorkspaceRootConflict    bool
+		checkShippedEventCompleteness bool
+		fixOrphans                    bool
+		fixArchivedFrom               bool
+		fixMalformed                  bool
+		outputFormatFlag              string
+		targetFlag                    string
 	)
 
 	cmd := &cobra.Command{
@@ -123,16 +124,17 @@ resume) — no new command; retry policy is owned by the caller.`,
 			defer ws.Close()
 
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
-				CheckOrphans:               checkOrphans,
-				CheckDuplicates:            checkDuplicates,
-				CheckArchivedFrom:          checkArchivedFrom,
-				CheckGateEvidence:          checkGateEvidence,
-				CheckOverArchivedFeatures:  checkOverArchivedFeatures,
-				CheckPartialMutations:      checkPartialMutations,
-				CheckWorkspaceRootConflict: checkWorkspaceRootConflict,
-				FixOrphans:                 fixOrphans,
-				FixArchivedFrom:            fixArchivedFrom,
-				FixMalformed:               fixMalformed,
+				CheckOrphans:                  checkOrphans,
+				CheckDuplicates:               checkDuplicates,
+				CheckArchivedFrom:             checkArchivedFrom,
+				CheckGateEvidence:             checkGateEvidence,
+				CheckOverArchivedFeatures:     checkOverArchivedFeatures,
+				CheckPartialMutations:         checkPartialMutations,
+				CheckWorkspaceRootConflict:    checkWorkspaceRootConflict,
+				CheckShippedEventCompleteness: checkShippedEventCompleteness,
+				FixOrphans:                    fixOrphans,
+				FixArchivedFrom:               fixArchivedFrom,
+				FixMalformed:                  fixMalformed,
 			})
 			if err != nil {
 				return fmt.Errorf("doctor: %w", err)
@@ -168,6 +170,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 	cmd.Flags().BoolVar(&checkOverArchivedFeatures, "check-over-archived-features", false, "check for a covering feature closed while it was never an explicit shipment manifest member and has descendant work returned to the backlog (read-only)")
 	cmd.Flags().BoolVar(&checkPartialMutations, "check-partial-mutations", false, "advisory: detect residual partial commit-association and dependency-linking state (exit code unaffected)")
 	cmd.Flags().BoolVar(&checkWorkspaceRootConflict, "check-workspace-root-conflict", false, "check for a conflicting .backlog and .backlogit workspace root before opening the workspace")
+	cmd.Flags().BoolVar(&checkShippedEventCompleteness, "check-shipped-event-completeness", false, "advisory: reconcile shipment shipped-event audit records -- archived shipments missing the shipped event, and shipments left shipped but unarchived (read-only; exit code unaffected)")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "archive orphaned artifacts instead of just reporting them")
 	cmd.Flags().BoolVar(&fixArchivedFrom, "fix-archived-from", false, "repair legacy self-referential archived_from records (destructive, CLI-only)")
 	cmd.Flags().BoolVar(&fixMalformed, "fix-malformed", false, "clear malformed archived_from records with no restore target (destructive, CLI-only; requires --check-archived-from)")
