@@ -16,6 +16,7 @@ import (
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -299,4 +300,35 @@ func TestShipShipment_UnrestorableItemReportsPartialCompensation(t *testing.T) {
 		"an un-restorable release-scope item must degrade the compensation state, never be skipped silently")
 	assert.True(t, strings.Contains(err.Error(), blockedID),
 		"the un-restored ID %q must be named in the returned error, got: %v", blockedID, err)
+}
+
+// 143.003-T (Unit 3): the fail-closed governed shipped path intentionally
+// suppresses the HookMoveShipmentStatus POST hook, which today always fires
+// because the append error is swallowed. Firing a "status changed to shipped"
+// post-hook for a transition that is about to be compensated (or reported as
+// indeterminate) would misinform external integrations. The suppression is
+// asserted with a recording hook runner rather than left to the doc comment.
+func TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook(t *testing.T) {
+	fixture := newShipDurabilityFixture(t, false)
+	fixture.ws.HookRunner = hooks.NewHookRunner()
+
+	movePostHookFired := false
+	fixture.ws.HookRunner.Register(hooks.HookMoveShipmentStatus, hooks.PhasePost, hooks.HookRegistration{
+		Name:     "record_move_shipment_status_post",
+		Priority: 100,
+		Fn: func(_ context.Context, hc hooks.HookContext) error {
+			if hc.ItemID == fixture.shipmentID && hc.NewValues["status"] == string(ShipmentShipped) {
+				movePostHookFired = true
+			}
+			return nil
+		},
+	})
+
+	injected := fmt.Errorf("append shipped event: %w: %w", blerrors.ErrWriteIndeterminate, errors.New("injected fsync failure"))
+	fixture.injectShippedAppend(t, func(context.Context) error { return injected })
+
+	_, err := shipWithWatchdog(t, fixture.ws, fixture.shipmentID)
+	require.Error(t, err)
+	assert.False(t, movePostHookFired,
+		"the move-shipment-status post hook must not fire for a shipped transition whose audit append failed")
 }
