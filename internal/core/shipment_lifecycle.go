@@ -388,6 +388,20 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		// membership mutation could land after the failed release and be
 		// overwritten by restoration of the pre-ship snapshot.
 		defer func() {
+			// 143.004-T: classify a governed shipped-event append failure BEFORE
+			// the len(shipSnapshots) guard below. Placing it after would make the
+			// branch dead code whenever snapshotting did not populate the map.
+			// restoreShipArtifacts stays behind that guard.
+			var appendErr *shipmentEventAppendError
+			if errors.As(closureErr, &appendErr) {
+				outcome := classifyShippedEventAppendFailure(ctx, ws, shipmentID, appendErr, shipSnapshots, nonMemberFeatureSnapshots)
+				shipRollbackAttempted = outcome.rollbackAttempted
+				if outcome.nonMemberRestored {
+					restored = true
+				}
+				closureErr = outcome.err
+				return
+			}
 			if closureErr == nil || len(shipSnapshots) == 0 {
 				return
 			}
@@ -746,6 +760,129 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 // deadline up front (mirroring rollbackQueueMove, queue.go:365-372) so this
 // best-effort cleanup is not itself defeated by the very failure condition
 // it exists to clean up after (review-fix, PR #327 Copilot finding).
+// shippedEventFailureOutcome carries the classified result of a governed
+// shipped-event append failure back to the rollback defer.
+type shippedEventFailureOutcome struct {
+	// err is the *blerrors.MutationPartialError the closure returns.
+	err error
+	// rollbackAttempted reports whether restoreShipArtifacts ran, so the outer
+	// non-member fallback keeps its existing semantics.
+	rollbackAttempted bool
+	// nonMemberRestored reports whether restoreRolledUpNonMemberFeatures was
+	// already run synchronously, so the outer deferred fallback does not repeat it.
+	nonMemberRestored bool
+}
+
+// classifyShippedEventAppendFailure classifies a governed shipped-event append
+// failure and decides whether the ship compensates or halts.
+//
+// The durability guarantee this implements is PATH-SCOPED, and narrower still
+// within that path. It covers the governed ShipShipment archival path and,
+// inside it, only the shipment's OWN terminal status transition. The same call
+// also appends best-effort item-level events -- status_changed via
+// setArtifactStatus, returned_to_backlog, and the parent cascades -- and those
+// stay best-effort by design. Non-ShipShipment producers (generic
+// UpdateArtifactWithGate and generic ArchiveItem callers) are not prevented from
+// reaching archived_status: shipped without a shipped event at all; preventing
+// them is deferred, and they are covered report-only by the doctor
+// shipped-event reconciliation audit.
+//
+// Two divergences from MutationEnvelope are deliberate and must not be "fixed"
+// back:
+//
+//  1. An UNTAGGED error is treated as unproven and therefore indeterminate,
+//     the inverse of MutationEnvelope's untagged default. The envelope's default
+//     is safe because its persist step routes through a primitive that tags both
+//     classes explicitly; the default non-durable append path does not tag at
+//     all, and events.EventWriter.AppendEvent exposes only error while its
+//     non-durable append discards the byte count. Compensating over a
+//     possibly-applied append to an append-only log is the one outcome the
+//     AppendEvent contract forbids.
+//  2. This branch HALTS rather than continuing the remaining steps. Archival is
+//     deliberately not attempted, leaving a detectable, documented
+//     shipped-and-unarchived residue instead of a permanently missing audit
+//     record.
+//
+// Classification precedence is indeterminate-first: an error carrying BOTH
+// sentinels classifies indeterminate and can never be compensated.
+func classifyShippedEventAppendFailure(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentID string,
+	appendErr *shipmentEventAppendError,
+	shipSnapshots map[string]shipArtifactSnapshot,
+	nonMemberFeatureSnapshots map[string]featureStatusSnapshot,
+) shippedEventFailureOutcome {
+	completed := []string{"complete-release-scope", "persist-shipment-status"}
+
+	if blerrors.IsWriteIndeterminate(appendErr) || !blerrors.IsWriteNotApplied(appendErr) {
+		// Indeterminate: suppress restoreShipArtifacts entirely. Restore the
+		// non-member covering feature synchronously while the artifact locks are
+		// still held, then halt archival.
+		var restoreErr error
+		restoredNonMember := false
+		if len(nonMemberFeatureSnapshots) > 0 {
+			restoredNonMember = true
+			if err := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, nil); err != nil {
+				restoreErr = fmt.Errorf("restore non-member covering feature scope: %w", err)
+			}
+		}
+		logShippedEventAppendFailure(ctx, shipmentID, "indeterminate", "not-compensated", nil, appendErr)
+		return shippedEventFailureOutcome{
+			// The joined restore failure goes INSIDE Cause: internal/mcp extracts
+			// the *MutationPartialError and renders only that value, so a joined
+			// outer error would drop the restore failure from every MCP response.
+			err: &blerrors.MutationPartialError{
+				Completed:         completed,
+				FailedStep:        blerrors.StepShippedEventAppend,
+				CompensationState: "not-compensated",
+				Class:             "indeterminate",
+				Cause:             errors.Join(error(appendErr), restoreErr),
+			},
+			rollbackAttempted: false,
+			nonMemberRestored: restoredNonMember,
+		}
+	}
+
+	// Proven not-applied: compensate through the existing snapshot rollback.
+	// 143.012-T promotes an incomplete compensation to "partially-compensated";
+	// this unit reports the fully compensated refusal as a structured result so it
+	// no longer reaches MCP as an unclassified internal error.
+	compensationState := "compensated"
+	cause := error(appendErr)
+	if len(shipSnapshots) > 0 {
+		if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
+			cause = errors.Join(cause, rollbackErr)
+		}
+	}
+	logShippedEventAppendFailure(ctx, shipmentID, "not-applied", compensationState, nil, cause)
+	return shippedEventFailureOutcome{
+		err: &blerrors.MutationPartialError{
+			Completed:         completed,
+			FailedStep:        blerrors.StepShippedEventAppend,
+			CompensationState: compensationState,
+			Class:             "not-applied",
+			Cause:             cause,
+		},
+		rollbackAttempted: true,
+	}
+}
+
+// logShippedEventAppendFailure emits the fixed, greppable slog record that is
+// the only non-MCP measurement surface for the shipped-event SLIs.
+// MutationPartialError.Error() does not render CompensationState, so
+// compensation_state and unrestored_ids are required attributes here.
+func logShippedEventAppendFailure(ctx context.Context, shipmentID, class, compensationState string, unrestoredIDs []string, cause error) {
+	slog.ErrorContext(ctx, "shipment shipped-event append failed",
+		"shipment_id", shipmentID,
+		"class", class,
+		"failed_step", blerrors.StepShippedEventAppend,
+		"compensation_state", compensationState,
+		"unrestored_ids", unrestoredIDs,
+		"cause", cause,
+	)
+}
+
 func restoreRolledUpNonMemberFeatures(ctx context.Context, ws *Workspace, snapshots map[string]featureStatusSnapshot, archivedIDs []string) error {
 	ctx = context.WithoutCancel(ctx)
 	archived := make(map[string]struct{}, len(archivedIDs))

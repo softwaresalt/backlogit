@@ -1,9 +1,11 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,4 +333,54 @@ func TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook(t *tes
 	require.Error(t, err)
 	assert.False(t, movePostHookFired,
 		"the move-shipment-status post hook must not fire for a shipped transition whose audit append failed")
+}
+
+// 143.004-T (Unit 4): the slog record is the only non-MCP measurement surface
+// for SLI 3, SLI 4, and SLI 5, because MutationPartialError.Error() does not
+// render CompensationState. Its shape is asserted by capture, not by inspection.
+func TestShipShipment_ShippedEventAppendFailureLogsFixedShape(t *testing.T) {
+	cases := []struct {
+		name                  string
+		injected              error
+		wantClass             string
+		wantCompensationState string
+	}{
+		{
+			name:                  "indeterminate",
+			injected:              fmt.Errorf("append: %w: %w", blerrors.ErrWriteIndeterminate, errors.New("boom")),
+			wantClass:             "indeterminate",
+			wantCompensationState: "not-compensated",
+		},
+		{
+			name:                  "not_applied",
+			injected:              fmt.Errorf("open: %w: %w", blerrors.ErrWriteNotApplied, errors.New("boom")),
+			wantClass:             "not-applied",
+			wantCompensationState: "compensated",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newShipDurabilityFixture(t, false)
+			fixture.injectShippedAppend(t, func(context.Context) error { return testCase.injected })
+
+			var captured bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&captured, &slog.HandlerOptions{Level: slog.LevelError})))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+
+			_, err := shipWithWatchdog(t, fixture.ws, fixture.shipmentID)
+			require.Error(t, err)
+
+			logged := captured.String()
+			require.Contains(t, logged, "shipment shipped-event append failed",
+				"the greppable slog message must be emitted")
+			assert.Contains(t, logged, `"class":"`+testCase.wantClass+`"`)
+			assert.Contains(t, logged, `"failed_step":"`+blerrors.StepShippedEventAppend+`"`)
+			assert.Contains(t, logged, `"compensation_state":"`+testCase.wantCompensationState+`"`)
+			assert.Contains(t, logged, `"shipment_id":"`+fixture.shipmentID+`"`)
+			assert.Contains(t, logged, `"unrestored_ids"`)
+			assert.Contains(t, logged, `"cause"`)
+		})
+	}
 }
