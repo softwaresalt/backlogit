@@ -109,6 +109,25 @@ const (
 	// FindingInconsistentDependencyEdge indicates frontmatter dependency edges and
 	// cached item_deps edges disagree for the same artifact.
 	FindingInconsistentDependencyEdge DoctorFindingType = "inconsistent_dependency_edge"
+
+	// FindingMissingShippedEvent indicates an archived shipment whose
+	// archived_status is "shipped" has no shipment_status_changed event with
+	// status == "shipped" in its item JSONL log. The audit record is permanently
+	// absent: item logs are append-only and are never synthesized or rewritten by
+	// this check. The same finding type also reports an item log that could not be
+	// read at all, with an explicit "event presence unknown" description, so a
+	// false negative can never masquerade as a clean result. Advisory; report-only.
+	FindingMissingShippedEvent DoctorFindingType = "missing_shipped_event"
+
+	// FindingShippedUnarchivedResidue indicates a shipment whose status is
+	// "shipped" was never archived. This is the residue the governed
+	// ShipShipment indeterminate branch deliberately leaves when the shipped-event
+	// append outcome cannot be proven, and it is anomalous regardless of whether
+	// the shipped event itself is present. The description records shipped-event
+	// presence and enumerates the archive candidates stranded alongside the
+	// shipment, because the indeterminate branch returns before the archive
+	// collector runs. Advisory; report-only.
+	FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -190,6 +209,13 @@ type DoctorOptions struct {
 	CheckPartialMutations bool
 	// CheckWorkspaceRootConflict enables the read-only dual-root conflict check.
 	CheckWorkspaceRootConflict bool
+	// CheckShippedEventCompleteness enables the read-only shipped-event
+	// reconciliation audit (143-F): archived shipments whose archived_status is
+	// "shipped" but whose item JSONL carries no shipped event, and shipments left
+	// "shipped" but unarchived. Detection only; the audit never writes,
+	// synthesizes, or rewrites JSONL, and its findings never change the doctor
+	// exit code. Off by default on both the CLI and MCP surfaces.
+	CheckShippedEventCompleteness bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
