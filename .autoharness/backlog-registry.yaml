@@ -509,6 +509,7 @@ operations:
     params:
       check_orphans: "check_orphans"
       check_duplicates: "check_duplicates"
+      check_shipped_event_completeness: "check_shipped_event_completeness"
       fix_orphans: "fix_orphans"
       target: "target"
 
