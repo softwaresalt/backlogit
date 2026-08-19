@@ -1,3 +1,7 @@
+---
+title: "PR #367 — shipped-event audit durability (127-S)"
+---
+
 ## Summary
 
 Implements feature 143-F (shipped-event audit durability) as part of shipment 127-S. Adds durability guarantees to the shipped-event append path so that failures are correctly classified (not-applied, indeterminate) and the doctor audit surface can detect and report residue after a partially-shipped shipment.

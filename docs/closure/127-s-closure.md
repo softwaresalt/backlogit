@@ -3,6 +3,8 @@ type: operational-closure
 title: "Operational Closure — 127-S shipped-event audit durability"
 doc_type: closure
 source: 127-S
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 shipment: 127-S
 feature: 143-F
 timestamp: 2026-08-19T03:20:00Z
