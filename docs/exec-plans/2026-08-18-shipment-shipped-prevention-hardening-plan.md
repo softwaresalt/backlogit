@@ -52,14 +52,14 @@ contract.
 
 | Requirement (from deliberation) | Implementation action | Unit |
 |---|---|---|
-| Reject generic shipment to `shipped` (update/move) outside ShipShipment, gate-independent | Unconditional refusal in `UpdateArtifactWithGate`; refuse ungoverned `MoveShipmentStatus` (`topLevel=true`) | U1, U2 |
+| Reject generic shipment to `shipped` (update/move) outside ShipShipment, gate-independent | Unconditional refusal in `UpdateArtifactWithGate` (unlocked-peek fast-path) and in `updateArtifactUngated` after the lock+reload (authoritative check-to-write); refuse ungoverned `MoveShipmentStatus` (`topLevel=true`) | U1, U2, U10, U11 |
 | Reject create-time shipment `status: shipped` | Refuse initial `shipped` for a shipment in `CreateArtifact` | U3, U4 |
 | Archive refuses `archived_status: shipped` without durable event | Pre-stamp check in `ArchiveItem` reusing `shippedEventPresence`, fail-closed | U5, U6 |
 | Reuse the detection predicate (no contract drift) | Call `shippedEventPresence` directly (same `core` package; no extraction) | U6 |
 | Do not block done, abandoned, or P-015 safe-close | Scope guard 2 to shipment `artifact_type` with `oldStatus == shipped`; non-shipment artifacts never blocked | U5, U6 |
 | MCP and CLI behave identically; stable error contract; no force lever | Enforce in shared core seams; wire sentinel surface mapping (U9); governed-parity tests through the registry | U7, U9 |
 | Guards fail closed on missing or unreadable evidence | Missing or unreadable event refuses | U2, U4, U6, U7 |
-| ShipShipment envelope remains the one sanctioned producer | ShipShipment exempt by construction; regression-tested | U1, U2, U5, U6 |
+| ShipShipment envelope remains the one sanctioned producer | ShipShipment exempt by construction; regression-tested | U1, U2, U5, U6, U11 |
 
 ## Implementation Units
 
@@ -93,7 +93,11 @@ verifiable milestone. Guard tracks are red-harness-first (TDD), mirroring the
   `topLevel == true` (the governed `ShipShipment` call uses `topLevel == false` and
   stays allowed). Add a dedicated sentinel `ErrShipmentShippedRequiresEnvelope` in
   the leaf `internal/errors` (do NOT reuse `ErrFormalGateRequired`); its MCP
-  `error_type` and CLI exit-code mapping is wired in U9
+  `error_type` and CLI exit-code mapping is wired in U9. The refusal added here is
+  the cheap unlocked-peek fast-path plus the move-seam guard; the authoritative
+  post-lock revalidation on the locked write path (`updateArtifactUngated` in
+  `internal/core/artifacts.go`) is a separate unit (U10 red harness, U11
+  implementation) so this unit stays within the <3 production-file boundary
 * Files: `internal/core/gate_transition.go`, `internal/core/shipment.go`,
   `internal/errors/errors.go` (sentinel definition only; surface mapping in U9)
 * Tests: U1 harness turns green; existing ShipShipment tests stay green
@@ -104,12 +108,15 @@ verifiable milestone. Guard tracks are red-harness-first (TDD), mirroring the
 
 * Domain: tests (red-harness)
 * Changes: failing tests that creating a shipment with an initial `status: shipped`
-  is refused through `CreateArtifact` and its surfaces (`create_item`,
-  `harvest_stash`), while a shipment created at `queued` is unaffected
-* Files: `internal/core/artifacts_test.go` (extend)
+  is refused through the core `CreateArtifact` seam, while a shipment created at
+  `queued` is unaffected. This unit is core-only: a `core`-package unit test cannot
+  drive the MCP `create_item` / `harvest_stash` or CLI transport handlers, so
+  surface-level create coverage is owned by U7 (parity)
+* Files: `internal/core/144_create_guard_test.go` (new; mirrors the existing
+  `066_create_guard_test.go` red-harness convention)
 * Tests: (1) `CreateArtifact` shipment with `status: shipped` refused; (2)
-  `create_item` / `harvest_stash` shipment create at `shipped` refused; (3)
-  shipment created at `queued` unaffected
+  `CreateArtifact` shipment created at `queued` unaffected; (3) `CreateArtifact`
+  non-shipment (e.g. task) create unaffected
 * Execution posture: test-first (red)
 
 ### U4 — Implement guard 1 on the create seam (core)
@@ -179,7 +186,8 @@ verifiable milestone. Guard tracks are red-harness-first (TDD), mirroring the
 * Domain: docs
 * Changes: a design-doc capturing the prevention/detection pairing, the ArchiveItem
   hook-gap, the gate-independent core seam, the full producer set (transition, move,
-  create, archive), and the fail-closed scoping; a compound learning graduating the
+  create, archive), the peek-vs-locked check-to-write authority (U2 peek / U11 locked
+  revalidation), and the fail-closed scoping; a compound learning graduating the
   reusable insight
 * Files: `docs/design-docs/2026-08-shipment-shipped-prevention-envelope.md`,
   `docs/compound/2026-08-18-shipment-shipped-prevention-envelope.md`
@@ -199,23 +207,63 @@ verifiable milestone. Guard tracks are red-harness-first (TDD), mirroring the
 * Execution posture: test-first
 * Depends on: U2, U4, U6
 
+### U10 — RED harness for guard 1 authoritative post-lock revalidation (tests)
+
+* Domain: tests (red-harness)
+* Changes: a failing test that distinguishes the cheap unlocked peek from the
+  authoritative locked-state refusal. Because the `core`-package test can call the
+  unexported `updateArtifactUngated` directly, it drives the locked write path with a
+  shipment `shipped` transition and asserts refusal originates there (not only at the
+  `UpdateArtifactWithGate` peek), and that no durable Markdown/JSONL write is applied.
+  Reuses `ErrShipmentShippedRequiresEnvelope` (defined in U2)
+* Files: `internal/core/144_locked_revalidation_test.go` (new)
+* Tests: (1) `updateArtifactUngated` shipment `queued -> shipped` refused with
+  `ErrShipmentShippedRequiresEnvelope` after the lock+reload; (2) the refusal leaves
+  the durable artifact unmutated (no write applied); (3) a non-shipment task
+  transition through `updateArtifactUngated` still writes under lock (no false
+  positive)
+* Execution posture: test-first (red) — compiles and FAILS pre-implementation because
+  the locked path does not yet refuse
+* Depends on: U2
+
+### U11 — Implement guard 1 authoritative post-lock revalidation (core)
+
+* Domain: code (core)
+* Changes: inside `updateArtifactUngated` (`internal/core/artifacts.go`), after
+  `lockArtifactMutations` and the authoritative `findArtifact` reload, refuse a
+  shipment `shipped` transition (`artifactType == shipment` and
+  `updates["status"] == shipped`) by returning `ErrShipmentShippedRequiresEnvelope`,
+  co-locating the check with the locked write so the guarantee does not depend on the
+  unlocked peek alone (closes the peek-to-write TOCTOU). ShipShipment stays exempt —
+  it ships via `moveShipmentStatusWithHeadGuard`, never this generic function — and
+  non-status updates to an already-`shipped` shipment are unaffected (they set no
+  `status` in `updates`). No new sentinel; reuses U2's
+* Files: `internal/core/artifacts.go`, `internal/errors/errors.go` (reuse only)
+* Tests: U10 harness turns green; existing update, gated-completion, and ShipShipment
+  paths stay green
+* Execution posture: test-first (make U10 pass)
+* Depends on: U10, U2
+
 ## Dependency Graph
 
 ```text
 U1 (red) ──▶ U2 (transition/move guard)
+U2 ──▶ U10 (red) ──▶ U11 (locked-path revalidation)
 U3 (red) ──▶ U4 (create guard)
 U5 (red) ──▶ U6 (archive guard)
 U2, U4, U6 ──▶ U9 (surface error mapping) ──▶ U7 (parity)
+U11 ──▶ U7 (parity)
 U2, U4, U6 ──▶ U8 (docs)
 ```
 
 * U1, U3, and U5 have no upstream dependencies and can start first (all red harnesses)
 * U2 depends on U1; U4 depends on U3 and U2 (shared sentinel); U6 depends on U5
+* U10 (red) depends on U2; U11 (authoritative locked-path revalidation) depends on U10 and U2
 * U9 depends on U2, U4, and U6 (wires all three sentinels' surface mapping)
-* U7 depends on U2, U4, U6, and U9; U8 (docs) depends on U2, U4, and U6
+* U7 depends on U2, U4, U6, U9, and U11; U8 (docs) depends on U2, U4, and U6
 * The graph is acyclic
 
-Estimated effort: 9 units times ~2 hours = ~18 hours.
+Estimated effort: 11 units times ~2 hours = ~22 hours.
 
 ## Decisions and Rationale
 
@@ -275,9 +323,11 @@ Estimated effort: 9 units times ~2 hours = ~18 hours.
   residue class the doctor audit catches; add a test that governed ship still
   archives when the event is present.
 * **Check-to-stamp ordering** — guard 1's authoritative refusal must apply on the
-  locked update path (not only the cheap unlocked peek), and guard 2 should hold the
-  shipment item-log lock across the presence check and the stamp (or explicitly
-  accept the narrow residual and rely on the doctor audit).
+  locked update path (`updateArtifactUngated`, U11) not only the cheap unlocked peek
+  (U2); U10/U11 add that locked-path revalidation plus a test that distinguishes it
+  from the peek. Guard 2 should hold the shipment item-log lock across the presence
+  check and the stamp (or explicitly accept the narrow residual and rely on the
+  doctor audit).
 * **Out-of-band edits remain out of scope** — direct Markdown/git edits can still
   produce residue; these are left to the report-only doctor audit by design.
 
@@ -332,9 +382,10 @@ Requires plan hardening: yes
 
 ## Runtime Verification and Closure
 
-Runtime surfaces changed: CLI (`backlogit move`, `backlogit update`,
-`backlogit archive`) and MCP (`move_item`, `update_item`, `archive_item`) behavior
-for shipment artifacts. No HTTP API or browser UI.
+Runtime surfaces changed: CLI (`backlogit move`, `backlogit update`, `backlogit add`,
+`backlogit stash harvest`, `backlogit archive`) and MCP (`move_item`, `update_item`,
+`create_item`, `harvest_stash`, `archive_item`) behavior for shipment artifacts. No
+HTTP API or browser UI.
 
 Runtime verification (post-build, by Ship):
 
@@ -594,3 +645,34 @@ Whether plan hardening was required: yes; satisfied. Runtime verification and
 operational closure are present for every changed surface.
 
 Gate action: PASS. Proceed to harvest.
+
+### PR #369 Copilot current-HEAD review-fix cycle (2026-08-19)
+
+Copilot's current-HEAD review of `admin/stage-47b48db0` @ `442a5a47` raised five
+threads against the plan and the harvested backlog. All five were validated against
+source and addressed in place; the PASS gate action above is unchanged — the fixes
+tighten coherence and add two TDD-ordered units without altering the enforcement
+design.
+
+* **U2 / 144.002-T locked-path revalidation (peek-to-write TOCTOU)** — confirmed:
+  the shipment refusal in `UpdateArtifactWithGate` runs on the unlocked peek
+  (`gate_transition.go`), while the authoritative write locks and reloads in
+  `updateArtifactUngated` (`artifacts.go`). Folding the locked check into U2 would
+  push it to four production files. Fix: added U10 (RED harness, `144.010-T`) and
+  U11 (implementation in `updateArtifactUngated`, `144.011-T`), each single-domain
+  and under three files; U2 / 144.002-T reworded to the peek fast-path plus
+  move-seam guard that points at U10/U11 for the check-to-write guarantee; U7 now
+  depends on U11.
+* **U3 / 144.003-T core-vs-surface mismatch** — confirmed: a `core` unit test
+  cannot drive MCP `create_item` / `harvest_stash`, and `internal/core/artifacts_test.go`
+  does not exist. Fix: narrowed U3 / 144.003-T to a core-only `CreateArtifact` RED
+  harness in a new file `internal/core/144_create_guard_test.go` (mirroring the
+  existing `066_create_guard_test.go`); surface-level create coverage stays with
+  U7 / 144.007-T (parity).
+* **Runtime-surface inventory omission** — confirmed: the "Runtime surfaces changed"
+  summary omitted the create producers. Fix: added CLI `backlogit add` /
+  `backlogit stash harvest` and MCP `create_item` / `harvest_stash`.
+
+Post-fix backlog: 11 units (144.001-T through 144.011-T), all parented under 144-F
+and in shipment 128-S; dependencies TDD-ordered; docs lint clean; `doctor` reports
+no new orphans for the 144.x hierarchy.

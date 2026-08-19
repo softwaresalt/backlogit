@@ -94,3 +94,32 @@ shipment assembly, 5.6 stash archive, 6 summary.
   operator gate at Ship review under degraded visibility. Rebuild the pinned
   `backlogit` binary post-merge (merged is not operative until then); the doctor
   audit remains the after-the-fact net.
+
+## PR #369 Copilot review-fix cycle (2026-08-19)
+
+Focused Stage review-fix on PR #369 (`admin/stage-47b48db0` @ `442a5a47`). Copilot's
+current-HEAD review raised five threads; all were validated against source and fixed
+in place (planning and backlog only — no source, test, or config edits, and no
+build/test/lint runs).
+
+- Findings 1 and 5 (U2 / 144.002-T): guard 1 refused only on the unlocked peek, but
+  the authoritative write locks and reloads in `updateArtifactUngated`
+  (`artifacts.go`), which was absent from U2. Added two new units to honor width
+  isolation: U10 / 144.010-T (RED harness,
+  `internal/core/144_locked_revalidation_test.go`) and U11 / 144.011-T
+  (implementation in `updateArtifactUngated`). U11 depends on U10 and 144.002-T;
+  U7 / 144.007-T now depends on U11. Both new tasks were added to shipment 128-S.
+- Findings 2 and 3 (U3 / 144.003-T): named a nonexistent `artifacts_test.go` and
+  promised MCP `create_item` / `harvest_stash` assertions from a core test.
+  Narrowed to a core-only `CreateArtifact` RED harness in the new file
+  `internal/core/144_create_guard_test.go`; transport coverage stays with
+  U7 / 144.007-T.
+- Finding 4: the runtime-surface inventory omitted the create producers. Added CLI
+  `backlogit add` / `backlogit stash harvest` and MCP `create_item` /
+  `harvest_stash`.
+
+Backlog is now 11 units under 144-F, all in 128-S, TDD-ordered. Plan review outcome
+is unchanged (PASS); docs lint is clean and `doctor` shows no new 144.x orphans.
+Backlog mutations used the pinned backlogit CLI executed inside the worktree; the
+MCP server remains bound to the protected root and was not used for mutations. The
+commit lands on `admin/stage-47b48db0`; the root worktree was left untouched.
