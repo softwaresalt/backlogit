@@ -1,5 +1,5 @@
 ---
-chunk_strategy: h1-h2
+chunk_strategy: h1-h2-h3
 description: "Core seam guard for shipment shipped-transition prevention: why unconditional core-seam refusal beats gate rules for governance-critical flows."
 doc_type: learning
 schema_version: "1.0"
