@@ -186,7 +186,7 @@ func mutationPartialRecoveryFor(classification, failedStep, compensationState st
 			" -- note it may report clean while those items remain torn, so verify each named ID directly. Reconcile before archiving"
 	default:
 		return "do not retry the ship; the shipped-event append outcome is unknown, so the shipment is left shipped and unarchived. " + audit +
-			", read .backlogit/logs/{shipment-id}.jsonl to determine whether the shipped event actually landed, and never synthesize it. Reconcile before archiving"
+			", read {workspace-storage-root}/logs/{shipment-id}.jsonl (e.g. .backlogit/logs/ or .backlog/logs/ depending on your workspace configuration) to determine whether the shipped event actually landed, and never synthesize it. Reconcile before archiving"
 	}
 }
 

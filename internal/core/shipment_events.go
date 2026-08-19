@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
@@ -55,7 +56,26 @@ func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventTyp
 	// Refuse an item ID that would resolve its log (and therefore its lock
 	// sidecar) outside the logs directory. Nothing has been written when this
 	// fires, so not-applied is the honest class and compensation is safe.
-	if !pathContained(logsDir, events.LogPathForItem(logsDir, itemID)) {
+	//
+	// Use real-path containment (EvalSymlinks) to prevent a symlinked component
+	// of logsDir from being exploited to bypass the lexical check. This mirrors
+	// the EvalSymlinks+pathContained pattern used by confineToStorageRoot.
+	logPath := events.LogPathForItem(logsDir, itemID)
+	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
+	if rootErr != nil {
+		realLogsDir = filepath.Clean(logsDir)
+	}
+	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
+	if evalErr != nil {
+		// The log file may not exist yet; resolve at least the parent directory
+		// so a symlinked intermediate component is still caught.
+		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
+			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
+		} else {
+			realLogPath = logPath
+		}
+	}
+	if !pathContained(realLogsDir, realLogPath) {
 		return fmt.Errorf("shipment event log for %s resolves outside the workspace logs directory: %w: %w",
 			itemID, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
 	}

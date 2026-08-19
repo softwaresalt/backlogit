@@ -724,7 +724,7 @@ func detectShippedUnarchivedResidue(ctx context.Context, ws *Workspace, logsDir 
 			eventState = "shipped event absent"
 		}
 
-		stranded := strandedArchiveCandidates(refs, ref)
+		stranded := strandedArchiveCandidates(refs, ref, filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive"))
 		strandedText := "none"
 		if len(stranded) > 0 {
 			strandedText = strings.Join(stranded, ", ")
@@ -751,7 +751,7 @@ func detectShippedUnarchivedResidue(ctx context.Context, ws *Workspace, logsDir 
 // ship path's terminal-status filtering or its feature-linked deliberation
 // resolution. Treat the enumeration as a starting point and re-run the audit
 // after archiving to confirm the finding clears.
-func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifactRef) []string {
+func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifactRef, archiveDir string) []string {
 	artifact, _, err := parseFile(shipmentRef.path)
 	if err != nil {
 		return nil
@@ -795,6 +795,13 @@ func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifa
 			continue
 		}
 		if group[0].status == string(models.StatusArchived) {
+			continue
+		}
+		// An item may already reside under archive/ while its frontmatter
+		// status is still "done" (pre-archived via terminal-status routing,
+		// archive.go:212-224). Such items are not stranded — they are
+		// already archived and the operator does not need to act on them.
+		if archiveDir != "" && pathContained(archiveDir, group[0].path) {
 			continue
 		}
 		candidates = append(candidates, id)
