@@ -1021,6 +1021,20 @@ func archiveShippedEventPreflight(ctx context.Context, ws *Workspace, itemID str
 		// Artifact not found is handled later; skip guard for unknown items.
 		return nil
 	}
+
+	// Mirror the 060.002-T queue-preference logic from ArchiveItem: when
+	// FindArtifactPath returns an archive-dir path (half-archive residue), but
+	// a queue copy exists for the same ID, prefer the queue copy — that is the
+	// canonical source whose status and event log matter for guard 2.
+	backlogDir := workspaceStorageRoot(ws)
+	archiveDir := filepath.Join(backlogDir, "archive")
+	if filepath.Clean(filepath.Dir(currentPath)) == filepath.Clean(archiveDir) {
+		queueDir := filepath.Join(backlogDir, queueRootDir(ws))
+		if queuePath, queueErr := findArtifactInDir(queueDir, itemID); queueErr == nil && queuePath != "" {
+			currentPath = queuePath
+		}
+	}
+
 	raw, err := os.ReadFile(currentPath)
 	if err != nil {
 		return nil // read failure handled later; skip guard
