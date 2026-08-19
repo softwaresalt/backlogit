@@ -622,9 +622,22 @@ func shippedEventPresence(ctx context.Context, logsDir, id string) (present bool
 	// The ID comes from raw Markdown frontmatter, so refuse anything that would
 	// resolve outside the logs directory before opening it. An unsafe ID is
 	// reported as unreadable rather than silently read or counted as a clean
-	// result.
+	// result. Use real-path containment (EvalSymlinks) to catch symlinked
+	// components, mirroring confineToStorageRoot.
 	logPath := events.LogPathForItem(logsDir, id)
-	if !pathContained(logsDir, logPath) {
+	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
+	if rootErr != nil {
+		realLogsDir = filepath.Clean(logsDir)
+	}
+	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
+	if evalErr != nil {
+		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
+			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
+		} else {
+			realLogPath = logPath
+		}
+	}
+	if !pathContained(realLogsDir, realLogPath) {
 		return false, false
 	}
 	itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
