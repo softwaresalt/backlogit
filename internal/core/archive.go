@@ -151,7 +151,20 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	oldStatus, _ := fm["status"].(string)
 	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
 
-	// 066.003-T: Refuse to overwrite a DISTINCT item already occupying the
+	// 144-F guard 2: refuse to stamp archived_status: shipped on a shipment
+	// that has no durable shipped event. The check runs after the item lock is
+	// acquired and before pre-archive hooks or any write, so a refusal is clean.
+	// Scoped to shipment artifacts whose pre-archive status is "shipped"; other
+	// artifact types and other statuses (done, abandoned, P-015 safe-close) are
+	// never blocked. Reuses shippedEventPresence (same core package) so
+	// prevention and detection scan the identical JSONL contract.
+	if fmArtifactType(fm) == "shipment" && oldStatus == string(ShipmentShipped) {
+		logsDir := WorkspaceLogsRoot(ws.RootPath)
+		present, readable := shippedEventPresence(ctx, logsDir, itemID)
+		if !readable || !present {
+			return nil, fmt.Errorf("archive shipment %s: %w", itemID, blerrors.ErrArchiveShippedRequiresEvent)
+		}
+	}
 	// path-keyed archive destination. Computed and checked here -- before the
 	// pre-archive hooks fire and before any file is written -- so a refused
 	// archive has no side effects. When a foreign item (same root ID/filename

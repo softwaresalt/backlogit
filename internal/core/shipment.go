@@ -173,6 +173,15 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		)
 	}
 
+	// 144-F guard 1 (move seam): ungoverned shipped is unconditionally refused.
+	// ShipShipment is the only governed caller and passes topLevel=false; the
+	// exported MoveShipmentStatus passes topLevel=true and is blocked here so no
+	// surface (MCP move_item, CLI backlogit move) can ship without the envelope.
+	if topLevel && newStatus == ShipmentShipped {
+		return fmt.Errorf("move shipment %s to shipped via ungoverned path: %w",
+			shipmentID, blerrors.ErrShipmentShippedRequiresEnvelope)
+	}
+
 	// Fire pre-move-shipment-status hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{

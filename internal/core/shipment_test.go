@@ -163,23 +163,21 @@ func TestClaimShipment_ActivatesIncludedScope(t *testing.T) {
 	assert.Equal(t, models.StatusActive, updatedFeature.Status)
 }
 
-// T002 / ST012: Move shipment from active to shipped.
+// T002 / ST012: MoveShipmentStatus no longer allows active→shipped after 144-F
+// guard 1. The ungoverned move path is refused; ShipShipment is now the sole
+// sanctioned producer.
 func TestMoveShipmentStatus_ActiveToShipped(t *testing.T) {
-	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 	shipment, err := CreateShipment(ctx, ws, "Deliver shipment", nil)
 	require.NoError(t, err)
 	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
 
-	// Act
+	// After 144-F guard 1, the exported MoveShipmentStatus (topLevel=true)
+	// must refuse ShipmentShipped unconditionally.
 	err = MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped)
-
-	// Assert
-	require.NoError(t, err)
-	updated, err := GetShipment(ctx, ws, shipment.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "shipped", string(updated.Status))
+	require.Error(t, err, "ungoverned MoveShipmentStatus must refuse ShipmentShipped (144-F guard 1)")
+	assert.ErrorIs(t, err, blerrors.ErrShipmentShippedRequiresEnvelope)
 }
 
 // T002 / ST012: Shipping a release archives completed scope, returns untouched work
@@ -1211,7 +1209,9 @@ func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, firstShipment.ID, task.ID))
 	require.NoError(t, MoveShipmentStatus(ctx, ws, firstShipment.ID, ShipmentActive))
-	require.NoError(t, MoveShipmentStatus(ctx, ws, firstShipment.ID, ShipmentShipped))
+	// Use the internal ungoverned path (topLevel=false) as a test fixture to
+	// reach "shipped" without the governed ShipShipment envelope.
+	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, firstShipment.ID, ShipmentShipped, false, ""))
 
 	// Act
 	err = AddItemToShipment(ctx, ws, secondShipment.ID, task.ID)
@@ -1235,7 +1235,8 @@ func TestAddItemToShipment_RejectsTerminalShipment(t *testing.T) {
 	shipment, err := CreateShipment(ctx, ws, "Terminal shipment", nil)
 	require.NoError(t, err)
 	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped))
+	// Use the internal ungoverned path (topLevel=false) as a test fixture.
+	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, shipment.ID, ShipmentShipped, false, ""))
 
 	// Act
 	err = AddItemToShipment(ctx, ws, shipment.ID, task.ID)
@@ -1770,4 +1771,44 @@ func TestCreateShipmentWithPriority_EmptyPriorityLastAndDeterministic(t *testing
 		assert.Less(t, idPos(s2.ID), idPos(s1.ID),
 			"empty-priority tie-break must be id ASC: %s before %s", s2.ID, s1.ID)
 	}
+}
+
+// 144.001-T (U1) RED harness: ungoverned MoveShipmentStatus (topLevel=true) must
+// refuse ShipmentShipped. These tests compile immediately but FAIL until U2
+// guards moveShipmentStatusWithHeadGuard when topLevel is true.
+
+func TestMoveShipmentStatus_ToShipped_Refused_Ungoverned(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	shipment, err := CreateShipment(ctx, ws, "Guard-test shipment ungoverned", nil)
+	require.NoError(t, err)
+
+	// Move to active first (this is fine — active is not "shipped").
+	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+
+	// Ungoverned shipped via the exported MoveShipmentStatus (topLevel=true).
+	err = MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped)
+	require.Error(t, err, "ungoverned MoveShipmentStatus must refuse ShipmentShipped")
+	assert.True(t, errors.Is(err, blerrors.ErrShipmentShippedRequiresEnvelope),
+		"want ErrShipmentShippedRequiresEnvelope; got %v", err)
+}
+
+func TestShipShipment_GovernedPath_StillShips(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Governed-ship feature", "feature")
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Governed-ship shipment", []string{feature.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	// ShipShipment is the governed envelope — must still succeed after guard 1.
+	// After shipping, ShipShipment archives the shipment, so the final file-system
+	// status is "archived" (with archived_status: shipped), not "shipped".
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+	require.NoError(t, err, "governed ShipShipment must succeed after guard 1")
+	require.NotNil(t, result)
 }

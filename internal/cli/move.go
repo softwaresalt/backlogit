@@ -102,7 +102,15 @@ autoharness gate check. On a gate refusal this command exits 6 (blocked),
 
 // moveGateError maps a gate error to the versioned exit code (6/7/8) and, under
 // --json, emits the machine payload. Non-gate errors pass through unchanged.
+// Also maps 144-F governance refusals to exit code 9 (ExitShipmentGovernance).
 func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error {
+	// 144-F: check governance refusals before gate-typed checks so the specific
+	// exit code (9) surfaces instead of the generic 1.
+	if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
+		cmd.SilenceErrors = true
+		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		return eeGov
+	}
 	ee := gateExitError(err)
 	if ee == nil {
 		return err

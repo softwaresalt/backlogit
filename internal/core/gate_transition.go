@@ -98,21 +98,18 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 	}
 
 	// A shipment moving to "shipped" MUST go through ShipShipment, never
-	// this general-purpose entry point: gateApplies (and its nil-broker
-	// sibling gateWouldApplyButForBroker, below) are hardcoded to
-	// task/subtask artifact types, so a shipment always fails that check
-	// regardless of enforcement state and falls straight through to the
-	// plain ungated write — completely bypassing ShipShipment's
-	// member-evidence verification, manifest-binding signing, and
-	// membership locking. This is a materially more complete bypass than
-	// even an operator --force: it requires no force flag at all, just
-	// calling a different, pre-existing general-purpose tool
-	// (backlogit_move_item / backlogit_update_item and their CLI
-	// equivalents) instead of ship_shipment. Refused outright under formal
-	// enforcement (106-F F1 review finding, round 8).
+	// this general-purpose entry point. This refusal is UNCONDITIONAL
+	// (gate-independent): ShipShipment writes via moveShipmentStatusWithHeadGuard
+	// with topLevel=false and is never routed through UpdateArtifactWithGate,
+	// so there is no legitimate caller of this function that legitimately needs
+	// to ship a shipment. The unconditional sentinel (144-F) supersedes the
+	// earlier formalGateEnforced()-only branch: the prior gate-independent
+	// path was a materially more complete bypass than even an operator --force
+	// (106-F F1 review finding, round 8).
 	if peek != nil && peek.ArtifactType == "shipment" {
-		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) && ws.formalGateEnforced() {
-			return nil, nil, formalGateShipmentRefusal(id, "shipments must be shipped via ShipShipment, not a direct status update, while formal gate evidence is enforced")
+		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) {
+			return nil, nil, fmt.Errorf("move shipment %s to shipped via generic path: %w",
+				id, bkerrors.ErrShipmentShippedRequiresEnvelope)
 		}
 	}
 

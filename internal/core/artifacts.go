@@ -241,6 +241,13 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted (create then archive): %w",
 			artifactID, status, blerrors.ErrValidation)
 	}
+	// 144-F guard 1 (create seam): reject "shipped" as an initial status for
+	// shipments. Shipments are created at "queued" and reach "shipped" only via
+	// the ShipShipment governed envelope.
+	if artifactType == "shipment" && models.ArtifactStatus(status) == models.ArtifactStatus(ShipmentShipped) {
+		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted for shipments (ship via ShipShipment): %w",
+			artifactID, status, blerrors.ErrShipmentShippedRequiresEnvelope)
+	}
 
 	now := models.NowUTC()
 	artifact := &models.Artifact{
@@ -517,6 +524,20 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	}
 	previousStatus := artifact.Status
 	previousTitle := artifact.Title
+
+	// 144-F guard 1 (locked path, U11): authoritative post-lock revalidation.
+	// The unlocked-peek check in UpdateArtifactWithGate is the fast-path refusal;
+	// this check closes the peek-to-write TOCTOU gap on the locked write path.
+	// ShipShipment is exempt by construction: it ships via
+	// moveShipmentStatusWithHeadGuard, never via this function, so no exemption
+	// flag is required here. Non-status updates to an already-shipped shipment
+	// are unaffected: they carry no "status" key in updates.
+	if artifact.ArtifactType == "shipment" {
+		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) {
+			return nil, fmt.Errorf("update artifact %s: locked write path refused shipment shipped transition: %w",
+				id, blerrors.ErrShipmentShippedRequiresEnvelope)
+		}
+	}
 
 	// Fire pre-update hooks.
 	if ws.HookRunner != nil {

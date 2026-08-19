@@ -394,8 +394,10 @@ func TestUpdateArtifactWithGate_ShipmentToShippedBypassesFormalEnforcement_Refus
 	_, _, shipmentID := newGatedShipment(t, ws) // newGatedShipment already claims the shipment to active
 
 	_, _, err := UpdateArtifactWithGate(ctx, ws, shipmentID, map[string]any{"status": "shipped"}, TransitionOptions{})
-	require.Error(t, err, "a direct shipment-to-shipped update must be refused under formal enforcement, not silently completed ungated")
-	require.True(t, stderrors.Is(err, bkerrors.ErrFormalGateRequired), "err = %v, want ErrFormalGateRequired", err)
+	require.Error(t, err, "a direct shipment-to-shipped update must be refused, not silently completed ungated")
+	// 144-F: guard 1 is now unconditional; ErrShipmentShippedRequiresEnvelope
+	// supersedes ErrFormalGateRequired for this call path.
+	require.True(t, stderrors.Is(err, bkerrors.ErrShipmentShippedRequiresEnvelope), "err = %v, want ErrShipmentShippedRequiresEnvelope", err)
 
 	sh, gErr := GetShipment(ctx, ws, shipmentID)
 	require.NoError(t, gErr)

@@ -15,10 +15,13 @@ import (
 //   - 7: gate configuration/setup error (missing/incompatible binary under
 //     enabled:true, autoharness exit 2, malformed repeated_failure contract).
 //   - 8: gate retryable (lock contention / gate in progress, or timeout).
+//   - 9: shipment governance refusal (144-F guard 1/2): shipped transition or
+//     archive outside the governed ShipShipment envelope.
 const (
-	ExitGateBlocked   = 6
-	ExitGateConfig    = 7
-	ExitGateRetryable = 8
+	ExitGateBlocked        = 6
+	ExitGateConfig         = 7
+	ExitGateRetryable      = 8
+	ExitShipmentGovernance = 9
 )
 
 // gateExitError maps a gate typed error to an *ExitError carrying the versioned
@@ -36,6 +39,17 @@ func gateExitError(err error) *ExitError {
 			return &ExitError{Code: ExitGateRetryable, Msg: ge.Error()}
 		}
 		return &ExitError{Code: ExitGateConfig, Msg: ge.Error()}
+	}
+	return nil
+}
+
+// shipmentGovernanceExitError maps 144-F guard errors (ErrShipmentShippedRequiresEnvelope
+// and ErrArchiveShippedRequiresEvent) to *ExitError with the versioned governance
+// exit code (9). Returns nil when err is not a governance-guard error.
+func shipmentGovernanceExitError(err error) *ExitError {
+	if errors.Is(err, corerrors.ErrShipmentShippedRequiresEnvelope) ||
+		errors.Is(err, corerrors.ErrArchiveShippedRequiresEvent) {
+		return &ExitError{Code: ExitShipmentGovernance, Msg: err.Error()}
 	}
 	return nil
 }

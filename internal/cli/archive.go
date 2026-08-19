@@ -47,6 +47,12 @@ Archived items are moved into .backlogit\archive and tracked in the index.`,
 			}
 			record, err := core.ArchiveItem(ctx, ws.DB, ws, args[0])
 			if err != nil {
+				// 144-F guard 2: map governance refusals to exit code 9.
+				if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
+					cmd.SilenceErrors = true
+					fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+					return eeGov
+				}
 				return fmt.Errorf("archive: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Archived %s → %s\n", record.ID, record.ArchivePath)

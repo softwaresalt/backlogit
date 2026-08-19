@@ -345,7 +345,9 @@ func TestAddToShipment_AlreadyAssignedUsesConflictErrorType(t *testing.T) {
 }
 
 func TestAddToShipment_ShippedShipmentUsesConflictErrorType(t *testing.T) {
-	// Arrange
+	// Arrange: use "abandoned" as a terminal state to avoid the 144-F guard 1
+	// that now unconditionally refuses backlogit_move_item to "shipped".
+	// Abandoned is also terminal and maps to "conflict" via ErrShipmentConflict.
 	s := setupRealMCPServer(t)
 	shipment := callToolAndParseJSON(t, s, "backlogit_create_shipment", map[string]any{
 		"title": "Shipped shipment",
@@ -356,7 +358,7 @@ func TestAddToShipment_ShippedShipmentUsesConflictErrorType(t *testing.T) {
 	})
 	_ = callToolAndParseJSON(t, s, "backlogit_move_item", map[string]any{
 		"id":     shipmentID,
-		"status": "shipped",
+		"status": "abandoned",
 	})
 	taskData := callToolAndParseJSON(t, s, "backlogit_create_item", map[string]any{
 		"title":         "Late shipment task",

@@ -93,22 +93,24 @@ func InternalError(detail string) *mcplib.CallToolResult {
 //
 // Error mapping table (sentinel → MCP error type):
 //
-//	Sentinel                  | MCP Type           | HTTP analogue
-//	--------------------------|--------------------|---------------
-//	ErrNotFound               | not_found          | 404
-//	ErrShipmentNotFound       | not_found          | 404
-//	ErrCheckpointNotFound     | not_found          | 404
-//	ErrShipmentConflict       | conflict           | 409
-//	ErrItemAlreadyAssigned    | conflict           | 409
-//	ErrCannotReturnItem       | conflict           | 409
-//	ErrChildrenNotTerminal    | conflict           | 409
-//	ErrValidation             | validation_failed  | 422
-//	ErrInvalidLinkType        | validation_failed  | 422
-//	ErrTelemetrySourceMissing | validation_failed  | 422
-//	ErrCheckpointInvalid      | validation_failed  | 422
-//	ErrCheckpointCorrupt      | validation_failed  | 422
-//	ErrTelemetryParseFailed   | internal           | 500
-//	(all others)              | internal           | 500
+//	Sentinel                          | MCP Type                              | HTTP analogue
+//	----------------------------------|---------------------------------------|---------------
+//	ErrNotFound                       | not_found                             | 404
+//	ErrShipmentNotFound               | not_found                             | 404
+//	ErrCheckpointNotFound             | not_found                             | 404
+//	ErrShipmentConflict               | conflict                              | 409
+//	ErrItemAlreadyAssigned            | conflict                              | 409
+//	ErrCannotReturnItem               | conflict                              | 409
+//	ErrChildrenNotTerminal            | conflict                              | 409
+//	ErrShipmentShippedRequiresEnv…    | shipment_shipped_requires_envelope    | 409
+//	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
+//	ErrValidation                     | validation_failed                     | 422
+//	ErrInvalidLinkType                | validation_failed                     | 422
+//	ErrTelemetrySourceMissing         | validation_failed                     | 422
+//	ErrCheckpointInvalid              | validation_failed                     | 422
+//	ErrCheckpointCorrupt              | validation_failed                     | 422
+//	ErrTelemetryParseFailed           | internal                              | 500
+//	(all others)                      | internal                              | 500
 //
 // op is a short camelCase description of the operation, prepended to
 // InternalError messages to aid diagnosis (e.g. "archive item").
@@ -127,6 +129,15 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		errors.Is(err, core.ErrTaskBusy),
 		errors.Is(err, corerrors.ErrChildrenNotTerminal):
 		return Conflict(err.Error())
+	case errors.Is(err, corerrors.ErrShipmentShippedRequiresEnvelope):
+		// 144-F guard 1: generic shipped-transition refusal; distinct from
+		// generic conflict so agents can tailor remediation (use ship_shipment).
+		return makeErrorResult("shipment_shipped_requires_envelope",
+			fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrArchiveShippedRequiresEvent):
+		// 144-F guard 2: archive of shipped shipment without durable event.
+		return makeErrorResult("archive_shipped_requires_event",
+			fmt.Sprintf("%s: %v", op, err))
 	case errors.Is(err, corerrors.ErrAmbiguousWorkspaceRoot):
 		var ambiguous *corerrors.AmbiguousWorkspaceRootError
 		if errors.As(err, &ambiguous) {

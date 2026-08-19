@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -606,4 +608,99 @@ func TestUnarchiveItem_LegacyArchivedFromAfterMigration(t *testing.T) {
 	restoredPath := filepath.Join(newDir, "queue", "001-T.md")
 	assert.FileExists(t, restoredPath)
 	assert.NoFileExists(t, filepath.Join(newDir, "archive", "001-T.md"))
+}
+
+// 144.005-T (U5) RED harness: ArchiveItem must refuse to stamp
+// archived_status: shipped on a shipment that has no durable shipped event,
+// must allow it when the event is present (governed archival), and must not
+// block non-shipped archival. Tests compile immediately but FAIL for the
+// refusal case until U6 adds the check to ArchiveItem.
+
+// seedShippedShipmentNoEvent writes a shipment frontmatter with status: shipped
+// directly, bypassing the U2 guard, so the fixture has no durable shipped event.
+func seedShippedShipmentNoEvent(t *testing.T, ws *core.Workspace) string {
+	t.Helper()
+	ctx := context.Background()
+	art, err := core.CreateShipment(ctx, ws, "No-event shipped shipment", nil)
+	require.NoError(t, err)
+
+	path, err := core.FindArtifactPath(ctx, ws, art.ID)
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	// Rewrite status to shipped in the frontmatter without touching the item log.
+	updated := strings.ReplaceAll(string(raw), "status: queued", "status: shipped")
+	require.NoError(t, os.WriteFile(path, []byte(updated), 0o644))
+	return art.ID
+}
+
+// seedShippedShipmentWithEvent writes a shipment at shipped status AND appends
+// the required durable shipment_status_changed event to its JSONL log.
+func seedShippedShipmentWithEvent(t *testing.T, ws *core.Workspace) string {
+	t.Helper()
+	id := seedShippedShipmentNoEvent(t, ws)
+	ctx := context.Background()
+
+	logsDir := core.WorkspaceLogsRoot(ws.RootPath)
+	logDir := filepath.Join(logsDir)
+	require.NoError(t, os.MkdirAll(logDir, 0o755))
+
+	eventLine := fmt.Sprintf(
+		"{\"timestamp\":%q,\"item_id\":%q,\"event_type\":\"shipment_status_changed\",\"delta\":{\"status\":\"shipped\"},\"actor\":\"backlogit\"}\n",
+		time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	logPath := filepath.Join(logsDir, id+".jsonl")
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = fmt.Fprint(f, eventLine)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	_ = ctx
+	return id
+}
+
+func TestArchiveItem_ShippedShipmentWithoutDurableEvent_Refused(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	shipmentID := seedShippedShipmentNoEvent(t, ws)
+
+	_, err := core.ArchiveItem(ctx, ws.DB, ws, shipmentID)
+	require.Error(t, err,
+		"ArchiveItem must refuse archived_status: shipped when no durable shipped event exists")
+	assert.True(t, errors.Is(err, blerrors.ErrArchiveShippedRequiresEvent),
+		"want ErrArchiveShippedRequiresEvent; got %v", err)
+}
+
+func TestArchiveItem_ShippedShipmentWithDurableEvent_Allowed(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	shipmentID := seedShippedShipmentWithEvent(t, ws)
+
+	// Guard 2 must pass when the durable event is present.
+	_, err := core.ArchiveItem(ctx, ws.DB, ws, shipmentID)
+	require.NoError(t, err,
+		"ArchiveItem must allow archiving a shipped shipment when the durable event is present")
+}
+
+func TestArchiveItem_NonShippedShipmentClosure_Unaffected(t *testing.T) {
+	ws := setupTestWorkspace(t)
+	ctx := context.Background()
+
+	// Create a shipment at "abandoned" — guard 2 must not block non-shipped closures.
+	art, err := core.CreateShipment(ctx, ws, "Abandoned shipment", nil)
+	require.NoError(t, err)
+
+	path, findErr := core.FindArtifactPath(ctx, ws, art.ID)
+	require.NoError(t, findErr)
+	raw, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	updated := strings.ReplaceAll(string(raw), "status: queued", "status: abandoned")
+	require.NoError(t, os.WriteFile(path, []byte(updated), 0o644))
+
+	_, err = core.ArchiveItem(ctx, ws.DB, ws, art.ID)
+	require.NoError(t, err,
+		"ArchiveItem must not block non-shipped shipment archival (guard 2 is scoped to shipped only)")
 }

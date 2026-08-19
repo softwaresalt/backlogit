@@ -267,3 +267,41 @@ func TestGate_NonTaskType_NotGated(t *testing.T) {
 	assert.Nil(t, outcome)
 	assert.Empty(t, runner.lastCmd, "gate must not run for a feature")
 }
+
+// 144.001-T (U1) RED harness: UpdateArtifactWithGate must refuse a shipment →
+// shipped transition unconditionally, even when the formal gate is OFF.
+// These tests compile immediately (sentinel defined in errors.go) but FAIL until
+// U2 removes the formalGateEnforced() condition from the shipment guard.
+
+func TestUpdateArtifactWithGate_ShipmentToShipped_Refused_GateOff(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	// Explicitly no formal gate config — formalGateEnforced() is false.
+	ws.Config.FormalGate = nil
+	ctx := context.Background()
+
+	shipment, err := CreateShipment(ctx, ws, "Guard-test shipment", nil)
+	require.NoError(t, err)
+	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+
+	_, _, err = UpdateArtifactWithGate(ctx, ws, shipment.ID,
+		map[string]any{"status": string(ShipmentShipped)},
+		TransitionOptions{})
+	require.Error(t, err, "shipment must not be moved to shipped via the generic gate path (gate OFF)")
+	assert.True(t, stderrors.Is(err, bkerrors.ErrShipmentShippedRequiresEnvelope),
+		"want ErrShipmentShippedRequiresEnvelope; got %v", err)
+}
+
+func TestUpdateArtifactWithGate_ShipmentToNonShipped_Unaffected(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	ws.Config.FormalGate = nil
+	ctx := context.Background()
+
+	shipment, err := CreateShipment(ctx, ws, "Transition-guard non-shipped shipment", nil)
+	require.NoError(t, err)
+
+	// queued→active must not be refused by guard 1.
+	_, _, err = UpdateArtifactWithGate(ctx, ws, shipment.ID,
+		map[string]any{"status": string(ShipmentActive)},
+		TransitionOptions{})
+	require.NoError(t, err, "non-shipped transition must not be refused by guard 1")
+}
