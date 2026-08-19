@@ -1,6 +1,7 @@
 ---
 type: dark-mode-event
 event: LOCAL_REVIEW_READY
+title: "LOCAL_REVIEW_READY — 127-S"
 timestamp: 2026-08-19T03:08:21Z
 reviewed_head: 97f1fd3b783868c1c185514582ff64b2db6ad760
 p0_p1_count: 0

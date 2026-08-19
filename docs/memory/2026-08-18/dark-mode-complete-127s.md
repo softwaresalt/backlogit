@@ -1,6 +1,7 @@
 ---
 type: dark-mode-event
 event: DARK_MODE_COMPLETE
+title: "DARK_MODE_COMPLETE — 127-S"
 timestamp: 2026-08-19T03:20:00Z
 shipment: 127-S
 ---

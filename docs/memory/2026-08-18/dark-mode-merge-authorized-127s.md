@@ -1,6 +1,7 @@
 ---
 type: dark-mode-event
 event: DARK_MODE_MERGE_AUTHORIZED
+title: "DARK_MODE_MERGE_AUTHORIZED — 127-S PR #367"
 timestamp: 2026-08-19T03:10:00Z
 pr_number: 367
 reviewed_head: 97f1fd3b783868c1c185514582ff64b2db6ad760

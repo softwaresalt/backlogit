@@ -1,5 +1,8 @@
 ---
 type: operational-closure
+title: "Operational Closure — 127-S shipped-event audit durability"
+doc_type: closure
+source: 127-S
 shipment: 127-S
 feature: 143-F
 timestamp: 2026-08-19T03:20:00Z
@@ -7,7 +10,6 @@ merge_sha: 817d46794342f0747f381e4d42e899d75d01c3cf
 pr_number: 367
 status: READY
 ---
-# Operational Closure — 127-S shipped-event audit durability
 
 ## Gate Outcomes
 

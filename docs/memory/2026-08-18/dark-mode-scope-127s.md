@@ -1,6 +1,7 @@
 ---
 type: dark-mode-event
 event: DARK_MODE_SCOPE
+title: "DARK_MODE_SCOPE — 127-S"
 timestamp: 2026-08-18T18:58:30-07:00
 scope: 127-S
 ---
