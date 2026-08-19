@@ -254,3 +254,33 @@ func snapshotLogsTree(t *testing.T, logsDir string) map[string]string {
 	require.NoError(t, walkErr)
 	return tree
 }
+
+// Review follow-up (143.007-T): a shipment whose manifest member is a FEATURE
+// must report the stranded descendants under it, not just the member itself.
+// This pins the descendant-expansion semantics so the enumeration cannot
+// silently regress to manifest-members-only.
+func TestDoctorShippedEventCompleteness_ResidueEnumeratesFeatureDescendants(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	feature, err := CreateArtifact(ctx, ws, "Residue feature member", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+
+	child, err := CreateArtifact(ctx, ws, "Residue feature child task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, child))
+
+	shipment := seedShippedShipment(t, ws, "Residue feature shipment", []string{feature.ID})
+
+	report := runShippedEventAudit(t, ws)
+	findings := findingsOfType(report, FindingShippedUnarchivedResidue)
+	require.Len(t, findings, 1)
+	assert.Equal(t, shipment.ID, findings[0].ArtifactID)
+	assert.Contains(t, findings[0].Description, feature.ID,
+		"the feature manifest member must be enumerated")
+	assert.Contains(t, findings[0].Description, child.ID,
+		"a descendant stranded under the feature member must be enumerated")
+	assert.Contains(t, findings[0].Description, "approximate",
+		"the enumeration must be labelled as an approximation of the ship-time sweep")
+}

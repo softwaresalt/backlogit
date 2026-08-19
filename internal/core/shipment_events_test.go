@@ -201,3 +201,21 @@ func TestAppendShipmentEventErr_SuccessOrderingOnShipPath(t *testing.T) {
 	require.GreaterOrEqual(t, archivedIndex, 0, "the archival record must be present in the item JSONL")
 	assert.Less(t, shippedIndex, archivedIndex, "the shipped event must be ordered before the archival record")
 }
+
+// Review follow-up (143.002-T): an item ID that would resolve its log outside the
+// workspace logs directory is refused before any lock or write, and is tagged
+// not-applied so the governed classifier may safely compensate.
+func TestAppendShipmentEventErr_RefusesUncontainedItemID(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	err := appendShipmentEventErr(ctx, ws, filepath.Join("..", "..", "escape"), "shipment_status_changed", map[string]any{
+		"status": string(ShipmentShipped),
+	})
+
+	require.Error(t, err)
+	assert.True(t, blerrors.IsWriteNotApplied(err),
+		"a refused, never-attempted append is proven not-applied, got: %v", err)
+	assert.ErrorIs(t, err, blerrors.ErrValidation)
+	assert.Contains(t, err.Error(), "outside the workspace logs directory")
+}

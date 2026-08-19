@@ -10,11 +10,14 @@
 # just locally edited. Remove an entry to re-enable template-drift detection
 # for that file when you want to re-adopt upstream template changes.
 #
-# NOTE: The following capability-gap files were deliberately NOT ignored so the
-# operator could decide whether to adopt new autoharness 1.4.11 capabilities.
-# Two of them are now ignored below because 143-F added a required local
-# customization (the P-007 / Ship-agent shipped-event indeterminate third
-# branch) that upstream templates do not carry:
+# NOTE: Two paths that were previously listed as deliberately NOT ignored --
+# .github/policies/workflow-policies.md and .github/agents/.ship.agent.md --
+# are now ignored below, because 143-F added a required local customization to
+# both: the P-007 / Ship-agent shipped-event indeterminate third branch, which
+# upstream templates do not carry.
+#
+# The following capability-gap files remain deliberately NOT ignored so the
+# operator can still decide whether to adopt new autoharness 1.4.11 capabilities:
 #   .autoharness/workspace-profile.yaml            (missing runtime_validation)
 #   .github/agents/_orchestrator.agent.md          (post-merge closure sequencing)
 #   .github/instructions/release-observability.instructions.md (validator/releasability evidence)

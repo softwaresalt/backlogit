@@ -619,6 +619,14 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 // readable == false with an explicit "event presence unknown" description and
 // never abort the whole doctor run for one unreadable file.
 func shippedEventPresence(ctx context.Context, logsDir, id string) (present bool, readable bool) {
+	// The ID comes from raw Markdown frontmatter, so refuse anything that would
+	// resolve outside the logs directory before opening it. An unsafe ID is
+	// reported as unreadable rather than silently read or counted as a clean
+	// result.
+	logPath := events.LogPathForItem(logsDir, id)
+	if !pathContained(logsDir, logPath) {
+		return false, false
+	}
 	itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
 	if err != nil {
 		return false, false
@@ -726,41 +734,70 @@ func detectShippedUnarchivedResidue(ctx context.Context, ws *Workspace, logsDir 
 			Type:       FindingShippedUnarchivedResidue,
 			ArtifactID: id,
 			Description: fmt.Sprintf(
-				"shipment %q has status %q but was never archived (resolved path %s); %s; stranded archive candidates: %s; reconcile before archiving (%s)",
+				"shipment %q has status %q but was never archived (resolved path %s); %s; stranded archive candidates (approximate -- re-run the audit after archiving to confirm): %s; reconcile before archiving (%s)",
 				id, ref.status, workspaceRelativePath(ws.RootPath, ref.path), eventState, strandedText, shippedEventAuditCaveat),
 		})
 	}
 	return findings
 }
 
-// strandedArchiveCandidates enumerates the manifest members and linked
-// deliberations that are still unarchived alongside a shipped-but-unarchived
-// shipment, matching what collectArchiveCandidateIDs would have swept.
+// strandedArchiveCandidates enumerates the manifest members, their unarchived
+// descendants, and the deliberations linked from the shipment body that remain
+// unarchived alongside a shipped-but-unarchived shipment.
+//
+// This is an operator-facing APPROXIMATION of the ship-time sweep, not a
+// byte-exact reproduction of collectArchiveCandidateIDs. It reports what a
+// reconciling operator still has to archive by hand; it does not re-run the
+// ship path's terminal-status filtering or its feature-linked deliberation
+// resolution. Treat the enumeration as a starting point and re-run the audit
+// after archiving to confirm the finding clears.
 func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifactRef) []string {
 	artifact, _, err := parseFile(shipmentRef.path)
 	if err != nil {
 		return nil
 	}
-	candidates := make([]string, 0)
+	seed := NormalizeShipmentItems(artifact)
+	seed = append(seed, deliberationIDPattern.FindAllString(artifact.Description, -1)...)
+
 	seen := make(map[string]struct{})
-	members := NormalizeShipmentItems(artifact)
-	members = append(members, deliberationIDPattern.FindAllString(artifact.Description, -1)...)
-	for _, memberID := range members {
-		if memberID == "" || memberID == shipmentRef.id {
+	queue := make([]string, 0, len(seed))
+	for _, id := range seed {
+		if id == "" || id == shipmentRef.id {
 			continue
 		}
-		if _, dup := seen[memberID]; dup {
+		if _, dup := seen[id]; dup {
 			continue
 		}
-		seen[memberID] = struct{}{}
-		group := refs[memberID]
+		seen[id] = struct{}{}
+		queue = append(queue, id)
+	}
+
+	// Expand descendants so a feature member reports the child work stranded
+	// under it, matching what the ship path would have swept.
+	for i := 0; i < len(queue); i++ {
+		parentID := queue[i]
+		for childID, group := range refs {
+			if len(group) == 0 || group[0].parentID != parentID {
+				continue
+			}
+			if _, dup := seen[childID]; dup {
+				continue
+			}
+			seen[childID] = struct{}{}
+			queue = append(queue, childID)
+		}
+	}
+
+	candidates := make([]string, 0, len(queue))
+	for _, id := range queue {
+		group := refs[id]
 		if len(group) == 0 {
 			continue
 		}
 		if group[0].status == string(models.StatusArchived) {
 			continue
 		}
-		candidates = append(candidates, memberID)
+		candidates = append(candidates, id)
 	}
 	sort.Strings(candidates)
 	return candidates

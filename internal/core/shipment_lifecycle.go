@@ -492,9 +492,21 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		if restoreAttempted && restoreSucceeded {
 			return
 		}
-		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
-			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
+		restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs)
+		if restoreErr == nil {
+			return
 		}
+		wrapped := fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr)
+		// internal/mcp extracts the *MutationPartialError and renders only that
+		// value, so joining this failure AROUND the typed error would drop it
+		// from every MCP response. Fold it into Cause instead whenever the
+		// governed classifier already produced one.
+		var partial *blerrors.MutationPartialError
+		if errors.As(err, &partial) {
+			partial.Cause = errors.Join(partial.Cause, wrapped)
+			return
+		}
+		err = errors.Join(err, wrapped)
 	}()
 
 	lockErr := func() (closureErr error) {

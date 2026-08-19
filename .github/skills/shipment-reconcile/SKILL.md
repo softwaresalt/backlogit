@@ -12,7 +12,10 @@ the archive + restore steps complete.
 ## When to Use
 
 * **Ship Step 6** (mandatory): pre-mode immediately before `backlogit_ship_shipment`;
-  post-mode immediately after the `git restore .backlogit/archive/` step.
+  post-mode immediately after the `git restore .backlogit/archive/` step — EXCEPT on the
+  halted-archival third branch (`mutation_partial` with `classification: indeterminate` and
+  `failed_step: shipped-event-append`), where `git restore` must NOT run at all and post-mode
+  is invoked directly. See Post-Mode step 0.
 * **Ship Step 0.5** (sanity check): pre-mode at intake with `expected_status: queued`
   (or `active` if the shipment was already claimed in a prior session)
   to catch Stage-side over-inclusion before any build work begins.

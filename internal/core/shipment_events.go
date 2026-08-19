@@ -52,6 +52,13 @@ func wrapShipmentAppendError(itemID, eventType string, err error) error {
 // source of truth) and never reclassifies the append outcome.
 func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) error {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	// Refuse an item ID that would resolve its log (and therefore its lock
+	// sidecar) outside the logs directory. Nothing has been written when this
+	// fires, so not-applied is the honest class and compensation is safe.
+	if !pathContained(logsDir, events.LogPathForItem(logsDir, itemID)) {
+		return fmt.Errorf("shipment event log for %s resolves outside the workspace logs directory: %w: %w",
+			itemID, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
 	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("lock shipment event log %s: %w: %w", itemID, blerrors.ErrWriteNotApplied, lockErr)
