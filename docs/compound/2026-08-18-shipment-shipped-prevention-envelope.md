@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2
 description: "Core seam guard for shipment shipped-transition prevention: why unconditional core-seam refusal beats gate rules for governance-critical flows."
-doc_type: compound
+doc_type: learning
 schema_version: "1.0"
 source: docs/compound/2026-08-18-shipment-shipped-prevention-envelope.md
 title: "Shipment governance: unconditional core-seam refusal for shipped transitions"

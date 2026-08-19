@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "Shipped-transition prevention and archive guard: the prevention/detection pairing, producer set, and locked-path authority."
-doc_type: design-doc
+doc_type: design
 schema_version: "1.0"
 source: docs/design-docs/2026-08-shipment-shipped-prevention-envelope.md
 title: "Shipment shipped-transition prevention and archive stamping guard (144-F)"
