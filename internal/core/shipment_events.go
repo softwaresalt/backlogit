@@ -61,12 +61,14 @@ func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventTyp
 	// of logsDir from being exploited to bypass the lexical check. This mirrors
 	// the EvalSymlinks+pathContained pattern used by confineToStorageRoot.
 	logPath := events.LogPathForItem(logsDir, itemID)
-	// Use real-path containment anchored on the workspace storage root to
-	// defend against a symlinked logsDir. If only the logs directory itself
-	// were the anchor, a symlink from logsDir to /external would make both
-	// realLogsDir and realLogPath resolve under /external and the inner check
-	// would pass. Anchoring on the storage root (which uses filepath.Abs first,
-	// following confineToStorageRoot) catches that case.
+	// Use real-path containment with TWO layered checks:
+	// (1) the logs directory itself must be contained within the workspace
+	//     storage root — guards against a symlinked logsDir that escapes the
+	//     workspace entirely;
+	// (2) the target log path must be contained within the resolved logs
+	//     directory — guards against an itemID like "../queue/escape" that
+	//     remains within the storage root but escapes the logs subtree.
+	// Both use filepath.Abs + EvalSymlinks, matching confineToStorageRoot.
 	absStorageRoot, absErr := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
 	if absErr != nil {
 		absStorageRoot = filepath.Clean(WorkspaceStorageRoot(ws.RootPath))
@@ -74,6 +76,17 @@ func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventTyp
 	realStorageRoot, srErr := filepath.EvalSymlinks(absStorageRoot)
 	if srErr != nil {
 		realStorageRoot = absStorageRoot
+	}
+	// Derive realLogsDir from the resolved storage root so the base is always
+	// consistent (no dependency on the logs directory existing yet). If the
+	// directory exists, resolve it to catch a symlinked component.
+	realLogsDir := filepath.Join(realStorageRoot, "logs")
+	if resolvedLogs, evalErr := filepath.EvalSymlinks(realLogsDir); evalErr == nil {
+		if !pathContained(realStorageRoot, resolvedLogs) {
+			return fmt.Errorf("workspace logs directory resolves outside the storage root: %w: %w",
+				blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+		}
+		realLogsDir = resolvedLogs
 	}
 	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
 	if evalErr != nil {
@@ -85,8 +98,8 @@ func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventTyp
 			realLogPath = logPath
 		}
 	}
-	if !pathContained(realStorageRoot, realLogPath) {
-		return fmt.Errorf("shipment event log for %s resolves outside the workspace storage root: %w: %w",
+	if !pathContained(realLogsDir, realLogPath) {
+		return fmt.Errorf("shipment event log for %s resolves outside the workspace logs directory: %w: %w",
 			itemID, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
 	}
 	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
