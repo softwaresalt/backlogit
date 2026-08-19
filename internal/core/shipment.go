@@ -202,9 +202,44 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 	}
 
 	slog.InfoContext(ctx, "shipment status changed", "shipment_id", shipmentID, "new_status", newStatus)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_status_changed", map[string]any{
+	// 143.002-T / 143.003-T: the shipment's own status event flows through the
+	// shipment-scoped, error-returning appender so the outcome is routable and
+	// classifiable.
+	//
+	// The fail-closed branch is gated on the GOVERNED path only
+	// (newStatus == ShipmentShipped && !topLevel). ShipShipment is the sole
+	// caller passing topLevel=false for ShipmentShipped; the exported
+	// MoveShipmentStatus passes true and stays best-effort. Gating on the status
+	// alone would make the exported entry point fail closed WITHOUT the
+	// classification and compensation that only ShipShipment's locked closure
+	// provides, persisting the status and then returning a bare error — an
+	// uncompensated residue on a path this change declares ungoverned.
+	//
+	// The append is never retried. events.EventWriter.AppendEvent's contract is
+	// that a partial write or a post-write fsync failure is
+	// blerrors.ErrWriteIndeterminate and is not safe to retry blindly; a
+	// pre-append lock failure is already tagged not-applied by
+	// appendShipmentEventErr and compensates. There is no third outcome class.
+	//
+	// The fail-closed shipped path intentionally suppresses the
+	// HookMoveShipmentStatus POST hook, which today always fires because the
+	// append error is swallowed. Firing a "status changed to shipped" post-hook
+	// for a transition that is about to be compensated (or explicitly reported
+	// as indeterminate) would misinform external integrations.
+	//
+	// On a platform without item-log file-lock support
+	// (internal/events/item_log_lock_other.go always errors), this branch turns
+	// every governed ship into a hard, clearly-classified refusal rather than a
+	// silent audit gap. Windows and Unix are the supported build targets.
+	appendErr := ws.appendShipmentEvent(ctx, shipmentID, "shipment_status_changed", map[string]any{
 		"status": string(newStatus),
 	})
+	if appendErr != nil {
+		if newStatus == ShipmentShipped && !topLevel {
+			return &shipmentEventAppendError{shipmentID: shipmentID, cause: appendErr}
+		}
+		slog.WarnContext(ctx, "append shipment status event", "shipment_id", shipmentID, "new_status", newStatus, "error", appendErr)
+	}
 
 	// Fire post-move-shipment-status hooks.
 	if ws.HookRunner != nil {
@@ -222,6 +257,27 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 
 	return nil
 }
+
+// shipmentEventAppendError is the private boundary value carrying a governed
+// shipped-event append failure out of moveShipmentStatusWithHeadGuard so
+// ShipShipment's rollback defer classifies ONLY that error. Every other closure
+// error -- including untagged pre-append failures from completeReleaseScope,
+// returnUnreleasedFeatureItems, and the status cascades -- keeps the existing
+// unconditional rollback.
+//
+// It is declared here, in the unit that constructs it, rather than a unit
+// earlier: an unexported type with no constructor is reported by staticcheck's
+// unused analyzer.
+type shipmentEventAppendError struct {
+	shipmentID string
+	cause      error
+}
+
+func (e *shipmentEventAppendError) Error() string {
+	return fmt.Sprintf("append shipped event for shipment %s: %v", e.shipmentID, e.cause)
+}
+
+func (e *shipmentEventAppendError) Unwrap() error { return e.cause }
 
 func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentID, expectedHeadSHA string) error {
 	currentHead, headErr := ws.headSHABounded(ctx)

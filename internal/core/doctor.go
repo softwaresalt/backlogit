@@ -109,6 +109,25 @@ const (
 	// FindingInconsistentDependencyEdge indicates frontmatter dependency edges and
 	// cached item_deps edges disagree for the same artifact.
 	FindingInconsistentDependencyEdge DoctorFindingType = "inconsistent_dependency_edge"
+
+	// FindingMissingShippedEvent indicates an archived shipment whose
+	// archived_status is "shipped" has no shipment_status_changed event with
+	// status == "shipped" in its item JSONL log. The audit record is permanently
+	// absent: item logs are append-only and are never synthesized or rewritten by
+	// this check. The same finding type also reports an item log that could not be
+	// read at all, with an explicit "event presence unknown" description, so a
+	// false negative can never masquerade as a clean result. Advisory; report-only.
+	FindingMissingShippedEvent DoctorFindingType = "missing_shipped_event"
+
+	// FindingShippedUnarchivedResidue indicates a shipment whose status is
+	// "shipped" was never archived. This is the residue the governed
+	// ShipShipment indeterminate branch deliberately leaves when the shipped-event
+	// append outcome cannot be proven, and it is anomalous regardless of whether
+	// the shipped event itself is present. The description records shipped-event
+	// presence and enumerates the archive candidates stranded alongside the
+	// shipment, because the indeterminate branch returns before the archive
+	// collector runs. Advisory; report-only.
+	FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
@@ -190,6 +209,13 @@ type DoctorOptions struct {
 	CheckPartialMutations bool
 	// CheckWorkspaceRootConflict enables the read-only dual-root conflict check.
 	CheckWorkspaceRootConflict bool
+	// CheckShippedEventCompleteness enables the read-only shipped-event
+	// reconciliation audit (143-F): archived shipments whose archived_status is
+	// "shipped" but whose item JSONL carries no shipped event, and shipments left
+	// "shipped" but unarchived. Detection only; the audit never writes,
+	// synthesizes, or rewrites JSONL, and its findings never change the doctor
+	// exit code. Off by default on both the CLI and MCP surfaces.
+	CheckShippedEventCompleteness bool
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -228,11 +254,13 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	type artifactInfo struct {
-		id           string
-		artifactType string
-		parentID     string
-		status       string
-		level        int // effective level (frontmatter level, or derived from ID)
+		id             string
+		artifactType   string
+		parentID       string
+		status         string
+		archivedStatus string
+		path           string
+		level          int // effective level (frontmatter level, or derived from ID)
 	}
 
 	// 066.001-T: a single shared canonical scan feeds the orphan, duplicate, and
@@ -257,11 +285,13 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		group := refs[id]
 		first := group[0]
 		artifacts = append(artifacts, artifactInfo{
-			id:           first.id,
-			artifactType: first.artifactType,
-			parentID:     first.parentID,
-			status:       first.status,
-			level:        first.level,
+			id:             first.id,
+			artifactType:   first.artifactType,
+			parentID:       first.parentID,
+			status:         first.status,
+			archivedStatus: first.archivedStatus,
+			path:           first.path,
+			level:          first.level,
 		})
 		for _, r := range group {
 			idToFiles[id] = append(idToFiles[id], r.path)
@@ -548,6 +578,14 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		}
 	}
 
+	if opts.CheckShippedEventCompleteness {
+		// 143.006-T / 143.007-T: read-only shipped-event reconciliation audit.
+		// Scans the canonical raw-Markdown refs (queue AND archive), never the
+		// SQLite projection, and never writes, synthesizes, or rewrites JSONL.
+		report.Findings = append(report.Findings, detectMissingShippedEvents(ctx, logsDir, refs, ids)...)
+		report.Findings = append(report.Findings, detectShippedUnarchivedResidue(ctx, ws, logsDir, refs, ids)...)
+	}
+
 	if opts.CheckPartialMutations && ws.DB != nil {
 		commitFindings, commitErr := detectPartialCommitAssociations(ctx, ws, logsDir)
 		if commitErr != nil {
@@ -569,6 +607,220 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	return report, nil
+}
+
+// shippedEventPresence reports whether the item JSONL for id carries a
+// shipment_status_changed event with status == "shipped", and whether the log
+// could be read at all.
+//
+// An unreadable log (open or scan failure, as distinct from "absent" or
+// "malformed line skipped") is NOT a missing event: reporting it as one would
+// let a false negative masquerade as a clean result. Callers surface
+// readable == false with an explicit "event presence unknown" description and
+// never abort the whole doctor run for one unreadable file.
+func shippedEventPresence(ctx context.Context, logsDir, id string) (present bool, readable bool) {
+	// The ID comes from raw Markdown frontmatter, so refuse anything that would
+	// resolve outside the logs directory before opening it. An unsafe ID is
+	// reported as unreadable rather than silently read or counted as a clean
+	// result. Use real-path containment (EvalSymlinks) to catch symlinked
+	// components, mirroring confineToStorageRoot.
+	logPath := events.LogPathForItem(logsDir, id)
+	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
+	if rootErr != nil {
+		realLogsDir = filepath.Clean(logsDir)
+	}
+	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
+	if evalErr != nil {
+		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
+			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
+		} else {
+			realLogPath = logPath
+		}
+	}
+	if !pathContained(realLogsDir, realLogPath) {
+		return false, false
+	}
+	itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
+	if err != nil {
+		return false, false
+	}
+	for _, event := range itemEvents {
+		if event.EventType != "shipment_status_changed" {
+			continue
+		}
+		if status, ok := event.Delta["status"].(string); ok && status == string(ShipmentShipped) {
+			return true, true
+		}
+	}
+	return false, true
+}
+
+// shippedEventAuditCaveat is the shared "verify the real history" wording, kept
+// consistent with the over-archived covering-feature audit.
+const shippedEventAuditCaveat = "advisory; exit code unaffected; verify the actual history before treating this as confirmed corruption -- it can be transient during an in-flight ship"
+
+// detectMissingShippedEvents reports an archived shipment whose archived_status
+// is "shipped" but whose item JSONL carries no shipped event. The check reads
+// archived_status, not status: ArchiveItem sets status to "archived" and stores
+// the pre-archive status in archived_status, so an archived shipped shipment
+// presents as status "archived".
+//
+// The audit never writes, synthesizes, or rewrites JSONL.
+func detectMissingShippedEvents(ctx context.Context, logsDir string, refs map[string][]artifactRef, ids []string) []DoctorFinding {
+	findings := make([]DoctorFinding, 0)
+	for _, id := range ids {
+		group := refs[id]
+		if len(group) == 0 {
+			continue
+		}
+		ref := group[0]
+		if ref.artifactType != "shipment" {
+			continue
+		}
+		if ref.archivedStatus != string(ShipmentShipped) {
+			continue
+		}
+		present, readable := shippedEventPresence(ctx, logsDir, id)
+		switch {
+		case !readable:
+			findings = append(findings, DoctorFinding{
+				Type:       FindingMissingShippedEvent,
+				ArtifactID: id,
+				Description: fmt.Sprintf(
+					"archived shipment %q has archived_status %q but its item log could not be read: log unreadable, event presence unknown (%s)",
+					id, ref.archivedStatus, shippedEventAuditCaveat),
+			})
+		case !present:
+			findings = append(findings, DoctorFinding{
+				Type:       FindingMissingShippedEvent,
+				ArtifactID: id,
+				Description: fmt.Sprintf(
+					"archived shipment %q has archived_status %q but its item log carries no shipment_status_changed event with status %q; the audit record is permanently absent and must never be synthesized (%s)",
+					id, ref.archivedStatus, string(ShipmentShipped), shippedEventAuditCaveat),
+			})
+		}
+	}
+	return findings
+}
+
+// detectShippedUnarchivedResidue reports a shipment left "shipped" but not
+// archived. This is the residue the governed ShipShipment indeterminate branch
+// deliberately leaves, and it is anomalous regardless of whether the shipped
+// event is present.
+//
+// The description records shipped-event presence, because that determines which
+// branch of the named-limitation procedure the operator follows, and enumerates
+// the archive candidates stranded alongside the shipment: the indeterminate
+// branch returns BEFORE collectArchiveCandidateIDs, so the whole archive set is
+// stranded, not the shipment alone. Membership is re-read from the canonical
+// scan, never from the SQLite projection. The reported path is the one the scan
+// actually observed rather than a re-derived assumption about routing.
+func detectShippedUnarchivedResidue(ctx context.Context, ws *Workspace, logsDir string, refs map[string][]artifactRef, ids []string) []DoctorFinding {
+	findings := make([]DoctorFinding, 0)
+	for _, id := range ids {
+		group := refs[id]
+		if len(group) == 0 {
+			continue
+		}
+		ref := group[0]
+		if ref.artifactType != "shipment" {
+			continue
+		}
+		if ref.status != string(ShipmentShipped) {
+			continue
+		}
+
+		eventState := "shipped event present"
+		if present, readable := shippedEventPresence(ctx, logsDir, id); !readable {
+			eventState = "shipped event presence unknown (log unreadable)"
+		} else if !present {
+			eventState = "shipped event absent"
+		}
+
+		stranded := strandedArchiveCandidates(refs, ref, filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive"))
+		strandedText := "none"
+		if len(stranded) > 0 {
+			strandedText = strings.Join(stranded, ", ")
+		}
+
+		findings = append(findings, DoctorFinding{
+			Type:       FindingShippedUnarchivedResidue,
+			ArtifactID: id,
+			Description: fmt.Sprintf(
+				"shipment %q has status %q but was never archived (resolved path %s); %s; stranded archive candidates (approximate -- re-run the audit after archiving to confirm): %s; reconcile before archiving (%s)",
+				id, ref.status, workspaceRelativePath(ws.RootPath, ref.path), eventState, strandedText, shippedEventAuditCaveat),
+		})
+	}
+	return findings
+}
+
+// strandedArchiveCandidates enumerates the manifest members, their unarchived
+// descendants, and the deliberations linked from the shipment body that remain
+// unarchived alongside a shipped-but-unarchived shipment.
+//
+// This is an operator-facing APPROXIMATION of the ship-time sweep, not a
+// byte-exact reproduction of collectArchiveCandidateIDs. It reports what a
+// reconciling operator still has to archive by hand; it does not re-run the
+// ship path's terminal-status filtering or its feature-linked deliberation
+// resolution. Treat the enumeration as a starting point and re-run the audit
+// after archiving to confirm the finding clears.
+func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifactRef, archiveDir string) []string {
+	artifact, _, err := parseFile(shipmentRef.path)
+	if err != nil {
+		return nil
+	}
+	seed := NormalizeShipmentItems(artifact)
+	seed = append(seed, deliberationIDPattern.FindAllString(artifact.Description, -1)...)
+
+	seen := make(map[string]struct{})
+	queue := make([]string, 0, len(seed))
+	for _, id := range seed {
+		if id == "" || id == shipmentRef.id {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		queue = append(queue, id)
+	}
+
+	// Expand descendants so a feature member reports the child work stranded
+	// under it, matching what the ship path would have swept.
+	for i := 0; i < len(queue); i++ {
+		parentID := queue[i]
+		for childID, group := range refs {
+			if len(group) == 0 || group[0].parentID != parentID {
+				continue
+			}
+			if _, dup := seen[childID]; dup {
+				continue
+			}
+			seen[childID] = struct{}{}
+			queue = append(queue, childID)
+		}
+	}
+
+	candidates := make([]string, 0, len(queue))
+	for _, id := range queue {
+		group := refs[id]
+		if len(group) == 0 {
+			continue
+		}
+		if group[0].status == string(models.StatusArchived) {
+			continue
+		}
+		// An item may already reside under archive/ while its frontmatter
+		// status is still "done" (pre-archived via terminal-status routing,
+		// archive.go:212-224). Such items are not stranded — they are
+		// already archived and the operator does not need to act on them.
+		if archiveDir != "" && pathContained(archiveDir, group[0].path) {
+			continue
+		}
+		candidates = append(candidates, id)
+	}
+	sort.Strings(candidates)
+	return candidates
 }
 
 func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) ([]DoctorFinding, error) {

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -171,7 +172,41 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 	return snapshots, nil
 }
 
+// shipRestoreRetryWindow bounds the per-CALL retry budget the compensation loop
+// spends re-acquiring item-log locks. It is expressed as a wall-clock deadline
+// as well as an attempt count because the in-process acquisition inside
+// events.LockItemLogCrossProcess is itself unbounded (a plain, uncancellable
+// mutex.Lock); the deadline is therefore a best-effort bound on the retry LOOP,
+// not a hard bound on any single acquisition. The budget is per call, not per
+// item, because this loop runs inside the ship closure's rollback defer with the
+// membership lock and every artifact lock held. Two cross-process wait periods
+// (3 seconds each) is the ceiling.
+const shipRestoreRetryWindow = 6 * time.Second
+
+// shipRestoreRetryAttempts is the number of EXTRA lock acquisitions the whole
+// call may spend, shared across all items.
+const shipRestoreRetryAttempts = 2
+
+// restoreShipArtifacts compensates a failed ship by restoring every snapshot.
+// It returns only the joined error; callers that must report which items could
+// not be restored use restoreShipArtifactsDetailed.
 func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) error {
+	_, err := restoreShipArtifactsDetailed(ctx, ws, snapshots)
+	return err
+}
+
+// restoreShipArtifactsDetailed restores every snapshot and additionally reports
+// the IDs it could NOT restore, so a caller can promote the outcome to
+// CompensationState "partially-compensated" instead of silently skipping an
+// item. Compensation is all-or-nothing or it says so.
+//
+// The per-item body runs inside a closure with a NIL-GUARDED deferred unlock.
+// An early return inside the loop is forbidden: unlockItemLog is a plain
+// statement in the original loop, not a defer, so an early return would leak the
+// process-global item-log mutex, which has no deadline. A blanket
+// `defer unlockItemLog()` is equally unsafe because
+// events.LockItemLogCrossProcess returns a NIL unlock on error.
+func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) ([]string, error) {
 	ctx = context.WithoutCancel(ctx)
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	operationID := shipmentOperationID(ctx)
@@ -180,53 +215,98 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 		ids = append(ids, id)
 	}
 	var errs []error
+	unrestored := make(map[string]struct{})
+	budget := &shipRestoreBudget{deadline: time.Now().Add(shipRestoreRetryWindow), attempts: shipRestoreRetryAttempts}
 	for _, id := range depthSortedIDs(ids) {
-		itemCtx, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
-		if lockErr != nil {
-			errs = append(errs, fmt.Errorf("lock artifact %s event log: %w", id, lockErr))
-			continue
-		}
-		snapshot := snapshots[id]
-		currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
-		var preservedEvents []events.Event
-		eventLogRestorable := readErr == nil
-		if readErr != nil {
-			errs = append(errs, fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
-		} else if preservedEvents, readErr = eventsSinceSnapshot(snapshot.eventLog, id, currentEvents, operationID); readErr != nil {
-			eventLogRestorable = false
-			errs = append(errs, fmt.Errorf("identify concurrent events for %s: %w", id, readErr))
-		}
-		if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
-			if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
-				errs = append(errs, fmt.Errorf("remove mutated artifact %s: %w", id, removeErr))
+		func() {
+			itemCtx, unlockItemLog, lockErr := acquireItemLogWithBudget(ctx, logsDir, id, budget)
+			if lockErr != nil {
+				errs = append(errs, fmt.Errorf("lock artifact %s event log: %w", id, lockErr))
+				unrestored[id] = struct{}{}
+				return
 			}
-		} else if err != nil && !errors.Is(err, blerrors.ErrNotFound) {
-			errs = append(errs, fmt.Errorf("locate mutated artifact %s: %w", id, err))
-		}
-		if err := restoreSnapshot(snapshot.file); err != nil {
-			errs = append(errs, fmt.Errorf("restore artifact %s file: %w", id, err))
-		}
-		if eventLogRestorable {
-			if err := restoreSnapshot(snapshot.eventLog); err != nil {
-				errs = append(errs, fmt.Errorf("restore artifact %s event log: %w", id, err))
-			} else {
-				writer := NewWorkspaceEventWriter(ws, logsDir)
-				for _, event := range preservedEvents {
-					if err := writer.AppendEvent(itemCtx, event); err != nil {
-						errs = append(errs, fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
+			defer func() {
+				if unlockItemLog != nil {
+					unlockItemLog()
+				}
+			}()
+			itemFailed := false
+			fail := func(err error) {
+				errs = append(errs, err)
+				itemFailed = true
+			}
+			defer func() {
+				if itemFailed {
+					unrestored[id] = struct{}{}
+				}
+			}()
+
+			snapshot := snapshots[id]
+			currentEvents, readErr := events.ReadAllEvents(itemCtx, logsDir, id)
+			var preservedEvents []events.Event
+			eventLogRestorable := readErr == nil
+			if readErr != nil {
+				fail(fmt.Errorf("read mutated artifact %s event log: %w", id, readErr))
+			} else if preservedEvents, readErr = eventsSinceSnapshot(snapshot.eventLog, id, currentEvents, operationID); readErr != nil {
+				eventLogRestorable = false
+				fail(fmt.Errorf("identify concurrent events for %s: %w", id, readErr))
+			}
+			if currentPath, err := FindArtifactPath(ctx, ws, id); err == nil && currentPath != snapshot.file.Path {
+				if removeErr := os.Remove(currentPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					fail(fmt.Errorf("remove mutated artifact %s: %w", id, removeErr))
+				}
+			} else if err != nil && !errors.Is(err, blerrors.ErrNotFound) {
+				fail(fmt.Errorf("locate mutated artifact %s: %w", id, err))
+			}
+			if err := restoreSnapshot(snapshot.file); err != nil {
+				fail(fmt.Errorf("restore artifact %s file: %w", id, err))
+			}
+			if eventLogRestorable {
+				if err := restoreSnapshot(snapshot.eventLog); err != nil {
+					fail(fmt.Errorf("restore artifact %s event log: %w", id, err))
+				} else {
+					writer := NewWorkspaceEventWriter(ws, logsDir)
+					for _, event := range preservedEvents {
+						if err := writer.AppendEvent(itemCtx, event); err != nil {
+							fail(fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
+						}
+					}
+					if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
+						fail(fmt.Errorf("restore artifact %s event index: %w", id, err))
 					}
 				}
-				if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
-					errs = append(errs, fmt.Errorf("restore artifact %s event index: %w", id, err))
-				}
 			}
-		}
-		if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
-			errs = append(errs, fmt.Errorf("restore artifact %s index: %w", id, err))
-		}
-		unlockItemLog()
+			if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
+				fail(fmt.Errorf("restore artifact %s index: %w", id, err))
+			}
+		}()
 	}
-	return errors.Join(errs...)
+	unrestoredIDs := make([]string, 0, len(unrestored))
+	for id := range unrestored {
+		unrestoredIDs = append(unrestoredIDs, id)
+	}
+	sort.Strings(unrestoredIDs)
+	return unrestoredIDs, errors.Join(errs...)
+}
+
+// shipRestoreBudget carries the per-call retry allowance shared by every item in
+// one compensation pass.
+type shipRestoreBudget struct {
+	deadline time.Time
+	attempts int
+}
+
+// acquireItemLogWithBudget re-acquires an item-log lock, spending the shared
+// per-call retry budget when the first attempt fails. It never blocks beyond the
+// budget's wall-clock deadline for the retry loop itself.
+func acquireItemLogWithBudget(ctx context.Context, logsDir, id string, budget *shipRestoreBudget) (context.Context, func(), error) {
+	itemCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+	for lockErr != nil && budget.attempts > 0 && time.Now().Before(budget.deadline) {
+		budget.attempts--
+		time.Sleep(50 * time.Millisecond)
+		itemCtx, unlock, lockErr = events.LockItemLogCrossProcess(ctx, logsDir, id)
+	}
+	return itemCtx, unlock, lockErr
 }
 
 // eventsSinceSnapshot returns events appended after the ship snapshot that are
@@ -345,11 +425,54 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// feature would revert an archival this same call just legitimately
 	// performed (review-fix, 133.004-T).
 	var archivedIDs []string
-	// restored tracks whether the explicit, in-line restore call later in
-	// this function (on the successful path) already ran, so the deferred
-	// fallback becomes a no-op instead of invoking
-	// restoreRolledUpNonMemberFeatures twice.
-	restored := false
+	// restoreAttempted and restoreSucceeded are tracked separately (143.012-T)
+	// so the deferred fallback can distinguish "already restored successfully"
+	// from "attempted and failed" and grant the latter exactly one retry. A
+	// single `restored` flag conflated the two and let a transient busy-lock
+	// permanently abandon the covering-feature compensation.
+	//
+	// Truth table for the interaction with shipRollbackAttempted:
+	//
+	//	outcome                | in-lock restore | attempted | succeeded | rollbackAttempted | fallback
+	//	-----------------------|-----------------|-----------|-----------|-------------------|---------
+	//	success                | explicit call   | true      | true      | false             | skip
+	//	success, restore fails | explicit call   | true      | false     | false             | retry once
+	//	not-applied            | none            | false     | false     | true              | skip
+	//	partially-compensated  | none            | false     | false     | true              | skip
+	//	indeterminate          | in classify     | true      | true/false| false             | retry once
+	restoreAttempted := false
+	restoreSucceeded := false
+	// 133.004-T: always attempt the revert, even if a later step in this
+	// function fails and returns early -- a partial/aborted ship must not
+	// leave a non-member covering feature stranded mid-rollup. A restore
+	// failure is joined onto (never silently drops) the function's error.
+	// review-fix (PR #327): this defer is now a fallback for early-return
+	// paths only. On the successful path, the explicit call further below
+	// runs the restore BEFORE VerifyPostShipConsistency and the post-ship
+	// hooks, so consistency checks and external integrations never observe
+	// the covering feature in its transient, incorrectly-rolled-up
+	// done/archived state. Relying solely on this defer would let it fire
+	// only during return unwinding -- strictly after those in-line
+	// statements already ran to completion.
+	// 143.012-T: releaseArtifactLocks is registered FIRST so LIFO unwinds it
+	// LAST, and the non-member-feature fallback is registered SECOND so it
+	// unwinds FIRST -- with the artifact locks genuinely held and the ctx
+	// ownership markers truthful. Before the swap, LIFO ran the release before
+	// the fallback, so the fallback performed status writes and file relocations
+	// with a ctx that falsely asserted the locks were held (ctx is reassigned in
+	// place when lockArtifactMutations succeeds).
+	//
+	// Nilling the releaser was evaluated and REJECTED: it would make the fallback
+	// unconditionally dead and silently delete the 133.004-T guarantee for the
+	// collectArchiveCandidateIDs, attachCommitToItems, and archiveItems failure
+	// paths.
+	var releaseArtifactLocks func() error
+	defer func() {
+		if releaseArtifactLocks != nil {
+			_ = releaseArtifactLocks()
+		}
+	}()
+
 	// 133.004-T: always attempt the revert, even if a later step in this
 	// function fails and returns early -- a partial/aborted ship must not
 	// leave a non-member covering feature stranded mid-rollup. A restore
@@ -363,19 +486,27 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// only during return unwinding -- strictly after those in-line
 	// statements already ran to completion.
 	defer func() {
-		if restored || shipRollbackAttempted {
+		if shipRollbackAttempted {
 			return
 		}
-		if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
-			err = errors.Join(err, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr))
+		if restoreAttempted && restoreSucceeded {
+			return
 		}
-	}()
-
-	var releaseArtifactLocks func() error
-	defer func() {
-		if releaseArtifactLocks != nil {
-			_ = releaseArtifactLocks()
+		restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs)
+		if restoreErr == nil {
+			return
 		}
+		wrapped := fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr)
+		// internal/mcp extracts the *MutationPartialError and renders only that
+		// value, so joining this failure AROUND the typed error would drop it
+		// from every MCP response. Fold it into Cause instead whenever the
+		// governed classifier already produced one.
+		var partial *blerrors.MutationPartialError
+		if errors.As(err, &partial) {
+			partial.Cause = errors.Join(partial.Cause, wrapped)
+			return
+		}
+		err = errors.Join(err, wrapped)
 	}()
 
 	lockErr := func() (closureErr error) {
@@ -388,6 +519,21 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		// membership mutation could land after the failed release and be
 		// overwritten by restoration of the pre-ship snapshot.
 		defer func() {
+			// 143.004-T: classify a governed shipped-event append failure BEFORE
+			// the len(shipSnapshots) guard below. Placing it after would make the
+			// branch dead code whenever snapshotting did not populate the map.
+			// restoreShipArtifacts stays behind that guard.
+			var appendErr *shipmentEventAppendError
+			if errors.As(closureErr, &appendErr) {
+				outcome := classifyShippedEventAppendFailure(ctx, ws, shipmentID, appendErr, shipSnapshots, nonMemberFeatureSnapshots)
+				shipRollbackAttempted = outcome.rollbackAttempted
+				if outcome.nonMemberRestored {
+					restoreAttempted = true
+					restoreSucceeded = outcome.nonMemberRestoreSucceeded
+				}
+				closureErr = outcome.err
+				return
+			}
 			if closureErr == nil || len(shipSnapshots) == 0 {
 				return
 			}
@@ -533,10 +679,11 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// custom integration) observe the feature in its transient,
 	// incorrectly-rolled-up done/archived state, even though it is reverted
 	// moments later when the function returns.
+	restoreAttempted = true
 	if restoreErr := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, archivedIDs); restoreErr != nil {
 		return nil, fmt.Errorf("ship shipment %s: restore non-member covering feature scope: %w", shipmentID, restoreErr)
 	}
-	restored = true
+	restoreSucceeded = true
 
 	if err := VerifyPostShipConsistency(ctx, ws, archivedIDs); err != nil {
 		return nil, fmt.Errorf("ship shipment %s: post-ship consistency: %w", shipmentID, err)
@@ -707,6 +854,143 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 		snapshots[featureID] = featureStatusSnapshot{status: item.Status}
 	}
 	return snapshots, nil
+}
+
+// shippedEventFailureOutcome carries the classified result of a governed
+// shipped-event append failure back to the rollback defer.
+type shippedEventFailureOutcome struct {
+	// err is the *blerrors.MutationPartialError the closure returns.
+	err error
+	// rollbackAttempted reports whether restoreShipArtifacts ran, so the outer
+	// non-member fallback keeps its existing semantics.
+	rollbackAttempted bool
+	// nonMemberRestored reports whether restoreRolledUpNonMemberFeatures was
+	// already run synchronously, so the outer deferred fallback does not repeat it.
+	nonMemberRestored bool
+	// nonMemberRestoreSucceeded reports whether that synchronous restore actually
+	// completed, so a failed in-lock attempt still earns the fallback's one retry.
+	nonMemberRestoreSucceeded bool
+}
+
+// classifyShippedEventAppendFailure classifies a governed shipped-event append
+// failure and decides whether the ship compensates or halts.
+//
+// The durability guarantee this implements is PATH-SCOPED, and narrower still
+// within that path. It covers the governed ShipShipment archival path and,
+// inside it, only the shipment's OWN terminal status transition. The same call
+// also appends best-effort item-level events -- status_changed via
+// setArtifactStatus, returned_to_backlog, and the parent cascades -- and those
+// stay best-effort by design. Non-ShipShipment producers (generic
+// UpdateArtifactWithGate and generic ArchiveItem callers) are not prevented from
+// reaching archived_status: shipped without a shipped event at all; preventing
+// them is deferred, and they are covered report-only by the doctor
+// shipped-event reconciliation audit.
+//
+// Two divergences from MutationEnvelope are deliberate and must not be "fixed"
+// back:
+//
+//  1. An UNTAGGED error is treated as unproven and therefore indeterminate,
+//     the inverse of MutationEnvelope's untagged default. The envelope's default
+//     is safe because its persist step routes through a primitive that tags both
+//     classes explicitly; the default non-durable append path does not tag at
+//     all, and events.EventWriter.AppendEvent exposes only error while its
+//     non-durable append discards the byte count. Compensating over a
+//     possibly-applied append to an append-only log is the one outcome the
+//     AppendEvent contract forbids.
+//  2. This branch HALTS rather than continuing the remaining steps. Archival is
+//     deliberately not attempted, leaving a detectable, documented
+//     shipped-and-unarchived residue instead of a permanently missing audit
+//     record.
+//
+// Classification precedence is indeterminate-first: an error carrying BOTH
+// sentinels classifies indeterminate and can never be compensated.
+func classifyShippedEventAppendFailure(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentID string,
+	appendErr *shipmentEventAppendError,
+	shipSnapshots map[string]shipArtifactSnapshot,
+	nonMemberFeatureSnapshots map[string]featureStatusSnapshot,
+) shippedEventFailureOutcome {
+	completed := []string{"complete-release-scope", "persist-shipment-status"}
+
+	if blerrors.IsWriteIndeterminate(appendErr) || !blerrors.IsWriteNotApplied(appendErr) {
+		// Indeterminate: suppress restoreShipArtifacts entirely. Restore the
+		// non-member covering feature synchronously while the artifact locks are
+		// still held, then halt archival.
+		var restoreErr error
+		restoredNonMember := false
+		restoreOK := false
+		if len(nonMemberFeatureSnapshots) > 0 {
+			restoredNonMember = true
+			if err := restoreRolledUpNonMemberFeatures(ctx, ws, nonMemberFeatureSnapshots, nil); err != nil {
+				restoreErr = fmt.Errorf("restore non-member covering feature scope: %w", err)
+			} else {
+				restoreOK = true
+			}
+		}
+		logShippedEventAppendFailure(ctx, shipmentID, "indeterminate", "not-compensated", nil, appendErr)
+		return shippedEventFailureOutcome{
+			// The joined restore failure goes INSIDE Cause: internal/mcp extracts
+			// the *MutationPartialError and renders only that value, so a joined
+			// outer error would drop the restore failure from every MCP response.
+			err: &blerrors.MutationPartialError{
+				Completed:         completed,
+				FailedStep:        blerrors.StepShippedEventAppend,
+				CompensationState: "not-compensated",
+				Class:             "indeterminate",
+				Cause:             errors.Join(error(appendErr), restoreErr),
+			},
+			rollbackAttempted:         false,
+			nonMemberRestored:         restoredNonMember,
+			nonMemberRestoreSucceeded: restoreOK,
+		}
+	}
+
+	// Proven not-applied: compensate through the existing snapshot rollback.
+	// Compensation is all-or-nothing or it says so: an item the loop could not
+	// restore promotes the result to "partially-compensated" and is named, never
+	// silently skipped.
+	compensationState := "compensated"
+	var unrestoredIDs []string
+	cause := error(appendErr)
+	if len(shipSnapshots) > 0 {
+		unrestored, rollbackErr := restoreShipArtifactsDetailed(ctx, ws, shipSnapshots)
+		if rollbackErr != nil {
+			cause = errors.Join(cause, rollbackErr)
+		}
+		if len(unrestored) > 0 {
+			compensationState = "partially-compensated"
+			unrestoredIDs = unrestored
+			cause = errors.Join(cause, fmt.Errorf("compensation could not restore: %s", strings.Join(unrestored, ", ")))
+		}
+	}
+	logShippedEventAppendFailure(ctx, shipmentID, "not-applied", compensationState, unrestoredIDs, cause)
+	return shippedEventFailureOutcome{
+		err: &blerrors.MutationPartialError{
+			Completed:         completed,
+			FailedStep:        blerrors.StepShippedEventAppend,
+			CompensationState: compensationState,
+			Class:             "not-applied",
+			Cause:             cause,
+		},
+		rollbackAttempted: true,
+	}
+}
+
+// logShippedEventAppendFailure emits the fixed, greppable slog record that is
+// the only non-MCP measurement surface for the shipped-event SLIs.
+// MutationPartialError.Error() does not render CompensationState, so
+// compensation_state and unrestored_ids are required attributes here.
+func logShippedEventAppendFailure(ctx context.Context, shipmentID, class, compensationState string, unrestoredIDs []string, cause error) {
+	slog.ErrorContext(ctx, "shipment shipped-event append failed",
+		"shipment_id", shipmentID,
+		"class", class,
+		"failed_step", blerrors.StepShippedEventAppend,
+		"compensation_state", compensationState,
+		"unrestored_ids", unrestoredIDs,
+		"cause", cause,
+	)
 }
 
 // restoreRolledUpNonMemberFeatures reverts any non-member covering feature

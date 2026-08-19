@@ -10,15 +10,23 @@
 # just locally edited. Remove an entry to re-enable template-drift detection
 # for that file when you want to re-adopt upstream template changes.
 #
-# NOTE: The following capability-gap files are deliberately NOT ignored so the
-# operator can decide whether to adopt new autoharness 1.4.11 capabilities:
+# NOTE: Two paths that were previously listed as deliberately NOT ignored --
+# .github/policies/workflow-policies.md and .github/agents/.ship.agent.md --
+# are now ignored below, because 143-F added a required local customization to
+# both: the P-007 / Ship-agent shipped-event indeterminate third branch, which
+# upstream templates do not carry.
+#
+# The following capability-gap files remain deliberately NOT ignored so the
+# operator can still decide whether to adopt new autoharness 1.4.11 capabilities:
 #   .autoharness/workspace-profile.yaml            (missing runtime_validation)
-#   .github/agents/.ship.agent.md                  (runtime_validation + P-001 closure gate)
 #   .github/agents/_orchestrator.agent.md          (post-merge closure sequencing)
 #   .github/instructions/release-observability.instructions.md (validator/releasability evidence)
-#   .github/policies/workflow-policies.md          (P-014 local review readiness gate)
 #   .github/skills/operational-closure/SKILL.md    (source artifact cleanup)
 #   .github/skills/review/SKILL.md                 (READY_WITH_FOLLOWUPS + 2 reviewer personas)
+#
+# Drift-ignore suppresses drift REPORTING; it does not by itself prevent a later
+# template adoption from overwriting the third branch. Re-apply the P-007 and
+# Ship-agent third branch after any autoharness template adoption.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
@@ -56,7 +64,11 @@
 
 # --- Policies / prompts ---
 .github/policies/policy-proposal.md
+.github/policies/workflow-policies.md
 .github/prompts/stage-grouping-analysis.prompt.md
+
+# --- Agents carrying the 143-F shipped-event indeterminate third branch ---
+.github/agents/.ship.agent.md
 
 # --- Skills ---
 .github/skills/compound-refresh/SKILL.md

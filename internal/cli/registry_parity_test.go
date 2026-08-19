@@ -886,3 +886,123 @@ func TestRegistryParity_ForceGatesAbsentFromMCPParams(t *testing.T) {
 	assert.True(t, humanTerminalOnly,
 		"registry update_task.cli_only_flags.force-gates.human_terminal_only must be true (F6/U4 deliberate asymmetry documentation)")
 }
+
+// 143.009-T (Unit 9): CLI-versus-MCP parity for the shipped-event
+// reconciliation audit. internal/cli is the only package that sees both
+// surfaces (internal/mcp cannot import internal/cli, per docs/ARCHITECTURE.md),
+// so the shared-fixture assertion has to live here. This adds a new fixture
+// rather than extending the registry-mapping or governed-mutation fixtures.
+func seedShippedEventParityFixture(t *testing.T, root string) {
+	t.Helper()
+	queue := filepath.Join(root, ".backlogit", "queue")
+	archive := filepath.Join(root, ".backlogit", "archive")
+	require.NoError(t, os.MkdirAll(queue, 0o755))
+	require.NoError(t, os.MkdirAll(archive, 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(archive, "900-S.md"), []byte(`---
+id: 900-S
+title: Archived shipment without shipped event
+artifact_type: shipment
+status: archived
+archived_status: shipped
+archived_from: .backlogit/queue/900-S.md
+level: 1
+custom_fields:
+    items:
+        - 900.001-T
+---
+
+# Archived shipment without shipped event
+`), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(queue, "901-S.md"), []byte(`---
+id: 901-S
+title: Shipped but unarchived shipment
+artifact_type: shipment
+status: shipped
+level: 1
+custom_fields:
+    items:
+        - 901.001-T
+---
+
+# Shipped but unarchived shipment
+`), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(queue, "901.001-T.md"), []byte(`---
+id: 901.001-T
+title: Stranded release scope task
+artifact_type: task
+status: done
+parent_id: 901-F
+level: 2
+---
+
+# Stranded release scope task
+`), 0o644))
+}
+
+func TestRegistryParity_ShippedEventAuditCLIAndMCPAgree(t *testing.T) {
+	root, ws := setupGovernedWorkspace(t)
+	seedShippedEventParityFixture(t, root)
+
+	// CLI surface.
+	cliCmd := NewRootCommand()
+	cliOut := new(bytes.Buffer)
+	cliCmd.SetOut(cliOut)
+	cliCmd.SetErr(cliOut)
+	cliCmd.SetArgs([]string{
+		"--cwd", root, "doctor", "--format", "json",
+		"--check-shipped-event-completeness",
+		"--check-orphans=false", "--check-duplicates=false", "--check-archived-from=false",
+	})
+	require.NoError(t, cliCmd.Execute(), "cli doctor failed: %s", cliOut.String())
+
+	// MCP surface, same fixture, same option.
+	server := mcpinternal.NewServer(ws)
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_doctor"
+	request.Params.Arguments = map[string]any{
+		"check_shipped_event_completeness": true,
+		"check_orphans":                    false,
+		"check_duplicates":                 false,
+	}
+	mcpResult, err := server.InvokeTool(context.Background(), "backlogit_doctor", request)
+	require.NoError(t, err)
+	require.NotNil(t, mcpResult)
+	require.False(t, mcpResult.IsError)
+	mcpText, ok := mcpResult.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+
+	type findingShape struct {
+		Type       string `json:"type"`
+		ArtifactID string `json:"artifact_id"`
+	}
+	decode := func(raw string) []findingShape {
+		var report struct {
+			Findings []findingShape `json:"findings"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(raw), &report))
+		shippedOnly := make([]findingShape, 0, len(report.Findings))
+		for _, finding := range report.Findings {
+			if finding.Type == string(core.FindingMissingShippedEvent) ||
+				finding.Type == string(core.FindingShippedUnarchivedResidue) {
+				shippedOnly = append(shippedOnly, finding)
+			}
+		}
+		sort.Slice(shippedOnly, func(i, j int) bool {
+			if shippedOnly[i].Type != shippedOnly[j].Type {
+				return shippedOnly[i].Type < shippedOnly[j].Type
+			}
+			return shippedOnly[i].ArtifactID < shippedOnly[j].ArtifactID
+		})
+		return shippedOnly
+	}
+
+	cliFindings := decode(cliOut.String())
+	mcpFindings := decode(mcpText.Text)
+
+	require.NotEmpty(t, cliFindings, "the shared fixture must produce findings for the parity assertion to be meaningful")
+	assert.Equal(t, cliFindings, mcpFindings,
+		"CLI and MCP must produce identical shipped-event findings for a shared fixture")
+}

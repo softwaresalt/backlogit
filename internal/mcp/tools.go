@@ -483,6 +483,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
 			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),
 			mcplib.WithBoolean("check_workspace_root_conflict", mcplib.Description("Enable read-only detection of a conflicting .backlog and .backlogit workspace root before workspace initialization (default false)")),
+			mcplib.WithBoolean("check_shipped_event_completeness", mcplib.Description("Enable the read-only shipped-event reconciliation audit: archived shipments whose archived_status is shipped but whose item log carries no shipped event, and shipments left shipped but unarchived (default false)")),
 			mcplib.WithBoolean("fix_orphans", mcplib.Description("Archive orphaned artifacts instead of just reporting them (default false)")),
 			mcplib.WithString("target", mcplib.Description("Validate a single artifact file (path relative to the workspace, confined to the storage root) and return a versioned DoctorTargetResult instead of a full workspace scan")),
 		),
@@ -2096,6 +2097,7 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	checkDuplicates := true
 	checkPartialMutations := false
 	checkWorkspaceRootConflict := false
+	checkShippedEventCompleteness := false
 	fixOrphans := false
 	if v, ok := request.Params.Arguments["check_orphans"].(bool); ok {
 		checkOrphans = v
@@ -2108,6 +2110,9 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 	if v, ok := request.Params.Arguments["check_workspace_root_conflict"].(bool); ok {
 		checkWorkspaceRootConflict = v
+	}
+	if v, ok := request.Params.Arguments["check_shipped_event_completeness"].(bool); ok {
+		checkShippedEventCompleteness = v
 	}
 	if v, ok := request.Params.Arguments["fix_orphans"].(bool); ok {
 		fixOrphans = v
@@ -2145,11 +2150,12 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 	}
 
 	opts := &core.DoctorOptions{
-		CheckOrphans:               checkOrphans,
-		CheckDuplicates:            checkDuplicates,
-		CheckPartialMutations:      checkPartialMutations,
-		CheckWorkspaceRootConflict: checkWorkspaceRootConflict,
-		FixOrphans:                 fixOrphans,
+		CheckOrphans:                  checkOrphans,
+		CheckDuplicates:               checkDuplicates,
+		CheckPartialMutations:         checkPartialMutations,
+		CheckWorkspaceRootConflict:    checkWorkspaceRootConflict,
+		CheckShippedEventCompleteness: checkShippedEventCompleteness,
+		FixOrphans:                    fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)
 	if err != nil {

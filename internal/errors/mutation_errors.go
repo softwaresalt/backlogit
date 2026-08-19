@@ -23,7 +23,11 @@ type MutationPartialError struct {
 	ContinuationApplied []string
 	// FailedStep is the name of the step that returned the classifying error.
 	FailedStep string
-	// CompensationState is "compensated", "not-compensated", or "unknown".
+	// CompensationState is "compensated", "not-compensated", "partially-compensated",
+	// or "unknown". "partially-compensated" reports a compensation that ran but
+	// could not restore every affected item; the un-restored IDs are named by the
+	// producer (see the governed shipped-event append path, which promotes an
+	// un-restorable release-scope item rather than skipping it silently).
 	CompensationState string
 	// Class is "not-applied", "indeterminate", or "double-fault".
 	Class string
@@ -61,3 +65,9 @@ func IsMutationPartial(err error) bool {
 	var partialErr *MutationPartialError
 	return errors.As(err, &partialErr)
 }
+
+// StepShippedEventAppend names the governed ShipShipment step that appends the
+// shipment's own active-to-shipped audit event. It is declared once here so
+// internal/core (which sets MutationPartialError.FailedStep) and internal/mcp
+// (which branches recovery guidance on it) share a single literal.
+const StepShippedEventAppend = "shipped-event-append"

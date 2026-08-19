@@ -12,7 +12,10 @@ the archive + restore steps complete.
 ## When to Use
 
 * **Ship Step 6** (mandatory): pre-mode immediately before `backlogit_ship_shipment`;
-  post-mode immediately after the `git restore .backlogit/archive/` step.
+  post-mode immediately after the `git restore .backlogit/archive/` step — EXCEPT on the
+  halted-archival third branch (`mutation_partial` with `classification: indeterminate` and
+  `failed_step: shipped-event-append`), where `git restore` must NOT run at all and post-mode
+  is invoked directly. See Post-Mode step 0.
 * **Ship Step 0.5** (sanity check): pre-mode at intake with `expected_status: queued`
   (or `active` if the shipment was already claimed in a prior session)
   to catch Stage-side over-inclusion before any build work begins.
@@ -49,6 +52,10 @@ The report ends with a `recommendation`:
 
 * `PROCEED` — all items are `matched` or `pre-archived`; no action needed
 * `HALT — operator reconcile required` — one or more missing, status-mismatch, or orphan items
+* `HALT — shipped-event reconciliation required` — post-mode only: `backlogit_ship_shipment`
+  returned `mutation_partial` with `classification: indeterminate` and
+  `failed_step: shipped-event-append`, so archival was deliberately halted before the archive
+  collector ran. Missing archive files are the intended output, not lost files.
 
 ## Behavioral Constraints
 
@@ -102,26 +109,47 @@ The report ends with a `recommendation`:
 
 ### Post-Mode
 
+0. **Classify the ship result first (143-F)**: Inspect the `backlogit_ship_shipment` result before
+   scanning for archives. If it returned `mutation_partial` with `classification: indeterminate` and
+   `failed_step: shipped-event-append`, the governed ship path deliberately halted BEFORE
+   `collectArchiveCandidateIDs` because the shipped-event append outcome could not be proven.
+   In that case:
+   * Do **not** run `git restore .backlogit/archive/`; there is nothing to restore and it masks
+     the reconciliation signal.
+   * Do **not** flag the absent archive files as a P-007 archive-integrity violation.
+   * Emit `recommendation: HALT — shipped-event reconciliation required`, name the shipment and
+     every stranded release-scope item, and direct the operator to
+     `backlogit doctor --check-shipped-event-completeness` and the named-limitation procedure in
+     P-007. Release the lock and stop; steps 1 through 5 below do not apply.
+   * A `classification: not-applied` result with `compensation_state: compensated` reverted the
+     ship cleanly: no archives were expected, and the ship may be retried.
+     `compensation_state: partially-compensated` additionally names release-scope items that could
+     not be restored; those must be reconciled before any retry.
+
 1. **Verify archive presence**:
    List `.backlogit/archive/` and confirm a file exists for the shipment itself
    (`{shipment_id}.*`).
 
 2. **Per-item archive check**:
    For every item in the manifest, verify a corresponding archive file exists.
-   If any are absent, flag them in the report.
+   If any are absent, flag them in the report. Skip this step entirely when step 0 classified the
+   result as a halted archival — absent files there are expected.
 
 3. **Deleted-file guard** (known `backlogit_ship_shipment` quirk — see P-007):
    Run `git status -- ".backlogit/archive/"` and inspect for deletions.
    If any archive files are reported as deleted, recommend
-   `git restore .backlogit/archive/` before the commit step.
+   `git restore .backlogit/archive/` before the commit step. This guard applies ONLY when step 0
+   classified the ship as having actually reached archival.
 
 4. **Produce post-mode report** per the same schema.
 
 5. **Gate decision**:
+   * If step 0 classified a halted archival → `recommendation: HALT — shipped-event reconciliation required`
    * If all archive files present and no deletions detected → `recommendation: PROCEED`
    * If missing archive files or unrestored deletions detected →
      `recommendation: HALT — restore archives`
-   * On `HALT`: release the lock and report. Ship must restore archives before committing.
+   * On `HALT`: release the lock and report. Ship must restore archives before committing, EXCEPT
+     on the shipped-event branch, where there are no archives to restore.
 
 6. **Release lock** (acquired in step 1 of pre-mode):
    Invoke `file-lock` release for `.backlogit/queue/{shipment_id}.md`.
@@ -148,8 +176,8 @@ If pre-mode cannot acquire the lock because another process holds it:
 ## Related Artifacts
 
 * `.github/skills/file-lock/SKILL.md` — lock acquisition/release primitives
-* `.github/agents/ship.agent.md` — integration points (Step 0.5, Step 6)
-* `.github/agents/stage.agent.md` — scope guard (Step 5.5)
+* `.github/agents/.ship.agent.md` — integration points (Step 0.5, Step 6)
+* `.github/agents/.stage.agent.md` — scope guard (Step 5.5)
 * `.github/policies/workflow-policies.md` — P-007 archive integrity policy
 
 ## Model Routing

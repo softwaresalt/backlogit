@@ -36,6 +36,7 @@ The current governed paths are:
 * artifact creation with eager dependency-edge indexing
 * dependency mutation
 * shipment membership mutation
+* shipment ship (the governed `ShipShipment` active-to-shipped audit append)
 
 ## Envelope contract
 
@@ -53,7 +54,9 @@ On failure after one or more steps were applied, the envelope returns
 
 * `Completed` — applied step names in order
 * `FailedStep` — the step that classified the failure
-* `CompensationState` — `compensated`, `not-compensated`, or `unknown`
+* `CompensationState` — `compensated`, `not-compensated`, `partially-compensated`,
+  or `unknown`. `partially-compensated` reports a compensation that ran but could
+  not restore every affected item; the producer names the un-restored IDs.
 * `Class` — `not-applied`, `indeterminate`, or `double-fault`
 * `Cause` — the wrapped original error, or a joined error set
 
@@ -72,6 +75,25 @@ The invariant is strict:
 This is the governed-mutation recovery rule: when a durable append may already
 be present, backlogit prefers convergence over rollback.
 
+### Producer carve-out: the shipped-event append
+
+The rule above describes `MutationEnvelope`, whose persist step routes through a
+write primitive that tags BOTH durability classes explicitly. The governed
+`ShipShipment` shipped-event append does not have that guarantee and therefore
+diverges deliberately:
+
+* `events.EventWriter.AppendEvent` exposes only `error`, and its default
+  non-durable append discards the write byte count, so a core-side wrapper cannot
+  distinguish a pre-write open failure from a short or partial write.
+* Only a **proven** pre-write outcome may compensate: the item-log lock failure
+  raised inside `appendShipmentEventErr` before any writer call, or a writer error
+  explicitly tagged `ErrWriteNotApplied`.
+* **Every other append error, including every untagged error, is `indeterminate`**
+  and suppresses rollback. This is the inverse of the envelope's untagged default,
+  and it is intentional: compensating over a possibly-applied append to an
+  append-only log is the one outcome the `AppendEvent` contract forbids.
+* Short-write detection is not promised, tested, or relied upon anywhere.
+
 ## Failure branches
 
 ### Not applied
@@ -80,11 +102,24 @@ When the failing step returns a plain error or `ErrWriteNotApplied`, the
 envelope compensates the already-applied earlier steps in reverse order. If all
 compensations succeed, the returned class is `not-applied`.
 
+**Shipped-event carve-out**: on that producer a plain (untagged) error does NOT
+compensate — it classifies `indeterminate`. Only the two proven pre-write outcomes
+listed above reach this branch. When compensation runs but cannot restore every
+release-scope item, the result is `not-applied` with
+`CompensationState: partially-compensated`, naming the un-restored IDs, rather
+than a silently skipped item.
+
 ### Indeterminate
 
 When the failing step returns `ErrWriteIndeterminate`, the envelope does not
 compensate. It continues running later steps so the stores can converge on the
 intended end state, then returns `Class: indeterminate`.
+
+**Shipped-event carve-out**: that producer **halts** instead of continuing.
+Archival is deliberately not attempted, leaving a detectable, documented
+`shipped`-and-unarchived residue rather than a permanently missing audit record.
+There is no supported forward transition out of `shipped`; recovery is the
+operator procedure documented in P-007.
 
 ### Double fault
 
@@ -111,7 +146,8 @@ designed for rerun safety.
 ## Recovery discovery
 
 Doctor exposes read-only recovery detection through
-`DoctorOptions.CheckPartialMutations`.
+`DoctorOptions.CheckPartialMutations` and
+`DoctorOptions.CheckShippedEventCompleteness`.
 
 The current checks are:
 
@@ -119,6 +155,24 @@ The current checks are:
   `commit_tracked` JSONL event for the same SHA
 * `inconsistent_dependency_edge` — frontmatter dependency edges and `item_deps`
   cache rows disagree
+* `missing_shipped_event` — an archived shipment whose `archived_status` is
+  `shipped` has no `shipment_status_changed: shipped` event in its item JSONL, or
+  its log could not be read at all (reported explicitly as "event presence
+  unknown"). Enabled by `CheckShippedEventCompleteness`
+* `shipped_unarchived_residue` — a shipment left `shipped` but unarchived, with
+  shipped-event presence recorded and the stranded archive candidates enumerated.
+  Enabled by `CheckShippedEventCompleteness`
+
+`FailedStep: shipped-event-append` (the exported constant
+`errors.StepShippedEventAppend`) is the discriminator that routes recovery guidance
+to the shipped-event audit rather than to `check_partial_mutations`, which
+provably cannot detect this residue. Recovery guidance is therefore keyed on the
+PRODUCER first and the class second, and it differs by `CompensationState`:
+`compensated` is safe to retry, `partially-compensated` requires reconciling the
+named un-restored IDs first (the audit may report clean while they remain torn),
+and `not-compensated` means the shipment is shipped-and-unarchived and the P-007
+named-limitation procedure applies. `Retryable` is `Class == "not-applied" &&
+CompensationState == "compensated"`.
 
 These findings are advisory. They never change doctor exit behavior on their
 own.

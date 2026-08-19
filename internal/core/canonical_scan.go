@@ -19,12 +19,13 @@ import (
 // guard. Bundling the parsed fields lets a single walk serve multiple consumers
 // without re-reading the file.
 type artifactRef struct {
-	path         string
-	id           string
-	artifactType string
-	parentID     string
-	status       string
-	level        int
+	path           string
+	id             string
+	artifactType   string
+	parentID       string
+	status         string
+	archivedStatus string
+	level          int
 }
 
 // scanCanonicalArtifacts walks the full artifactSearchDirs(ws) set recursively
@@ -103,12 +104,13 @@ func scanCanonicalArtifacts(ws *Workspace) (map[string][]artifactRef, error) {
 				level = levelFromID(a.ID)
 			}
 			refs[a.ID] = append(refs[a.ID], artifactRef{
-				path:         path,
-				id:           a.ID,
-				artifactType: a.ArtifactType,
-				parentID:     a.ParentID,
-				status:       string(a.Status),
-				level:        level,
+				path:           path,
+				id:             a.ID,
+				artifactType:   a.ArtifactType,
+				parentID:       a.ParentID,
+				status:         string(a.Status),
+				archivedStatus: a.ArchivedStatus,
+				level:          level,
 			})
 			return nil
 		})
