@@ -42,6 +42,18 @@ var (
 	ErrInvalidStatusTransition = errors.New("backlogit: invalid status transition")
 	ErrWebhookDispatch         = errors.New("backlogit: webhook dispatch error")
 
+	// 144-F prevention hardening: non-ShipShipment shipped-transition guard.
+	// ErrShipmentShippedRequiresEnvelope is returned when a caller attempts to
+	// move a shipment to "shipped" through a generic path (UpdateArtifactWithGate,
+	// updateArtifactUngated, or ungoverned MoveShipmentStatus) instead of the
+	// governed ShipShipment envelope.
+	ErrShipmentShippedRequiresEnvelope = errors.New("backlogit: shipment must be shipped via ShipShipment, not a direct status update")
+
+	// ErrArchiveShippedRequiresEvent is returned when ArchiveItem is about to stamp
+	// archived_status: shipped on a shipment but no durable shipment_status_changed
+	// event with status "shipped" is present in the item's JSONL log.
+	ErrArchiveShippedRequiresEvent = errors.New("backlogit: archiving a shipped shipment requires a durable shipped event in the item log")
+
 	// Root-ID conflict integrity sentinel errors (066-F).
 	// ErrIDCollision indicates a freshly resolved artifact ID already exists as a
 	// canonical file on the filesystem (queue, archive, or a routed directory),

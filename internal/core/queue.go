@@ -409,6 +409,12 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 	if models.ArtifactStatus(newStatus) == models.StatusArchived {
 		return nil, fmt.Errorf("bulk update to archived is not supported; use the archive operation to preserve provenance: %w", blerrors.ErrValidation)
 	}
+	// 144-F guard 1: shipments must reach "shipped" only via ShipShipment.
+	// Abort the whole batch when newStatus is "shipped" so no item in the
+	// batch is written before the refusal fires.
+	if models.ArtifactStatus(newStatus) == models.ArtifactStatus(ShipmentShipped) {
+		return nil, fmt.Errorf("bulk update to shipped is not supported for shipments; use the ShipShipment operation: %w", blerrors.ErrShipmentShippedRequiresEnvelope)
+	}
 	result := &BulkUpdateResult{}
 	for _, id := range itemIDs {
 		artifact, err := findArtifact(ctx, ws, id)

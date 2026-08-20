@@ -364,9 +364,12 @@ func TestShipmentQueueSuppression_DependentBecomesVisibleWhenPrereqTerminal(t *t
 
 	require.NoError(t, core.AddShipmentBlock(ctx, ws, dependent.ID, prereq.ID))
 
-	// Transition prerequisite to "shipped" via the valid state machine (queued → active → shipped).
+	// Transition prerequisite to terminal via the valid state machine.
+	// Use "abandoned" instead of "shipped" — both are terminal for queue
+	// suppression purposes, and "abandoned" does not require the governed
+	// ShipShipment envelope that guard 1 now enforces (144-F).
 	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentActive))
-	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentShipped))
+	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentAbandoned))
 
 	// Now the dependent must be visible in the queued view.
 	filter := &core.QueueFilter{

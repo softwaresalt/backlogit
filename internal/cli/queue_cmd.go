@@ -183,6 +183,12 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 			itemIDs := strings.Split(ids, ",")
 			result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, itemIDs, status)
 			if err != nil {
+				// 144-F: map governance refusal to exit code 9.
+				if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
+					cmd.SilenceErrors = true
+					fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+					return eeGov
+				}
 				return fmt.Errorf("bulk update status: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated %d items to status %q\n", result.Succeeded, status)

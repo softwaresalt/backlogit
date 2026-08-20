@@ -108,6 +108,14 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		opt(&cfg)
 	}
 
+	// 144-F guard 2 preflight: run BEFORE any cascade so a refusal leaves
+	// descendants untouched. Read the parent frontmatter early (using the
+	// same fm map and lock the main body later re-reads) and refuse before
+	// archiveDescendants fires.
+	if err := archiveShippedEventPreflight(ctx, ws, itemID); err != nil {
+		return nil, err
+	}
+
 	// Cascade: archive all descendants bottom-up before archiving the target.
 	var cascadedItems []string
 	var failedItems []ArchiveFailure
@@ -151,7 +159,6 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	oldStatus, _ := fm["status"].(string)
 	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
 
-	// 066.003-T: Refuse to overwrite a DISTINCT item already occupying the
 	// path-keyed archive destination. Computed and checked here -- before the
 	// pre-archive hooks fire and before any file is written -- so a refused
 	// archive has no side effects. When a foreign item (same root ID/filename
@@ -1000,4 +1007,50 @@ func AutoArchive(ctx context.Context, database *sql.DB, ws *Workspace, policy *A
 		count++
 	}
 	return count, nil
+}
+
+// archiveShippedEventPreflight is the 144-F guard 2 pre-cascade check.
+// It reads the parent item's frontmatter before any cascade or write, and
+// refuses to proceed when the item is a shipment at "shipped" status without
+// a durable shipped event in its JSONL log. This must be called BEFORE
+// archiveDescendants so a refusal leaves children untouched.
+// Returns nil when the guard does not apply or the event is present.
+func archiveShippedEventPreflight(ctx context.Context, ws *Workspace, itemID string) error {
+	currentPath, err := FindArtifactPath(ctx, ws, itemID)
+	if err != nil {
+		// Artifact not found is handled later; skip guard for unknown items.
+		return nil
+	}
+
+	// Mirror the 060.002-T queue-preference logic from ArchiveItem: when
+	// FindArtifactPath returns an archive-dir path (half-archive residue), but
+	// a queue copy exists for the same ID, prefer the queue copy — that is the
+	// canonical source whose status and event log matter for guard 2.
+	backlogDir := workspaceStorageRoot(ws)
+	archiveDir := filepath.Join(backlogDir, "archive")
+	if filepath.Clean(filepath.Dir(currentPath)) == filepath.Clean(archiveDir) {
+		queueDir := filepath.Join(backlogDir, queueRootDir(ws))
+		if queuePath, queueErr := findArtifactInDir(queueDir, itemID); queueErr == nil && queuePath != "" {
+			currentPath = queuePath
+		}
+	}
+
+	raw, err := os.ReadFile(currentPath)
+	if err != nil {
+		return nil // read failure handled later; skip guard
+	}
+	fm, _, parseErr := models.ParseFrontmatter(string(raw))
+	if parseErr != nil || fm == nil {
+		return nil // parse failure handled later; skip guard
+	}
+	oldStatus, _ := fm["status"].(string)
+	if fmArtifactType(fm) != "shipment" || oldStatus != string(ShipmentShipped) {
+		return nil // guard is scoped to shipped shipments only
+	}
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	present, readable := shippedEventPresence(ctx, logsDir, itemID)
+	if !readable || !present {
+		return fmt.Errorf("archive shipment %s: %w", itemID, blerrors.ErrArchiveShippedRequiresEvent)
+	}
+	return nil
 }

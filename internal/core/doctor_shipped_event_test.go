@@ -35,13 +35,66 @@ func seedShippedShipment(t *testing.T, ws *Workspace, title string, memberIDs []
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped))
+	// Use the internal ungoverned path (topLevel=false) as a test fixture to
+	// reach "shipped" status without the governed ShipShipment envelope;
+	// this is intentional so the doctor audit's detection tests see a shipment
+	// that may lack a durable shipped event.
+	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, shipment.ID, ShipmentShipped, false, ""))
 	reloaded, err := loadArtifact(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 	return reloaded
 }
 
-// removeShippedEvent rewrites the item log without any shipped
+// seedArchivedShippedNoEvent creates an "archived with archived_status: shipped
+// but no durable shipped event" fixture by writing the archive file directly.
+// This bypasses guard 2 (ArchiveItem) intentionally: guard 2 prevents new
+// residue; doctor tests verify DETECTION of existing pre-144-F residue.
+func seedArchivedShippedNoEvent(t *testing.T, ws *Workspace, title string, memberIDs []string) *models.Artifact {
+	t.Helper()
+	ctx := context.Background()
+	shipment, err := CreateShipment(ctx, ws, title, memberIDs)
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, shipment.ID, ShipmentShipped, false, ""))
+	removeShippedEvent(t, ws, shipment.ID)
+
+	// Write the archive file directly, bypassing ArchiveItem guard 2.
+	// Mirrors the minimal path used by pre-144-F ungoverned archive operations.
+	backlogDir := workspaceStorageRoot(ws)
+	currentPath, findErr := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, findErr)
+	archiveDir := filepath.Join(backlogDir, "archive")
+	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+	archivePath := filepath.Join(archiveDir, filepath.Base(currentPath))
+
+	raw, readErr := os.ReadFile(currentPath)
+	require.NoError(t, readErr)
+	fm, body, parseErr := models.ParseFrontmatter(string(raw))
+	require.NoError(t, parseErr)
+	if fm == nil {
+		fm = map[string]any{}
+	}
+	fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
+	fm["archived_status"] = fm["status"]
+	fm["status"] = "archived"
+	newContent := models.SerializeFrontmatter(fm, body)
+	require.NoError(t, os.WriteFile(archivePath, []byte(newContent), 0o644))
+	require.NoError(t, os.Remove(currentPath))
+
+	// Upsert to DB so the doctor can find it.
+	art := &models.Artifact{
+		ID:           shipment.ID,
+		Title:        title,
+		Status:       models.StatusArchived,
+		ArtifactType: "shipment",
+	}
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, art))
+	reloaded, err := loadArtifact(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	return reloaded
+}
+
 // shipment_status_changed record, simulating the ungoverned producers this
 // audit detects report-only. It is a fixture helper: the audit itself never
 // writes JSONL.
@@ -112,10 +165,9 @@ func TestDoctorShippedEventCompleteness_MissingShippedEvent(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
-		shipment := seedShippedShipment(t, ws, "Missing shipped event shipment", []string{task.ID})
-		removeShippedEvent(t, ws, shipment.ID)
-		_, err = ArchiveItem(ctx, ws.DB, ws, shipment.ID)
-		require.NoError(t, err)
+		// Use the bypass helper: guard 2 prevents ArchiveItem on shipped-without-event,
+		// so the fixture writes the archive file directly (simulating pre-144-F residue).
+		shipment := seedArchivedShippedNoEvent(t, ws, "Missing shipped event shipment", []string{task.ID})
 
 		report := runShippedEventAudit(t, ws)
 		findings := findingsOfType(report, FindingMissingShippedEvent)
@@ -209,10 +261,9 @@ func TestDoctorShippedEventCompleteness_NeverMutatesItemLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
 
-	archived := seedShippedShipment(t, ws, "Non-mutation archived shipment", []string{task.ID})
-	removeShippedEvent(t, ws, archived.ID)
-	_, err = ArchiveItem(ctx, ws.DB, ws, archived.ID)
-	require.NoError(t, err)
+	// Use the bypass helper: guard 2 prevents ArchiveItem on shipped-without-event,
+	// so the fixture writes the archive file directly (simulating pre-144-F residue).
+	_ = seedArchivedShippedNoEvent(t, ws, "Non-mutation archived shipment", []string{task.ID})
 
 	residueTask, err := CreateArtifact(ctx, ws, "Non-mutation residue task", "task", WithParent(mustFeature(t, ws, "Non-mutation residue feature")))
 	require.NoError(t, err)
