@@ -2,6 +2,7 @@
 title: "Compound Refresh — 128-S / 144-F Scope"
 doc_type: closure
 schema_version: "1.0"
+chunk_strategy: h1-h2-h3
 ingested_at: "2026-08-20T04:20:00Z"
 source: docs/closure/2026-08-19-128-s-144-f-compound-refresh.md
 ---
