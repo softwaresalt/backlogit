@@ -192,3 +192,31 @@ over.
 `SHIPPED`/`ARCHIVED`. Feature 144-F and tasks 144.001-T through 144.011-T —
 `ARCHIVED`. No active or queued items remain for this release scope. This
 state is durable in the `post-merge/128-s` branch/PR pending merge.
+
+## Closure PR Status (final, awaiting operator approval)
+
+* **Closure PR**: [#371](https://github.com/softwaresalt/backlogit/pull/371)
+  — "chore(harness): post-merge closure for shipment 128-S / feature 144-F"
+* **Branch**: `post-merge/128-s`
+* **Reviewed HEAD**: `0ba2fa9cd113d43c9085a841151b8dac8e971281`
+* **CI**: 5/5 checks `success` (test, CLI Reference Drift, Detect code
+  changes, Docline frontmatter gate, Markdown lint)
+* **Copilot review**: covers HEAD `0ba2fa9c` (submitted
+  2026-08-20T05:17:37Z); no pending review requests
+* **Review threads**: 3/3 resolved (all were the docline
+  `chunk_strategy` frontmatter finding raised against an earlier commit
+  `4b2cbaf3`, fixed in `0ba2fa9c`, replied to, then resolved; the fresh
+  review at `0ba2fa9c` raised zero new findings)
+* **Mergeable**: `MERGEABLE`, `mergeStateStatus: CLEAN`
+* **Merge strategy**: repo-level `allow_merge_commit=true`,
+  `allow_squash_merge=false`, `allow_rebase_merge=false` (unchanged from
+  implementation PR #370's verification)
+* **§1.9 gate**: PASS (all 3 checks — no pending review, review covers
+  current HEAD, zero unresolved threads)
+
+**STOP — P-014 gate.** This closure PR is fully ready for merge but was
+**not merged** in this session. The operator's approval `PR 370: Merge
+approved` (2026-08-19T20:10:01-07:00) was explicitly scoped to
+implementation PR #370 only and does not extend to this closure PR. Merging
+PR #371 requires a new, explicit operator approval naming PR #371 (e.g.
+`PR 371: Merge approved`).
