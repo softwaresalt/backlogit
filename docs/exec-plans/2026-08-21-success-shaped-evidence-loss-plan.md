@@ -58,14 +58,15 @@ makes conformance across the whole corpus unobservable.
 | R1 | Unmodeled `context` keys survive the create round-trip verbatim | U0a, U1a, U2 |
 | R2 | The four modeled context fields and their filters keep working unchanged | U1a, U2 |
 | R3 **(D, widened by P)** | Unknown keys in the **closed schema namespace** — the `CheckpointV1` top level and the nested modeled `progress` object — are rejected loudly at the create boundary, naming **all** of them in one error. `context` is explicitly excluded and stays open | U3a, U3d, U4 |
-| R4 | `ParseCheckpoint`'s **observable** read behavior is unchanged for every input shape, including degenerate `context` values; the legacy corpus is not reclassified | U3b, U3c, U4 |
+| R4 | `ParseCheckpoint`'s **observable** read behavior is unchanged for every input shape, including degenerate `context` values and mixed-case duplicate aliases of a modeled `context` key, whose winner stays source-order deterministic; the legacy corpus is not reclassified | U3b, U3c, U4 |
 | R5 | The create result reports the persisted context key names on both surfaces, on the V1 **and** the legacy path, and the reported list always matches the bytes on disk | U5a, U5b, U6 |
 | R6 | Tests dispatch through the registered MCP handler and the CLI flag, not the core function | U5a |
 | R7 | A per-file **frontmatter-decode** failure becomes a finding and the scan continues; containment and I/O failures stay errors | U0b, U7a, U7b, U8 |
 | R8 | The lint gate keeps its non-zero exit on a malformed corpus | U9a |
 | R9 | `LintReport.Findings` is a present, non-null array on every path — clean, degraded, and error-free-but-empty | U9a, U9b |
 | R10 | CLI and MCP emit identical lint payloads for the degraded corpus | U9a |
-| R11 | Both contracts are documented on every operator- and agent-facing surface: generated CLI reference, MCP tool descriptions, the authoring guide, and the agent instruction file | U6, U4b, U8b, U10a, U10b |
+| R11 | Both contracts are documented on every operator- and agent-facing surface: generated CLI reference, MCP tool descriptions, the authoring guide, and the agent instruction file | U6, U3d, U4b, U8b, U9c, U10a, U10b |
+| R11a **(P)** | Every agent- and operator-facing contract-text edit has a red harness scheduled upstream of it, so no description can ship unasserted | U3d (for U4b), U5a s4 (for U6), U9c (for U8b) |
 | R12 | `ErrCheckpointUnknownField` surfaces on MCP as a structured `validation_failed` outcome carrying an `unknown_fields` array, not a generic `internal` error | U3d, U4b |
 | R13 **(P)** | The modeled key sets used by the marshaller and the unknown-key probe are **derived from struct tags by reflection**, so adding a field cannot silently desynchronize them | U1b, U3c, U2, U4 |
 | R14 **(P)** | No dump that succeeds today is newly rejected: key comparison matches `encoding/json`'s case-insensitive semantics | U3c, U4 |
@@ -78,9 +79,14 @@ Every unit's commit boundary additionally runs the constitutional quality gates 
 `go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .` — with zero findings. No unit is
 accepted on test-green alone.
 
-U0a–U10b are materialized as backlogit tasks under the covering feature created by Stage before
-implementation begins, and the dependency graph below is registered through backlogit dependency
-operations. This document is the design reference; backlogit holds the authoritative task state.
+All twenty-three units (U0a, U0b, U1a, U1b, U2, U3a–U3d, U4, U4b, U5a, U5b, U6, U7a, U7b, U8, U8b,
+U9a, U9b, U9c, U10a, U10b) are materialized as backlogit tasks under the covering feature `146-F`
+created by Stage before
+implementation begins. **The dependency-graph code block below is the authoritative enumerated edge
+list: exactly 35 `blocks` edges**, registered one-for-one through backlogit dependency operations, with
+no edge registered that the diagram does not draw and none drawn that is not registered. This document
+is the design reference; backlogit holds the authoritative task state. Unit-to-task mapping is carried
+on each task's `unit-*` label.
 
 Branch: a single dedicated implementation branch carries all units and merges through one merge
 commit (Principle XI). No unit lands on a separate branch.
@@ -101,7 +107,10 @@ commit (Principle XI). No unit lands on a separate branch.
     workspace Go conventions forbid. The repository precedent is the typed
     `*corerrors.AmbiguousWorkspaceRootError` recovered by `errors.As` in `internal/mcp/errors.go`.
   * `Extra map[string]json.RawMessage \`json:"-"\`` on `CheckpointContext` and a stub
-    `func (c CheckpointContext) Keys() []string { return make([]string, 0) }`. Both are genuinely
+    `func (c CheckpointContext) Keys() ([]string, error) { return make([]string, 0), nil }` — declared
+    at U0a with the **final** U6 signature, not an interim `[]string`, so U2 replaces only the body and
+    no call site is migrated twice. **Invariant**: no unit before U6 may reference `Keys()`. Both are
+    genuinely
     behavior-neutral: a `json:"-"` field is invisible to `encoding/json`, and the stub is unreferenced
     by production code until U6.
   * `CreateCheckpointResult` (see U6 for the pinned shape) plus the `CreateCheckpoint` signature
@@ -188,11 +197,18 @@ commit (Principle XI). No unit lands on a separate branch.
   and strips tag options with `strings.Split(tag, ",")[0]`.
 * **Note on the recursion trap**: a recursive `MarshalJSON` fails scenario 1 by stack exhaustion, so no
   separate scenario is required; the guard is stated in U2 as an implementation constraint.
-* **Posture**: test-first. Scenarios 1 and 4 are red before U2. Scenarios 2 and 3 are guards: scenario 2
+* **Scenario 5 — key-injection and key-escape guard**: two `Extra` keys are decoded from literal-JSON
+  fixtures and re-emitted — one containing `"`, `\`, and a newline (for example
+  `foo","shipment_id":"pwned` followed by a newline), one containing `a > b && b < c`. The written bytes
+  MUST still decode into a `map[string]any` whose `context` object carries each exact literal key with
+  its original value and whose `shipment_id` is unchanged, and the raw bytes MUST NOT contain `\u0026`.
+  This fails any `emit()` that splices raw key text into a buffer **and** any `emit()` that encodes keys
+  with escape-enabled `json.Marshal`.
+* **Posture**: test-first. Scenarios 1, 4, and 5 are red before U2. Scenarios 2 and 3 are guards: scenario 2
   is green pre-U2 only because `Extra` is `json:"-"` and therefore invisible to `encoding/json`, and it
   becomes load-bearing once U2 gives the carrier behavior; scenario 3 is green throughout.
-* **Acceptance**: two failing assertions (scenarios 1 and 4); scenarios 2 and 3 green before and after
-  U2.
+* **Acceptance**: three failing assertions (scenarios 1, 4, and 5); scenarios 2 and 3 green before and
+  after U2.
 
 ### U2 — Preserve unmodeled `context` keys through the create round-trip
 
@@ -205,8 +221,9 @@ commit (Principle XI). No unit lands on a separate branch.
   Extra map[string]json.RawMessage `json:"-"`
   ```
 
-  Add custom `UnmarshalJSON` and `MarshalJSON`. Unmarshal decodes the four modeled keys and routes
-  every other key into `Extra`. Marshal re-emits the modeled keys followed by the `Extra` keys
+  Add custom `UnmarshalJSON` and `MarshalJSON`. Unmarshal fills the four modeled fields by decoding the
+  **original bytes** through the method-less shadow type and separately collects every non-modeled key
+  into `Extra` (mechanism pinned below). Marshal re-emits the modeled keys followed by the `Extra` keys
   **flattened back into the same `context` object**, sorted by key for deterministic output. **Replace
   U0a's `Keys()` stub** with the real accessor returning the sorted set of keys `MarshalJSON` actually
   emits.
@@ -220,7 +237,8 @@ commit (Principle XI). No unit lands on a separate branch.
   * `func (c *CheckpointContext) UnmarshalJSON(b []byte) error` — pointer receiver.
   * `func (c CheckpointContext) Keys() ([]string, error)` — **value** receiver, and it returns
     `emit()`'s error rather than discarding it, so no caller can silently observe an empty list for a
-    context that failed to serialize. U6 propagates that error alongside the write error.
+    context that failed to serialize. U6 propagates that error alongside the write error. **Replace
+    U0a's stub body only**; the signature is unchanged from U0a.
 * **Recursion guard**: `emit()` MUST NOT call `json.Marshal` on `CheckpointContext`. Build the object
   either through an ordered `bytes.Buffer` or by marshalling a
   `type plainContext CheckpointContext` shadow that carries no methods, then appending the sorted
@@ -244,6 +262,16 @@ commit (Principle XI). No unit lands on a separate branch.
   matching, so a `context` supplying `Shipment_ID` behaves exactly as it does today (R14).
 * **`MarshalJSON` MUST skip any `Extra` key that matches a modeled key**; the modeled field is
   authoritative and no duplicate key is ever emitted.
+* **`Extra` keys are emitted through the same escape-free encoder as everything else, never spliced as
+  raw text.** `emit()` must produce each key through a `json.Encoder` with `SetEscapeHTML(false)` — the
+  `jsonutil.MarshalReadable` path — and only the key's *value* is appended verbatim from the stored
+  `json.RawMessage`. Bare `json.Marshal(key)` is **not** acceptable: it is the same banned call as
+  above, and for a key containing `&`, `<`, or `>` it would emit `\u0026` into the key bytes, breaking
+  the escape-free guarantee even though the value round-trips. Interpolating an `Extra` key directly
+  into a `bytes.Buffer` is worse: a key containing `"`, `\`, or a newline — for example
+  `foo","shipment_id":"pwned` — would terminate the key string early and inject a sibling member,
+  overwriting a modeled field on the next read. The collision skip does not prevent that, because the
+  injected text never appears as a map key. U1b scenario 5 is the guard.
 * **`Keys()` is derived from the emitted bytes, not from struct emptiness.** Every modeled field
   carries `,omitempty`, so a field that is set-but-empty is elided from disk. `Keys()` MUST return
   exactly the key set `MarshalJSON` emits, so `context_keys` can never name a key that is absent from
@@ -254,6 +282,25 @@ commit (Principle XI). No unit lands on a separate branch.
   `MarshalJSON` from `Keys()` and discarding its error — which would both violate the
   never-discard-errors rule and return `[]` for a file that does carry context keys, recreating the
   success-shaped envelope R5 exists to remove.
+* **`UnmarshalJSON` decode mechanism is pinned, because a map-routed decode is nondeterministic
+  (R4, R14).** `UnmarshalJSON(b []byte)` performs exactly two decodes of the **same original `b`**, in
+  this order:
+  1. **Modeled fields — decoded directly from `b`.** `json.Unmarshal(b, (*plainContext)(c))` against the
+     method-less `plainContext` shadow. This is the *only* thing that may set a modeled field. It
+     reproduces `encoding/json`'s own key handling byte-for-byte: source-order traversal,
+     case-insensitive tag matching, and last-value-wins on duplicates.
+  2. **`Extra` — collected from a separate `map[string]json.RawMessage` decode of `b`**, keeping
+     **only** those raw keys that do **not** case-insensitively match a modeled tag.
+* **Routing modeled keys out of the `map[string]json.RawMessage` is forbidden.** A `context` object may
+  legally carry two case-insensitive aliases of one modeled field — `{"shipment_id":"A","Shipment_ID":"B"}`
+  — and they land in the raw map as two **distinct** entries. `encoding/json` resolves that dump
+  deterministically today, in source order, so `B` wins. A decoder that instead iterated the raw map to
+  find modeled aliases would pick its winner in Go's **randomized** map iteration order, so the same
+  bytes would parse to `A` on one run and `B` on the next. That is a silent, nondeterministic R4/R14
+  violation that no U3b or U3c scenario written against a single expected value would reliably catch,
+  because it passes on roughly half of all runs. `Extra` is immune to the same trap by construction: it
+  is an accumulate-**all** set difference, never a single-winner selection, so iteration order cannot
+  change its contents.
 * **Read-path safety (R4)**: `UnmarshalJSON` MUST reproduce `encoding/json`'s existing observable
   behavior for every degenerate `context` value — `null`, absent, a non-object scalar, and duplicate
   keys — because `ParseCheckpoint` decodes `CheckpointV1` and therefore runs this code on **every**
@@ -277,9 +324,28 @@ commit (Principle XI). No unit lands on a separate branch.
   `errors.Is(err, corerrors.ErrCheckpointUnknownField)` **and** naming that key, and writes no file;
   (2) a V1 dump with **two** unknown top-level keys names **both**, sorted, in a single error;
   (3) a V1 dump with an unknown key nested inside `progress` is rejected and the error names the
-  nesting path, pinning the decided blast radius of the closed namespace (see U4).
-* **Posture**: test-first. All three are red before U4.
-* **Acceptance**: three failing assertions; no file written on rejection.
+  nesting path, pinning the decided blast radius of the closed namespace (see U4); (4) an
+  **N-independent-pair mixed-case duplicate table** with **N = 8** structurally independent fixtures in
+  one test function. Each fixture carries both a `progress` and a `Progress` alias and a *different*
+  unknown nested key, and the pairs alternate which alias holds the unknown key so no pair's outcome
+  depends on another's. Every fixture must be rejected and must name exactly its own expected nested
+  path; a ninth fixture places a *different* unknown key under each alias and asserts **both** paths
+  appear, sorted and de-duplicated, in one error.
+* **Why N = 8 and not one fixture repeated**: Go's map iteration order is *unspecified*, not a
+  documented uniform distribution, so re-running a single fixture gives no bounded detection signal —
+  it can pass on the very run used to observe red, even against a map-routing implementation, which is
+  a false-negative red. `docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md`
+  records the repository's empirical result for exactly this bug class: with N = 8 independent pairs the
+  pre-fix implementation failed 5 of 8 in a single observed run — a non-marginal signal — while the
+  fixed implementation passed deterministically across repeated runs, because a correct implementation
+  has **zero** iteration-order sensitivity left to expose. That learning's Rule 3 is adopted verbatim
+  here: the red observation must show **most or all** pairs failing, not a marginal one-of-N, before U4
+  is started.
+* **Posture**: test-first. All four are red before U4.
+* **Acceptance**: four failing assertions; no file written on rejection; scenario 4's red observation
+  records the per-pair failure count and shows most or all of the eight pairs failing; after U4 all
+  eight pairs pass on three consecutive runs, which is the by-construction check that U4's
+  recurse-into-every-match form left no order sensitivity behind.
 
 ### U3b — Read-path regression guard for degenerate `context` values
 
@@ -288,9 +354,16 @@ commit (Principle XI). No unit lands on a separate branch.
 * **Changes**: guard the observable behavior of `ParseCheckpoint` for every `context` shape that now
   flows through a hand-written `UnmarshalJSON`.
 * **Scenarios**: (1) `"context": null`, absent `context`, `context` as a JSON string, and `context` as a
-  number each parse with exactly the outcome they produce today; (2) a `context` object with duplicate
-  keys parses with the same last-wins outcome as today; (3) a dump with no `schema_version` is written
-  verbatim and is never subjected to the unknown-key probe.
+  number each parse with exactly the outcome they produce today; (2) duplicate-key `context` objects
+  parse with the same last-wins outcome as today, over a table that MUST include **both** of these
+  exact-duplicate and mixed-case-alias orders: `{"shipment_id":"A","shipment_id":"B"}`,
+  `{"shipment_id":"A","Shipment_ID":"B"}`, and `{"Shipment_ID":"A","shipment_id":"B"}` — the last two
+  being the aliases `encoding/json` resolves in **source** order. Pinning both alias orders in the
+  pre-U2 golden table is what makes the trap detectable: a source-order-faithful decoder satisfies both
+  rows deterministically, while a decoder that resolves modeled aliases by iterating
+  `map[string]json.RawMessage` can satisfy them only by chance and will flake, because Go randomizes map
+  iteration order. Neither row may be marked "expected: either value"; (3) a dump with no
+  `schema_version` is written verbatim and is never subjected to the unknown-key probe.
 * **Golden baseline**: the expected outcomes MUST be captured from the **pre-U2 commit** as a committed
   golden table (fixture → error class, parsed field values, re-marshalled bytes) and generated once
   before U2 begins. Writing the expectations after U2 is designed would encode post-change behavior as
@@ -346,7 +419,11 @@ commit (Principle XI). No unit lands on a separate branch.
   enumeration in that description is **derived by reflection over `CheckpointV1` and
   `CheckpointProgress` in the test** and every derived key is asserted present in the description
   string, so a future modeled field cannot silently desynchronize the documented contract from the
-  enforced one.
+  enforced one. The reflection-derived set necessarily includes the four administrative
+  `disposition_*` fields, which the disposition verbs write and which are not caller-supplied create
+  inputs; the description must therefore present them in a **reserved / administrative** sub-list, and
+  scenario 3 asserts each derived key appears somewhere in the description without asserting it appears
+  in the caller-supplied group.
 * **Posture**: test-first. All three red before U4b.
 * **Acceptance**: three failing assertions, all on structured or registered content, never on message
   text.
@@ -363,11 +440,18 @@ commit (Principle XI). No unit lands on a separate branch.
      `map[string]json.RawMessage`, diff its key set against the `CheckpointV1` tag set, and if the
      difference is non-empty return `&backlogiterrors.CheckpointUnknownFieldError{Fields: sorted}` **directly** (`internal/events` already imports the errors package under the `backlogiterrors` alias; `corerrors` is `internal/mcp`'s alias)
      — not wrapped again — so that `errors.Is(err, ErrCheckpointUnknownField)` matches through its
-     `Unwrap` and `errors.As` recovers `Fields` without parsing any message. Locate the `progress` key
-     with the **same case-insensitive comparison** used for the top-level diff and recurse the same
-     diff one level into it, skipping the recursion when that raw value is `null` or the key is absent.
-     A case-sensitive lookup would silently skip the recursion for a dump spelling it `Progress`, which
-     `encoding/json` matches, letting unknown nested keys escape the closed namespace.
+     `Unwrap` and `errors.As` recovers `Fields` without parsing any message. For the nested recursion,
+     recurse into **every** raw entry whose key case-insensitively matches `progress` — never into a
+     single selected match. A dump may legally carry `progress` and `Progress` as two **distinct**
+     entries in the raw map, and choosing one of them by iterating `map[string]json.RawMessage` would
+     select the winner in Go's **randomized** map iteration order: if only one alias carries an unknown
+     nested key, the same bytes would be accepted on one run and rejected on the next. Union the unknown
+     nested paths found under **all** matching entries into the one sorted, de-duplicated `Fields` slice
+     using the `progress.<key>` path form, so the reported set is a function of the input bytes alone.
+     Skip any matching entry whose raw value is `null`, and skip the recursion entirely when no key
+     matches. A case-sensitive lookup is wrong for the single-alias case too: it would silently skip the
+     recursion for a dump spelling it `Progress`, which `encoding/json` matches, letting unknown nested
+     keys escape the closed namespace.
      Do **not** use `json.Decoder.DisallowUnknownFields()` and do **not** substring-match
      `"json: unknown field"`: the decoder reports only the first offending key, returns an untyped
      error, and `go.instructions.md` bans matching on error text.
@@ -429,16 +513,23 @@ commit (Principle XI). No unit lands on a separate branch.
 * **Domain**: tests
 * **Files**: `internal/cli/checkpoint_create_test.go` (extend),
   `internal/mcp/checkpoint_create_context_test.go` (new). The cross-surface comparison lives in
-  `internal/cli/checkpoint_create_test.go`. `internal/cli` already depends on `internal/mcp`, so an external `cli_test` package may import it without a cycle; the MCP half dispatches the registered tool through the exported server handle, never a handler method directly.
+  `internal/cli/checkpoint_create_test.go`. `internal/cli` already depends on `internal/mcp` in
+  **production** code — `internal/cli/manifest.go` imports it as `mcpinternal`, and
+  `internal/cli/list_filter_parity_test.go` and `internal/cli/metadata_parity_test.go` already do the
+  same in tests — so an external `cli_test` package may import it without a cycle; the MCP half dispatches the registered tool through the exported server handle, never a handler method directly.
 * **Changes**: assert that the create result carries the persisted context key names. The MCP scenario
   dispatches through the registered `handleCreateCheckpoint` with a `state_dump` string argument; the
   CLI scenario drives the `--state-dump` flag. Neither calls `events.CreateCheckpoint` directly,
   because argument extraction and marshalling are part of the loss path.
 * **Scenarios**: (1) MCP result includes `context_keys` listing modeled and unmodeled keys; (2) CLI JSON
   output includes the same `context_keys` for the same dump; (3) both are byte-identical for the key
-  list.
-* **Posture**: test-first. All three red before U6.
-* **Acceptance**: three failing assertions.
+  list; (4) the **constructed** `checkpoint create` Cobra command's `Short`, `Long`, and `Example`
+  strings carry the open-`context`, closed-namespace, and `context_keys` sentences U6 writes. Scenario 4
+  exists so R11a holds for U6 as well: every agent- and operator-facing contract-text edit in this plan
+  has a red harness scheduled upstream of it (U3d for U4b, U9c for U8b, U5a scenario 4 for U6), and none
+  ships unasserted.
+* **Posture**: test-first. All four red before U6.
+* **Acceptance**: four failing assertions.
 
 ### U5b — Red harness for the empty and legacy `context_keys` shapes
 
@@ -477,9 +568,14 @@ commit (Principle XI). No unit lands on a separate branch.
   `internal/mcp/tools.go:1126` are replaced, not extended — a `map[string]string` cannot carry a
   `[]string` at all.
 * **Both write paths populate the list from the bytes that were written.** On the V1 path
-  `ContextKeys` comes from `CheckpointContext.Keys()`, whose error is **propagated**, never discarded —
-  `Keys()` reads from the same `emit()` that produced the written bytes, so no `Keys()` error can
-  follow an applied write. On the **legacy verbatim path** it comes from
+  `ContextKeys` comes from `CheckpointContext.Keys()`, whose error is **propagated**, never discarded.
+  **Call ordering is pinned**: `Keys()` MUST be called **before** `syncWriteFileAtomic`, so a
+  serialization failure deterministically prevents the write instead of leaving a file on disk whose
+  keys could not be reported. `Keys()` and the marshal step both run `emit()` over the same value; the
+  second `emit()` call is intentional and cheap, and the alternative — capturing the keys out of the
+  marshal step — is acceptable only if it is done in the same pre-write step. Wiring `Keys()` *after*
+  the write is forbidden: it would recreate exactly the applied-write-with-unreportable-result
+  inversion this plan exists to remove. On the **legacy verbatim path** it comes from
   scanning the top-level `context` object of the written bytes into `map[string]json.RawMessage`, then
   sorting the extracted keys with `sort.Strings` — no schema assumption, no parse of the rest of the
   document. Sorting is mandatory: Go map iteration order is randomized, so an unsorted legacy list
@@ -505,8 +601,9 @@ commit (Principle XI). No unit lands on a separate branch.
   help-text unit landing after U6, rejected because U10a would then regenerate the CLI reference
   against stale Cobra strings and R11 would ship unsatisfied for the checkpoint half.
 * **Posture**: makes U5a and U5b green.
-* **Acceptance**: U5a and U5b pass; `context_keys` serializes as `[]`, never `null`; every new exported
-  identifier carries a doc comment beginning with its own name.
+* **Acceptance**: U5a and U5b pass, including U5a scenario 4's assertions on the constructed Cobra
+  strings; `Keys()` is invoked before `syncWriteFileAtomic` on the V1 path; `context_keys` serializes as
+  `[]`, never `null`; every new exported identifier carries a doc comment beginning with its own name.
 
 ### U7a — Red harness for report-and-continue lint
 
@@ -517,10 +614,14 @@ commit (Principle XI). No unit lands on a separate branch.
   findings for every file.
 * **No production seam is introduced.** `mdfront.Decode` already returns a hard error on malformed
   YAML, so a genuine fixture such as `---\ntitle: [unclosed\n---\nBody.\n` produces a path-selective
-  decode failure with no injection at all. The previously contemplated package-level `decodeDocFn`
-  variable is **rejected**: it is global mutable state in a production package (an explicit
-  `go.instructions.md` anti-pattern), and it would have forced the removal of `t.Parallel()` calls that
-  already exist in `internal/docline`. Existing `t.Parallel()` calls are retained.
+  decode failure with no injection at all. A package-level `decodeDocFn` variable is **unnecessary
+  here** — not categorically banned. `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md`
+  documents the function-variable seam as an accepted, repository-precedented pattern
+  (`persistArtifactWriteFn`, `appendCommentFn`, `mkdirDirSyncFn`), and the same learning records the
+  `t.Parallel` prohibition it carries. Both reasons to decline it here are local: the failure is
+  naturally reachable through a real malformed fixture, so no seam is needed at all, and adopting one
+  would force removing `t.Parallel()` calls that already exist in `internal/docline`. Existing
+  `t.Parallel()` calls are retained.
 * **Scenarios**: (1) the undecodable file yields exactly one finding with `Rule: RuleDecodeError` and
   `Severity: SeverityError`; (2) findings for the remaining files are still present, proving the scan
   continued; (3) a corpus whose only problem is the undecodable file still yields a non-empty findings
@@ -528,7 +629,7 @@ commit (Principle XI). No unit lands on a separate branch.
   asserted by U9a scenario 1; U7a stays inside `internal/docline`, which does not import
   `internal/cli`.
 * **Posture**: test-first. All three red before U8.
-* **Acceptance**: three failing assertions. The `classifyDecodeFailure` convergence-lock table test
+* **Acceptance**: three failing assertions. The `classifyDecodeFailure` / `applyDecodeFailure` table test
   belongs to U8, which introduces the helper; U7a must not reference it, because U7a lands before U8
   and the identifier does not exist at its own commit boundary.
 
@@ -541,30 +642,53 @@ commit (Principle XI). No unit lands on a separate branch.
   `os.ReadFile` fail on every platform while leaving `core.SafeResolve` satisfied. A `chmod 0o000`
   construction is **rejected**: it is a no-op on Windows, this workspace's development platform, so the
   scenario would be an unfixable red there.
-* **Construction constraint for scenario 1**: a `Path: "../escape"` fixture is **not** sufficient and may not be the
-  sole construction — `collectInScopeDocs` rejects it at `service.go:226-229` before the `LintTree` loop is
-  reached, so it would stay green even against a U8 that wrongly downgrades a `decodeDoc`-internal
-  containment failure. Scenario 1 MUST call the unexported `decodeDoc(root, rel)` directly — reachable
-  because `internal/docline` tests are in-package — with a `rel` that makes its own `SafeResolve` fail,
-  assert `errors.Is(err, ErrPathEscapesWorkspace)` and — because the call is made directly against `decodeDoc`, the provenance of the containment failure is established by construction rather
-  than by inspecting the message; no assertion may read `err.Error()`. It **also** asserts that `LintTree` over the same corpus returns
-  `nil, err`. It must not reference `classifyDecodeFailure`, which does not exist until U8.
-* **Scenarios**: (1) a `decodeDoc` failure carrying `ErrPathEscapesWorkspace` still makes `LintTree`
-  return that error with a nil findings slice — it is **never** downgraded to a finding, and
-  `errors.Is(err, ErrFrontmatterDecode)` is false for it; (2) an unreadable file (an `os.ReadFile`
-  failure) also still returns an error rather than a finding, and no finding's `File` or `Fix` string
-  contains the workspace absolute path prefix — every one is repo-relative POSIX, matching the rest of
-  the package.
+* **Construction constraint for scenario 1**: scenario 1 is a **direct sentinel guard on `decodeDoc`**,
+  not a `LintTree` propagation assertion. It MUST call the unexported `decodeDoc(root, rel)` directly —
+  reachable because `internal/docline` tests are in-package — with a `rel` that makes its own
+  `core.SafeResolve` fail, and assert `errors.Is(err, ErrPathEscapesWorkspace)`. Because the call is
+  made directly against `decodeDoc`, the provenance of the containment failure is established by
+  construction rather than by inspecting the message; no assertion may read `err.Error()`. It must not
+  reference `classifyDecodeFailure`, which does not exist until U8.
+* **Why the `LintTree` half of scenario 1 is removed rather than weakened**: an earlier revision also
+  required scenario 1 to assert that `LintTree` over the same corpus returns `nil, err`. That assertion
+  is **unconstructible from a corpus**. `LintTree` passes `decodeDoc` only the paths
+  `collectInScopeDocs` produced, and those are `filepath.Rel(absRoot, p)` results for files found by
+  walking **inside** the already-`core.SafeResolve`d base (`service.go:225-283`), so `decodeDoc`'s own
+  `core.SafeResolve(root, rel)` can never fail for them; and the separate direct `decodeDoc` call does
+  not inject its error into `LintTree`. Keeping the requirement would give U7b — a **green-throughout**
+  guard — an acceptance condition that cannot be met. The propagation half is **relocated to U8**: its
+  `applyDecodeFailure` table test pins `(containment error) → (nil findings, cause unchanged)`, and U8's
+  acceptance requires `LintTree`'s per-file body to be nothing but a call to `applyDecodeFailure`. That
+  is where the
+  never-downgraded-to-a-finding guarantee is enforced.
+* **Construction constraint for scenario 1b**: because the `decodeDoc`-internal containment branch is
+  unreachable through `LintTree`, U7b asserts the containment edge that **is** reachable there —
+  `collectInScopeDocs` — and labels it as covering that edge only. It explicitly does **not** claim to
+  cover the `decodeDoc` branch, which is exactly the over-claim the removed assertion made.
+* **Scenarios**: (1) `decodeDoc` called directly with an escaping `rel` returns an error satisfying
+  `errors.Is(err, ErrPathEscapesWorkspace)`, for which `errors.Is(err, ErrFrontmatterDecode)` is
+  **false** — so a containment failure can never be classified as decodable data; (1b) `LintTree` with
+  `Options{Path: "../escape"}` returns a nil findings slice and an error satisfying
+  `errors.Is(err, ErrPathEscapesWorkspace)`, with `errors.Is(err, ErrFrontmatterDecode)` false, guarding
+  the `collectInScopeDocs` containment edge end-to-end; (2) an unreadable file — `decodeDoc` called
+  directly with a `rel` resolving to a directory, so `os.ReadFile` fails — returns an error for which
+  `errors.Is(err, ErrFrontmatterDecode)` is **false**, and, over an ordinary corpus, no finding's `File`
+  or `Fix` string contains the workspace absolute path prefix; every one is repo-relative POSIX,
+  matching the rest of the package.
 * **Posture**: containment regression guard (Principle III). Green before and after U8.
-* **Acceptance**: both green at every commit boundary.
+* **Acceptance**: all three green at every commit boundary. U7b makes **no** claim about `LintTree`'s
+  handling of a `decodeDoc`-internal containment failure; that claim belongs to U8's
+  `applyDecodeFailure` table.
 
 ### U8 — Accumulate `decode_error` findings and continue scanning
 
 * **Domain**: code, plus the in-package characterization test for the unexported helper it introduces
 * **Files**: `internal/docline/service.go`, `internal/docline/report.go` (doc comment only),
-  `internal/docline/classify_decode_failure_test.go` (new, `package docline`)
-* **Scope note**: four files — two production edits, one doc-comment correction, and the helper's
-  characterization table test. Recorded as a 2-Hour Rule file-count and width-isolation exception;
+  `internal/docline/decode_failure_test.go` (new, `package docline`)
+* **Scope note**: **three files** — one production file carrying both edits (the `LintTree` per-file
+  branch and the two new helpers both live in `service.go`), one doc-comment correction in `report.go`,
+  and the characterization table test for the two unexported helpers. Recorded as a 2-Hour Rule
+  file-count and width-isolation exception, because it still mixes production code with its own test;
   rejected alternative: a separate post-U8 test unit, rejected because U7a must not reference
   `classifyDecodeFailure` (it lands first) and a convergence lock deferred past U8 leaves the
   three-way split unpinned at U8's own commit boundary. `internal/docline/policy.go` is **not** in the
@@ -580,18 +704,60 @@ commit (Principle XI). No unit lands on a separate branch.
   3. anything else — notably the `os.ReadFile` failure at `service.go:291-293`, whose `*fs.PathError`
      carries the **absolute** host path → still `return nil, err`. It is a broken invocation, not
      malformed data.
-* **The discrimination lives in one unexported helper**,
-  `classifyDecodeFailure(err error) (rule string, fatal error)` in `internal/docline/service.go`,
-  called by `LintTree`. It returns `(RuleDecodeError, nil)` for a frontmatter-decode failure and
-  `("", err)` for everything that must propagate, so the two outcomes are mutually exclusive and
-  neither is expressed as a bare boolean. It MUST NOT return `("", nil)`: a `nil` input is a programming error and returns `("", errors.New("docline: classifyDecodeFailure called with nil error"))`, so `LintTree` either appends a finding with a non-empty rule or propagates an error. `PlanMigration` adopting the same helper is the recorded
-  convergence follow-up, so a second decode policy over the same frontmatter grammar is never written.
-  A table test over containment, decode, read-failure, and nil inputs is the convergence lock.
+* **Two unexported helpers, split by policy neutrality**, both in `internal/docline/service.go`:
+  1. `classifyDecodeFailure(err error) (kind decodeFailureKind, cause error)` — **policy-neutral**. It
+     returns `decodeFailureContainment`, `decodeFailureRead`, or `decodeFailureFrontmatter` and echoes
+     `err` back as `cause`, unchanged and unwrapped, so no caller loses the original error value. It
+     carries **no lint vocabulary**: no `Rule`, no `Finding`, no report concept. That is precisely what
+     makes it reusable by `PlanMigration`, whose abort policy differs from `LintTree`'s — the recorded
+     convergence follow-up, already materialized as stash `1787FD85`. A classifier that returned
+     `RuleDecodeError` would have baked `LintTree`'s presentation decision into the shared boundary and
+     forced `PlanMigration` to write a second classification anyway. This split is a **structural cost
+     knowingly incurred in-scope for an out-of-scope consumer**, recorded as such in the Decisions
+     table: the in-scope requirement R7 would be met by `applyDecodeFailure` alone, and the `nil`-input
+     branch is unreachable on `LintTree`'s own call path. It is retained because collapsing the two and
+     re-splitting them later would make stash `1787FD85` a refactor of shipped code rather than an
+     adoption, and because `docs/compound/2026-07-29-fsutil-neutral-leaf-caller-classifies.md` records
+     that a leaf which cannot know the caller's policy must return neutral errors and let each caller
+     classify at its own boundary — exactly this shape. It MUST NOT return a zero kind with
+     a `nil` cause: a `nil` input is a programming error and returns
+     `(decodeFailureRead, errors.New("docline: classifyDecodeFailure called with nil error"))`, so the
+     fail-closed default is "propagate".
+  2. `applyDecodeFailure(err error, rel string) ([]Finding, error)` — the **lint policy** mapping, and
+     the only branch `LintTree` is permitted to use. For `decodeFailureFrontmatter` it returns a
+     one-element slice and a `nil` error; for every other kind it returns `(nil, cause)` with the error
+     value **unchanged**. `LintTree`'s per-file body is exactly, inside the existing `if err != nil` branch:
+     `fs, fatal := applyDecodeFailure(err, rel); if fatal != nil { return nil, fatal }; findings = append(findings, fs...); continue`.
+     The trailing `continue` is **load-bearing**: without it execution falls through to
+     `FromMap(frontmatterOrEmpty(md))` with a `nil` `md`, and `frontmatterOrEmpty(nil)` returns an empty
+     map, so `ValidateFields` would append spurious missing-`title`/`source`/`doc_type` findings on top
+     of the `decode_error` finding and break U7a scenario 1's "exactly one finding" contract.
+     `LintTree` MUST NOT re-derive the branch itself, so there is one place where a fail-open regression
+     could be introduced and one place where it is tested.
+* **The table test covers both helpers, and that is what closes the fail-open gap.**
+  `classifyDecodeFailure` is tabled over containment, read-failure, frontmatter-decode, and `nil`
+  inputs — the convergence lock. `applyDecodeFailure` is tabled over an **injected**
+  `ErrPathEscapesWorkspace` and an **injected** wrapped `*fs.PathError`, asserting for each that the
+  returned finding slice is `nil`, that the returned error is the same value that went in, and that no
+  absolute path appears anywhere in the result. Injection is trivial here because both helpers take an
+  `error` argument rather than reading the filesystem. This matters: `LintTree`'s `decodeDoc`-internal
+  containment branch is unreachable from any corpus (see U7b), but the `os.ReadFile` fatal class **is**
+  constructible, and without an `applyDecodeFailure` table a fail-open implementation that turned every
+  `decodeDoc` error into a `decode_error` finding — leaking the `*fs.PathError`'s absolute host path
+  into `Fix` — would still pass U7b scenarios 1, 1b, and 2. The two-helper split plus this table is the
+  guard.
+* **MCP mapping is asserted by U9a, not by U8.** `handleDocsLint` (`internal/mcp/docs_tools.go`) already
+  maps a `docline.ErrPathEscapesWorkspace` return to a structured `validation_failed` result via
+  `errors.Is` rather than to `InternalError`. U8 must not regress that, but U8's own files are all in
+  `package docline` and cannot execute an assertion against `handleDocsLint`. The assertion therefore
+  lives in **U9a scenario 5**, which already extends `internal/mcp/docs_tools_test.go`. U8's acceptance
+  records the requirement; U9a's harness pins it.
 * **The discriminator must exist before it can be used.** `decodeDoc` currently wraps both the read and
   the decode failure with an opaque `%w` over an untyped error, so there is nothing to branch on today.
   Wrap the `mdfront.Decode` branch at `service.go:297` with the `ErrFrontmatterDecode` sentinel U0b
   declared — `fmt.Errorf("docline.decodeDoc: decode %s: %w: %w", rel, ErrFrontmatterDecode, err)` —
-  so `LintTree` branches purely on `errors.Is`. **No error text is ever inspected.**
+  so `LintTree` branches purely on `errors.Is`. The two-`%w` verb form requires Go ≥ 1.20; this module
+  declares `go 1.24.0` in `go.mod`, so it is available. **No error text is ever inspected.**
 * The finding carries `Rule: RuleDecodeError`, `Field: "frontmatter"`, `Severity: SeverityError`, `File`
   set to the repo-relative POSIX path, and a **sanitized** `Fix` built from the structured decode cause
   — never `err.Error()` of a wrapped `*fs.PathError`, and never a matched error substring. The `Fix`
@@ -601,10 +767,16 @@ commit (Principle XI). No unit lands on a separate branch.
   U8 must not weaken either. The one edit is to the `LintReport` doc comment's claim that "transport
   errors are reserved for … parse failures", which this unit makes false.
 * **Posture**: makes U7a green.
-* **Acceptance**: U7a passes and U7b still passes; a table test over containment, decode, read-failure,
-  and nil inputs pins `classifyDecodeFailure` — this is the convergence lock; `LintTree` never returns `nil, err` for a
-  frontmatter-decode failure and always returns `nil, err` for a containment or I/O failure; every new
-  exported identifier carries a doc comment beginning with its own name.
+* **Acceptance**: U7a passes and U7b still passes; the `decode_failure_test.go` table pins
+  `classifyDecodeFailure` over containment, decode, read-failure, and `nil` inputs (the convergence
+  lock) **and** `applyDecodeFailure` over an injected `ErrPathEscapesWorkspace` and an injected wrapped
+  `*fs.PathError` (the containment- and I/O-propagation guard, per U7b); `LintTree`'s per-file body
+  calls `applyDecodeFailure` and nothing else, appending its findings when it returns a `nil` error and
+  returning `nil` plus its error value **unchanged** otherwise, so it never returns `nil, err` for a
+  frontmatter-decode failure and always returns `nil, err` for a containment or I/O failure; U9a
+  scenario 5 still passes, confirming `handleDocsLint` maps `docline.ErrPathEscapesWorkspace` to
+  `validation_failed` rather than `InternalError`; every new exported identifier carries a doc comment
+  beginning with its own name.
 
 ### U8b — Update the lint surface contract text
 
@@ -621,34 +793,71 @@ commit (Principle XI). No unit lands on a separate branch.
   half, exactly as it would have for the checkpoint half.
 * **Width isolation**: both edits are Go source; the description strings are machine-consumed contract
   text, not a docs artifact.
-* **Posture**: follows U8 so the text describes shipped behavior.
-* **Acceptance**: both strings name the `decode_error` rule value; the CLI text names the retained
-  non-zero exit and the MCP description names the successful-tool-result behavior.
+* **Posture**: makes U9c green; follows U8 so the text describes shipped behavior.
+* **Acceptance**: all three U9c scenarios pass; both strings name the `decode_error` rule value; the CLI
+  text names the retained non-zero exit and the MCP description names the successful-tool-result
+  behavior and mentions no exit code.
 
-### U9a — Lock the degraded-corpus shape and exit code on both surfaces
+### U9a — Lock the degraded-corpus behavioral shape and exit code on both surfaces
 
 * **Domain**: tests
 * **Files**: `internal/cli/docs_test.go` (extend), `internal/mcp/docs_tools_test.go` (extend)
+* **Scope**: **behavior only.** Every assertion in this unit is about what the two surfaces *do* with a
+  malformed corpus. The contract-**text** assertions that were previously bundled here now live in U9c,
+  which is the red harness for U8b.
 * **Scenarios**: (1) `backlogit docs lint` still exits non-zero and prints a report containing the
   `decode_error` finding; (2) the marshalled JSON is inspected directly for a **present and non-null**
   `findings` array using a `.([]any)` type assertion, which fails for both an absent key and a JSON
-  `null`; (3) MCP returns a successful tool result carrying the same findings rather than
-  `InternalError`, and the **registered** `backlogit_docs_lint` tool description names the
-  `decode_error` rule value and states that a malformed document is returned as a finding in a
-  successful tool result rather than failing the tool call. The MCP description does **not** mention
-  exit codes — MCP has none, and importing a shell concept into an agent-facing tool contract is a
-  leaky abstraction (R11, agent-facing half).
+  `null`; (3) MCP returns a **successful tool result** carrying the same findings rather than
+  `InternalError`, and the CLI and MCP finding payloads for the same corpus are byte-identical;
+  (4) a corpus whose `--path` escapes the workspace makes the CLI exit non-zero with **no** report
+  rendered and **no** `decode_error` finding; (5) the same input driven through `backlogit_docs_lint`
+  returns a structured **`validation_failed`** result — never `InternalError` and never a successful
+  result carrying a finding — pinning that `handleDocsLint` keeps routing
+  `docline.ErrPathEscapesWorkspace` through `errors.Is` to the validation outcome. Scenarios 4 and 5 are
+  **green throughout**: they lock the existing containment mapping against U8's edits to the producing
+  path, and they live here because U8's own files are all in `package docline` and cannot execute an
+  assertion against `handleDocsLint`.
 * **Constraint**: `TestDocsTools_CLIParity` is not sufficient on its own. Both sides marshal the same
   struct, so a shape defect drifts identically on both sides and compares equal. Scenario 2 must read
   the marshalled JSON, not the producing struct.
-* **Posture**: test-first. Scenario 3 fails against today's `handleDocsLint`, so all three are run once
-  against pre-U8 HEAD and their failure recorded, then re-run after U8. The surface-level red is
-  observed even though the unit is authored alongside U8.
+* **Posture**: **test-first for scenarios 1–3, red before U8**; scenarios 4 and 5 are containment
+  regression guards, green at every commit boundary. All three red scenarios fail against pre-U8 `LintTree` and
+  `handleDocsLint`, and every identifier they touch — `RuleDecodeError` among them — exists from U0b, so
+  the harness commit compiles and its red result is directly observable. U8 makes them green. This unit
+  asserts nothing that U8b writes, so it is authored and observed red **before** U8 rather than replayed
+  against an earlier commit after the behavior already landed — which is what the previous
+  `U8 --> U8b --> U9a` ordering would have forced, and which satisfies no reading of Principle II.
 * **Red-result contingency**: if a scenario is still red after U8, U9a becomes the red harness for a new
   unit **U9x** — `internal/docline/report.go`, guarantee a non-nil `Findings` slice at the producing
   boundary, acceptance "the assertion in the failing scenario passes without being weakened" — which
   must land before U10a. U9a may **not** be marked green by relaxing the `.([]any)` assertion.
-* **Acceptance**: all three pass; the existing parity test still passes unchanged.
+* **Acceptance**: three failing assertions before U8; scenarios 1–3 pass after U8; scenarios 4 and 5
+  green before and after U8; the existing parity test still passes unchanged.
+
+### U9c — Red harness for the lint surface contract text
+
+* **Domain**: tests
+* **Files**: `internal/cli/docs_contract_test.go` (new), `internal/mcp/docs_tools_contract_test.go`
+  (new). Dedicated files, **not** extensions of the files U9a extends: U9a and U9c are unordered
+  relative to each other in the graph, so sharing `docs_test.go` and `docs_tools_test.go` between them
+  would reintroduce commit coupling in exactly the place the split exists to remove.
+* **Rationale**: U8b writes contract text on two surfaces. Test-first requires that text to have a red
+  harness of its own, authored and observed failing **before** U8b, exactly as U3d is the red harness
+  for U4b's tool description. Bundling these assertions into U9a — a unit the graph placed *after* U8b —
+  made them unobservable-red by construction: the behavior and the text they assert would already exist
+  at U9a's commit boundary.
+* **Scenarios**: (1) the **registered** `backlogit_docs_lint` tool description names the `decode_error`
+  rule value and states that a malformed document is returned as a finding in a **successful tool
+  result** rather than failing the tool call; (2) that same description does **not** mention exit codes —
+  MCP has none, and importing a shell concept into an agent-facing tool contract is a leaky abstraction
+  (R11, agent-facing half); (3) the `docs lint` Cobra `Short`, `Long`, and `Example` strings name the
+  `decode_error` rule value and state that the non-zero exit is retained on a corpus containing one.
+* **Constraint**: assertions read the **registered** tool description through the exported server handle
+  and the **constructed** Cobra command, never a package-level literal, so a description that is written
+  but never registered cannot produce a false green.
+* **Posture**: test-first. All three are red before U8b. U8b makes them green.
+* **Acceptance**: three failing assertions before U8b; all three pass after U8b.
 
 ### U9b — Lock the clean-corpus always-array shape
 
@@ -694,8 +903,9 @@ commit (Principle XI). No unit lands on a separate branch.
   `context` is unredacted durable state written to a git-tracked path and must not carry secrets.
 * **Generated-artifact caveat**: `.github/instructions/backlogit.instructions.md` is autoharness-
   generated from `backlogit.instructions.md.tmpl`, which lives in a repository this plan treats as
-  strictly read-only (Principle IV, PA-5). The in-repo edit is applied for immediate effect **and**
-  recorded as a follow-up backlog item to upstream the same wording into the template; otherwise the
+  strictly read-only (Principle IV, PA-5). The in-repo edit is applied for immediate effect **and** the
+  same wording is upstreamed into the template under the already-created follow-up **stash `360A183F`**;
+  otherwise the
   next regeneration silently reverts this shipment's own writer-migration guardrail. The durable,
   non-generated statement of the contract is U4b's `backlogit_create_checkpoint` tool description.
 * **Writer-migration ordering**: this instruction update MUST land before or with the merge, because an
@@ -704,8 +914,10 @@ commit (Principle XI). No unit lands on a separate branch.
 * **Risky action**: classified as PA-7.
 * **Posture**: docs-only.
 * **Acceptance**: the authoring guide names the new rule value; the instruction file names `context` as
-  the destination for arbitrary recovery keys and carries the secrets caveat; the template follow-up
-  item exists in the backlog.
+  the destination for arbitrary recovery keys and carries the secrets caveat. The template follow-up is
+  **already recorded as stash `360A183F`**, created by Stage during the PR #372 remediation cycle, so
+  this unit verifies that entry is still `active` rather than creating anything. Ship must not create a
+  planning backlog item for it.
 
 ## Dependency graph
 
@@ -724,23 +936,33 @@ U6  --> U10a
 U6  --> U10b
 U0b --> U7a --> U8
 U0b --> U7b --> U8
-U8  --> U8b --> U9a --> U10a
+U0b --> U9a --> U8
 U0b --> U9b --> U8
-U9a --> U10b
+U0b --> U9c --> U8b
+U8  --> U8b --> U10a
+U8b --> U10b
 ```
 
-* `U8b` precedes `U9a`, because U9a scenario 3 asserts the tool-description text U8b writes.
-* `U9a` precedes `U10b`, because U10b documents the shipped `decode_error` contract; the authoring guide
+* `U9c` precedes `U8b`, because U9c **is** U8b's red harness: it asserts the contract text U8b writes on
+  both surfaces and must be observed failing before that text exists, exactly as U3d precedes U4b.
+* `U9a` no longer depends on `U8b`. It asserts **behavior only** and precedes `U8`, so its red result is
+  observed before the behavior lands rather than replayed against an earlier commit afterwards. The
+  retired `U8 --> U8b --> U9a` chain scheduled a red harness after the two units that implement the
+  behavior it harnesses, which satisfies no reading of Principle II.
+* `U8b` precedes `U10b`, because U10b documents the shipped `decode_error` contract; the authoring guide
   and the instruction file may not describe lint behavior that has not yet landed. This edge also
-  orders `U10b` transitively after `U0b`, `U9b`, `U8`, and `U8b`.
+  orders `U10b` transitively after `U0b`, `U7a`, `U7b`, `U9a`, `U9b`, `U9c`, and `U8`.
 * `U0b` precedes `U9b` as a track-entry convention only; unlike `U7a` and `U7b`, `U9b` asserts no
   prelude identifier.
 * `U9b` precedes `U8`, because its clean-corpus shape guard must be observed green **before** U8 changes
   the producing path; its acceptance is "green before and after U8".
 * **`U0a` precedes every Track A harness and `U0b` precedes every Track B harness.** They declare the
-  identifiers each harness asserts against — `CheckpointUnknownFieldError`, `Extra`, the `Keys()` stub,
-  and `CreateCheckpointResult` for Track A; `RuleDecodeError` and `ErrFrontmatterDecode` for Track B —
-  so each harness commit compiles and its red result is observable. The two preludes share no file and
+  identifiers each harness asserts against — `CheckpointUnknownFieldError`, `Extra`, and
+  `CreateCheckpointResult` for Track A; `RuleDecodeError` and `ErrFrontmatterDecode` for Track B,
+  which `U7a`, `U7b`, `U9a`, and `U9c` all reference —
+  so each harness commit compiles and its red result is observable. The `Keys()` stub is declared for
+  the same reason but is **not** an assertion target for any harness; it exists so U6's call site and
+  U2's replacement are signature-stable. The two preludes share no file and
   no commit, so the two source entries stay genuinely independent.
 * `U3b` and `U3c` precede `U2` because they are the pre-change golden-baseline guards; their expected
   outcomes must be captured before `UnmarshalJSON` is hand-written.
@@ -751,32 +973,69 @@ U9a --> U10b
 * `U4` precedes `U6`: both modify `CreateCheckpoint` in `internal/events/memory.go`, and U6 populates a
   result behind an already-strict boundary.
 * `U8b` precedes `U10a`, because the generated lint reference is built from the Cobra strings U8b edits.
-* Track A (`U0a`, `U1a`–`U6`) and Track B (`U0b`, `U7a`–`U9b`) share no unit and may run in either
-  order or concurrently.
-* `U10a` and `U10b` are last on both tracks, and the graph now encodes that: every terminal test and
-  code unit has an outgoing edge into one of them. `U9a --> U10a` exists so the generated lint reference
-  is regenerated only after the degraded-corpus shape is locked.
+  `U9c` is transitively ordered ahead of `U10a` through `U8b`, so the contract text is locked green
+  before it is regenerated into the tracked reference.
+* **Edge inventory.** The code block above is the authoritative list: **35 direct edges**, matching the
+  35 `blocks` edges registered in backlogit exactly. Two of them are retained for stated reasons rather
+  than because the chain requires them, and the two reasons are **different**:
+  * `U2 --> U6` is genuinely **transitively implied** (`U2 --> U4 --> U4b --> U6` already orders them)
+    and is retained anyway because U6 consumes the `Keys()` accessor U2 defines, so the semantic
+    dependency is direct.
+  * `U0b --> U9b` is **not** transitively implied — it is U9b's *only* incoming edge, so removing it
+    would leave U9b with no predecessor. It is retained as a **track-entry convention**: U9b asserts no
+    prelude identifier and would compile without U0b, but routing every Track B unit through the single
+    prelude commit is what keeps the two source entries on disjoint commit chains.
+
+  No other edge is redundant. A direct `U9c --> U10a` edge was considered and **rejected** as pure
+  redundancy: `U9c --> U8b --> U10a` already orders them.
+* Track A (`U0a`, `U1a`–`U6`) and Track B (`U0b`, `U7a`–`U9c`) share no unit and no commit **up to and
+  including `U6` and `U8b`**, and those pre-integration segments may run in either order or
+  concurrently. `U10a` and `U10b` are **not** part of either track: they are a shared post-track
+  integration phase that depends on both (`U6 --> U10a`, `U8b --> U10a`, `U6 --> U10b`,
+  `U8b --> U10b`), because the generated CLI reference and the agent instruction surfaces each carry
+  both contracts in one artifact and cannot be split by track. The independence claim is therefore
+  scoped to the pre-integration units, not to the plan as a whole; the two source entries remain
+  independently *reviewable* and independently *revertible* up to integration, but they are delivered
+  through one shared integration phase and one merge commit.
+* `U10a` and `U10b` are last overall, and the graph encodes that: every terminal test and
+  code unit has an outgoing edge into one of them, directly or transitively. On Track B the terminal
+  edge runs `U9a --> U8 --> U8b --> U10a` and `U9c --> U8b --> U10b`, so the generated lint reference
+  and the instruction surfaces are still produced only after both the degraded-corpus shape and the
+  contract text are locked.
 * The graph is acyclic. `U9x` (the U9a red-result contingency) is not scheduled; it materializes only if
-  a U9a scenario is still red after U8, in which case it inserts as `U9a --> U9x --> U10a`.
+  a U9a scenario is still red after U8, in which case it inserts as `U8 --> U9x --> U8b`, which keeps it
+  ahead of `U10a`.
 
 ## Scope boundaries and recorded follow-ups
 
 These are deliberate exclusions, recorded here so the plan is not read as a complete elimination of
-checkpoint evidence loss. Every follow-up is owned by Stage and is created as a backlog item during the
-harvest that decomposes this plan, so none of them can leak back into this shipment's scope.
+checkpoint evidence loss. Every follow-up is owned by Stage and **has already been materialized as a
+backlogit stash entry with the ID cited in the Follow-up column** — created during the PR #372
+remediation cycle, after a duplicate check found no equivalent existing artifact in the queue, the
+archive, or the stash. None of them is a member of shipment `129-S`: they are recorded residual exposure,
+not release-blocking work, so they cannot leak back into this shipment's scope, and Ship — which is
+forbidden from creating planning backlog items — has nothing left to create.
+
+Stash is the correct artifact type here rather than a queued task. Each entry is undeliberated,
+unplanned intake that has not passed a plan-review gate, so materializing it as a `queued` task under a
+covering feature would both bypass the harvest contract (P-003: every task traces to a reviewed plan and
+carries concrete acceptance criteria) and put unreviewed work into the same ready-queue Ship draws from.
+Each entry carries its provenance inline: the originating plan path, the parent feature `146-F`, the
+shipment `129-S`, the external source ID where one applies, and an explicit
+"NOT release-blocking for `129-S`" marker.
 
 | Excluded surface | Why it is excluded | Residual exposure | Follow-up |
 |---|---|---|---|
-| `core.AbandonCheckpoint` (`internal/core/checkpoint_disposition.go`) | It performs the same parse → mutate → re-marshal round-trip on a **pre-existing** file. U2 fixes its `context` loss as a side effect, but unmodeled **top-level** keys are still dropped on abandon. Fixing it needs a raw top-level carrier or a refusal-to-mutate policy, which is a distinct design decision from the create boundary | Any checkpoint on disk carrying unmodeled top-level keys loses them when abandoned. The nine live files all carry such keys | Backlog item: "preserve or refuse on unmodeled top-level keys in checkpoint disposition rewrites" |
-| `events.ResolveCheckpoint` | Same parse/mutate/re-marshal shape | Same as above on resolve | Same backlog item |
-| **Indeterminate durable-write reporting for `CreateCheckpoint`** | Returning a populated result alongside an indeterminate-write error is the right contract, but `CreateCheckpoint` writes through `syncWriteFileAtomic` (`internal/events/fsutil.go`), which today has **no outcome classification and no injectable seam**, and neither the MCP `errorResponse` nor the CLI error path can carry a `path` or a key list. Delivering it needs a classified write result, a handler-level seam, and a new error envelope on both surfaces — none of which is traceable to source entry `3C7AAC71` or `90F2A9F8` | A create whose write is indeterminate still returns a bare error, so the caller cannot tell "probably written" from "not written" | Backlog item: "classify `syncWriteFileAtomic` outcomes by **converging `internal/events` onto the existing `internal/atomicfile` leaf**, which already tags `ErrWriteNotApplied` and `ErrWriteIndeterminate`, rather than adding a second classifier inside the private duplicate — then surface indeterminate creates with path and context keys on both transports" |
-| `MigrateReport.Applied` / `Skipped` (`internal/docline/report.go`) | These sibling collection fields carry `omitempty` and therefore vanish on a zero-apply run — a known adjacent instance of the always-an-array contract | A zero-apply migrate report omits both arrays | Backlog item: "drop `omitempty` from `MigrateReport` collection fields" |
+| `core.AbandonCheckpoint` (`internal/core/checkpoint_disposition.go`) | It performs the same parse → mutate → re-marshal round-trip on a **pre-existing** file. U2 fixes its `context` loss as a side effect, but unmodeled **top-level** keys are still dropped on abandon. Fixing it needs a raw top-level carrier or a refusal-to-mutate policy, which is a distinct design decision from the create boundary | Any checkpoint on disk carrying unmodeled top-level keys loses them when abandoned. The nine live files all carry such keys | Stash `D3CE9E81` (task, high): "preserve or refuse on unmodeled top-level keys in checkpoint disposition rewrites" |
+| `events.ResolveCheckpoint` | Same parse/mutate/re-marshal shape | Same as above on resolve | Same stash entry, `D3CE9E81` |
+| **Indeterminate durable-write reporting for `CreateCheckpoint`** | Returning a populated result alongside an indeterminate-write error is the right contract, but `CreateCheckpoint` writes through `syncWriteFileAtomic` (`internal/events/fsutil.go`), which today has **no outcome classification and no injectable seam**, and neither the MCP `errorResponse` nor the CLI error path can carry a `path` or a key list. Delivering it needs a classified write result, a handler-level seam, and a new error envelope on both surfaces — none of which is traceable to source entry `3C7AAC71` or `90F2A9F8` | A create whose write is indeterminate still returns a bare error, so the caller cannot tell "probably written" from "not written" | Stash `EA1F5912` (task, medium): "classify `syncWriteFileAtomic` outcomes by **converging `internal/events` onto the existing `internal/atomicfile` leaf**, which already tags `ErrWriteNotApplied` and `ErrWriteIndeterminate`, rather than adding a second classifier inside the private duplicate — then surface indeterminate creates with path and context keys on both transports" |
+| `MigrateReport.Applied` / `Skipped` (`internal/docline/report.go`) | These sibling collection fields carry `omitempty` and therefore vanish on a zero-apply run — a known adjacent instance of the always-an-array contract | A zero-apply migrate report omits both arrays | Stash `EC987334` (task, medium): "drop `omitempty` from `MigrateReport` collection fields" |
 | `ApplyMigration` | Its all-or-nothing abort is a deliberate **write-path** safety invariant with its own preflight and TOCTOU guard | None introduced | None |
-| `PlanMigration` | Excluded, but the write-path rationale does **not** apply: `PlanMigration` is read-only, so after U8 `docs lint` reports-and-continues on a frontmatter decode failure while `docs migrate --plan` still aborts the whole corpus on the first one — a real divergence in the same package over the same grammar | Two decode policies over one frontmatter grammar | Backlog item: "converge `LintTree` and `PlanMigration` on one `decodeDoc` failure-classification helper" |
-| Registry governance for `create_checkpoint` | This shipment does **not** add a `governed: true` marker or a `governed_name` to `.autoharness/backlog-registry.yaml`, because the governed-parity design requires a named behavioral fixture per marker and that is a separate decision. Neither the registry nor the MCP-to-CLI fallback guide describes a `create_checkpoint` result shape or flag semantics affected by U6, so no drift is introduced | `create_checkpoint` remains ungoverned, with CLI/MCP parity enforced by U5a rather than by the registry drift test | Backlog item: "decide whether `create_checkpoint` becomes a governed operation" |
-| `.github/instructions/backlogit.instructions.md` upstream template | The file is autoharness-generated and its template lives in a repository this plan treats as strictly read-only (Principle IV, PA-5), so the durable fix cannot be applied from here | U10b's writer-migration guardrail is silently reverted by the next autoharness regeneration | Backlog item: "upstream the checkpoint `context` Continuity Protocol wording into `backlogit.instructions.md.tmpl`" |
-| CLI vs MCP error-shape asymmetry on unknown-key rejection | MCP carries a structured `unknown_fields []string` array (U4b); the CLI prints a wrapped error string. Adding a JSON error-serialization path to the CLI is a general output-contract change affecting every CLI error, not just this one, and is untraceable to either in-scope source entry | An agent driving the CLI must read the message text to learn which keys were rejected, while an agent driving MCP gets a parseable list | Backlog item: "provide a structured JSON error envelope for CLI validation failures mirroring the MCP shape" |
-| `.backlogit/checkpoints/` gitignore posture | Deliberately unchanged. Opening the `context` namespace makes it easier for an agent to persist arbitrary session state to a **git-tracked** path, but changing the tracking posture mid-shipment would rewrite unrelated repository conventions | Unredacted agent-supplied `context` continues to be committed to git; mitigated only by U10b's documented caveat | Backlog item: "decide gitignore and redaction posture for checkpoint `context`" |
+| `PlanMigration` | Excluded, but the write-path rationale does **not** apply: `PlanMigration` is read-only, so after U8 `docs lint` reports-and-continues on a frontmatter decode failure while `docs migrate --plan` still aborts the whole corpus on the first one — a real divergence in the same package over the same grammar | Two decode policies over one frontmatter grammar | Stash `1787FD85` (task, high): "converge `LintTree` and `PlanMigration` on one `decodeDoc` failure-classification helper" |
+| Registry governance for `create_checkpoint` | This shipment does **not** add a `governed: true` marker or a `governed_name` to `.autoharness/backlog-registry.yaml`, because the governed-parity design requires a named behavioral fixture per marker and that is a separate decision. Neither the registry nor the MCP-to-CLI fallback guide describes a `create_checkpoint` result shape or flag semantics affected by U6, so no drift is introduced | `create_checkpoint` remains ungoverned, with CLI/MCP parity enforced by U5a rather than by the registry drift test | Stash `5F4E0FC3` (unknown, medium): "decide whether `create_checkpoint` becomes a governed operation" |
+| `.github/instructions/backlogit.instructions.md` upstream template | The file is autoharness-generated and its template lives in a repository this plan treats as strictly read-only (Principle IV, PA-5), so the durable fix cannot be applied from here | U10b's writer-migration guardrail is silently reverted by the next autoharness regeneration | Stash `360A183F` (task, high): "upstream the checkpoint `context` Continuity Protocol wording into `backlogit.instructions.md.tmpl`" |
+| CLI vs MCP error-shape asymmetry on unknown-key rejection | MCP carries a structured `unknown_fields []string` array (U4b); the CLI prints a wrapped error string. Adding a JSON error-serialization path to the CLI is a general output-contract change affecting every CLI error, not just this one, and is untraceable to either in-scope source entry | An agent driving the CLI must read the message text to learn which keys were rejected, while an agent driving MCP gets a parseable list | Stash `63E810D9` (task, medium): "provide a structured JSON error envelope for CLI validation failures mirroring the MCP shape" |
+| `.backlogit/checkpoints/` gitignore posture | Deliberately unchanged. Opening the `context` namespace makes it easier for an agent to persist arbitrary session state to a **git-tracked** path, but changing the tracking posture mid-shipment would rewrite unrelated repository conventions | Unredacted agent-supplied `context` continues to be committed to git; mitigated only by U10b's documented caveat | Stash `6CE00B88` (unknown, medium): "decide gitignore and redaction posture for checkpoint `context`" |
 
 ## Decisions and rationale
 
@@ -785,17 +1044,21 @@ harvest that decomposes this plan, so none of them can leak back into this shipm
 | `context` is open, the top level and `progress` are closed | The caller owns `context`; the schema owns the rest. Preserving caller payload keeps the structured recovery data agents demonstrably need, while a closed schema namespace stays enforceable and tells an agent immediately when it put a key in the wrong place. Closing `progress` is a deliberate widening of the decision record's "top level" wording, recorded in R3 rather than left implicit |
 | Strictness lives in a create-only two-pass decode | `ParseCheckpoint` is shared with `ListCheckpoints` and `GetCheckpoint`. Tightening it would mark existing on-disk checkpoints as quarantine candidates. Running `ParseCheckpoint` **first** also keeps shape errors classified as `ErrCheckpointCorrupt` instead of being swallowed by an unknown-field rejection |
 | The unknown-key probe is a reflection-derived, case-insensitive map diff | The decoder's `DisallowUnknownFields` reports only the **first** unknown key, returns an untyped error, and would force substring matching — banned by the workspace Go conventions. A hand-written key list would silently drift the next time `CheckpointV1` gains a field, exactly as it did when the four `disposition_*` fields landed. Case-insensitivity matches `json.Unmarshal`'s own field matching so no dump that succeeds today is newly rejected |
+| Every case-insensitive **match set** is consumed whole; nothing selects a single winner out of a raw map | Go randomizes map iteration order, so any step that picks one entry from `map[string]json.RawMessage` among several case-insensitive aliases makes the same input bytes produce different outcomes across runs. Two places in this plan were exposed: `UnmarshalJSON`'s modeled-field routing (fixed by decoding the modeled shadow directly from the original bytes, which inherits `encoding/json`'s deterministic source-order last-wins) and U4's nested `progress` recursion (fixed by recursing into every match and unioning the results). Set differences and unions are order-immune; single-winner selections are not |
 | The reflected tag sets implement a **frozen declared version**, not automatic schema admission | Deriving the create-boundary allowlist from `CheckpointV1` means a newly tagged field would silently widen what `schema_version: 1` accepts. Policy: adding a modeled top-level or `progress` key requires either a new `CheckpointV2` with explicit reader/writer compatibility, or an explicitly documented V1 compatibility exception recorded in the plan or design docs. U1b scenario 3 (the `context` key set) and **U3d scenario 3** (every reflection-derived `CheckpointV1`/`CheckpointProgress` key must appear in the hand-written tool description) assert against literal or manual expectations, so such a widening forces a deliberate update; U3c scenario 3 pins tag-option stripping |
 | Two declaration-only prelude units (U0a, U0b) land first | Ten harness units — eight on Track A, two on Track B — assert against identifiers their green units create. Without the preludes those commits do not compile, so the Principle II red result is unobservable rather than merely weak. They are split by track so the two source entries share no commit |
 | `Extra` is declared `json:"-"` | A defined-type conversion copies field tags, so an untagged `Extra` would make the method-less shadow type emit and consume a literal `"Extra"` key nested inside `context` |
 | `Extra` holds `json.RawMessage` | A `map[string]any` round-trip can reshape numbers and drop key order. Raw values are preserved without a decode/encode reshaping cycle |
 | `Keys()` is derived from the emitted bytes, on both write paths | Every modeled context field carries `omitempty`. Deriving `context_keys` from struct emptiness would let the result name a key the file does not contain, and hard-coding `[]` for the legacy path would hide a rich `context` that was actually written — both are new success-shaped envelopes inside the fix for success-shaped envelopes |
 | Frontmatter-decode failures become findings; containment and I/O failures stay errors, discriminated by sentinel | A malformed document is data the report should describe. A path escape is a NON-NEGOTIABLE containment control and an unreadable file is a broken invocation; neither may be downgraded to a finding. `decodeDoc` wraps both failures identically today, so a new `ErrFrontmatterDecode` sentinel is required before `LintTree` can branch without inspecting error text |
+| The decode-failure split is **two** helpers: a policy-neutral classifier and a lint-policy applier | `classifyDecodeFailure` returns a failure *kind* plus the unchanged cause and carries no lint vocabulary, so `PlanMigration` — whose policy is abort, not report-and-continue — can converge on it (stash `1787FD85`) instead of writing a second classification, exactly the neutral-leaf/caller-classifies shape recorded in `docs/compound/2026-07-29-fsutil-neutral-leaf-caller-classifies.md`. `applyDecodeFailure` holds the lint mapping and is the only branch `LintTree` may use, so there is exactly one place a fail-open regression could enter and exactly one place it is tested. Both take an `error` argument, so the fatal classes are injectable in a table test even where no corpus can reach them |
+| The two-helper split is an **acknowledged in-scope structural cost for an out-of-scope consumer** | R7 alone would be satisfied by `applyDecodeFailure`, and `classifyDecodeFailure`'s `nil`-input branch is unreachable from `LintTree`'s own call path, so the separation is not free and is not pretended to be. It is accepted because the alternative — ship one helper now and split it when stash `1787FD85` is built — turns that follow-up into a refactor of shipped gate code rather than an adoption, on a surface that runs on every pull request. The cost is one extra unexported type, one extra function, and two extra table rows, all inside one file and one unit |
+| Nothing selects a single winner out of a raw map, and the determinism guard uses N independent pairs | Go's map iteration order is unspecified rather than uniformly random, so re-running one fixture gives no bounded detection signal and can produce a false-negative red. `docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md` records the repository's empirical result — 5 of 8 independent pairs failing pre-fix — so U3a scenario 4 uses eight independent alias pairs and requires most or all to fail before U4 starts |
 | Both fixes land at the shared core seam and both surfaces marshal one pinned type | Fixing in `internal/events` and `internal/docline` rather than per surface makes CLI/MCP parity structural. Pinning a single wire type — as `docline.LintReport` already does — removes the tag, nil-slice, and key-ordering drift that two independent map literals would reintroduce |
-| Indeterminate-write reporting is **descoped**, not deferred silently | It is the right contract but needs a classified write result, a handler seam, and a new error envelope on both surfaces — none traceable to the two in-scope source entries. Recorded in the Scope boundaries table with a named backlog follow-up |
+| Indeterminate-write reporting is **descoped**, not deferred silently | It is the right contract but needs a classified write result, a handler seam, and a new error envelope on both surfaces — none traceable to the two in-scope source entries. Recorded in the Scope boundaries table as stash `EA1F5912` |
 | `AbandonCheckpoint`, `ResolveCheckpoint`, `PlanMigration`, and `ApplyMigration` are untouched | Recorded with residual exposure and owned follow-ups in the Scope boundaries table rather than left implicit |
 | Unbounded `context` size and depth are **accepted**, not capped | The caller is a local agent that can already write an arbitrarily large legacy dump through the existing verbatim path, so no new capability is created. A cap would reintroduce exactly the silent truncation this plan exists to remove. Explicitly accepted under the local-agent trust model |
-| Checkpoint `context` is unredacted, git-tracked durable state | `.backlogit/checkpoints/` is **not** gitignored and its files are tracked. Opening the namespace makes it easier for an agent to persist arbitrary session state there. This shipment does not change the gitignore posture; U10b documents the caveat and the Scope boundaries table records the follow-up |
+| Checkpoint `context` is unredacted, git-tracked durable state | `.backlogit/checkpoints/` is **not** gitignored and its files are tracked. Opening the namespace makes it easier for an agent to persist arbitrary session state there. This shipment does not change the gitignore posture; U10b documents the caveat and the Scope boundaries table records the follow-up as stash `6CE00B88` |
 
 ## Risks and caveats
 
@@ -811,13 +1074,20 @@ harvest that decomposes this plan, so none of them can leak back into this shipm
 | An `Extra` key collides with a modeled tag and emits a duplicate key, silently overwriting `ShipmentID` on the next read | U2 skips colliding keys using the derived modeled-key set; U1b scenario 2 asserts the collision case | U1b, U2 |
 | The modeled-key set or the `CheckpointV1` tag set is hand-written and drifts the next time a field is added | Both are derived by reflection at package init; U1b scenario 3 and U3c scenario 3 are the drift guards | U1b, U2, U3c, U4 |
 | An exact-match key diff rejects a dump that `json.Unmarshal` accepts today because of case-insensitive field matching | U4 compares case-insensitively; this is rollback trigger C and R14 | U3c, U4 |
+| `UnmarshalJSON` routes modeled `context` fields out of a `map[string]json.RawMessage`, so a dump carrying two case-insensitive aliases of one modeled key resolves its winner in randomized map iteration order and the same bytes parse differently across runs | U2 pins the modeled fields to a direct `json.Unmarshal(b, (*plainContext)(c))` of the original bytes and forbids map-routing them; `Extra` is an accumulate-all set difference and is order-immune. U3b scenario 2's golden table pins **both** alias orders | U2, U3b |
+| U4's nested probe picks one `progress` alias out of the raw map, so a dump carrying `progress` and `Progress` is accepted on some runs and rejected on others | U4 recurses into **every** case-insensitive match and unions the unknown nested paths into one sorted, de-duplicated set; U3a scenario 4 pins determinism with an **N = 8 independent-pair** `progress`/`Progress` alias table per `docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md`, requiring most or all pairs red before U4. A single fixture re-run is explicitly **not** sufficient: it can pass by chance on the very run used to observe red | U3a, U4 |
 | A modeled key whose tag carries `,omitempty` is treated as unknown because the option was not stripped | U4 derives tag names with `strings.Split(tag, ",")[0]`; U3c scenario 3 pins `disposition_reason` as accepted | U3c, U4 |
 | `context_keys` names a key that `omitempty` elided from the file | `Keys()` is derived from the emitted bytes; U5b scenario 3 asserts file/result agreement for `"task_ids": []` | U2, U5b |
 | The legacy path reports `context_keys: []` even though a rich `context` was persisted | U6 scans the written bytes on the legacy path too; U5b scenario 1 asserts the keys are reported | U5b, U6 |
 | Custom marshalling breaks `CheckpointFilter` on `shipment_id` / `feature_id` | U1a scenario 3 asserts end-to-end through `ListCheckpoints` with a real filter, not just through the struct accessors | U1a, U2 |
 | A shape error (bad `created_at`) is misclassified as an unknown-field rejection | U4 runs `ParseCheckpoint` first; U3c scenario 3 pins `ErrCheckpointCorrupt` for a malformed timestamp | U3c, U4 |
 | The new sentinel surfaces on MCP as a generic `internal` error, so an agent cannot self-correct | U4b maps it to `ValidationFailed` with a structured `unknown_fields` array; U3d asserts the classification and the field | U3d, U4b |
-| A literal reading of "replace `return nil, err` on `decodeDoc` failure" downgrades `ErrPathEscapesWorkspace` — a NON-NEGOTIABLE Principle III control — into a success-shaped finding | U8 mandates an explicit sentinel-discriminated three-way split; U7b scenario 1 asserts the containment error still propagates | U7b, U8 |
+| A literal reading of "replace `return nil, err` on `decodeDoc` failure" downgrades `ErrPathEscapesWorkspace` — a NON-NEGOTIABLE Principle III control — into a success-shaped finding | U8 mandates an explicit sentinel-discriminated three-way split behind `classifyDecodeFailure`, applied through the single `applyDecodeFailure` boundary `LintTree` must call; U7b scenario 1 pins the sentinel directly on `decodeDoc`, scenario 1b pins the reachable `collectInScopeDocs` edge through `LintTree`, and U8's `applyDecodeFailure` table injects both `ErrPathEscapesWorkspace` and a wrapped `*fs.PathError` to cover the branch no corpus can reach | U7b, U8 |
+| A fail-open U8 turns **every** `decodeDoc` error into a `decode_error` finding, leaking the `*fs.PathError`'s absolute host path into `Fix` — and still passes every U7b scenario, because none of them exercises `LintTree`'s per-file branch with a fatal error | `LintTree`'s per-file body is exactly one `applyDecodeFailure` call, and U8's table injects the constructible I/O fatal class directly into that helper, asserting nil findings, the error value returned unchanged, and no absolute path anywhere in the result | U8 |
+| `emit()` splices an `Extra` key into a buffer as raw text, so a key containing `"` terminates the string early and injects a sibling member that overwrites a modeled field on the next read | U2 requires every `Extra` key to be encoded through `encoding/json`, never interpolated; U1b scenario 5 uses a key containing `"`, `\`, and a newline | U1b, U2 |
+| A shared decode classifier that carries lint vocabulary cannot actually be reused by `PlanMigration`, so the recorded convergence follow-up silently becomes a second decode policy anyway | `classifyDecodeFailure` is policy-neutral (a failure **kind** plus the unchanged cause, no `Rule` and no `Finding`); the lint mapping lives in the separate `applyDecodeFailure`, so stash `1787FD85` converges on a boundary that fits an abort policy as well as a report-and-continue policy | U8 |
+| A harness unit is scheduled **after** the units that implement the behavior it harnesses, so its red result can only be replayed against an earlier commit rather than observed at its own boundary | U9a is split: behavioral assertions stay in U9a and precede U8; the contract-text assertions move to U9c, which precedes U8b and is its red harness | U9a, U9c |
+| A guard unit carries an acceptance condition that cannot be constructed, so it can only be satisfied by weakening the assertion | U7b's `LintTree`-level `decodeDoc`-containment assertion is **removed** with its unreachability recorded, and the guarantee is relocated to U8's classifier table rather than silently dropped | U7b, U8 |
 | `LintTree` cannot distinguish a read failure from a decode failure, so the implementer reaches for substring matching | U0b declares `ErrFrontmatterDecode` and U8 wraps it at the `mdfront.Decode` branch, so the branch is pure `errors.Is` | U0b, U8 |
 | The `decode_error` `Fix` string leaks an absolute host path from an `*fs.PathError` | U8 keeps `os.ReadFile` failures as errors and requires a sanitized repo-relative `Fix`; U7b scenario 2 asserts no absolute prefix appears | U7b, U8 |
 | A package-global test seam causes flaky parallel runs or forces unscoped edits to existing tests | The `decodeDocFn` seam is **rejected**; U7a uses a real malformed fixture and existing `t.Parallel()` calls are retained | U7a |
@@ -826,7 +1096,7 @@ harvest that decomposes this plan, so none of them can leak back into this shipm
 | A red-first test bypasses the transport and proves nothing | U5a dispatches through the registered MCP handler and the CLI flag; U3d dispatches through the registered handler | U3d, U5a |
 | Continuing after a decode error silently flips CI to green | U9a scenario 1 asserts the non-zero exit is retained on a malformed corpus | U9a |
 | An agent following current instructions emits `schema_version: 1` with top-level recovery keys, hits the new rejection, and loses its session snapshot | U10b updates the Continuity Protocol before merge, and U4b's `unknown_fields` array names every offending key so the retry is mechanical | U4b, U10b |
-| U10b's guardrail is silently reverted because the instruction file is autoharness-generated | U10b records the generated status and an owned backlog follow-up to upstream the template; U4b's tool description is the non-generated durable statement | U4b, U10b |
+| U10b's guardrail is silently reverted because the instruction file is autoharness-generated | U10b records the generated status and cites the already-created upstream follow-up stash `360A183F`; U4b's tool description is the non-generated durable statement | U4b, U10b |
 | Generated CLI reference drifts from shipped help text, or `make docs` produces no diff because no help string changed | U6 edits the checkpoint Cobra strings and U8b edits the lint Cobra strings; U10a's acceptance requires the new sentences to be present | U6, U8b, U10a |
 
 ## Constitution Check
@@ -834,8 +1104,8 @@ harvest that decomposes this plan, so none of them can leak back into this shipm
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | pass | All production changes are Go. No `unsafe`. New failure modes wrap a sentinel with `%w` (`ErrCheckpointUnknownField` in `internal/errors/checkpoint_errors.go`), matching the existing convention. No error-text substring matching is used anywhere |
-| II. Test-First Development (NON-NEGOTIABLE) | pass | U1a, U1b, U3a, U3d, U5a, U5b, U7a, and U9a are red harnesses whose red scenarios must be observed failing before U2, U4, U4b, U6, and U8 respectively. U0a and U0b land first precisely so those commits compile and the red is observable rather than theoretical. U3b, U3c, U7b, and U9b are green-throughout regression guards, explicitly labeled as such, so no unit demands a red result from an assertion of existing behavior. U9a carries a U9x contingency so a still-red scenario cannot be resolved by weakening the assertion. **Scope note (not a deviation)**: U0a and U0b assert nothing by construction, so test-first is inapplicable to them, and U8b carries no behavioral harness — U0a/U0b assert nothing by construction, and U8b edits only machine-consumed contract-text strings, whose verification is U9a scenario 3 (the registered `backlogit_docs_lint` description) and U10a's generated-reference content check for the Cobra half, rather than a behavioral test. U4b's description edit is behaviorally verified by U3d scenarios 2 and 3 |
-| III. Workspace Isolation and Security Boundaries | pass | No path-resolution behavior changes. `docline` containment through `core.SafeResolve` and checkpoint `ensurePathContained` are untouched, and U8 explicitly keeps `ErrPathEscapesWorkspace` as a propagating error rather than a finding (U7b scenario 1 guards it). No secret is introduced by the patch; the open `context` namespace's secrets caveat is documented in U10b and recorded in the Decisions table |
+| II. Test-First Development (NON-NEGOTIABLE) | pass | U1a, U1b, U3a, U3d, U5a, U5b, U7a, U9a, and U9c are red harnesses, and every one of them is scheduled **strictly upstream** of the unit it harnesses: U1a/U1b → U2, U3a → U4, U3d → U4b, U5a/U5b → U6, U7a/U9a → U8, U9c → U8b. U0a and U0b land first precisely so those commits compile and the red is observable rather than theoretical. U3b, U3c, U7b, and U9b are green-throughout regression guards, explicitly labeled as such, so no unit demands a red result from an assertion of existing behavior. U9a carries a U9x contingency so a still-red scenario cannot be resolved by weakening the assertion. The PR #372 remediation removed the last exception: U9a previously sat **downstream** of U8 and U8b, so its red could only be replayed against an earlier commit rather than observed at its own boundary — the behavioral half now precedes U8 and the contract-text half was extracted into U9c, which precedes U8b. **Scope note (not a deviation)**: U0a and U0b assert nothing by construction, so test-first is inapplicable to them. U4b's description edit is behaviorally verified by U3d scenarios 2 and 3, and U8b's by U9c scenarios 1–3 plus U10a's generated-reference content check for the Cobra half |
+| III. Workspace Isolation and Security Boundaries | pass | No path-resolution behavior changes. `docline` containment through `core.SafeResolve` and checkpoint `ensurePathContained` are untouched, and U8 explicitly keeps `ErrPathEscapesWorkspace` as a propagating error rather than a finding. Three guards enforce it: U7b scenario 1 pins the sentinel on `decodeDoc` directly, U7b scenario 1b pins the reachable `collectInScopeDocs` edge end-to-end through `LintTree`, and U8's `applyDecodeFailure` table injects both `ErrPathEscapesWorkspace` and a wrapped `*fs.PathError` into the single boundary `LintTree`'s per-file body is permitted to call — which is what closes the fail-open path for the `decodeDoc`-internal branch that no corpus can reach. U8's acceptance additionally pins `handleDocsLint`'s mapping of `docline.ErrPathEscapesWorkspace` to `validation_failed`. No secret is introduced by the patch; the open `context` namespace's secrets caveat is documented in U10b and recorded in the Decisions table |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | pass | All edits resolve inside this repository's working tree. The external source records (`C:\Source\GitHub\autoharness`, entries `3C7AAC71`, `90F2A9F8`, `84D8E6AB`) are strictly read-only inputs: no unit writes there and no backlogit command is run against that workspace. Verification fixtures resolve inside the tree or in `t.TempDir()`. The out-of-tree pinned binary at `C:\Tools\backlogit.exe` is fenced off by PA-5, which forbids any agent write to it |
 | V. Structured Observability | documented-deviation | The change is itself an observability fix: it converts two silent or blind outcomes into machine-readable `context_keys`, `unknown_fields`, and `decode_error` signals. **Deviation**: intercom was unavailable during this planning session, so no milestone was broadcast to a remote channel, and the `backlogit docs lint --path` self-lint was not executed because the operator scoped Stage to planning artifacts only. Execution-time observability is covered by the closure table's execution-trace row |
 | VI. Single Responsibility | pass | No new dependencies. `encoding/json`, `reflect`, and the existing `internal/jsonutil` and `internal/errors` packages cover everything. The package-global `decodeDocFn` seam was considered and rejected as global mutable state; the reflection-derived key sets are immutable init-time lookup tables, not mutable globals |
@@ -844,7 +1114,7 @@ harvest that decomposes this plan, so none of them can leak back into this shipm
 | IX. Git-Friendly Persistence | pass | Checkpoint output stays readable JSON through `jsonutil.MarshalReadable`; `Extra` keys are emitted in sorted order for stable diffs |
 | X. Agent Context Efficiency | pass | `context_keys` lets an agent confirm persistence without a read-back, `unknown_fields` lets it self-correct without a human, and a continuing lint returns one report instead of forcing per-file `--path` reruns |
 | XI. Merge Commit History Preservation (NON-NEGOTIABLE) | pass | All units land on one dedicated implementation branch. Before merging, Ship verifies the repository merge method is merge-commit and halts with a P-009 violation if squash or rebase merging is enabled — recorded as a pre-merge gate row in Deepened operational closure, not as an assumption about settings |
-| Task Granularity (NON-NEGOTIABLE) | documented-deviation | Twenty-two units. Width isolation holds: twelve tests-only (U1a, U1b, U3a, U3b, U3c, U3d, U5a, U5b, U7a, U7b, U9a, U9b), six code-only (U0b, U2, U4, U4b, U8b, and U6's production half), one code-plus-own-test (U8), one code-plus-mechanical-test-migration (U0a), and two docs-only (U10a, U10b). No unit exceeds three scenarios except U1b, which has four; the function heuristic holds everywhere. (6) *U1b* carries a fourth scenario, the HTML-escape guard, because it defends a shipped `SetEscapeHTML(false)` guarantee that U2 can silently break and that no existing test reaches; rejected alternative: a separate single-scenario escape-guard unit, rejected because it would assert against the same `emit()` boundary as U1b's other marshaller guards and splitting them fragments one review surface. Scenario counts are per test function; table-driven cases inside one scenario (U3b s1, U3c s3, U5b s2) count once because they share one fixture and one assertion helper. **Deviations, each with justification and the rejected simpler alternative**: (1) *U0a* touches six files across four packages and mixes production declarations with two mechanical `memory_test.go` call-site migrations — an exported signature change is atomic across its callers and the test edits are compilation fixes, not test authoring; rejected alternative: a dual-shape shim returning both old and new shapes, rejected as dead code (Development Workflow §5). (2) *U6* touches three files and edits Cobra help strings, which are contract text emitted by code, because `context_keys` must appear consistently on both surfaces in one commit; rejected alternative: a separate help-text unit, rejected because U10a's regeneration would then run against stale text. (3) *U8* touches four files — two production edits, one doc-comment correction that would otherwise ship a false documented contract, and the characterization table test that pins the unexported helper it introduces; it therefore also mixes code with its own test; rejected alternatives: leaving the doc comment stale (rejected because it would ship a false documented contract) and a separate post-U8 test unit (rejected because U7a must not reference `classifyDecodeFailure` and a convergence lock deferred past U8 leaves the three-way split unpinned at U8's own commit boundary). (4) *U5a, U8b, U9a, and U9b* span `internal/cli` and `internal/mcp` because R6 and R10 require assertions on both transports in one comparison; the cross-surface assertion lives in `internal/cli`, which already imports `internal/mcp`; rejected alternative: two single-package harnesses asserting the same payload independently, rejected because R6/R10 require one byte-identical comparison of both surfaces — two separate tests would drift together and compare equal, the same false green the U9a constraint note rules out. Committed fixture data (U3b's golden table, U3c's synthetic legacy fixtures) counts as one artifact for the file heuristic, since it is generated once and reviewed as a unit |
+| Task Granularity (NON-NEGOTIABLE) | documented-deviation | Twenty-three units. Width isolation holds: thirteen tests-only (U1a, U1b, U3a, U3b, U3c, U3d, U5a, U5b, U7a, U7b, U9a, U9b, U9c), six code-only (U0b, U2, U4, U4b, U8b, and U6's production half), one code-plus-own-test (U8), one code-plus-mechanical-test-migration (U0a), and two docs-only (U10a, U10b). The function heuristic holds everywhere. **Deviations, numbered sequentially, each with its justification and the rejected simpler alternative. Nine numbered deviations, 1-4b covering file-count and width and 6-9 covering scenario count.** *File-count and width deviations:* (1) *U0a* touches six files across four packages and mixes production declarations with two mechanical `memory_test.go` call-site migrations — an exported signature change is atomic across its callers and the test edits are compilation fixes, not test authoring; rejected alternative: a dual-shape shim returning both old and new shapes, rejected as dead code (Development Workflow §5). (2) *U6* touches three files and edits Cobra help strings, which are contract text emitted by code, because `context_keys` must appear consistently on both surfaces in one commit; rejected alternative: a separate help-text unit, rejected because U10a's regeneration would then run against stale text. (3) *U8* touches three files — one production file carrying both edits (`service.go`), one doc-comment correction that would otherwise ship a false documented contract (`report.go`), and the characterization table test that pins the two unexported helpers it introduces (`decode_failure_test.go`); it therefore mixes code with its own test; rejected alternatives: leaving the doc comment stale (rejected because it would ship a false documented contract) and a separate post-U8 test unit (rejected because U7a must not reference `classifyDecodeFailure` and a convergence lock deferred past U8 leaves the three-way split unpinned at U8's own commit boundary). (4) *U5a, U5b, U9a, U9b, and U9c* are **test** units that span `internal/cli` and `internal/mcp` because R5, R6, R10, and R11 require assertions on both transports in one comparison; the cross-surface assertion lives in `internal/cli`, which already imports `internal/mcp` in production (`internal/cli/manifest.go` imports it as `mcpinternal`); rejected alternative: two single-package harnesses asserting the same payload independently, rejected because R5/R6/R10 require one byte-identical comparison of both surfaces — two separate tests would drift together and compare equal, the same false green the U9a constraint note rules out. (4b) *U8b* also spans the two packages, but for a different reason and with a different justification: it is a **code** unit that edits contract-text strings in `internal/cli/docs.go` and `internal/mcp/docs_tools.go`, performing no cross-surface assertion at all. R11 requires the lint contract to be documented on the operator- and agent-facing surfaces together, and both edits are Go string literals consumed by machines, so this is one skill domain rather than a code-plus-docs mix; rejected alternative: two single-package text units, rejected because U10a would then regenerate the CLI reference between them and ship a half-updated contract. (5) *U9a and U9c* are two tests-only units over the same two surfaces; rejected alternative: keeping them as one unit, rejected because that unit could only be scheduled after U8b and its contract-text assertions would then be unobservable-red, which is the Principle II defect this split exists to remove. They are unordered relative to each other, so U9c uses **dedicated** new test files rather than extending U9a's, removing the commit coupling that sharing files would reintroduce. *Scenario-count deviations (the plan's per-function limit is three):* (6) *U1b* carries five scenarios — the three original marshaller guards plus the HTML-escape guard, which defends a shipped `SetEscapeHTML(false)` guarantee that U2 can silently break and that no existing test reaches, plus the `Extra` key-injection guard, which defends against a raw-text key splice in `emit()` that the collision skip cannot catch; rejected alternative: separate single-scenario units for each, rejected because all five assert against the same `emit()` boundary and splitting them fragments one review surface. (7) *U3a* carries four scenarios, the fourth being the N-independent-pair mixed-case `progress`/`Progress` determinism table; rejected alternative: folding it into scenario 3, rejected because scenario 3 asserts *that* nested keys are closed while scenario 4 asserts the result is *a function of the input bytes alone* — merging them would let a nondeterministic implementation pass scenario 3 on the runs where it happens to pick the offending alias. (8) *U5a* carries four scenarios, the fourth asserting U6's `checkpoint create` Cobra strings; rejected alternative: a separate contract-text unit for U6 mirroring U9c, rejected because U5a already dispatches both surfaces for the same unit and a fourth assertion there is cheaper than a fifth unit — but the fourth scenario is required, because without it U6 would be the only contract-text edit in the plan with no upstream red harness (R11a). (9) *U9a* carries five scenarios: three red-before-U8 behavioral assertions plus two green-throughout containment guards (scenarios 4 and 5) that pin `handleDocsLint`'s `ErrPathEscapesWorkspace` → `validation_failed` mapping; rejected alternative: placing those two in U8, rejected because U8's files are all in `package docline` and cannot execute an assertion against `handleDocsLint`, which would leave the acceptance criterion with no home file. Scenario counts are per test function; table-driven cases inside one scenario (U3b s1, U3b s2, U3a s4, U3c s3, U5b s2) count once because they share one fixture and one assertion helper. Committed fixture data (U3b's golden table, U3c's synthetic legacy fixtures, U3a's eight alias-pair fixtures) counts as one artifact for the file heuristic, since it is generated once and reviewed as a unit |
 | Capability Overlay — agent-engram | pass | Code facts were sourced through indexed CLI lookup and direct reads of known files. No `.engram/` artifact is hand-edited |
 | Capability Overlay — backlogit | pass | U0a–U10b are materialized as backlogit tasks under the covering feature with registered dependency edges; this document is the design reference, not a parallel task store |
 | Capability Overlay — agent-intercom | documented-deviation | Intercom was unreachable for the whole planning session. Remote operator visibility is degraded and no approval was routed through it. Only safe, non-destructive planning work was performed, and the substitute approval channel is named under Human checkpoints |
@@ -856,7 +1126,7 @@ Constitution Check: documented-deviations
 | Signal | Present | Justification |
 |---|---|---|
 | Public API, schema, or contract change | **yes** | `CreateCheckpoint` changes signature; the checkpoint `context` contract becomes open while the schema namespace becomes closed; the create result gains `context_keys`; the MCP validation result gains `unknown_fields`; `LintReport` gains a new `decode_error` rule value. All are consumed by agents through CLI and MCP |
-| Security, auth, permission, or compliance-sensitive behavior | **yes** | Not authentication or authorization — none is touched. The signal is data exposure: the open `context` namespace makes it materially easier for an agent to persist arbitrary, unredacted session state to `.backlogit/checkpoints/`, which is **git-tracked**. Mitigations: U10b documents that `context` must not carry secrets, U3c uses hand-written synthetic fixtures and never copies live bytes, U8 keeps `ErrPathEscapesWorkspace` a propagating error, and the gitignore/redaction posture decision is recorded as an owned follow-up in the Scope boundaries table |
+| Security, auth, permission, or compliance-sensitive behavior | **yes** | Not authentication or authorization — none is touched. The signal is data exposure: the open `context` namespace makes it materially easier for an agent to persist arbitrary, unredacted session state to `.backlogit/checkpoints/`, which is **git-tracked**. Mitigations: U10b documents that `context` must not carry secrets, U3c uses hand-written synthetic fixtures and never copies live bytes, U8 keeps `ErrPathEscapesWorkspace` a propagating error, and the gitignore/redaction posture decision is recorded as stash `6CE00B88` in the Scope boundaries table |
 | Migration, backfill, destructive data or config action, or irreversible step | no | The existing checkpoint corpus is explicitly not migrated, rewritten, or reclassified. No file is deleted or moved |
 | External integration, operator checkpoint, or external dependency | no | No new dependency and no external service. The source records live in another repository but are read-only inputs, not integration points |
 | High runtime, rollout, or rollback risk | **yes** | `ParseCheckpoint` is on the read path for every checkpoint consumer, and `docs lint` is a blocking CI gate. A regression in either is felt immediately across agent sessions and pull requests |
@@ -868,7 +1138,7 @@ Requires plan hardening: yes
 | Unit | Runtime surface changed | What runtime verification must prove |
 |---|---|---|
 | U2, U4, U4b, U6 (verified) | CLI `backlogit checkpoint create`, MCP `backlogit_create_checkpoint` | A real create with a rich `context` writes every supplied key to disk; a dump with unknown top-level keys is rejected with **every** key named, surfaced as `validation_failed` on MCP, and writes no file; `backlogit checkpoint list` and `checkpoint get` still read every pre-existing file in `.backlogit/checkpoints/` without new `needs_quarantine` flags |
-| U8, U9a, U9b | CLI `backlogit docs lint`, MCP `backlogit_docs_lint` | A repository containing one deliberately malformed document produces a full report naming that file with `decode_error` plus findings for the rest, and still exits non-zero; a path-escape input and an unreadable file both still fail loudly instead of appearing as findings; a clean corpus still returns a present `findings: []` |
+| U8, U9a, U9b, U9c | CLI `backlogit docs lint`, MCP `backlogit_docs_lint` | A repository containing one deliberately malformed document produces a full report naming that file with `decode_error` plus findings for the rest, and still exits non-zero; a path-escape input and an unreadable file both still fail loudly instead of appearing as findings; a clean corpus still returns a present `findings: []` |
 | U10a, U8b | Generated CLI reference and surface contract text | `make docs` leaves no diff and the CI cli-reference-drift check is green |
 | U10b | Agent instruction surfaces | An agent reading the updated Continuity Protocol places recovery keys under `context` and does not trip the closed top-level namespace |
 
@@ -924,6 +1194,20 @@ path for every checkpoint consumer and `docs lint` is a blocking CI gate for eve
 * `docs/compound/2026-07-23-machine-readable-governance-field-contract.md`
 * `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`
 * `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md`
+* `docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md` —
+  the authoritative technique for detecting Go map-iteration-order bugs; adopted by U3a scenario 4 and
+  runtime scenario 4b, and the reason neither uses a single repeated fixture
+* `docs/compound/2026-06-26-docline-frontmatter-contract.md` — the four-part frontmatter contract
+  (body-preserving codec, idempotent seed-once migration, born-compliant generation, CI gate) governing
+  the exact package U8/U8b/U10b touch. U8 preserves the property the gate's trustworthiness depends on:
+  a stable, achievable green state. Report-and-continue widens what the report *describes*; it does not
+  widen what the gate *accepts*, because the non-zero exit is retained on any finding (protected
+  invariant 3). The same learning's convergence framing is the institutional basis for stash `1787FD85`
+* `docs/compound/2026-07-29-fsutil-neutral-leaf-caller-classifies.md` — the neutral-leaf /
+  caller-classifies rule. U8's two-helper split is a direct instance: `classifyDecodeFailure` is the
+  neutral leaf, `applyDecodeFailure` and (later) `PlanMigration` are the callers that classify at their
+  own policy boundary. The same rule underpins the `EA1F5912` follow-up's `internal/atomicfile`
+  convergence
 * `docs/design-docs/checkpoint-administrative-disposition.md`, `docs/design-docs/governed-operation-parity.md`
 * `.github/instructions/constitution.instructions.md`, `.github/instructions/strict-safety.instructions.md`,
   `.github/instructions/backlogit.instructions.md`, `.github/instructions/go.instructions.md`
@@ -934,7 +1218,9 @@ These must hold at every commit boundary, not merely at the end of the shipment:
 
 1. **Read-path leniency.** `ParseCheckpoint` accepts unknown fields, and its *observable* behavior is
    unchanged for every input shape — including `context: null`, absent `context`, a scalar `context`,
-   and duplicate `context` keys, all of which now flow through a hand-written `UnmarshalJSON`. No
+   duplicate `context` keys, and mixed-case aliases of a modeled `context` key, all of which now flow
+   through a hand-written `UnmarshalJSON`. For every one of those shapes the outcome is a **function of
+   the input bytes alone**: repeated decodes of identical bytes must produce identical results. No
    pre-existing file under `.backlogit/checkpoints/` changes its `needs_quarantine` classification.
 2. **Legacy verbatim path.** A state dump without `schema_version: 1` is written byte-for-byte as
    supplied and is never subjected to the unknown-key probe.
@@ -944,7 +1230,9 @@ These must hold at every commit boundary, not merely at the end of the shipment:
    `null` and never absent — on the clean path as well as the degraded one.
 5. **Containment and I/O failures stay errors.** A `collectInScopeDocs` walk failure, an
    `ErrPathEscapesWorkspace` raised anywhere including inside `decodeDoc`, and an `os.ReadFile` failure
-   all still return an error from `LintTree`. Only frontmatter-decode failures degrade to findings.
+   all still return an error from `LintTree`, with the error **value** unchanged. Only frontmatter-decode
+   failures degrade to findings, and `LintTree`'s per-file body must be a single `applyDecodeFailure`
+   call so there is one auditable place where that could regress.
 6. **No append-only history is rewritten.** Nothing in this plan writes, synthesizes, or edits an
    existing checkpoint file or JSONL event record.
 7. **Shape errors keep their classification.** A malformed `created_at` or wrong-typed field still
@@ -989,8 +1277,9 @@ These must hold at every commit boundary, not merely at the end of the shipment:
 **ProposedAction PA-3 — Change the semantics of a blocking CI gate and its contract text (U8, U8b).**
 
 * Targets: `internal/docline/service.go`, `internal/docline/report.go` (doc comment only),
-  `internal/docline/classify_decode_failure_test.go`, plus U8b's `internal/cli/docs.go` and
-  `internal/mcp/docs_tools.go` contract-text strings
+  `internal/docline/decode_failure_test.go`, plus U8b's `internal/cli/docs.go` and
+  `internal/mcp/docs_tools.go` contract-text strings. U9c is the red harness for the contract-text half;
+  it asserts only, changes no gate semantics, and is therefore not itself a risky action
 * Change kind: contract change on the repository-wide docline gate that runs on every pull request
 * Rollback: revert the merge commit. The gate returns to abort-on-first-error, which is strictly more
   conservative, so rollback cannot let a non-conforming corpus through
@@ -1090,6 +1379,8 @@ Target scenarios, in order:
 | 2 | The same command after the change, again through `go run ./cmd/backlogit` from the feature-branch HEAD | Byte-identical classification to scenario 1 |
 | 3 | Create a V1 checkpoint with a rich `context` in an in-tree fixture directory | Every supplied context key is present on disk; `context_keys` lists exactly those keys and no more |
 | 4 | Create a V1 checkpoint with two unknown top-level keys | Rejected, **both** keys named in the error, `validation_failed` on MCP, and no file is written |
+| 4b | Create V1 checkpoints from the **eight independent** `progress`/`Progress` alias-pair fixtures of U3a scenario 4, each with a different unknown nested key | Every one of the eight is rejected, each naming exactly its own nested path; repeat the whole set three times and the outcome is identical each time |
+| 4c | Read back V1 checkpoints whose `context` carries the mixed-case alias pairs from U3b scenario 2's golden table, in both source orders, three times each | The same modeled `shipment_id` value every time, matching the pre-merge baseline captured in scenario 1 |
 | 5a | Create a legacy dump with no `schema_version` whose `context` carries `pr_number` and `next_steps` | Written verbatim; `context_keys` lists exactly `["next_steps","pr_number"]`, sorted |
 | 5b | Create a legacy dump with no `context`, and one whose `context` is `42` | Written verbatim; the create succeeds; `context_keys` is `[]`, not `null` |
 | 5c | Drive scenarios 5a and 5b through the `backlogit_create_checkpoint` **MCP** tool | Byte-identical `context_keys` payloads to the CLI on both, confirming the agent surface receives `[]` rather than `null` |
@@ -1724,3 +2015,168 @@ None. The plan carries a deepened runtime verification section with eleven order
 entrypoint pinned to `go run ./cmd/backlogit` from the feature-branch HEAD, explicit blocked-path
 handling, and a deepened operational closure table with two pre-merge gates, three monitoring signals,
 three rollback triggers, an execution-trace row, a named owner, and a bounded validation window.
+
+
+<!-- plan-review-attempt: 8 -->
+
+## Plan Review
+
+`dispatch_mode: multi-agent-dispatch`
+
+`decision: PASS`
+
+Gate runs 9 and 10, covering the PR #372 remediation cycle. This is the final and authoritative record
+for Stage Step 4 and the harvest skill, and the last `## Plan Review` section in document order.
+
+**Trigger.** Planning-only staging PR #372 (HEAD `aee6cbe0`) carried five unresolved Copilot review
+threads against the gate-8 PASS plan. Each was treated as a blocking P1 until proven otherwise. All five
+were **fixed**; none was declined. Re-gating was therefore mandatory, and the gate was run twice: run 9
+against the thread remediation, run 10 against the run-9 remediation.
+
+**Coverage.** In **both** runs all seven manifest personas were dispatched as independent sub-agents and
+all seven returned findings, so the `multi-agent-dispatch` label is valid under the terminal-states rule
+— no partial coverage was merged and no fallback to a sequential rubric pass was required. Cross-model
+diversity was applied throughout: the Architecture Strategist, Agent-Native Parity Reviewer, and Security
+Lens Reviewer each ran on a different model from the caller and from one another. Personas: Constitution
+Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher (always-on); Architecture Strategist
+(always triggered); Agent-Native Parity Reviewer (triggered — the plan changes MCP tool contracts, result
+shapes, and agent instruction surfaces); Security Lens Reviewer (triggered — the plan changes a
+path-containment-adjacent control and persists arbitrary caller input to a git-tracked path).
+
+### Review-thread disposition
+
+| Thread | Disposition | Remediation |
+|---|---|---|
+| Mixed-case duplicate `context` keys are nondeterministic under a map-routed decode | **Fixed** | U2 pins `UnmarshalJSON` to two decodes of the same original bytes — modeled fields via `json.Unmarshal(b, (*plainContext)(c))`, `Extra` via a separate `map[string]json.RawMessage` set difference — and forbids routing modeled keys out of the raw map. U3b scenario 2's pre-U2 golden table now pins the exact-duplicate case and **both** mixed-case alias orders |
+| A case-insensitive `progress` lookup can match more than one entry, so create is nondeterministic | **Fixed** | U4 recurses into **every** case-insensitive match and unions the unknown nested paths into one sorted, de-duplicated set. U3a scenario 4 is an N = 8 independent-pair determinism table |
+| U7b's required `LintTree` assertion cannot be constructed from a corpus | **Fixed** | U7b scenario 1 is narrowed to the direct `decodeDoc` sentinel guard, the unconstructible clause is removed with its unreachability recorded, new scenario 1b guards the reachable `collectInScopeDocs` edge, and the propagation guarantee is relocated to U8's `applyDecodeFailure` table |
+| U9a is scheduled after the units that implement the behavior it harnesses | **Fixed** | U9a is split. Behavioral assertions stay in U9a, which now precedes U8 (`U0b --> U9a --> U8`); the contract-text assertions move to new unit U9c, which precedes U8b (`U0b --> U9c --> U8b`) and is U8b's red harness |
+| The eight scope-boundary follow-ups were never created | **Fixed** | All eight exist as backlogit stash entries `D3CE9E81`, `EA1F5912`, `EC987334`, `1787FD85`, `5F4E0FC3`, `360A183F`, `63E810D9`, `6CE00B88`, duplicate-checked against the queue, archive, and stash before creation, each carrying inline provenance and an explicit non-release-blocking marker. None is a member of `129-S` |
+
+### Gate run 9 — FAIL (2 P1)
+
+| Persona | Result |
+|---|---|
+| Constitution Reviewer | 0 P0, 0 P1, 1 P2, 4 P3 |
+| Go Reviewer | 0 P0, 0 P1, 0 P2, 6 P3 |
+| Scope Boundary Auditor | 0 P0, 0 P1, 1 P2, 3 P3 |
+| Learnings Researcher | 0 P0, **1 P1**, 1 P2, 1 P3 |
+| Architecture Strategist | 0 P0, **1 P1**, 3 P2, 0 P3 |
+| Agent-Native Parity Reviewer | 0 P0, 0 P1, 0 P2, 1 P3 |
+| Security Lens Reviewer | 0 P0, 0 P1, 1 P2, 1 P3 |
+
+**P1-1 (Learnings Researcher).** U3a scenario 4 and runtime scenario 4b detected the map-iteration trap
+by re-running a single fixture, which
+`docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md`
+identifies as a false-negative red — it can pass on the very run used to observe red, even against a
+map-routing implementation. **Remediated**: both were converted to an N = 8 structurally independent
+alias-pair design, the red observation must now record the per-pair failure count and show most or all
+pairs failing, and the learning was added to the consulted list.
+
+**P1-2 (Architecture Strategist).** The plan claimed Tracks A and B "share no unit and may run in either
+order or concurrently", but U10a and U10b both depend on `U6` and `U8b` and carry both contracts.
+**Remediated**: independence is now scoped to the pre-integration segments and U10a/U10b are explicitly
+modelled as a shared post-track integration phase.
+
+All run-9 P2 and P3 findings were remediated in the same session: the dependency edge count was
+reconciled (the redundant `U9c --> U10a` registration was removed and the graph code block declared the
+authoritative 35-edge list), U9c moved to dedicated test files, U8's classifier was split into a
+policy-neutral `classifyDecodeFailure` and a lint-policy `applyDecodeFailure` whose table injects both
+fatal classes, U0a pinned `Keys()`'s final signature, U6 pinned `Keys()` before the write, U5a gained a
+Cobra-string scenario closing R11a for U6, U1b gained an `Extra` key-injection guard, U3d required the
+administrative `disposition_*` fields to be presented as a reserved sub-list, U7a's seam rejection was
+softened to match the cited seam-patterns learning, and the Task Granularity ledger was renumbered with
+U8's file count corrected to three.
+
+### Gate run 10 — PASS
+
+| Persona | Result | Verdict |
+|---|---|---|
+| Constitution Reviewer | 0 P0, 0 P1, 1 P2, 2 P3 | "gate-9 findings are genuinely resolved" |
+| Go Reviewer | 0 P0, 0 P1, 0 P2, 3 P3 | "the six prior P3 advisories are all correctly remediated" |
+| Scope Boundary Auditor | 0 P0, 0 P1, 2 P2, 2 P3 | "executable and scope-anchored to the two source defects" |
+| Learnings Researcher | 0 P0, 0 P1, 2 P2, 1 P3 | "all three gate-9 findings are substantively resolved" |
+| Architecture Strategist | 0 P0, 0 P1, 0 P2, 0 P3 | "all four prior architecture findings are resolved" |
+| Agent-Native Parity Reviewer | 0 P0, 0 P1, 0 P2, 0 P3 | "agent-native parity is preserved without introducing new drift" |
+| Security Lens Reviewer | 0 P0, 0 P1, 0 P2, 0 P3 | "both gate-9 findings are resolved; no security control was weakened" |
+
+**Merged: 0 P0, 0 P1.** Every run-10 P2 was remediated before this record was written, so the gate
+resolves to PASS on the P3-only row rather than to ADVISORY. Because the decision is PASS, no
+`operator_authorization` field is required or asserted. **Stage did not waive any P0 or P1 finding at any
+point across the ten gate runs.**
+
+### Remediation applied after gate run 10
+
+* **Stale risk-table cell (Learnings P2).** The mitigation for the `progress`-alias risk still advertised
+  "repeated invocations of the same fixture bytes" — the approach the N-pair learning rejects. Rewritten
+  to name the N = 8 independent-pair table and to state explicitly that a single fixture re-run is not
+  sufficient.
+* **Unsatisfiable U8 acceptance criterion (Constitution P2, Go P3-A).** U8's acceptance required an
+  assertion on `handleDocsLint`, but every U8 file is in `package docline` and cannot execute it. The
+  assertion moved to **U9a scenarios 4 and 5**, which already extend `internal/mcp/docs_tools_test.go`;
+  U8's acceptance now only requires that guard to stay green. Recorded as Task Granularity deviation (9).
+* **Task Granularity deviation (4) mischaracterized U8b and omitted U5b (Scope P2, Constitution P3).**
+  Deviation (4) now covers the five **test** units (U5a, U5b, U9a, U9b, U9c) with an R5/R6/R10/R11
+  rationale, and a new **(4b)** gives U8b its own R11-based justification as a **code** unit that
+  performs no cross-surface assertion.
+* **U8 two-helper split recorded as an acknowledged cost (Scope P2, Scope P3).** A new Decisions row
+  states plainly that R7 alone would be met by `applyDecodeFailure`, that `classifyDecodeFailure`'s
+  `nil`-input branch is unreachable on `LintTree`'s own call path, and that the separation is accepted
+  because splitting later would turn stash `1787FD85` into a refactor of shipped gate code rather than an
+  adoption. `docs/compound/2026-07-29-fsutil-neutral-leaf-caller-classifies.md` is now cited as the
+  institutional basis (Learnings P3).
+* **Edge inventory mislabel (Constitution P3, Scope P3).** `U0b --> U9b` is U9b's only incoming edge and
+  therefore not transitively implied. The inventory now separates the two cases: `U2 --> U6` retained
+  though transitively implied, `U0b --> U9b` retained as a non-redundant track-entry convention.
+* **Encoder contradiction in U2 (Go P3-B).** The key-injection rule said `json.Marshal(key)` while the
+  HTML-escape rule bans `json.Marshal` inside `emit()`. Reconciled: `Extra` keys are produced through the
+  same escape-free `jsonutil.MarshalReadable` encoder, and U1b scenario 5 now also asserts no `\u0026`
+  appears for a key containing `a > b && b < c`.
+* **Missing `continue` in the specified `LintTree` body (Go P3-C).** The per-file body is now quoted with
+  its trailing `continue` and the reason it is load-bearing: without it, execution falls through with a
+  `nil` `md` and `ValidateFields` appends spurious missing-field findings alongside the `decode_error`
+  finding, breaking U7a scenario 1's exactly-one-finding contract.
+
+### Findings declined, with evidence
+
+* **Learnings Researcher, run 10, P2 — "`docs/compound/2026-06-26-docline-frontmatter-contract.md` is
+  not cited anywhere in the plan; no `Learnings and instructions consulted` section exists".** Declined
+  as a false negative. The section exists under `## Plan Hardening`, and the learning is cited there with
+  the stable-achievable-green statement the finding asks for, alongside the N-independent-pair learning.
+  No change was required; the U8 body was nevertheless given an additional inline cross-reference.
+
+### Gate history
+
+| Run | Decision | Merged counts | Note |
+|---|---|---|---|
+| 1 | FAIL | 1 P0, 19 P1 | Initial review |
+| 2 | FAIL | 0 P0, 15 P1 | Second-order defects in the round-1 remediation |
+| 3 | FAIL | 0 P0, 7 P1 | Architecture and Security reached zero P1 |
+| 4 | FAIL | 0 P0, 6 P1 | Round-3 edits had reached summary tables but not unit bodies |
+| 5 | FAIL | 0 P0, 2 P1 | Constitution, Scope, Parity reached zero P1 |
+| 6 | FAIL | 0 P0, 2 P1 | Constitution, Scope, Learnings reached zero P1 |
+| 7 | FAIL | 0 P0, 0 P1, P2s open | Go, Architecture, Security, Parity all zero P1 |
+| 8 | PASS | 0 P0, 0 P1, 0 open P2 | All seven personas sound |
+| 9 | FAIL | 0 P0, 2 P1 | PR #372 remediation re-gate: test-design and track-independence defects |
+| 10 | **PASS** | 0 P0, 0 P1, 0 open P2 | Architecture, Parity, and Security returned zero findings of any severity |
+
+The maximum-two-re-entry-cycle limit in Stage Step 4 governs re-invocation after a **FAIL verdict
+returned to the operator**. No FAIL was ever returned: each run's findings were remediated in-session and
+the gate re-run, which is the plan-review skill's own revise-and-re-review path. Every run is recorded
+above rather than compacted, so the remediation trail is auditable.
+
+### P3 items recorded without action
+
+None. Every P3 raised in runs 9 and 10 was either remediated above or was a restatement of a remediated
+P2. The four advisory P3 items carried forward from gate run 8 were superseded: the `Keys()` call
+ordering is now pinned in U6, U8's acceptance is scoped to what its own files can execute, the
+dependency-graph bullet no longer lists the `Keys()` stub as an assertion target, and the `decodeDoc`
+wrap target is named precisely.
+
+### Runtime verification and closure gaps
+
+None. The plan carries a deepened runtime verification section with **thirteen** ordered scenarios —
+including the two determinism scenarios 4b and 4c added in this cycle — the entrypoint pinned to
+`go run ./cmd/backlogit` from the feature-branch HEAD, explicit blocked-path handling, and a deepened
+operational closure table with two pre-merge gates, three monitoring signals, three rollback triggers, an
+execution-trace row, a named owner, and a bounded validation window.

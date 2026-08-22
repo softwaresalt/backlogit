@@ -204,3 +204,137 @@ rollback signal.
   table, owned by Stage and to be created as backlog items in a future staging session.
 * Four advisory P3 items from gate run 8 remain unactioned and are listed in the final `## Plan Review`
   section. None affects executability.
+
+## PR #372 remediation cycle 1 (Stage, branch `chore/stage-129-s`)
+
+Resumed on the already-checked-out branch `chore/stage-129-s` at HEAD `aee6cbe0` to remediate five
+unresolved Copilot review threads on planning-only staging PR #372. Scope was Stage-owned planning and
+backlog artifacts plus this memory file only. No source, test, config, workflow, template, or generated
+runtime file was touched; no build, test, or linter was run; no commit, push, PR, merge, worktree,
+shipment claim, or ship was performed; `C:\Source\GitHub\autoharness` was not read from or written to at
+all; and the unrelated untracked Azure DevOps artifacts under `docs/decisions/2026-08-20-*`,
+`docs/exec-plans/2026-08-20-*`, and `docs/memory/2026-08-20/` were left untouched. Orchestrator owns the
+commit, push, and thread-reply flow — **the GitHub threads are NOT resolved by this session.**
+
+### Degraded visibility (recorded, not silently skipped)
+
+Intercom was unavailable for this cycle as well. No milestone was broadcast and no approval was routed
+remotely. Remote operator visibility remains degraded; Ship must not assume any remote operator observed
+these decisions. Recorded as a `documented-deviation` in the plan's Constitution Check.
+
+### Thread disposition — five fixed, none declined
+
+| Thread | Disposition |
+|---|---|
+| `PRRT_kwDORzozKM6bVXyA` — mixed-case duplicate `context` keys nondeterministic | **Fixed.** U2 pins `UnmarshalJSON` to two decodes of the same original bytes: modeled fields via `json.Unmarshal(b, (*plainContext)(c))`, `Extra` via a separate `map[string]json.RawMessage` set difference. Routing modeled keys out of the raw map is forbidden. U3b s2's pre-U2 golden table pins both alias orders |
+| `PRRT_kwDORzozKM6bVXyF` — case-insensitive `progress` lookup can match more than one entry | **Fixed.** U4 recurses into every case-insensitive match and unions the unknown nested paths, sorted and de-duplicated. U3a gained scenario 4 |
+| `PRRT_kwDORzozKM6bVXyW` — U7b's `LintTree` assertion is unconstructible | **Fixed.** Verified against `internal/docline/service.go:225-289` that `LintTree` only feeds `decodeDoc` paths produced inside the already-`SafeResolve`d base. Scenario 1 narrowed to the direct sentinel guard, new scenario 1b covers the reachable `collectInScopeDocs` edge, propagation relocated to U8's `applyDecodeFailure` table |
+| `PRRT_kwDORzozKM6bVXyg` — U9a scheduled after the units it harnesses | **Fixed.** U9a split into U9a (behavioral, now precedes U8) and new unit U9c (contract text, precedes U8b) |
+| `PRRT_kwDORzozKM6bVXyq` — the eight follow-ups were never created | **Fixed.** All eight materialized as backlogit stash entries, duplicate-checked first |
+
+### Follow-ups created (all Stage-owned, none in `129-S`, none release-blocking)
+
+| ID | Kind / priority | Topic |
+|---|---|---|
+| `D3CE9E81` | task / high | Preserve or refuse on unmodeled top-level keys in checkpoint disposition rewrites |
+| `EA1F5912` | task / medium | Classify `syncWriteFileAtomic` outcomes by converging on `internal/atomicfile`; surface indeterminate creates |
+| `EC987334` | task / medium | Drop `omitempty` from `MigrateReport` collection fields |
+| `1787FD85` | task / high | Converge `LintTree` and `PlanMigration` on the one decode-failure classification helper |
+| `5F4E0FC3` | unknown / medium | Decide whether `create_checkpoint` becomes a governed operation |
+| `360A183F` | task / high | Upstream the checkpoint `context` Continuity Protocol wording into `backlogit.instructions.md.tmpl` |
+| `63E810D9` | task / medium | Structured JSON error envelope for CLI validation failures mirroring the MCP shape |
+| `6CE00B88` | unknown / medium | Decide gitignore and redaction posture for checkpoint `context` |
+
+**Stash, not queued tasks, is deliberate.** Each entry is undeliberated, unplanned intake that has not
+passed a plan-review gate, so materializing it as a `queued` task under a covering feature would bypass
+the P-003 harvest contract and inject unreviewed work into the same ready-queue Ship draws from. Every
+entry carries inline provenance: the originating plan path, parent feature `146-F`, shipment `129-S`, the
+external source ID where applicable, and an explicit "NOT release-blocking for `129-S`" marker. The plan's
+Scope boundaries table, feature `146-F`'s `Boundaries` section, and U10b's acceptance now cite the real
+IDs. U10b **verifies** `360A183F` is still `active`; it creates nothing, and Ship must not create a
+planning backlog item for it.
+
+### Backlog changes
+
+* **New task `146.024-T`** — plan unit U9c, "Red harness for the docs lint surface contract text",
+  `queued`, `high`, labels `stage-harvested,unit-U9c,domain-tests`, parent `146-F`. Uses dedicated new
+  files `internal/cli/docs_contract_test.go` and `internal/mcp/docs_tools_contract_test.go`.
+* **`146.020-T` rescoped** to behavior only (unit U9a), then extended with two green-throughout
+  containment guards after gate run 10.
+* **Dependency graph: 33 → 35 `blocks` edges**, matching the plan's diagram exactly, one-for-one.
+  * `146.020-T`: removed `146.019-T`, added `146.002-T`
+  * `146.018-T`: added `146.020-T`
+  * `146.024-T`: added `146.002-T`
+  * `146.019-T`: added `146.024-T`
+  * `146.022-T`: removed `146.020-T`; `146.024-T` was added then removed again as transitively redundant
+  * `146.023-T`: removed `146.020-T`, added `146.019-T`
+  * Ready entry points remain exactly `146.001-T` and `146.002-T`.
+* **Task bodies updated**: `146.001-T`, `146.005-T`, `146.006-T`, `146.007-T`, `146.008-T`, `146.011-T`,
+  `146.013-T`, `146.015-T`, `146.017-T`, `146.018-T`, `146.019-T`, `146.020-T`, `146.023-T`, `146.024-T`.
+* **Feature `146-F`**: `Boundaries` rewritten as a table citing the eight stash IDs with the stash-vs-task
+  rationale; `Provenance` extended with U9c and the 23-unit / 35-edge state; one `stage` comment appended
+  recording the whole cycle.
+* **Shipment `129-S`**: `146.024-T` added. Manifest is now **24 items** — covering feature `146-F` plus 23
+  tasks. Status `queued`, **not claimed, not shipped**. No follow-up stash entry is a member.
+
+### Plan review gate
+
+Two full gate runs, seven personas each, all dispatched as independent sub-agents and all returning
+findings, so `dispatch_mode: multi-agent-dispatch` is valid in both.
+
+* **Run 9 — FAIL, 0 P0 / 2 P1.** Learnings Researcher: U3a s4 used a single repeated fixture, the
+  false-negative red the N-independent-pair learning warns against. Architecture Strategist: the Track
+  A/B independence claim was false because U10a/U10b depend on both tracks. Both remediated in-session,
+  along with five P2s and seventeen P3s.
+* **Run 10 — PASS, 0 P0 / 0 P1 / 0 open P2.** Architecture, Parity, and Security each returned zero
+  findings of any severity. All five run-10 P2s were remediated before the record was written; one
+  Learnings P2 was declined as a false negative with evidence (the citation it reported missing exists in
+  the `Learnings and instructions consulted` section).
+
+`decision: PASS`, no `operator_authorization` required. No P0 or P1 was waived across all ten runs.
+
+### Highest-value defects this cycle caught
+
+1. **Two nondeterminism traps in one plan.** Both U2's modeled-field routing and U4's `progress`
+   recursion would have selected a single winner out of a `map[string]json.RawMessage`, making the same
+   input bytes produce different results across runs — and every planned test would still have passed
+   roughly half the time. The general rule now recorded in the Decisions table: consume every
+   case-insensitive **match set** whole; set differences and unions are order-immune, single-winner
+   selections are not.
+2. **A guard whose acceptance criterion could not be met.** U7b required `LintTree` to propagate a
+   `decodeDoc`-internal containment error, which no corpus can trigger. The honest fix was to remove the
+   assertion, record why, and relocate the guarantee — not to weaken it.
+3. **A fail-open hole the narrowing exposed.** With U7b narrowed, a U8 that turned every `decodeDoc`
+   error into a `decode_error` finding would still have passed every U7b scenario while leaking a
+   `*fs.PathError`'s absolute host path. Fixed by splitting the decode-failure branch into a
+   policy-neutral `classifyDecodeFailure` and a lint-policy `applyDecodeFailure`, with both fatal classes
+   injected in a table test.
+4. **A red harness scheduled after its own green unit.** U9a asserted text U8b writes while the graph
+   placed it after U8b, so its red could only ever be replayed. Splitting out U9c fixed it and produced
+   R11a: every agent- and operator-facing contract-text edit now has an upstream red harness.
+5. **Promised-but-uncreated follow-ups.** The plan guaranteed eight owned backlog items that existed
+   nowhere. Ship is forbidden from creating planning backlog items, so handing `129-S` over in that state
+   would have silently dropped all eight.
+
+### Files changed this cycle
+
+* `docs/exec-plans/2026-08-21-success-shaped-evidence-loss-plan.md` — remediated across the five threads
+  and two gate rounds; one new `## Plan Review` section appended (`plan-review-attempt: 8`).
+* `.backlogit/queue/` — new task `146.024-T`, fourteen task bodies updated, feature `146-F` sections and
+  one comment, shipment `129-S` manifest, and the dependency edges.
+* `.backlogit/stash.jsonl` — eight new stash entries.
+* `docs/memory/2026-08-21/success-shaped-evidence-loss-stage-memory.md` — this section.
+
+Not touched: the deliberation record, any source/test/config/workflow/template file, the Azure DevOps
+artifacts, the closure worktree, and the entire `autoharness` workspace.
+
+### Handoff
+
+* **Orchestrator** owns the commit, push, and the PR #372 thread replies and resolutions. Nothing was
+  committed by this session and no thread was marked resolved.
+* **Ship** should still start from shipment `129-S`; the two ready entry points remain `146.001-T` (U0a)
+  and `146.002-T` (U0b). PA-8 must be approved before `146.006-T` (U2) and PA-3 before `146.018-T` (U8);
+  PA-5 remains `destructive`, operator-only, and `blocked`. With intercom down, approvals must be
+  obtained by direct operator prompt and recorded by flipping each `ActionResult` to `approved`.
+* The eight follow-up stash entries stay in the stash for a future Stage session. They are explicitly
+  **not** Ship's to create or execute.
