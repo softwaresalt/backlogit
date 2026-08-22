@@ -22,11 +22,14 @@ created_at, updated_at, and status fields are auto-populated.
 
 The top level and the nested progress object are a CLOSED schema namespace:
 any key outside the modeled set (schema_version, agent, session_id, phase,
-status, created_at, updated_at, context, progress, resume_hint, disposition,
-disposition_reason, disposition_operator, and disposition_at at the top
-level; tasks_completed, tasks_remaining, files_modified, and decisions
+status, created_at, updated_at, context, progress, and resume_hint at the
+top level; tasks_completed, tasks_remaining, files_modified, and decisions
 inside progress) is an unknown field and the create is rejected, naming
-every offending key path.
+every offending key path. The four disposition fields (disposition,
+disposition_reason, disposition_operator, disposition_at) are part of the
+schema but are RESERVED and administrative: they are set only by
+"checkpoint abandon", never at create, and supplying one here is rejected
+as an unknown field too.
 
 The context object is the OPEN counterpart: shipment_id, feature_id,
 task_ids, and branch are modeled, but any other key you supply there

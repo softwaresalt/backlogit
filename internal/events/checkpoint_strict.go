@@ -11,37 +11,115 @@ import (
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
+// checkpointV1ReservedKeys are CheckpointV1 top-level fields that exist in
+// the schema but are administrative/disposition-owned: per
+// docs/design-docs/checkpoint-administrative-disposition.md, they are
+// "populated only by AbandonCheckpoint" (mirrored by QuarantineCheckpoint's
+// sidecar). Copilot review on PR #373 flagged that admitting them at the
+// CreateCheckpoint boundary lets a caller forge disposition:"abandoned"
+// directly; a later legitimate AbandonCheckpoint call on that same file then
+// silently no-ops via its idempotent-already-abandoned short-circuit,
+// producing NO audit append — exactly the class of evidence loss this
+// shipment exists to close. These four keys are therefore excluded from the
+// create-time legal set and treated as unknown fields if supplied at create,
+// even though they remain legal (and required) for AbandonCheckpoint's own
+// direct rewrite of the file, which never calls checkClosedSchemaNamespace.
+var checkpointV1ReservedKeys = map[string]struct{}{
+	"disposition":          {},
+	"disposition_reason":   {},
+	"disposition_operator": {},
+	"disposition_at":       {},
+}
+
 // checkpointV1TopLevelKeys is the case-insensitive set of CheckpointV1's
-// modeled top-level JSON tag names, derived once via reflection so the
-// create-boundary closed-namespace check (146.011-T / U4) cannot silently
-// desynchronize from the struct itself as fields are added or renamed.
-var checkpointV1TopLevelKeys = modeledJSONTagKeys(reflect.TypeOf(CheckpointV1{}))
+// modeled top-level JSON tag names MINUS checkpointV1ReservedKeys, derived
+// once via reflection so the create-boundary closed-namespace check
+// (146.011-T / U4) cannot silently desynchronize from the struct itself as
+// fields are added or renamed.
+var checkpointV1TopLevelKeys = deriveCreateableTopLevelKeys()
+
+func deriveCreateableTopLevelKeys() map[string]struct{} {
+	keys := modeledJSONTagKeys(reflect.TypeOf(CheckpointV1{}))
+	for k := range checkpointV1ReservedKeys {
+		delete(keys, k)
+	}
+	return keys
+}
 
 // checkpointProgressKeys is the case-insensitive set of CheckpointProgress's
 // modeled JSON tag names, used to validate the nested progress object.
 var checkpointProgressKeys = modeledJSONTagKeys(reflect.TypeOf(CheckpointProgress{}))
+
+// topLevelEntry is one member of a decoded top-level JSON object in source
+// order, preserving exact-duplicate keys.
+type topLevelEntry struct {
+	key   string
+	value json.RawMessage
+}
+
+// decodeTopLevelEntries walks data as a JSON object token stream and returns
+// EVERY top-level member in source order, including exact-case duplicate
+// keys. This is deliberately NOT a map[string]json.RawMessage decode: Go's
+// own json.Unmarshal into a map silently collapses exact-duplicate keys to a
+// single last-value-wins entry before any caller-level code ever runs, so a
+// dump carrying two identically-cased "progress" members (one with an
+// unknown nested key, one clean) would have its dirty entry vanish before
+// checkClosedSchemaNamespace's loop ever saw it — the same category of
+// silent evidence loss the mixed-case alias handling was already written to
+// prevent, just triggered by an exact duplicate instead of a case variant.
+// Flagged by Copilot review on PR #373.
+func decodeTopLevelEntries(data []byte) ([]topLevelEntry, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim.String() != "{" {
+		return nil, fmt.Errorf("checkpoint strict decode: expected a JSON object, got %v", tok)
+	}
+	var entries []topLevelEntry
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return nil, fmt.Errorf("checkpoint strict decode: expected a string key, got %v", keyTok)
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+		entries = append(entries, topLevelEntry{key: key, value: v})
+	}
+	return entries, nil
+}
 
 // checkClosedSchemaNamespace enforces the closed CheckpointV1 top-level and
 // nested-progress schema namespace at the CreateCheckpoint create boundary
 // (146.011-T / U4). Callers MUST run this only after ParseCheckpoint (pass 1)
 // has already succeeded on the same bytes, so a genuine shape error keeps its
 // ErrCheckpointCorrupt classification instead of being misreported as an
-// unknown-field rejection. Pass 2 (this function) decodes the same original
-// bytes into a map[string]json.RawMessage and diffs every top-level key
-// against checkpointV1TopLevelKeys; any key whose name case-insensitively
-// matches "progress" is not itself flagged (progress is a legal top-level
-// field) but is instead recursed into, diffing its own keys against
+// unknown-field rejection. Pass 2 (this function) walks the same original
+// bytes as an ordered token stream (decodeTopLevelEntries, never a map decode
+// — see its doc comment for why) and diffs every top-level key against
+// checkpointV1TopLevelKeys (which already excludes the reserved
+// disposition* fields); any key whose name case-insensitively matches
+// "progress" is not itself flagged (progress is a legal top-level field) but
+// is instead recursed into, diffing its own keys against
 // checkpointProgressKeys.
 //
 // NESTED RECURSION IS DETERMINISTIC (PR #372 remediation): every raw
 // top-level entry whose key case-insensitively matches "progress" is
 // inspected — never a single map-iteration-selected entry — because a dump
-// may legally carry both "progress" and "Progress" as two distinct map
-// entries, and choosing one by iterating the raw map would select the
-// winner in randomized map iteration order, so the same bytes would be
-// accepted on one run and rejected on the next. The unknown nested paths
-// found under ALL matching entries are unioned into one sorted,
-// de-duplicated Fields slice using the "progress.<key>" path form. A
+// may legally carry both "progress" and "Progress" as two distinct entries
+// (or even the same key twice), and choosing one by iterating an unordered
+// map would select the winner in randomized map iteration order, so the
+// same bytes would be accepted on one run and rejected on the next. The
+// unknown nested paths found under ALL matching entries are unioned into one
+// sorted, de-duplicated Fields slice using the "progress.<key>" path form. A
 // matching entry whose raw value is JSON null is skipped (there are no
 // nested keys to evaluate); the recursion is skipped entirely when no
 // top-level key matches "progress" at all.
@@ -51,8 +129,8 @@ var checkpointProgressKeys = modeledJSONTagKeys(reflect.TypeOf(CheckpointProgres
 // not wrap it again, so errors.As continues to recover it without an extra
 // unwrap hop.
 func checkClosedSchemaNamespace(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	entries, err := decodeTopLevelEntries(data)
+	if err != nil {
 		// Pass 1 (ParseCheckpoint) already succeeded on these same bytes, so
 		// this decode is expected to succeed too; propagate rather than mask
 		// if it somehow does not.
@@ -60,14 +138,13 @@ func checkClosedSchemaNamespace(data []byte) error {
 	}
 
 	var unknown []string
-	for k, v := range raw {
-		if strings.EqualFold(k, "progress") {
-			nested := unknownNestedProgressKeys(v)
-			unknown = append(unknown, nested...)
+	for _, e := range entries {
+		if strings.EqualFold(e.key, "progress") {
+			unknown = append(unknown, unknownNestedProgressKeys(e.value)...)
 			continue
 		}
-		if _, ok := checkpointV1TopLevelKeys[strings.ToLower(k)]; !ok {
-			unknown = append(unknown, k)
+		if _, ok := checkpointV1TopLevelKeys[strings.ToLower(e.key)]; !ok {
+			unknown = append(unknown, e.key)
 		}
 	}
 

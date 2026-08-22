@@ -163,3 +163,95 @@ func TestCreateCheckpoint_MixedCaseDuplicateProgressAlias_NIndependentPairs(t *t
 		assertNoCheckpointWritten(t, dir)
 	})
 }
+
+// TestCreateCheckpoint_ExactDuplicateProgressKey_DirtyFirst and
+// TestCreateCheckpoint_ExactDuplicateProgressKey_CleanFirst close the gap
+// Copilot review found on PR #373: json.Unmarshal into a
+// map[string]json.RawMessage silently collapses two EXACT-case-duplicate
+// top-level keys (not just mixed-case aliases like "progress"/"Progress") to
+// a single last-value-wins entry before any validation code runs. A naive
+// map-based decode would therefore let an unknown key hidden in a shadowed
+// "progress" object escape detection whenever a later identically-cased
+// "progress" member happened to be clean. checkClosedSchemaNamespace now
+// walks the top-level object as an ordered token stream
+// (decodeTopLevelEntries) precisely so every occurrence — dirty first or
+// dirty last — is inspected, regardless of which one ParseCheckpoint's own
+// struct decode ultimately assigns to CheckpointV1.Progress.
+func TestCreateCheckpoint_ExactDuplicateProgressKey_DirtyFirst(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"progress":{"unexpected_dup":"x"},"progress":{"tasks_completed":["146.001-T"]}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	fields := unknownFieldsFromErr(t, err)
+	assert.Equal(t, []string{"progress.unexpected_dup"}, fields)
+	assertNoCheckpointWritten(t, dir)
+}
+
+func TestCreateCheckpoint_ExactDuplicateProgressKey_CleanFirst(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"progress":{"tasks_completed":["146.001-T"]},"progress":{"unexpected_dup":"x"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	fields := unknownFieldsFromErr(t, err)
+	assert.Equal(t, []string{"progress.unexpected_dup"}, fields)
+	assertNoCheckpointWritten(t, dir)
+}
+
+// TestCreateCheckpoint_RejectsReservedDispositionFields closes the
+// audit-bypass gap Copilot review found on PR #373: the reflection-derived
+// create allowlist originally admitted the four administrative disposition
+// fields (disposition, disposition_reason, disposition_operator,
+// disposition_at), which are documented
+// (docs/design-docs/checkpoint-administrative-disposition.md) as populated
+// ONLY by AbandonCheckpoint. Admitting them at create let a caller forge
+// disposition:"abandoned" directly, so a later legitimate AbandonCheckpoint
+// call on that same file would silently no-op via its
+// idempotent-already-abandoned short-circuit and produce no audit append.
+// Each reserved key is now excluded from checkpointV1TopLevelKeys and
+// rejected as an unknown field at create.
+func TestCreateCheckpoint_RejectsReservedDispositionFields(t *testing.T) {
+	tests := []struct {
+		name      string
+		fieldJSON string
+		wantField string
+	}{
+		{"disposition", `"disposition":"abandoned"`, "disposition"},
+		{"disposition_reason", `"disposition_reason":"synthetic reason text"`, "disposition_reason"},
+		{"disposition_operator", `"disposition_operator":"synthetic-operator"`, "disposition_operator"},
+		{"disposition_at", `"disposition_at":"2026-01-01T00:00:00Z"`, "disposition_at"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			stateDump := fmt.Sprintf(
+				`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+					`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",%s}`,
+				tt.fieldJSON,
+			)
+
+			_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+			fields := unknownFieldsFromErr(t, err)
+			assert.Equal(t, []string{tt.wantField}, fields)
+			assertNoCheckpointWritten(t, dir)
+		})
+	}
+}
+
+// TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit is an
+// end-to-end regression for the same Copilot-flagged gap: even a dump that
+// supplies BOTH status:"abandoned" and disposition:"abandoned" together
+// (the exact shape that would have silently defeated AbandonCheckpoint's
+// audit trail) is rejected at create, naming disposition as the offending
+// field.
+func TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
+		`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","disposition":"abandoned"}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	fields := unknownFieldsFromErr(t, err)
+	assert.Equal(t, []string{"disposition"}, fields)
+	assertNoCheckpointWritten(t, dir)
+}

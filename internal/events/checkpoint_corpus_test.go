@@ -147,16 +147,20 @@ func TestCreateCheckpoint_MalformedCreatedAt_IsCorruptNotUnknownField(t *testing
 	assert.False(t, errors.Is(err, backlogiterrors.ErrCheckpointUnknownField), "a malformed created_at must never be misclassified as an unknown-field rejection")
 }
 
-// TestCreateCheckpoint_DispositionReasonAccepted is the tag-option-stripping
-// half of scenario 3 of 146.009-T (U3c): a dump carrying disposition_reason —
-// a modeled key whose tag carries the ",omitempty" option — is accepted,
-// pinning that tag-option stripping (R13/R14) does not misclassify a modeled
-// field as unknown.
-func TestCreateCheckpoint_DispositionReasonAccepted(t *testing.T) {
+// TestCreateCheckpoint_ResumeHintAccepted is the tag-option-stripping half of
+// scenario 3 of 146.009-T (U3c): a dump carrying resume_hint — a modeled key
+// whose tag carries the ",omitempty" option — is accepted, pinning that tag
+// -option stripping (R13/R14) does not misclassify a modeled field as
+// unknown. Originally this scenario used disposition_reason; 146.011-T's
+// Copilot-review remediation (PR #373) moved the disposition_* fields to
+// checkpointV1ReservedKeys (see checkpoint_strict.go), so resume_hint is a
+// non-reserved ",omitempty" field standing in for the same tag-stripping
+// guarantee.
+func TestCreateCheckpoint_ResumeHintAccepted(t *testing.T) {
 	dir := t.TempDir()
 	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
 		`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",` +
-		`"disposition_reason":"synthetic reason text"}`
+		`"resume_hint":"synthetic resume hint text"}`
 
 	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
 	require.NoError(t, err)
