@@ -1,6 +1,9 @@
 package errors
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // Checkpoint administrative disposition sentinel errors (136-F).
 //
@@ -74,6 +77,32 @@ var (
 	// replaces the malformed file with a valid one before the link executes,
 	// the move is refused so a valid replacement is never quarantined.
 	ErrCheckpointContentChanged = errors.New("backlogit: checkpoint content changed since classification; refusing quarantine move")
+
+	// ErrCheckpointUnknownField indicates a checkpoint create request carried a
+	// key outside the closed CheckpointV1 top-level or nested progress schema
+	// namespace (the context namespace remains open). Callers that need the
+	// offending field names should use errors.As to recover a
+	// *CheckpointUnknownFieldError rather than parsing this sentinel's message.
+	ErrCheckpointUnknownField = errors.New("backlogit: checkpoint carries unknown schema field")
 )
 
+// CheckpointUnknownFieldError is returned when a checkpoint create request
+// carries one or more keys outside the closed schema namespace (the
+// CheckpointV1 top level and the nested progress object). Fields is the
+// sorted, de-duplicated set of offending key paths (for example
+// "unexpected_key" or "progress.unexpected_key"). Recover Fields with
+// errors.As rather than parsing Error()'s message.
+type CheckpointUnknownFieldError struct {
+	Fields []string
+}
 
+// Error returns the formatted error string for CheckpointUnknownFieldError.
+func (e *CheckpointUnknownFieldError) Error() string {
+	return "backlogit: checkpoint carries unknown schema field(s): " + strings.Join(e.Fields, ", ")
+}
+
+// Unwrap returns ErrCheckpointUnknownField so errors.Is matches through this
+// typed error.
+func (e *CheckpointUnknownFieldError) Unwrap() error {
+	return ErrCheckpointUnknownField
+}

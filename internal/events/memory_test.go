@@ -30,11 +30,11 @@ func TestCreateCheckpoint_WritesFile(t *testing.T) {
 	dir := t.TempDir()
 
 	// Act
-	cpPath, err := events.CreateCheckpoint(context.Background(), dir, `{"state": "test"}`)
+	result, err := events.CreateCheckpoint(context.Background(), dir, `{"state": "test"}`)
 
 	// Assert
 	require.NoError(t, err)
-	assert.FileExists(t, cpPath)
+	assert.FileExists(t, result.Path)
 }
 
 // TestCreateCheckpoint_V1NoHTMLEscape is a regression test for the checkpoint
@@ -47,7 +47,7 @@ func TestCreateCheckpoint_V1NoHTMLEscape(t *testing.T) {
 	cpPath, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(cpPath)
+	data, err := os.ReadFile(cpPath.Path)
 	require.NoError(t, err)
 	s := string(data)
 

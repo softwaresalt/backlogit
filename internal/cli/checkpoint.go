@@ -77,14 +77,14 @@ is returned as JSON.`,
 			if err != nil {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
-			path, err := events.CreateCheckpoint(ctx, dir, stateDump)
+			result, err := events.CreateCheckpoint(ctx, dir, stateDump)
 			if err != nil {
 				return fmt.Errorf("create checkpoint: %w", err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(map[string]string{"path": path})
+			return enc.Encode(map[string]any{"path": result.Path, "context_keys": result.ContextKeys})
 		},
 	}
 	cmd.Flags().StringVar(&stateDump, "state-dump", "", "JSON checkpoint state dump")

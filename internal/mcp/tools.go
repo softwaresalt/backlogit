@@ -1119,11 +1119,11 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 		return ValidationFailed("state_dump is required"), nil
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
-	path, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
+	result, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
 	if err != nil {
 		return domainError("create checkpoint", err), nil
 	}
-	return toolResultJSON(map[string]string{"path": path})
+	return toolResultJSON(map[string]any{"path": result.Path, "context_keys": result.ContextKeys})
 }
 
 func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

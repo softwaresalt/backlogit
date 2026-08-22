@@ -41,9 +41,13 @@ func SaveMemory(_ context.Context, memoriesPath string, key string, summary stri
 // If the state dump contains a V1 schema (schema_version=1), it is parsed and
 // validated before writing. Missing created_at, updated_at, and status fields
 // are auto-populated. Legacy (non-V1) dumps are written as-is with atomic writes.
-func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (string, error) {
+// The returned CreateCheckpointResult.ContextKeys is a declaration-only prelude
+// field (146.001-T / U0a): it is always make([]string, 0) here. The real
+// population of ContextKeys from the persisted context bytes lands in
+// 146.015-T (U6), gated behind 146.006-T (U2, PA-8).
+func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (CreateCheckpointResult, error) {
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
-		return "", fmt.Errorf("create checkpoint dir: %w", err)
+		return CreateCheckpointResult{}, fmt.Errorf("create checkpoint dir: %w", err)
 	}
 	name := fmt.Sprintf("checkpoint-%s.json", time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(checkpointDir, name)
@@ -58,7 +62,7 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		cp, err := ParseCheckpoint(data)
 		if err != nil {
 			// Preserve the ErrCheckpointCorrupt sentinel from ParseCheckpoint.
-			return "", fmt.Errorf("parse v1 checkpoint: %w", err)
+			return CreateCheckpointResult{}, fmt.Errorf("parse v1 checkpoint: %w", err)
 		}
 		if cp.CreatedAt.IsZero() {
 			cp.CreatedAt = time.Now().UTC()
@@ -70,17 +74,17 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 			cp.Status = "active"
 		}
 		if err := ValidateCheckpoint(cp); err != nil {
-			return "", err
+			return CreateCheckpointResult{}, err
 		}
 		var marshalErr error
 		data, marshalErr = jsonutil.MarshalReadable(cp)
 		if marshalErr != nil {
-			return "", fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
+			return CreateCheckpointResult{}, fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
 		}
 	}
 
 	if err := syncWriteFileAtomic(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("write checkpoint: %w", err)
+		return CreateCheckpointResult{}, fmt.Errorf("write checkpoint: %w", err)
 	}
-	return path, nil
+	return CreateCheckpointResult{Path: path, ContextKeys: make([]string, 0)}, nil
 }
