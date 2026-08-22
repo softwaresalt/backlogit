@@ -152,7 +152,16 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_create_checkpoint",
-			mcplib.WithDescription("Save a session state checkpoint"),
+			mcplib.WithDescription("Save a session state checkpoint from a JSON state_dump. The top level "+
+				"and the nested progress object are a CLOSED schema namespace: the only legal top-level keys are "+
+				"schema_version, agent, session_id, phase, status, created_at, updated_at, context, progress, "+
+				"resume_hint, disposition, disposition_reason, disposition_operator, and disposition_at, and the "+
+				"only legal keys inside progress are tasks_completed, tasks_remaining, files_modified, and "+
+				"decisions; any other key at either level fails the call as validation_failed with an "+
+				"unknown_fields list naming the offending key path(s). The context object is the OPEN "+
+				"counterpart: shipment_id, feature_id, task_ids, and branch are modeled, but any other key you "+
+				"supply there survives the create round-trip unchanged. The successful result reports "+
+				"context_keys: the exact list of context key names persisted to disk."),
 			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist")),
 		),
 		s.handleCreateCheckpoint,
