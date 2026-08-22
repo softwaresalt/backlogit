@@ -1,13 +1,20 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/cli"
+	"github.com/softwaresalt/backlogit/internal/core"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // U6 (078.006-T): `backlogit checkpoint create --state-dump {{state_dump}}` must
@@ -116,4 +123,124 @@ func TestCheckpointCreate_NoHTMLEscape(t *testing.T) {
 	assert.NotContains(t, getOut, `\u003e`)
 	assert.NotContains(t, getOut, `\u003c`)
 	assert.NotContains(t, getOut, `\u0026`)
+}
+
+// newMCPServerForRoot constructs an MCP server bound to the given workspace
+// root, for cross-surface (CLI vs MCP) comparisons. Shared by the U5a/U5b
+// context_keys scenarios below.
+func newMCPServerForRoot(t *testing.T, root string) *mcpinternal.Server {
+	t.Helper()
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+	return mcpinternal.NewServer(ws)
+}
+
+// invokeCreateCheckpointMCP dispatches backlogit_create_checkpoint through the
+// registered tool handle (InvokeTool), never a handler method directly, and
+// returns the decoded JSON response body.
+func invokeCreateCheckpointMCP(t *testing.T, srv *mcpinternal.Server, stateDump string) map[string]any {
+	t.Helper()
+	request := mcplib.CallToolRequest{}
+	request.Params.Arguments = map[string]any{"state_dump": stateDump}
+
+	result, err := srv.InvokeTool(context.Background(), "backlogit_create_checkpoint", request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError, "MCP create must succeed for a valid state dump")
+
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	return resp
+}
+
+// contextKeysFrom extracts and sorts the string context_keys array from a
+// decoded create response, for both the CLI and MCP surfaces.
+func contextKeysFrom(t *testing.T, resp map[string]any) []string {
+	t.Helper()
+	raw, ok := resp["context_keys"].([]any)
+	require.True(t, ok, "response must carry a context_keys array")
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		keyName, ok := v.(string)
+		require.True(t, ok)
+		out = append(out, keyName)
+	}
+	return out
+}
+
+// TestCheckpointCreate_ContextKeysInJSONOutput is scenario 2 of 146.013-T
+// (U5a): the CLI JSON output includes the same context_keys for the same
+// dump, driven through the --state-dump flag rather than
+// events.CreateCheckpoint directly.
+func TestCheckpointCreate_ContextKeysInJSONOutput(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"sess-ctxkeys","phase":"build","context":{"shipment_id":"129-S","pr_number":372}}`
+
+	createOut := runCLIStdout(t, root, "checkpoint", "create", "--state-dump", stateDump)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(createOut), &resp))
+
+	keys := contextKeysFrom(t, resp)
+	assert.Contains(t, keys, "shipment_id")
+	assert.Contains(t, keys, "pr_number")
+}
+
+// TestCheckpointCreate_ContextKeysByteIdenticalAcrossSurfaces is scenario 3
+// of 146.013-T (U5a): the MCP and CLI context_keys results for the same dump
+// are byte-identical (as a sorted key list), mirroring the established
+// docline.LintReport pattern where both surfaces encode the same type.
+func TestCheckpointCreate_ContextKeysByteIdenticalAcrossSurfaces(t *testing.T) {
+	root := setupCLIWorkspace(t)
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"sess-parity","phase":"build","context":{"shipment_id":"129-S","feature_id":"146-F","review_gate":"PASS"}}`
+
+	createOut := runCLIStdout(t, root, "checkpoint", "create", "--state-dump", stateDump)
+	var cliResp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(createOut), &cliResp))
+	cliKeys := contextKeysFrom(t, cliResp)
+
+	srv := newMCPServerForRoot(t, root)
+	mcpResp := invokeCreateCheckpointMCP(t, srv, stateDump)
+	mcpKeys := contextKeysFrom(t, mcpResp)
+
+	// A shared underlying function means both surfaces can trivially agree on
+	// an EMPTY list (today's placeholder behavior); require non-empty content
+	// first so this scenario cannot pass vacuously the way a bare equality
+	// check on two shared-struct surfaces can (the same risk the docline
+	// LintTree/CLI-MCP parity test documents for its own shared-struct check).
+	require.NotEmpty(t, cliKeys, "CLI context_keys must be non-empty for a dump whose context carries keys")
+	require.NotEmpty(t, mcpKeys, "MCP context_keys must be non-empty for a dump whose context carries keys")
+
+	sort.Strings(cliKeys)
+	sort.Strings(mcpKeys)
+	assert.Equal(t, mcpKeys, cliKeys, "CLI and MCP context_keys must be byte-identical for the same dump")
+}
+
+// TestCheckpointCreateCommand_ContractText_OpenContextAndContextKeys is
+// scenario 4 of 146.013-T (U5a): the CONSTRUCTED checkpoint create Cobra
+// command's Short, Long, and Example strings must carry the open-context,
+// closed-namespace, and context_keys sentences that 146.015-T (U6) writes.
+// This exists so R11a holds for U6: every agent- and operator-facing
+// contract-text edit in this plan has a red harness scheduled upstream of
+// it, and none ships unasserted.
+func TestCheckpointCreateCommand_ContractText_OpenContextAndContextKeys(t *testing.T) {
+	root := cli.NewRootCommand()
+	cmd, _, err := root.Find([]string{"checkpoint", "create"})
+	require.NoError(t, err)
+	require.NotNil(t, cmd)
+
+	combined := strings.ToLower(cmd.Short + "\n" + cmd.Long + "\n" + cmd.Example)
+
+	assert.Contains(t, combined, "context_keys", "the constructed command must mention context_keys")
+	assert.True(t,
+		strings.Contains(combined, "open") && strings.Contains(combined, "context"),
+		"the constructed command must describe the open context namespace",
+	)
+	assert.True(t,
+		strings.Contains(combined, "closed") || strings.Contains(combined, "unknown"),
+		"the constructed command must describe the closed schema namespace / unknown-field rejection",
+	)
 }
