@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "phase": "build",
+  "consumer": "ship",
+  "shipment_id": "999-S",
+  "feature_id": "999-F",
+  "branch": "feat/synthetic-fixture-a",
+  "pr_number": 9001,
+  "pr_status": "open",
+  "ci_status": "pending",
+  "tasks_completed": ["999.001-T"],
+  "review_gate": "PENDING",
+  "decisions": ["Synthetic fixture A: minimal legacy shape with a review_gate string."],
+  "next_steps": "Synthetic placeholder next step.",
+  "resume_hint": "Synthetic placeholder resume hint."
+}

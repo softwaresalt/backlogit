@@ -1,0 +1,14 @@
+{
+  "version": "1",
+  "phase": "blocked",
+  "consumer": "ship",
+  "shipment_id": "997-S",
+  "feature_id": "997-F",
+  "branch": "fix/synthetic-fixture-c",
+  "ci_status": "failing",
+  "items_blocked": ["997.002-T", "997.003-T"],
+  "decisions": ["Synthetic fixture C: blocked legacy shape with an items_blocked array and no pr_number."],
+  "follow_up_tasks": [],
+  "next_steps": "Synthetic placeholder next step for fixture C: unblock 997.002-T.",
+  "resume_hint": "Synthetic placeholder resume hint for fixture C."
+}
