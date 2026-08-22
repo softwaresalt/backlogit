@@ -214,3 +214,73 @@ func TestDocs_RejectsUnknownFormat(t *testing.T) {
 		assert.ErrorContainsf(t, err, "invalid --format", "args=%v", args)
 	}
 }
+
+// docsDegradedCorpus builds a fixture tree containing one file whose
+// frontmatter cannot be decoded plus one ordinary contract violation, for the
+// 146.020-T (U9a) degraded-corpus behavioral scenarios.
+func docsDegradedCorpus(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFixtureDoc(t, root, "docs/decisions/broken.md", "---\ntitle: [unclosed\n---\nBody.\n")
+	writeFixtureDoc(t, root, "docs/decisions/missing-source.md", "---\ntitle: Missing Source\n---\nBody.\n")
+	return root
+}
+
+// TestDocsLint_DegradedCorpus_ExitsNonZeroWithDecodeErrorFinding is scenario 1
+// of 146.020-T (U9a): `backlogit docs lint` still exits non-zero and prints a
+// report containing the decode_error finding for a degraded corpus.
+func TestDocsLint_DegradedCorpus_ExitsNonZeroWithDecodeErrorFinding(t *testing.T) {
+	root := docsDegradedCorpus(t)
+
+	out, err := runDocs(t, root, "docs", "lint", "--format", "json")
+	require.Error(t, err, "a degraded corpus must still exit non-zero")
+
+	var report struct {
+		Valid    bool `json:"valid"`
+		Findings []struct {
+			File string `json:"file"`
+			Rule string `json:"rule"`
+		} `json:"findings"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &report), "the report must still be rendered even though a file failed to decode")
+	assert.False(t, report.Valid)
+
+	var sawDecodeError bool
+	for _, f := range report.Findings {
+		if f.File == "docs/decisions/broken.md" && f.Rule == "decode_error" {
+			sawDecodeError = true
+		}
+	}
+	assert.True(t, sawDecodeError, "the report must contain a decode_error finding for the undecodable file")
+}
+
+// TestDocsLint_DegradedCorpus_FindingsArrayPresentAndNonNull is scenario 2 of
+// 146.020-T (U9a): the marshalled JSON is inspected directly for a present
+// and non-null findings array using a .([]any) type assertion, which fails
+// for both an absent key and a JSON null.
+func TestDocsLint_DegradedCorpus_FindingsArrayPresentAndNonNull(t *testing.T) {
+	root := docsDegradedCorpus(t)
+
+	out, err := runDocs(t, root, "docs", "lint", "--format", "json")
+	require.Error(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &raw))
+	findings, ok := raw["findings"].([]any)
+	require.True(t, ok, "findings must be present and decode as a non-null JSON array")
+	assert.NotEmpty(t, findings)
+}
+
+// TestDocsLint_PathEscape_NoReportRendered is scenario 4 of 146.020-T (U9a):
+// a corpus whose --path escapes the workspace makes the CLI exit non-zero
+// with NO report rendered and NO decode_error finding. Green before and
+// after 146.018-T (U8): this locks the existing containment mapping against
+// U8's edits to the producing path.
+func TestDocsLint_PathEscape_NoReportRendered(t *testing.T) {
+	root := docsDegradedCorpus(t)
+
+	out, err := runDocs(t, root, "docs", "lint", "--path", "../escape", "--format", "json")
+	require.Error(t, err)
+	assert.Empty(t, out, "a containment failure must render no report at all")
+	assert.NotContains(t, out, "decode_error")
+}
