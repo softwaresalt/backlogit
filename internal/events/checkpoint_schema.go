@@ -89,10 +89,24 @@ type plainContext struct {
 var modeledContextKeys = deriveModeledContextKeys()
 
 func deriveModeledContextKeys() map[string]struct{} {
+	return modeledJSONTagKeys(reflect.TypeOf(plainContext{}))
+}
+
+// modeledJSONTagKeys derives the case-insensitive set of a struct type's
+// modeled JSON tag names via reflection. Shared by the context Extra
+// carrier (146.006-T / U2) and the create-boundary closed-namespace check
+// (146.011-T / U4) so both derivations stay pinned to the same rule: skip
+// unexported fields, skip an absent or "-" tag, and strip any ",omitempty"
+// (or other) tag option suffix.
+func modeledJSONTagKeys(typ reflect.Type) map[string]struct{} {
 	set := make(map[string]struct{})
-	typ := reflect.TypeOf(plainContext{})
 	for i := 0; i < typ.NumField(); i++ {
-		tag := typ.Field(i).Tag.Get("json")
+		f := typ.Field(i)
+		if f.PkgPath != "" {
+			// unexported field
+			continue
+		}
+		tag := f.Tag.Get("json")
 		if tag == "" || tag == "-" {
 			continue
 		}

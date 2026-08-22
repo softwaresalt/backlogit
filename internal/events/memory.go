@@ -64,6 +64,14 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 			// Preserve the ErrCheckpointCorrupt sentinel from ParseCheckpoint.
 			return CreateCheckpointResult{}, fmt.Errorf("parse v1 checkpoint: %w", err)
 		}
+		// Pass 2 (146.011-T / U4): only after pass 1 (ParseCheckpoint) has
+		// already succeeded, enforce the closed CheckpointV1 top-level and
+		// nested-progress schema namespace. The typed error is returned
+		// directly, not wrapped again, so errors.As still recovers it in one
+		// hop.
+		if err := checkClosedSchemaNamespace(data); err != nil {
+			return CreateCheckpointResult{}, err
+		}
 		if cp.CreatedAt.IsZero() {
 			cp.CreatedAt = time.Now().UTC()
 		}

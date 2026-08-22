@@ -40,11 +40,13 @@ var liveCorpusQuarantineBaseline = map[string]bool{
 }
 
 // TestCreateCheckpoint_ValidV1WithUnknownKeys_ListedUnflagged is scenario 1 of
-// 146.009-T (U3c): a complete, schema-valid V1 dump that also carries unknown
-// top-level keys still parses through ParseCheckpoint and is listed by
-// ListCheckpoints with NeedsQuarantine == false. Parse success alone does not
-// imply an unflagged summary, so the fixture must also satisfy
-// ValidateCheckpoint: every required field is present and valid.
+// 146.009-T (U3c), superseded by 146.011-T (U4): a complete, schema-valid V1
+// dump that also carries an unknown top-level key is now REJECTED at create
+// (the closed schema namespace), so it never reaches ListCheckpoints at all.
+// Before U4 this scenario asserted the opposite (create succeeded and the
+// resulting file was listed unflagged); U4's create-boundary closed-namespace
+// check makes that pre-U4 behavior obsolete by design, so this test is
+// updated in place rather than left asserting a superseded contract.
 func TestCreateCheckpoint_ValidV1WithUnknownKeys_ListedUnflagged(t *testing.T) {
 	dir := t.TempDir()
 	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
@@ -52,13 +54,14 @@ func TestCreateCheckpoint_ValidV1WithUnknownKeys_ListedUnflagged(t *testing.T) {
 		`"extra_diagnostic":"should not affect validation"}`
 
 	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
-	require.NoError(t, err, "today (pre-146.011-T/U4) an unknown top-level key does not reject create")
+	require.Error(t, err, "post-146.011-T (U4) an unknown top-level key must reject create")
+	var typed *backlogiterrors.CheckpointUnknownFieldError
+	require.True(t, errors.As(err, &typed), "the rejection must be recoverable as *CheckpointUnknownFieldError")
+	assert.Equal(t, []string{"extra_diagnostic"}, typed.Fields)
 
 	summaries, err := events.ListCheckpoints(context.Background(), dir, events.CheckpointFilter{})
 	require.NoError(t, err)
-	require.Len(t, summaries, 1)
-	assert.False(t, summaries[0].NeedsQuarantine, "a schema-valid V1 dump with an unknown top-level key must not be flagged for quarantine")
-	assert.Empty(t, summaries[0].ValidationErr)
+	assert.Empty(t, summaries, "a rejected create must write no file, so nothing is listed")
 }
 
 // TestListCheckpoints_LegacyCorpus_MatchesGoldenTriple is scenario 2 of
