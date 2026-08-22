@@ -39,10 +39,21 @@ type CheckpointV1 struct {
 	// an abandon disposition has been applied; QuarantineCheckpoint never
 	// rewrites the checkpoint bytes and instead records its disposition in a
 	// sidecar (see CheckpointDispositionRecord).
-	Disposition         string    `json:"disposition,omitempty" validate:"omitempty,oneof=abandoned quarantined"`
-	DispositionReason   string    `json:"disposition_reason,omitempty"`
-	DispositionOperator string    `json:"disposition_operator,omitempty"`
-	DispositionAt       time.Time `json:"disposition_at,omitempty"`
+	//
+	// DispositionAt is *time.Time, not time.Time (Copilot review remediation
+	// on PR #373): encoding/json's `omitempty` does NOT omit a zero-value
+	// struct (time.Time is a struct), so a value-typed field with
+	// `,omitempty` would still marshal a never-abandoned checkpoint's
+	// DispositionAt as the literal zero time "0001-01-01T00:00:00Z" on every
+	// ordinary create. Once 146.011-T made "disposition_at" a reserved,
+	// create-rejected field, that spurious zero-time member would make an
+	// otherwise-normal checkpoint's own written JSON fail if ever resubmitted
+	// through CreateCheckpoint. A nil *time.Time correctly omits under
+	// `,omitempty`.
+	Disposition         string     `json:"disposition,omitempty" validate:"omitempty,oneof=abandoned quarantined"`
+	DispositionReason   string     `json:"disposition_reason,omitempty"`
+	DispositionOperator string     `json:"disposition_operator,omitempty"`
+	DispositionAt       *time.Time `json:"disposition_at,omitempty"`
 }
 
 // CheckpointContext holds shipment/feature/branch context for the checkpoint.

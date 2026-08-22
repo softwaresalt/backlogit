@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -254,4 +255,38 @@ func TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit(t *testing
 	fields := unknownFieldsFromErr(t, err)
 	assert.Equal(t, []string{"disposition"}, fields)
 	assertNoCheckpointWritten(t, dir)
+}
+
+// TestCreateCheckpoint_NormalCreateOmitsDispositionAt is a second Copilot
+// review remediation on PR #373: CheckpointV1.DispositionAt was a value-typed
+// time.Time with a ",omitempty" tag that encoding/json cannot honor for a
+// struct zero value, so an ORDINARY create with no disposition fields
+// supplied at all was still writing the literal
+// "disposition_at":"0001-01-01T00:00:00Z" to disk. Once disposition_at
+// became a reserved, create-rejected field (see
+// TestCreateCheckpoint_RejectsReservedDispositionFields above), that
+// spurious zero-value member made a checkpoint's own freshly written bytes
+// fail if ever resubmitted through CreateCheckpoint — a checkpoint could not
+// round-trip through itself. DispositionAt is now *time.Time, which
+// correctly omits under ",omitempty" when nil.
+func TestCreateCheckpoint_NormalCreateOmitsDispositionAt(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build"}`
+
+	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile(result.Path)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	_, hasDispositionAt := doc["disposition_at"]
+	assert.False(t, hasDispositionAt, "a normal create must never persist the reserved disposition_at field")
+
+	// The written bytes must themselves be accepted by a second create call
+	// (round-trip), which is exactly the property the spurious zero-value
+	// field broke.
+	_, err = events.CreateCheckpoint(context.Background(), dir, string(raw))
+	assert.NoError(t, err, "a freshly written checkpoint's own bytes must round-trip through CreateCheckpoint")
 }

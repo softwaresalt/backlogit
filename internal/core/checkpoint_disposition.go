@@ -99,7 +99,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	cp.Disposition = events.DispositionAbandoned
 	cp.DispositionReason = reason
 	cp.DispositionOperator = operator
-	cp.DispositionAt = now
+	cp.DispositionAt = &now
 	cp.UpdatedAt = now
 
 	updated, err := jsonutil.MarshalReadable(cp)
