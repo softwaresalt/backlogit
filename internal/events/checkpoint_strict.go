@@ -167,7 +167,7 @@ func checkClosedSchemaNamespace(data []byte) error {
 			unknown = append(unknown, unknownNestedProgressKeys(e.value)...)
 			continue
 		}
-		if _, ok := checkpointV1TopLevelKeys[strings.ToLower(e.key)]; !ok {
+		if !isFoldKeyIn(e.key, checkpointV1TopLevelKeys) {
 			unknown = append(unknown, e.key)
 			continue
 		}
@@ -217,7 +217,7 @@ func unknownNestedProgressKeys(raw json.RawMessage) []string {
 	}
 	var unknown []string
 	for k := range nested {
-		if _, ok := checkpointProgressKeys[strings.ToLower(k)]; !ok {
+		if !isFoldKeyIn(k, checkpointProgressKeys) {
 			unknown = append(unknown, "progress."+k)
 		}
 	}

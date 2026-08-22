@@ -90,25 +90,31 @@ type plainContext struct {
 	Branch     string   `json:"branch,omitempty"`
 }
 
-// modeledContextKeys is the case-insensitive set of CheckpointContext's
-// modeled JSON tag names, derived once via a package-level var initializer by
-// reflecting over plainContext's json tags. No init() and no panic: an
-// unparsable tag is simply skipped, since plainContext's tags are pinned by
-// this same file. Both UnmarshalJSON (routing keys into Extra) and emit()
-// (filtering Extra keys that collide with a modeled field) consult this set
-// so a future modeled field cannot silently desynchronize the two paths.
+// modeledContextKeys is the set of CheckpointContext's modeled JSON tag
+// names (exact declared spelling), derived once via a package-level var
+// initializer by reflecting over plainContext's json tags. No init() and no
+// panic: an unparsable tag is simply skipped, since plainContext's tags are
+// pinned by this same file. Both UnmarshalJSON (routing keys into Extra) and
+// emit() (filtering Extra keys that collide with a modeled field) consult
+// this set, through isFoldKeyIn, so a future modeled field cannot silently
+// desynchronize the two paths.
 var modeledContextKeys = deriveModeledContextKeys()
 
 func deriveModeledContextKeys() map[string]struct{} {
 	return modeledJSONTagKeys(reflect.TypeOf(plainContext{}))
 }
 
-// modeledJSONTagKeys derives the case-insensitive set of a struct type's
-// modeled JSON tag names via reflection. Shared by the context Extra
-// carrier (146.006-T / U2) and the create-boundary closed-namespace check
-// (146.011-T / U4) so both derivations stay pinned to the same rule: skip
-// unexported fields, skip an absent or "-" tag, and strip any ",omitempty"
-// (or other) tag option suffix.
+// modeledJSONTagKeys derives the set of a struct type's modeled JSON tag
+// names (exact declared spelling) via reflection. Shared by the context
+// Extra carrier (146.006-T / U2) and the create-boundary closed-namespace
+// check (146.011-T / U4) so both derivations stay pinned to the same rule:
+// skip unexported fields, skip an absent or "-" tag, and strip any
+// ",omitempty" (or other) tag option suffix. Keys are intentionally NOT
+// lowercased here: membership checks against this set must go through
+// isFoldKeyIn, which compares using Unicode simple case folding (the same
+// algorithm encoding/json itself uses for field matching), not
+// strings.ToLower -- see isFoldKeyIn's doc comment for why the two are not
+// equivalent.
 func modeledJSONTagKeys(typ reflect.Type) map[string]struct{} {
 	set := make(map[string]struct{})
 	for i := 0; i < typ.NumField(); i++ {
@@ -125,16 +131,51 @@ func modeledJSONTagKeys(typ reflect.Type) map[string]struct{} {
 		if name == "" {
 			continue
 		}
-		set[strings.ToLower(name)] = struct{}{}
+		set[name] = struct{}{}
 	}
 	return set
 }
 
-// isModeledContextKey reports whether key case-insensitively matches one of
-// CheckpointContext's modeled JSON tag names.
+// isFoldKeyIn reports whether key matches any member of known using Unicode
+// simple case folding, via strings.EqualFold. This is the single shared
+// matcher for every modeled-vs-unmodeled JSON key classification in this
+// package: CheckpointContext's Extra routing and collision filtering
+// (isModeledContextKey below) and checkpoint_strict.go's closed top-level
+// and nested-progress namespace checks.
+//
+// strings.EqualFold, not strings.ToLower, is load-bearing (Copilot review
+// remediation on PR #373, deferred past the review-fix circuit breaker as
+// stash 6D03554D and now fixed under an operator-authorized exceptional
+// cycle): encoding/json's own field-name matching uses Unicode simple case
+// folding, the exact equivalence relation strings.EqualFold implements --
+// NOT a per-rune lowercase mapping. The two disagree for runes such as
+// U+017F LATIN SMALL LETTER LONG S ("ſ"), which simple-case-folds to "s"/"S"
+// (so encoding/json treats "ſhipment_id" as a match for the "shipment_id"
+// tag) but is left unchanged by unicode.ToLower (it is already its own
+// lowercase form, so ToLower-based comparison never recognizes the fold).
+// Using ToLower here let a fold-duplicate key survive into Extra as if it
+// were genuinely unmodeled, get re-emitted after the modeled field, and flip
+// which occurrence won on the next reparse. Matching this package's key
+// classification to encoding/json's own algorithm closes that gap by
+// construction: a fold-duplicate key is always recognized as modeled, so it
+// is never routed into Extra in the first place. This intentionally performs
+// a linear scan rather than a normalized-map lookup: the known-key sets here
+// are small (at most a handful of struct fields), and a normalization step
+// (e.g. lowercasing) would reintroduce exactly the same non-equivalence bug
+// this function exists to close.
+func isFoldKeyIn(key string, known map[string]struct{}) bool {
+	for k := range known {
+		if strings.EqualFold(key, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// isModeledContextKey reports whether key matches one of CheckpointContext's
+// modeled JSON tag names under Unicode simple case folding (see isFoldKeyIn).
 func isModeledContextKey(key string) bool {
-	_, ok := modeledContextKeys[strings.ToLower(key)]
-	return ok
+	return isFoldKeyIn(key, modeledContextKeys)
 }
 
 // UnmarshalJSON decodes b into c. The decode mechanism is pinned (146.006-T /
