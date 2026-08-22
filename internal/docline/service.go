@@ -95,11 +95,11 @@ func LintTree(opts Options) ([]Finding, error) {
 	for _, rel := range files {
 		md, err := decodeDoc(opts.Root, rel)
 		if err != nil {
-			fs, fatal := applyDecodeFailure(err, rel)
+			decodeFindings, fatal := applyDecodeFailure(err, rel)
 			if fatal != nil {
 				return nil, fatal
 			}
-			findings = append(findings, fs...)
+			findings = append(findings, decodeFindings...)
 			continue
 		}
 		b := FromMap(frontmatterOrEmpty(md))
