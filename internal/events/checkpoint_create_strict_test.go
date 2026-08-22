@@ -241,11 +241,11 @@ func TestCreateCheckpoint_RejectsReservedDispositionFields(t *testing.T) {
 }
 
 // TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit is an
-// end-to-end regression for the same Copilot-flagged gap: even a dump that
+// end-to-end regression for the same Copilot-flagged gap: a dump that
 // supplies BOTH status:"abandoned" and disposition:"abandoned" together
 // (the exact shape that would have silently defeated AbandonCheckpoint's
-// audit trail) is rejected at create, naming disposition as the offending
-// field.
+// audit trail) is rejected at create, naming BOTH the reserved key
+// (disposition) and the reserved status value (status) as offending.
 func TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit(t *testing.T) {
 	dir := t.TempDir()
 	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
@@ -253,8 +253,52 @@ func TestCreateCheckpoint_ForgedAbandonedDispositionCannotBypassAudit(t *testing
 
 	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
 	fields := unknownFieldsFromErr(t, err)
-	assert.Equal(t, []string{"disposition"}, fields)
+	assert.Equal(t, []string{"disposition", "status"}, fields)
 	assertNoCheckpointWritten(t, dir)
+}
+
+// TestCreateCheckpoint_RejectsStatusAbandonedWithoutDisposition closes the
+// gap Copilot review found even after the disposition-field reservation
+// above: "status" itself remains a legal top-level key, so a dump supplying
+// status:"abandoned" WITH NO disposition fields at all still passed both
+// checkClosedSchemaNamespace (status is legal) and ValidateCheckpoint
+// (abandoned is a legal Status enum value) — persisting a checkpoint that
+// LOOKS abandoned but was never audited. Worse, it could never be repaired
+// through the governed operation afterward: AbandonCheckpoint refuses any
+// non-"active" status before it would ever reach its own
+// already-abandoned idempotent check. checkClosedSchemaNamespace now also
+// rejects the reserved status value directly.
+func TestCreateCheckpoint_RejectsStatusAbandonedWithoutDisposition(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
+		`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	fields := unknownFieldsFromErr(t, err)
+	assert.Equal(t, []string{"status"}, fields)
+	assertNoCheckpointWritten(t, dir)
+}
+
+// TestCreateCheckpoint_StatusResolvedAndActiveStillAccepted pins the
+// non-reserved status values: "active" (the default) and "resolved" (a
+// caller may legitimately import an already-closed session directly,
+// since resolve carries no audit-trail requirement) both still succeed at
+// create.
+func TestCreateCheckpoint_StatusResolvedAndActiveStillAccepted(t *testing.T) {
+	for _, status := range []string{"active", "resolved"} {
+		t.Run(status, func(t *testing.T) {
+			dir := t.TempDir()
+			stateDump := fmt.Sprintf(
+				`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":%q,`+
+					`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`,
+				status,
+			)
+
+			result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+			require.NoError(t, err)
+			assert.FileExists(t, result.Path)
+		})
+	}
 }
 
 // TestCreateCheckpoint_NormalCreateOmitsDispositionAt is a second Copilot

@@ -74,7 +74,10 @@ create is rejected, naming every offending key path. The four disposition
 fields (disposition, disposition_reason, disposition_operator,
 disposition_at) are part of the schema but are RESERVED and administrative:
 they are set only by "checkpoint abandon", never at create, and supplying
-one here is rejected as an unknown field too.
+one here is rejected as an unknown field too. status:"abandoned" is ALSO
+rejected even with no disposition fields present, because "checkpoint
+abandon" is the only governed path to that state; status:"active" and
+status:"resolved" remain accepted.
 
 The context object is the OPEN counterpart: shipment_id, feature_id,
 task_ids, and branch are modeled, but any other key you supply there

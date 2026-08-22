@@ -31,6 +31,26 @@ var checkpointV1ReservedKeys = map[string]struct{}{
 	"disposition_at":       {},
 }
 
+// checkpointReservedStatusValues are Status values that must never be
+// supplied directly at create, even though "status" itself remains a legal
+// top-level key: they represent a governed disposition outcome that must
+// only be reached via its own audited operation. "abandoned" is the only
+// such value today. Copilot review on PR #373 found that excluding the four
+// disposition* KEYS alone was insufficient: a caller could still submit
+// status:"abandoned" with no disposition fields at all. That dump passes
+// both checkClosedSchemaNamespace (status is a legal key) and
+// ValidateCheckpoint (abandoned is a legal Status enum value), persisting a
+// checkpoint that LOOKS abandoned but was never audited — and it can never
+// be repaired through the governed operation afterward, because
+// AbandonCheckpoint refuses any non-"active" status
+// (ErrCheckpointNotActive) before it would ever reach its own
+// already-abandoned idempotent check. "resolved" is NOT reserved: closing a
+// checkpoint via resolve carries no audit-trail requirement, so a caller
+// legitimately importing an already-closed session may supply it directly.
+var checkpointReservedStatusValues = map[string]struct{}{
+	"abandoned": {},
+}
+
 // checkpointV1TopLevelKeys is the case-insensitive set of CheckpointV1's
 // modeled top-level JSON tag names MINUS checkpointV1ReservedKeys, derived
 // once via reflection so the create-boundary closed-namespace check
@@ -109,7 +129,11 @@ func decodeTopLevelEntries(data []byte) ([]topLevelEntry, error) {
 // disposition* fields); any key whose name case-insensitively matches
 // "progress" is not itself flagged (progress is a legal top-level field) but
 // is instead recursed into, diffing its own keys against
-// checkpointProgressKeys.
+// checkpointProgressKeys. A "status" entry whose value is a reserved literal
+// (checkpointReservedStatusValues) is ALSO flagged even though "status" is
+// itself a legal key: the key is legal, but that specific value represents a
+// governed disposition outcome that must only be reached via its own
+// audited operation (see checkpointReservedStatusValues' doc comment).
 //
 // NESTED RECURSION IS DETERMINISTIC (PR #372 remediation): every raw
 // top-level entry whose key case-insensitively matches "progress" is
@@ -145,6 +169,10 @@ func checkClosedSchemaNamespace(data []byte) error {
 		}
 		if _, ok := checkpointV1TopLevelKeys[strings.ToLower(e.key)]; !ok {
 			unknown = append(unknown, e.key)
+			continue
+		}
+		if strings.EqualFold(e.key, "status") && isReservedStatusValue(e.value) {
+			unknown = append(unknown, e.key)
 		}
 	}
 
@@ -152,6 +180,21 @@ func checkClosedSchemaNamespace(data []byte) error {
 		return nil
 	}
 	return &backlogiterrors.CheckpointUnknownFieldError{Fields: dedupeSorted(unknown)}
+}
+
+// isReservedStatusValue reports whether raw is a JSON string equal to one of
+// checkpointReservedStatusValues. A value that fails to decode as a plain
+// JSON string (e.g. a number, object, or malformed literal) is treated as
+// not reserved: ValidateCheckpoint's own oneof enum check downstream is
+// responsible for rejecting a malformed Status shape, this check is only
+// responsible for the specific reserved literal.
+func isReservedStatusValue(raw json.RawMessage) bool {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return false
+	}
+	_, reserved := checkpointReservedStatusValues[s]
+	return reserved
 }
 
 // unknownNestedProgressKeys returns the "progress.<key>" paths for every key
