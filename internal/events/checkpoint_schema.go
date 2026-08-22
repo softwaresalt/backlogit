@@ -1,13 +1,18 @@
 package events
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // checkpointValidator is the package-level validator instance (per compound learning: cache at package level).
@@ -60,17 +65,223 @@ type CheckpointContext struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
-// Keys returns the sorted set of context key names that MarshalJSON actually
-// emits to disk for this CheckpointContext. It is a value receiver so it
-// behaves identically for addressable and non-addressable values, matching
-// MarshalJSON's receiver.
-//
-// Deprecated: this is a declaration-only prelude stub (146.001-T / U0a). It
-// always returns an empty, non-nil slice and a nil error. The real
-// implementation lands in 146.006-T (U2), which replaces only this method's
-// body — the signature is pinned here and does not change.
+// plainContext is a method-less shadow of CheckpointContext's modeled fields
+// (146.006-T / U2). It carries no Extra field and no UnmarshalJSON/MarshalJSON
+// methods, so json.Unmarshal against it exercises encoding/json's own
+// deterministic, case-insensitive, source-order, last-wins field matching —
+// exactly once, against the original bytes — and json.Marshal against it
+// (via jsonutil.MarshalReadable, never json.Marshal, so HTML escaping stays
+// disabled) renders only the four modeled fields in declaration order.
+type plainContext struct {
+	ShipmentID string   `json:"shipment_id,omitempty"`
+	FeatureID  string   `json:"feature_id,omitempty"`
+	TaskIDs    []string `json:"task_ids,omitempty"`
+	Branch     string   `json:"branch,omitempty"`
+}
+
+// modeledContextKeys is the case-insensitive set of CheckpointContext's
+// modeled JSON tag names, derived once via a package-level var initializer by
+// reflecting over plainContext's json tags. No init() and no panic: an
+// unparsable tag is simply skipped, since plainContext's tags are pinned by
+// this same file. Both UnmarshalJSON (routing keys into Extra) and emit()
+// (filtering Extra keys that collide with a modeled field) consult this set
+// so a future modeled field cannot silently desynchronize the two paths.
+var modeledContextKeys = deriveModeledContextKeys()
+
+func deriveModeledContextKeys() map[string]struct{} {
+	set := make(map[string]struct{})
+	typ := reflect.TypeOf(plainContext{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := typ.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.Split(tag, ",")[0]
+		if name == "" {
+			continue
+		}
+		set[strings.ToLower(name)] = struct{}{}
+	}
+	return set
+}
+
+// isModeledContextKey reports whether key case-insensitively matches one of
+// CheckpointContext's modeled JSON tag names.
+func isModeledContextKey(key string) bool {
+	_, ok := modeledContextKeys[strings.ToLower(key)]
+	return ok
+}
+
+// UnmarshalJSON decodes b into c. The decode mechanism is pinned (146.006-T /
+// U2, PR #372 remediation): it performs exactly two decodes of the SAME
+// original bytes. Pass 1 decodes b into the method-less plainContext shadow,
+// which is the ONLY thing that may set a modeled field and which inherits
+// encoding/json's deterministic source-order, case-insensitive, last-wins
+// semantics. Pass 2 decodes b into a map[string]json.RawMessage used ONLY to
+// populate Extra, keeping every key that does NOT case-insensitively match a
+// modeled tag. Routing modeled keys OUT of that raw map is forbidden: a
+// context carrying both shipment_id and Shipment_ID lands as two distinct
+// map entries, and selecting a winner by map iteration would make the same
+// bytes parse to A on one run and B on the next — a nondeterministic
+// violation. Extra is order-immune because it is an accumulate-all set
+// difference, never a single-winner selection. A JSON null value is a no-op
+// (the zero CheckpointContext), matching encoding/json's own convention for
+// decoding null into a non-pointer struct field.
+func (c *CheckpointContext) UnmarshalJSON(b []byte) error {
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		*c = CheckpointContext{}
+		return nil
+	}
+
+	var shadow plainContext
+	if err := json.Unmarshal(b, &shadow); err != nil {
+		return err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	var extra map[string]json.RawMessage
+	if len(raw) > 0 {
+		extra = make(map[string]json.RawMessage, len(raw))
+		for k, v := range raw {
+			if isModeledContextKey(k) {
+				continue
+			}
+			extra[k] = v
+		}
+		if len(extra) == 0 {
+			extra = nil
+		}
+	}
+
+	*c = CheckpointContext{
+		ShipmentID: shadow.ShipmentID,
+		FeatureID:  shadow.FeatureID,
+		TaskIDs:    shadow.TaskIDs,
+		Branch:     shadow.Branch,
+		Extra:      extra,
+	}
+	return nil
+}
+
+// MarshalJSON renders c's modeled fields followed by its sorted Extra keys,
+// flattened into a single JSON object. It is a VALUE receiver, because
+// Context is a value field on CheckpointV1 and a pointer receiver would be
+// silently skipped by encoding/json whenever the value is non-addressable
+// (a bare function return value, or a value stored in a map[string]any).
+func (c CheckpointContext) MarshalJSON() ([]byte, error) {
+	_, body, err := c.emit()
+	return body, err
+}
+
+// Keys returns the context key names that MarshalJSON actually emits to disk
+// for this CheckpointContext: the modeled fields JSON actually renders
+// (respecting omitempty elision), in declaration order, followed by the
+// sorted Extra keys that survive the modeled-key collision filter. It is a
+// value receiver so it behaves identically for addressable and
+// non-addressable values, matching MarshalJSON's receiver.
 func (c CheckpointContext) Keys() ([]string, error) {
-	return make([]string, 0), nil
+	keys, _, err := c.emit()
+	if keys == nil {
+		keys = make([]string, 0)
+	}
+	return keys, err
+}
+
+// emit is the single unexported implementation both MarshalJSON and Keys()
+// delegate to, so neither can silently swallow an error the other surfaces.
+// It marshals the plainContext shadow through jsonutil.MarshalReadable (never
+// json.Marshal, so HTML escaping stays disabled), reads back the keys it
+// actually emitted (respecting omitempty elision) via a token-stream walk —
+// never a map decode, which would not preserve declaration order — and
+// splices in each surviving Extra member: the key re-encoded through the
+// same escape-free encoder (a bare json.Marshal(key) would still emit
+// \u0026 for a key containing "&", and splicing raw key text into a buffer
+// would let a key containing a quote or newline inject a sibling member),
+// and the value appended verbatim from its stored json.RawMessage.
+func (c CheckpointContext) emit() ([]string, []byte, error) {
+	shadow := plainContext{
+		ShipmentID: c.ShipmentID,
+		FeatureID:  c.FeatureID,
+		TaskIDs:    c.TaskIDs,
+		Branch:     c.Branch,
+	}
+	modeledBytes, err := jsonutil.MarshalReadable(shadow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("checkpoint context: marshal modeled fields: %w", err)
+	}
+	modeledKeysPresent, err := objectMemberKeys(modeledBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("checkpoint context: read modeled keys: %w", err)
+	}
+
+	extraKeys := make([]string, 0, len(c.Extra))
+	for k := range c.Extra {
+		if isModeledContextKey(k) {
+			continue
+		}
+		extraKeys = append(extraKeys, k)
+	}
+	sort.Strings(extraKeys)
+
+	keys := make([]string, 0, len(modeledKeysPresent)+len(extraKeys))
+	keys = append(keys, modeledKeysPresent...)
+	keys = append(keys, extraKeys...)
+
+	var buf bytes.Buffer
+	// modeledBytes is a well-formed JSON object; strip its trailing '}' so
+	// Extra members can be appended before the single closing brace.
+	buf.Write(modeledBytes[:len(modeledBytes)-1])
+	needComma := len(modeledKeysPresent) > 0
+	for _, k := range extraKeys {
+		if needComma {
+			buf.WriteByte(',')
+		}
+		needComma = true
+		keyBytes, err := jsonutil.MarshalReadable(k)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checkpoint context: marshal extra key %q: %w", k, err)
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		buf.Write(c.Extra[k])
+	}
+	buf.WriteByte('}')
+	return keys, buf.Bytes(), nil
+}
+
+// objectMemberKeys returns the top-level key names of a JSON object, in the
+// order they appear, using a token stream rather than a map decode (which
+// does not preserve order).
+func objectMemberKeys(raw []byte) ([]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim.String() != "{" {
+		return nil, fmt.Errorf("checkpoint context: expected a JSON object, got %v", tok)
+	}
+	var keys []string
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return nil, fmt.Errorf("checkpoint context: expected a string key, got %v", keyTok)
+		}
+		keys = append(keys, key)
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+	}
+	return keys, nil
 }
 
 // CheckpointProgress tracks task completion state within a checkpoint.
