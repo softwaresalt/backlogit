@@ -71,6 +71,9 @@ At meaningful boundaries such as task completion, review handoff, or session end
 2. When memory or checkpoint operations are supported, also persist a concise structured summary through backlogit.
 3. Summaries should capture outcome, changed files or surfaces, decisions, blockers, and next steps.
 4. Do not dump raw transcript logs into backlogit memory fields.
+5. For a `schema_version: 1` checkpoint dump, any recovery keys you need beyond the four modeled fields (`shipment_id`, `feature_id`, `task_ids`, `branch`) belong INSIDE `context`, not at the top level and not inside `progress` — the top level and the nested `progress` object are a CLOSED schema namespace, while `context` is the OPEN one. An unmodeled key placed at the top level or inside `progress` fails the create as an unknown-field rejection rather than being silently accepted.
+6. If a checkpoint create is rejected for an unknown field, this means "retry with the offending keys nested under context", not "session state is lost" — no file is written on a rejected create, so there is nothing to recover; simply resubmit the same dump with the extra keys moved into `context`.
+7. Checkpoint context is unredacted, git-tracked durable state written to a path under the workspace storage root. Treat it exactly like any other tracked file: it MUST NOT carry secrets, credentials, tokens, or other sensitive values, whether in a modeled field or in an arbitrary `context` key.
 
 ## Traceability Protocol
 

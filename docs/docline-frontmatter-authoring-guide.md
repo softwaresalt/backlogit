@@ -199,6 +199,25 @@ bytes are never touched).
 > `BACKLOGIT_DOCS_ALLOW_APPLY` environment flag is set, and likewise requires a
 > scoped path.
 
+### Malformed frontmatter: `decode_error`
+
+A file whose frontmatter block cannot be decoded (malformed YAML) does not
+abort a `backlogit docs lint` scan. It is reported as a finding with
+`rule: decode_error` and `severity: error`, and the scan continues over the
+rest of the corpus — every other in-scope file is still linted in the same
+run. The CLI still exits non-zero (the retained CI-gate contract) because a
+corpus containing a `decode_error` finding is not a clean tree, exactly as
+for any other rule violation. On the MCP surface, a `decode_error` finding is
+returned inside the normal successful `backlogit_docs_lint` result (the
+`{valid, violation_count, findings}` envelope), never as a failed tool call —
+MCP has no exit code, so the finding is the only signal.
+
+A path-containment failure (the scanned path escapes the workspace) and a raw
+I/O failure reading a file are both distinct from `decode_error`: both remain
+fatal and abort the scan (CLI: non-zero exit with no report rendered; MCP: a
+`validation_failed` tool error), because only a per-file frontmatter decode
+failure is treated as report-and-continue.
+
 ## Scope
 
 In scope: `docs/**` (except `docs/memory/**` and `docs/archive/**`), plus the
