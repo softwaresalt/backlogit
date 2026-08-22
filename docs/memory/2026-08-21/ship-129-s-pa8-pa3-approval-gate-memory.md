@@ -90,8 +90,10 @@ occurred.
 
 ## Test suite state (expected, intentional red)
 
-Full `go test ./...` after all 15 completions shows exactly 23 failing tests, all of them the
-red-harness assertions for work gated behind PA-8/PA-3 (none are regressions):
+Full `go test ./...` after all 15 completions shows 25 failing tests (9 events + 6 mcp + 8 cli + 2
+docline; the `internal/cli` count below was originally mislabeled `(6)` despite listing 8 tests —
+corrected here per Copilot review on PR #373), all of them the red-harness assertions for work
+gated behind PA-8/PA-3 (none are regressions):
 
 * `internal/events` (9): `TestCreateCheckpoint_OpenContextNamespace_FlatScalar`,
   `_NestedObject`, `TestCreateCheckpoint_RejectsSingleUnknownTopLevelKey`,
@@ -104,7 +106,7 @@ red-harness assertions for work gated behind PA-8/PA-3 (none are regressions):
   `TestBacklogitCreateCheckpoint_DescriptionEnumeratesLegalKeys`,
   `_DescriptionNamesEveryReflectedKey`, `TestBacklogitDocsLint_ContractText_DecodeErrorSuccessfulResult`,
   `TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError`
-* `internal/cli` (6): `TestCheckpointCreate_LegacyDumpContextKeysNamesActualKeys`,
+* `internal/cli` (8): `TestCheckpointCreate_LegacyDumpContextKeysNamesActualKeys`,
   `_EmptyTaskIDsContextKeysMatchWrittenBytes`, `_ContextKeysInJSONOutput`,
   `_ContextKeysByteIdenticalAcrossSurfaces`,
   `TestCheckpointCreateCommand_ContractText_OpenContextAndContextKeys`,

@@ -221,8 +221,12 @@ func docsToolDegradedTree(t *testing.T) string {
 
 // TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError is
 // scenario 3 of 146.020-T (U9a): MCP returns a successful tool result
-// carrying the same findings rather than InternalError, and the CLI and MCP
-// finding payloads for the same corpus are byte-identical.
+// carrying the same findings rather than InternalError, and the MCP finding
+// payload for the same corpus is byte-identical to docline.LintTree's own
+// output — the same underlying service call the CLI transport also makes
+// (mirroring TestDocsTools_CLIParity's cross-surface comparison method,
+// since neither this file nor that one invokes the compiled CLI binary
+// directly).
 func TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError(t *testing.T) {
 	root := docsToolDegradedTree(t)
 	s := NewServerForRoot(root)
@@ -230,8 +234,9 @@ func TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError(t *testing
 	res := callDocsTool(t, s.handleDocsLint, map[string]any{})
 	require.False(t, res.IsError, "a degraded corpus must still return a successful tool result, never InternalError")
 
+	mcpJSON := docsResultText(t, res)
 	var report docline.LintReport
-	require.NoError(t, json.Unmarshal([]byte(docsResultText(t, res)), &report))
+	require.NoError(t, json.Unmarshal([]byte(mcpJSON), &report))
 
 	var sawDecodeError bool
 	for _, f := range report.Findings {
@@ -240,6 +245,20 @@ func TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError(t *testing
 		}
 	}
 	assert.True(t, sawDecodeError, "the MCP result must contain a decode_error finding for the undecodable file")
+
+	// Cross-surface parity: docline.LintTree is the same underlying call the
+	// CLI's `docs lint` command makes (see internal/cli/docs.go), so
+	// comparing against it directly is the established parity methodology in
+	// this file (see TestDocsTools_CLIParity above).
+	findings, err := docline.LintTree(docline.Options{Root: root, Profile: docline.ProfileAuthoring})
+	require.NoError(t, err)
+	expected, err := json.Marshal(docline.NewLintReport(findings))
+	require.NoError(t, err)
+
+	var gotMap, wantMap any
+	require.NoError(t, json.Unmarshal([]byte(mcpJSON), &gotMap))
+	require.NoError(t, json.Unmarshal(expected, &wantMap))
+	assert.Equal(t, wantMap, gotMap, "MCP and the underlying docline service must marshal identical lint payloads for a degraded corpus")
 }
 
 // TestDocsLintTool_PathEscapeOnDegradedCorpus_ValidationFailed is scenario 5

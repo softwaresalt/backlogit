@@ -214,9 +214,13 @@ MCP has no exit code, so the finding is the only signal.
 
 A path-containment failure (the scanned path escapes the workspace) and a raw
 I/O failure reading a file are both distinct from `decode_error`: both remain
-fatal and abort the scan (CLI: non-zero exit with no report rendered; MCP: a
-`validation_failed` tool error), because only a per-file frontmatter decode
-failure is treated as report-and-continue.
+fatal and abort the scan. On the CLI, either failure exits non-zero with no
+report rendered. On MCP the two are NOT mapped the same way: a containment
+failure maps to a `validation_failed` tool error, while a raw I/O failure
+(e.g. a permission error reading a file) falls through to the generic
+`internal` tool error, because `handleDocsLint` only special-cases
+`docline.ErrPathEscapesWorkspace`. Only a per-file frontmatter decode failure
+is treated as report-and-continue; every other failure mode aborts the scan.
 
 ## Scope
 
