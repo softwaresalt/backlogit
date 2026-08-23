@@ -18,8 +18,13 @@ title: "146-F / 129-S — Runtime Verification"
 
 # Runtime Verification: 146-F success-shaped evidence loss (PR #373, shipment 129-S)
 
-**Surface**: `cli` (backlogit CLI — `checkpoint create`, `docs lint`)
-**Mode**: manual (local build + representative invocations)
+**Surface**: `cli` and `mcp` (backlogit CLI — `checkpoint create`, `docs lint`; MCP tools —
+`backlogit_create_checkpoint`, `backlogit_docs_lint`). PR #373 changed both transports (the
+CLI's own result path AND MCP-specific response shaping for `context_keys` and the
+`decode_error`-carrying successful-result contract), so both must be exercised — CLI-only
+verification is insufficient for this change's stated scope.
+**Mode**: manual (CLI, local build + representative invocations) + automated (MCP, existing
+in-tree regression tests dispatched through the registered tool handlers)
 **Context**: PR #373 merged to `main` at `15ab30a2a394439f52e5338fc94d1c50e3f395ae`. Two governed
 diagnostic-path defects were fixed:
 
@@ -43,13 +48,21 @@ build is sufficient; no browser, API host, or background job is involved.
 
 ## Step 3 — Verification Mode
 
-**Manual** CLI invocation of the built binary — the fastest, most direct verification for
-CLI-surfaced behavior; browser/API modes do not apply.
+**Manual** CLI invocation of the built binary for the CLI transport; **automated in-process
+MCP tool dispatch** (via `go test`, run fresh with `-count=1` to bypass the test cache) for
+the MCP transport — the same technique the existing in-tree test suite uses to exercise the
+registered MCP tool handlers end-to-end (`s.handleCreateCheckpoint` /
+`s.handleDocsLint` through `mcplib.CallToolRequest`, never the underlying core functions
+directly). Browser/API modes do not apply.
 
 ## Step 4 — Targets and Scenarios
 
-* `backlogit checkpoint create --state-dump <dump-with-unmodeled-context-keys>`
-* `backlogit docs lint --path <corpus-with-one-malformed-frontmatter-file>`
+* `backlogit checkpoint create --state-dump <dump-with-unmodeled-context-keys>` (CLI)
+* `backlogit docs lint --path <corpus-with-one-malformed-frontmatter-file>` (CLI)
+* `backlogit_create_checkpoint` MCP tool with a `context` object carrying a modeled key
+  (`shipment_id`) and an unmodeled key (`pr_number`) (MCP)
+* `backlogit_docs_lint` MCP tool against a corpus containing one file with malformed
+  frontmatter (MCP)
 
 ## Step 5 — Execution and Evidence
 
@@ -125,19 +138,65 @@ corpus removed after verification (not committed); the raw command output log is
 at `docs/scratch/rv-docs-lint-output.txt` and `docs/scratch/rv-checkpoint-create-output.txt`
 as evidence.
 
+### Scenario 3 — MCP `backlogit_create_checkpoint` reports `context_keys` (Defect 1, MCP transport)
+
+Command:
+```
+go test ./internal/mcp/... -run TestHandleCreateCheckpoint_ResultIncludesContextKeys -v -count=1
+```
+
+This test dispatches `backlogit_create_checkpoint` through the registered
+`s.handleCreateCheckpoint` handler (the same `mcplib.CallToolRequest` path a real MCP
+client uses — not `events.CreateCheckpoint` directly) with a `context` object carrying one
+modeled key (`shipment_id`) and one unmodeled key (`pr_number`), and asserts the tool
+result's `context_keys` array contains both.
+
+Observed: `--- PASS: TestHandleCreateCheckpoint_ResultIncludesContextKeys (0.09s)` — full
+output at `docs/scratch/rv-mcp-surface-test-output.txt`.
+
+**PASS** — the MCP transport reports the same previously-dropped keys as the CLI transport
+(Scenario 1), confirming the fix is not CLI-only.
+
+### Scenario 4 — MCP `backlogit_docs_lint` returns `decode_error` in a successful result (Defect 2, MCP transport)
+
+Command:
+```
+go test ./internal/mcp/... -run TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError -v -count=1
+```
+
+This test dispatches `backlogit_docs_lint` through the registered `s.handleDocsLint`
+handler against a corpus containing one malformed-frontmatter file, and asserts (a) the
+tool result is a **successful** result (`IsError: false`) rather than the pre-fix bare
+`InternalError`, (b) the decoded `docline.LintReport` contains a `decode_error` finding for
+the broken file, and (c) the MCP payload is byte-for-byte identical (after JSON
+unmarshalling) to the underlying `docline.LintTree` result for the same corpus —
+cross-surface parity with the CLI path.
+
+Observed: `--- PASS: TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError (0.01s)`
+— full output at `docs/scratch/rv-mcp-surface-test-output.txt`.
+
+**PASS** — the MCP transport no longer returns a bare `InternalError` on a corpus decode
+failure; it returns a successful result carrying the `decode_error` finding, matching the
+CLI transport's behavior (Scenario 2).
+
 ## Step 6 — Verdict
 
-**PASS** for both scenarios. No follow-up runtime risk identified for these two defect
-fixes specifically.
+**PASS** across all four scenarios (CLI and MCP transports, both defect fixes). No follow-up
+runtime risk identified for these two defect fixes specifically.
 
 ## Step 7 — Handoff to Operational Closure
 
 * Verification verdict: **PASS**
-* Runtime surfaces verified: CLI (`checkpoint create`, `docs lint`)
-* Evidence: see Step 5 above and `docs/scratch/rv-*.txt`
+* Runtime surfaces verified: CLI (`checkpoint create`, `docs lint`) and MCP
+  (`backlogit_create_checkpoint`, `backlogit_docs_lint`)
+* Evidence: see Step 5 above, `docs/scratch/rv-*.txt`, and
+  `docs/scratch/rv-mcp-surface-test-output.txt`
 * Blocked prerequisites: none for this verification
-* Risky action state: none — this verification is read/write to local scratch state only,
-  no destructive or production-impacting action was taken
+* Risky action state: this verification touches the two `ActionRisk: high` surfaces this
+  release changed — PA-8 (hand-written checkpoint codec on the shared read path) and PA-3
+  (docs-lint CI-gate semantics) — and confirms both behave as the plan specified at the
+  merged HEAD; see the closure artifact's Risky Action Record for the full approval/result
+  history
 * Follow-up recommendations: none new from runtime verification itself. The **unrelated**
   shipment-archival gate-evidence blocker for 146.006-T (stash `DD957688`) is a backlog/
   process concern, not a runtime regression, and is tracked separately in the closure
