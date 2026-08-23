@@ -1,0 +1,20 @@
+{
+  "valid": false,
+  "violation_count": 2,
+  "findings": [
+    {
+      "file": "docs/scratch/rv-docline-corpus/bad-frontmatter.md",
+      "field": "",
+      "rule": "decode_error",
+      "severity": "error",
+      "fix": "docline.decodeDoc: decode docs/scratch/rv-docline-corpus/bad-frontmatter.md: docline: frontmatter decode failed: mdfront.Decode: parse frontmatter: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "file": "docs/scratch/rv-docline-corpus/good.md",
+      "field": "source",
+      "rule": "required",
+      "severity": "error",
+      "fix": "required field \"source\" is missing or empty"
+    }
+  ]
+}
