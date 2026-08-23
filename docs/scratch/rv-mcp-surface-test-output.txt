@@ -1,8 +1,0 @@
-=== RUN   TestHandleCreateCheckpoint_ResultIncludesContextKeys
-2026/08/22 19:43:48 INFO config loaded package=config workspace=C:\Users\DEWILL~1\AppData\Local\Temp\TestHandleCreateCheckpoint_ResultIncludesContextKeys2986361732\001\.backlogit
-2026/08/22 19:43:48 INFO workspace initialized storage_root=C:\Users\DEWILL~1\AppData\Local\Temp\TestHandleCreateCheckpoint_ResultIncludesContextKeys2986361732\001\.backlogit duration_ms=43
---- PASS: TestHandleCreateCheckpoint_ResultIncludesContextKeys (0.09s)
-=== RUN   TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError
---- PASS: TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError (0.01s)
-PASS
-ok  	github.com/softwaresalt/backlogit/internal/mcp	3.221s

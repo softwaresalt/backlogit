@@ -50,8 +50,6 @@ title: "Ship — PR #373 merge and 129-S / 146-F post-merge closure"
   (PASS) for both defect fixes.
 * `docs/closure/2026-08-22-146-f-129-s-closure.md` — full operational closure artifact,
   including the shipment-gate blocker analysis and READY WITH CONDITIONS verdict.
-* `docs/scratch/rv-checkpoint-create-output.txt`, `docs/scratch/rv-docs-lint-output.txt` —
-  raw verification command output, retained as evidence.
 * This memory file.
 
 ## Decisions and Rationale
@@ -68,8 +66,10 @@ title: "Ship — PR #373 merge and 129-S / 146-F post-merge closure"
    and violates the explicit "do not hand-edit generated cache state" instruction. Failed
    closed per operator instruction to fail closed on any reconciliation ambiguity.
 3. **Verified the narrow scope of the blocker** by checking gate-evidence ancestry for
-   all 23 manifest members against current `main` HEAD — only `146.006-T` fails; the
-   underlying code change is independently verified present at HEAD.
+   all 23 task members of the 129-S manifest against current `main` HEAD (the ship-time
+   member-evidence gate only checks `task`/`subtask` artifacts, not the covering feature)
+   — 22 tasks pass cleanly and only `146.006-T` fails; the underlying code change is
+   independently verified present at HEAD.
 4. **Stashed a follow-up (`DD957688`)** for Stage triage recommending a supported repair
    path (an audited "force ship-time member evidence" operation), rather than leaving the
    gap undocumented.

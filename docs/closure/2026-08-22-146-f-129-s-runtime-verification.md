@@ -41,10 +41,15 @@ build is sufficient; no browser, API host, or background job is involved.
 
 ## Step 2 — Environment Prechecks
 
-* Build artifact: local build from post-merge `main` (`go build ./cmd/backlogit`),
-  commit `15ab30a2a394439f52e5338fc94d1c50e3f395ae` — matches the merged PR #373 HEAD.
+* Build artifact: local build from this post-merge closure branch (`go build ./cmd/backlogit`),
+  which descends from merge commit `15ab30a2a394439f52e5338fc94d1c50e3f395ae` (PR #373's
+  merged tree, identical to its CI-covered head `de8efd694dbfb6909eae0f04161deee8592073e8`
+  — the merge introduced no additional commits).
 * No external dependencies, ports, or credentials required.
-* `go test ./...` (full suite) already green on this commit per PR #373's `test` CI check.
+* `go test ./... -count=1` (full suite, all packages) was independently re-run locally
+  during this closure session on the current tree and passed clean — every package `ok`,
+  no failures. PR #373's own `test` CI check was also green at its head `de8efd69` prior
+  to merge.
 
 ## Step 3 — Verification Mode
 
@@ -91,7 +96,8 @@ Persisted file content (context object):
 "context":{"another_extra":42,"custom_unmodeled_key":"preserve-me"}
 ```
 **PASS** — both previously-dropped keys are reported and durably persisted. Test artifact
-removed after verification (not committed).
+removed after verification (not committed); the full command output is captured inline
+above (Observed).
 
 ### Scenario 2 — Docs lint corpus-wide decode-failure containment (Defect 2)
 
@@ -108,7 +114,7 @@ Expected: the malformed file surfaces as a `decode_error` finding (not a silent 
 and the scan continues to lint `good.md`, producing its own finding too. Exit code
 remains non-zero (a corpus containing a decode error is not a clean tree).
 
-Observed (`docs/scratch/rv-docs-lint-output.txt`):
+Observed:
 ```json
 {
   "valid": false,
@@ -134,9 +140,8 @@ Exit code: 1 (non-zero, expected — corpus is not clean).
 
 **PASS** — the scan did not abort on the first decode failure; both files were linted and
 both findings were surfaced. This is the exact regression the defect fix targets. Test
-corpus removed after verification (not committed); the raw command output log is retained
-at `docs/scratch/rv-docs-lint-output.txt` and `docs/scratch/rv-checkpoint-create-output.txt`
-as evidence.
+corpus removed after verification (not committed); the full command output is captured
+inline above (Observed).
 
 ### Scenario 3 — MCP `backlogit_create_checkpoint` reports `context_keys` (Defect 1, MCP transport)
 
@@ -151,8 +156,12 @@ client uses — not `events.CreateCheckpoint` directly) with a `context` object 
 modeled key (`shipment_id`) and one unmodeled key (`pr_number`), and asserts the tool
 result's `context_keys` array contains both.
 
-Observed: `--- PASS: TestHandleCreateCheckpoint_ResultIncludesContextKeys (0.09s)` — full
-output at `docs/scratch/rv-mcp-surface-test-output.txt`.
+Observed:
+```
+--- PASS: TestHandleCreateCheckpoint_ResultIncludesContextKeys (0.09s)
+```
+(full `go test` transcript reproduced verbatim above is the complete evidence; no
+additional output beyond the pass line and standard `go test` framing was produced)
 
 **PASS** — the MCP transport reports the same previously-dropped keys as the CLI transport
 (Scenario 1), confirming the fix is not CLI-only.
@@ -172,8 +181,10 @@ the broken file, and (c) the MCP payload is byte-for-byte identical (after JSON
 unmarshalling) to the underlying `docline.LintTree` result for the same corpus —
 cross-surface parity with the CLI path.
 
-Observed: `--- PASS: TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError (0.01s)`
-— full output at `docs/scratch/rv-mcp-surface-test-output.txt`.
+Observed:
+```
+--- PASS: TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError (0.01s)
+```
 
 **PASS** — the MCP transport no longer returns a bare `InternalError` on a corpus decode
 failure; it returns a successful result carrying the `decode_error` finding, matching the
@@ -181,16 +192,19 @@ CLI transport's behavior (Scenario 2).
 
 ## Step 6 — Verdict
 
-**PASS** across all four scenarios (CLI and MCP transports, both defect fixes). No follow-up
-runtime risk identified for these two defect fixes specifically.
+**PASS** across all four scenarios (CLI and MCP transports, both defect fixes), reinforced
+by a clean full-suite `go test ./... -count=1` run on the current tree (every package
+reported `ok`, zero failures). No follow-up runtime risk identified for these two defect
+fixes specifically.
 
 ## Step 7 — Handoff to Operational Closure
 
 * Verification verdict: **PASS**
 * Runtime surfaces verified: CLI (`checkpoint create`, `docs lint`) and MCP
   (`backlogit_create_checkpoint`, `backlogit_docs_lint`)
-* Evidence: see Step 5 above, `docs/scratch/rv-*.txt`, and
-  `docs/scratch/rv-mcp-surface-test-output.txt`
+* Evidence: see Step 5 above (all command/test output reproduced inline in this report;
+  no separate evidence files are retained per this workspace's ephemeral-scratch
+  convention — `.github/instructions/context-efficiency.instructions.md`)
 * Blocked prerequisites: none for this verification
 * Risky action state: this verification touches the two `ActionRisk: high` surfaces this
   release changed — PA-8 (hand-written checkpoint codec on the shared read path) and PA-3
