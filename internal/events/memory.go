@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -41,14 +42,25 @@ func SaveMemory(_ context.Context, memoriesPath string, key string, summary stri
 // If the state dump contains a V1 schema (schema_version=1), it is parsed and
 // validated before writing. Missing created_at, updated_at, and status fields
 // are auto-populated. Legacy (non-V1) dumps are written as-is with atomic writes.
-func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (string, error) {
+//
+// CreateCheckpointResult.ContextKeys (146.015-T / U6) reports the exact
+// context key names persisted to disk. On the V1 path it comes from
+// CheckpointContext.Keys(), whose error is PROPAGATED, never discarded; per
+// the pinned call ordering, Keys() runs BEFORE the write, so a serialization
+// failure deterministically prevents a file from landing on disk whose keys
+// could not be reported. On the legacy (non-V1) path it comes from a
+// strictly best-effort scan of the WRITTEN bytes' top-level context object,
+// sorted with sort.Strings: any decode failure or non-object context yields
+// an empty, non-nil array, and the create still succeeds regardless.
+func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (CreateCheckpointResult, error) {
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
-		return "", fmt.Errorf("create checkpoint dir: %w", err)
+		return CreateCheckpointResult{}, fmt.Errorf("create checkpoint dir: %w", err)
 	}
 	name := fmt.Sprintf("checkpoint-%s.json", time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(checkpointDir, name)
 
 	data := []byte(stateDump)
+	var contextKeys []string
 
 	// Probe for V1 schema.
 	var probe struct {
@@ -58,7 +70,15 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		cp, err := ParseCheckpoint(data)
 		if err != nil {
 			// Preserve the ErrCheckpointCorrupt sentinel from ParseCheckpoint.
-			return "", fmt.Errorf("parse v1 checkpoint: %w", err)
+			return CreateCheckpointResult{}, fmt.Errorf("parse v1 checkpoint: %w", err)
+		}
+		// Pass 2 (146.011-T / U4): only after pass 1 (ParseCheckpoint) has
+		// already succeeded, enforce the closed CheckpointV1 top-level and
+		// nested-progress schema namespace. The typed error is returned
+		// directly, not wrapped again, so errors.As still recovers it in one
+		// hop.
+		if err := checkClosedSchemaNamespace(data); err != nil {
+			return CreateCheckpointResult{}, err
 		}
 		if cp.CreatedAt.IsZero() {
 			cp.CreatedAt = time.Now().UTC()
@@ -70,17 +90,59 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 			cp.Status = "active"
 		}
 		if err := ValidateCheckpoint(cp); err != nil {
-			return "", err
+			return CreateCheckpointResult{}, err
 		}
+
+		// Call ordering is pinned (146.015-T / U6): Keys() MUST run before the
+		// write below, so a serialization failure prevents the write instead
+		// of leaving a file on disk whose keys cannot be reported.
+		keys, keysErr := cp.Context.Keys()
+		if keysErr != nil {
+			return CreateCheckpointResult{}, fmt.Errorf("compute checkpoint context keys: %w", keysErr)
+		}
+		contextKeys = keys
+
 		var marshalErr error
 		data, marshalErr = jsonutil.MarshalReadable(cp)
 		if marshalErr != nil {
-			return "", fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
+			return CreateCheckpointResult{}, fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
 		}
 	}
 
 	if err := syncWriteFileAtomic(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("write checkpoint: %w", err)
+		return CreateCheckpointResult{}, fmt.Errorf("write checkpoint: %w", err)
 	}
-	return path, nil
+
+	if contextKeys == nil {
+		// Legacy (non-V1) path: CheckpointContext.Keys() never ran above, so
+		// scan the bytes that were actually written.
+		contextKeys = legacyContextKeys(data)
+	}
+	return CreateCheckpointResult{Path: path, ContextKeys: contextKeys}, nil
+}
+
+// legacyContextKeys performs a strictly best-effort scan of a written
+// checkpoint's top-level context object for a legacy (non-V1) dump. It never
+// fails: an unparseable document, an absent context key, or a context value
+// that is not a JSON object (null, a scalar, an array) all yield an empty,
+// non-nil slice. When keys are found they are sorted with sort.Strings.
+func legacyContextKeys(data []byte) []string {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return make([]string, 0)
+	}
+	ctxRaw, ok := doc["context"]
+	if !ok {
+		return make([]string, 0)
+	}
+	var ctx map[string]json.RawMessage
+	if err := json.Unmarshal(ctxRaw, &ctx); err != nil {
+		return make([]string, 0)
+	}
+	keys := make([]string, 0, len(ctx))
+	for k := range ctx {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

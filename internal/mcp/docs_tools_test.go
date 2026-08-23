@@ -207,3 +207,74 @@ func TestDocsTools_CLIParity(t *testing.T) {
 	require.NoError(t, json.Unmarshal(expected, &wantMap))
 	assert.Equal(t, wantMap, gotMap, "MCP and CLI must marshal identical lint payloads")
 }
+
+// docsToolDegradedTree builds a fixture tree containing one file whose
+// frontmatter cannot be decoded plus one ordinary contract violation, for the
+// 146.020-T (U9a) degraded-corpus behavioral scenarios.
+func docsToolDegradedTree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeMCPDoc(t, root, "docs/decisions/broken.md", "---\ntitle: [unclosed\n---\nBody.\n")
+	writeMCPDoc(t, root, "docs/decisions/missing-source.md", "---\ntitle: Missing Source\n---\nBody.\n")
+	return root
+}
+
+// TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError is
+// scenario 3 of 146.020-T (U9a): MCP returns a successful tool result
+// carrying the same findings rather than InternalError, and the MCP finding
+// payload for the same corpus is byte-identical to docline.LintTree's own
+// output — the same underlying service call the CLI transport also makes
+// (mirroring TestDocsTools_CLIParity's cross-surface comparison method,
+// since neither this file nor that one invokes the compiled CLI binary
+// directly).
+func TestDocsLintTool_DegradedCorpus_SuccessfulResultNotInternalError(t *testing.T) {
+	root := docsToolDegradedTree(t)
+	s := NewServerForRoot(root)
+
+	res := callDocsTool(t, s.handleDocsLint, map[string]any{})
+	require.False(t, res.IsError, "a degraded corpus must still return a successful tool result, never InternalError")
+
+	mcpJSON := docsResultText(t, res)
+	var report docline.LintReport
+	require.NoError(t, json.Unmarshal([]byte(mcpJSON), &report))
+
+	var sawDecodeError bool
+	for _, f := range report.Findings {
+		if f.File == "docs/decisions/broken.md" && f.Rule == "decode_error" {
+			sawDecodeError = true
+		}
+	}
+	assert.True(t, sawDecodeError, "the MCP result must contain a decode_error finding for the undecodable file")
+
+	// Cross-surface parity: docline.LintTree is the same underlying call the
+	// CLI's `docs lint` command makes (see internal/cli/docs.go), so
+	// comparing against it directly is the established parity methodology in
+	// this file (see TestDocsTools_CLIParity above).
+	findings, err := docline.LintTree(docline.Options{Root: root, Profile: docline.ProfileAuthoring})
+	require.NoError(t, err)
+	expected, err := json.Marshal(docline.NewLintReport(findings))
+	require.NoError(t, err)
+
+	var gotMap, wantMap any
+	require.NoError(t, json.Unmarshal([]byte(mcpJSON), &gotMap))
+	require.NoError(t, json.Unmarshal(expected, &wantMap))
+	assert.Equal(t, wantMap, gotMap, "MCP and the underlying docline service must marshal identical lint payloads for a degraded corpus")
+}
+
+// TestDocsLintTool_PathEscapeOnDegradedCorpus_ValidationFailed is scenario 5
+// of 146.020-T (U9a): the same degraded-corpus input driven through
+// backlogit_docs_lint with an escaping path returns a structured
+// validation_failed result — never InternalError and never a successful
+// result carrying a finding. Green before and after 146.018-T (U8): it locks
+// the existing docline.ErrPathEscapesWorkspace -> validation_failed mapping
+// against U8's edits to the producing path.
+func TestDocsLintTool_PathEscapeOnDegradedCorpus_ValidationFailed(t *testing.T) {
+	root := docsToolDegradedTree(t)
+	s := NewServerForRoot(root)
+
+	res := callDocsTool(t, s.handleDocsLint, map[string]any{"path": "../escape"})
+	require.True(t, res.IsError, "an escaping path must fail as validation_failed, never succeed")
+	text := docsResultText(t, res)
+	assert.Contains(t, text, "validation_failed")
+	assert.NotContains(t, text, "decode_error")
+}

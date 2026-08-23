@@ -95,7 +95,12 @@ func LintTree(opts Options) ([]Finding, error) {
 	for _, rel := range files {
 		md, err := decodeDoc(opts.Root, rel)
 		if err != nil {
-			return nil, err
+			decodeFindings, fatal := applyDecodeFailure(err, rel)
+			if fatal != nil {
+				return nil, fatal
+			}
+			findings = append(findings, decodeFindings...)
+			continue
 		}
 		b := FromMap(frontmatterOrEmpty(md))
 		for _, v := range ValidateFields(b, profile) {
@@ -282,6 +287,70 @@ func collectInScopeDocs(root, subPath string) ([]string, error) {
 	return out, nil
 }
 
+// decodeFailureKind classifies a decodeDoc failure by cause, independent of
+// any consuming policy (146.018-T / U8).
+type decodeFailureKind int
+
+const (
+	// decodeFailureContainment indicates the failure was a path-containment
+	// violation (ErrPathEscapesWorkspace), which may be raised either inside
+	// decodeDoc itself or upstream by collectInScopeDocs.
+	decodeFailureContainment decodeFailureKind = iota
+	// decodeFailureRead indicates an I/O failure (or any other error not
+	// classified below) reading the target file. This is also the fail-closed
+	// default for a nil input.
+	decodeFailureRead
+	// decodeFailureFrontmatter indicates a per-file frontmatter decode
+	// failure (ErrFrontmatterDecode): the file's content is malformed, but
+	// containment and I/O both succeeded.
+	decodeFailureFrontmatter
+)
+
+// classifyDecodeFailure classifies a decodeDoc error into a policy-neutral
+// decodeFailureKind and returns the unchanged cause alongside it. It carries
+// no Rule and no Finding, which is what makes it reusable outside LintTree's
+// own policy (e.g. by a future PlanMigration consumer, see stash 1787FD85). A
+// nil input is treated fail-closed: classifyDecodeFailure is only ever called
+// from a branch that already observed a non-nil error, so a nil argument
+// indicates a caller bug, not a directly reachable scan-time state. Rather
+// than panic or silently treat it as "no failure", it is classified as
+// decodeFailureRead with a synthesized cause, so the fail-closed default is
+// propagate (the caller-holding policy, applyDecodeFailure, only converts
+// decodeFailureFrontmatter into a finding).
+func classifyDecodeFailure(err error) (decodeFailureKind, error) {
+	if err == nil {
+		return decodeFailureRead, fmt.Errorf("docline.classifyDecodeFailure: called with a nil error")
+	}
+	switch {
+	case errors.Is(err, ErrPathEscapesWorkspace):
+		return decodeFailureContainment, err
+	case errors.Is(err, ErrFrontmatterDecode):
+		return decodeFailureFrontmatter, err
+	default:
+		return decodeFailureRead, err
+	}
+}
+
+// applyDecodeFailure holds LintTree's decode-failure POLICY and is the ONLY
+// function LintTree's per-file body may call for a decodeDoc failure: a
+// frontmatter decode failure becomes a single decode_error Finding and a nil
+// error (the scan continues); a containment or read/I-O failure is returned
+// unchanged as a fatal error (the scan aborts). classifyDecodeFailure itself
+// stays policy-neutral so it can be reused by a consumer that wants a
+// different policy for the same three-way split.
+func applyDecodeFailure(err error, rel string) ([]Finding, error) {
+	kind, cause := classifyDecodeFailure(err)
+	if kind != decodeFailureFrontmatter {
+		return nil, cause
+	}
+	return []Finding{{
+		File:     rel,
+		Rule:     RuleDecodeError,
+		Severity: SeverityError,
+		Fix:      cause.Error(),
+	}}, nil
+}
+
 // decodeDoc reads and decodes a repo-relative doc through SafeResolve.
 func decodeDoc(root, rel string) (*Markdown, error) {
 	abs, err := core.SafeResolve(root, rel)
@@ -294,7 +363,11 @@ func decodeDoc(root, rel string) (*Markdown, error) {
 	}
 	md, err := Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("docline.decodeDoc: decode %s: %w", rel, err)
+		// Two-%w wrap (Go >= 1.20; go.mod declares go 1.24.0): the discriminator
+		// ErrFrontmatterDecode is wrapped alongside the original decode cause so
+		// classifyDecodeFailure can select on errors.Is(err, ErrFrontmatterDecode)
+		// while the underlying YAML error is still recoverable for diagnostics.
+		return nil, fmt.Errorf("docline.decodeDoc: decode %s: %w: %w", rel, ErrFrontmatterDecode, err)
 	}
 	return md, nil
 }

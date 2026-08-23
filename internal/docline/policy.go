@@ -37,7 +37,19 @@ var (
 	// ErrSchemaViolation indicates a v1 schema constraint failure (minLength/pattern)
 	// distinct from required-field presence and doc_type vocabulary.
 	ErrSchemaViolation = errors.New("docline: schema constraint violation")
+	// ErrFrontmatterDecode indicates a document's YAML frontmatter block could
+	// not be decoded (malformed YAML). Unlike ErrPathEscapesWorkspace
+	// (containment) or a raw os.ReadFile failure (I/O), a frontmatter decode
+	// failure is per-file data malformation: LintTree reports it as a finding
+	// and continues scanning the rest of the corpus rather than aborting.
+	ErrFrontmatterDecode = errors.New("docline: frontmatter decode failed")
 )
+
+// RuleDecodeError is the Finding.Rule value reported when a document's
+// frontmatter cannot be decoded. It is distinct from every contract-violation
+// rule (missing/unknown field, doc_type, schema) because the failure is a
+// per-file scan continuation, not a hard invocation error.
+const RuleDecodeError = "decode_error"
 
 // DocType is a member of the closed controlled vocabulary of document types.
 type DocType string

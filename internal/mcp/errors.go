@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -23,6 +24,18 @@ type workspaceRootAmbiguousResponse struct {
 	SupportedResolutions []string `json:"supported_resolutions"`
 	Override             string   `json:"override"`
 	Retryable            bool     `json:"retryable"`
+}
+
+// checkpointUnknownFieldsResponse is the structured MCP error shape for a
+// checkpoint create request rejected by the closed CheckpointV1 top-level /
+// nested-progress schema namespace (146.011-T / U4). UnknownFields names
+// every offending key path (e.g. "unexpected_key" or
+// "progress.unexpected_key"), sorted and de-duplicated, so a caller does not
+// need to parse Message to recover the offending fields.
+type checkpointUnknownFieldsResponse struct {
+	Error         string   `json:"error"`
+	Message       string   `json:"message"`
+	UnknownFields []string `json:"unknown_fields"`
 }
 
 type mutationPartialResponse struct {
@@ -88,6 +101,23 @@ func InternalError(detail string) *mcplib.CallToolResult {
 	return makeErrorResult("internal", detail)
 }
 
+// checkpointUnknownFields returns a dedicated MCP error for a checkpoint
+// create request rejected by the closed schema namespace (146.011-T / U4,
+// 146.012-T / U4b). fields is the sorted, de-duplicated set of offending key
+// paths (e.g. "unexpected_key" or "progress.unexpected_key").
+func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
+	resp := checkpointUnknownFieldsResponse{
+		Error:         "validation_failed",
+		Message:       "checkpoint carries unknown schema field(s): " + strings.Join(fields, ", "),
+		UnknownFields: append([]string(nil), fields...),
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return InternalError(fmt.Sprintf("marshal checkpoint unknown fields response: %v", err))
+	}
+	return mcplib.NewToolResultError(string(data))
+}
+
 // domainError routes domain sentinel errors to the correct MCP error category
 // and falls back to InternalError for unknown failures.
 //
@@ -104,6 +134,7 @@ func InternalError(detail string) *mcplib.CallToolResult {
 //	ErrChildrenNotTerminal            | conflict                              | 409
 //	ErrShipmentShippedRequiresEnv…    | shipment_shipped_requires_envelope    | 409
 //	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
+//	ErrCheckpointUnknownField         | validation_failed (+ unknown_fields)  | 422
 //	ErrValidation                     | validation_failed                     | 422
 //	ErrInvalidLinkType                | validation_failed                     | 422
 //	ErrTelemetrySourceMissing         | validation_failed                     | 422
@@ -144,6 +175,16 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 			return WorkspaceRootAmbiguous(ambiguous.Roots)
 		}
 		return WorkspaceRootAmbiguous(core.WorkspaceRootCandidates())
+	case errors.Is(err, corerrors.ErrCheckpointUnknownField):
+		// Dedicated case (146.012-T / U4b), placed before the general
+		// ErrValidation case: the general ValidationFailed path returns a
+		// two-field {error, message} struct with no room for the offending
+		// field list, mirroring the WorkspaceRootAmbiguous precedent above.
+		var typed *corerrors.CheckpointUnknownFieldError
+		if errors.As(err, &typed) {
+			return checkpointUnknownFields(typed.Fields)
+		}
+		return ValidationFailed(err.Error())
 	case errors.Is(err, corerrors.ErrValidation),
 		errors.Is(err, corerrors.ErrInvalidLinkType),
 		errors.Is(err, corerrors.ErrTelemetrySourceMissing),

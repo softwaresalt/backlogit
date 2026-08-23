@@ -18,7 +18,10 @@ type FindingReport struct {
 
 // LintReport is the pinned lint result envelope. It always reports success
 // (valid=false simply means violations exist); transport errors are reserved
-// for invalid params / IO / parse failures.
+// for invalid params / IO / parse failures. A per-file frontmatter decode
+// failure (146.018-T / U8) is one such violation, not a transport error: it
+// surfaces as a Finding with Rule "decode_error" (see RuleDecodeError) so the
+// scan can report it and continue past the rest of the corpus.
 type LintReport struct {
 	Valid          bool            `json:"valid"`
 	ViolationCount int             `json:"violation_count"`

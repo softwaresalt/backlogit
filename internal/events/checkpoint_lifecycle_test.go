@@ -250,7 +250,8 @@ func TestResolveCheckpoint_RefusesAbandoned(t *testing.T) {
 	cp.Disposition = DispositionAbandoned
 	cp.DispositionReason = "superseded"
 	cp.DispositionOperator = "tester@example.com"
-	cp.DispositionAt = time.Now().UTC()
+	dispositionAt := time.Now().UTC()
+	cp.DispositionAt = &dispositionAt
 	writeTestCheckpointNamed(t, dir, "checkpoint-20260423-100000.json", cp)
 
 	err := ResolveCheckpoint(context.Background(), dir, "checkpoint-20260423-100000.json")

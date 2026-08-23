@@ -152,7 +152,23 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_create_checkpoint",
-			mcplib.WithDescription("Save a session state checkpoint"),
+			mcplib.WithDescription("Save a session state checkpoint from a JSON state_dump. When state_dump "+
+				"declares schema_version=1, the top level and the nested progress object are a CLOSED schema "+
+				"namespace: the only legal top-level keys you may supply at create are schema_version, agent, "+
+				"session_id, phase, status, created_at, updated_at, context, progress, and resume_hint, and the "+
+				"only legal keys inside progress are tasks_completed, tasks_remaining, files_modified, and "+
+				"decisions; any other key at either level fails the call as validation_failed with an "+
+				"unknown_fields list naming the offending key path(s). The four disposition fields (disposition, "+
+				"disposition_reason, disposition_operator, disposition_at) are part of the schema but are "+
+				"RESERVED and administrative: they are set only by backlogit_abandon_checkpoint, never at "+
+				"create, and supplying one here is rejected as an unknown field. status:\"abandoned\" is ALSO "+
+				"rejected even with no disposition fields present, because backlogit_abandon_checkpoint is the "+
+				"only governed path to that state; status:\"active\" and status:\"resolved\" remain accepted. "+
+				"The context object is the OPEN "+
+				"counterpart: shipment_id, feature_id, task_ids, and branch are modeled, but any other key you "+
+				"supply there survives the create round-trip unchanged. A legacy state_dump (no schema_version, "+
+				"or a value other than 1) is written verbatim with no schema validation. The successful result "+
+				"reports context_keys: the exact list of context key names persisted to disk."),
 			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist")),
 		),
 		s.handleCreateCheckpoint,
@@ -1119,11 +1135,11 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 		return ValidationFailed("state_dump is required"), nil
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
-	path, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
+	result, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
 	if err != nil {
 		return domainError("create checkpoint", err), nil
 	}
-	return toolResultJSON(map[string]string{"path": path})
+	return toolResultJSON(map[string]any{"path": result.Path, "context_keys": result.ContextKeys})
 }
 
 func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

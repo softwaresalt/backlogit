@@ -23,7 +23,11 @@ const docsApplyAllowEnv = "BACKLOGIT_DOCS_ALLOW_APPLY"
 func (s *Server) registerDocsTools() {
 	s.addTool(
 		mcplib.NewTool("backlogit_docs_lint",
-			mcplib.WithDescription("Validate in-scope documentation frontmatter against the docline base schema. Returns a success envelope {valid, violation_count, findings} even when violations exist."),
+			mcplib.WithDescription("Validate in-scope documentation frontmatter against the docline base schema. "+
+				"Returns a success envelope {valid, violation_count, findings} even when violations exist. A "+
+				"per-file frontmatter decode failure (malformed YAML) is one such violation: it is reported as a "+
+				"finding with rule decode_error in this same successful result, and the scan continues over the "+
+				"rest of the corpus, rather than the call itself failing."),
 			mcplib.WithString("path", mcplib.Description("Optional repo-relative sub-path to limit the scan")),
 			mcplib.WithString("profile", mcplib.Description("Validation profile: authoring (default) or ingestion")),
 		),

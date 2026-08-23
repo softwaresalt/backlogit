@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "phase": "pr-ready",
+  "consumer": "stage",
+  "shipment_id": "998-S",
+  "feature_id": "998-F",
+  "branch": "chore/synthetic-fixture-b",
+  "pr_number": 9002,
+  "pr_url": "https://example.invalid/synthetic/pull/9002",
+  "ci_status": "all_green",
+  "tasks_completed": ["998.001-T", "998.002-T"],
+  "tasks_queued": ["998.003-T"],
+  "review_artifact": "998.001-R",
+  "review_gate": "PASS",
+  "copilot_comments_resolved": 2,
+  "last_commit": "0000000",
+  "decisions": [
+    "Synthetic fixture B: PR-ready legacy shape with pr_url and review_artifact keys."
+  ],
+  "items_blocked": [],
+  "follow_up_tasks": ["999-follow-up"],
+  "next_steps": "Synthetic placeholder next step for fixture B.",
+  "resume_hint": "Synthetic placeholder resume hint for fixture B."
+}
