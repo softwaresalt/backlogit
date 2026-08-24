@@ -63,7 +63,7 @@ strand a valid-but-non-conforming file with no disposition verb at all.
 | R5 | No preservation carrier is added to `CheckpointV1` **for this scope** (decision-anchored, not a permanent ban) | source doc, Decided behaviour §5 | negative requirement — guarded in U2 |
 | R6 | The nine live legacy files are left untouched by this work | source doc, Decided behaviour §6 | negative requirement — asserted in U10 (live-corpus hash guard) and U10b (mirror, not live, for the sweep) |
 | R7 | Typed, machine-readable refusal naming the offending keys, with one canonical "quarantine is the remedy" predicate | plan-originated (source doc Unresolved Q1) | U1, U7, U7d, U8 |
-| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe | plan-originated (source doc Unresolved Q3, widened by plan review) | U6, U6b, U6c, U6d |
+| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe | plan-originated (source doc Unresolved Q3, widened by plan review) | U6, U6b, U6c, U6d, U8c |
 | R9 | Human-facing design doc restates the verb pair as total over its scoped population | plan-originated (source doc Option B cons) | U9 |
 | R10 | Agent-facing instruction surfaces teach the new `resolve` failure mode and the repair-or-quarantine remedy | plan-originated (plan review) | U9b |
 
@@ -429,12 +429,19 @@ failed.
   "lifecycle" and "identity" tiers would require trusting `Agent`, `ShipmentID`, and `FeatureID`
   read out of a document already judged unsafe to round-trip, and would leave a schema-invalid file
   with an empty `agent` silently dropped by an agent filter. `ListCheckpoints` stays read-only.
+  **The exemption is a published contract, not silent behaviour** (PR #377 review cycle 4): the
+  exported `ListCheckpoints` doc comment is updated in the same commit to state that a
+  `NeedsQuarantine: true` summary bypasses every optional filter, so a caller filtering on status,
+  agent, shipment, feature, or age is told to expect rows that do not match its filter. The
+  agent-facing `list_checkpoints` description carries the same statement and is owned by U7b,
+  which therefore depends on this unit.
 * **Tests** (3): a valid-but-non-conforming `status: "resolved"` file is still returned when
   `filter.Status == "active"`, carrying `NeedsQuarantine: true`; a **conforming**
   `status: "resolved"` file is still dropped by that same filter, proving the exemption is scoped to
   quarantine candidates and is not a blanket filter bypass; a non-conforming file is still returned
   when `filter.Agent` names a different agent, matching the parse-failure precedent.
-* **Expected red**: cases 1 and 3 fail; case 2 is a declared regression guard.
+* **Expected red**: cases 1 and 3 fail; case 2 is a declared regression guard. The doc-comment
+  update is a contract obligation carried by this unit, not a fourth scenario.
 * **Depends on**: U6.
 
 ### U6b — `GetCheckpoint` agrees with `ListCheckpoints`
@@ -580,14 +587,16 @@ failed.
 
   | Line | Tool | Delta |
   |---|---|---|
-  | `:178` | `list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use quarantine_checkpoint, not resolve_checkpoint or abandon_checkpoint.` |
+  | `:178` | `list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use quarantine_checkpoint, not resolve_checkpoint or abandon_checkpoint. Such a summary is returned regardless of the status, agent, shipment_id, feature_id, and max_age filters, so a filtered result can contain rows that do not match the filter.` |
   | `:189` | `get_checkpoint` | append: ` For a schema-valid document, returns conforming false when it carries unmodeled top-level keys; such a document cannot be resolved or abandoned. A schema-invalid document is refused before any conformance verdict is produced.` |
 
   The `get_checkpoint` qualifier is load-bearing: `GetCheckpoint` runs `ValidateCheckpoint` and
   returns `ErrCheckpointInvalid` before any conformance result exists
   (`internal/events/checkpoint_lifecycle.go:~105-137`), so an unqualified "returns conforming
   false for a document with unmodeled top-level keys" would promise a verdict the read path
-  cannot produce for the nine legacy files.
+  cannot produce for the nine legacy files. The `list_checkpoints` filter sentence was added in
+  PR #377 review cycle 4 and is why this unit now depends on **U6d**: a published tool description
+  must not promise an exemption no shipped code performs.
 * **Tests** (2): a table-driven assertion over the two registered read descriptions, read from the
   **built tool set** rather than a duplicated literal; and the existing registry-parity /
   fallback-map drift test
@@ -595,7 +604,7 @@ failed.
   re-run and staying green, with `.autoharness/backlog-registry.yaml` updated in the same commit
   if it carries description text for these tools.
 * **Expected red**: both rows of case 1 fail. Case 2 is a declared regression guard.
-* **Depends on**: U6b, U6c.
+* **Depends on**: U6b, U6c, U6d.
 
 ### U7c — MCP mutation-surface tool descriptions (exact replacement strings)
 
@@ -631,8 +640,10 @@ failed.
   quarantine remediation command, matching the existing CLI error idiom. **The offending-key list
   is only available for a valid-but-non-conforming target.** A schema-invalid legacy document is
   refused by the U3 validity gate before conformance runs, so no key list exists for it; that
-  refusal prints the validation reason and the remediation command instead. Project the new
-  `conforming` / `needs_quarantine` fields on `checkpoint get`. **No JSON error envelope is added**
+  refusal prints the validation reason and the remediation command instead. **The `checkpoint get`
+  conformance projection is not in this unit**: it moved to **U8c** in PR #377 review cycle 4,
+  because a read projection is a different contract from a refusal rendering and folding it in
+  made a fourth scenario. This unit must not touch `newCheckpointGetCmd`. **No JSON error envelope is added**
   — that is stash `63E810D9` and stays out of scope; the CLI/MCP shape asymmetry it describes is a
   documented, pre-existing condition, restated in U9b rather than fixed here.
 * **Tests** (3): `checkpoint resolve` on a **schema-invalid legacy** document exits non-zero,
@@ -645,14 +656,43 @@ failed.
 * **Expected red**: all three fail.
 * **Depends on**: U7.
 
+### U8c — CLI `checkpoint get` projects the conformance verdict
+
+* **Domain**: code (cli)
+* **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_test.go`
+* **Change**: `newCheckpointGetCmd` (`internal/cli/checkpoint.go:180-210`) calls
+  `events.GetCheckpoint` and prints a **literal** `"valid": true` with no conformance field, so the
+  CLI read surface would keep answering the superseded question after U6b lands. Call
+  `events.GetCheckpointResult` and project `valid`, `conforming`, `needs_quarantine`, and
+  `remediation_command`; the hardcoded literal is removed, not shadowed. This is the CLI twin of
+  U6c and takes the same shape. It is a **separate unit from U8** — added in PR #377 review cycle
+  4 — because U8 owns refusal rendering on `resolve` / `abandon`, already carries three scenarios,
+  and a fourth would breach the granularity limit; the two units share
+  `internal/cli/checkpoint.go` but not a function, exactly as U6c and U7c share
+  `internal/mcp/tools.go`. Without this unit, U8b's `valid-but-non-conforming` parity row — "CLI
+  `checkpoint get` → the same" — asserts behaviour no unit implements.
+  **Schema-invalid documents keep their existing refusal**: U6b returns `ErrCheckpointInvalid`
+  unwrapped from `GetCheckpointResult` and the CLI already exits non-zero on it, so `get` on a
+  legacy file surfaces the pre-existing validation-class refusal rather than a disposition code.
+  This unit **pins** that behaviour rather than changing it.
+* **Tests** (3): a valid-but-non-conforming file reports `valid: true`, `conforming: false`,
+  `needs_quarantine: true`, and a non-empty `remediation_command`; a conforming file reports
+  `conforming: true`; a schema-invalid file exits non-zero with the pre-existing validation-class
+  refusal rather than a success payload asserting validity, asserted against the command's actual
+  output rather than a literal. The "literal `"valid": true` is gone" assertion rides on cases 1
+  and 2 rather than being a fourth scenario.
+* **Expected red**: cases 1 and 2 fail; case 3 is a declared regression guard pinning the shipped
+  read contract.
+* **Depends on**: U6b.
+
 ### U8b — Cross-surface parity from one stored state
 
 * **Domain**: tests
 * **Files**: `internal/cli/checkpoint_parity_test.go` (new). **No production change.**
 * **Change**: `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`
   Rule 3 requires that a guard spanning CLI and MCP exercise **both surfaces from the same stored
-  state**. U6/U6b/U6c/U7/U7b/U8 each build their own fixtures, so they could drift apart and still
-  all pass. Add one shared fixture table — `legacy-shaped` (schema-invalid **and**
+  state**. U6/U6b/U6c/U7/U7b/U8/U8c each build their own fixtures, so they could drift apart and
+  still all pass. Add one shared fixture table — `legacy-shaped` (schema-invalid **and**
   non-conforming), `valid-but-non-conforming`, `conforming-active` — written once per case, then
   driven through the CLI command handler **and** the MCP handler **and** the `events` read layer
   against that same file, asserting the refusal classification agrees. Shape differences (exit code
@@ -666,10 +706,10 @@ failed.
   accept/refuse verdict and the same remedy verb, and that every fixture file is byte-identical
   after all three surfaces have been exercised.
 * **Expected red**: none. **Posture: regression guard — this unit is the parity contract itself.**
-  It lands after U7b, U7c, U8, and U6c, so all three surfaces already carry the behaviour; the unit
-  exists to pin their agreement, and the exemption is declared here rather than claimed as
+  It lands after U7b, U7c, U8, U8c, and U6c, so all three surfaces already carry the behaviour; the
+  unit exists to pin their agreement, and the exemption is declared here rather than claimed as
   test-first (same precedent as U2d).
-* **Depends on**: U6c, U7b, U7c, U8.
+* **Depends on**: U6c, U7b, U7c, U8, U8c.
 
 ### U9 — Design doc: total classification
 
@@ -809,10 +849,12 @@ failed.
   IV), the resolved path is asserted to be repo-root-relative **before the first write**, it is
   added to the freeze-scope declaration, and — because `.gitignore` carries no `docs/scratch/` rule
   today (`*.exe` already covers the built binary, the copied fixtures are not covered) — adding that
-  ignore rule is owned by this unit. U10b inherits all of it. Teardown is classified as
-  `ActionRisk: destructive` requiring
-  operator approval (Constitution VII). If approval is not granted the directory is left in place
-  and recorded as a cleanup follow-up.
+  ignore rule is owned by this unit. U10b inherits all of it. **Teardown does not run here** (PR
+  #377 review cycle 4): U10b consumes this unit's quarantine archive, fixtures, and branch-built
+  binary, so the workspace is handed over intact and teardown ownership moves to U10b. It stays
+  classified `ActionRisk: destructive` (A4b) requiring
+  operator approval (Constitution VII) at the point U10b performs it. If approval is not granted
+  the directory is left in place and recorded as a cleanup follow-up.
 * **Depends on**: U9b.
 
 ### U10b — Runtime verification of acceptance, restore, and the recovery sweep
@@ -841,6 +883,13 @@ failed.
   filenames and succeeds on every other mirrored file.
 * **Nine-file acknowledgement**: satisfied by row 3 against the mirror. U10's live-corpus SHA-256
   comparison must still pass after this unit runs.
+* **Inherited inputs and teardown**: U10 hands this unit a **live** workspace — the branch-built
+  binary, the copied fixtures, the mirror source, and the quarantine archive row 2 consumes.
+  Confirm those inputs are present before row 1 rather than rebuilding them; a missing workspace
+  blocks this unit on re-running U10, it does not license a hand-rebuild. **Teardown of
+  `docs/scratch/checkpoint-verification/` is owned by this unit** and runs only after all three
+  rows pass, still `ActionRisk: destructive` (A4b) requiring operator approval, and still skipped
+  and recorded as a cleanup follow-up when approval is withheld.
 * **Depends on**: U10 (scratch workspace, ignore rule, branch-built binary, and the quarantine
   archive row 2 consumes).
 
@@ -851,8 +900,9 @@ U1 ──▶ U2 ──┬──▶ U2b ──┬──▶ U2e ──────
             ├──▶ U2c ──┤
             │          ├──▶ U3 ──▶ U3b
             │          ├──▶ U4 ──▶ U5 ──▶ U5b
-            │          └──▶ U6 ──┬──▶ U6b ──▶ U6c ──▶ U7b
-            │                    └──▶ U6d
+            │          └──▶ U6 ──┬──▶ U6b ──┬──▶ U6c ──┬──▶ U7b
+            │                    │          └──▶ U8c   │
+            │                    └──▶ U6d ─────────────┘
             └──▶ U2d ──▶ U2f ──┬──▶ U3b
                                └──▶ U4
 
@@ -863,7 +913,8 @@ U4 ──┼──▶ U7 ──┬──▶ U7d ──▶ U7c ──┐
 U5 ──┘         └──▶ U8 ───────────┤
                                   ├──▶ U8b ──▶ U9 ──▶ U9b ──▶ U10 ──▶ U10b
 U6c ──────────────────────────────┤
-U7b ──────────────────────────────┘
+U7b ──────────────────────────────┤
+U8c ──────────────────────────────┘
 ```
 
 Edges declared, no cycles:
@@ -884,20 +935,23 @@ Edges declared, no cycles:
 | U6 → U6b | Both read surfaces must report the same field set. |
 | U6 → U6d | The filter exemption extends the conformance branch U6 introduces. |
 | U6b → U6c | The MCP handler projects U6b's result type; without it `valid: true` stays hardcoded. |
+| U6b → U8c | The CLI handler projects the same result type; without it `newCheckpointGetCmd` keeps its hardcoded `valid: true`. |
 | U6b, U6c → U7b | The read-surface descriptions promise U6b's new field as projected by U6c. |
+| U6d → U7b | The `list_checkpoints` description states the filter exemption U6d implements; a published description must not promise unshipped behaviour. |
 | U1, U3b, U4, U5 → U7 | MCP maps every sentinel those units emit. |
 | U1, U7 → U7d | The handler routes on U1's `QuarantineIsRemedy` predicate into U7's response shape. |
 | U7, U7d → U7c | The mutation-surface descriptions promise codes that only reach `resolve` once U7d routes them. |
 | U7 → U8 | The CLI consumes the mapping layer. |
-| U7b, U7c, U8, U6c → U8b | Parity table drives every completed surface, including the MCP `get` projection. |
+| U7b, U7c, U8, U6c, U8c → U8b | Parity table drives every completed surface, including both the MCP and the CLI `get` projections. |
 | U6b, U8b → U9 | Design doc restates final behaviour. |
 | U9 → U9b → U10 → U10b | Docs, then refusal verification, then acceptance and restore verification against the scratch workspace U10 creates. |
 
 Suggested execution order: U1, U2, U2b, U2c, U2d, U2e, U2f, U3, U6, U6b, U6c, U6d, U7b, U3b, U4,
-U5, U5b, U7, U7d, U7c, U8, U8b, U9, U9b, U10, U10b. U2b, U2c, and U2d are mutually independent once
-U2 lands; U6 and U4 are mutually independent once U2c lands; U6d is independent of everything after
-U6; U2e is independent of the gate units and only has to land before U9. **U3 and U5 are not
-independent of U4/U6** — see the edge table.
+U5, U5b, U7, U7d, U7c, U8, U8c, U8b, U9, U9b, U10, U10b. U2b, U2c, and U2d are mutually independent
+once U2 lands; U6 and U4 are mutually independent once U2c lands; U6d is independent of everything
+after U6 but must land before U7b; U8c is independent of everything after U6b and only has to land
+before U8b; U2e is independent of the gate units and only has to land before U9. **U3 and U5 are
+not independent of U4/U6** — see the edge table.
 
 ## Decisions and Rationale
 
@@ -945,7 +999,7 @@ independent of U4/U6** — see the edge table.
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` on MCP, named keys on CLI, `NeedsQuarantine` + `RemediationCommand` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
 | VI. Single Responsibility | **pass** | No new dependencies. The helper reuses `decodeTopLevelEntries`, `isFoldKeyIn`, `modeledJSONTagKeys`, and `unknownNestedProgressKeys` already present in `internal/events`. |
-| VII. Destructive Command Approval (NON-NEGOTIABLE) | **deviation (documented)** | The change is net **anti**-destructive: it removes a silent data-destruction path. **Two deviations**: (a) the remedy this plan directs operators toward — quarantine — *moves the source file out of the live directory*, which is destructive from the perspective of a live `active` checkpoint; U9b therefore states it must be a deliberate operator decision. (b) U10's scratch teardown is a directory deletion; it is classified `ActionRisk: destructive`, requires operator approval, and is skipped (leaving the directory as a cleanup follow-up) if approval is withheld. |
+| VII. Destructive Command Approval (NON-NEGOTIABLE) | **deviation (documented)** | The change is net **anti**-destructive: it removes a silent data-destruction path. **Two deviations**: (a) the remedy this plan directs operators toward — quarantine — *moves the source file out of the live directory*, which is destructive from the perspective of a live `active` checkpoint; U9b therefore states it must be a deliberate operator decision. (b) the scratch teardown — owned by **U10b**, after U10 hands the workspace over intact — is a directory deletion; it is classified `ActionRisk: destructive`, requires operator approval, and is skipped (leaving the directory as a cleanup follow-up) if approval is withheld. |
 | VIII. Explicit Safety Modes | **pass** | Work executes under **freeze-scope**. Declared boundary: `internal/errors/`, `internal/events/`, `internal/core/`, `internal/mcp/`, `internal/cli/`, `docs/design-docs/checkpoint-administrative-disposition.md`, `docs/cli-reference/backlogit_checkpoint_*.md`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml`, `docs/closure/`, and `docs/scratch/checkpoint-verification/`. The nine live checkpoint files are explicitly **outside** the mutation boundary. |
 | IX. Git-Friendly Persistence | **pass** | Checkpoint JSON stays human-readable; `jsonutil.MarshalReadable` and the atomic-write helpers are unchanged. |
 | X. Agent Context Efficiency | **pass** | Refusals carry structured field lists so an agent does not parse message text to learn which keys were rejected. U6b closes the `list` / `get` disagreement that would otherwise cost an agent an extra round trip and a wrong verb. |
@@ -958,7 +1012,7 @@ independent of U4/U6** — see the edge table.
 | I. Safety-First Go | `AbandonCheckpoint`'s pre-existing `%v` validation wrap is left in place. | Fixing it changes an unrelated shipped error contract inside a bounded-scope plan and would need its own red phase and cross-surface assertions. | "Fix it while we're in the file" — rejected: it is a silent contract change to a governed path, invisible in this plan's tests, and belongs in its own unit. |
 | V. Structured Observability | No refusal counter, log, or telemetry event. | The refusal is already agent-visible and typed; adding a telemetry surface pulls `internal/telemetry` into a freeze-scoped change and widens the blast radius past the defect. | "Emit a telemetry event per refusal" — rejected: nine known refusals on day one would immediately produce noise with no consumer defined. |
 | VII. Destructive Approval | Quarantine — a source-file-moving operation — is the directed remedy. | Without widening quarantine the plan creates an unremediable deadlock (F3); a move to `archive/checkpoints/` preserves the bytes verbatim and is reversible by copy-back, which U10b proves. | "Refuse on all three verbs" — rejected: strands the file with no disposition path at all, which is strictly worse than a reversible move. |
-| VII. Destructive Approval | U10's scratch directory teardown is a deletion. | Verification needs a disposable workspace; leaving it permanently pollutes the tree. | "Use `%TEMP%`" — rejected outright by Constitution IV (containment) and by the workspace's no-temp-directory rule. |
+| VII. Destructive Approval | U10b's scratch directory teardown is a deletion (moved from U10 in PR #377 review cycle 4 so U10b's inherited inputs survive). | Verification needs a disposable workspace; leaving it permanently pollutes the tree. | "Use `%TEMP%`" — rejected outright by Constitution IV (containment) and by the workspace's no-temp-directory rule. |
 
 Constitution Check: documented-deviations
 
@@ -1165,7 +1219,7 @@ highest-value assertion in the plan; if review trims anything, it must not be th
 | A2 | Widen `QuarantineCheckpoint` classification so more files become movable to the archive | `internal/core/checkpoint_disposition.go` | contract change on a file-moving verb | **high** | not required; move is verbatim and audited, and `moveNoReplace` never overwrites | revert; quarantined files are recoverable from the archive dir with their sidecar | planned |
 | A3 | Change five MCP tool descriptions (`list`, `get`, `resolve`, `abandon`, `quarantine`) and update `.github/instructions/backlogit.instructions.md` | `internal/mcp/tools.go`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml` | agent-facing contract change | moderate | not required | revert | planned |
 | A4 | Run disposition verbs during runtime verification | `docs/scratch/checkpoint-verification/` only | local file mutation | moderate | not required — in-tree scratch only, live corpus hash-guarded | discard the scratch contents | planned |
-| A4b | Tear down the scratch verification workspace after closure | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) | none needed — contents are reproducible from the plan | planned |
+| A4b | Tear down the scratch verification workspace after closure (**owned by U10b**, only after its three rows pass — U10 hands the workspace over intact) | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) | none needed — contents are reproducible from the plan | planned |
 | A5 | Mutate the nine live legacy checkpoints or the stale `129-S` checkpoint | `.backlogit/checkpoints/` | destructive, irreversible | **destructive** | **FORBIDDEN in this work.** Out of scope; requires explicit operator approval in a separate unit of work. | n/a | **abandoned** |
 
 ### Deepened runtime verification (U10, U10b)
@@ -1200,7 +1254,9 @@ highest-value assertion in the plan; if review trims anything, it must not be th
   immediately, do not proceed to closure, and treat it as a red-phase failure of the owning unit.
   Conversely, a refusal on one of the nine enumerated legacy filenames is **expected** and must not
   be treated as a blocked path.
-* **Teardown** — classified `ActionRisk: destructive` (A4b) and executed only with operator
+* **Teardown** — owned by **U10b** and performed only after its three rows pass; U10 leaves the
+  workspace standing because U10b consumes its archive, fixtures, and binary. Classified
+  `ActionRisk: destructive` (A4b) and executed only with operator
   approval. If approval is withheld, leave the directory in place and record it as a cleanup
   follow-up rather than deleting it unilaterally.
 
@@ -1399,3 +1455,30 @@ task ID was renumbered, and the reviewed decision, scope, data-loss safety postu
 refusal remain unchanged.
 
 <!-- copilot-review-remediation: pr-377-cycle-3 -->
+
+### PR #377 Copilot review remediation, cycle 4
+
+A fourth Copilot review (`PRR_kwDORzozKM8AAAABKsXFuA`) against head
+`bb4879237ca2ada40cf3416530563acbbecd6ac9` raised five threads under the summary "the plan omits
+the required CLI get projection unit, relies on disposable cross-task state, and contains
+inconsistent lifecycle metadata". This cycle is an **operator-authorized extension** past the
+three-cycle limit, recorded as such rather than treated as a silent counter reset. All five were
+confirmed valid against `internal/cli/checkpoint.go`, `internal/events/checkpoint_lifecycle.go`,
+and the staged artifacts; one is valid on the remedy while carrying a partly stale premise, and one
+is only partially remediable without violating the tool-managed data-ownership rule.
+
+| Thread | Finding | Plan delta |
+|---|---|---|
+| `PRRT_kwDORzozKM6b2qq7` (`147.015-T`) | U8 dropped the CLI `checkpoint get` projection that U6b produces and U8b's parity table consumes. `newCheckpointGetCmd` (`internal/cli/checkpoint.go:180-210`) still calls `events.GetCheckpoint` and prints a hardcoded `valid: true`, while U8 specifies only the resolve/abandon rows and carries no dependency on U6b. Folding it into U8 would add a fourth scenario and breach the task limit. | **U8c added** (`147.027-T`) — a three-scenario, single-domain unit that reprojects `newCheckpointGetCmd` from `events.GetCheckpointResult`. U8's change note now states the projection moved out and that U8 must not touch `newCheckpointGetCmd`; U6c gained the reciprocal note that it must not touch the CLI. Edges `U6b → U8c → U8b`. Added to the `130-S` manifest and to U8b's dependency list. |
+| `PRRT_kwDORzozKM6b2qrn` (`147.026-T`) | U10b consumes U10's scratch workspace — the branch-built binary, the copied fixtures, and the quarantine archive its second row restores from — but U10 owned an approved teardown of that directory at its own completion. Ordering was left to chance, and the losing order silently destroys U10b's inputs. | **Teardown ownership moved to U10b**, after all three of its rows pass. U10 now hands the workspace over intact; U10b gained an explicit *Inherited inputs and teardown* bullet making the live workspace a precondition and a missing workspace a blocker on re-running U10 rather than a licence to hand-rebuild. The Constitution VII deviation, the conflict-resolution row, risky action **A4b**, and the Teardown bullet all re-attribute to U10b; the `ActionRisk: destructive` classification and approval requirement are unchanged. |
+| `PRRT_kwDORzozKM6b2qsD` (`147.023-T`) | U6d makes `ListCheckpoints` stop applying its documented Agent / Status / ShipmentID / FeatureID / MaxAge filters to quarantine candidates, but changed no caller-facing contract. An exported function silently ignoring its own documented options is a trap for every caller that is not this feature. | U6d now **publishes** the exemption: the exported `ListCheckpoints` doc comment states that quarantine candidates bypass the filter block and that filtered results may therefore include entries mismatching status, agent, feature, shipment, or age. A sixth acceptance criterion covers the doc comment, and its expected-red note records that it is a contract obligation rather than a fourth test scenario — the three-scenario budget is untouched. U7b's agent-facing `list_checkpoints` description carries the same sentence and gains a `U6d → U7b` edge so a published description can never promise unshipped behaviour. |
+| `PRRT_kwDORzozKM6b2qsr` (`.backlogit/hooks_queue.jsonl`) | The committed event stream stops at the original 19-task shipment creation, so consumers polling this durable queue never receive creation signals for `147.020-T` through `147.026-T`. | Partially remediable. Every cycle-4 mutation was executed through the **supported backlogit CLI surface** against this worktree, so nine genuine events (seq 2305-2313) landed: one `create_artifact` for `147.027-T` and eight `update_artifact` events covering `147-F`, `147.014-T`, `147.015-T`, `147.016-T`, `147.019-T`, `147.022-T`, `147.023-T`, and `147.026-T`. Retroactive `create_artifact` events for artifacts that already exist cannot be truthfully emitted, and hand-appending them is forbidden by the tool-managed data-ownership rule. Reverting the file was rejected: the existing rows are genuine tool-emitted history, and reverting while the worktree runtime keeps appending forks the sequence space. **Residual**: `147.020-T`, `147.021-T`, `147.024-T`, and `147.025-T` still have no lifecycle event; each emits a genuine `update_artifact` the moment Ship claims it, and all four remain discoverable through the index and the queue view. |
+| `PRRT_kwDORzozKM6b2qtQ` (`checkpoint-20260824-191617.json`) | The handoff labelled PR #377 "CI green" while `push_state` said the cycle-3 remediation was local-only, so Ship could resume treating unvalidated code as validated. | Premise partly stale — the branch **is** pushed and CI **is** green on `bb487923`. The artifact was still internally inconsistent and goes stale the instant cycle 4 commits. Fixed in the `context` namespace **only**, because the top-level namespace is closed and this very feature refuses unmodeled top-level keys: `ci_state` now records the last verified green SHA and the six named checks, `push_state` and `pr` carry the local-only cycle-4 tip, and `resume_hint` requires push plus fresh CI before merge is even considered. `task_ids` gained `147.027-T`; `review_remediation` gained the cycle-4 entry. |
+
+Net effect: 26 implementation units become 27 (U8c added); three edges added (`U6b → U8c`,
+`U8c → U8b`, `U6d → U7b`) — 40 `blocks` edges in the harvested task graph become 43 — and the
+`130-S` manifest grows from 27 to 28 members. Teardown ownership moved from U10 to U10b without
+changing its risk class. No unit was removed, no task ID was renumbered, and the reviewed decision,
+scope, data-loss safety posture, and fail-closed refusal remain unchanged.
+
+<!-- copilot-review-remediation: pr-377-cycle-4 -->
