@@ -104,12 +104,13 @@ so delegation of that objective was prohibited for this turn.
 ## Backlog state
 
 * Feature **`147-F`** — "Refuse to rewrite checkpoints carrying unmodeled top-level keys", `queued`, `high`
-* Tasks **`147.001-T` … `147.019-T`** (19 units, U1 … U10), all `queued`
-* Shipment **`130-S`** — `queued`, `high`, 20 items, `covering_feature: 147-F`, `skipped: []`
+* Tasks **`147.001-T` … `147.022-T`** (22 units, U1 … U10 plus U2e, U2f, U6c), all `queued`
+* Shipment **`130-S`** — `queued`, `high`, 23 items, `covering_feature: 147-F`, `skipped: []`
 * Stash **`D3CE9E81`** — `harvested`, archived to `.backlogit/archive/stash.jsonl`
   with `reason: harvested` and `harvested_artifact_id: 147-F`
 
-Units were split from 11 to 19 to satisfy the NON-NEGOTIABLE 2-Hour Rule
+Units were split from 11 to 19 at harvest, then to 22 during the PR #377 review
+cycle, to satisfy the NON-NEGOTIABLE 2-Hour Rule
 (< 3 files, < 5 functions, **< 4 test scenarios**). `147.005-T` (U2d),
 `147.010-T` (U5b), and `147.016-T` (U8b) are pure regression guards that
 explicitly declare exemption from the two-step red rule.
@@ -191,6 +192,34 @@ Plan review gate: **PASS** (`dispatch_mode: multi-agent-dispatch`, two attempts)
 | Refusal observability / telemetry | Principle V deviation, recorded in the plan |
 | `CleanupCheckpoints` Windows `os.Remove` collision | Narrowed Ship-handoff follow-up |
 | impl-plan skill `go run` self-lint entrypoint | Conflicts with Stage's no-build Role Boundary; deviation recorded |
+
+## PR #377 review remediation cycle
+
+Eight Copilot review threads were raised against the staging PR after CI passed.
+All eight were confirmed against the frozen artefacts and the live source at
+`540930d6`; none was a false positive. One (`147.018-T`) was partially valid on
+its premise — plan units U9b and U10 shared a repair *mechanism* and differed only
+in entry point, while the harvested task had invented a third procedure — and
+fully valid on its remedy.
+
+| Thread anchor | Category | Remediation |
+|---|---|---|
+| `147.003-T` nested `progress` | valid | New `147.020-T` (U2e): nested duplicate and fold-variant rule via an ordered token walk in the read-boundary helper only, so the shipped 146-F create boundary is untouched |
+| `147.012-T` get result shape | valid | U6b now declares `CheckpointReadResult` + `GetCheckpointResult` with `GetCheckpoint` retained as a wrapper; new `147.022-T` (U6c) owns the MCP projection that removes the hardcoded `"valid": true` |
+| `147.014-T` resolve error code | valid | `checkpoint_use_quarantine` for schema-invalid, `checkpoint_non_conforming` for unmodeled top-level keys, matching U7 |
+| `147.016-T` parity fixtures | valid | Three-row matrix restored; `conforming` assertions moved to the `valid-but-non-conforming` row because a schema-invalid document never reaches a conformance verdict |
+| `147.018-T` repair path | partial premise, valid remedy | One canonical body-preserving procedure with two entry points (direct repair, post-quarantine restore); creating a replacement checkpoint is explicitly rejected as the repair path |
+| `147.019-T` verification hardening | valid | Scratch path pinned, containment asserted before first write, `.gitignore` rule owned by the task, binary built from branch HEAD, hash comparison over the whole checkpoint directory rather than a count-pinned subset |
+| `.backlogit/memories.json` | valid | Continuity key populated with the 130-S / 147-F handoff record |
+| `147.005-T` I1 bundling | valid | New `147.021-T` (U2f): I1 write-site enumeration or the gated `rewriteCheckpointFile` seam, split out because the fallback is a production seam inside a declared green-on-landing guard unit |
+
+Net backlog delta: 19 tasks / 25 edges became 22 tasks / 34 edges. No task ID was
+renumbered, no unit was removed, and the reviewed decision, scope, hierarchy, and
+test-first ordering are unchanged. The ready set is still exactly `147.001-T`.
+
+The SQLite index was **not** resynced: the edits were made in a dedicated Stage
+planning worktree and a sync would have written to the polluted main worktree.
+Refresh the index before trusting query output.
 
 ## Degraded visibility
 
