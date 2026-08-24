@@ -473,8 +473,8 @@ failed.
   `conforming: true`; the file is byte-unchanged after get.
 * **Expected red**: cases 1 and 2 fail (the result type does not exist until the declaration step,
   then returns zero values).
-* **Consumed by**: U6c projects this result onto the MCP `get_checkpoint` response; U8 projects it
-  onto `backlogit checkpoint get`.
+* **Consumed by**: U6c projects this result onto the MCP `get_checkpoint` response; U8c
+  (`147.027-T`) projects it onto `backlogit checkpoint get`.
 * **Depends on**: U2c.
 
 ### U6c — MCP `get_checkpoint` projects the conformance verdict
