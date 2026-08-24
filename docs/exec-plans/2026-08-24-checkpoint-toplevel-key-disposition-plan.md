@@ -61,9 +61,9 @@ strand a valid-but-non-conforming file with no disposition verb at all.
 | R3 | `ResolveCheckpoint` gains a `ValidateCheckpoint` gate and the same conformance check | source doc, Decided behaviour §3 | U3 |
 | R4 | `QuarantineCheckpoint` widens malformed classification so the verb pair stays total over its scoped population | source doc, Decided behaviour §4 | U5 |
 | R5 | No preservation carrier is added to `CheckpointV1` **for this scope** (decision-anchored, not a permanent ban) | source doc, Decided behaviour §5 | negative requirement — guarded in U2 |
-| R6 | The nine live legacy files are left untouched by this work | source doc, Decided behaviour §6 | negative requirement — asserted in U10 |
-| R7 | Typed, machine-readable refusal naming the offending keys, with one canonical "quarantine is the remedy" predicate | plan-originated (source doc Unresolved Q1) | U1, U7, U8 |
-| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe | plan-originated (source doc Unresolved Q3, widened by plan review) | U6, U6b, U6c |
+| R6 | The nine live legacy files are left untouched by this work | source doc, Decided behaviour §6 | negative requirement — asserted in U10 (live-corpus hash guard) and U10b (mirror, not live, for the sweep) |
+| R7 | Typed, machine-readable refusal naming the offending keys, with one canonical "quarantine is the remedy" predicate | plan-originated (source doc Unresolved Q1) | U1, U7, U7d, U8 |
+| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe | plan-originated (source doc Unresolved Q3, widened by plan review) | U6, U6b, U6c, U6d |
 | R9 | Human-facing design doc restates the verb pair as total over its scoped population | plan-originated (source doc Option B cons) | U9 |
 | R10 | Agent-facing instruction surfaces teach the new `resolve` failure mode and the repair-or-quarantine remedy | plan-originated (plan review) | U9b |
 
@@ -263,37 +263,33 @@ failed.
   than claimed as test-first.
 * **Depends on**: U2.
 
-### U2f — Protected invariant I1: write-site enumeration or gated rewrite seam
+### U2f — Protected invariant I1: checkpoint rewrite write-site enumeration
 
 * **Domain**: tests
-* **Files**: `internal/events/checkpoint_writesite_test.go` (new); under the fallback mechanism
-  additionally `internal/events/checkpoint_lifecycle.go` (the helper and the `ResolveCheckpoint`
-  call site), `internal/core/checkpoint_disposition.go` (the `AbandonCheckpoint` call site) and
-  their two `_test.go` files
+* **Files**: `internal/events/checkpoint_writesite_test.go` (new). No production change.
 * **Change**: land the executable form of **I1** described in "Entry-point completeness audit"
-  below. The primary mechanism is a write-site enumeration test that walks the package sources for
-  calls to `syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target
-  resolves under the checkpoint directory and asserts the resulting call-site set equals the audited
-  allow-list. If the enumeration proves impractical to implement reliably, the fallback is a single
-  **exported** gated helper — `events.RewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error`
-  — that runs both gates internally and is the **only** function permitted to re-marshal an
-  existing checkpoint. **It must be exported.** The seam has two consumers in two packages:
-  `ResolveCheckpoint` in `internal/events` (U3b) and `AbandonCheckpoint` in `internal/core`
-  (U4, `internal/core/checkpoint_disposition.go:~110-125`, today calling
-  `atomicfile.WriteFileAtomic` directly inside its `MutationEnvelope`). Go cannot reference an
-  unexported identifier across a package boundary, so an unexported `rewriteCheckpointFile` in
-  `internal/events` would leave U4's rewrite permanently ungated — the exact hole I1 exists to
-  close. If the fallback is chosen, the write-site enumeration must also cover `internal/core`,
-  because that is where the second gated rewrite lands.
-* **Why this is a separate unit from U2d**: the fallback is a **production seam** that U3b and U4
-  must route through, so the mechanism decision is taken here and consumed there. Bundling it into
-  U2d would put a possible production change inside a unit that declares itself green on landing
-  with no red phase, and would take that unit to four scenarios across two skill domains —
-  breaching both the width-isolation rule and the 2-hour granularity rule.
-* **Tests** (2): the enumerated call-site set equals the allow-list; a synthetic ungated rewrite
-  site fails the assertion. Under the fallback the second case becomes
-  `events.RewriteCheckpointFile` refusing a non-conforming document.
-* **Expected red**: case 2 fails until the chosen mechanism exists.
+  below, as a write-site enumeration test. The test walks the sources of **both** `internal/events`
+  and `internal/core` for calls to `syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` /
+  `os.WriteFile` whose target resolves under the checkpoint directory and asserts the resulting
+  call-site set equals the audited allow-list. `internal/core` is in scope because
+  `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~110-125`) calls
+  `atomicfile.WriteFileAtomic` directly inside its `MutationEnvelope`; an enumeration limited to
+  `internal/events` would leave that rewrite invisible — the exact hole I1 exists to close.
+* **Mechanism is decided here, not deferred**: the previously offered "or a single exported
+  `events.RewriteCheckpointFile` seam" fallback is **withdrawn**. Carrying both mechanisms made the
+  unit's file set either one new test file or five files across two packages and two skill domains,
+  so its size could not be known before work started and the larger branch breached both the
+  three-file heuristic and width isolation. The withdrawal is recorded in Decisions and Rationale.
+* **Halt condition**: if the enumeration cannot be implemented reliably — for example if call-target
+  resolution proves ambiguous — mark the unit `blocked` and re-plan the gated-seam alternative as
+  its own units under a new task ID. Do **not** grow this unit into the seam.
+* **Why this is a separate unit from U2d**: I1's executable form is a distinct deliverable that U3b
+  and U4 must satisfy, so the allow-list must be pinned before those units touch their call sites.
+  Bundling it into U2d would take that unit to four scenarios across two skill domains — breaching
+  both the width-isolation rule and the 2-hour granularity rule.
+* **Tests** (2): the enumerated call-site set equals the allow-list across both packages; a
+  synthetic ungated rewrite site added to the fixture corpus fails the assertion.
+* **Expected red**: case 2 fails until the enumeration exists.
 * **Depends on**: U2d.
 
 ### U3 — `ResolveCheckpoint` validity gate
@@ -403,13 +399,43 @@ failed.
   `RemediationCommand` must be **PowerShell-safe** (this is a Windows-first workspace: no
   unescaped double quotes, no backticks, runnable as-is when pasted into `pwsh`).
   `ListCheckpoints` stays strictly read-only — no move, no rewrite, no error propagation — and the
-  conformance branch must run **before** the filter block so a non-conforming summary cannot be
-  silently dropped by an active-status filter.
-* **Tests** (3): a valid-but-non-conforming file lists with `NeedsQuarantine: true` and a
+  conformance branch must run **before** the filter block, so the verdict is computed for every
+  parsed document rather than only for documents the caller's filter happens to select.
+  **Ordering is not exemption**: only the `ParseCheckpoint` failure path is filter-exempt today
+  (`internal/events/checkpoint_lifecycle.go:~46-57` appends and `continue`s before the filter
+  block), while the `valErr` branch falls through into the `Agent` / `Status` / `ShipmentID` /
+  `FeatureID` / `MaxAge` checks like any other summary. Whether a quarantine candidate also becomes
+  filter-exempt is a separate behavioural change owned by **U6d**; this unit must not claim a
+  drop-through guarantee it does not implement.
+* **Tests** (4): a valid-but-non-conforming file lists with `NeedsQuarantine: true` and a
   PowerShell-safe remediation command; a file failing **both** validation and conformance reports
-  both reasons in `ValidationErr`; the files on disk are byte-unchanged after listing.
+  both reasons in `ValidationErr`; the verdict is computed before the filter block, asserted by a
+  case whose filter matches the document; the files on disk are byte-unchanged after listing.
 * **Expected red**: cases 1 and 2 fail.
 * **Depends on**: U2c.
+
+### U6d — quarantine candidates survive the `ListCheckpoints` filter block
+
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/events/checkpoint_lifecycle_test.go`
+* **Change**: U6 computes the conformance verdict before the filter block, but the summary then
+  falls through into the filter checks, so a non-conforming document is still dropped by a caller
+  filtering on `status: "active"` — and its own `status` field is exactly the untrusted data this
+  feature refuses to rely on. The remediation surface would then be invisible to precisely the
+  query an agent runs at session start. Extend the shipped parse-failure exemption
+  (`internal/events/checkpoint_lifecycle.go:~46-57`) to conformance: **any summary with
+  `NeedsQuarantine: true` bypasses the whole filter block**, exactly as a parse failure does today.
+  This is deliberately a blanket exemption rather than a per-field one — splitting filters into
+  "lifecycle" and "identity" tiers would require trusting `Agent`, `ShipmentID`, and `FeatureID`
+  read out of a document already judged unsafe to round-trip, and would leave a schema-invalid file
+  with an empty `agent` silently dropped by an agent filter. `ListCheckpoints` stays read-only.
+* **Tests** (3): a valid-but-non-conforming `status: "resolved"` file is still returned when
+  `filter.Status == "active"`, carrying `NeedsQuarantine: true`; a **conforming**
+  `status: "resolved"` file is still dropped by that same filter, proving the exemption is scoped to
+  quarantine candidates and is not a blanket filter bypass; a non-conforming file is still returned
+  when `filter.Agent` names a different agent, matching the parse-failure precedent.
+* **Expected red**: cases 1 and 3 fail; case 2 is a declared regression guard.
+* **Depends on**: U6.
 
 ### U6b — `GetCheckpoint` agrees with `ListCheckpoints`
 
@@ -431,7 +457,10 @@ failed.
   compiles unchanged. `valid` retains its existing meaning (schema-valid) and is **not** repurposed;
   conformance is reported as a distinct field so no existing consumer's contract silently changes.
   Schema-invalid documents keep returning `ErrCheckpointInvalid` — this unit adds conformance
-  reporting for **valid-but-non-conforming** documents only.
+  reporting for **valid-but-non-conforming** documents only. That sentinel is returned
+  **unwrapped**: `GetCheckpointResult` does not wrap it in `ErrCheckpointUseQuarantine`, because a
+  read is not a rewrite and there is nothing to refuse. Downstream surfaces must therefore expect
+  the pre-existing validation-class refusal on `get`, not a disposition code.
 * **Tests** (3): a valid-but-non-conforming file returns `valid: true, conforming: false,
   needs_quarantine: true` with a non-empty `RemediationCommand`; a conforming file returns
   `conforming: true`; the file is byte-unchanged after get.
@@ -451,75 +480,147 @@ failed.
   `conforming`, `needs_quarantine`, and `remediation_command` from the returned result; the
   hardcoded `"valid": true` is removed, not shadowed. Without this unit U7b's `get_checkpoint`
   description and U8b's MCP `get` parity rows would describe behaviour no unit implements.
+  **Schema-invalid documents keep their existing refusal.** `handleGetCheckpoint` routes errors
+  through `domainError` (`internal/mcp/errors.go:148`), which takes no filename and already maps
+  `ErrCheckpointInvalid` to `code: validation_failed`. U6b returns that sentinel unwrapped, so
+  `get` on a legacy file surfaces the pre-existing validation-class refusal — **not**
+  `checkpoint_use_quarantine`, which U7 only ever emits from `checkpointDispositionError` on the
+  *mutation* handlers. Demanding a disposition code here would require re-routing the read handler
+  through a mutation-shaped error path, widening this unit into U7's file set and changing a
+  shipped read contract for no safety gain: the quarantine remedy is already discoverable from
+  `list_checkpoints`, which reports `needs_quarantine: true` for the same file (U6).
 * **Tests** (3): a valid-but-non-conforming file returns `valid: true, conforming: false,
   needs_quarantine: true` and a non-empty `remediation_command`; a conforming file returns
-  `conforming: true`; a schema-invalid file returns the U7 `checkpoint_use_quarantine` error code
-  rather than a success payload asserting validity.
-* **Expected red**: all three fail.
-* **Depends on**: U6b (result type), U7 (error mapping for case 3).
+  `conforming: true`; a schema-invalid file returns the pre-existing `validation_failed` refusal
+  produced by `domainError` from an unwrapped `ErrCheckpointInvalid`, rather than a success payload
+  asserting validity, asserted against the handler's actual payload.
+* **Expected red**: cases 1 and 2 fail; case 3 is a declared regression guard pinning the shipped
+  read contract.
+* **Depends on**: U6b (result type). The former dependency on U7 is removed — this unit pins the
+  existing error mapping rather than consuming the new one.
 
 ### U7 — MCP error mapping and response shape
 
 * **Domain**: code (mcp)
 * **Files**: `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`
-* **Change**: three coupled defects, all in the mapping layer.
-  1. `handleResolveCheckpoint` (`internal/mcp/tools.go:1214-1225`) routes through `domainError`,
-     whose switch has **no case** for `ErrCheckpointUseQuarantine`, `ErrCheckpointInvalid`, or
-     `ErrCheckpointNonConforming` — every new refusal would fall to
-     `default: InternalError` and surface to agents as a 500. Add all three cases to `domainError`.
-  2. `checkpointDispositionError` currently emits `checkpoint_use_quarantine` for the
-     abandon/quarantine handlers only; add `ErrCheckpointNonConforming` with
-     `Code: "checkpoint_non_conforming"`.
-  3. The two existing response shapes are incompatible: `checkpointUnknownFieldsResponse`
+* **Change**: three coupled defects, all in the mapping layer. The handler-routing half of the
+  original U7 is now **U7d**, because it touches `internal/mcp/tools.go` and would have taken this
+  unit to three files across two behavioural surfaces.
+  1. `checkpointDispositionError` (`internal/mcp/errors.go:309`) currently emits
+     `checkpoint_use_quarantine` for the abandon/quarantine handlers only; add
+     `ErrCheckpointNonConforming` with `Code: "checkpoint_non_conforming"`. Its existing
+     `ErrCheckpointNotFound` → `NotFound` case and its `default: InternalError` tail both stay.
+  2. The two existing response shapes are incompatible: `checkpointUnknownFieldsResponse`
      (`internal/mcp/errors.go:29-39`) carries `error`/`message`/`unknown_fields` while
-     `checkpointDispositionErrorResponse` (`~290-300`) carries
-     `code`/`filename`/`retryable`/`remediation`. Extend
+     `checkpointDispositionErrorResponse` (`:291-299`) carries
+     `error`/`message`/`code`/`filename`/`retryable`/`outcome`/`remediation`. Extend
      `checkpointDispositionErrorResponse` with `UnknownFields []string \`json:"unknown_fields"\`` —
      **no `omitempty`** — populated via `errors.As`, so one refusal shape answers both "what went
-     wrong" and "which keys". Add the row to the mapping-table doc comment
+     wrong" and "which keys".
+  3. `domainError` (`internal/mcp/errors.go:148`) is the fallback surface for handlers that carry no
+     filename. **Correcting a stale claim in this plan**: earlier text asserted it had "no case for
+     `ErrCheckpointUseQuarantine`, `ErrCheckpointInvalid`, or `ErrCheckpointNonConforming`". The
+     `ErrCheckpointInvalid` third of that is false — `internal/mcp/errors.go:~188-193` already maps
+     it to `validation_failed`, grouped with `ErrValidation` and `ErrCheckpointCorrupt`, and a
+     dedicated `ErrCheckpointUnknownField` case already precedes it. Only
+     `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming` are genuinely absent; add those
+     two as a **safety net** so a refusal reaching a handler that has not been re-routed can never
+     surface as a 500. Add the two rows to the mapping-table doc comment
      (`internal/mcp/errors.go:127-144`).
-* **Tests** (3): invoking the **`handleResolveCheckpoint` handler** (not the events function) on a
-  legacy document returns `checkpoint_use_quarantine` and explicitly asserts the payload is **not**
-  `"error":"internal"`; invoking `handleAbandonCheckpoint` on a non-conforming target returns
+* **Tests** (4): `checkpointDispositionError` returns `checkpoint_non_conforming` for
+  `ErrCheckpointNonConforming` and its `ErrCheckpointNotFound` → `NotFound` case still fires;
+  `domainError` maps the two missing sentinels to their named codes instead of falling to
+  `default: InternalError`; invoking `handleAbandonCheckpoint` on a non-conforming target returns
   `checkpoint_non_conforming` with a populated `unknown_fields` read through a `.([]any)` type
   assertion so an absent or `null` key fails
   (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`); a conforming
   refusal returns `unknown_fields: []` rather than omitting the key.
-* **Expected red**: all three fail — case 1 returns `internal`, cases 2-3 fail to unmarshal the
-  absent field.
+* **Expected red**: all four fail.
 * **Depends on**: U1, U3b, U4, U5.
 
-### U7b — MCP tool descriptions (exact replacement strings)
+### U7d — `handleResolveCheckpoint` routes disposition refusals through the disposition shape
+
+* **Domain**: code (mcp)
+* **Files**: `internal/mcp/tools.go`, `internal/mcp/checkpoint_disposition_test.go`
+* **Change**: U7 extends `checkpointDispositionErrorResponse` with `code`, `filename`, and
+  `unknown_fields`, but `handleResolveCheckpoint` (`internal/mcp/tools.go:1214-1232`) calls
+  `domainError("resolve checkpoint", err)`. `domainError` takes **no filename argument**, so it can
+  never populate `filename`, and it does not build the disposition response at all — no routing
+  change means no `code`, no `filename`, and no `unknown_fields` on a resolve refusal, however
+  complete the mapping table is. Route **by class**, using the U1 predicate:
+  `if events.QuarantineIsRemedy(err) { return checkpointDispositionError("resolve checkpoint", filename, err) }`
+  falling through to `domainError` otherwise. A wholesale swap would regress the errors
+  `checkpointDispositionError` does not name — `ErrCheckpointCannotResolveAbandoned` and
+  `ErrCheckpointCorrupt` map to `validation_failed` through `domainError` today and would fall to
+  that function's `default: InternalError` tail. `ErrCheckpointNotFound` is safe either way: it is
+  handled explicitly at `internal/mcp/errors.go:~358` before the default. The predicate matches both
+  new refusals: U3 wraps the validity gate as
+  `fmt.Errorf("%w: %w", ErrCheckpointUseQuarantine, valErr)` and U3b returns
+  `ErrCheckpointNonConforming`, so `errors.Is` matches through the wrap.
+* **Tests** (4): invoking the **`handleResolveCheckpoint` handler** (not the events function) on a
+  schema-invalid legacy document returns `code: checkpoint_use_quarantine` with a populated
+  `filename` and explicitly asserts the payload is **not** `"error":"internal"`; invoking it on a
+  valid-but-non-conforming document returns `code: checkpoint_non_conforming` with `unknown_fields`
+  non-empty; a missing file still returns the pre-existing not-found refusal; an already-abandoned
+  target still returns its pre-existing `validation_failed` refusal, proving the non-disposition
+  path still reaches `domainError`.
+* **Expected red**: cases 1 and 2 fail; cases 3 and 4 are declared regression guards.
+* **Depends on**: U1 (the predicate), U7 (the response shape and the code).
+
+### U7b — MCP read-surface tool descriptions (exact replacement strings)
 
 * **Domain**: docs (agent-facing tool contract)
-* **Files**: `internal/mcp/tools.go` (descriptions at `:176-224`), `internal/mcp/tools_test.go`,
-  `.autoharness/backlog-registry.yaml` (only if it carries description text),
-  `internal/cli/registry_parity_test.go` (re-run; unchanged unless it drifts)
-* **Change**: five descriptions. This table is the single source of truth and is reproduced
-  verbatim in `147.014-T`; the two must not drift.
+* **Files**: `internal/mcp/tools.go` (descriptions at `:176-192`), `internal/mcp/tools_test.go`;
+  `.autoharness/backlog-registry.yaml` and an `internal/cli/registry_parity_test.go` re-run only if
+  the registry carries description text for these two tools
+* **Change**: the **two read-surface** descriptions. The three mutation-surface descriptions moved
+  to **U7c**: five rows in one unit exceeded the four-scenario limit and mixed a read contract with
+  a refusal contract. This table is the single source of truth and is reproduced verbatim in
+  `147.014-T`; the two must not drift.
 
   | Line | Tool | Delta |
   |---|---|---|
   | `:178` | `list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use quarantine_checkpoint, not resolve_checkpoint or abandon_checkpoint.` |
   | `:189` | `get_checkpoint` | append: ` For a schema-valid document, returns conforming false when it carries unmodeled top-level keys; such a document cannot be resolved or abandoned. A schema-invalid document is refused before any conformance verdict is produced.` |
-  | `:196` | `resolve_checkpoint` | append: ` Refuses a stored document it cannot safely rewrite rather than replacing it: checkpoint_use_quarantine when the document is schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. Use quarantine_checkpoint instead.` |
-  | `:211` | `abandon_checkpoint` | append: ` Also refuses when the document carries unmodeled top-level keys.` |
-  | `:220` | `quarantine_checkpoint` | replace `malformed checkpoint file` → `checkpoint file that cannot be safely rewritten (malformed, schema-invalid, or carrying unmodeled top-level keys)` |
 
   The `get_checkpoint` qualifier is load-bearing: `GetCheckpoint` runs `ValidateCheckpoint` and
   returns `ErrCheckpointInvalid` before any conformance result exists
   (`internal/events/checkpoint_lifecycle.go:~105-137`), so an unqualified "returns conforming
   false for a document with unmodeled top-level keys" would promise a verdict the read path
   cannot produce for the nine legacy files.
-* **Tests** (2): a table-driven assertion over the five registered descriptions, read from the
-  **built tool set** rather than a duplicated literal, each row asserting its required substring
-  and that `resolve_checkpoint` distinguishes `checkpoint_use_quarantine` from
-  `checkpoint_non_conforming`; and the existing registry-parity / fallback-map drift test
+* **Tests** (2): a table-driven assertion over the two registered read descriptions, read from the
+  **built tool set** rather than a duplicated literal; and the existing registry-parity /
+  fallback-map drift test
   (`docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`, Rule 1)
   re-run and staying green, with `.autoharness/backlog-registry.yaml` updated in the same commit
-  if it carries description text.
-* **Expected red**: all five rows of case 1 fail. Case 2 is a declared regression guard.
-* **Depends on**: U6b, U7.
+  if it carries description text for these tools.
+* **Expected red**: both rows of case 1 fail. Case 2 is a declared regression guard.
+* **Depends on**: U6b, U6c.
+
+### U7c — MCP mutation-surface tool descriptions (exact replacement strings)
+
+* **Domain**: docs (agent-facing tool contract)
+* **Files**: `internal/mcp/tools.go` (descriptions at `:193-224`), `internal/mcp/tools_test.go`;
+  `.autoharness/backlog-registry.yaml` and an `internal/cli/registry_parity_test.go` re-run only if
+  the registry carries description text for these three tools
+* **Change**: the **three mutation-surface** descriptions. Split out of U7b. This table is the
+  single source of truth and is reproduced verbatim in `147.024-T`; the two must not drift.
+
+  | Line | Tool | Delta |
+  |---|---|---|
+  | `:196` | `resolve_checkpoint` | append: ` Refuses a stored document it cannot safely rewrite rather than replacing it: checkpoint_use_quarantine when the document is schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. Use quarantine_checkpoint instead.` |
+  | `:211` | `abandon_checkpoint` | append: ` Also refuses when the document carries unmodeled top-level keys.` |
+  | `:220` | `quarantine_checkpoint` | replace `malformed checkpoint file` → `checkpoint file that cannot be safely rewritten (malformed, schema-invalid, or carrying unmodeled top-level keys)` |
+
+  The `resolve_checkpoint` row promises two **codes**, which only reach that surface once U7d
+  routes the handler through `checkpointDispositionError` — hence the dependency on U7d as well as
+  on the U7 mapping.
+* **Tests** (2): a table-driven assertion over the three registered mutation descriptions, read
+  from the **built tool set**, each row asserting its required substring and that
+  `resolve_checkpoint` distinguishes `checkpoint_use_quarantine` from `checkpoint_non_conforming`;
+  and the registry-parity / fallback-map drift test re-run and staying green.
+* **Expected red**: all three rows of case 1 fail. Case 2 is a declared regression guard.
+* **Depends on**: U7, U7d.
 
 ### U8 — CLI refusal surfacing
 
@@ -557,16 +658,18 @@ failed.
   against that same file, asserting the refusal classification agrees. Shape differences (exit code
   + text vs JSON payload) are expected; the **classification** must not differ. A schema-invalid
   document never reaches a conformance verdict, so the `conforming: false` assertions belong to the
-  `valid-but-non-conforming` row **only**; the `legacy-shaped` row asserts the invalid-document
-  refusal (`ErrCheckpointInvalid` / `checkpoint_use_quarantine`) instead of a success payload.
+  `valid-but-non-conforming` row **only**; the `legacy-shaped` row asserts the **validation-class**
+  refusal on `get` — `events.ErrCheckpointInvalid`, MCP `code: validation_failed` (U6c), CLI
+  non-zero exit — instead of a success payload, while `checkpoint_use_quarantine` belongs to the
+  `resolve` column, where U7d routes it.
 * **Tests** (3): one row per fixture shape, each asserting CLI, MCP, and `events` reach the same
   accept/refuse verdict and the same remedy verb, and that every fixture file is byte-identical
   after all three surfaces have been exercised.
 * **Expected red**: none. **Posture: regression guard — this unit is the parity contract itself.**
-  It lands after U7b, U8, and U6c, so all three surfaces already carry the behaviour; the unit
+  It lands after U7b, U7c, U8, and U6c, so all three surfaces already carry the behaviour; the unit
   exists to pin their agreement, and the exemption is declared here rather than claimed as
   test-first (same precedent as U2d).
-* **Depends on**: U6c, U7b, U8.
+* **Depends on**: U6c, U7b, U7c, U8.
 
 ### U9 — Design doc: total classification
 
@@ -609,10 +712,20 @@ failed.
   `docs/compound/2026-07-17-backlogit-update-drops-archive-provenance.md` — a **body-preserving
   hand-repair** procedure so quarantine is not the only escape from a checkpoint an operator still
   wants. This is **one** procedure with two entry points, and both must be written out verbatim so
-  this file, task `147.018-T`, and U10's restore row cannot drift apart:
+  this file, task `147.018-T`, and U10b's restore row cannot drift apart:
 
-  **(a) Direct repair** — the document is still under `.backlogit/checkpoints/`. Open it and move
-  every unmodeled top-level key into the reserved container object `context.legacy_top_level`,
+  **(a) Direct repair** — the document is still under `.backlogit/checkpoints/`. First **classify
+  every offender** the conformance verdict reported, because they are not all repairable by moving
+  keys:
+
+  | Reported offender | Repair |
+  |---|---|
+  | `<key>` — a plain unmodeled top-level key | Move it under `context.legacy_top_level`, preserving name and value byte-for-byte. |
+  | `duplicate:<key>` where one member is modeled | Move the **unmodeled** variant under `context.legacy_top_level`; the modeled member stays where it is. |
+  | `duplicate:<key>` where **both** members are unmodeled | Move **both**, keeping their original names as distinct members of `context.legacy_top_level`. The container is unmodeled, so the pair round-trips verbatim and neither value is chosen over the other. |
+  | `duplicate:progress.<key>` — a nested fold-variant pair inside `progress` (U2e) | **Not repairable by moving keys.** `progress` is a modeled field and `legacy_top_level` is a top-level container, so no move relocates the pair out of the collapsing decode. Either the operator decides which member survives — an information-destroying choice that only a human may make, recorded in the task log — or, if neither member may be dropped, **quarantine the document** and keep the verbatim bytes. |
+
+  Then move every key the table assigns to the container object `context.legacy_top_level`,
   preserving each original key name and value byte-for-byte. **Do not flatten the keys directly
   into `context`.** `CheckpointContext.UnmarshalJSON`
   (`internal/events/checkpoint_schema.go:196-220`) skips any `context` member whose name is
@@ -623,8 +736,12 @@ failed.
   round-trips through `Extra` intact, and nesting **every** moved key under it makes the rule
   uniform rather than requiring per-key fold comparisons. If `context.legacy_top_level` already
   exists, merge into it and **refuse to overwrite an existing member** — stop and reconcile that
-  conflict by hand. Then re-run `checkpoint get` to confirm `conforming: true` and use the normal
-  verb (`resolve` or `abandon`).
+  conflict by hand under the same rule, never silently dropping one of two values. Then re-run
+  `checkpoint get` to confirm `conforming: true` and use the normal verb (`resolve` or `abandon`).
+  **Termination rule**: if `checkpoint get` still reports `conforming: false` after the classified
+  moves are applied, the document holds an offender the move cannot relocate — a nested `progress`
+  duplicate is the known case. **Stop and quarantine; do not iterate the repair**, because
+  repeating a move-only repair against a nested offender cannot converge.
 
   **(b) Post-quarantine restore** — the document was already quarantined, so its bytes and its
   `<filename>.disposition.json` sidecar both live under `archive/checkpoints/`. **Never copy the
@@ -667,57 +784,86 @@ failed.
   session-start recovery guidance at exactly the moment the guidance becomes wrong.
 * **Depends on**: U9.
 
-### U10 — Runtime verification in a scratch workspace
+### U10 — Runtime verification of the refusal path
 
 * **Domain**: verification
 * **Files**: `.gitignore` (scratch-directory ignore rule); otherwise none (produces `docs/closure/`
   evidence)
 * **Change**: none to product code. Build the binary **from the branch under test** (not the pinned
-  repo-root `backlogit.exe`, which predates the change) and exercise the refusal and acceptance
-  paths against a **scratch** workspace seeded with copies of the legacy document shapes. The nine
+  repo-root `backlogit.exe`, which predates the change) and exercise the **refusal** path against a
+  **scratch** workspace seeded with copies of the legacy document shapes. The acceptance and
+  restore rows moved to **U10b**: five rows exceeded the four-scenario limit, and the restore row
+  also carried a contradiction with the live-corpus guard (see U10b). The nine
   live files under `.backlogit/checkpoints/` are read for shape reference only and are never
   mutation targets (R6); the check is a programmatic before/after SHA-256 comparison of **every**
   file under `.backlogit/checkpoints/`, not a visual one, and not a count-pinned subset — twelve
   files are present on this branch now that the staging checkpoint has landed, and that number
   drifts as sessions add checkpoints, so the guard enumerates the directory rather than a literal.
-* **Rows** (5): legacy-shaped resolve → refused, bytes unchanged; valid-but-non-conforming abandon
-  → refused naming keys; valid-but-non-conforming quarantine → accepted, archived bytes identical;
-  conforming active abandon → still succeeds; **restore path** — a quarantined file is recovered
-  per entry point (b) of the single U9b procedure (rename the archived bytes *and* their
-  `.disposition.json` sidecar aside to `<filename>.quarantined-<disposition_at>` first, then copy
-  the preserved bytes back into the now-free active filename), hand-repaired per entry point (a),
-  and then resolves normally — proving quarantine is recoverable rather than terminal **without**
-  ever leaving one filename present in both `.backlogit/checkpoints/` and `archive/checkpoints/`,
-  and with the renamed evidence pair still byte-identical afterwards.
+* **Rows** (3): **read verdict** — `list` reports `needs_quarantine: true` with a paste-runnable
+  PowerShell-safe remediation command and `get` reports `conforming: false` for the same fixture;
+  **refusal** — legacy-shaped resolve refused and valid-but-non-conforming abandon refused naming
+  keys, with the fixture bytes unchanged after both; **quarantine accept** — quarantine accepted
+  and the archived bytes byte-identical to the pre-quarantine original.
 * **Scratch containment**: the scratch workspace is created **inside the repository working tree**
   at `docs/scratch/checkpoint-verification/` (never `%TEMP%`, never outside the cwd — Constitution
   IV), the resolved path is asserted to be repo-root-relative **before the first write**, it is
   added to the freeze-scope declaration, and — because `.gitignore` carries no `docs/scratch/` rule
   today (`*.exe` already covers the built binary, the copied fixtures are not covered) — adding that
-  ignore rule is owned by this unit. Teardown is classified as `ActionRisk: destructive` requiring
+  ignore rule is owned by this unit. U10b inherits all of it. Teardown is classified as
+  `ActionRisk: destructive` requiring
   operator approval (Constitution VII). If approval is not granted the directory is left in place
   and recorded as a cleanup follow-up.
-* **Nine-file acknowledgement**: verification must confirm that after this change a session-start
-  recovery sweep produces refusals **only** on the nine enumerated legacy filenames and succeeds on
-  every other file under `.backlogit/checkpoints/`.
 * **Depends on**: U9b.
+
+### U10b — Runtime verification of acceptance, restore, and the recovery sweep
+
+* **Domain**: verification
+* **Files**: none. Runs entirely inside the scratch workspace U10 created; no repository file
+  changes.
+* **Change**: none to product code. **The recovery sweep runs against a scratch mirror, never the
+  live directory.** U10 requires every file under `.backlogit/checkpoints/` to be byte-unchanged,
+  while the nine-file acknowledgement requires a sweep that "succeeds on every other file in that
+  directory" — a real `resolve` against the conforming active checkpoints there. The two cannot
+  both hold against the live corpus, so the sweep operates on a **copied mirror** inside the
+  scratch workspace (`docs/scratch/checkpoint-verification/mirror/`). The nine enumerated legacy
+  filenames keep their names in the mirror, so the discrimination assertion is unchanged while the
+  live bytes stay read-only.
+* **Rows** (3): **acceptance is not over-refused** — a conforming active fixture is accepted by
+  abandon and a second conforming active fixture is accepted by resolve; **restore path** — a
+  quarantined file is recovered per entry point (b) of the single U9b procedure (rename the
+  archived bytes *and* their `.disposition.json` sidecar aside to
+  `<filename>.quarantined-<disposition_at>` first, then copy the preserved bytes back into the
+  now-free active filename), hand-repaired per the classified entry point (a), and then resolves
+  normally — proving quarantine is recoverable rather than terminal **without** ever leaving one
+  filename present in both the active fixture directory and the archive directory, and with the
+  renamed evidence pair still byte-identical afterwards; **recovery sweep discrimination** — against
+  the mirror, a session-start recovery sweep refuses **exactly** the nine enumerated legacy
+  filenames and succeeds on every other mirrored file.
+* **Nine-file acknowledgement**: satisfied by row 3 against the mirror. U10's live-corpus SHA-256
+  comparison must still pass after this unit runs.
+* **Depends on**: U10 (scratch workspace, ignore rule, branch-built binary, and the quarantine
+  archive row 2 consumes).
 
 ## Dependency Graph
 
 ```text
-U1 ──▶ U2 ──┬──▶ U2b ──┬──▶ U2e ──────────────────────────────────▶ U9
+U1 ──▶ U2 ──┬──▶ U2b ──┬──▶ U2e ─────────────────────────▶ U9
             ├──▶ U2c ──┤
             │          ├──▶ U3 ──▶ U3b
             │          ├──▶ U4 ──▶ U5 ──▶ U5b
-            │          └──▶ U6 ──▶ U6b ──▶ U6c
+            │          └──▶ U6 ──┬──▶ U6b ──▶ U6c ──▶ U7b
+            │                    └──▶ U6d
             └──▶ U2d ──▶ U2f ──┬──▶ U3b
                                └──▶ U4
 
-U3b ─┐
-U4 ──┼──▶ U7 ──┬──▶ U7b ──▶ U8b ──▶ U9 ──▶ U9b ──▶ U10
-U5 ──┤         ├──▶ U8 ─────▶ U8b
-U1 ──┘         └──▶ U6c ────▶ U8b
-U6b ──────────────▶ U7b
+U1 ──┬────────────────────▶ U7d
+     │
+U3b ─┤
+U4 ──┼──▶ U7 ──┬──▶ U7d ──▶ U7c ──┐
+U5 ──┘         └──▶ U8 ───────────┤
+                                  ├──▶ U8b ──▶ U9 ──▶ U9b ──▶ U10 ──▶ U10b
+U6c ──────────────────────────────┤
+U7b ──────────────────────────────┘
 ```
 
 Edges declared, no cycles:
@@ -728,27 +874,30 @@ Edges declared, no cycles:
 | U2 → U2b, U2c, U2d | All extend the same helper. |
 | U2b, U2c → U2e | The nested duplicate rule extends U2b's recursion and reuses U2c's `duplicate:` reporting form. |
 | U2e → U9 | The design doc's totality claim covers the completed predicate, nested duplicates included. |
-| U2d → U2f | I1's executable form builds on U2d's reflection guards and settles the mechanism choice. |
-| U2f → U3b, U4 | Under the fallback mechanism both in-place rewrite paths route through the gated seam, so the choice must precede them. |
+| U2d → U2f | I1's executable form builds on U2d's reflection guards. |
+| U2f → U3b, U4 | The audited rewrite allow-list must be pinned **before** either gate unit touches its call site, or the enumeration is written against a moving target. |
 | U2c → U3, U4, U6 | Every gate calls the completed predicate, including the duplicate rule. |
 | U3 → U3b | Conformance gate sits after the validity gate. |
 | U6 → U3b | U3b's residual test asserts U6 flags the same file, so the discovery path must exist. |
 | U4 → U5 | U5's paired table asserts abandon **refuses** the row quarantine accepts; that refusal is U4's. |
 | U5 → U5b | State-dimension rows extend U5's table. |
 | U6 → U6b | Both read surfaces must report the same field set. |
+| U6 → U6d | The filter exemption extends the conformance branch U6 introduces. |
 | U6b → U6c | The MCP handler projects U6b's result type; without it `valid: true` stays hardcoded. |
-| U7 → U6c | U6c's third case asserts the U7 error code for a schema-invalid document. |
+| U6b, U6c → U7b | The read-surface descriptions promise U6b's new field as projected by U6c. |
 | U1, U3b, U4, U5 → U7 | MCP maps every sentinel those units emit. |
-| U6b → U7b | Tool description for `backlogit_get_checkpoint` describes U6b's new field. |
-| U7 → U7b, U8 | Both consume the mapping layer. |
-| U7b, U8, U6c → U8b | Parity table drives every completed surface, including the MCP `get` projection. |
+| U1, U7 → U7d | The handler routes on U1's `QuarantineIsRemedy` predicate into U7's response shape. |
+| U7, U7d → U7c | The mutation-surface descriptions promise codes that only reach `resolve` once U7d routes them. |
+| U7 → U8 | The CLI consumes the mapping layer. |
+| U7b, U7c, U8, U6c → U8b | Parity table drives every completed surface, including the MCP `get` projection. |
 | U6b, U8b → U9 | Design doc restates final behaviour. |
-| U9 → U9b → U10 | Docs then verification. |
+| U9 → U9b → U10 → U10b | Docs, then refusal verification, then acceptance and restore verification against the scratch workspace U10 creates. |
 
-Suggested execution order: U1, U2, U2b, U2c, U2d, U2e, U2f, U3, U6, U6b, U3b, U4, U5, U5b, U7,
-U6c, U7b, U8, U8b, U9, U9b, U10. U2b, U2c, and U2d are mutually independent once U2 lands; U6 and
-U4 are mutually independent once U2c lands; U2e is independent of the gate units and only has to
-land before U9. **U3 and U5 are not independent of U4/U6** — see the edge table.
+Suggested execution order: U1, U2, U2b, U2c, U2d, U2e, U2f, U3, U6, U6b, U6c, U6d, U7b, U3b, U4,
+U5, U5b, U7, U7d, U7c, U8, U8b, U9, U9b, U10, U10b. U2b, U2c, and U2d are mutually independent once
+U2 lands; U6 and U4 are mutually independent once U2c lands; U6d is independent of everything after
+U6; U2e is independent of the gate units and only has to land before U9. **U3 and U5 are not
+independent of U4/U6** — see the edge table.
 
 ## Decisions and Rationale
 
@@ -765,6 +914,8 @@ land before U9. **U3 and U5 are not independent of U4/U6** — see the edge tabl
 | Enforce in the mutation seam, not only at create | Same learning: "the setter protects the file (source of truth)". The create boundary cannot protect a file written by an older binary or edited by hand — which is precisely how all nine live legacy files came to exist. This is the one point where `2026-07-28-attach-commit-repersist-must-reload-from-markdown.md` **is** honoured. |
 | Round-trip safety, not "no unknown keys", is the predicate | A document with `"status"` and `"Status"` has zero *unknown* keys yet still loses a member on rewrite. Naming the predicate correctly is what makes U2c non-optional. |
 | Conformance is a **new** reported field, not a redefinition of `valid` | `GetCheckpoint`'s `valid` already has consumers. U6b adds `conforming` alongside it so no shipped contract changes meaning underneath a caller. |
+| **U2f's gated-seam fallback withdrawn** (PR #377 review cycle 3) | Offering "enumeration test **or** exported `events.RewriteCheckpointFile` seam" inside one unit meant its real file set was either one new test file or five files spanning `internal/events`, `internal/core`, and two skill domains — so the unit's size could not be known before work started, and the larger branch breached both the three-file heuristic and width isolation. The enumeration is now the only mechanism; if it proves unimplementable, U2f halts as `blocked` and the seam is re-planned as its own units under a new ID rather than absorbed. |
+| **MCP `get` keeps its validation-class refusal for schema-invalid documents** (PR #377 review cycle 3) | `handleGetCheckpoint` routes through `domainError`, which takes no filename and already maps `ErrCheckpointInvalid` to `validation_failed`. Making `get` emit `checkpoint_use_quarantine` would mean routing a **read** through a mutation-shaped error path, widening U6c into U7's file set and changing a shipped contract. The quarantine remedy is already discoverable from `list_checkpoints` (`needs_quarantine: true`), so the safety value is nil and the churn is real. Disposition codes stay on the mutation verbs. |
 
 ## Risks and Caveats
 
@@ -773,13 +924,13 @@ land before U9. **U3 and U5 are not independent of U4/U6** — see the edge tabl
 | `ResolveCheckpoint` becomes stricter and breaks an existing caller | Medium | Existing fixtures are built from a `CheckpointV1` struct (`internal/events/checkpoint_lifecycle_test.go:19-25`) and conform by construction. U3 adds explicit red-phase coverage for both refusals and re-asserts the conforming and idempotent paths. |
 | **Agent session-start recovery hits nine refusals on day one** | **High** | This is *correct* behaviour, not a regression, and must not be read as one. The nine filenames are enumerated in Runtime Verification and Closure; the rollback trigger fires only on a refusal **outside** that set. U9b updates the agent-facing instruction file in the same PR so recovery guidance matches. |
 | The quarantine widening is dropped and the deadlock ships | **High** | U5 is a first-class unit whose primary test asserts accept-by-quarantine and refuse-by-abandon **in the same table row**, so neither assertion can be deleted alone. |
-| **`ResolveCheckpoint` refusal surfaces to agents as a 500** | **High** | `handleResolveCheckpoint` routes through `domainError`, which has no case for the new sentinels and would fall to `InternalError`. U7 adds all three cases and asserts the payload is not `"error":"internal"`. |
+| **`ResolveCheckpoint` refusal surfaces to agents as a 500** | **High** | `handleResolveCheckpoint` routes through `domainError`, which has no case for the two new sentinels and would fall to `InternalError`. U7 adds both cases as a safety net, U7d routes disposition-class refusals through `checkpointDispositionError` so they also carry `code` and `filename`, and both units assert the payload is not `"error":"internal"`. |
 | **Nested `context` keys swept into refusal, regressing 146-F** | **High** | U2b's second scenario is a permanent regression guard asserting unmodeled `context` keys return nil. |
 | Duplicate / fold-variant top-level keys pass conformance and are then collapsed | Medium | U2c makes `strings.EqualFold`-equal top-level keys non-conforming, reported as `duplicate:<key>`. |
 | Conformance key set drifts from `CheckpointV1` | Medium | U2d asserts set equality against the create-boundary set plus the reserved keys, guarding the hand-written reserved literal. |
 | A future change reintroduces a top-level preservation carrier | Low | U2d asserts `CheckpointV1` declares no `json:"-"` map carrier, anchored to the deliberation so the guard reads as "revisit the decision", not "never". |
-| Widened quarantine increases traffic into `archive/checkpoints/`, where `CleanupCheckpoints` `os.Remove`s a colliding destination | Medium | `moveNoReplace` already refuses to overwrite on the quarantine path. The reverse direction is the real hazard: U9b's restore entry point must rename the archived bytes **and** their `.disposition.json` sidecar aside before copying anything back, so no filename is ever live in both directories and no quarantined evidence can be removed by a later sweep. U10's restore row asserts that property. |
-| The nine live legacy files are mutated during verification | Medium | U10 runs against an in-tree scratch workspace only; live files are read for shape reference and never used as mutation targets. Every file under `.backlogit/checkpoints/` is hash-compared programmatically before and after. |
+| Widened quarantine increases traffic into `archive/checkpoints/`, where `CleanupCheckpoints` `os.Remove`s a colliding destination | Medium | `moveNoReplace` already refuses to overwrite on the quarantine path. The reverse direction is the real hazard: U9b's restore entry point must rename the archived bytes **and** their `.disposition.json` sidecar aside before copying anything back, so no filename is ever live in both directories and no quarantined evidence can be removed by a later sweep. U10b's restore row asserts that property. |
+| The nine live legacy files are mutated during verification | Medium | U10 and U10b run against an in-tree scratch workspace only — U10b's recovery sweep uses a **copied mirror**, never the live directory. Live files are read for shape reference and never used as mutation targets. Every file under `.backlogit/checkpoints/` is hash-compared programmatically before and after. |
 | Windows atomic-write regression | Low | No change to `atomicfile.WriteFileAtomic` or `syncWriteFileAtomic`; only additional pre-write gates. |
 | CLI reference drift blocks the PR | Low | U9 regenerates `gen-docs` output and runs `backlogit docs lint` before handoff. |
 | `CreateCheckpoint` same-second filename collision silently overwrites (adjacent, **out of scope**) | Medium | Surfaced during the entry-point audit (I1). Not fixed here and not stashed, to hold the bounded scope. Recorded in Plan Hardening as a named follow-up. |
@@ -806,7 +957,7 @@ land before U9. **U3 and U5 are not independent of U4/U6** — see the edge tabl
 |---|---|---|---|
 | I. Safety-First Go | `AbandonCheckpoint`'s pre-existing `%v` validation wrap is left in place. | Fixing it changes an unrelated shipped error contract inside a bounded-scope plan and would need its own red phase and cross-surface assertions. | "Fix it while we're in the file" — rejected: it is a silent contract change to a governed path, invisible in this plan's tests, and belongs in its own unit. |
 | V. Structured Observability | No refusal counter, log, or telemetry event. | The refusal is already agent-visible and typed; adding a telemetry surface pulls `internal/telemetry` into a freeze-scoped change and widens the blast radius past the defect. | "Emit a telemetry event per refusal" — rejected: nine known refusals on day one would immediately produce noise with no consumer defined. |
-| VII. Destructive Approval | Quarantine — a source-file-moving operation — is the directed remedy. | Without widening quarantine the plan creates an unremediable deadlock (F3); a move to `archive/checkpoints/` preserves the bytes verbatim and is reversible by copy-back, which U10 proves. | "Refuse on all three verbs" — rejected: strands the file with no disposition path at all, which is strictly worse than a reversible move. |
+| VII. Destructive Approval | Quarantine — a source-file-moving operation — is the directed remedy. | Without widening quarantine the plan creates an unremediable deadlock (F3); a move to `archive/checkpoints/` preserves the bytes verbatim and is reversible by copy-back, which U10b proves. | "Refuse on all three verbs" — rejected: strands the file with no disposition path at all, which is strictly worse than a reversible move. |
 | VII. Destructive Approval | U10's scratch directory teardown is a deletion. | Verification needs a disposable workspace; leaving it permanently pollutes the tree. | "Use `%TEMP%`" — rejected outright by Constitution IV (containment) and by the workspace's no-temp-directory rule. |
 
 Constitution Check: documented-deviations
@@ -832,7 +983,8 @@ Requires plan hardening: yes
 | U5, U5b | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"resolved"` file is refused by both verbs with its documented pre-existing sentinels. |
 | U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **PowerShell-runnable** remediation command on **both** read surfaces, and the file is unchanged after reading. |
 | U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI, MCP, and the `events` read layer reach the same classification from the same stored file. |
-| U10 | Live workspace, read-only | A session-start recovery sweep refuses **only** the nine enumerated legacy filenames and succeeds on every other file under `.backlogit/checkpoints/`. Every live SHA-256 hash in that directory is unchanged. |
+| U10 | Live workspace, read-only | Every live SHA-256 hash under `.backlogit/checkpoints/` is unchanged across the whole verification run. |
+| U10b | Scratch mirror of `.backlogit/checkpoints/` | A session-start recovery sweep against the mirror refuses **exactly** the nine enumerated legacy filenames and succeeds on every other mirrored file. A quarantined file restores from the archive and then resolves. |
 
 **The nine expected-refusal filenames** (enumerated so a correct refusal is never misread as a
 regression — recorded from the live corpus inspection performed during deliberation; the exact list
@@ -881,7 +1033,7 @@ finding of the 117-S review cycle.
 | `docs/compound/security-issues/2026-08-09-authenticate-before-filter-security-check-ordering.md` | Forced the explicit gate-ordering invariants below. A "does this even apply" filter placed ahead of the trustworthiness verification creates an invisible bypass — and drove U4's gate **ahead** of the already-abandoned short-circuit and U6's conformance branch **ahead** of the list filter block. |
 | `docs/compound/2026-07-28-attach-commit-repersist-must-reload-from-markdown.md` | **Deliberately distinguished, not followed.** This is the repository's standing "preserve at a re-persist seam" resolution and its precedents all chose preserve. The Decisions and Rationale table records the three grounds on which checkpoint top-level extras differ (unowned/arbitrary data, a namespace already closed at create, and an existing sanctioned open carrier in `context`). Its seam-enforcement half **is** followed: U3/U4 gate the mutation seam, not just create. |
 | `docs/compound/2026-07-17-backlogit-update-drops-archive-provenance.md` | The direct precedent naming this exact preserve-vs-refuse fork. Its Guidance section drove the **body-preserving hand-repair** procedure added to U9b, so quarantine is not the only escape from a non-conforming checkpoint an operator still wants. |
-| `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md` | Rule 3 forced U8b: a cross-surface guard must exercise CLI **and** MCP **from the same stored state**, not from independent fixtures. Rule 1 forced the registry-drift re-run in U7b for the five changed tool descriptions. |
+| `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md` | Rule 3 forced U8b: a cross-surface guard must exercise CLI **and** MCP **from the same stored state**, not from independent fixtures. Rule 1 forced the registry-drift re-run, split across U7b (two read-surface descriptions) and U7c (three mutation-surface descriptions). |
 | `docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md` | Forced the `unknown_fields` array contract in U7: no `omitempty`, and the empty case asserted with a `.([]any)` type assertion. |
 | `docs/compound/2026-08-01-self-hosted-cli-version-skew-merged-fix-not-yet-operative.md` and `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md` | Forced the fresh-binary requirement in U10: the pinned repo-root `backlogit.exe` predates this work and must not be used to verify it. |
 | `docs/compound/2026-07-30-task-only-typed-metadata-seam-enforce-before-schema.md` | Already reflected: enforce in the mutation seam, reflection-derive the key set. |
@@ -905,19 +1057,15 @@ the two named in the stash text.** Audit of every checkpoint write site in `inte
 | `internal/telemetry/checkpoint.go:94` | different artifact (telemetry harvest cursor), different schema, not under `.backlogit/checkpoints/` | **Out of scope.** Named here so the audit is total and a reviewer does not read its absence as an omission. |
 
 **Making I1 executable.** A table in a plan document decays. **U2f** lands a
-**write-site enumeration test** in `internal/events`: it walks the package sources for calls to
+**write-site enumeration test**: it walks the sources of **both** `internal/events` and
+`internal/core` for calls to
 `syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target resolves under
 the checkpoint directory and asserts the resulting call-site set equals the enumerated allow-list
 above. A new in-place rewrite path added later fails that test rather than silently joining the
-ungated set. If the enumeration proves impractical to implement reliably, the fallback is a single
-**exported** gated helper —
-`events.RewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error` — that
-runs both gates internally and is the **only** function permitted to re-marshal an existing
-checkpoint; U3b (`internal/events`) and U4 (`internal/core`) then route through it. The export is
-mandatory rather than stylistic: U4's write site lives in a different package, and Go cannot
-reference an unexported identifier across that boundary, so an unexported helper would gate exactly
-one of the two rewrite paths. Under the fallback the enumeration allow-list must cover
-`internal/core` as well. Either mechanism satisfies I1; a comment does not.
+ungated set. `internal/core` is in scope because U4's write site lives there. The previously
+offered "or a single exported `events.RewriteCheckpointFile` seam" fallback is **withdrawn**: see
+Decisions and Rationale. If the enumeration cannot be implemented reliably, U2f halts as `blocked`
+and the seam is re-planned as its own units rather than absorbed. A comment does not satisfy I1.
 The mechanism decision is taken in U2f, which is why U2f precedes U3b and U4 in the dependency
 graph and is not folded into U2d's schema-reflection guards.
 
@@ -1020,7 +1168,7 @@ highest-value assertion in the plan; if review trims anything, it must not be th
 | A4b | Tear down the scratch verification workspace after closure | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) | none needed — contents are reproducible from the plan | planned |
 | A5 | Mutate the nine live legacy checkpoints or the stale `129-S` checkpoint | `.backlogit/checkpoints/` | destructive, irreversible | **destructive** | **FORBIDDEN in this work.** Out of scope; requires explicit operator approval in a separate unit of work. | n/a | **abandoned** |
 
-### Deepened runtime verification (U10)
+### Deepened runtime verification (U10, U10b)
 
 * **Environment precheck** — build a fresh binary from the branch HEAD
   (`go build -o <scratch>/backlogit-verify.exe ./cmd/backlogit`) and confirm `version` reports the
@@ -1035,11 +1183,19 @@ highest-value assertion in the plan; if review trims anything, it must not be th
 * **Live-corpus guard** — record `Get-FileHash` for all files under `.backlogit/checkpoints/`
   **before** and **after** the verification run and assert programmatically that every hash is
   identical (R6, A5). A visual comparison is not sufficient.
-* **Target scenarios** — the five rows of the U10 unit, each asserting the file's SHA before and
-  after for refusal cases. The fifth row (**restore path**) is mandatory: copy a quarantined file
-  back from `archive/checkpoints/`, hand-repair it per the U9b procedure, and confirm it then
+* **Target scenarios** — the three rows of U10 (read verdict, refusal, quarantine accept) plus the
+  three rows of U10b (acceptance, restore, recovery-sweep discrimination), each asserting the
+  fixture's SHA before and after for refusal cases. The **restore path** row in U10b is mandatory:
+  copy a quarantined file back from the archive per the U9b entry point (b) rename-aside rule,
+  hand-repair it per the classified U9b entry point (a), and confirm it then
   resolves. Without this row the plan asserts quarantine is a remedy without ever demonstrating
   it is recoverable.
+* **Mirror, not live corpus** — U10b's recovery-sweep row runs against
+  `docs/scratch/checkpoint-verification/mirror/`, a byte-copy of `.backlogit/checkpoints/`. The
+  sweep needs successful `resolve` calls on the conforming files to prove discrimination, and those
+  succeed by rewriting; running it against the live directory would contradict the live-corpus
+  guard above. Mirrored filenames are preserved so the nine-name assertion still means what it
+  says.
 * **Blocked-path handling** — if any refusal case instead succeeds and rewrites the file, halt
   immediately, do not proceed to closure, and treat it as a red-phase failure of the owning unit.
   Conversely, a refusal on one of the nine enumerated legacy filenames is **expected** and must not
@@ -1124,7 +1280,8 @@ immediately and is recorded below.
 The `plan-harden` output is intact and was itself a review target. Attempt 1 falsified invariant I3
 as originally written; it is now a state-scoped table with a named, tested out-of-scope class.
 Invariant I1 was upgraded from a prose table to an executable requirement (a write-site enumeration
-test, or a single gated exported `events.RewriteCheckpointFile` seam). Invariant I2 gained the corrected
+test covering `internal/events` and `internal/core`; the alternative gated-seam mechanism was
+withdrawn in PR #377 review cycle 3 rather than left as an open branch). Invariant I2 gained the corrected
 `AbandonCheckpoint` gate placement and a named, tested residual for the already-resolved
 short-circuit. The consulted-learnings table gained three learnings the reviewers proved were
 directly applicable and missing.
@@ -1207,3 +1364,38 @@ nine edges. No unit was removed, no task ID was renumbered, and the reviewed dec
 test-first ordering are unchanged.
 
 <!-- copilot-review-remediation: pr-377 -->
+
+### PR #377 Copilot review remediation, cycle 3
+
+A third Copilot review (`PRR_kwDORzozKM8AAAABKsDFyQ`) against head
+`d6c11c5ef55d2a053cf1c05f488feb70743a4359` raised eight threads under the summary "several
+implementation contracts are inconsistent, and multiple tasks violate mandatory granularity
+limits". All eight were confirmed valid against `internal/mcp/errors.go`, `internal/mcp/tools.go`,
+and `internal/events/checkpoint_lifecycle.go`; two were valid on the remedy while carrying a
+partly incorrect premise, and the correction is recorded in the owning task rather than silently
+adopted.
+
+| Thread | Finding | Plan delta |
+|---|---|---|
+| `PRRT_kwDORzozKM6b18Ht` (`147.011-T`) | U6's acceptance criteria claimed schema-invalid documents are "already surfaced" by `list_checkpoints`. They are not: the `valErr` branch of `ListCheckpoints` falls through into the Agent / Status / ShipmentID / FeatureID / MaxAge filter block, so a quarantine candidate can be filtered out of the very listing that advertises its remedy. | **U6d added** — quarantine candidates bypass the filter block, matching the shipped parse-failure precedent. U6's false guarantee removed and replaced with an "ordering is not exemption" note. Edge `U6 → U6d`. |
+| `PRRT_kwDORzozKM6b18I5` (`147.021-T`) | U2f offered two mechanisms — an enumeration test **or** an exported `events.RewriteCheckpointFile` seam — so its true size was one new test file or five files across two packages and two skill domains. Unknowable scope, and the larger branch breaches both the three-file heuristic and width isolation. | U2f **commits to enumeration only**; the seam is withdrawn. A halt condition replaces it: if the enumeration proves unimplementable, U2f goes `blocked` and the seam is re-planned under a new ID. Recorded in Decisions and Rationale. |
+| `PRRT_kwDORzozKM6b18GZ` (`147.022-T`) | U6c's third acceptance criterion asserted MCP `get_checkpoint` returns `code: checkpoint_use_quarantine` for a schema-invalid document. `handleGetCheckpoint` routes through `domainError`, which takes no filename and cannot emit disposition codes; the criterion was unreachable. | U6c's criterion retargeted to the **reachable, pre-existing** `validation_failed` refusal. Dependency on U7 dropped (U6c now needs only U6b). Edge `U7 → U6c` removed. Decision recorded: disposition codes stay on the mutation verbs. |
+| `PRRT_kwDORzozKM6b18HQ` (`147.013-T`) | U7 mixed `internal/mcp/errors.go` sentinel mapping with a `tools.go` handler-routing change, and its criterion claimed `domainError` has "no case for `ErrCheckpointInvalid`". It has one — grouped with `ErrValidation` and `ErrCheckpointCorrupt` — so only two sentinels are genuinely absent. | U7 trimmed to `errors.go` only (two new cases). **U7d added** for the `handleResolveCheckpoint` routing change. The false "no case" claim corrected. Edges `U1, U7 → U7d`. |
+| `PRRT_kwDORzozKM6b18Js` (`147.014-T`) | U7b covered five tool descriptions across two skill domains — read surfaces and mutation surfaces — in one unit, breaching width isolation. | U7b reduced to the **two read-surface** rows; **U7c added** for the **three mutation-surface** rows. U7b's dependency retargeted from U7 to U6c. Edges `U7, U7d → U7c → U8b`. |
+| `PRRT_kwDORzozKM6b18IM` (`147.018-T`) | U9b's repair entry point (a) told operators to "move unmodeled keys into `context`" without classifying which offenders that actually works for. `duplicate:progress.<key>` cannot be repaired that way at all, and a blind move can produce a new duplicate. | Entry point (a) gains a four-row **offender classification table** (`<key>`; `duplicate:<key>` where one side is modeled; `duplicate:<key>` where neither is; `duplicate:progress.<key>`) plus a **termination rule** — re-run the conformance check after each repair, and stop after one round-trip. |
+| `PRRT_kwDORzozKM6b18Ip` (`147.019-T`) | U10 required every file under `.backlogit/checkpoints/` to be byte-unchanged **and** a recovery sweep that "succeeds on every other file" in that same directory. Success means a rewrite; the two requirements were mutually exclusive. | The recovery sweep moves to a **copied mirror** at `docs/scratch/checkpoint-verification/mirror/`. The live directory stays hash-guarded and read-only. Mirrored filenames are preserved so the nine-name assertion is unchanged. |
+| `PRRT_kwDORzozKM6b18JP` (`147.019-T`) | U10 carried five verification rows spanning refusal, acceptance, restore, and a recovery sweep — over the four-scenario limit and over the two-hour rule. | U10 keeps **three refusal-path rows**; **U10b added** with the three acceptance / restore / sweep rows. Edge `U10 → U10b`. |
+
+Additional drift found while reconciling and fixed in the same pass, not raised by the review:
+`147.016-T`'s parity table named `checkpoint_use_quarantine` for the MCP `get` legacy-shaped row —
+the same impossible code the `147.022-T` thread flagged one surface over. Corrected to
+`validation_failed` for consistency with U6c.
+
+Net effect: 22 implementation units become 26 (U6d, U7c, U7d, U10b added); one edge removed
+(`U7 → U6c`), seven added (`U6 → U6d`, `U1 → U7d`, `U7 → U7d`, `U7 → U7c`, `U7d → U7c`,
+`U7c → U8b`, `U10 → U10b`), and two retargeted (`U7b` from U7 to U6c, `U6c` off U7) — 34 `blocks`
+edges in the harvested task graph become 40. No unit was removed, no
+task ID was renumbered, and the reviewed decision, scope, data-loss safety posture, and fail-closed
+refusal remain unchanged.
+
+<!-- copilot-review-remediation: pr-377-cycle-3 -->
