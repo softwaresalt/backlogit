@@ -31,12 +31,13 @@ func TestRepairShipmentMemberEvidence_AppendsForcedEvent(t *testing.T) {
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 
-	// Mark task done (ungated, so no evidence exists yet) and archive it.
+	// Mark task done (ungated).
 	_, err = updateArtifactUngated(ctx, ws, task.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 
-	// Add a stale (divergent) EventGatePassed event to simulate the real scenario.
-	staleHead := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" // non-existent sha
+	// Add a stale EventGatePassed event: the head_sha is a well-formed but
+	// non-existent object in this repo (simulates a dangling/orphaned SHA).
+	staleHead := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	require.NoError(t, appendItemEventErr(ctx, ws, task.ID, EventGatePassed, map[string]any{
 		"outcome":  "passed",
 		"ran":      true,
@@ -59,10 +60,92 @@ func TestRepairShipmentMemberEvidence_AppendsForcedEvent(t *testing.T) {
 	assert.Equal(t, head, h, "repaired event must carry the current HEAD sha")
 	reason, _ := evidence.Event.Delta["force_reason"].(string)
 	assert.Equal(t, "test repair reason", reason)
+	repairFlag, _ := evidence.Event.Delta["repair"].(bool)
+	assert.True(t, repairFlag, "repaired event must set repair:true")
+	staleRecorded, _ := evidence.Event.Delta["stale_evidence_head"].(string)
+	assert.Equal(t, staleHead, staleRecorded, "repair must record the stale sha for audit")
 
 	// Verify validateMemberGateEvidence now accepts the member with the current HEAD.
 	require.NoError(t, validateMemberGateEvidence(ctx, ws, []string{task.ID}, head),
 		"member must pass evidence validation after repair")
+}
+
+// TestRepairShipmentMemberEvidence_AlreadyCurrentEvidence_Errors verifies that
+// RepairShipmentMemberEvidence rejects a member whose existing evidence is
+// already an ancestor of the current HEAD (no repair is needed).
+func TestRepairShipmentMemberEvidence_AlreadyCurrentEvidence_Errors(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	base, head, _ := initGitRepoWithCommits(t, ws.RootPath)
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "repair feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "repair task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "repair shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	_, err = updateArtifactUngated(ctx, ws, task.ID, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	// Evidence at base, which IS an ancestor of head.
+	require.NoError(t, appendItemEventErr(ctx, ws, task.ID, EventGatePassed, map[string]any{
+		"outcome":  "passed",
+		"ran":      true,
+		"head_sha": base,
+	}))
+	_ = head
+
+	err = RepairShipmentMemberEvidence(ctx, ws, shipment.ID, task.ID, "unnecessary repair")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already an ancestor")
+}
+
+// TestRepairShipmentMemberEvidence_NoEvidence_Errors verifies that
+// RepairShipmentMemberEvidence rejects a member with no prior gate evidence.
+func TestRepairShipmentMemberEvidence_NoEvidence_Errors(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	initGitRepoWithCommits(t, ws.RootPath)
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "repair feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "repair task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "repair shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	_, err = updateArtifactUngated(ctx, ws, task.ID, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	// No gate evidence appended.
+
+	err = RepairShipmentMemberEvidence(ctx, ws, shipment.ID, task.ID, "no evidence")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no prior gate evidence")
+}
+
+// TestRepairShipmentMemberEvidence_FormalEnforcementActive_Errors verifies that
+// RepairShipmentMemberEvidence returns an error when formal gate enforcement is
+// active (EventGateForced is not admissible under FormalAdmit).
+func TestRepairShipmentMemberEvidence_FormalEnforcementActive_Errors(t *testing.T) {
+	ws := newGateTestWorkspace(t)
+	// Activate formal gate enforcement via the environment anchor.
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
+	ctx := context.Background()
+
+	feat, err := CreateArtifact(ctx, ws, "repair feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "repair task", "task", WithParent(feat.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "repair shipment", []string{task.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	err = RepairShipmentMemberEvidence(ctx, ws, shipment.ID, task.ID, "formal enforcement active")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "formal gate enforcement")
 }
 
 // TestRepairShipmentMemberEvidence_EmptyReason_Errors verifies that an empty

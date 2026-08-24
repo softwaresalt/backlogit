@@ -320,9 +320,14 @@ operations:
   # gate pass event (pre_task_completion_gate_forced) at the current workspace HEAD
   # so the subsequent backlogit_ship_shipment ancestry check passes. Requires an
   # explicit operator reason for the audit trail.
+  #
+  # MCP registration is intentionally absent: gate forcing is a deliberate
+  # human-at-a-terminal action; the permanent MCP exclusion mirrors the existing
+  # force-gates boundary (force_cli_only) documented in the registry and code.
   repair_member_evidence:
-    mcp_tool: "backlogit_repair_member_evidence"
     cli_command: "backlogit shipment repair-evidence {{shipment_id}} --member {{member_id}} --reason {{reason}}"
+    cli_only: true
+    rationale: "gate-evidence repair is operator-only; MCP exclusion is deliberate and permanent (mirrors force_cli_only contract)"
     params:
       shipment_id: "shipment_id"
       member_id: "member_id"
