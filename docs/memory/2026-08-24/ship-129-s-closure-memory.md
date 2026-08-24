@@ -71,20 +71,27 @@ at a divergent head)".
 
 ## Shipment Result
 
-```json
+```text
 {
   "shipment_id": "129-S",
   "shipment_status": "shipped",
-  "archived_ids": ["146.001-T", ..., "146.024-T", "129-S", "146-F"],
+  "archived_ids": ["146.001-T", "146.002-T", "146.004-T", "146.005-T",
+    "146.006-T", "146.007-T", "146.008-T", "146.009-T", "146.010-T",
+    "146.011-T", "146.012-T", "146.013-T", "146.014-T", "146.015-T",
+    "146.016-T", "146.017-T", "146.018-T", "146.019-T", "146.020-T",
+    "146.021-T", "146.022-T", "146.023-T", "146.024-T", "129-S", "146-F"],
   "commit_sha": "15ab30a2a394439f52e5338fc94d1c50e3f395ae"
 }
 ```
 
 ## Open Items
 
-- Stash `DD957688` should be archived (it was the blocker — now resolved)
 - Remaining follow-up stash items from 146-F/129-S scope are independent (`D3CE9E81`, `EA1F5912`, etc.)
 - Closure PR #376 (post-merge/129-s-ship-closure) needs operator review and merge
+
+## Completed This Session
+
+- Stash `DD957688` archived (blocker resolved by repair-evidence + ship)
 
 ## Next Steps for Operator
 
