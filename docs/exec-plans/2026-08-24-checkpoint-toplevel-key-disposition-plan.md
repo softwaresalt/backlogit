@@ -510,7 +510,7 @@ failed.
 
 * **Domain**: code (mcp)
 * **Files**: `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`
-* **Change**: three coupled defects, all in the mapping layer. The handler-routing half of the
+* **Change**: four coupled defects, all in the mapping layer. The handler-routing half of the
   original U7 is now **U7d**, because it touches `internal/mcp/tools.go` and would have taken this
   unit to three files across two behavioural surfaces.
   1. `checkpointDispositionError` (`internal/mcp/errors.go:309`) currently emits
@@ -534,14 +534,34 @@ failed.
      two as a **safety net** so a refusal reaching a handler that has not been re-routed can never
      surface as a 500. Add the two rows to the mapping-table doc comment
      (`internal/mcp/errors.go:127-144`).
+  4. The three disposition-class remediation strings — `checkpoint_use_quarantine`,
+     `checkpoint_use_abandon`, and the new `checkpoint_non_conforming` — currently name a hardcoded
+     originating verb (the shipped `checkpoint_use_quarantine` string is `"this target is
+     malformed; call backlogit_quarantine_checkpoint instead of backlogit_abandon_checkpoint"`).
+     After U7d routes `handleResolveCheckpoint` through the same formatter, that hardcode would
+     make a resolve refusal advertise `backlogit_abandon_checkpoint` as the operator's original
+     verb — a lie that would send the operator to the wrong entry point. The formatter already
+     receives `op` (`"abandon checkpoint"`, `"quarantine checkpoint"`, and after U7d
+     `"resolve checkpoint"`); derive the operator-facing verb from the first word of `op` and
+     interpolate `backlogit_<verb>_checkpoint` into the "instead of" clause of each of the three
+     disposition-class remediations. This keeps the formatter operation-aware without adding a new
+     parameter, honours the width-isolation split (formatter ownership stays with U7 /
+     `147.013-T`; handler-side assertions stay with U7d / `147.025-T`), and lets U7d assert on
+     the `remediation` field without changing the shape or ownership boundary. The remedy verb
+     itself (`quarantine` for the two "target is malformed / non-conforming" classes, `abandon`
+     for the "target is valid" class) is unchanged; only the wronged verb becomes op-derived.
 * **Tests** (4): `checkpointDispositionError` returns `checkpoint_non_conforming` for
   `ErrCheckpointNonConforming` and its `ErrCheckpointNotFound` → `NotFound` case still fires;
   `domainError` maps the two missing sentinels to their named codes instead of falling to
   `default: InternalError`; invoking `handleAbandonCheckpoint` on a non-conforming target returns
   `checkpoint_non_conforming` with a populated `unknown_fields` read through a `.([]any)` type
   assertion so an absent or `null` key fails
-  (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`); a conforming
-  refusal returns `unknown_fields: []` rather than omitting the key.
+  (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`) and a
+  `remediation` string naming `backlogit_abandon_checkpoint` as the originating verb (proving the
+  op-derived interpolation is in place — the assertion holds because abandon is the caller here,
+  but the formatter is not hardcoded to it, which U7d's resolve-side assertions confirm from the
+  other direction); a conforming refusal returns `unknown_fields: []` rather than omitting the
+  key.
 * **Expected red**: all four fail.
 * **Depends on**: U1, U3b, U4, U5.
 
@@ -554,9 +574,15 @@ failed.
   `domainError("resolve checkpoint", err)`. `domainError` takes **no filename argument**, so it can
   never populate `filename`, and it does not build the disposition response at all — no routing
   change means no `code`, no `filename`, and no `unknown_fields` on a resolve refusal, however
-  complete the mapping table is. Route **by class**, using the U1 predicate:
-  `if events.QuarantineIsRemedy(err) { return checkpointDispositionError("resolve checkpoint", filename, err) }`
-  falling through to `domainError` otherwise. A wholesale swap would regress the errors
+  complete the mapping table is. Route **by class**, using the U1 predicate — imported through the
+  existing `backlogiterrors` alias `internal/mcp/tools.go` already carries for
+  `github.com/softwaresalt/backlogit/internal/errors`, since U1 declares the predicate in that
+  package (`internal/errors/checkpoint_errors.go`), not in `internal/events`:
+  `if backlogiterrors.QuarantineIsRemedy(err) { return checkpointDispositionError("resolve checkpoint", filename, err) }`
+  falling through to `domainError` otherwise. Passing the `op` string `"resolve checkpoint"` here
+  is what the U7 op-derived remediation reads to render `backlogit_resolve_checkpoint` as the
+  wronged verb rather than the hardcoded `backlogit_abandon_checkpoint` a shipped resolve refusal
+  would otherwise advertise. A wholesale swap would regress the errors
   `checkpointDispositionError` does not name — `ErrCheckpointCannotResolveAbandoned` and
   `ErrCheckpointCorrupt` map to `validation_failed` through `domainError` today and would fall to
   that function's `default: InternalError` tail. `ErrCheckpointNotFound` is safe either way: it is
@@ -566,13 +592,19 @@ failed.
   `ErrCheckpointNonConforming`, so `errors.Is` matches through the wrap.
 * **Tests** (4): invoking the **`handleResolveCheckpoint` handler** (not the events function) on a
   schema-invalid legacy document returns `code: checkpoint_use_quarantine` with a populated
-  `filename` and explicitly asserts the payload is **not** `"error":"internal"`; invoking it on a
+  `filename`, a `remediation` string naming `backlogit_resolve_checkpoint` (not
+  `backlogit_abandon_checkpoint`) as the originating verb — pinning U7's op-derived interpolation
+  from the resolve side, so the formatter cannot silently regress to a hardcoded wronged verb —
+  and explicitly asserts the payload is **not** `"error":"internal"`; invoking it on a
   valid-but-non-conforming document returns `code: checkpoint_non_conforming` with `unknown_fields`
-  non-empty; a missing file still returns the pre-existing not-found refusal; an already-abandoned
+  non-empty and a `remediation` string naming `backlogit_resolve_checkpoint` as the originating
+  verb; a missing file still returns the pre-existing not-found refusal; an already-abandoned
   target still returns its pre-existing `validation_failed` refusal, proving the non-disposition
   path still reaches `domainError`.
-* **Expected red**: cases 1 and 2 fail; cases 3 and 4 are declared regression guards.
-* **Depends on**: U1 (the predicate), U7 (the response shape and the code).
+* **Expected red**: cases 1 and 2 fail (routing and both remediation-verb assertions); cases 3 and
+  4 are declared regression guards.
+* **Depends on**: U1 (the predicate and its host package), U7 (the response shape, the code, and
+  the op-derived remediation the resolve-side assertions read).
 
 ### U7b — MCP read-surface tool descriptions (exact replacement strings)
 
@@ -754,7 +786,26 @@ failed.
   wants. This is **one** procedure with two entry points, and both must be written out verbatim so
   this file, task `147.018-T`, and U10b's restore row cannot drift apart:
 
-  **(a) Direct repair** — the document is still under `.backlogit/checkpoints/`. First **classify
+  **Validity is a precondition, not part of the repair.** `checkpoint get` reports validity and
+  conformance as **separate** outcomes (U6b, U6c, U8c): a schema-invalid stored document is refused
+  with `ErrCheckpointInvalid` **before** any conformance verdict is produced, so the classified
+  offender list entry point (a) reads does not exist for that document. Entry point (a) is
+  therefore the repair path for a stored document `checkpoint get` reports as
+  `valid: true, conforming: false` **only**. A schema-invalid stored document is routed to
+  `quarantine_checkpoint` directly — moving unmodeled keys cannot fix a validation defect
+  (`legacy_top_level` relocates keys, not fixes shapes), and this instruction file promises **no**
+  in-place repair for arbitrary validation defects. That is the same disposition U3's validity gate
+  already forces on `resolve` (via the `ErrCheckpointUseQuarantine` wrap) and U4/U5 already forces
+  on `abandon`; the instruction file's job is to teach the operator that the two dispositions
+  agree, not to invent a hidden third repair for validation defects. The two disjoint entry
+  conditions are therefore:
+
+  * **(a) direct repair** — active file, `checkpoint get` reports `valid: true, conforming: false`.
+  * **(b) post-quarantine restore** — file already quarantined; the operator wants the evidence
+    back under active-checkpoint semantics.
+
+  **(a) Direct repair** — the document is still under `.backlogit/checkpoints/` and
+  `checkpoint get` has already reported `valid: true, conforming: false` on it. First **classify
   every offender** the conformance verdict reported, because they are not all repairable by moving
   keys:
 
@@ -807,7 +858,22 @@ failed.
      copy, and must not be carried into the active directory (a `checkpoint-*.json.disposition.json`
      file there would be swept up by the `checkpoint-*.json` glob). Stop if the active path already
      exists: never overwrite a live checkpoint.
-  3. Apply entry point (a) unchanged to the restored file.
+  3. Apply entry point (a) unchanged to the restored file — including its schema-valid precondition.
+     The precondition **is not a formality here**: quarantines routed by U3 (validity gate on
+     resolve) or U4/U5 (validity gate on abandon) preserve schema-invalid bytes, so the archived
+     evidence may fail validation. If `checkpoint get` refuses the restored bytes with
+     `ErrCheckpointInvalid`, entry point (a) is inapplicable — the classified offender list does
+     not exist for that document, and moving unmodeled keys cannot fix a validation defect. If
+     entry point (a) is inapplicable, or if its **termination rule** fires (`conforming: false`
+     persists after the classified moves because the offender is a nested `progress` duplicate or
+     other move-untouchable class), **abort the restore**: remove `.backlogit/checkpoints/<filename>`
+     and leave the file quarantined. The renamed archive evidence at
+     `archive/checkpoints/<filename>.quarantined-<disposition_at>` and its
+     `.disposition.json` sibling are **untouched** by the abort — they are the only verbatim
+     record of the pre-quarantine bytes, and the append-only disposition audit log still names the
+     quarantine event. The restore has succeeded only when `checkpoint get` reports the active copy
+     as **both** `valid: true` **and** `conforming: true`; otherwise preserved evidence remains
+     quarantined, exactly as if step 2 had never run.
 
   The renamed evidence pair is **retained, not deleted**: it is the only verbatim record of the
   pre-repair bytes, and the quarantine event itself remains in the append-only disposition audit
@@ -872,16 +938,23 @@ failed.
   filenames keep their names in the mirror, so the discrimination assertion is unchanged while the
   live bytes stay read-only.
 * **Rows** (3): **acceptance is not over-refused** — a conforming active fixture is accepted by
-  abandon and a second conforming active fixture is accepted by resolve; **restore path** — a
-  quarantined file is recovered per entry point (b) of the single U9b procedure (rename the
+  abandon and a second conforming active fixture is accepted by resolve; **restore path** — the
+  quarantine archive U10 row 3 produced, which is **valid-but-non-conforming** (row 1's `get`
+  already reported `conforming: false`, which under U6b/U6c is only possible on a schema-valid
+  document — a schema-invalid document is refused with `ErrCheckpointInvalid` before any
+  conformance verdict), is recovered per entry point (b) of the single U9b procedure (rename the
   archived bytes *and* their `.disposition.json` sidecar aside to
   `<filename>.quarantined-<disposition_at>` first, then copy the preserved bytes back into the
-  now-free active filename), hand-repaired per the classified entry point (a), and then resolves
-  normally — proving quarantine is recoverable rather than terminal **without** ever leaving one
-  filename present in both the active fixture directory and the archive directory, and with the
-  renamed evidence pair still byte-identical afterwards; **recovery sweep discrimination** — against
-  the mirror, a session-start recovery sweep refuses **exactly** the nine enumerated legacy
-  filenames and succeeds on every other mirrored file.
+  now-free active filename), hand-repaired per the classified entry point (a), and — with
+  `checkpoint get` then reporting the active copy as both `valid: true` **and** `conforming: true`
+  — resolves normally — proving quarantine is recoverable rather than terminal **without** ever
+  leaving one filename present in both the active fixture directory and the archive directory,
+  and with the renamed evidence pair still byte-identical afterwards. The valid-but-non-conforming
+  fixture class is deliberate: entry point (a)'s schema-valid precondition holds so its classified
+  moves converge; a schema-invalid archive would land on U9b's restore-abort rule and this row
+  would fail; **recovery sweep discrimination** — against the mirror, a session-start recovery
+  sweep refuses **exactly** the nine enumerated legacy filenames and succeeds on every other
+  mirrored file.
 * **Nine-file acknowledgement**: satisfied by row 3 against the mirror. U10's live-corpus SHA-256
   comparison must still pass after this unit runs.
 * **Inherited inputs and teardown**: U10 hands this unit a **live** workspace — the branch-built
