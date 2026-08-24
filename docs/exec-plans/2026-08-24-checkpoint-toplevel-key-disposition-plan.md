@@ -136,6 +136,14 @@ requires a *compiling but failing* harness. Every code unit therefore runs in tw
 
 A unit is not red until `go test ./<pkg>` prints assertion failures rather than a build error.
 
+**Declared regression guards.** Not every scenario listed under a unit is a red assertion. A
+scenario that asserts already-shipped behaviour, or that expects `nil` from a `return nil`
+declaration stub, passes from the moment it lands. Those cases are **declared regression guards**:
+each unit's **Expected red** line names which of its cases fail and which are guards, and a unit
+whose cases are *all* guards declares that explicitly (U2d, U8b). A guard is not a test-first
+violation — silently counting one as red is, because it hides the fact that no assertion ever
+failed.
+
 ### U1 — Non-conforming sentinel, typed error, and the canonical remedy predicate
 
 * **Domain**: code (errors)
@@ -166,7 +174,8 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 * **Tests** (3): a conforming V1 document returns nil; a document with two unknown top-level keys
   returns the typed error with both keys sorted; a document carrying all four `disposition*` fields
   **and** `status:"abandoned"` returns nil.
-* **Expected red**: cases 2 and 3 fail (`return nil` stub returns nil for case 2).
+* **Expected red**: case 2 fails against the `return nil` stub. Cases 1 and 3 both expect `nil`, so
+  they pass from the moment they land — declared regression guards, not red assertions.
 * **Depends on**: U1.
 
 ### U2b — Conformance helper: nested `progress` rule and open `context` namespace
@@ -180,7 +189,10 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 * **Tests** (3): an unknown nested key returns `progress.<key>`; **unmodeled `context` keys return
   nil** (the open namespace shipped in 146-F must not be swept into refusal — this is the
   highest-risk regression in the plan); a non-object `progress` returns nil without panicking.
-* **Expected red**: cases 1 and 3 fail; case 2 passes trivially and is a permanent regression guard.
+* **Expected red**: case 1 fails. Case 2 (unmodeled `context` keys return `nil`) is the permanent
+  146-F regression guard, and case 3 (non-object `progress` returns `nil`) also passes before the
+  recursion lands, because the U2 top-level check never descends into `progress` at all — both are
+  declared regression guards, not red assertions.
 * **Scope note**: `unknownNestedProgressKeys` decodes `progress` into a `map[string]json.RawMessage`,
   so duplicate and fold-variant nested keys collapse before the unknown-key diff and are invisible
   to this unit. That gap is closed by **U2e** and must not be folded into this unit's three
@@ -255,23 +267,32 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 
 * **Domain**: tests
 * **Files**: `internal/events/checkpoint_writesite_test.go` (new); under the fallback mechanism
-  additionally `internal/events/checkpoint_lifecycle.go`
+  additionally `internal/events/checkpoint_lifecycle.go` (the helper and the `ResolveCheckpoint`
+  call site), `internal/core/checkpoint_disposition.go` (the `AbandonCheckpoint` call site) and
+  their two `_test.go` files
 * **Change**: land the executable form of **I1** described in "Entry-point completeness audit"
   below. The primary mechanism is a write-site enumeration test that walks the package sources for
   calls to `syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target
   resolves under the checkpoint directory and asserts the resulting call-site set equals the audited
   allow-list. If the enumeration proves impractical to implement reliably, the fallback is a single
-  gated helper — `rewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error` —
-  that runs both gates internally and is the **only** function permitted to re-marshal an existing
-  checkpoint.
+  **exported** gated helper — `events.RewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error`
+  — that runs both gates internally and is the **only** function permitted to re-marshal an
+  existing checkpoint. **It must be exported.** The seam has two consumers in two packages:
+  `ResolveCheckpoint` in `internal/events` (U3b) and `AbandonCheckpoint` in `internal/core`
+  (U4, `internal/core/checkpoint_disposition.go:~110-125`, today calling
+  `atomicfile.WriteFileAtomic` directly inside its `MutationEnvelope`). Go cannot reference an
+  unexported identifier across a package boundary, so an unexported `rewriteCheckpointFile` in
+  `internal/events` would leave U4's rewrite permanently ungated — the exact hole I1 exists to
+  close. If the fallback is chosen, the write-site enumeration must also cover `internal/core`,
+  because that is where the second gated rewrite lands.
 * **Why this is a separate unit from U2d**: the fallback is a **production seam** that U3b and U4
   must route through, so the mechanism decision is taken here and consumed there. Bundling it into
   U2d would put a possible production change inside a unit that declares itself green on landing
   with no red phase, and would take that unit to four scenarios across two skill domains —
   breaching both the width-isolation rule and the 2-hour granularity rule.
 * **Tests** (2): the enumerated call-site set equals the allow-list; a synthetic ungated rewrite
-  site fails the assertion. Under the fallback the second case becomes `rewriteCheckpointFile`
-  refusing a non-conforming document.
+  site fails the assertion. Under the fallback the second case becomes
+  `events.RewriteCheckpointFile` refusing a non-conforming document.
 * **Expected red**: case 2 fails until the chosen mechanism exists.
 * **Depends on**: U2d.
 
@@ -308,7 +329,11 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
   bytes unchanged **and** U6 flags the same file `NeedsQuarantine: true` (pins the residual and its
   discovery path together, so neither half can be deleted alone); a document with
   `disposition: "abandoned"` still returns `ErrCheckpointCannotResolveAbandoned`.
-* **Expected red**: cases 1 and 2 fail.
+* **Expected red**: case 1 fails (resolve currently succeeds and rewrites a non-conforming
+  document). Case 2 passes once this unit's `U6` dependency has landed — the already-resolved
+  short-circuit is shipped behaviour and `U6` already flags the file — and case 3 asserts the
+  shipped `ErrCheckpointCannotResolveAbandoned` guard. Both are declared regression guards, not
+  red assertions.
 * **Granularity check before starting**: case 2 asserts across the U3b gate *and* the U6 discovery
   path. Before beginning, count the functions modified across `checkpoint_lifecycle.go` and
   `checkpoint_lifecycle_test.go` for U3b combined with any still-open U6 work; if the total reaches
@@ -467,25 +492,33 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 ### U7b — MCP tool descriptions (exact replacement strings)
 
 * **Domain**: docs (agent-facing tool contract)
-* **Files**: `internal/mcp/tools.go`, `.autoharness/backlog-registry.yaml` (if drift), `internal/cli/registry_parity_test.go`
-* **Change**: five descriptions. Current → replacement, verbatim:
-  * `backlogit_list_checkpoints` (`:178`): `"List session state checkpoints with optional filters"`
-    → `"List session state checkpoints with optional filters. Flags each entry with needs_quarantine and remediation_command when its bytes are malformed or carry unmodeled top-level keys."`
-  * `backlogit_get_checkpoint` (`:189`): `"Get and validate a specific checkpoint by filename"`
-    → `"Get and validate a specific checkpoint by filename. Reports conforming=false and needs_quarantine=true when the stored bytes carry unmodeled top-level keys."`
-  * `backlogit_resolve_checkpoint` (`:196`): `"Mark a checkpoint as resolved"`
-    → `"Mark a checkpoint as resolved. Refuses a malformed or non-conforming target rather than rewriting it; use backlogit_quarantine_checkpoint instead."`
-  * `backlogit_abandon_checkpoint` (`:211`): `"Administratively abandon a valid checkpoint. Refuses a malformed target; use backlogit_quarantine_checkpoint instead."`
-    → `"Administratively abandon a valid, conforming checkpoint. Refuses a malformed or non-conforming target; use backlogit_quarantine_checkpoint instead."`
-  * `backlogit_quarantine_checkpoint` (`:220`): `"Quarantine a malformed checkpoint by moving its bytes verbatim to the archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."`
-    → `"Quarantine a malformed or non-conforming checkpoint by moving its bytes verbatim to the archive. Refuses a valid, conforming target; use backlogit_abandon_checkpoint instead."`
-* **Tests** (2): the existing registry-parity / fallback-map drift test
-  (`docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`, Rule 1) is
-  re-run and stays green for all five renamed descriptions, with
-  `.autoharness/backlog-registry.yaml` updated in the same commit if it carries description text;
-  a description-content assertion that `backlogit_resolve_checkpoint` mentions quarantine, so the
-  agent-facing contract cannot silently revert.
-* **Expected red**: case 2 fails.
+* **Files**: `internal/mcp/tools.go` (descriptions at `:176-224`), `internal/mcp/tools_test.go`,
+  `.autoharness/backlog-registry.yaml` (only if it carries description text),
+  `internal/cli/registry_parity_test.go` (re-run; unchanged unless it drifts)
+* **Change**: five descriptions. This table is the single source of truth and is reproduced
+  verbatim in `147.014-T`; the two must not drift.
+
+  | Line | Tool | Delta |
+  |---|---|---|
+  | `:178` | `list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use quarantine_checkpoint, not resolve_checkpoint or abandon_checkpoint.` |
+  | `:189` | `get_checkpoint` | append: ` For a schema-valid document, returns conforming false when it carries unmodeled top-level keys; such a document cannot be resolved or abandoned. A schema-invalid document is refused before any conformance verdict is produced.` |
+  | `:196` | `resolve_checkpoint` | append: ` Refuses a stored document it cannot safely rewrite rather than replacing it: checkpoint_use_quarantine when the document is schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. Use quarantine_checkpoint instead.` |
+  | `:211` | `abandon_checkpoint` | append: ` Also refuses when the document carries unmodeled top-level keys.` |
+  | `:220` | `quarantine_checkpoint` | replace `malformed checkpoint file` → `checkpoint file that cannot be safely rewritten (malformed, schema-invalid, or carrying unmodeled top-level keys)` |
+
+  The `get_checkpoint` qualifier is load-bearing: `GetCheckpoint` runs `ValidateCheckpoint` and
+  returns `ErrCheckpointInvalid` before any conformance result exists
+  (`internal/events/checkpoint_lifecycle.go:~105-137`), so an unqualified "returns conforming
+  false for a document with unmodeled top-level keys" would promise a verdict the read path
+  cannot produce for the nine legacy files.
+* **Tests** (2): a table-driven assertion over the five registered descriptions, read from the
+  **built tool set** rather than a duplicated literal, each row asserting its required substring
+  and that `resolve_checkpoint` distinguishes `checkpoint_use_quarantine` from
+  `checkpoint_non_conforming`; and the existing registry-parity / fallback-map drift test
+  (`docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`, Rule 1)
+  re-run and staying green, with `.autoharness/backlog-registry.yaml` updated in the same commit
+  if it carries description text.
+* **Expected red**: all five rows of case 1 fail. Case 2 is a declared regression guard.
 * **Depends on**: U6b, U7.
 
 ### U8 — CLI refusal surfacing
@@ -493,32 +526,47 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 * **Domain**: code (cli)
 * **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_test.go`
 * **Change**: surface the new refusals on `backlogit checkpoint resolve` and
-  `backlogit checkpoint abandon` with the offending key list and the PowerShell-safe quarantine
-  remediation command, matching the existing CLI error idiom. Project the new
+  `backlogit checkpoint abandon` as actionable operator messages carrying the PowerShell-safe
+  quarantine remediation command, matching the existing CLI error idiom. **The offending-key list
+  is only available for a valid-but-non-conforming target.** A schema-invalid legacy document is
+  refused by the U3 validity gate before conformance runs, so no key list exists for it; that
+  refusal prints the validation reason and the remediation command instead. Project the new
   `conforming` / `needs_quarantine` fields on `checkpoint get`. **No JSON error envelope is added**
   — that is stash `63E810D9` and stays out of scope; the CLI/MCP shape asymmetry it describes is a
   documented, pre-existing condition, restated in U9b rather than fixed here.
-* **Tests** (2): `checkpoint resolve` on a legacy document exits non-zero and names quarantine;
-  `checkpoint abandon` on a non-conforming document exits non-zero and names the offending keys.
-* **Expected red**: both fail.
+* **Tests** (3): `checkpoint resolve` on a **schema-invalid legacy** document exits non-zero,
+  reports the `checkpoint_use_quarantine` class with the validation reason and the remediation
+  command, and prints **no** key list; `checkpoint resolve` on a **valid-but-non-conforming**
+  document exits non-zero and names the offending top-level keys alongside the same command;
+  `checkpoint abandon` on that same valid-but-non-conforming document does likewise. The
+  PowerShell-safety assertion rides on the rendered command in cases 2 and 3 rather than being a
+  fourth scenario, keeping this unit inside the 2-Hour Rule.
+* **Expected red**: all three fail.
 * **Depends on**: U7.
 
 ### U8b — Cross-surface parity from one stored state
 
 * **Domain**: tests
-* **Files**: `internal/cli/checkpoint_parity_test.go` (new)
+* **Files**: `internal/cli/checkpoint_parity_test.go` (new). **No production change.**
 * **Change**: `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`
   Rule 3 requires that a guard spanning CLI and MCP exercise **both surfaces from the same stored
-  state**. U7 and U8 each build their own fixtures, so they could drift apart and still both pass.
-  Add one shared fixture table — `legacy-shaped` (invalid + non-conforming),
-  `valid-but-non-conforming`, `conforming-active` — written once per case, then driven through the
-  CLI command handler **and** the MCP handler against that same file, asserting the refusal
-  classification agrees. Shape differences (exit code + text vs JSON payload) are expected;
-  the **classification** must not differ.
-* **Tests** (3): one row per fixture shape, each asserting CLI and MCP reach the same
-  accept/refuse verdict and the same remedy verb.
-* **Expected red**: the `valid-but-non-conforming` row fails first.
-* **Depends on**: U7b, U8.
+  state**. U6/U6b/U6c/U7/U7b/U8 each build their own fixtures, so they could drift apart and still
+  all pass. Add one shared fixture table — `legacy-shaped` (schema-invalid **and**
+  non-conforming), `valid-but-non-conforming`, `conforming-active` — written once per case, then
+  driven through the CLI command handler **and** the MCP handler **and** the `events` read layer
+  against that same file, asserting the refusal classification agrees. Shape differences (exit code
+  + text vs JSON payload) are expected; the **classification** must not differ. A schema-invalid
+  document never reaches a conformance verdict, so the `conforming: false` assertions belong to the
+  `valid-but-non-conforming` row **only**; the `legacy-shaped` row asserts the invalid-document
+  refusal (`ErrCheckpointInvalid` / `checkpoint_use_quarantine`) instead of a success payload.
+* **Tests** (3): one row per fixture shape, each asserting CLI, MCP, and `events` reach the same
+  accept/refuse verdict and the same remedy verb, and that every fixture file is byte-identical
+  after all three surfaces have been exercised.
+* **Expected red**: none. **Posture: regression guard — this unit is the parity contract itself.**
+  It lands after U7b, U8, and U6c, so all three surfaces already carry the behaviour; the unit
+  exists to pin their agreement, and the exemption is declared here rather than claimed as
+  test-first (same precedent as U2d).
+* **Depends on**: U6c, U7b, U8.
 
 ### U9 — Design doc: total classification
 
@@ -526,13 +574,24 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 * **Files**: `docs/design-docs/checkpoint-administrative-disposition.md`, regenerated
   `docs/cli-reference/backlogit_checkpoint_*.md`
 * **Change**: restate the "Malformed-Only vs Valid-Only Split Rationale" section as a
-  **state-scoped** three-way classification — for an `active` target: conforming-and-valid →
-  abandon; malformed **or** non-conforming → quarantine. State explicitly that non-`active` states
-  (`ErrCheckpointNotActive`) are a separate, pre-existing class **not** addressed here, so the
-  totality claim is not overstated. Document the `ResolveCheckpoint` validity and conformance gates
-  as a behaviour change, note the named already-resolved residual from U3b, and record that the
-  top-level namespace is closed in both directions with `context` remaining the sole open one.
-  Regenerate CLI reference docs via `gen-docs` if any command help text changed.
+  **state-scoped four-class** classification. For a `status: "active"` target:
+
+  | Class | `abandon` | `resolve` | `quarantine` |
+  |---|---|---|---|
+  | valid + conforming | accept | accept | refuse (`ErrCheckpointUseAbandon`) |
+  | valid but non-conforming | refuse (`ErrCheckpointNonConforming`) | refuse (`ErrCheckpointNonConforming`) | **accept** |
+  | parses but schema-invalid | refuse (`ErrCheckpointUseQuarantine`) | refuse (`ErrCheckpointUseQuarantine`) | accept |
+  | does not parse | refuse (`ErrCheckpointUseQuarantine`) | refuse (`ErrCheckpointUseQuarantine`) | accept |
+
+  The third row must be written out separately rather than folded into "malformed": it is the
+  exact shape of the nine live legacy files — they parse cleanly and fail `ValidateCheckpoint` —
+  and a three-class table that only names parse failure is **not total** over active checkpoints.
+  State explicitly that non-`active` states (`ErrCheckpointNotActive`) are a separate, pre-existing
+  class **not** addressed here, so the totality claim is not overstated. Document the
+  `ResolveCheckpoint` validity and conformance gates as a behaviour change, note the named
+  already-resolved residual from U3b, and record that the top-level namespace is closed in both
+  directions with `context` remaining the sole open one. Regenerate CLI reference docs via
+  `gen-docs` if any command help text changed.
 * **Tests**: `backlogit docs lint` reports 0 violations; the CLI Reference Drift check is clean.
 * **Expected red**: n/a (docs-only; runs after behaviour is final).
 * **Depends on**: U6b, U8b.
@@ -548,14 +607,53 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
   or `checkpoint_non_conforming` and the remedy is quarantine, not retry; the disjointness
   discriminator is validity **and** top-level conformance; and — following the Guidance section of
   `docs/compound/2026-07-17-backlogit-update-drops-archive-provenance.md` — a **body-preserving
-  hand-repair** procedure (open the file, move the unmodeled top-level keys under `context`, re-run
-  `checkpoint get` to confirm `conforming: true`, then use the normal verb) so quarantine is not the
-  only escape from a checkpoint an operator still wants. This is **one** procedure with two entry
-  points, and both must be written out so this file and U10's restore row cannot drift apart:
-  **(a) direct repair** — the document is still under `.backlogit/checkpoints/`, so repair it in
-  place and then use the normal verb; **(b) post-quarantine restore** — the document was already
-  quarantined, so copy the archived bytes back from `archive/checkpoints/` and apply the same
-  in-place repair. Both preserve the original document body. Neither creates a **replacement**
+  hand-repair** procedure so quarantine is not the only escape from a checkpoint an operator still
+  wants. This is **one** procedure with two entry points, and both must be written out verbatim so
+  this file, task `147.018-T`, and U10's restore row cannot drift apart:
+
+  **(a) Direct repair** — the document is still under `.backlogit/checkpoints/`. Open it and move
+  every unmodeled top-level key into the reserved container object `context.legacy_top_level`,
+  preserving each original key name and value byte-for-byte. **Do not flatten the keys directly
+  into `context`.** `CheckpointContext.UnmarshalJSON`
+  (`internal/events/checkpoint_schema.go:196-220`) skips any `context` member whose name is
+  `strings.EqualFold`-equal to a modeled context field (`shipment_id`, `feature_id`, `task_ids`,
+  `branch`) when populating `Extra`, so a flattened top-level `shipment_id` landing beside an
+  existing `context.shipment_id` silently destroys one of the two values on the next re-marshal —
+  the same loss class this feature exists to close. `legacy_top_level` is unmodeled, so it
+  round-trips through `Extra` intact, and nesting **every** moved key under it makes the rule
+  uniform rather than requiring per-key fold comparisons. If `context.legacy_top_level` already
+  exists, merge into it and **refuse to overwrite an existing member** — stop and reconcile that
+  conflict by hand. Then re-run `checkpoint get` to confirm `conforming: true` and use the normal
+  verb (`resolve` or `abandon`).
+
+  **(b) Post-quarantine restore** — the document was already quarantined, so its bytes and its
+  `<filename>.disposition.json` sidecar both live under `archive/checkpoints/`. **Never copy the
+  archived file back under its original name while the archive copy is still there.** That leaves
+  the same filename in `.backlogit/checkpoints/` *and* `archive/checkpoints/`, and the next
+  `CleanupCheckpoints` sweep archives the active copy over the quarantined one — on Windows it
+  calls `os.Remove(dst)` before the rename (`internal/events/checkpoint_lifecycle.go:238-242`),
+  destroying the quarantined evidence outright. Reconcile the archive **first**, in this order:
+
+  1. Rename the archived pair out of the cleanup-destination namespace, keeping the two files
+     together: `archive/checkpoints/<filename>` →
+     `archive/checkpoints/<filename>.quarantined-<disposition_at>` and
+     `archive/checkpoints/<filename>.disposition.json` →
+     `archive/checkpoints/<filename>.quarantined-<disposition_at>.disposition.json`, where
+     `<disposition_at>` is the sidecar's timestamp rendered in compact UTC basic format
+     (`20060102T150405Z`) so the name is legal on Windows. The evidence name no longer ends in
+     `.json`, so it can never be a `CleanupCheckpoints` destination and can never be matched by the
+     `checkpoint-*.json` glob. The sidecar still records the original base name in its `filename`
+     field, so provenance survives the rename.
+  2. **Copy** — never move — the preserved bytes to `.backlogit/checkpoints/<filename>`. The
+     sidecar stays in the archive; it describes the quarantine event, not the restored working
+     copy, and must not be carried into the active directory (a `checkpoint-*.json.disposition.json`
+     file there would be swept up by the `checkpoint-*.json` glob). Stop if the active path already
+     exists: never overwrite a live checkpoint.
+  3. Apply entry point (a) unchanged to the restored file.
+
+  The renamed evidence pair is **retained, not deleted**: it is the only verbatim record of the
+  pre-repair bytes, and the quarantine event itself remains in the append-only disposition audit
+  log. Both entry points preserve the original document body. Neither creates a **replacement**
   checkpoint: a fresh file would abandon the original filename, `created_at`, and session identity,
   which is a different operation and must not be described as the repair path. State that quarantining a checkpoint whose
   `status` is `active` moves live recovery state to the archive and should be a deliberate operator
@@ -584,9 +682,13 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
   drifts as sessions add checkpoints, so the guard enumerates the directory rather than a literal.
 * **Rows** (5): legacy-shaped resolve → refused, bytes unchanged; valid-but-non-conforming abandon
   → refused naming keys; valid-but-non-conforming quarantine → accepted, archived bytes identical;
-  conforming active abandon → still succeeds; **restore path** — a quarantined file is copied back
-  from `archive/checkpoints/`, hand-repaired per entry point (b) of the single U9b procedure, and
-  then resolves normally, proving quarantine is recoverable rather than terminal.
+  conforming active abandon → still succeeds; **restore path** — a quarantined file is recovered
+  per entry point (b) of the single U9b procedure (rename the archived bytes *and* their
+  `.disposition.json` sidecar aside to `<filename>.quarantined-<disposition_at>` first, then copy
+  the preserved bytes back into the now-free active filename), hand-repaired per entry point (a),
+  and then resolves normally — proving quarantine is recoverable rather than terminal **without**
+  ever leaving one filename present in both `.backlogit/checkpoints/` and `archive/checkpoints/`,
+  and with the renamed evidence pair still byte-identical afterwards.
 * **Scratch containment**: the scratch workspace is created **inside the repository working tree**
   at `docs/scratch/checkpoint-verification/` (never `%TEMP%`, never outside the cwd — Constitution
   IV), the resolved path is asserted to be repo-root-relative **before the first write**, it is
@@ -676,7 +778,7 @@ land before U9. **U3 and U5 are not independent of U4/U6** — see the edge tabl
 | Duplicate / fold-variant top-level keys pass conformance and are then collapsed | Medium | U2c makes `strings.EqualFold`-equal top-level keys non-conforming, reported as `duplicate:<key>`. |
 | Conformance key set drifts from `CheckpointV1` | Medium | U2d asserts set equality against the create-boundary set plus the reserved keys, guarding the hand-written reserved literal. |
 | A future change reintroduces a top-level preservation carrier | Low | U2d asserts `CheckpointV1` declares no `json:"-"` map carrier, anchored to the deliberation so the guard reads as "revisit the decision", not "never". |
-| Widened quarantine increases traffic into `archive/checkpoints/`, where `CleanupCheckpoints` `os.Remove`s a colliding destination | Medium | `moveNoReplace` already refuses to overwrite on the quarantine path. U10's restore row exercises the archive round trip. Recorded as a follow-up if a collision is observed. |
+| Widened quarantine increases traffic into `archive/checkpoints/`, where `CleanupCheckpoints` `os.Remove`s a colliding destination | Medium | `moveNoReplace` already refuses to overwrite on the quarantine path. The reverse direction is the real hazard: U9b's restore entry point must rename the archived bytes **and** their `.disposition.json` sidecar aside before copying anything back, so no filename is ever live in both directories and no quarantined evidence can be removed by a later sweep. U10's restore row asserts that property. |
 | The nine live legacy files are mutated during verification | Medium | U10 runs against an in-tree scratch workspace only; live files are read for shape reference and never used as mutation targets. Every file under `.backlogit/checkpoints/` is hash-compared programmatically before and after. |
 | Windows atomic-write regression | Low | No change to `atomicfile.WriteFileAtomic` or `syncWriteFileAtomic`; only additional pre-write gates. |
 | CLI reference drift blocks the PR | Low | U9 regenerates `gen-docs` output and runs `backlogit docs lint` before handoff. |
@@ -729,7 +831,7 @@ Requires plan hardening: yes
 | U4 | CLI `backlogit checkpoint abandon`, MCP `backlogit_abandon_checkpoint` | A valid-but-non-conforming document is refused, the offending keys are named, and the disposition audit JSONL is unchanged. |
 | U5, U5b | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"resolved"` file is refused by both verbs with its documented pre-existing sentinels. |
 | U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **PowerShell-runnable** remediation command on **both** read surfaces, and the file is unchanged after reading. |
-| U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI and MCP reach the same classification from the same stored file. |
+| U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI, MCP, and the `events` read layer reach the same classification from the same stored file. |
 | U10 | Live workspace, read-only | A session-start recovery sweep refuses **only** the nine enumerated legacy filenames and succeeds on every other file under `.backlogit/checkpoints/`. Every live SHA-256 hash in that directory is unchanged. |
 
 **The nine expected-refusal filenames** (enumerated so a correct refusal is never misread as a
@@ -808,9 +910,14 @@ the two named in the stash text.** Audit of every checkpoint write site in `inte
 the checkpoint directory and asserts the resulting call-site set equals the enumerated allow-list
 above. A new in-place rewrite path added later fails that test rather than silently joining the
 ungated set. If the enumeration proves impractical to implement reliably, the fallback is a single
-gated helper — `rewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error` — that
+**exported** gated helper —
+`events.RewriteCheckpointFile(path string, cp *CheckpointV1, original []byte) error` — that
 runs both gates internally and is the **only** function permitted to re-marshal an existing
-checkpoint; U3b and U4 then route through it. Either mechanism satisfies I1; a comment does not.
+checkpoint; U3b (`internal/events`) and U4 (`internal/core`) then route through it. The export is
+mandatory rather than stylistic: U4's write site lives in a different package, and Go cannot
+reference an unexported identifier across that boundary, so an unexported helper would gate exactly
+one of the two rewrite paths. Under the fallback the enumeration allow-list must cover
+`internal/core` as well. Either mechanism satisfies I1; a comment does not.
 The mechanism decision is taken in U2f, which is why U2f precedes U3b and U4 in the dependency
 graph and is not folded into U2d's schema-reflection guards.
 
@@ -881,11 +988,13 @@ addressed here.
 | `active` | yes | **accepts** | refuses `ErrCheckpointUseAbandon` |
 | `active` | no (any of the three fails) | refuses `ErrCheckpointUseQuarantine` / `ErrCheckpointNonConforming` | **accepts** |
 | `resolved` | yes | refuses `ErrCheckpointNotActive` | refuses `ErrCheckpointUseAbandon` |
-| `resolved` | no | refuses `ErrCheckpointNotActive`¹ | **accepts** |
+| `resolved` | no | refuses `ErrCheckpointUseQuarantine` / `ErrCheckpointNonConforming`¹ | **accepts** |
 
-¹ `ErrCheckpointNotActive` fires at `internal/core/checkpoint_disposition.go:~87-89`, after the
-validity and conformance gates, so a malformed resolved file is refused by abandon on
-trustworthiness grounds first and reaches quarantine.
+¹ The validity and conformance gates run **ahead of** the `ErrCheckpointNotActive` check at
+`internal/core/checkpoint_disposition.go:~87-89`, so a resolved document that is malformed,
+schema-invalid, or non-conforming is refused by abandon on **trustworthiness** grounds — not on
+state — and reaches quarantine. `ErrCheckpointNotActive` is therefore reached only by a resolved
+document that parses, validates, and conforms, which is row 3.
 
 **Row 3 is a real double-refusal**, and it is **pre-existing behaviour introduced by neither this
 plan nor 146-F**. A conforming, valid, non-active checkpoint has no disposition verb. That is the
@@ -1015,7 +1124,7 @@ immediately and is recorded below.
 The `plan-harden` output is intact and was itself a review target. Attempt 1 falsified invariant I3
 as originally written; it is now a state-scoped table with a named, tested out-of-scope class.
 Invariant I1 was upgraded from a prose table to an executable requirement (a write-site enumeration
-test, or a single gated `rewriteCheckpointFile` seam). Invariant I2 gained the corrected
+test, or a single gated exported `events.RewriteCheckpointFile` seam). Invariant I2 gained the corrected
 `AbandonCheckpoint` gate placement and a named, tested residual for the already-resolved
 short-circuit. The consulted-learnings table gained three learnings the reviewers proved were
 directly applicable and missing.

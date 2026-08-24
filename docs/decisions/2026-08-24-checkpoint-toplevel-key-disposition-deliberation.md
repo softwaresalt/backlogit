@@ -297,8 +297,13 @@ defect.
 4. **`QuarantineCheckpoint` widens its malformed classification (F3).** A target that parses and
    validates but fails the conformance check is classified **malformed** and is quarantinable. Only
    a target that parses, validates, **and** conforms is refused with `ErrCheckpointUseAbandon`.
-   This keeps the two verbs disjoint and total: every document is dispositionable by exactly one
-   of them.
+   This keeps the two verbs disjoint and total **over `status: "active"` documents only**: every
+   active document is dispositionable by exactly one of them. Totality is deliberately **not**
+   claimed over other states — a valid, conforming `status: "resolved"` document is refused by
+   abandon (`ErrCheckpointNotActive`) and by quarantine (`ErrCheckpointUseAbandon`) alike. That
+   double refusal is a pre-existing state-conflict class introduced by neither this work nor
+   146-F; the plan pins the scope qualifier as protected invariant I3 and tests the double
+   refusal in unit U5b.
 5. **No preservation carrier is added to `CheckpointV1`.** The top-level namespace remains closed
    in both directions.
 6. **The nine live legacy files are left untouched by this work.** They are already
