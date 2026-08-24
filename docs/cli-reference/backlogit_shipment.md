@@ -42,6 +42,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 * [backlogit shipment create](backlogit_shipment_create.md)	 - Create a shipment
 * [backlogit shipment get](backlogit_shipment_get.md)	 - Get a shipment by ID
 * [backlogit shipment list](backlogit_shipment_list.md)	 - List shipments
+* [backlogit shipment repair-evidence](backlogit_shipment_repair-evidence.md)	 - Repair stale gate evidence for a shipment member
 * [backlogit shipment return-blocked](backlogit_shipment_return-blocked.md)	 - Return a blocked item from a shipment
 * [backlogit shipment ship](backlogit_shipment_ship.md)	 - Close a released shipment and archive the released scope
 
