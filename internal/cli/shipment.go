@@ -32,6 +32,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentClaimCmd())
 	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
+	cmd.AddCommand(newShipmentRepairEvidenceCmd())
 	return cmd
 }
 
@@ -392,6 +393,69 @@ func newShipmentReturnBlockedCmd() *cobra.Command {
 	cmd.Flags().StringVar(&reason, "reason", "", "blocked reason")
 	_ = cmd.MarkFlagRequired("shipment")
 	_ = cmd.MarkFlagRequired("item")
+	_ = cmd.MarkFlagRequired("reason")
+	return cmd
+}
+
+// newShipmentRepairEvidenceCmd returns the `backlogit shipment repair-evidence
+// <shipment-id>` subcommand. It appends an audited forced gate pass event for a
+// single member whose recorded gate evidence head_sha is stale (dangling or
+// divergent) but whose implementation is verified present at the current
+// workspace HEAD. This is an operator-only break-glass for the narrow scenario
+// where a PR review-fix cycle orphaned the original completion commit while the
+// diff content survived into the merged branch. Requires a non-empty --reason as
+// operator justification; mirrors the existing move --force-gates contract.
+func newShipmentRepairEvidenceCmd() *cobra.Command {
+	var memberID string
+	var reason string
+
+	cmd := &cobra.Command{
+		Use:   "repair-evidence <shipment-id>",
+		Short: "Repair stale gate evidence for a shipment member",
+		Long: `Append an audited forced gate pass event for a single shipment member whose
+recorded gate evidence head_sha is stale (dangling or divergent from the
+current workspace HEAD) but whose implementation is verified present in the
+merged scope.
+
+This is an operator-only break-glass for the narrow scenario where a PR
+review-fix cycle orphaned the original task completion commit while the diff
+content survived into the merged branch. After the repair, backlogit shipment
+ship will accept the member in its ancestry check.
+
+The --reason flag is required and is recorded verbatim in the audit log.`,
+		Example: `  backlogit shipment repair-evidence 129-S --member 146.006-T --reason "orphaned by PR review-fix rebase; diff verified at current main HEAD"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			shipmentID := args[0]
+			slog.Info("shipment command invoked",
+				"operation", "shipment-repair-evidence",
+				"shipment_id", shipmentID,
+				"member_id", memberID,
+			)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			if err := core.RepairShipmentMemberEvidence(ctx, ws, shipmentID, memberID, reason); err != nil {
+				return fmt.Errorf("repair member evidence: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]string{
+				"shipment_id": shipmentID,
+				"member_id":   memberID,
+				"status":      "repaired",
+			})
+		},
+	}
+	cmd.Flags().StringVar(&memberID, "member", "", "member item ID to repair")
+	cmd.Flags().StringVar(&reason, "reason", "", "operator justification for the evidence repair (required)")
+	_ = cmd.MarkFlagRequired("member")
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }

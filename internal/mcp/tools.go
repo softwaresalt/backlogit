@@ -443,6 +443,15 @@ func (s *Server) RegisterTools() {
 		s.handleAddToShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_repair_member_evidence",
+			mcplib.WithDescription("Repair stale gate evidence for a shipment member by appending an audited forced gate pass event at the current workspace HEAD. Operator-only break-glass for the narrow scenario where a PR review-fix cycle orphaned the original task completion commit while the diff content survived into the merged branch."),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("member_id", mcplib.Required(), mcplib.Description("Member item ID to repair")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Operator justification for the evidence repair (required for audit trail)")),
+		),
+		s.handleRepairMemberEvidence,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_adopt_item",
 			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),
@@ -2017,6 +2026,41 @@ func (s *Server) handleAddToShipment(ctx context.Context, request mcplib.CallToo
 		"shipment_id": shipmentID,
 		"item_id":     itemID,
 		"status":      "added",
+	})
+}
+
+func (s *Server) handleRepairMemberEvidence(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	shipmentID, _ := request.Params.Arguments["shipment_id"].(string)
+	if shipmentID == "" {
+		return ValidationFailed("shipment_id is required"), nil
+	}
+	memberID, _ := request.Params.Arguments["member_id"].(string)
+	if memberID == "" {
+		return ValidationFailed("member_id is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	if reason == "" {
+		return ValidationFailed("reason is required"), nil
+	}
+
+	logger.Info(
+		"shipment tool invoked",
+		"tool", "backlogit_repair_member_evidence",
+		"shipment_id", shipmentID,
+		"member_id", memberID,
+	)
+
+	if err := core.RepairShipmentMemberEvidence(ctx, s.Workspace, shipmentID, memberID, reason); err != nil {
+		return domainError("repair member evidence", err), nil
+	}
+	return toolResultJSON(map[string]any{
+		"shipment_id": shipmentID,
+		"member_id":   memberID,
+		"status":      "repaired",
 	})
 }
 

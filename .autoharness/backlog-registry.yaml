@@ -314,6 +314,20 @@ operations:
       item_id: "item_id"
       reason: "reason"
 
+  # repair_member_evidence is an operator-only break-glass for the narrow scenario
+  # where a PR review-fix cycle orphaned the original task completion commit while
+  # its diff content survived into the merged branch. It appends an audited forced
+  # gate pass event (pre_task_completion_gate_forced) at the current workspace HEAD
+  # so the subsequent backlogit_ship_shipment ancestry check passes. Requires an
+  # explicit operator reason for the audit trail.
+  repair_member_evidence:
+    mcp_tool: "backlogit_repair_member_evidence"
+    cli_command: "backlogit shipment repair-evidence {{shipment_id}} --member {{member_id}} --reason {{reason}}"
+    params:
+      shipment_id: "shipment_id"
+      member_id: "member_id"
+      reason: "reason"
+
   # --- Stash management ---
 
   stash:
