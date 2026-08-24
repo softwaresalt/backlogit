@@ -16,7 +16,8 @@ import (
 //
 // Prerequisites:
 //   - shipmentID must identify an active shipment.
-//   - memberID must be present in the shipment manifest.
+//   - memberID must be present in the shipment manifest and be a task or subtask
+//     (features are not gated and do not carry per-member gate evidence).
 //   - The member must be in a terminal release status (done or archived).
 //   - The workspace must be inside a git repository with a resolvable HEAD.
 //   - reason must be non-empty (operator-provided justification is required).
@@ -57,6 +58,11 @@ func RepairShipmentMemberEvidence(ctx context.Context, ws *Workspace, shipmentID
 	member, err := loadArtifact(ctx, ws, memberID)
 	if err != nil {
 		return fmt.Errorf("repair member evidence: load member %s: %w", memberID, err)
+	}
+	if member.ArtifactType != "task" && member.ArtifactType != "subtask" {
+		return fmt.Errorf("repair member evidence: member %s has type %q; "+
+			"only task and subtask members carry gate evidence (features are skipped by the gate)",
+			memberID, member.ArtifactType)
 	}
 	if !isTerminalReleaseStatus(member.Status) {
 		return fmt.Errorf("repair member evidence: member %s is not in a terminal status (status: %s); "+
