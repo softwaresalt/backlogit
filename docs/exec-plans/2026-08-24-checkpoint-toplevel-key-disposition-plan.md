@@ -396,8 +396,19 @@ failed.
   `CheckConformingTopLevelNamespace(data)`; on failure set `NeedsQuarantine = true` and
   `RemediationCommand`, and **append** to `ValidationErr` rather than overwriting it — a file can
   fail both validation and conformance and the operator needs both reasons.
-  `RemediationCommand` must be **PowerShell-safe** (this is a Windows-first workspace: no
-  unescaped double quotes, no backticks, runnable as-is when pasted into `pwsh`).
+  `RemediationCommand` must be **POSIX-safe** — paste-runnable verbatim in `bash`, `sh`, or `zsh`
+  via the single-quote-and-escape idiom that `shellQuoteSingle` already emits. It is **not**
+  claimed PowerShell-safe for arbitrary accepted filenames: the POSIX `'\''` escape idiom is not
+  a valid PowerShell literal, and no single command string can be paste-runnable in both shells
+  for a filename containing a single quote. Windows-first workspace note: `CreateCheckpoint`
+  (`internal/events/memory.go:59`) only ever writes filenames of the form
+  `checkpoint-YYYYMMDD-HHMMSS.json` — digits, hyphens, and the fixed extension — so the natural
+  corpus contains no shell-special characters and the emitted command is therefore also literally
+  paste-safe in `pwsh` for every backlogit-generated file. The POSIX-safe form only differs from
+  a hypothetical PowerShell-safe form for filenames with single quotes, spaces, or other
+  metacharacters, which the generator does not produce; a Windows operator who encounters an
+  out-of-band file recovers via Git Bash / WSL / `bash -c`, hand-adapts the `'\''` escape to
+  PowerShell's doubled `''`, or renames the file to the generator's shape.
   `ListCheckpoints` stays strictly read-only — no move, no rewrite, no error propagation — and the
   conformance branch must run **before** the filter block, so the verdict is computed for every
   parsed document rather than only for documents the caller's filter happens to select.
@@ -408,7 +419,7 @@ failed.
   filter-exempt is a separate behavioural change owned by **U6d**; this unit must not claim a
   drop-through guarantee it does not implement.
 * **Tests** (4): a valid-but-non-conforming file lists with `NeedsQuarantine: true` and a
-  PowerShell-safe remediation command; a file failing **both** validation and conformance reports
+  POSIX-safe remediation command; a file failing **both** validation and conformance reports
   both reasons in `ValidationErr`; the verdict is computed before the filter block, asserted by a
   case whose filter matches the document; the files on disk are byte-unchanged after listing.
 * **Expected red**: cases 1 and 2 fail.
@@ -668,22 +679,25 @@ failed.
 * **Domain**: code (cli)
 * **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_test.go`
 * **Change**: surface the new refusals on `backlogit checkpoint resolve` and
-  `backlogit checkpoint abandon` as actionable operator messages carrying the PowerShell-safe
-  quarantine remediation command, matching the existing CLI error idiom. **The offending-key list
-  is only available for a valid-but-non-conforming target.** A schema-invalid legacy document is
-  refused by the U3 validity gate before conformance runs, so no key list exists for it; that
-  refusal prints the validation reason and the remediation command instead. **The `checkpoint get`
-  conformance projection is not in this unit**: it moved to **U8c** in PR #377 review cycle 4,
-  because a read projection is a different contract from a refusal rendering and folding it in
-  made a fourth scenario. This unit must not touch `newCheckpointGetCmd`. **No JSON error envelope is added**
-  — that is stash `63E810D9` and stays out of scope; the CLI/MCP shape asymmetry it describes is a
-  documented, pre-existing condition, restated in U9b rather than fixed here.
+  `backlogit checkpoint abandon` as actionable operator messages carrying the POSIX-safe
+  quarantine remediation command (see U6 for the shell-contract rationale; PowerShell-safety
+  for arbitrary accepted filenames is not claimed, and the shipped `shellQuoteSingle` idiom is
+  POSIX-specific). The rendered command matches the existing CLI error idiom. **The
+  offending-key list is only available for a valid-but-non-conforming target.** A schema-invalid
+  legacy document is refused by the U3 validity gate before conformance runs, so no key list
+  exists for it; that refusal prints the validation reason and the remediation command instead.
+  **The `checkpoint get` conformance projection is not in this unit**: it moved to **U8c** in
+  PR #377 review cycle 4, because a read projection is a different contract from a refusal
+  rendering and folding it in made a fourth scenario. This unit must not touch
+  `newCheckpointGetCmd`. **No JSON error envelope is added** — that is stash `63E810D9` and stays
+  out of scope; the CLI/MCP shape asymmetry it describes is a documented, pre-existing condition,
+  restated in U9b rather than fixed here.
 * **Tests** (3): `checkpoint resolve` on a **schema-invalid legacy** document exits non-zero,
   reports the `checkpoint_use_quarantine` class with the validation reason and the remediation
   command, and prints **no** key list; `checkpoint resolve` on a **valid-but-non-conforming**
   document exits non-zero and names the offending top-level keys alongside the same command;
   `checkpoint abandon` on that same valid-but-non-conforming document does likewise. The
-  PowerShell-safety assertion rides on the rendered command in cases 2 and 3 rather than being a
+  POSIX-safety assertion rides on the rendered command in cases 2 and 3 rather than being a
   fourth scenario, keeping this unit inside the 2-Hour Rule.
 * **Expected red**: all three fail.
 * **Depends on**: U7.
@@ -907,7 +921,8 @@ failed.
   files are present on this branch now that the staging checkpoint has landed, and that number
   drifts as sessions add checkpoints, so the guard enumerates the directory rather than a literal.
 * **Rows** (3): **read verdict** — `list` reports `needs_quarantine: true` with a paste-runnable
-  PowerShell-safe remediation command and `get` reports `conforming: false` for the same fixture;
+  POSIX-safe remediation command (see U6 for the shell-contract rationale) and `get` reports
+  `conforming: false` for the same fixture;
   **refusal** — legacy-shaped resolve refused and valid-but-non-conforming abandon refused naming
   keys, with the fixture bytes unchanged after both; **quarantine accept** — quarantine accepted
   and the archived bytes byte-identical to the pre-quarantine original.
@@ -1109,7 +1124,7 @@ Requires plan hardening: yes
 | U3, U3b | CLI `backlogit checkpoint resolve`, MCP `backlogit_resolve_checkpoint` | A legacy-shaped document in the scratch workspace is refused and its bytes are byte-identical (SHA before/after). A valid-but-non-conforming document is refused with `checkpoint_non_conforming`. A conforming active checkpoint still resolves. The MCP payload is **not** `"error":"internal"`. |
 | U4 | CLI `backlogit checkpoint abandon`, MCP `backlogit_abandon_checkpoint` | A valid-but-non-conforming document is refused, the offending keys are named, and the disposition audit JSONL is unchanged. |
 | U5, U5b | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"resolved"` file is refused by both verbs with its documented pre-existing sentinels. |
-| U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **PowerShell-runnable** remediation command on **both** read surfaces, and the file is unchanged after reading. |
+| U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **POSIX-runnable** remediation command on **both** read surfaces (see U6 for the shell-contract rationale; PowerShell-safety for arbitrary accepted filenames is not claimed, and the natural filename generator produces shapes that are literally paste-safe in `pwsh` as well), and the file is unchanged after reading. |
 | U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI, MCP, and the `events` read layer reach the same classification from the same stored file. |
 | U10 | Live workspace, read-only | Every live SHA-256 hash under `.backlogit/checkpoints/` is unchanged across the whole verification run. |
 | U10b | Scratch mirror of `.backlogit/checkpoints/` | A session-start recovery sweep against the mirror refuses **exactly** the nine enumerated legacy filenames and succeeds on every other mirrored file. A quarantined file restores from the archive and then resolves. |
@@ -1449,8 +1464,10 @@ directly applicable and missing.
 **P2 / P3 — acknowledged**
 
 Remediated in-plan: the `AbandonCheckpoint` gate placement, the duplicate/fold-variant rule, the
-`ValidationErr` append rather than overwrite, PowerShell-safe `RemediationCommand`, the
-untagged-exported-field escape hatch in `modeledJSONTagKeys` (U2d test 3), the unquarantine/restore
+`ValidationErr` append rather than overwrite, POSIX-safe `RemediationCommand` (relabelled from
+"PowerShell-safe" in PR #377 review cycle 7 with a Windows-first-workspace rationale — see U6),
+the untagged-exported-field escape hatch in `modeledJSONTagKeys` (U2d test 3), the
+unquarantine/restore
 runtime row, the `U2b` merge into a coherent U2 family, the conformance branch ordering ahead of the
 list filter block, and the archive-collision risk row.
 
@@ -1556,3 +1573,91 @@ changing its risk class. No unit was removed, no task ID was renumbered, and the
 scope, data-loss safety posture, and fail-closed refusal remain unchanged.
 
 <!-- copilot-review-remediation: pr-377-cycle-4 -->
+
+### PR #377 Copilot review remediation, cycle 7
+
+A seventh Copilot review against head `122cdf30723196f8ebdeb9e1ce9ae2a04e5bdf69` (post-cycle-6)
+raised six comments, grouped by four root causes: canonical checkpoint stale at cycle 4; canonical
+memory stale at cycle 3; wrong get-result producer/projection task references in `147.018-T`; a
+cross-platform shell contract conflict between the plan's/tasks' "PowerShell-safe" claim and the
+shipped POSIX single-quote-escape idiom in `remediationQuarantineCommand`
+(`internal/events/checkpoint_lifecycle.go:274-290`); the same conflict mirrored in plan units
+U6/U8/U10 and their runtime verification row; and U9 generated-doc-ownership drift in `147.017-T`.
+Cycles 5, 6, and 7 are **operator-authorized extensions** past the original three-cycle limit,
+recorded as such rather than treated as silent counter resets.
+
+**Design decision — cross-platform shell contract.** `RemediationCommand` is defined as
+**POSIX-safe**, matching the shipped implementation and the shipped
+`TestListCheckpoints_RemediationCommandIsShellSafe` assertion. It is **not** claimed
+PowerShell-safe for arbitrary accepted filenames: the POSIX `'\''` close-escape-reopen idiom that
+`shellQuoteSingle` emits is not a valid PowerShell literal (PowerShell escapes a single quote
+inside a single-quoted string as doubled `''`), and no single command string can be paste-runnable
+in both shells for a filename containing a single quote. Two alternatives were considered and
+rejected:
+
+* **Separate shell-specific renderings** (add `remediation_command_posix` and
+  `remediation_command_powershell`) — doubles the read-surface API, requires new MCP/CLI
+  projections on U6b/U6c/U8c/U8b, needs new test scenarios, and grows the width of at least four
+  tasks. Justified only if PowerShell-native support is a hard requirement, which the Windows-first
+  workspace note does not actually establish: the generator produces safe filenames that are
+  literally paste-safe in `pwsh` without any escape.
+* **Filename grammar restriction** to `[A-Za-z0-9._-]+` — requires product-code change
+  (`validateCheckpointFilename`), a new refusal path that has no existing regression to guard
+  against (no legacy filename on disk contains a shell metacharacter), and a new width-isolated
+  task at minimum. Justified only if the "PowerShell-safe" claim cannot be honestly reframed,
+  which it can.
+
+**Why POSIX-safe is clearly safer than the current "PowerShell-safe" claim.** The current claim is
+empirically false: pasting `'\''` into `pwsh` parses as three string tokens, not as an escaped
+single quote. Correcting the claim to POSIX-safe matches the shipped code and shipped test,
+removes a false invariant that agents and reviewers would otherwise try to enforce, and preserves
+the practical Windows recovery path via the generator-shape note: `CreateCheckpoint`
+(`internal/events/memory.go:59`) only writes `checkpoint-YYYYMMDD-HHMMSS.json`, which contains no
+shell-special characters and is therefore literally paste-safe in `pwsh` for every
+backlogit-generated file. The POSIX-safe form only differs from a hypothetical PowerShell-safe
+form for filenames containing single quotes, spaces, or other metacharacters, which the generator
+does not produce; a Windows operator who encounters such an out-of-band file recovers via Git Bash
+/ WSL / `bash -c`, hand-adapts the `'\''` escape to `''`, or renames the file to the generator's
+shape.
+
+**Grounds** (grounded in existing code, validation rules, call sites, CLI/MCP projections, and
+tests, not by assertion):
+
+* Shipped `remediationQuarantineCommand` and `shellQuoteSingle`
+  (`internal/events/checkpoint_lifecycle.go:274-290`) emit the POSIX `'\''` escape idiom.
+* Shipped `TestListCheckpoints_RemediationCommandIsShellSafe`
+  (`internal/events/checkpoint_lifecycle_test.go:430-455`) uses filename
+  `checkpoint-weird 'name' & rm -rf.json`, comments "safe to run verbatim in a POSIX shell", and
+  asserts the POSIX-safe escape output — this is the test's intent by construction.
+* `validateCheckpointFilename` (`internal/events/checkpoint_lifecycle.go:254-273`) rejects only
+  empty, path-separator-bearing, or non-`checkpoint-*.json` names; it does not restrict interior
+  characters. So the accepted filename grammar today already includes shell-special characters,
+  which the POSIX escape correctly handles and any PowerShell claim cannot.
+* CLI/MCP projections in U6b/U6c/U8c reproject the shipped `RemediationCommand` string verbatim;
+  no projection layer re-quotes or re-renders it. The read-surface contract is therefore whatever
+  the events layer emits, and the events layer emits POSIX-safe.
+* No shipped call site claims PowerShell-native invocation of the returned command; the plan/task
+  text was the only source of the "PowerShell-safe" invariant.
+
+**Backlog shape effect: unchanged.** This is a documentation correction — no product-code change,
+no new exported API, no new width-isolated task. The 27-task / 43-edge / 28-shipment-member shape
+is preserved. The alternative (adding a U6e width-isolated task) was considered and rejected: it
+would ship additional runtime surface and additional test scenarios to enforce a contract the
+shipped code and shipped test already meet honestly under the POSIX-safe framing.
+
+| Thread | Finding | Plan / backlog delta |
+|---|---|---|
+| checkpoint handoff stale | `.backlogit/checkpoints/checkpoint-20260824-191617.json` recorded cycle-4 state and obsolete push/review flags; it did not name the reviewed HEAD versus the local unreviewed commits generated in cycles 5, 6, and 7. | Regenerated with cycle-7 `context` metadata: `reviewed_head` records the last cycle-6 head Copilot reviewed against, `local_unreviewed_state` records the cycle-7 tip that Ship must push and re-review, `review_remediation` gained cycle-5, cycle-6, and cycle-7 entries. Schema-valid: only `context` keys are added; the top-level namespace stays closed, matching the very invariant this feature exists to enforce. |
+| canonical memory stale | `.backlogit/memories.json` key `stage-d3ce9e81-checkpoint-toplevel-keys` stopped at cycle 3 (26 tasks / 40 edges) and did not describe cycles 4-7. | Regenerated through cycle-7 final state: 27 tasks / 43 edges / 28 shipment members (unchanged shape from cycle 4), cycle-4 U8c addition documented, cycles 5-6 recorded (backlog-only remediation, no shape change), cycle-7 shell-contract decision recorded with grounds and rejected alternatives, reviewed-head vs local-unreviewed handoff pinned. |
+| repair task IDs wrong | `147.018-T` cited `(147.010-T / U6b, 147.011-T / U6c, 147.023-T / U8c)` for the get-result producer and its projections. Actual mapping: 147.010-T is U5b (I3 state classification), 147.011-T is U6 (list surface), 147.023-T is U6d (filter exemption). None produces the get-result. | Corrected to `(147.012-T / U6b, 147.022-T / U6c, 147.027-T / U8c)`. 147.012-T declares `GetCheckpointResult`, 147.022-T projects it onto MCP `get_checkpoint`, and 147.027-T projects it onto CLI `checkpoint get` — the actual get-result producer and its two projections. |
+| shell contract conflict on 147.011-T | 147.011-T body and acceptance claimed `RemediationCommand` was PowerShell-safe. The shipped implementation is POSIX-safe. Neither is paste-runnable in the other shell for a filename containing a single quote. | 147.011-T body and acceptance now claim POSIX-safe with a Windows-first-workspace note explaining why the natural filename generator produces shapes literally paste-safe in `pwsh` for every backlogit-generated file. 147.015-T (U8) and 147.019-T (U10) carry the same correction. No new dependency, no new task, no code or exported API change. |
+| shell contract conflict in plan | Plan units U6, U8, and U10, and the Runtime Verification row for `U6, U6b`, mirrored the "PowerShell-safe" claim. | Plan U6, U8, and U10 relabelled to POSIX-safe with the Windows-first-workspace generator-shape rationale reproduced once in U6 and cross-referenced from U8/U10. Runtime Verification row for `U6, U6b` says "POSIX-runnable" and references the same rationale. Plan-hardening remediation register updated to record the relabelling and cross-reference the decision. |
+| U9 generated-doc ownership drift | 147.017-T listed only `docs/design-docs/checkpoint-administrative-disposition.md` in Files, and had no CLI Reference Drift acceptance criterion. Plan U9 assigns regenerated `docs/cli-reference/backlogit_checkpoint_*.md` **and** the CLI Reference Drift check to U9. | 147.017-T Files list now includes `docs/cli-reference/backlogit_checkpoint_*.md`, the body records the regeneration obligation and its trigger (any U6/U6b/U8/U8c help-text or output-projection change), a "CLI Reference Drift check clean" acceptance criterion is added, and an explicit acceptance criterion states `.github/instructions/backlogit.instructions.md` is not touched by this unit (owned by 147.018-T / U9b). Ownership of U9b's agent-instruction file is preserved. |
+
+Net effect: no unit added, no edge added, no shipment member added, no task ID renumbered. Backlog
+shape stays at **27 tasks / 43 edges / 28 shipment members**. The reviewed decision, scope,
+data-loss safety posture, fail-closed refusal, 147.018-T same-merge requirement, and the
+147.009-T paired-assertion halt condition are all unchanged. The shell-contract decision preserves
+shipped behaviour (POSIX-safe, matching the shipped test) rather than replacing it.
+
+<!-- copilot-review-remediation: pr-377-cycle-7 -->
