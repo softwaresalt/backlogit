@@ -8,12 +8,12 @@ Implement a requested feature by continuously looping against a strict, compilin
 
 ## When to Use
 
-Invoked by the ship agent when a task has the `harness-ready` label. Not invoked directly by users.
+Invoked by the ship agent when a task is harness-satisfied — it carries the `harness-ready` label, or it carries `harness-exempt` and passed the ship agent's P-002.1 evaluation. Not invoked directly by users.
 
 ## Inputs
 
 * `task_id`: (Required) The backlog task ID to implement.
-* `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`).
+* `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`). For a `harness-exempt` task there is no scaffolded red harness; the caller passes the task's declared verification command instead, and the loop below runs against that command unchanged.
 
 ## Output
 
@@ -132,6 +132,7 @@ If all quality gates pass:
 
 * No subagent spawning (leaf executor)
 * Never modify test files (tests are the specification)
+* Never weaken, delete, or relax an existing harness assertion to reach green, including on a `harness-exempt` task whose deliverable is a new green-step guard
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
 * Same-error recurrence at attempt 3+ triggers the universal circuit breaker
 * Read coding standards once at task start; targeted re-read for unfamiliar modules

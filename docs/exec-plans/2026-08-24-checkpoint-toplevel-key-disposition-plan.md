@@ -654,7 +654,10 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
 * **Expected red**: **none — `harness-exempt: covered-by U12`.** U13 is the implementation half of
   U12's red gate and scaffolds no test function of its own. Its verification command is U12's
   selector (`go test -count=1 -run '^TestU12_' ./internal/events`), which must go from three
-  failures to zero.
+  failures to zero. This is the plan's single behaviour-changing exemption and the explicitly
+  allowed `covered-by` carve-out under P-002.1: U12 is a declared dependency, carries
+  `harness-ready` rather than an exemption, and its red evidence must be confirmed before U13
+  builds. No other unit may claim this shape.
 * **Green-step guards**: none.
 * **Depends on**: U12.
 
@@ -2002,6 +2005,10 @@ on `147.010-T`.
   branch and one PR for shipment `130-S`, so the natural outcome is a single merge commit carrying
   all of them, and the gate simply forbids deferring the U9b delta to a later PR. It does **not**
   require, imply, or permit a merge per backlog task.
+  **Discoverability (cycle 22)**: `147.007-T`, `147.008-T`, and `147.009-T` each carry a
+  `merge-gate-dependent` label and a backreference paragraph naming this gate, and `147-F.md` and
+  `130-S.md` state it at feature and shipment level. Those are labels and prose only — no
+  dependency edge is added and executable ordering is unchanged.
 * **Depends on**: U9.
 
 ### U10 — Runtime verification of the refusal path
@@ -2399,7 +2406,7 @@ from the two roots.
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | **pass** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Cycle-17 change**: the pre-existing `%v` validation wrap in `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~70-73`) is **fixed** by U17 rather than recorded as a deviation. The cycle-16 gate ruled the deviation unavailable: Principle I is not satisfiable by documenting a departure from it, and the "unrelated shipped contract" justification lapses once U4 and U14 edit that same function. |
-| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single three-step lifecycle declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a red harness step that lands **only** functions that **fail on assertions**, then a green step that lands the implementation together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 also withdrew the cycle-8 rule that every unit needs at least one failing assertion, which had forced fabricated REDs on the declaration-only units U1d and U15 — a test that can only fail because a symbol does not yet exist is a build error, and a test that passes the moment the declared shape lands was never red. Those units are now `harness-exempt: declaration-only` and their behaviour carries a genuine failing harness downstream (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15). Test-first is preserved without exception for behaviour: no behaviour-changing unit in this plan lacks a transitive failing-harness prerequisite (invariant I4). U2d owns a real production delta with a compiling-but-failing harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
+| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single three-step lifecycle declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a red harness step that lands **only** functions that **fail on assertions**, then a green step that lands the implementation together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 also withdrew the cycle-8 rule that every unit needs at least one failing assertion, which had forced fabricated REDs on the declaration-only units U1d and U15 — a test that can only fail because a symbol does not yet exist is a build error, and a test that passes the moment the declared shape lands was never red. Those units are now `harness-exempt: declaration-only` and their behaviour carries a genuine failing harness downstream (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15). Test-first is preserved for behaviour with exactly one explicitly allowed, edge-backed carve-out: every behaviour-changing unit is backed by a failing harness observed red before its implementation lands, carried on the unit itself except for **U13**, whose harness is owned by its declared prerequisite **U12** under the `covered-by` class (invariant I4). No other unit may claim that shape. U2d owns a real production delta with a compiling-but-failing harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` (raw paths plus structural truncation scalars) on MCP, named keys on CLI, `NeedsQuarantine` + a structured `RemediationIntent` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
@@ -2415,7 +2422,7 @@ from the two roots.
 | Principle | Deviation | Justification | Simpler alternative rejected |
 |---|---|---|---|
 | V. Structured Observability | No refusal counter, log, or telemetry event. | The refusal is already agent-visible and typed; adding a telemetry surface pulls `internal/telemetry` into a freeze-scoped change and widens the blast radius past the defect. | "Emit a telemetry event per refusal" — rejected: nine known refusals on day one would immediately produce noise with no consumer defined. |
-| II. Test-First Development | Ten units scaffold **zero** harness test functions and are recorded `harness-exempt`. | P-004's precondition quantifies over every scaffolded harness test function; when a unit scaffolds none, it holds vacuously. The exempt set is closed and enumerated below, each entry names where its behaviour's failing harness lives, and no unit in it changes behaviour except U13 — whose harness is U12. | "Give every unit a failing assertion" — rejected in cycle 20. That rule is what produced U1d's and U15's fabricated REDs, where the only way to fail was for a symbol not to exist (a build error) or for the declared shape not to have landed yet. Manufacturing behaviour purely to create a red assertion was already rejected once, in cycle 10, when U5b's invented delta reopened a scoped-out decision. |
+| II. Test-First Development | Ten units scaffold **zero** harness test functions and are recorded `harness-exempt`. | P-004's precondition quantifies over every scaffolded harness test function; when a unit scaffolds none, it holds vacuously. The exempt set is closed and enumerated below, each entry names where its behaviour's failing harness lives, and exactly one member changes behaviour — U13, the explicitly allowed `covered-by` carve-out whose red harness is owned by its prerequisite U12. | "Give every unit a failing assertion" — rejected in cycle 20. That rule is what produced U1d's and U15's fabricated REDs, where the only way to fail was for a symbol not to exist (a build error) or for the declared shape not to have landed yet. Manufacturing behaviour purely to create a red assertion was already rejected once, in cycle 10, when U5b's invented delta reopened a scoped-out decision. |
 
 **The `harness-exempt` set is closed (cycle 20).** No unit outside this table may claim the
 exemption, and adding one requires a plan amendment.
@@ -2433,37 +2440,47 @@ exemption, and adding one requires a plan amendment.
 | U10b | `147.026-T` | `verification-only` | not applicable — runtime evidence |
 | U10c | `147.041-T` | `verification-only` | not applicable — runtime evidence |
 
-**Ship ready-selection adapter (cycle 21, shipment-scoped, non-global).** The repository-wide
-ready-queue policy (`.github/policies/workflow-policies.md`, `.github/agents/.ship.agent.md` §
-"harness-ready label") filters strictly on `harness-ready` and has no vocabulary for
-`harness-exempt`; read literally, that global policy would tell Ship's harness-architect /
-build-feature selection to scaffold a red harness for all ten units in the table above,
-contradicting the closed-set exemption this plan just enumerated. This paragraph is the
-machine-readable, shipment-local adapter that resolves the conflict without editing the global
-policy files:
+**Ship ready-selection contract (cycle 21 adapter, generalized into global policy in cycle 22).**
+Cycle 21 recorded this rule as a shipment-local adapter because the repository-wide ready-queue
+policy (`.github/policies/workflow-policies.md`, `.github/agents/.ship.agent.md`) filtered strictly
+on `harness-ready` and had no vocabulary for `harness-exempt`; read literally, that global policy
+would have told Ship's harness-architect / build-feature selection to scaffold a red harness for
+all ten units in the table above, contradicting the closed-set exemption this plan enumerates.
+Cycle 22 closed that gap in the global policy itself — **P-002.1 (Harness-Exempt Alternative
+Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — so this plan is now a
+*conforming consumer* of a general contract rather than the carrier of a local exception:
 
-* **Rule.** For shipment `130-S` only, a `147.0xx-T` task is harness-satisfied — and therefore
-  eligible for Ship's `queued` ready-selection and build-feature dispatch — when its `labels`
-  field contains **either** `harness-ready` **or** `harness-exempt`. Equivalent query:
+* **Rule.** A `147.0xx-T` task is harness-satisfied — and therefore eligible for Ship's `queued`
+  ready-selection and build-feature dispatch — when its `labels` field contains `harness-ready`,
+  **or** contains `harness-exempt` and passes P-002.1 evaluation. Equivalent selection query,
+  applied only after P-002.1 has validated each exempt task:
   `SELECT id FROM items WHERE parent_id = '147-F' AND status = 'queued' AND (labels LIKE
   '%harness-ready%' OR labels LIKE '%harness-exempt%')`.
-* **Scope of the adapter.** This is a documented **P-002 enforcement deviation/adapter** for this
-  shipment's closed, ten-unit exempt set — it is **not** a waiver of Constitution Principle II
-  (Test-First Development), which is satisfied vacuously per the Documented deviations row above,
-  and it is **not** a change to the global `harness-ready` policy text itself.
-  `.github/policies/workflow-policies.md` and `.github/agents/.ship.agent.md` are intentionally
-  left unmodified in this pass; the adapter lives here and in `147-F.md`'s test-lifecycle state,
-  both plan/task-local artifacts, pending any future decision to generalize it into global policy.
-* **No exception for behaviour.** A task that changes behaviour always requires `harness-ready`
-  before Ship's build-feature skill may implement it; `harness-exempt` never substitutes for
-  `harness-ready` on a behaviour-changing unit, and invariant I4 (declaration → harness →
-  implementation monotonicity) is the structural guarantee that no such unit is ever only
-  `harness-exempt`. The one exception-shaped entry in the table above, `U13` / `147.036-T`, is
-  `covered-by U12` — its behaviour's failing harness is U12's, not an absence of one.
+* **Fail-closed evaluation.** The label alone is not admission. Each of the ten tasks declares a
+  class from the closed P-002.1 vocabulary (`declaration-only`, `docs-only`, `verification-only`,
+  `covered-by <owner-id>`), a one-line reason, and membership in the closed set enumerated above,
+  which is this plan's declared exempt contract. An unrecognized class, a task not in that closed
+  set, or a behaviour-changing task without a valid predecessor harness owner is a **halt** and a
+  reported P-002 gap — never a silent skip and never a trigger to scaffold a substitute harness.
+* **Relationship to Principle II.** This is a P-002 *enforcement* contract, not a waiver of
+  Constitution Principle II (Test-First Development), which is satisfied vacuously per the
+  Documented deviations row above.
+* **Behaviour requires red evidence; U13 is the single edge-backed carve-out.** Every
+  behaviour-changing unit in this plan is backed by a failing harness that was observed red before
+  its implementation lands. Nine of the ten exempt units carry no behaviour at all
+  (`declaration-only`, `docs-only`, `verification-only`) and so owe no red of their own. Exactly
+  one exempt unit does change behaviour: **U13 / `147.036-T`**, and it is the explicit, allowed
+  `covered-by` carve-out — its failing harness is owned by its prerequisite **U12 /
+  `147.035-T`** (three failing seam-contract functions), which is a declared dependency, carries
+  `harness-ready` rather than an exemption, and lands red before U13 builds. No other unit may
+  claim that shape: any further behaviour-changing unit needs `harness-ready` on itself. Invariant
+  I4 (declaration → harness → implementation monotonicity) is the structural guarantee that the
+  edge exists.
 * **Application.** Ship (or its harness-architect / build-feature skill) MUST treat all ten tasks
-  in the table above as already harness-satisfied on first encounter and MUST NOT scaffold a red
-  harness for any of them; it still schedules and implements each in dependency order like any
-  other queued task.
+  in the table above as already harness-satisfied once P-002.1 evaluation passes, and MUST NOT
+  scaffold a red harness for any of them; it still schedules and implements each in dependency
+  order like any other queued task. For U13, "in dependency order" additionally means after U12's
+  red evidence is confirmed and its harness commit has landed.
 
 **Principle I carries no deviation (cycle 17).** The row recorded here through cycle 16 —
 `AbandonCheckpoint`'s `%v` validation wrap left in place — is withdrawn. The cycle-16 gate found
@@ -3810,7 +3827,8 @@ cycle 17 and is documented in "PR #377 plan remediation, cycle 17 — formal dec
 That appendix is remediation evidence, **not** a gate outcome: this `cycle: 16` record was the
 current gate state at `decision: FAIL` until the fresh, independent `cycle: 17` plan review below
 was dispatched against the decomposed plan, and it is now superseded in turn by the `cycle: 18`
-`ADVISORY` record and then the `cycle: 20` `FAIL` record at the end of this document, the current
+`ADVISORY` record, the `cycle: 20` `FAIL` record, and finally the `cycle: 21` `FAIL` record at the
+end of this document, the current
 gate state. All eight blockers (1 P0, 7
 P1) are dispositioned as closed in the appendix, and the decomposition passed both the cycle-17 and
 cycle-18 reviews.
@@ -3822,7 +3840,8 @@ normative sections above; where this appendix and a normative section disagree, 
 section governs. The `cycle: 16` `## Plan Review` record was the **current gate state** at the time
 this appendix was written; it was `decision: FAIL`, and nothing in this appendix cleared it on its
 own. It has since been superseded by the `cycle: 17` `FAIL` record, the `cycle: 18`
-`ADVISORY` record, and the `cycle: 20` `FAIL` record at the end of this document, the current gate
+`ADVISORY` record, the `cycle: 20` `FAIL` record, and the `cycle: 21` `FAIL` record at the end of
+this document, the current gate
 state. Cycle 17 executed the
 `restage_recommendation: formal-decomposition` that gate required; the result passed a fresh,
 independent plan-review gate, as the `cycle: 17` record below records, and cycle 18 confirms the
@@ -4121,8 +4140,9 @@ implementation — those remain separate gates owned by Ship and the operator.
 **Trigger.** A fresh current-head review of PR #377 at `3bcff086` found CI 6/6 green and the
 Copilot review fresh on that exact commit, but **20 unresolved Copilot threads**: 17 P1 and 3 P2.
 The cycle-18 `decision: ADVISORY` record is therefore **superseded**; its `push_allowed: yes` and
-`operator_authorization: approved` no longer describe the gate. The current gate state is the
-**cycle 20** Plan Review record below, whose decision is `FAIL` pending a fresh local plan review.
+`operator_authorization: approved` no longer describe the gate. The `cycle: 20` record below was
+the current gate state when this appendix was written; it has since been superseded by the
+`cycle: 21` `FAIL` record at the end of this document, which is the current gate state.
 
 **Root causes, not samples.** The 20 threads reduce to four root causes. Every fix below is applied
 to the whole class, not to the individual prose the reviewer happened to quote.
@@ -4318,3 +4338,38 @@ checkpoint are updated to record this gate outcome and the corrections applied.
 
 This authorization covers **planning artifacts only**. It is not merge approval, not a shipment
 claim, and not authorization for Ship to begin implementation.
+
+### PR #377 plan remediation, cycle 22 — P-002 consumer contract generalized
+
+**This appendix is remediation evidence, not a gate outcome.** It records a bounded
+prompt/policy-artifact pass. It appends no `## Plan Review` record, claims no `PASS`, and does not
+clear the `cycle: 21` `FAIL`. The current gate state remains the `cycle: 21` record above, whose
+`restage_recommendation: confirmatory-review-of-cycle-21-fixes` is still outstanding. No Go source,
+test, or configuration file was touched; no push, PR action, shipment claim, or Ship handoff
+occurred.
+
+**Trigger.** Cycle 21 recorded the `harness-exempt` ready-selection rule as a *shipment-local
+adapter* and deliberately left `.github/policies/workflow-policies.md` and
+`.github/agents/.ship.agent.md` unmodified. Those global artifacts accept only `harness-ready`, so
+Ship would halt at its own Step 2 gate ("confirm every queued task now carries the `harness-ready`
+label") before executing shipment `130-S` — with all forty-two tasks currently carrying neither
+label and ten of them exempt by design. A plan-local paragraph cannot repair a global consumer
+contract that halts first.
+
+**Corrections applied.**
+
+| ID | Finding | Fix |
+|---|---|---|
+| C1 | The global P-002 consumer accepts only `harness-ready`, so Ship halts before shipment `130-S` and, read literally, would scaffold red harnesses for all ten exempt units. | Generalized, not PR-specific: `.github/policies/workflow-policies.md` P-002 now admits a task that is **harness-satisfied** — `harness-ready` **or** fail-closed `harness-exempt` — with new **P-002.1** (closed exemption-class vocabulary, required metadata, predecessor-harness-owner conditions, evaluation order, producer no-scaffold obligation) and **P-002.2** (halt taxonomy and reporting). `.github/agents/.ship.agent.md` gains **Step 2a** and a three-way Step 2 partition; Step 3 selects on the harness-satisfied predicate. `.github/skills/harness-architect/SKILL.md` gains **Step 1a** plus guardrails forbidding fabricated REDs; `.github/skills/build-feature/SKILL.md` accepts harness-satisfied dispatch. P-004 gains the vacuous-satisfaction relationship. Amendment log entry `1.15.0`. |
+| C2 | The Ship ready-selection adapter's "No exception for behaviour" bullet asserted that a behaviour-changing task *always* requires `harness-ready`, which contradicts U13 — an exempt, behaviour-changing unit — in the same table. | Reworded plan-wide. Behaviour requires **red evidence**, carried on the unit itself except for exactly one explicitly allowed, edge-backed carve-out: **U13 / `147.036-T`**, whose failing harness is owned by its declared prerequisite **U12 / `147.035-T`**, which carries `harness-ready` rather than an exemption and lands red before U13 builds. Corrected in the Documented deviations row, the Constitution Check Principle II row, the renamed "Ship ready-selection contract" bullets, and `147-F.md`. |
+| C3 | The `147.018-T` / U9b hard merge gate was discoverable only from `147.018-T` and the plan's U9b bullet; the three constrained tasks carried no backreference. | `147.007-T`, `147.008-T`, and `147.009-T` each gain a `merge-gate-dependent` label and a "HARD MERGE GATE backreference" paragraph; `147-F.md` and `130-S.md` state the gate at feature and shipment level. Prose and labels only — **no dependency edge added**, executable ordering unchanged, topology unchanged. |
+| C4 | Two current-gate pointers still named cycle 20 as "the current gate state" (the cycle-16 "Cycle-17 status of this record" paragraph and the cycle-17 formal-decomposition appendix preamble), and the cycle-20 remediation appendix asserted itself as current. | All three normalized to name `cycle: 21` as the current gate state. Exactly one current-gate-state claim remains. |
+| C5 | `147-F.md` asserted in the present tense that "32 tasks carry a red harness". No harness has been scaffolded — Ship has not run `harness-architect` against this shipment. | Reworded to planned ownership: 32 tasks are **planned to own** a red harness, each naming the `TestU<unit>_` functions its harness step must land, none scaffolded yet. |
+
+**Topology unchanged.** 42 queued tasks, 104 queued-to-queued executable edges, 43 shipment
+members, ready roots exactly `{147.001-T, 147.032-T}`. No dependency edge, task count, shipment
+membership, or unit definition changed in this pass.
+
+**Still outstanding.** The `cycle: 21` remediation queue above is unchanged: the independent
+confirmation review is still required before push, the PR #377 threads remain blocked on it, and
+operator merge approval has not been requested.

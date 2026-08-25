@@ -31,7 +31,7 @@ Agents must read this file at each declared gate point and enforce the relevant 
 
 ---
 
-## P-002: TDD Gate (Harness-Ready Precondition)
+## P-002: TDD Gate (Harness-Satisfied Precondition)
 
 | Field      | Value                                                        |
 |------------|--------------------------------------------------------------|
@@ -39,15 +39,101 @@ Agents must read this file at each declared gate point and enforce the relevant 
 | Applies To | `ship` (consumer; harness-architect skill is the producer) |
 | Gate Point | Queue building (Step 2) and task claiming (Step 3)           |
 
-**Statement**: The ship agent may only claim and implement a task after the harness-architect has confirmed that the test harness compiles and all tests fail in the red phase.
+**Statement**: The ship agent may only claim and implement a task once that task is
+**harness-satisfied**. A task is harness-satisfied when the harness-architect has confirmed that
+its test harness compiles and all of its tests fail in the red phase, or when it carries a
+`harness-exempt` declaration that passes every P-002.1 condition.
 
-**Precondition** (ship): The task carries the `harness-ready` label.
+**Precondition** (ship): The task carries the `harness-ready` label, **or** the task carries the
+`harness-exempt` label and is P-002.1-valid.
 
-**Postcondition** (harness-architect): The task has `harness-ready` label, the harness compiles (`go test -run=^$ -count=1 ./...`), and all tests fail with expected failure markers.
+**Postcondition** (harness-architect): The task has `harness-ready` label, the harness compiles (`go test -run=^$ -count=1 ./...`), and all tests fail with expected failure markers. A P-002.1-valid `harness-exempt` task scaffolds no harness test function, so this postcondition holds vacuously for it and no `harness-ready` label is applied.
 
-**Enforcement** (ship): Filter ready queue to only tasks carrying the `harness-ready` label.
+**Enforcement** (ship): Filter the ready queue to harness-satisfied tasks — those carrying
+`harness-ready`, plus those carrying `harness-exempt` that pass P-002.1 evaluation. Evaluate the
+exemption **before** admitting the task; an unevaluated `harness-exempt` label is not admission.
 
-**Violation Action**: Halt and suggest running the harness-architect.
+**Violation Action**: Halt and report the gap. For a task carrying neither label, suggest running
+the harness-architect. For a task whose `harness-exempt` declaration fails P-002.1, report a
+P-002 gap using the P-002.2 taxonomy and do not scaffold a substitute harness.
+
+---
+
+### P-002.1 — Harness-Exempt Alternative Satisfaction (Fail-Closed)
+
+**Statement**: `harness-exempt` is an alternative way to satisfy P-002, never a way to skip it.
+The label on its own grants nothing. A task is P-002.1-valid only when every condition below
+holds. If any condition is missing, unreadable, ambiguous, or unrecognized, the task is **not**
+harness-satisfied — fail closed.
+
+**Recognized exemption classes** (closed vocabulary; no other value is recognized):
+
+| Class | Applies to | Predecessor harness owner |
+|---|---|---|
+| `declaration-only` | Lands types, signatures, sentinels, or carriers with no behavior branch and no observable behavior change | Not required; the declaration's behavior must still name the downstream unit whose harness fails |
+| `docs-only` | Changes documentation, instruction, prompt, or agent artifacts only; no production or test code | Not required |
+| `verification-only` | Executes and records evidence for behavior that already shipped or is delivered by a prerequisite; commits only green guards, never a new red assertion | Not required |
+| `covered-by <owner-id>` | Behavior-changing implementation whose failing harness is owned by an existing predecessor task | **Required** |
+
+**Required exemption metadata** — all of the following MUST be present and machine-readable:
+
+1. The `harness-exempt` label on the task.
+2. An exemption class drawn from the closed vocabulary above, declared in the task body in a stable, greppable form (for example `**Test-lifecycle classification**: harness-exempt: docs-only`).
+3. A one-line reason stating why no red harness is scaffolded for this task.
+4. Representation in the declared task/plan contract: the governing plan, feature, or shipment contract enumerates a closed exempt set, and this task is a member of it.
+5. For `covered-by <owner-id>` only, the predecessor harness owner's task ID.
+
+**Additional conditions for `covered-by <owner-id>`** — all MUST hold before build:
+
+* The named owner exists as a task in the same release unit.
+* The owner is a declared dependency of the exempt task, direct or transitive.
+* The owner is itself harness-satisfied by `harness-ready` — an exempt task may never be covered by another exempt task.
+* The owner's red evidence is complete: its harness manifest records `Compilation: PASS` and `Red Phase: CONFIRMED` per P-004, and the owner's harness commit has landed.
+
+Classes `declaration-only`, `docs-only`, and `verification-only` require **no** predecessor
+harness owner and MUST NOT have a test fabricated for them. A test that can only fail because a
+symbol does not yet exist is a build error, and a test that passes the moment a declared shape
+lands was never red.
+
+**Evaluation order** (ship, at queue building and again at task claiming):
+
+1. Task carries `harness-ready` → harness-satisfied. Stop.
+2. Task carries `harness-exempt` but the class is missing or outside the closed vocabulary → **halt** (P-002.2 `EXEMPT_CLASS_UNRECOGNIZED`).
+3. Task carries `harness-exempt` but is absent from the declared closed exempt set → **halt** (P-002.2 `EXEMPT_NOT_IN_CONTRACT`).
+4. Task changes behavior and its class is not `covered-by` → **halt** (P-002.2 `EXEMPT_BEHAVIOR_NO_OWNER`).
+5. Class is `covered-by` and any owner condition above fails → **halt** (P-002.2 `EXEMPT_OWNER_INVALID` or `EXEMPT_OWNER_NOT_RED`).
+6. Otherwise → harness-satisfied. Admit the task and do not scaffold a harness for it.
+
+**Producer obligation** (harness-architect): Partition the task set before scaffolding. Tasks that
+are P-002.1-valid `harness-exempt` are already harness-satisfied — do **not** generate red tests,
+stubs, or a `harness-ready` label for them, and do not treat their absence from the
+`harness-ready` set as a gap. Tasks whose exemption fails evaluation are a halt, not a scaffolding
+target.
+
+**Preserved test-first semantics**: Every behavior-changing task that is not `covered-by` a valid,
+red-confirmed predecessor still requires `harness-ready` before implementation. `harness-exempt`
+never substitutes for `harness-ready` on such a task, and the declaration → harness →
+implementation ordering is unchanged for all non-exempt work.
+
+---
+
+### P-002.2 — Harness-Exempt Halt Taxonomy and Reporting
+
+**Statement**: A failed exemption evaluation is a reportable P-002 gap, not a silent skip and not
+a trigger for scaffolding a substitute harness.
+
+| Code | Condition | Report |
+|---|---|---|
+| `EXEMPT_CLASS_UNRECOGNIZED` | Exemption class missing, unreadable, or outside the closed vocabulary | `P-002 GAP: {task_id} carries harness-exempt with unrecognized class [{value}].` |
+| `EXEMPT_NOT_IN_CONTRACT` | Task is not a member of the declared closed exempt set in the plan, feature, or shipment contract | `P-002 GAP: {task_id} claims harness-exempt but is not in the declared exempt set for {release_unit}.` |
+| `EXEMPT_BEHAVIOR_NO_OWNER` | Behavior-changing implementation without a `covered-by` predecessor harness owner | `P-002 GAP: {task_id} changes behavior under harness-exempt with no predecessor harness owner.` |
+| `EXEMPT_OWNER_INVALID` | Named owner does not exist, is not a declared dependency, or is itself only `harness-exempt` | `P-002 GAP: {task_id} names harness owner {owner_id}, which is not a valid red-evidence dependency.` |
+| `EXEMPT_OWNER_NOT_RED` | Owner's red evidence has not completed before this task's build | `P-002 GAP: {task_id} would build before owner {owner_id} red evidence is confirmed.` |
+
+**Violation Action**: Halt at the gate point. Record the code and message through P-005 telemetry.
+Return the task to the operator or to Stage for a contract amendment. Do not scaffold a
+substitute harness, do not relabel the task `harness-ready`, and do not proceed with a partial
+queue.
 
 ---
 
@@ -88,6 +174,13 @@ Agents must read this file at each declared gate point and enforce the relevant 
 **Postcondition**: The harness manifest records `Compilation: PASS` and `Red Phase: CONFIRMED`.
 
 **Violation Action**: Do NOT apply `harness-ready` label. Halt and report the failure.
+
+**Relationship to P-002.1**: This precondition quantifies over every scaffolded harness test
+function. A P-002.1-valid `harness-exempt` task scaffolds none, so the precondition holds
+vacuously and no red phase is owed for that task. Manufacturing a test purely to produce a red
+assertion for an exempt task is a P-002.1 producer-obligation violation, not compliance. For the
+`covered-by` class, the red evidence recorded here belongs to the named predecessor owner and
+MUST be confirmed before the exempt task builds.
 
 ---
 
@@ -571,3 +664,4 @@ follow-up items before `DARK_MODE_COMPLETE` is emitted.
 | 1.12.0  | 2026-07-08     | Added P-017      | Dark factory autonomy contract — bounded autonomous execution, local-review authority, and audited merge approval |
 | 1.13.0  | 2026-07-08     | Migrated P-014   | Copilot Review Merge Gate → Local Review Readiness Merge Gate (local review authoritative; Copilot advisory shadow) |
 | 1.14.0  | 2026-07-31     | Amended P-015    | Non-member-artifacts-stay-in-queue invariant is now code-enforced by `core.ShipShipment` (115-S); cascade `backlogit_ship_shipment` is safe for partial-feature shipments; single-artifact manual procedure demoted to a defense-in-depth fallback |
+| 1.15.0  | 2026-08-25     | Amended P-002, added P-002.1 and P-002.2 | Ready/build selection accepts `harness-ready` OR fail-closed `harness-exempt`; P-002 retitled Harness-Satisfied Precondition; closed exemption-class vocabulary, predecessor-harness-owner requirement for behavior changes, producer no-scaffold obligation, and halt taxonomy; P-004 gains the vacuous-satisfaction relationship |

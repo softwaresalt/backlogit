@@ -27,6 +27,16 @@
 # Drift-ignore suppresses drift REPORTING; it does not by itself prevent a later
 # template adoption from overwriting the third branch. Re-apply the P-007 and
 # Ship-agent third branch after any autoharness template adoption.
+#
+# NOTE (2026-08-25): three generated surfaces now also carry the local P-002.1 /
+# P-002.2 harness-exempt consumer contract, which upstream templates do not
+# carry: .github/policies/workflow-policies.md (P-002 harness-satisfied
+# precondition, P-002.1, P-002.2, P-004 relationship, amendment 1.15.0),
+# .github/agents/.ship.agent.md (Step 2 three-way partition and Step 2a), and
+# .github/skills/build-feature/SKILL.md (harness-satisfied dispatch). Re-apply
+# that contract after any autoharness template adoption.
+# .github/skills/harness-architect/SKILL.md is repo-authored (no generation
+# footer, not manifest-tracked) and needs no entry here.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
@@ -71,6 +81,7 @@
 .github/agents/.ship.agent.md
 
 # --- Skills ---
+.github/skills/build-feature/SKILL.md
 .github/skills/compound-refresh/SKILL.md
 .github/skills/file-lock/SKILL.md
 .github/skills/harness-doctor/SKILL.md
