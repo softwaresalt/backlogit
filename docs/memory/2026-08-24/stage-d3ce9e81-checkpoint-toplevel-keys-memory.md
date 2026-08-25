@@ -262,3 +262,47 @@ canonical "next action" pointer for the initiative:
   against the pushed branch.
 * Session checkpoint of record: `checkpoint-20260825-190220.json`
   (`phase: cycle-19-advisory-closure-complete`).
+
+## Canonical status update (cycle 21, 2026-08-25)
+
+This addendum supersedes the cycle-19 addendum above as the canonical "next action" pointer; the
+cycle-19 addendum is left unedited as history, consistent with how it treated the narrative above
+it. Between cycle 19 and cycle 21, **cycle 20** ran a full test-lifecycle remediation of PR #377's
+20 unresolved Copilot threads (17 P1, 3 P2): it withdrew the "declared regression guards in the
+harness" device plan-wide in favour of a three-step declaration → red-harness → green lifecycle,
+made `147.032-T` / U1d and `147.038-T` / U15 `harness-exempt: declaration-only`, made `147.007-T` /
+U3b `harness-exempt: verification-only` behind new unit U3c (`147.042-T`), added `147.043-T` / U6e
+to make the `RemediationIntent` contract total, corrected `147.021-T`'s halt path, and grew the
+topology to 42 tasks / 104 edges / 43 shipment members. Cycle 20 closed the `harness-exempt` set at
+ten enumerated units but recorded its own gate as `FAIL` pending a fresh local plan review before
+push.
+
+* Plan review is now at **`cycle: 21`, `decision: FAIL`**
+  (`dispatch_mode: single-agent-declared-degradation`,
+  `TOOL_DEGRADED: reviewer-subagent-dispatch`, `operator_authorization: pending`,
+  severity counts P0=0/P1=1/P2=1/P3=2, topology **SOUND**, `push_allowed: no`). Full record:
+  `docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md` (final `## Plan
+  Review` section, `cycle: 21`).
+* Cycle 21 **is** the fresh local plan review cycle 20 required. It found and fixed, in the same
+  pass: (P1) the closed ten-unit `harness-exempt` set was enumerated in the plan but applied to
+  only three of its ten member tasks' frontmatter (`147.007-T`, `147.032-T`, `147.038-T`), with no
+  plan-local rule telling Ship's ready-selection query to treat `harness-exempt` as an alternative
+  to `harness-ready` — fixed by labelling the remaining seven (`147.017-T`, `147.018-T`,
+  `147.019-T`, `147.021-T`, `147.026-T`, `147.036-T`, `147.041-T`) and adding a machine-readable
+  Ship ready-selection adapter (a documented P-002 enforcement deviation, not a Principle II
+  waiver) to the plan's Documented deviations section and `147-F.md`; (P2) residual ambient
+  `backlogit docs lint` references in `147.017-T` (3 occurrences) and `147.018-T` (4 occurrences),
+  replaced with `go run ./cmd/backlogit --cwd . docs lint`; (P3 x2) a cycle-19 numbering
+  continuity gap and a stale current-gate-state pointer chain, both corrected.
+* Topology is **SOUND** and unchanged this cycle: 42 queued tasks under `147-F`, 104
+  queued-to-queued executable edges, 43 members in shipment `130-S`, ready set exactly
+  `{147.001-T, 147.032-T}`, verified acyclic by an independent Kahn topological sort (42/42
+  ordered).
+* **NEXT REQUIRED ACTION: an independent confirmation review of the cycle-21 fixes, then push
+  branch `chore/stage-130-s` and reconcile GitHub PR #377.** `operator_authorization: pending` —
+  this session did **not** push, did not request merge approval, and did not claim shipment
+  `130-S`. Ship must not claim `130-S` until Stage's confirmation review passes and its own build,
+  review, and PR-lifecycle gates run against the pushed branch.
+* Session checkpoint of record: see the newest `checkpoint-2026*.json` entry with
+  `phase` starting `cycle-21-` in `.backlogit/checkpoints/` (created and validated via
+  `go run ./cmd/backlogit --cwd . checkpoint create` / `checkpoint get`).
