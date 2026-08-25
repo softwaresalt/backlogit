@@ -87,35 +87,70 @@ _test.go). No task added, no dep edge changed.
 ### 3. `147.010-T` (U5b) — rebalance to own a real production delta
 
 Under cycles 1–7, U5b claimed "no production change" and existed only to pin the state-scoping
-of invariant I3.
+of invariant I3. An initial cycle-8 iteration proposed wrapping `QuarantineCheckpoint`'s
+`ErrCheckpointUseAbandon` return with the target `baseName` for observability parity — that
+proposal has been **retracted as out-of-scope refusal-observability** (the frozen feature
+explicitly excludes refusal observability such as counters, logs, telemetry, and error-message
+enrichment whose end-goal is operator observability rather than a semantic classification
+change).
 
-**Fix — extend U5b with an observability-parity delta consistent with pre-existing patterns.**
-`QuarantineCheckpoint`'s `ErrCheckpointUseAbandon` return is the one bare `blerrors.ErrCheckpoint*`
-return in `internal/core/checkpoint_disposition.go`. Every other refusal in the file wraps its
-sentinel with additional context:
+**Fix — extend U5b with a state-scoped classification delta.** In `QuarantineCheckpoint`, after
+the existing `validTarget` classification block, add a status check: when a target parses,
+validates, and is conforming, but `cp.Status != "active"`, refuse with
+`ErrCheckpointNotActive` wrapped as `%w: status=%s` rather than the bare
+`ErrCheckpointUseAbandon`. Only a valid+conforming **active** target continues to be refused
+with `ErrCheckpointUseAbandon`. Change form, inserted between the `validTarget` block and the
+archive/audit path:
 
-| Refusal | Wrap form |
-|---|---|
-| `ErrCheckpointNotFound` | `%w: %s + baseName` |
-| `ErrCheckpointUseQuarantine` | `%w: %v + parseErr/valErr` |
-| `ErrCheckpointNotActive` | `%w: status=%s + cp.Status` |
-| `ErrCheckpointDestinationOccupied` | `%w: %s + baseName` |
-| `ErrCheckpointUseAbandon` (today) | **bare return** — no wrap |
+```go
+if validTarget {
+    if cp.Status != "active" {
+        return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
+    }
+    return blerrors.ErrCheckpointUseAbandon
+}
+```
 
-U5b's production delta is to wrap this last one:
-`return fmt.Errorf("%w: %s", blerrors.ErrCheckpointUseAbandon, baseName)`. This is not a
-speculative seam. It brings a pre-existing bare sentinel in line with the wrap pattern already
-used by every other refusal in the same file, and it makes the state-conflict double-refusal
-observability parity between quarantine and abandon: both now name the offending filename in
-the error message. `errors.Is(err, blerrors.ErrCheckpointUseAbandon)` continues to hold through
-`%w`, so `147.009-T` / U5's row-2 guard (`errors.Is` on a fully conforming active document
-refused by quarantine) stays green.
+This corrects a pre-existing misleading redirect: today, a `status:"resolved"` conforming
+document hitting quarantine returns `ErrCheckpointUseAbandon` ("use abandon instead"), but the
+same document then hits `AbandonCheckpoint`'s existing `status != "active"` gate and is
+refused with `ErrCheckpointNotActive` — the operator is bounced between verbs with neither
+surface naming the actual state-class problem. After U5b, both mutation verbs converge on the
+same truthful state-class sentinel for the non-active conforming case, so the pre-existing
+double-refusal state-conflict class named in the plan's Decisions and Rationale (Row 3 of the
+I3 discussion) is disclosed at first contact.
+
+Semantic constraints preserved:
+
+- Quarantine is **not** widened to accept the state-conflict class; it still refuses every
+  non-active conforming target (only the sentinel it returns changes).
+- U5's active-scope hard gate (Row 2 of the I3 table) is **unchanged**: a fully conforming
+  `status:"active"` document refused by quarantine still returns `ErrCheckpointUseAbandon`.
+- `errors.Is` domain behaviour is honoured for both cases:
+  `errors.Is(err, ErrCheckpointUseAbandon)` for the active row (U5's row-2 guard) and
+  `errors.Is(err, ErrCheckpointNotActive)` for the non-active row (now cross-surface with
+  abandon).
+- No new sentinel is introduced. `ErrCheckpointNotActive` already exists in
+  `internal/errors/checkpoint_errors.go` and is already routed through the MCP disposition
+  error response (`internal/mcp/errors.go:329` maps it to `checkpoint_not_active`), so no
+  MCP code changes and no U7/U7d follow-up.
+- Error-message enrichment is not the end-goal — the `%w: status=%s` form matches
+  `AbandonCheckpoint`'s pre-existing wrap for the same sentinel so the two surfaces produce
+  the same shape; the classification correction is the delta.
+- Existing shipped test `TestQuarantineCheckpoint_ValidRefusesNamingAbandon` uses a fixture
+  from `validDispositionTestCheckpoint()` whose `Status` is `"active"`, so it stays green:
+  it exercises U5's row-2 branch, which still returns `ErrCheckpointUseAbandon`.
 
 U5b's three test rows: case 1 (RED) asserts a `status:"resolved"` conforming document refused
-by quarantine carries `strings.Contains(err.Error(), baseName)`; case 2 (guard) asserts
-`errors.Is(err, ErrCheckpointNotActive)` on the same document refused by abandon; case 3 (guard)
-asserts abandon accepts a `status:"active"` conforming document. Case 1's `baseName` assertion
-is RED against U5's landing state where the sentinel is returned bare.
+by `QuarantineCheckpoint` returns an error where `errors.Is(err, ErrCheckpointNotActive)`
+holds and the message names the status; case 2 (guard) asserts the same document refused by
+`AbandonCheckpoint` returns `errors.Is(err, ErrCheckpointNotActive)` naming the status
+(pre-existing shipped behaviour, colocated so a future edit cannot decouple the two surfaces'
+state-class agreement); case 3 (guard) asserts a `status:"active"` conforming document
+refused by `QuarantineCheckpoint` returns `errors.Is(err, ErrCheckpointUseAbandon)` — U5's
+row-2 hard gate, unchanged. Case 1 is RED against U5's landing state, where
+`QuarantineCheckpoint` returns bare `ErrCheckpointUseAbandon` for the resolved conforming
+target and `errors.Is(ErrCheckpointUseAbandon, ErrCheckpointNotActive)` is false.
 
 Files list gains `internal/core/checkpoint_disposition.go`. No task added, no dep edge changed.
 
@@ -190,9 +225,14 @@ Applied here as: the canonical checkpoint's `ci_state`, `pr`, `push_state`, `res
 - `.backlogit/queue/147.005-T.md` — description rewrites U2d as an events code+tests unit owning
   the derived-set introduction and the conformance-check refactor; acceptance criteria include
   the two-step red posture and the single red case; all-guards exemption text removed.
-- `.backlogit/queue/147.010-T.md` — description gains the observability-parity delta on
-  `ErrCheckpointUseAbandon`; acceptance criteria include the `baseName` assertion as the single
-  red case; "no production change" and "green on landing" claims removed.
+- `.backlogit/queue/147.010-T.md` — description gains the state-scoped classification delta
+  on `QuarantineCheckpoint` (state-truthful refusal via `ErrCheckpointNotActive` for
+  non-active conforming targets); acceptance criteria include the `errors.Is(err,
+  ErrCheckpointNotActive)` assertion on the quarantine surface as the single red case, plus
+  the non-widening guarantee, the U5 row-2 hard-gate preservation, the shipped-test
+  preservation, and the retraction of the prior cycle-8 observability-wrap proposal as
+  out-of-scope refusal-observability; "no production change" and "green on landing" claims
+  removed.
 - `.backlogit/queue/147.016-T.md` — Expected Red narrative restructured to enumerate specific
   assertion failures against declaration stubs and current handlers at batch-harness time;
   "Expected red: none" and posture-exemption text removed.
