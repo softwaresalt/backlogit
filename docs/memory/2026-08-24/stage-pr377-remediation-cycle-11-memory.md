@@ -86,7 +86,7 @@ The checkpoint referenced `docs/memory/2026-08-24/stage-pr377-remediation-cycle-
 
 ## Compaction Threshold Check
 
-- `docs/memory/` directory: 11 files in 2026-08-24, ~313KB total — below both triggers (>40 files, >500KB). No compaction required.
+- `docs/memory/` directory: prior archive-only compaction reduced 41 to 27 files at an earlier point; measured footprint at current state is 36 files / 316.2 KiB, still below mandatory triggers (>40 files or >500 KB); no new compaction required.
 
 ## Adversarial Review Follow-Up (Cycle 11)
 
