@@ -398,67 +398,27 @@ assertion — it does not replace one (cycle-8 correction).
 * **Expected red**: row 1's accept-half fails (quarantine currently refuses it).
 * **Depends on**: U2c, U4.
 
-### U5b — State-scoped quarantine classification (state-truthful refusal for non-active conforming targets)
+### U5b — RETIRED (cycle 10)
 
-* **Domain**: code (core)
-* **Files**: `internal/core/checkpoint_disposition.go`, `internal/core/checkpoint_disposition_test.go`
-* **Change**: extend `QuarantineCheckpoint`'s in-memory classification so that when a target is
-  valid+conforming (`validTarget == true` after U5's `parse OK && validate OK && conformance OK`
-  check) **and** `cp.Status != "active"`, refuse with `ErrCheckpointNotActive` wrapped as
-  `%w: status=%s` rather than the bare `ErrCheckpointUseAbandon`. Only a valid+conforming
-  **active** target continues to be refused with `ErrCheckpointUseAbandon`. This corrects a
-  misleading redirect the current path emits: today, a `status:"resolved"` conforming document
-  hitting quarantine returns `ErrCheckpointUseAbandon` ("use abandon instead"), but that same
-  document then hits `AbandonCheckpoint`'s existing `status != "active"` gate and is refused
-  with `ErrCheckpointNotActive` — the operator is bounced between verbs with neither surface
-  naming the actual state-class problem. After U5b, both mutation verbs converge on the same
-  truthful state-class sentinel for the non-active conforming case, so the pre-existing
-  double-refusal state-conflict class named in the Decisions and Rationale table (Row 3 of the
-  I3 discussion below) is disclosed at first contact rather than requiring the operator to
-  invoke both verbs to piece it together. `errors.Is` continues to match the documented sentinel
-  for each case: `errors.Is(err, ErrCheckpointUseAbandon)` holds for the active row (U5's row-2
-  hard gate, unchanged); `errors.Is(err, ErrCheckpointNotActive)` now also holds for the
-  non-active row on the quarantine surface, matching abandon's existing behaviour on the same
-  document. The MCP mapping layer (`internal/mcp/errors.go:329`) already routes
-  `ErrCheckpointNotActive` to `checkpoint_not_active`, so this change adds no new MCP code and
-  needs no U7/U7d follow-up. Change form, inserted between the existing `validTarget`
-  classification block and the archive/audit path:
+Unit U5b is retired. Its production delta — changing the `QuarantineCheckpoint` refusal sentinel
+for non-active conforming targets from `ErrCheckpointUseAbandon` to `ErrCheckpointNotActive` —
+contradicted the origin decision's explicit scope exclusion of the state-conflict class. The
+decision document states the double-refusal row is "pre-existing behaviour introduced by neither
+this work nor 146-F" and the plan's Decisions and Rationale names it as "explicitly out of scope:
+widening quarantine to accept it would change what 'quarantine' means." Changing the sentinel
+returned for that row widens/reopens the decision's scope boundary, and inventing the delta solely
+to satisfy P-004's red-gate requirement is not a valid justification.
 
-  ```go
-  if validTarget {
-      if cp.Status != "active" {
-          return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
-      }
-      return blerrors.ErrCheckpointUseAbandon
-  }
-  ```
+**Disposition of U5b's assertions:** U5b's three state-conflict regression rows are absorbed into
+U5 (147.009-T) as already-green pinned guards. They pin the I3 table row 3 (conforming +
+`resolved` → refused by both verbs) as a tested invariant rather than an assumed one, without
+requiring any production change. U5 retains its genuine red gate (row 1's accept-half of the
+paired assertion). P-004 is satisfied by U5's existing red load; the absorbed rows are green on
+landing and do not contribute to the red gate.
 
-* **State-scoping rationale**: quarantine is **not** widened to accept the state-conflict class
-  — widening would change what "quarantine" means, from "these bytes are untrustworthy" to
-  "I want this file gone" (see Decisions and Rationale). It is narrowed only on the sentinel
-  it returns: quarantine still refuses every non-active conforming target, but the refusal
-  now names the truthful state-class problem rather than pointing at a verb that will refuse
-  on a different sentinel. Invariant I3's totality remains scoped to `status: "active"` — the
-  sole classification remainder inside the active scope is the conforming-active row that
-  returns `ErrCheckpointUseAbandon`, and U5's row-2 guard pins it. U5b's tests pin state-scoped
-  totality and cross-surface state-class agreement together, so a future reader cannot break
-  either without a failing test.
-* **Tests** (3, expressed as one table so state-scoped classification and the U5 row-2 guard
-  cannot drift independently): a `status:"resolved"` conforming row asserts
-  `QuarantineCheckpoint` refuses with `errors.Is(err, ErrCheckpointNotActive)` and the error
-  message names the status; the same row asserts `AbandonCheckpoint` refuses the same document
-  with `errors.Is(err, ErrCheckpointNotActive)` and the error message names the status
-  (pre-existing shipped behaviour, colocated so a future edit cannot decouple the two
-  surfaces' state-class agreement); a `status:"active"` conforming row asserts
-  `QuarantineCheckpoint` refuses with `errors.Is(err, ErrCheckpointUseAbandon)` — U5's row-2
-  hard gate, unchanged.
-* **Expected red**: case 1 fails against U5's landing state — `QuarantineCheckpoint` returns
-  bare `ErrCheckpointUseAbandon` for the resolved+conforming target, and
-  `errors.Is(ErrCheckpointUseAbandon, ErrCheckpointNotActive)` is false. Cases 2 and 3 are
-  declared regression guards for pre-existing shipped behaviour (abandon's status guard and
-  U5's row-2 refusal on the sole active-scope classification remainder). **P-004 is satisfied**
-  by case 1 as the single red assertion.
-* **Depends on**: U5.
+**Task disposition:** `147.010-T` is archived (history preserved in `.backlogit/archive/`),
+removed from shipment `130-S`, and removed from the dependency graph. No downstream tasks depended
+on `147.010-T`.
 
 ### U6 — `ListCheckpoints` surfaces non-conforming files
 
@@ -843,10 +803,14 @@ assertion — it does not replace one (cycle-8 correction).
     succeeds and rewrites the file with a fabricated skeleton (F2 in memory) before U3's
     validity gate and U7d's route-through-disposition-shape stub complete; assertion that
     resolve is refused with `checkpoint_use_quarantine` **fails**.
-  * **`valid-but-non-conforming` row**: `events.GetCheckpointResult.Conforming` — the U6b
-    declaration stub returns a zero-value result before its `Conforming` field is populated
-    by the U6b implementation; assertion `result.Conforming == false` **fails** because zero
-    value cannot be distinguished from an unset stub. MCP `get_checkpoint` — before U6c's
+  * **`valid-but-non-conforming` row**: `events.GetCheckpointResult` — the U6b
+    declaration stub returns a zero-value result before its projection fields are populated
+    by the U6b implementation; assertions `result.Valid == true`, `result.NeedsQuarantine == true`,
+    `result.RemediationCommand != ""`, and `result.Conforming == false` **fail** because the
+    zero-value struct yields `Valid: false`, `NeedsQuarantine: false`, `RemediationCommand: ""`,
+    and `Conforming: false` — where `Conforming == false` alone is ambiguous (matches zero value),
+    the positive-projection assertions (`Valid == true`, `NeedsQuarantine == true`,
+    `RemediationCommand != ""`) prove the stub is unpopulated. MCP `get_checkpoint` — before U6c's
     projection stub is filled in, the response has no `conforming` field; assertion that
     `conforming: false` appears in the payload **fails**. CLI `checkpoint get` — before
     U8c/147.027-T reprojects `newCheckpointGetCmd` from `events.GetCheckpointResult`, the CLI
@@ -988,12 +952,19 @@ assertion — it does not replace one (cycle-8 correction).
      `.json`, so it can never be a `CleanupCheckpoints` destination and can never be matched by the
      `checkpoint-*.json` glob. The sidecar still records the original base name in its `filename`
      field, so provenance survives the rename.
-  2. **Copy** — never move — the preserved bytes to `.backlogit/checkpoints/<filename>`. The
+  2. **Approval gate (Principle VII)**: before executing the copy in step 3, the implementation
+     MUST obtain explicit operator approval for the **potential** abort cleanup (step 4's removal
+     of the invalid restored copy at `.backlogit/checkpoints/<filename>`). Approval covers the
+     destructive file deletion that abort may perform. If approval is withheld, the restoration
+     procedure MUST NOT begin — do not copy the file in step 3. This satisfies Constitution
+     Principle VII (destructive command approval) by obtaining consent before the destructive path
+     becomes reachable, not after the copy is already in place.
+  3. **Copy** — never move — the preserved bytes to `.backlogit/checkpoints/<filename>`. The
      sidecar stays in the archive; it describes the quarantine event, not the restored working
      copy, and must not be carried into the active directory (a `checkpoint-*.json.disposition.json`
      file there would be swept up by the `checkpoint-*.json` glob). Stop if the active path already
      exists: never overwrite a live checkpoint.
-  3. Apply entry point (a) unchanged to the restored file — including its schema-valid precondition.
+  4. Apply entry point (a) unchanged to the restored file — including its schema-valid precondition.
      The precondition **is not a formality here**: quarantines routed by U3 (validity gate on
      resolve) or U4/U5 (validity gate on abandon) preserve schema-invalid bytes, so the archived
      evidence may fail validation. If `checkpoint get` refuses the restored bytes with
@@ -1002,6 +973,7 @@ assertion — it does not replace one (cycle-8 correction).
      entry point (a) is inapplicable, or if its **termination rule** fires (`conforming: false`
      persists after the classified moves because the offender is a nested `progress` duplicate or
      other move-untouchable class), **abort the restore**: remove `.backlogit/checkpoints/<filename>`
+     (this deletion was pre-approved in step 2's approval gate)
      and leave the file quarantined. The renamed archive evidence at
      `archive/checkpoints/<filename>.quarantined-<disposition_at>` and its
      `.disposition.json` sibling are **untouched** by the abort — they are the only verbatim
@@ -1109,7 +1081,7 @@ assertion — it does not replace one (cycle-8 correction).
 U1 ──▶ U2 ──┬──▶ U2b ──┬──▶ U2e ─────────────────────────▶ U9
             ├──▶ U2c ──┤
             │          ├──▶ U3 ──▶ U3b
-            │          ├──▶ U4 ──▶ U5 ──▶ U5b
+            │          ├──▶ U4 ──▶ U5
             │          └──▶ U6 ──┬──▶ U6b ──┬──▶ U6c ──┬──▶ U7b
             │                    │          └──▶ U8c   │
             │                    └──▶ U6d ─────────────┘
@@ -1141,7 +1113,6 @@ Edges declared, no cycles:
 | U3 → U3b | Conformance gate sits after the validity gate. |
 | U6 → U3b | U3b's residual test asserts U6 flags the same file, so the discovery path must exist. |
 | U4 → U5 | U5's paired table asserts abandon **refuses** the row quarantine accepts; that refusal is U4's. |
-| U5 → U5b | State-dimension rows extend U5's table. |
 | U6 → U6b | Both read surfaces must report the same field set. |
 | U6 → U6d | The filter exemption extends the conformance branch U6 introduces. |
 | U6b → U6c | The MCP handler projects U6b's result type; without it `valid: true` stays hardcoded. |
@@ -1157,7 +1128,7 @@ Edges declared, no cycles:
 | U9 → U9b → U10 → U10b | Docs, then refusal verification, then acceptance and restore verification against the scratch workspace U10 creates. |
 
 Suggested execution order: U1, U2, U2b, U2c, U2d, U2e, U2f, U3, U6, U6b, U6c, U6d, U7b, U3b, U4,
-U5, U5b, U7, U7d, U7c, U8, U8c, U8b, U9, U9b, U10, U10b. U2b, U2c, and U2d are mutually independent
+U5, U7, U7d, U7c, U8, U8c, U8b, U9, U9b, U10, U10b. U2b, U2c, and U2d are mutually independent
 once U2 lands; U6 and U4 are mutually independent once U2c lands; U6d is independent of everything
 after U6 but must land before U7b; U8c is independent of everything after U6b and only has to land
 before U8b; U2e is independent of the gate units and only has to land before U9. **U3 and U5 are
@@ -1204,7 +1175,7 @@ not independent of U4/U6** — see the edge table.
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | **deviation (documented)** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Deviation**: `AbandonCheckpoint` already wraps its validation failure with `%v` (`internal/core/checkpoint_disposition.go:~76-81`), losing `ErrCheckpointInvalid`. This plan does not fix that pre-existing wrap — it is recorded as a named follow-up rather than silently claimed as compliant. |
-| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every code unit uses the two-step red posture declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a harness that **fails on assertions**. Expected red is stated per unit. U2d and U5b each own a real production delta with a compiling-but-failing harness case that fails against the pre-delta state (U2d — the derived-set equality assertion fails against the empty `checkpointV1AllTopLevelKeys` declaration stub; U5b — the `errors.Is(err, ErrCheckpointNotActive)` assertion on `QuarantineCheckpoint` for a `status:"resolved"` conforming target fails against U5's landing state where the bare `ErrCheckpointUseAbandon` is returned). U8b's parity harness lands during batch harness generation and fails against the declaration stubs of U6b/U6c/U7b/U7c/U8/U8c (see U8b's Expected red enumeration). P-004 does not permit an all-guards exemption, so cycle-8 replaces the earlier exemption claims with these concrete red-load statements. |
+| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every code unit uses the two-step red posture declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a harness that **fails on assertions**. Expected red is stated per unit. U2d owns a real production delta with a compiling-but-failing harness case that fails against the pre-delta state (U2d — the derived-set equality assertion fails against the empty `checkpointV1AllTopLevelKeys` declaration stub). U8b's parity harness lands during batch harness generation and fails against the declaration stubs of U6b/U6c/U7b/U7c/U8/U8c (see U8b's Expected red enumeration). U5's state-conflict regression rows (absorbed from retired U5b) are already-green pinned guards that do not contribute to U5's red gate; U5 retains its genuine red assertion (row 1's accept-half). P-004 does not permit an all-guards exemption, so cycle-8 replaced the earlier exemption claims with concrete red-load statements, and cycle-10 retired U5b whose production delta contradicted the decision's scope boundary. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` on MCP, named keys on CLI, `NeedsQuarantine` + `RemediationCommand` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
@@ -1244,7 +1215,7 @@ Requires plan hardening: yes
 |---|---|---|
 | U3, U3b | CLI `backlogit checkpoint resolve`, MCP `backlogit_resolve_checkpoint` | A legacy-shaped document in the scratch workspace is refused and its bytes are byte-identical (SHA before/after). A valid-but-non-conforming document is refused with `checkpoint_non_conforming`. A conforming active checkpoint still resolves. The MCP payload is **not** `"error":"internal"`. |
 | U4 | CLI `backlogit checkpoint abandon`, MCP `backlogit_abandon_checkpoint` | A valid-but-non-conforming document is refused, the offending keys are named, and the disposition audit JSONL is unchanged. |
-| U5, U5b | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"resolved"` file is refused by **both** verbs with `ErrCheckpointNotActive` naming the status, closing the pre-existing misleading redirect in which quarantine pointed at abandon and abandon refused on a different sentinel; a conforming `status:"active"` file is refused by quarantine with `ErrCheckpointUseAbandon` (U5's row-2 hard gate). |
+| U5 | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"resolved"` file is refused by **both** verbs with `ErrCheckpointUseAbandon` (quarantine) and `ErrCheckpointNotActive` (abandon) — the pre-existing double-refusal state-conflict class pinned by U5's absorbed regression guards; a conforming `status:"active"` file is refused by quarantine with `ErrCheckpointUseAbandon` (U5's row-2 hard gate). |
 | U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **POSIX-runnable** remediation command on **both** read surfaces (see U6 for the shell-contract rationale; PowerShell-safety for arbitrary accepted filenames is not claimed, and the natural filename generator produces shapes that are literally paste-safe in `pwsh` as well), and the file is unchanged after reading. |
 | U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI, MCP, and the `events` read layer reach the same classification from the same stored file. |
 | U10 | Live workspace, read-only | Every live SHA-256 hash under `.backlogit/checkpoints/` is unchanged across the whole verification run. |
@@ -1412,7 +1383,8 @@ document that parses, validates, and conforms, which is row 3.
 plan nor 146-F**. A conforming, valid, non-active checkpoint has no disposition verb. That is the
 named **state-conflict class**, explicitly out of scope: widening quarantine to accept it would
 change what "quarantine" means (from "these bytes are untrustworthy" to "I want this file gone"),
-which is a separate decision requiring its own deliberation. U5b pins the row so the exclusion is
+which is a separate decision requiring its own deliberation. U5 absorbs the state-conflict
+regression rows (from retired U5b) as already-green pinned guards, so the exclusion is
 tested rather than assumed, and U9's design-doc rewrite states the scope qualifier so a future
 reader is not told the classification is total when it is total only over `active`.
 
@@ -1497,7 +1469,7 @@ Per `.github/instructions/circuit-breaker.instructions.md`: 5 build/test fix att
 assertion — disjoint and total over `status: "active"` — cannot be made to pass, **halt** rather
 than weakening it: a green suite with an `active`-state deadlock shipped is worse than a blocked
 task. Row 3 of the I3 table (conforming + `resolved` → refused by both) is **not** covered by that
-stop condition; it is pre-existing, out of scope, and U5b asserts it as-is.
+stop condition; it is pre-existing, out of scope, and U5's absorbed regression guards assert it as-is.
 
 ### Unresolved operator decisions
 
@@ -1803,9 +1775,24 @@ speculative seam or fabricating production behaviour solely to make a test go re
 | 147.016-T / U8b — "Expected red: none" against batch harness contract | U8b claimed an exemption on the grounds that it lands after every dep's implementation. That framing was incompatible with the batch harness contract: harness generation lands before impls, so U8b's assertions run against the deps' declaration stubs and current handlers. | The Expected Red section is restructured to enumerate specific failing assertions per fixture row against the pre-implementation state: legacy-shaped row — `events.ErrCheckpointInvalid` refusal on `get` fails against pre-U6b/pre-U6c/pre-U8c handlers, `resolve` refusal with `checkpoint_use_quarantine` fails against pre-U3/pre-U7d; valid-but-non-conforming row — `conforming: false` projection assertions fail against the U6b declaration stub's zero-value result, U6c's unfilled projection, and U8c's hardcoded `"valid": true`; refusal-on-mutation assertions fail against pre-U3b/pre-U4 handlers; byte-identity postcondition fails against the current `ResolveCheckpoint` rewrite; conforming-active row stays as a declared regression guard. U8b remains test-only with parity-contract role after impls land; its cycle-8 red load is honest against the batch-harness moment. No task added, no dep edge changed. |
 
 Net effect: no unit added, no edge added, no shipment member added, no task ID renumbered. Backlog
-shape stays at **27 tasks / 43 edges / 28 shipment members**. Prior-cycle decisions
+shape was **27 tasks / 43 edges / 28 shipment members** at cycle-8 close (subsequently reduced
+to **26 tasks / 42 edges / 27 shipment members** by cycle-10's U5b retirement). Prior-cycle decisions
 (checkpoint-safety design, shell contract, repair mapping, hard merge gate, 147.009-T
 paired-assertion halt condition, ownership splits) are unchanged. The three affected tasks now
 carry P-004-compliant harnesses with concrete pre-implementation-state red assertions.
 
 <!-- copilot-review-remediation: pr-377-cycle-8 -->
+
+### PR #377 Copilot review remediation, cycle 10
+
+A tenth Copilot review (operator-authorized extension) flagged three findings:
+
+| Thread | Issue | Cycle-10 correction |
+|---|---|---|
+| 147.016-T / U8b — `Conforming == false` zero-value ambiguity | The `valid-but-non-conforming` row's `result.Conforming == false` assertion is a bool zero value and does not prove `ListCheckpoints` populated the projection; an unset declaration stub also yields `false`. | U8b's harness now asserts **at least one required positive projected field alongside `Conforming == false`**: `Valid == true`, `NeedsQuarantine == true`, and `RemediationCommand != ""`. Against the declaration stub's zero-value result, all three fail — proving the projection is unpopulated rather than relying on the ambiguous zero-value alone. Plan U8b description and 147.016-T acceptance criteria updated to match. |
+| 147.018-T / U9b — post-quarantine restore abort cleanup lacks P-VII approval gate | Entry point (b)'s abort step can delete an invalid restored active copy, but Constitution Principle VII requires explicit approval before every destructive file action. The approval-gate was missing. | U9b's entry point (b) now requires explicit operator approval for the **potential** abort cleanup **before** the restore begins (step 2). If approval is withheld, restoration must not start. The implementation task must carry this rule into generated instructions. Plan U9b description and 147.018-T acceptance criteria updated. |
+| 147.010-T / U5b — production delta contradicts origin decision scope exclusion | U5b's cycle-8 production delta (changing the `QuarantineCheckpoint` refusal sentinel for non-active conforming targets from `ErrCheckpointUseAbandon` to `ErrCheckpointNotActive`) widens the decision's explicitly out-of-scope state-conflict class. Inventing a behaviour change solely to force a RED assertion does not justify reopening a scoped-out decision. | U5b is **retired**. Its state-conflict regression rows are absorbed into U5 (147.009-T) as already-green pinned guards — they test the I3 row-3 invariant without requiring any production change. U5 retains its genuine red gate (row 1). 147.010-T is archived (history preserved), removed from shipment 130-S, and the U5 → U5b dependency edge is removed. Plan U5b section replaced with a retirement notice; dep graph, edge table, execution order, Constitution Check II, I3 discussion, runtime verification table, and stop conditions updated. |
+
+Net effect: **1 task retired** (147.010-T / U5b archived), **1 edge removed** (U5 → U5b), **1 shipment member removed** (147.010-T from 130-S). Backlog shape changes from **27 tasks / 43 edges / 28 shipment members** to **26 tasks / 42 edges / 27 shipment members**. No new task, no new edge, no new shipment member. Prior-cycle decisions (checkpoint-safety design, shell contract, POSIX-safe RemediationCommand, repair mapping, hard merge gate, 147.009-T paired-assertion halt condition, ownership splits) are unchanged. The duplicate modeled-key rule, schema-invalid quarantine rule, valid-nonconforming-only repair rule, operation-aware remediation formatting, and body-preserving repair hard same-merge gate are all preserved.
+
+<!-- copilot-review-remediation: pr-377-cycle-10 -->

@@ -303,7 +303,9 @@ defect.
    abandon (`ErrCheckpointNotActive`) and by quarantine (`ErrCheckpointUseAbandon`) alike. That
    double refusal is a pre-existing state-conflict class introduced by neither this work nor
    146-F; the plan pins the scope qualifier as protected invariant I3 and tests the double
-   refusal in unit U5b.
+   refusal in unit U5b. (U5b was subsequently retired in cycle 10 — its production delta
+   contradicted this scope qualifier — and the double-refusal regression guards were absorbed
+   into U5 as already-green pinned assertions.)
 5. **No preservation carrier is added to `CheckpointV1`.** The top-level namespace remains closed
    in both directions.
 6. **The nine live legacy files are left untouched by this work.** They are already
