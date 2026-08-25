@@ -651,7 +651,7 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   marshal or write. Filename validation and path containment
   (`validateCheckpointFilename`, `ensurePathContained`) run first and are unchanged.
 * **Tests**: none new — U12 owns the contract. This unit turns U12's three assertions green.
-* **Expected red**: **none — `harness-exempt: covered-by U12`.** U13 is the implementation half of
+* **Expected red**: **none — `harness-exempt: covered-by` with `harness_owner: 147.035-T` (U12).** U13 is the implementation half of
   U12's red gate and scaffolds no test function of its own. Its verification command is U12's
   selector (`go test -count=1 -run '^TestU12_' ./internal/events`), which must go from three
   failures to zero. This is the plan's single behaviour-changing exemption and the explicitly
@@ -2431,7 +2431,7 @@ exemption, and adding one requires a plan amendment.
 |---|---|---|---|
 | U1d | `147.032-T` | `declaration-only` | U6 (`147.011-T`), U6e (`147.043-T`), U6c (`147.022-T`), U16 (`147.039-T`) |
 | U15 | `147.038-T` | `declaration-only` | U6b (`147.012-T`), U8b (`147.016-T`) |
-| U13 | `147.036-T` | `covered-by U12` | U12 (`147.035-T`) — three failing seam-contract functions |
+| U13 | `147.036-T` | `covered-by` (`harness_owner: 147.035-T`) | U12 (`147.035-T`) — three failing seam-contract functions |
 | U3b | `147.007-T` | `verification-only` | U3c (`147.042-T`), turned green by U14 (`147.037-T`) |
 | U2f | `147.021-T` | `verification-only` | U12 (`147.035-T`) — I1 is enforced by the seam, not the enumeration |
 | U9 | `147.017-T` | `docs-only` | not applicable — no behaviour |
@@ -2439,6 +2439,37 @@ exemption, and adding one requires a plan amendment.
 | U10 | `147.019-T` | `verification-only` | not applicable — runtime evidence |
 | U10b | `147.026-T` | `verification-only` | not applicable — runtime evidence |
 | U10c | `147.041-T` | `verification-only` | not applicable — runtime evidence |
+
+**Every exempt unit carries an executable, must-fail-before-deliverable gate (cycle 23).** The
+exemption removes the *scaffolded red harness*, not the *observed failure*. Each of the ten tasks
+above now carries a canonical `harness-exemption-contract` body block with five keys in identical
+order — `harness_exemption_class`, `harness_exemption_reason`, `harness_owner`,
+`exempt_verification_command`, `exempt_precondition` — plus `harness_owner_command` on U13 alone.
+Every command was executed at HEAD `e8b974e` and observed **failing**, so no unit's gate is
+vacuous:
+
+| Unit | Gate shape | Why it cannot pass before the deliverable |
+|---|---|---|
+| U1d | `go doc` symbol + tag probe, then 3 named `--- PASS: TestU1dGuard_` lines | `go doc` exits non-zero while `RemediationIntent` is absent; a generic compile check would pass |
+| U15 | `go doc` type + function probe, then 2 named `--- PASS: TestU15Guard_` lines | same; the guards also pin the pre-existing `GetCheckpoint` contract unchanged |
+| U13 | seam-file precondition-set probe, then 3 named `--- PASS: TestU12_` lines | the seam file does not exist and U12's selector returns `[no tests to run]` |
+| U3b | named test file exists, then 2 named `--- PASS: TestU3bGuard_` lines | the file does not exist; the bare selector exits 0 with `[no tests to run]` |
+| U2f | named test file exists, then 2 named `--- PASS: TestU2fGuard_` lines | same |
+| U9 | four required design-doc strings present, `disjoint by design` absent, then `docs lint` | `docs lint` alone already reports `violation_count: 0` and can never fail |
+| U9b | six required instruction-file markers present, then `docs lint` | same, and this is the hard merge gate where a vacuous pass is most expensive |
+| U10 | ≥5 `evidence_row: unit=U10 …` records plus 2 declared scalars | the closure artifact does not exist; an empty or partial artifact still fails |
+| U10b | ≥5 `evidence_row: unit=U10b …` records plus 3 declared scalars | same |
+| U10c | ≥3 `evidence_row: unit=U10c …` records plus 2 declared scalars | same |
+
+**Objective class boundary (P-002.4).** `covered-by` is the only exempt class that may modify
+production behaviour, and U13 is this plan's only member of it. The check is mechanical: at the
+completion gate the task's changed-file set must be a subset of its class delta surface —
+`docs-only` changes zero `*.go` files, `verification-only` changes zero non-test `*.go` files,
+`declaration-only` changes only the production files it names (added top-level declarations, plus
+a behaviour-preserving wrapper re-expression only when its guards pin the pre-existing contract)
+and its own guard file, and `covered-by` changes no `*_test.go` file at all. Anything outside the
+surface is a halt (`EXEMPT_DELTA_EXCEEDS_CLASS`, or `EXEMPT_BEHAVIOR_NO_OWNER` when a
+no-behaviour class produces production behaviour). Fail closed on any unclassifiable delta.
 
 **Ship ready-selection contract (cycle 21 adapter, generalized into global policy in cycle 22).**
 Cycle 21 recorded this rule as a shipment-local adapter because the repository-wide ready-queue
@@ -2458,7 +2489,7 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   '%harness-ready%' OR labels LIKE '%harness-exempt%')`.
 * **Fail-closed evaluation.** The label alone is not admission. Each of the ten tasks declares a
   class from the closed P-002.1 vocabulary (`declaration-only`, `docs-only`, `verification-only`,
-  `covered-by <owner-id>`), a one-line reason, and membership in the closed set enumerated above,
+  `covered-by`, with the owner in `harness_owner`), a one-line reason, and membership in the closed set enumerated above,
   which is this plan's declared exempt contract. An unrecognized class, a task not in that closed
   set, or a behaviour-changing task without a valid predecessor harness owner is a **halt** and a
   reported P-002 gap — never a silent skip and never a trigger to scaffold a substitute harness.
@@ -2481,6 +2512,19 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   scaffold a red harness for any of them; it still schedules and implements each in dependency
   order like any other queued task. For U13, "in dependency order" additionally means after U12's
   red evidence is confirmed and its harness commit has landed.
+* **Two gates, not one (cycle 23).** P-002.1 evaluation is split, because the cycle-22 form
+  checked U12's red evidence at Ship Step 2 — which runs *before* harness generation — making U13
+  unsatisfiable by construction and deadlocking this shipment at its own gate. **Static intake**
+  (Ship Step 2a, harness-architect Step 1a) validates only what is knowable pre-scaffolding:
+  fields, class, reason, closed-set membership, U12's existence / dependency edge / non-exempt
+  type, and the declared commands. **Claim time** (Ship Step 4.1a) re-evaluates U12's
+  `harness-ready` label, `Compilation: PASS` / `Red Phase: CONFIRMED`, and landed harness commit —
+  and solely owns `EXEMPT_OWNER_NOT_RED`. `harness-architect` must scaffold U12 as an ordinary
+  harness target and must never raise that code. Queue admission is not build admission.
+* **Observed failure is still owed (cycle 23).** Each exempt unit runs its
+  `exempt_verification_command` once before any work and MUST see it fail; a pre-work success is
+  `EXEMPT_FALSE_GREEN` and a halt. `go test -run <selector>` exiting 0 with `[no tests to run]` is
+  a **failure**, not a pass, so a selector-only command is never sufficient on its own.
 
 **Principle I carries no deviation (cycle 17).** The row recorded here through cycle 16 —
 `AbandonCheckpoint`'s `%v` validation wrap left in place — is withdrawn. The cycle-16 gate found
@@ -4373,3 +4417,52 @@ membership, or unit definition changed in this pass.
 **Still outstanding.** The `cycle: 21` remediation queue above is unchanged: the independent
 confirmation review is still required before push, the PR #377 threads remain blocked on it, and
 operator merge approval has not been requested.
+
+### PR #377 plan remediation, cycle 23 — harness-exempt consumer contract made executable
+
+**This appendix is remediation evidence, not a gate outcome.** It records a second bounded
+prompt/policy-artifact pass over the cycle-22 contract. It appends no `## Plan Review` record,
+claims no `PASS`, and does not clear the `cycle: 21` `FAIL`. The current gate state remains the
+`cycle: 21` record above, whose `restage_recommendation: confirmatory-review-of-cycle-21-fixes` is
+still outstanding — and cycle 23's own changes are now also unreviewed. No Go source, test, or
+configuration file was touched; no subagent was invoked; no push, PR action, shipment claim, or
+Ship handoff occurred.
+
+**Trigger.** A fresh review of the cycle-22 artifacts found two P1 defects in the contract itself.
+Cycle 22 gave Ship a vocabulary for `harness-exempt` but left the contract both unsatisfiable in
+one direction and unfalsifiable in the other.
+
+**Corrections applied.**
+
+| ID | Finding | Fix |
+|---|---|---|
+| D1 | **Deadlock.** P-002.1 required the `covered-by` owner's red evidence (`harness-ready`, `Compilation: PASS`, `Red Phase: CONFIRMED`, harness commit landed) at Ship Step 2a — which runs *before* harness generation. The evidence cannot exist at that point, so `147.036-T` / U13 halts with `EXEMPT_OWNER_NOT_RED` on every run and shipment `130-S` deadlocks on its own gate. | P-002.1 split into **static intake** (fields, class, reason, closed-contract membership, owner existence / dependency edge / non-exempt type, declared commands) and a **claim-time** re-evaluation. `.ship.agent.md` gains **Step 4.1a**, an explicit claim-time gate that solely owns `EXEMPT_OWNER_NOT_RED` and runs the pre-work probe; Step 2a is now labelled static intake and forbidden from evaluating owner red evidence. `harness-architect` Step 1a is likewise static-only, must not raise `EXEMPT_OWNER_NOT_RED`, and must **scaffold** `covered-by` owners rather than excluding them. P-002's `Gate Point` row and the P-002.2 table now name the owning gate per code, reconciling the old "task claiming (Step 3)" wording with Ship's actual step numbering. |
+| D2 | **False green.** Exempt dispatch could pass without any work. `go test -run <selector>` exits **0** with `[no tests to run]` when nothing matches (verified: `ok … [no tests to run]`, exit 0); the `declaration-only` "compile check" passes before the declaration exists; and `147.019-T`, `147.026-T`, `147.041-T` carried **no executable command at all**. | New **P-002.3**: every exempt task declares `exempt_precondition: must-fail-before-deliverable`; Ship Step 4.1a and `build-feature` Step 0 each run the command once pre-work and MUST observe failure, halting `EXEMPT_FALSE_GREEN` on a pre-work success. A false-green signal table makes `[no tests to run]`, `testing: warning: no tests to run`, `no test files`, and zero named `--- PASS:` lines failures regardless of exit status. Per-class authoring rules require `declaration-only` to probe the declared symbol (`go doc`, which exits non-zero when absent) and `docs-only` to probe required content before linting. The post-deliverable gate must pass **and** match declared evidence, else `EXEMPT_EVIDENCE_MISMATCH`. |
+| D3 | The exemption class, reason, and owner lived only in prose (`**Test-lifecycle classification**: harness-exempt: docs-only`), with no stable machine-readable anchor and no command field. | All ten tasks gain a `<!-- BEGIN:harness-exemption-contract -->` block carrying five keys in identical order — `harness_exemption_class`, `harness_exemption_reason`, `harness_owner`, `exempt_verification_command`, `exempt_precondition` — plus `harness_owner_command` on U13. The class token is now bare `covered-by` with the owner in `harness_owner`. Body metadata, not frontmatter: `.backlogit/header-def.yaml` declares a closed per-type field set that would reject or drop these keys. Static intake requires all keys and an executable command (`EXEMPT_CONTRACT_INCOMPLETE`, `EXEMPT_COMMAND_MISSING`). |
+| D4 | The three runtime-evidence units had no deterministic durable artifact, so "recorded runtime evidence" was unfalsifiable. | A single tracked human-readable manifest under the existing `docs/closure/` convention, `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md` (already named by U10 and U10c), carries per-unit `evidence_row:` records (`filename`, `sha256`, `state`, `destination`, `outcome`) and `evidence_scalar:` fields. Probes require a minimum row count plus the declared scalars, so an absent, empty, or partially-populated artifact fails and only a complete run passes. |
+| D5 | `build-feature` forbade modifying test files outright, which blocks `verification-only` and `declaration-only` deliverables whose *product* is a new guard file. | Narrowly amended: the skill MAY create the **new** test/evidence files a task names, and nothing else. Editing, deleting, relaxing, skipping, build-tagging, or narrowing the selector of any pre-existing assertion stays forbidden, as does authoring a failing assertion (a fabricated RED). The exception does not extend to `docs-only` (zero `*.go`) or `covered-by` (zero `*_test.go` — the owner owns the harness). |
+| D6 | "Changes behavior" was a prose judgement, so class compliance was unverifiable after the fact. | New **P-002.4** makes it objective: a per-class changed-file delta surface, checked at the completion gate against `git diff --name-only`, with `EXEMPT_DELTA_EXCEEDS_CLASS` / `EXEMPT_BEHAVIOR_NO_OWNER` halts and an explicit fail-closed rule for unclassifiable deltas. `covered-by` is stated as the only exempt class that may modify production behaviour. U15's wrapper re-expression of `GetCheckpoint` is admitted only because its guards pin the pre-existing contract unchanged. |
+| D7 | P-002's `Applies To` named only `ship`, with harness-architect mentioned parenthetically and `build-feature` absent, although both enforce the contract. | `Applies To` now reads `ship` (queue consumer and claim-time gate), `harness-architect` skill (producer / no-scaffold partition), `build-feature` skill (dispatch consumer and pre-work precondition probe), with the matching gate points. |
+
+**No fabricated REDs.** No test was invented for any declaration-only or docs-only unit. Their
+observed failure is the declared `exempt_verification_command` run against the pre-work tree, which
+is a real probe of the declared symbol or the required content — not a build error and not a
+manufactured assertion.
+
+**Baseline evidence.** All ten `exempt_verification_command` values were extracted from the task
+files and executed at HEAD `e8b974e`. All ten exited **1**, matching each task's declared baseline;
+`147.036-T`'s `harness_owner_command` also exited 1. The command grammar was additionally proven in
+the passing direction against existing symbols and existing test selectors, so the probes are
+falsifiable in both directions rather than merely failing.
+
+**Topology unchanged.** 42 queued tasks, 104 queued-to-queued executable edges, 43 shipment
+members, ready roots exactly `{147.001-T, 147.032-T}`. No dependency edge, task count, shipment
+membership, or unit definition changed in this pass.
+
+**Still outstanding.** The `cycle: 21` remediation queue is unchanged, and cycle 23 adds to it: the
+independent confirmation review must now cover the cycle-21, cycle-22, and cycle-23 changes
+together. Two pre-existing P-003 gaps are recorded but **not** fixed here, because closing them
+means authoring acceptance criteria rather than correcting the exemption contract: `147.036-T` and
+`147.041-T` carry no `acceptance-criteria` block at all. Their deliverables are declared in body
+prose and, for `147.041-T`, in the cycle-23 evidence-manifest requirement, so neither task is
+undefined — but P-003 requires at least one acceptance criterion per task and both are missing one.

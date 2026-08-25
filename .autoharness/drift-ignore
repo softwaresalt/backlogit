@@ -37,6 +37,29 @@
 # that contract after any autoharness template adoption.
 # .github/skills/harness-architect/SKILL.md is repo-authored (no generation
 # footer, not manifest-tracked) and needs no entry here.
+#
+# NOTE (2026-08-25, cycle 23): that contract was corrected in place; the
+# re-apply obligation above now covers the corrected form, amendment 1.16.0:
+#   .github/policies/workflow-policies.md  — P-002 Applies To names ship /
+#       harness-architect / build-feature with their gates; P-002.1 split into
+#       static intake and a claim-time re-evaluation that solely owns
+#       EXEMPT_OWNER_NOT_RED; canonical greppable body-metadata contract block
+#       (harness_exemption_class / harness_exemption_reason / harness_owner /
+#       exempt_verification_command / exempt_precondition, plus
+#       harness_owner_command for covered-by); new P-002.3 (must-fail-before-
+#       deliverable probe, false-green signals, per-class command authoring) and
+#       new P-002.4 (objective behavior classification by changed-file delta
+#       surface); five added halt codes.
+#   .github/agents/.ship.agent.md         — Step 2a is static intake only; new
+#       Step 4.1a claim-time gate; Step 4.2 passes harness_cmd / exempt_gate_cmd
+#       / exempt_class; Step 4.3 adds the exempt completion gate.
+#   .github/skills/build-feature/SKILL.md — new Step 0 pre-work probe; Step 2
+#       false-green parsing; Step 5 narrow new-test-file exception for
+#       verification-only / declaration-only deliverables that still forbids
+#       weakening any existing assertion; post-loop exempt completion gate.
+#   .github/skills/harness-architect/SKILL.md — Step 1a is static intake only,
+#       must not raise EXEMPT_OWNER_NOT_RED, and must scaffold covered-by owners
+#       (repo-authored; still needs no drift-ignore entry).
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

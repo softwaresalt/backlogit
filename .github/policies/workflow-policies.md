@@ -36,22 +36,24 @@ Agents must read this file at each declared gate point and enforce the relevant 
 | Field      | Value                                                        |
 |------------|--------------------------------------------------------------|
 | Policy ID  | P-002                                                        |
-| Applies To | `ship` (consumer; harness-architect skill is the producer) |
-| Gate Point | Queue building (Step 2) and task claiming (Step 3)           |
+| Applies To | `ship` (queue consumer and claim-time gate), `harness-architect` skill (producer / no-scaffold partition), `build-feature` skill (dispatch consumer and pre-work precondition probe) |
+| Gate Point | Static intake at Ship Step 2 / Step 2a and harness-architect Step 1a; claim-time re-evaluation at Ship Step 4.1a; pre-work probe at build-feature Step 0 |
 
 **Statement**: The ship agent may only claim and implement a task once that task is
 **harness-satisfied**. A task is harness-satisfied when the harness-architect has confirmed that
 its test harness compiles and all of its tests fail in the red phase, or when it carries a
-`harness-exempt` declaration that passes every P-002.1 condition.
+`harness-exempt` declaration that passes every P-002.1 condition **at the gate that owns that
+condition** — static conditions at intake, predecessor red evidence at claim time.
 
 **Precondition** (ship): The task carries the `harness-ready` label, **or** the task carries the
-`harness-exempt` label and is P-002.1-valid.
+`harness-exempt` label and is P-002.1-valid at the gate being evaluated.
 
 **Postcondition** (harness-architect): The task has `harness-ready` label, the harness compiles (`go test -run=^$ -count=1 ./...`), and all tests fail with expected failure markers. A P-002.1-valid `harness-exempt` task scaffolds no harness test function, so this postcondition holds vacuously for it and no `harness-ready` label is applied.
 
 **Enforcement** (ship): Filter the ready queue to harness-satisfied tasks — those carrying
-`harness-ready`, plus those carrying `harness-exempt` that pass P-002.1 evaluation. Evaluate the
-exemption **before** admitting the task; an unevaluated `harness-exempt` label is not admission.
+`harness-ready`, plus those carrying `harness-exempt` that pass P-002.1 **static intake**. Evaluate
+the static conditions **before** admitting the task; an unevaluated `harness-exempt` label is not
+admission. Re-evaluate the claim-time conditions in P-002.1 immediately before the task is claimed.
 
 **Violation Action**: Halt and report the gap. For a task carrying neither label, suggest running
 the harness-architect. For a task whose `harness-exempt` declaration fails P-002.1, report a
@@ -72,43 +74,117 @@ harness-satisfied — fail closed.
 |---|---|---|
 | `declaration-only` | Lands types, signatures, sentinels, or carriers with no behavior branch and no observable behavior change | Not required; the declaration's behavior must still name the downstream unit whose harness fails |
 | `docs-only` | Changes documentation, instruction, prompt, or agent artifacts only; no production or test code | Not required |
-| `verification-only` | Executes and records evidence for behavior that already shipped or is delivered by a prerequisite; commits only green guards, never a new red assertion | Not required |
-| `covered-by <owner-id>` | Behavior-changing implementation whose failing harness is owned by an existing predecessor task | **Required** |
+| `verification-only` | Executes and records evidence for behavior that already shipped or is delivered by a prerequisite; commits only green guards and evidence artifacts, never a new red assertion | Not required |
+| `covered-by` | Behavior-changing implementation whose failing harness is owned by an existing predecessor task named in `harness_owner` | **Required** |
 
 **Required exemption metadata** — all of the following MUST be present and machine-readable:
 
 1. The `harness-exempt` label on the task.
-2. An exemption class drawn from the closed vocabulary above, declared in the task body in a stable, greppable form (for example `**Test-lifecycle classification**: harness-exempt: docs-only`).
-3. A one-line reason stating why no red harness is scaffolded for this task.
-4. Representation in the declared task/plan contract: the governing plan, feature, or shipment contract enumerates a closed exempt set, and this task is a member of it.
-5. For `covered-by <owner-id>` only, the predecessor harness owner's task ID.
+2. A **harness exemption contract block** in the task body, delimited by
+   `<!-- BEGIN:harness-exemption-contract -->` and `<!-- END:harness-exemption-contract -->`, whose
+   fenced body carries these five canonical keys, one per line, in this order and with this exact
+   grammar (`key: value`, lowercase snake_case keys, no surrounding quotes):
 
-**Additional conditions for `covered-by <owner-id>`** — all MUST hold before build:
+   ```text
+   harness_exemption_class: <declaration-only|docs-only|verification-only|covered-by>
+   harness_exemption_reason: <one line of text>
+   harness_owner: <task-id|none>
+   exempt_verification_command: <exact command>
+   exempt_precondition: must-fail-before-deliverable
+   ```
 
-* The named owner exists as a task in the same release unit.
+3. Representation in the declared task/plan contract: the governing plan, feature, or shipment
+   contract enumerates a closed exempt set, and this task is a member of it.
+4. For `covered-by` only, a sixth key appended after `exempt_precondition`:
+   `harness_owner_command: <exact command>` — the predecessor owner's harness command, which is
+   the command the implementation loop runs. The five canonical keys stay contiguous and in the
+   same order on every exempt task; the sixth is appended so the shared grammar is identical
+   across classes.
+
+The contract block is body metadata, not frontmatter. The backlog artifact frontmatter contract
+(`.backlogit/header-def.yaml`) declares a closed per-type field set that does not include these
+keys, so placing them in frontmatter would be rejected or silently dropped. The block is the
+authoritative, greppable location; prose restatements are advisory.
+
+**Key rules**:
+
+* `harness_exemption_class` MUST be exactly one of the four class tokens. `covered-by` carries no
+  inline owner ID — the owner belongs in `harness_owner`.
+* `harness_owner` MUST be `none` for `declaration-only`, `docs-only`, and `verification-only`, and
+  MUST be a task ID for `covered-by`.
+* `exempt_verification_command` MUST be an exact, runnable command, not a description. It is
+  executed verbatim in PowerShell 7 (`pwsh`) from the repository root.
+* `exempt_precondition` MUST be the literal `must-fail-before-deliverable`. No other value is
+  recognized.
+* A missing key, a key out of order, an empty value, or a placeholder value is
+  `EXEMPT_CONTRACT_INCOMPLETE` — fail closed. A present-but-non-executable
+  `exempt_verification_command` is `EXEMPT_COMMAND_MISSING`.
+
+**Additional conditions for `covered-by`** — split across two gates:
+
+*Static intake conditions* (evaluated at Ship Step 2a and harness-architect Step 1a):
+
+* The task named in `harness_owner` exists as a task in the same release unit.
 * The owner is a declared dependency of the exempt task, direct or transitive.
-* The owner is itself harness-satisfied by `harness-ready` — an exempt task may never be covered by another exempt task.
-* The owner's red evidence is complete: its harness manifest records `Compilation: PASS` and `Red Phase: CONFIRMED` per P-004, and the owner's harness commit has landed.
+* The owner is **eligible** to be harness-satisfied by `harness-ready` — it does not itself carry
+  `harness-exempt`. An exempt task may never be covered by another exempt task.
+* `harness_owner_command` is present and exact.
+
+*Claim-time conditions* (evaluated immediately before the exempt task is claimed, at Ship Step
+4.1a — never at intake):
+
+* The owner now carries the `harness-ready` label.
+* The owner's red evidence is complete: its harness manifest records `Compilation: PASS` and
+  `Red Phase: CONFIRMED` per P-004.
+* The owner's harness commit has landed.
+
+**Why the split is load-bearing.** Intake runs **before** harness generation, so the owner's red
+evidence does not exist yet by construction. Evaluating the owner's red evidence at intake makes
+`covered-by` unsatisfiable for every shipment whose owner harness has not already been scaffolded,
+which deadlocks the shipment at its own gate. Intake therefore validates only what is knowable
+statically — fields, class, reason, contract membership, owner dependency edge, owner type, and the
+declared commands — and the red-evidence conditions are re-evaluated at claim time, where they are
+knowable and where a missing red is still a halt before any implementation begins.
 
 Classes `declaration-only`, `docs-only`, and `verification-only` require **no** predecessor
 harness owner and MUST NOT have a test fabricated for them. A test that can only fail because a
 symbol does not yet exist is a build error, and a test that passes the moment a declared shape
 lands was never red.
 
-**Evaluation order** (ship, at queue building and again at task claiming):
+**Evaluation order — static intake** (ship Step 2a, harness-architect Step 1a):
 
 1. Task carries `harness-ready` → harness-satisfied. Stop.
-2. Task carries `harness-exempt` but the class is missing or outside the closed vocabulary → **halt** (P-002.2 `EXEMPT_CLASS_UNRECOGNIZED`).
-3. Task carries `harness-exempt` but is absent from the declared closed exempt set → **halt** (P-002.2 `EXEMPT_NOT_IN_CONTRACT`).
-4. Task changes behavior and its class is not `covered-by` → **halt** (P-002.2 `EXEMPT_BEHAVIOR_NO_OWNER`).
-5. Class is `covered-by` and any owner condition above fails → **halt** (P-002.2 `EXEMPT_OWNER_INVALID` or `EXEMPT_OWNER_NOT_RED`).
-6. Otherwise → harness-satisfied. Admit the task and do not scaffold a harness for it.
+2. Task carries `harness-exempt` but has no contract block, or the block is missing a required key
+   or carries an empty/placeholder value → **halt** (P-002.2 `EXEMPT_CONTRACT_INCOMPLETE`).
+3. `harness_exemption_class` is missing or outside the closed vocabulary → **halt** (P-002.2
+   `EXEMPT_CLASS_UNRECOGNIZED`).
+4. `exempt_verification_command` is absent, empty, or not an executable command → **halt** (P-002.2
+   `EXEMPT_COMMAND_MISSING`).
+5. Task is absent from the declared closed exempt set → **halt** (P-002.2 `EXEMPT_NOT_IN_CONTRACT`).
+6. The task's declared deliverable changes production behavior and its class is not `covered-by` →
+   **halt** (P-002.2 `EXEMPT_BEHAVIOR_NO_OWNER`). Objective test in P-002.4.
+7. Class is `covered-by` and any *static intake* owner condition above fails → **halt** (P-002.2
+   `EXEMPT_OWNER_INVALID`).
+8. Otherwise → **statically admitted**. Schedule the task in dependency order and do not scaffold a
+   harness for it. Static admission is not permission to build.
+
+**Evaluation order — claim time** (ship Step 4.1a, immediately before the task is claimed):
+
+1. Re-read the contract block. Any drift from the statically admitted values → **halt**
+   (`EXEMPT_CONTRACT_INCOMPLETE`).
+2. Class is `covered-by`: the owner carries `harness-ready`, its manifest records
+   `Compilation: PASS` and `Red Phase: CONFIRMED`, and its harness commit has landed. Any one
+   absent → **halt** (P-002.2 `EXEMPT_OWNER_NOT_RED`). Absence is a halt, never a wait-and-proceed.
+3. Run the P-002.3 pre-work precondition probe. A pre-work success → **halt** (P-002.2
+   `EXEMPT_FALSE_GREEN`).
+4. Otherwise → the task may be claimed and dispatched to `build-feature`.
 
 **Producer obligation** (harness-architect): Partition the task set before scaffolding. Tasks that
-are P-002.1-valid `harness-exempt` are already harness-satisfied — do **not** generate red tests,
-stubs, or a `harness-ready` label for them, and do not treat their absence from the
-`harness-ready` set as a gap. Tasks whose exemption fails evaluation are a halt, not a scaffolding
-target.
+pass P-002.1 static intake as `harness-exempt` are already harness-satisfied — do **not** generate
+red tests, stubs, or a `harness-ready` label for them, and do not treat their absence from the
+`harness-ready` set as a gap. Scaffold the non-exempt set, **including every `covered-by` owner**,
+so that the owner's red evidence exists by the time the exempt task reaches its claim-time gate.
+Tasks whose exemption fails static intake are a halt, not a scaffolding target.
 
 **Preserved test-first semantics**: Every behavior-changing task that is not `covered-by` a valid,
 red-confirmed predecessor still requires `harness-ready` before implementation. `harness-exempt`
@@ -120,20 +196,114 @@ implementation ordering is unchanged for all non-exempt work.
 ### P-002.2 — Harness-Exempt Halt Taxonomy and Reporting
 
 **Statement**: A failed exemption evaluation is a reportable P-002 gap, not a silent skip and not
-a trigger for scaffolding a substitute harness.
+a trigger for scaffolding a substitute harness. Each code names the gate that owns it, so a code
+raised at the wrong gate is itself a contract defect.
 
-| Code | Condition | Report |
-|---|---|---|
-| `EXEMPT_CLASS_UNRECOGNIZED` | Exemption class missing, unreadable, or outside the closed vocabulary | `P-002 GAP: {task_id} carries harness-exempt with unrecognized class [{value}].` |
-| `EXEMPT_NOT_IN_CONTRACT` | Task is not a member of the declared closed exempt set in the plan, feature, or shipment contract | `P-002 GAP: {task_id} claims harness-exempt but is not in the declared exempt set for {release_unit}.` |
-| `EXEMPT_BEHAVIOR_NO_OWNER` | Behavior-changing implementation without a `covered-by` predecessor harness owner | `P-002 GAP: {task_id} changes behavior under harness-exempt with no predecessor harness owner.` |
-| `EXEMPT_OWNER_INVALID` | Named owner does not exist, is not a declared dependency, or is itself only `harness-exempt` | `P-002 GAP: {task_id} names harness owner {owner_id}, which is not a valid red-evidence dependency.` |
-| `EXEMPT_OWNER_NOT_RED` | Owner's red evidence has not completed before this task's build | `P-002 GAP: {task_id} would build before owner {owner_id} red evidence is confirmed.` |
+| Code | Owning gate | Condition | Report |
+|---|---|---|---|
+| `EXEMPT_CONTRACT_INCOMPLETE` | static intake; re-checked at claim time | Contract block absent, a required key missing or out of order, an empty or placeholder value, or drift between intake and claim time | `P-002 GAP: {task_id} harness-exemption contract block is incomplete or drifted [{detail}].` |
+| `EXEMPT_CLASS_UNRECOGNIZED` | static intake | `harness_exemption_class` missing, unreadable, or outside the closed vocabulary | `P-002 GAP: {task_id} carries harness-exempt with unrecognized class [{value}].` |
+| `EXEMPT_COMMAND_MISSING` | static intake | `exempt_verification_command` absent, empty, a description rather than a command, or — for `covered-by` — `harness_owner_command` absent | `P-002 GAP: {task_id} declares no executable exempt verification command.` |
+| `EXEMPT_NOT_IN_CONTRACT` | static intake | Task is not a member of the declared closed exempt set in the plan, feature, or shipment contract | `P-002 GAP: {task_id} claims harness-exempt but is not in the declared exempt set for {release_unit}.` |
+| `EXEMPT_BEHAVIOR_NO_OWNER` | static intake; re-checked at the completion gate | Behavior-changing implementation without a `covered-by` predecessor harness owner, per the P-002.4 objective test | `P-002 GAP: {task_id} changes behavior under harness-exempt class [{class}] with no predecessor harness owner.` |
+| `EXEMPT_OWNER_INVALID` | static intake | Named owner does not exist, is not a declared dependency, or is itself `harness-exempt` | `P-002 GAP: {task_id} names harness owner {owner_id}, which is not a valid red-evidence dependency.` |
+| `EXEMPT_OWNER_NOT_RED` | **claim time only** | At claim time the owner does not carry `harness-ready`, its manifest does not record `Compilation: PASS` / `Red Phase: CONFIRMED`, or its harness commit has not landed | `P-002 GAP: {task_id} would build before owner {owner_id} red evidence is confirmed.` |
+| `EXEMPT_FALSE_GREEN` | claim time / build-feature entry | The pre-work run of `exempt_verification_command` succeeded before any work was done, or produced a P-002.3 false-green signal that was treated as success | `P-002 GAP: {task_id} exempt verification command passed before the deliverable existed [{command}].` |
+| `EXEMPT_EVIDENCE_MISMATCH` | completion gate | Post-deliverable run exits 0 but carries a false-green signal, or does not match the declared guard count, content assertions, or evidence-manifest fields | `P-002 GAP: {task_id} exempt verification passed vacuously or did not match declared evidence [{detail}].` |
+| `EXEMPT_DELTA_EXCEEDS_CLASS` | completion gate | The task's changed-file set is outside the P-002.4 class delta surface | `P-002 GAP: {task_id} changed files outside its harness-exempt class [{class}] surface: {paths}.` |
+
+**`EXEMPT_OWNER_NOT_RED` is a claim-time code.** Raising it at static intake is a false halt: at
+intake the harness has not been generated yet, so no owner can have red evidence. Static intake
+validates the owner's existence, dependency edge, and type only.
 
 **Violation Action**: Halt at the gate point. Record the code and message through P-005 telemetry.
 Return the task to the operator or to Stage for a contract amendment. Do not scaffold a
-substitute harness, do not relabel the task `harness-ready`, and do not proceed with a partial
-queue.
+substitute harness, do not relabel the task `harness-ready`, do not weaken or replace the declared
+verification command, and do not proceed with a partial queue.
+
+---
+
+### P-002.3 — Exempt Execution Contract (Must-Fail-Before-Deliverable)
+
+**Statement**: An exemption removes the *scaffolded red harness*, not the *observed failure*. Every
+exempt task carries an executable command that MUST be observed failing before the deliverable
+exists and passing after it lands. A command that cannot fail before the work is not a gate.
+
+**Pre-work probe (mandatory)**: Before executing an exempt task, Ship — and `build-feature` on
+entry — runs `exempt_verification_command` **exactly once** against the pre-work tree and MUST
+observe failure.
+
+* Failure means a non-zero exit status, **or** any of the false-green signals below even when the
+  exit status is 0.
+* If the command succeeds before any work is done, **halt** with P-002.2 `EXEMPT_FALSE_GREEN`. Do
+  not implement, do not weaken the command, and do not proceed on the theory that the deliverable
+  already exists.
+
+**False-green signals** (each is a failure regardless of exit status):
+
+| Signal | Where it comes from | Rule |
+|---|---|---|
+| `[no tests to run]` | `go test -run <selector>` with a selector that matches nothing | Failure. `go test` exits 0 in this case, so exit status alone is not admissible evidence. |
+| `testing: warning: no tests to run` | the same case under `-v` | Failure. |
+| `no test files` | a package with no `_test.go` files | Failure. |
+| zero matching `--- PASS: <name>` lines | `go test -v` with a named-selector command | Failure. A selector command MUST assert a minimum count of named `--- PASS:` lines equal to the number of guards the task declares. |
+| a no-op or vacuously-true content probe | a docs or evidence probe whose assertions are all satisfied by the pre-work tree | Failure at authoring time: the command is not a gate and MUST be strengthened, not accepted. |
+
+**Post-deliverable gate**: After the deliverable lands, the same command MUST exit 0 **and** carry
+no false-green signal **and** match the task's declared evidence — the named guard count, the
+declared content assertions, or the declared evidence-manifest fields. Success produced by absent
+tests, an empty selector, a skipped package, or a no-op is not a pass; report P-002.2
+`EXEMPT_EVIDENCE_MISMATCH` and halt.
+
+**Command authoring rules by class**:
+
+| Class | The command MUST | It MUST NOT |
+|---|---|---|
+| `declaration-only` | Probe the declared symbol or contract directly (for example `go doc <pkg> <Symbol>`, which exits non-zero when the symbol is absent) **and** assert the named green-step guards pass by count | Be a generic compile or `go build` / `go test -run=^$` check, which passes before the declaration exists |
+| `docs-only` | Probe the required documentation or instruction **content** (the required strings, and where the deliverable replaces a claim, the absence of the replaced string) **and then** run the doc lint gate | Be the lint gate alone, which passes on the pre-work tree |
+| `verification-only` | Assert the declared evidence exists — named `--- PASS:` guard lines by count, or the declared evidence-manifest rows and scalars | Rely on a selector's exit status, or accept a manifest file that exists but lacks the required fields |
+| `covered-by` | Assert the owner's harness selector passes by named `--- PASS:` count **and** probe this task's own final deliverable | Be the owner's selector alone when the task has its own deliverable to pin |
+
+**Loop command versus gate command**: For `covered-by`, the implementation loop runs
+`harness_owner_command` (the owner's failing harness, driven from red to green) and the completion
+gate runs `exempt_verification_command`. For every other class the two are the same command.
+
+**Violation Action**: Halt at the gate point, record the P-002.2 code through P-005 telemetry, and
+return the task for a contract amendment. Never relax the command to make the gate pass.
+
+---
+
+### P-002.4 — Objective Behavior Classification and Class Delta Surface
+
+**Statement**: `covered-by` is the **only** exempt class that may modify production behavior. The
+other three classes MUST NOT. Classification is decided against the actual changed-file set and
+delta, not against the task's prose, and the check fails closed when the actual change exceeds the
+class.
+
+**Class delta surface** — the changed-file set for an exempt task's commit MUST be a subset of:
+
+| Class | Allowed changed files | Hard prohibitions |
+|---|---|---|
+| `declaration-only` | The production files named in the task, restricted to added top-level declarations (types, fields, functions, constants, sentinels) and doc comments, plus this task's own new `*_test.go` guard file | No new conditional branch, error value, or output field inside a pre-existing function body; no changed file the task does not name |
+| `docs-only` | Markdown, instruction, prompt, and agent artifacts only | Zero `*.go` files changed, test or production |
+| `verification-only` | New or appended `*_test.go` files and evidence artifacts under `docs/closure/` | Zero non-test `*.go` files changed |
+| `covered-by` | Non-test production files named in the task | No `*_test.go` file added or modified — the owner owns the harness |
+
+**Behavior-preserving re-expression** is permitted under `declaration-only` only when an existing
+function is rewritten as a thin wrapper over the new declaration with no new branch, no new error
+value, and no new output field, **and** the task's `exempt_verification_command` pins the
+pre-existing contract as unchanged. Absent that pin, treat it as a behavior change.
+
+**Evidence rule**: At the completion gate, compute the changed-file set for the task
+(`git diff --name-only <pre-task-commit>..HEAD`) and compare it against the class surface above.
+
+* Any changed file outside the class surface → **halt** with P-002.2 `EXEMPT_DELTA_EXCEEDS_CLASS`.
+* Any non-test `*.go` change under `docs-only` or `verification-only` → **halt** with
+  `EXEMPT_BEHAVIOR_NO_OWNER`: the delta is behavior under a class that admits none.
+* Any `*_test.go` change under `covered-by` → **halt** with `EXEMPT_DELTA_EXCEEDS_CLASS`.
+
+Fail closed: when the delta cannot be attributed to a class surface — an unclassifiable path, a
+mixed commit, or an unreadable diff — halt rather than admitting it.
 
 ---
 
@@ -179,8 +349,11 @@ queue.
 function. A P-002.1-valid `harness-exempt` task scaffolds none, so the precondition holds
 vacuously and no red phase is owed for that task. Manufacturing a test purely to produce a red
 assertion for an exempt task is a P-002.1 producer-obligation violation, not compliance. For the
-`covered-by` class, the red evidence recorded here belongs to the named predecessor owner and
-MUST be confirmed before the exempt task builds.
+`covered-by` class, the red evidence recorded here belongs to the named predecessor owner and MUST
+be confirmed at the exempt task's **claim-time** gate (P-002.1), not at static intake — at intake
+the harness has not been generated yet. Vacuous satisfaction of P-004 does not remove the observed
+failure: the exempt task still owes the P-002.3 must-fail-before-deliverable probe against its
+declared `exempt_verification_command`.
 
 ---
 
@@ -665,3 +838,4 @@ follow-up items before `DARK_MODE_COMPLETE` is emitted.
 | 1.13.0  | 2026-07-08     | Migrated P-014   | Copilot Review Merge Gate → Local Review Readiness Merge Gate (local review authoritative; Copilot advisory shadow) |
 | 1.14.0  | 2026-07-31     | Amended P-015    | Non-member-artifacts-stay-in-queue invariant is now code-enforced by `core.ShipShipment` (115-S); cascade `backlogit_ship_shipment` is safe for partial-feature shipments; single-artifact manual procedure demoted to a defense-in-depth fallback |
 | 1.15.0  | 2026-08-25     | Amended P-002, added P-002.1 and P-002.2 | Ready/build selection accepts `harness-ready` OR fail-closed `harness-exempt`; P-002 retitled Harness-Satisfied Precondition; closed exemption-class vocabulary, predecessor-harness-owner requirement for behavior changes, producer no-scaffold obligation, and halt taxonomy; P-004 gains the vacuous-satisfaction relationship |
+| 1.16.0  | 2026-08-25     | Amended P-002, P-002.1, P-002.2, P-004; added P-002.3 and P-002.4 | Cycle-23 correction of two P1 defects in the 1.15.0 contract. (1) **Deadlock**: owner red evidence was required at intake, which runs before harness generation, so `covered-by` was unsatisfiable by construction; evaluation is split into static intake (fields, class, reason, contract membership, owner dependency edge and type, declared commands) and a claim-time re-evaluation that owns `EXEMPT_OWNER_NOT_RED`. P-002 `Applies To` now names `ship`, `harness-architect`, and `build-feature` with their gates. (2) **False green**: exempt dispatch could pass vacuously (`go test -run` with no matching tests exits 0; a declaration compile check passes before the declaration). New P-002.3 requires canonical greppable body metadata, a must-fail-before-deliverable pre-work probe, per-class command authoring rules, and false-green signal handling; new P-002.4 makes behavior classification objective against the changed-file delta surface and fails closed when a class is exceeded. Five new halt codes: `EXEMPT_CONTRACT_INCOMPLETE`, `EXEMPT_COMMAND_MISSING`, `EXEMPT_FALSE_GREEN`, `EXEMPT_EVIDENCE_MISMATCH`, and `EXEMPT_DELTA_EXCEEDS_CLASS` |
