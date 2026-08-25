@@ -139,10 +139,12 @@ A unit is not red until `go test ./<pkg>` prints assertion failures rather than 
 **Declared regression guards.** Not every scenario listed under a unit is a red assertion. A
 scenario that asserts already-shipped behaviour, or that expects `nil` from a `return nil`
 declaration stub, passes from the moment it lands. Those cases are **declared regression guards**:
-each unit's **Expected red** line names which of its cases fail and which are guards, and a unit
-whose cases are *all* guards declares that explicitly (U2d, U8b). A guard is not a test-first
-violation — silently counting one as red is, because it hides the fact that no assertion ever
-failed.
+each unit's **Expected red** line names which of its cases fail and which are guards. A guard is
+not a test-first violation — silently counting one as red is, because it hides the fact that no
+assertion ever failed. **P-004 has no "all-guards" exemption**: every unit still needs at least
+one assertion that fails against a compilable pre-implementation state, and that red assertion
+must be recorded per unit. A unit's role as a parity or invariant guard is compatible with a red
+assertion — it does not replace one (cycle-8 correction).
 
 ### U1 — Non-conforming sentinel, typed error, and the canonical remedy predicate
 
@@ -164,18 +166,27 @@ failed.
 
 * **Domain**: code (events)
 * **Files**: `internal/events/checkpoint_conformance.go` (new), `internal/events/checkpoint_conformance_test.go` (new)
-* **Change**: add `checkpointV1AllTopLevelKeys` — `modeledJSONTagKeys(reflect.TypeOf(CheckpointV1{}))`
-  with **no** reserved-key subtraction — and exported `CheckConformingTopLevelNamespace(data []byte) error`.
-  It reuses `decodeTopLevelEntries` and `isFoldKeyIn` unchanged and returns
-  `*backlogiterrors.CheckpointNonConformingError` directly. It performs **no** reserved-status-value
-  check: `status: "abandoned"` is a legal read-boundary value. A new file (not
-  `checkpoint_strict.go`) because the read boundary and the create boundary have deliberately
-  different legal key sets and must not read as one mechanism.
+* **Change**: add exported `CheckConformingTopLevelNamespace(data []byte) error`. It reuses
+  `decodeTopLevelEntries` and `isFoldKeyIn` unchanged and returns
+  `*backlogiterrors.CheckpointNonConformingError` directly. The read-boundary legal-key set is
+  `checkpointV1TopLevelKeys ∪ checkpointV1ReservedKeys` — U2 wires this as an **inline
+  two-set check** (`isFoldKeyIn(k, checkpointV1TopLevelKeys) || isFoldKeyIn(k, checkpointV1ReservedKeys)`)
+  against the two already-existing sets. The named package-level derived set
+  `checkpointV1AllTopLevelKeys` is deliberately **not** introduced by this unit — its introduction
+  and the read-boundary refactor onto it belong to **U2d** as that unit's real production delta.
+  U2 performs **no** reserved-status-value check: `status: "abandoned"` is a legal read-boundary
+  value because the reserved keys are admitted. A new file (not `checkpoint_strict.go`) because
+  the read boundary and the create boundary have deliberately different legal key sets and must
+  not read as one mechanism.
 * **Tests** (3): a conforming V1 document returns nil; a document with two unknown top-level keys
-  returns the typed error with both keys sorted; a document carrying all four `disposition*` fields
-  **and** `status:"abandoned"` returns nil.
-* **Expected red**: case 2 fails against the `return nil` stub. Cases 1 and 3 both expect `nil`, so
-  they pass from the moment they land — declared regression guards, not red assertions.
+  returns the typed error with both keys sorted; a document containing all four `disposition*`
+  reserved keys with `status: "abandoned"` returns nil (proving reserved-key admission and the
+  deliberate absence of a reserved-status-value check at the read boundary).
+* **Expected red**: case 2 fails against the `return nil` stub. Case 1 (conforming V1 → nil) is a
+  declared regression guard for the trivial-conforming boundary condition; case 3 (reserved-key
+  admission) is a declared regression guard for the read-boundary admission of the disposition*
+  namespace, which is a shipped behaviour of `checkpointV1ReservedKeys` and not introduced here.
+  **P-004 is satisfied** by case 2 as the single red assertion.
 * **Depends on**: U1.
 
 ### U2b — Conformance helper: nested `progress` rule and open `context` namespace
@@ -240,27 +251,41 @@ failed.
 * **Expected red**: cases 1 and 2 fail.
 * **Depends on**: U2b (nested recursion), U2c (`duplicate:` reporting form).
 
-### U2d — Key-set derivation parity and decision-anchored carrier guard
+### U2d — Read-boundary derived key set and decision-anchored carrier guard
 
-* **Domain**: tests
-* **Files**: `internal/events/checkpoint_conformance_test.go`
-* **Change**: assert `checkpointV1AllTopLevelKeys` equals `checkpointV1TopLevelKeys` unioned with
-  `checkpointV1ReservedKeys`. Both derive from the same `modeledJSONTagKeys` call, so this guards
-  drift in the **hand-written `checkpointV1ReservedKeys` literal**, not in the reflected field set —
-  the narrower claim is the accurate one. Second, add a **decision-anchored** guard: `CheckpointV1`
-  declares no `json:"-"` map carrier, with a comment naming
-  `docs/decisions/2026-08-24-checkpoint-toplevel-key-disposition-deliberation.md`. This is a
-  "revisit the decision before changing this" marker, **not** a permanent ban on top-level
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_conformance.go`, `internal/events/checkpoint_conformance_test.go`
+* **Change**: introduce `checkpointV1AllTopLevelKeys` as a **package-level derived set** —
+  `modeledJSONTagKeys(reflect.TypeOf(CheckpointV1{}))` with **no** reserved-key subtraction — and
+  **refactor `CheckConformingTopLevelNamespace` off U2's inline two-set check onto the single
+  derived set**. This is U2d's real production delta: the read boundary stops carrying the
+  reserved-key admission as two runtime lookups against
+  `checkpointV1TopLevelKeys ∪ checkpointV1ReservedKeys` and instead consults one authoritative
+  derivation of every modeled top-level key, so the hand-written `checkpointV1ReservedKeys`
+  literal cannot drift out of the modeled field set without a failing test. Second, add a
+  **decision-anchored** guard: `CheckpointV1` declares no `json:"-"` map carrier, with a comment
+  naming `docs/decisions/2026-08-24-checkpoint-toplevel-key-disposition-deliberation.md`. This is
+  a "revisit the decision before changing this" marker, **not** a permanent ban on top-level
   preservation (see Decisions and Rationale).
-* **Tests** (3): set equality; absence of a `json:"-"` map carrier on `CheckpointV1`; **every
-  exported field of `CheckpointV1` carries a non-empty `json:"..."` tag**. The third closes a
-  latent escape hatch: `modeledJSONTagKeys` skips untagged exported fields, so a future field added
-  without a tag would appear in *neither* derived set, leaving set equality silently satisfied while
-  the field is invisible to both boundaries. Every field is tagged today, so this test is green on
-  landing and guards drift.
-* **Expected red**: none. **Posture: regression guard — green on landing, no red phase expected.**
-  This is the one unit exempt from the two-step red rule, and the exemption is declared here rather
-  than claimed as test-first.
+* **Two-step red posture**: (a) **Declaration step** lands
+  `var checkpointV1AllTopLevelKeys = map[string]struct{}{}` — a compilable empty stub with the
+  right identity but empty content — leaving `CheckConformingTopLevelNamespace` on U2's inline
+  two-set check unchanged so U2's own tests stay green. (b) **Harness step** lands the tests;
+  case 1 fails on assertions (empty ≠ union). (c) **Implementation step** fills in the derivation
+  and refactors `CheckConformingTopLevelNamespace` to consult `checkpointV1AllTopLevelKeys`.
+* **Tests** (3): `checkpointV1AllTopLevelKeys` equals `checkpointV1TopLevelKeys ∪
+  checkpointV1ReservedKeys` — set equality against the hand-written literal, guarding drift in the
+  reserved-key set rather than the reflected field set (the narrower claim is the accurate one);
+  absence of a `json:"-"` map carrier on `CheckpointV1`; **every exported field of `CheckpointV1`
+  carries a non-empty `json:"..."` tag**. The third closes a latent escape hatch: `modeledJSONTagKeys`
+  skips untagged exported fields, so a future field added without a tag would appear in the
+  derived set only when the escape hatch is closed.
+* **Expected red**: case 1 fails against the declaration-step empty stub — set equality does not
+  hold when the derived set is empty. Cases 2 and 3 are declared regression guards: `CheckpointV1`
+  already declares no `json:"-"` carrier and every exported field is already tagged, so both
+  assertions expect a state that already holds. **P-004 is satisfied** by case 1 as the single
+  red assertion; cases 2 and 3 are guards, and the unit is no longer claiming an all-guards
+  exemption.
 * **Depends on**: U2.
 
 ### U2f — Protected invariant I1: checkpoint rewrite write-site enumeration
@@ -373,19 +398,39 @@ failed.
 * **Expected red**: row 1's accept-half fails (quarantine currently refuses it).
 * **Depends on**: U2c, U4.
 
-### U5b — State-dimension classification row (I3 scoping)
+### U5b — State-scoped classification and quarantine refusal observability parity
 
-* **Domain**: tests
-* **Files**: `internal/core/checkpoint_disposition_test.go`
-* **Change**: no production change. Pin the **pre-existing** state-conflict class that invariant I3
-  is explicitly scoped to exclude: a conforming, valid, `status: "resolved"` checkpoint is refused
-  by `abandon` with `ErrCheckpointNotActive` **and** by `quarantine` with `ErrCheckpointUseAbandon`.
-  This is shipped behaviour, not introduced here, and widening quarantine to accept it is out of
-  scope — but leaving it untested would let a future reader believe I3's totality claim covers it.
-* **Tests** (2): the `status:"resolved"` conforming row asserts both refusals with their exact
-  sentinels; a `status:"active"` conforming row asserts abandon accepts, proving the discriminator
+* **Domain**: code (core)
+* **Files**: `internal/core/checkpoint_disposition.go`, `internal/core/checkpoint_disposition_test.go`
+* **Change**: extend `QuarantineCheckpoint` to wrap its `ErrCheckpointUseAbandon` return with the
+  target `baseName` for **observability parity** with the other `blerrors.ErrCheckpoint*` returns
+  in the same file. Every other refusal in `checkpoint_disposition.go` already wraps
+  (`ErrCheckpointNotFound` — `%w: %s + baseName`; `ErrCheckpointUseQuarantine` — `%w: %v + parseErr/valErr`;
+  `ErrCheckpointNotActive` — `%w: status=%s + cp.Status`; `ErrCheckpointDestinationOccupied` —
+  `%w: %s + baseName`). `ErrCheckpointUseAbandon` is the one bare `blerrors.ErrCheckpoint*` return
+  in the file. Wrapping it names the offending filename so operators handling a state-conflict
+  double-refusal see which file is stranded without cross-referencing the CLI or MCP invocation.
+  `errors.Is(err, blerrors.ErrCheckpointUseAbandon)` continues to hold, so U5's row-2 regression
+  guard and every downstream caller stay green. This is U5b's real production delta and unlocks
+  its role as the state-scoped invariant I3 pin: the `status:"resolved"` conforming row asserts
+  that the wrapped refusal carries the same filename discriminator as the abandon refusal, so
+  neither surface can silently drift its state-conflict error shape.
+* **State-scoping rationale**: the pre-existing state-conflict class (`status:"resolved"`
+  conforming refused by both verbs) is deliberately not widened here — widening quarantine to
+  accept it would change what "quarantine" means, from "these bytes are untrustworthy" to "I want
+  this file gone" (see Decisions and Rationale). Invariant I3's totality is scoped to `active`.
+  This unit's tests pin that state-scoped totality and the observability wrap together, so a
+  future reader cannot break either without a failing test.
+* **Tests** (3): a `status:"resolved"` conforming row asserts quarantine refuses with
+  `ErrCheckpointUseAbandon` **and** the error message includes the target `baseName` (the wrap
+  assertion); the same row asserts abandon refuses with `ErrCheckpointNotActive` naming the
+  status; a `status:"active"` conforming row asserts abandon accepts, proving the discriminator
   is `status` and not conformance.
-* **Expected red**: none — regression guard, declared exempt from the two-step red rule.
+* **Expected red**: case 1's wrap assertion fails against the bare-sentinel return in U5's
+  landing state — `errors.Is` matches but `strings.Contains(err.Error(), baseName)` does not.
+  Cases 2 and 3 are declared regression guards for pre-existing shipped behaviour (abandon's
+  status guard and abandon's acceptance of conforming active documents). **P-004 is satisfied**
+  by case 1 as the single red assertion.
 * **Depends on**: U5.
 
 ### U6 — `ListCheckpoints` surfaces non-conforming files
@@ -751,10 +796,59 @@ failed.
 * **Tests** (3): one row per fixture shape, each asserting CLI, MCP, and `events` reach the same
   accept/refuse verdict and the same remedy verb, and that every fixture file is byte-identical
   after all three surfaces have been exercised.
-* **Expected red**: none. **Posture: regression guard — this unit is the parity contract itself.**
-  It lands after U7b, U7c, U8, U8c, and U6c, so all three surfaces already carry the behaviour; the
-  unit exists to pin their agreement, and the exemption is declared here rather than claimed as
-  test-first (same precedent as U2d).
+* **Batch-harness posture**: U8b's harness lands during the batch harness generation phase, when
+  its dep tasks (U6b/147.012-T, U6c/147.022-T, U7b/147.014-T, U7c/147.024-T, U8/147.015-T,
+  U8c/147.027-T) have their **declaration stubs** but not yet their implementations. Against that
+  state, U8b's parity assertions target projections and refusal shapes that the declaration stubs
+  do not yet produce. The batch-harness model is what makes the assertions runnable while the
+  deps' implementations are still pending: the test file compiles against the declaration stubs,
+  and the assertions fail because the stubs do not yet exhibit the parity U8b is written to pin.
+* **Expected red** (against declaration stubs / current handlers, per row):
+
+  * **`legacy-shaped` row**: `events.GetCheckpoint(data)` — currently returns a success payload
+    for a schema-invalid document because the U6b/147.012-T validity gate is not yet in the
+    declaration stub; the assertion `errors.Is(err, ErrCheckpointInvalid)` **fails**. MCP
+    `get_checkpoint(filename)` — currently returns a success payload before U6c/147.022-T's
+    domainError mapping stub is filled in; assertion `code == "validation_failed"` **fails**.
+    CLI `checkpoint get filename` — currently prints hardcoded `"valid": true` and exits 0
+    (see cycle-4 finding on `newCheckpointGetCmd` at `internal/cli/checkpoint.go:180-210` before
+    U8c/147.027-T reprojects it); assertion `exit_code != 0` **fails**. `resolve` — currently
+    succeeds and rewrites the file with a fabricated skeleton (F2 in memory) before U3's
+    validity gate and U7d's route-through-disposition-shape stub complete; assertion that
+    resolve is refused with `checkpoint_use_quarantine` **fails**.
+  * **`valid-but-non-conforming` row**: `events.GetCheckpointResult.Conforming` — the U6b
+    declaration stub returns a zero-value result before its `Conforming` field is populated
+    by the U6b implementation; assertion `result.Conforming == false` **fails** because zero
+    value cannot be distinguished from an unset stub. MCP `get_checkpoint` — before U6c's
+    projection stub is filled in, the response has no `conforming` field; assertion that
+    `conforming: false` appears in the payload **fails**. CLI `checkpoint get` — before
+    U8c/147.027-T reprojects `newCheckpointGetCmd` from `events.GetCheckpointResult`, the CLI
+    prints hardcoded `"valid": true` with no conformance field; assertion that `conforming:
+    false` appears in stdout **fails**. `resolve` and `abandon` — before U3b's conformance gate
+    and U4's conformance gate land, both mutations succeed on a valid-but-non-conforming
+    document; assertions of refusal with `checkpoint_non_conforming` **fail** on both surfaces.
+  * **`conforming-active` row**: every surface accepts `abandon`; `get` reports `conforming: true`.
+    All three of these assertions describe pre-existing shipped behaviour (`abandon` already
+    accepts a conforming active document, and `conforming: true` is the neutral default once
+    projections land). This row is a **declared regression guard**: it does not fail against
+    the declaration stubs but pins the agreement so a future regression cannot silently drop
+    the accept path.
+  * **Byte-identity postcondition**: every fixture file is byte-identical on disk after all
+    three surfaces have been exercised. Against the current `ResolveCheckpoint` — which rewrites
+    on the `valid-but-non-conforming` row — the assertion **fails** for row 2's fixture.
+
+  Rows 1 and 2 together carry the batch-harness red gate; row 3 is the parity/regression guard
+  that pins the accept path. This unit no longer claims an all-guards exemption — case 1 and
+  case 2 each produce concrete assertion failures against the pre-implementation state, and P-004
+  is satisfied by their aggregate red load.
+
+* **Parity/regression-guard role after impls land**: once U3, U3b, U4, U5, U6, U6b, U6c, U7,
+  U7b, U7c, U7d, U8, U8c have landed in dep order, the assertions above turn green: every
+  surface projects the same classification for the same stored bytes. U8b's role at that point
+  is exactly the parity contract it has always been — pin the agreement so a future regression
+  in any one surface (a stale MCP projection, a CLI hardcode, an events-layer default) surfaces
+  as a failing test instead of a silent drift.
+
 * **Depends on**: U6c, U7b, U7c, U8, U8c.
 
 ### U9 — Design doc: total classification
@@ -1083,7 +1177,7 @@ not independent of U4/U6** — see the edge table.
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | **deviation (documented)** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Deviation**: `AbandonCheckpoint` already wraps its validation failure with `%v` (`internal/core/checkpoint_disposition.go:~76-81`), losing `ErrCheckpointInvalid`. This plan does not fix that pre-existing wrap — it is recorded as a named follow-up rather than silently claimed as compliant. |
-| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every code unit uses the two-step red posture declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a harness that **fails on assertions**. Expected red is stated per unit. U2d and U5b are pure regression guards and declare their exemption explicitly rather than claiming a red phase they do not have. |
+| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every code unit uses the two-step red posture declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a harness that **fails on assertions**. Expected red is stated per unit. U2d and U5b each own a real production delta with a compiling-but-failing harness case that fails against the pre-delta state (U2d — the derived-set equality assertion fails against the empty `checkpointV1AllTopLevelKeys` declaration stub; U5b — the `baseName`-in-error assertion fails against the bare-sentinel return in U5's landing state). U8b's parity harness lands during batch harness generation and fails against the declaration stubs of U6b/U6c/U7b/U7c/U8/U8c (see U8b's Expected red enumeration). P-004 does not permit an all-guards exemption, so cycle-8 replaces the earlier exemption claims with these concrete red-load statements. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` on MCP, named keys on CLI, `NeedsQuarantine` + `RemediationCommand` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
@@ -1661,3 +1755,30 @@ data-loss safety posture, fail-closed refusal, 147.018-T same-merge requirement,
 shipped behaviour (POSIX-safe, matching the shipped test) rather than replacing it.
 
 <!-- copilot-review-remediation: pr-377-cycle-7 -->
+
+### PR #377 Copilot review remediation, cycle 8
+
+An eighth Copilot review against the current PR head flagged three tasks whose bodies claimed a
+"regression guard — green on landing, no red phase" exemption from P-004: 147.005-T (U2d),
+147.010-T (U5b), and 147.016-T (U8b). The reviewer is correct — the harness workflow-policy
+excerpt in `.github/policies/workflow-policies.md` P-004 defines the harness-ready label as
+"harness compiles and fails RED" and does not carve out a regression-guard exemption. Prior
+cycles allowed those tasks to be declared exempt on the grounds that they pin pre-existing
+shipped behaviour; that framing is retired here, and each of the three units is rebalanced to
+own a real red assertion that fails against the pre-implementation state, without inventing a
+speculative seam or fabricating production behaviour solely to make a test go red.
+
+| Thread | Issue | Cycle-8 correction |
+|---|---|---|
+| P-004 all-guards exemption text | The Test-First posture section and Constitution Check II declared U2d, U5b, and U8b exempt from the two-step red rule on the grounds that they are pure regression guards. P-004 does not permit this: the harness-ready label requires the harness to compile and fail on assertions before implementation. | The "all-guards exemption" language is removed from the Test-First posture section (a unit may still contain guards, but at least one case must fail against the pre-delta state) and from Constitution Check II. Each of U2d, U5b, and U8b is rebalanced below to state its concrete red load. |
+| 147.005-T / U2d — regression-guard exemption on a code unit | U2d claimed an exemption while U2 owned the introduction of the `checkpointV1AllTopLevelKeys` derived set and the refactor of `CheckConformingTopLevelNamespace` to consult it. That left U2d with only invariant assertions and no red load. | The derived-set introduction and the conformance-check refactor **move from U2 to U2d**. U2 keeps its inline two-set check against `checkpointV1TopLevelKeys` and `checkpointV1ReservedKeys`. U2d's declaration step lands `var checkpointV1AllTopLevelKeys = map[string]struct{}{}` empty; U2d's harness step lands three cases including a set-equality assertion that **fails RED** against that empty stub; U2d's implementation step fills the derivation and refactors the conformance check to consult the single set. The task and file lists are updated accordingly. No task added, no dep edge changed. |
+| 147.010-T / U5b — "no production change" test-only task | U5b claimed an exemption and declared "no production change" while pinning the state-scoping of invariant I3. That left U5b without a red load. | U5b **gains a real observability-parity delta**: wrap `QuarantineCheckpoint`'s `ErrCheckpointUseAbandon` return with the target `baseName` (`fmt.Errorf("%w: %s", blerrors.ErrCheckpointUseAbandon, baseName)`), matching the pre-existing wrap pattern used by every other `blerrors.ErrCheckpoint*` return in `checkpoint_disposition.go`. `errors.Is(err, ErrCheckpointUseAbandon)` continues to hold, so U5's row-2 guard and every downstream caller stay green. U5b's row-1 case asserts the wrapped error message includes `baseName` and **fails RED** against U5's landing state where the sentinel is returned bare. Rows 2 and 3 remain declared guards. Files list gains `internal/core/checkpoint_disposition.go`. No task added, no dep edge changed. |
+| 147.016-T / U8b — "Expected red: none" against batch harness contract | U8b claimed an exemption on the grounds that it lands after every dep's implementation. That framing was incompatible with the batch harness contract: harness generation lands before impls, so U8b's assertions run against the deps' declaration stubs and current handlers. | The Expected Red section is restructured to enumerate specific failing assertions per fixture row against the pre-implementation state: legacy-shaped row — `events.ErrCheckpointInvalid` refusal on `get` fails against pre-U6b/pre-U6c/pre-U8c handlers, `resolve` refusal with `checkpoint_use_quarantine` fails against pre-U3/pre-U7d; valid-but-non-conforming row — `conforming: false` projection assertions fail against the U6b declaration stub's zero-value result, U6c's unfilled projection, and U8c's hardcoded `"valid": true`; refusal-on-mutation assertions fail against pre-U3b/pre-U4 handlers; byte-identity postcondition fails against the current `ResolveCheckpoint` rewrite; conforming-active row stays as a declared regression guard. U8b remains test-only with parity-contract role after impls land; its cycle-8 red load is honest against the batch-harness moment. No task added, no dep edge changed. |
+
+Net effect: no unit added, no edge added, no shipment member added, no task ID renumbered. Backlog
+shape stays at **27 tasks / 43 edges / 28 shipment members**. Prior-cycle decisions
+(checkpoint-safety design, shell contract, repair mapping, hard merge gate, 147.009-T
+paired-assertion halt condition, ownership splits) are unchanged. The three affected tasks now
+carry P-004-compliant harnesses with concrete pre-implementation-state red assertions.
+
+<!-- copilot-review-remediation: pr-377-cycle-8 -->
