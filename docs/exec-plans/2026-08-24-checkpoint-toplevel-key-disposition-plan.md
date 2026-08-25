@@ -821,15 +821,20 @@ on `147.010-T`.
     false` appears in stdout **fails**. `resolve` and `abandon` — before U3b's conformance gate
     and U4's conformance gate land, both mutations succeed on a valid-but-non-conforming
     document; assertions of refusal with `checkpoint_non_conforming` **fail** on both surfaces.
-  * **`conforming-active` row**: every surface accepts `abandon`; `get` reports `conforming: true`.
-    All three of these assertions describe pre-existing shipped behaviour (`abandon` already
-    accepts a conforming active document, and `conforming: true` is the neutral default once
-    projections land). This row is a **declared regression guard**: it does not fail against
-    the declaration stubs but pins the agreement so a future regression cannot silently drop
-    the accept path.
-  * **Byte-identity postcondition**: every fixture file is byte-identical on disk after all
-    three surfaces have been exercised. Against the current `ResolveCheckpoint` — which rewrites
-    on the `valid-but-non-conforming` row — the assertion **fails** for row 2's fixture.
+  * **`conforming-active` row**: every surface accepts `abandon` — this is pre-existing shipped
+    behaviour and passes from the moment the assertion lands. The three `get` assertions
+    (`events.GetCheckpointResult` → `conforming: true`, MCP `get_checkpoint` → `conforming: true`,
+    CLI `checkpoint get` → `conforming: true`) are **RED** until U6b/U6c/U8c land:
+    `GetCheckpointResult` begins as a zero-value declaration stub (`Conforming: false`), the
+    MCP payload lacks a `conforming` field before U6c, and the CLI prints hardcoded
+    `"valid": true` with no conformance field before U8c. Only accepted `abandon` is an
+    already-green regression guard.
+  * **Byte-identity postcondition**: applies **only** to refused-mutation paths (rows 1 and 2's
+    non-mutation surfaces exercised against the canonical fixture directly). The
+    `conforming-active` row's accepted `abandon` necessarily mutates its fresh fixture and
+    asserts the intended rewrite/archive outcome, not byte identity. Against the current
+    `ResolveCheckpoint` — which rewrites on the `valid-but-non-conforming` row — the assertion
+    **fails** for row 2's fixture.
 
   Rows 1 and 2 together carry the batch-harness red gate; row 3 is the parity/regression guard
   that pins the accept path. This unit no longer claims an all-guards exemption — case 1 and
@@ -1828,3 +1833,28 @@ An eleventh Copilot review (operator-authorized extension) flagged nine root cau
 Net effect: no unit added, no edge added, no shipment member added, no task ID renumbered. Backlog shape remains **26 tasks / 42 edges / 27 shipment members**. Prior-cycle decisions (checkpoint-safety design, shell contract, repair mapping, hard merge gate, 147.009-T paired-assertion halt condition, ownership splits, U5b retirement) are unchanged.
 
 <!-- copilot-review-remediation: pr-377-cycle-11 -->
+
+### PR #377 Copilot review remediation, cycle 12
+
+A twelfth Copilot review (operator-authorized extension) flagged two findings on the same PR head (ee13e2e9):
+
+| Thread | Issue | Cycle-12 correction |
+|---|---|---|
+| All-unmodeled duplicate repair row safety | The exact-duplicate raw key names were treated as safely round-trippable via `legacy_top_level`. `CheckpointContext.UnmarshalJSON` decodes context into `map[string]json.RawMessage`, so exact-duplicate keys collapse via Go last-wins map insertion. | Split the row into distinct-spelling (safe to move) and exact-same-spelling (not auto-repairable, requires operator choice with duplicate-preserving method or quarantine). Generalized exact-duplicate safety invariant: no-implicit-survivor rule applies regardless of modeled/unmodeled key status. Plan cycle-1 remediation row updated from four-row to five-row. Task acceptance criteria updated. |
+
+Net effect: no task added, no edge added, no shipment member added. Backlog shape remains **26 tasks / 42 edges / 27 shipment members**. Prior-cycle decisions unchanged.
+
+<!-- copilot-review-remediation: pr-377-cycle-12 -->
+
+### PR #377 Copilot review remediation, cycle 13
+
+A thirteenth Copilot review (operator-authorized extension) flagged two current-head synchronization findings:
+
+| Thread | Issue | Cycle-13 correction |
+|---|---|---|
+| U8b byte-identity postcondition universality (plan ~line 830) | A stale paragraph still required every fixture file to remain byte-identical on disk, contradicting the corrected U8b contract. Accepted `abandon` necessarily mutates its fresh fixture. | Byte-identity postcondition paragraph rewritten: applies only to refused-mutation paths (rows 1 and 2); the `conforming-active` row's accepted `abandon` asserts the intended rewrite/archive outcome, not byte identity. |
+| U8b `conforming-active` row expected-red classification (147.016-T) | The expected-red section claimed the `conforming-active` row was a pure regression guard with all assertions already green. `GetCheckpointResult` begins as a zero-value declaration stub, and current MCP/CLI `get` payloads lack `conforming`. The three `conforming: true` get assertions are RED until U6b/U6c/U8c land. Only accepted `abandon` is already-green. | Plan and 147.016-T corrected: `conforming-active` row's three `get` assertions (`conforming: true` on core/MCP/CLI) reclassified as RED against declaration stubs; only `abandon` acceptance remains as an already-green regression guard. |
+
+Net effect: no task added, no edge added, no shipment member added. Backlog shape remains **26 tasks / 42 edges / 27 shipment members**. Prior-cycle decisions unchanged.
+
+<!-- copilot-review-remediation: pr-377-cycle-13 -->
