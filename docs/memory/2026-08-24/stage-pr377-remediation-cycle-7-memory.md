@@ -30,8 +30,11 @@ generated in cycles 5, 6, and 7.
 enforces. New `context` fields:
 
 - `reviewed_head`: `122cdf30` (last commit Copilot has reviewed).
-- `local_unreviewed_state`: recorded in `push_state` and `pr` — the cycle-7 remediation commit
-  is local-only until Ship pushes and secures fresh CI + fresh review.
+- `local_unreviewed_state`: originally recorded in `push_state` and `pr` a not-yet-pushed,
+  pending-review state. **Superseded same-day** — see the Addendum below: once the Orchestrator
+  pushed the cycle-7 commit, those fields were corrected so they defer to live PR #377 state
+  instead of asserting a push/CI/review status that goes stale the moment the branch advances
+  further.
 - `review_remediation`: appended cycle-5, cycle-6, and cycle-7 entries.
 
 Validated by `backlogit checkpoint get checkpoint-20260824-191617.json` returning
@@ -186,10 +189,35 @@ documented deviation carried from prior cycles.
 
 Ship or the operator:
 
-1. Push `chore/stage-130-s` to origin.
-2. Wait for CI to complete on the cycle-7 head.
-3. Confirm the fresh Copilot review covers the new head.
-4. Post replies to the six cycle-7 threads.
-5. Resolve the threads (Stage cannot).
-6. Secure explicit P-014 operator merge approval.
-7. Merge with merge-commit strategy (P-009).
+1. Query the live GitHub PR #377 head, checks, and reviews (do not assume the state recorded
+   above still holds — the branch has since been pushed and the remote advances independently
+   of this file).
+2. If the current head lacks green CI or fresh Copilot coverage, obtain them.
+3. Post replies to the six cycle-7 threads.
+4. Resolve the threads (Stage cannot).
+5. Secure explicit P-014 operator merge approval.
+6. Merge with merge-commit strategy (P-009) — do not merge with unresolved threads.
+
+## Addendum — post-push correction (same day)
+
+After this cycle-7 commit was made, the Orchestrator pushed it to
+`origin/chore/stage-130-s` as `06fd1f80`. That push falsified the self-referential claim this
+cycle's regenerated checkpoint and canonical memory had embedded for their own containing
+commit — namely, that the commit had not yet reached the remote and that the branch tip was
+still the pre-cycle-7 review head. A follow-up, scope-bounded correction (still within D3CE9E81)
+updated `.backlogit/checkpoints/checkpoint-20260824-191617.json`
+(`context.ci_state`, `context.pr`, `context.push_state`, `context.resume_ref`, top-level
+`resume_hint`) and the `.backlogit/memories.json` canonical key
+`stage-d3ce9e81-checkpoint-toplevel-keys` (its `NEXT SAFE ACTION` sentence) to:
+
+* keep the historical fact that the head Copilot reviewed at the start of cycle 7 was
+  `122cdf30723196f8ebdeb9e1ce9ae2a04e5bdf69`, which surfaced the six comments remediated here;
+* stop asserting the containing commit's push, CI, or review-coverage status, since that status
+  changes independently of when the checkpoint/memory file was written;
+* state that GitHub PR #377 is authoritative for current head, push status, CI, pending review,
+  and unresolved threads, and that consumers must query it live before acting; and
+* preserve every unrelated durable fact (branch, scope D3CE9E81, feature 147-F, shipment 130-S,
+  27 tasks / 43 edges / 28 members, cycles 1-7 remediation completed locally and committed, the
+  147.018-T hard merge gate, and the 147.009-T halt condition) unchanged.
+
+No backlog shape, task, dependency, or code content changed as part of this correction.
