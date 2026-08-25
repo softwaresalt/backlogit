@@ -94,7 +94,7 @@ Combined findings B and C into one U7e task because all three domainError mappin
 
 ## Memory Footprint
 
-- docs/memory: 39 files, ~326 KiB (below 40-file and 500 KB thresholds)
+- docs/memory: 39 files, 327.5 KiB (below 40-file and 500 KB thresholds)
 - Compact-context: NOT required
 
 ## Decisions
