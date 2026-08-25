@@ -317,6 +317,27 @@ assertion — it does not replace one (cycle-8 correction).
 * **Expected red**: case 2 fails until the enumeration exists.
 * **Depends on**: U2d.
 
+### U2g — Context-member duplicate detection read boundary
+
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_schema.go`, `internal/events/checkpoint_schema_test.go`.
+* **Change**: before `CheckpointContext.UnmarshalJSON` collapses the raw JSON into
+  `map[string]json.RawMessage`, perform ordered duplicate detection on the immediate members of
+  `context`. Exact-duplicate member names and case-fold-equivalent member names (RFC 7159 §8.3)
+  MUST be refused with a sentinel error. All unique extension keys MUST be preserved — `context`
+  remains an open namespace per U2b. The duplicate check runs before map construction so data
+  cannot be lost by silent map overwrite.
+* **Sentinel routing**: duplicate context members produce a new
+  `ErrCheckpointContextDuplicateKey` sentinel wrapped with the violating key name. This sentinel
+  routes through `domainError` → `validation_failed` (added by U7e's safety-net row or wired
+  in-place) and is surfaced to the operator as a conformance refusal, not an internal error.
+* **Tests** (3): exact-duplicate key refuses with `ErrCheckpointContextDuplicateKey`; case-fold-
+  equivalent key refuses with the same sentinel; a document with distinct unique extension keys
+  succeeds and all keys survive round-trip.
+* **Expected red**: cases 1 and 2 fail (no duplicate detection exists); case 3 is a declared
+  regression guard.
+* **Depends on**: U1, U2b.
+
 ### U3 — `ResolveCheckpoint` validity gate
 
 * **Domain**: code (events)
@@ -573,10 +594,10 @@ on `147.010-T`.
      `ErrCheckpointInvalid` third of that is false — `internal/mcp/errors.go:~188-193` already maps
      it to `validation_failed`, grouped with `ErrValidation` and `ErrCheckpointCorrupt`, and a
      dedicated `ErrCheckpointUnknownField` case already precedes it. Only
-     `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming` are genuinely absent; add those
-     two as a **safety net** so a refusal reaching a handler that has not been re-routed can never
-     surface as a 500. Add the two rows to the mapping-table doc comment
-     (`internal/mcp/errors.go:127-144`).
+     `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming` are genuinely absent; those two
+     **safety net** mappings are moved to **U7e** (147.029-T, cycle-14 split) to satisfy the `<4
+     scenarios` width limit. This task no longer owns the `domainError` rows or the mapping-table
+     doc comment update.
   4. The three disposition-class remediation strings — `checkpoint_use_quarantine`,
      `checkpoint_use_abandon`, and the new `checkpoint_non_conforming` — currently name a hardcoded
      originating verb (the shipped `checkpoint_use_quarantine` string is `"this target is
@@ -593,10 +614,9 @@ on `147.010-T`.
      the `remediation` field without changing the shape or ownership boundary. The remedy verb
      itself (`quarantine` for the two "target is malformed / non-conforming" classes, `abandon`
      for the "target is valid" class) is unchanged; only the wronged verb becomes op-derived.
-* **Tests** (4): `checkpointDispositionError` returns `checkpoint_non_conforming` for
+* **Tests** (3): `checkpointDispositionError` returns `checkpoint_non_conforming` for
   `ErrCheckpointNonConforming` and its `ErrCheckpointNotFound` → `NotFound` case still fires;
-  `domainError` maps the two missing sentinels to their named codes instead of falling to
-  `default: InternalError`; invoking `handleAbandonCheckpoint` on a non-conforming target returns
+  invoking `handleAbandonCheckpoint` on a non-conforming target returns
   `checkpoint_non_conforming` with a populated `unknown_fields` read through a `.([]any)` type
   assertion so an absent or `null` key fails
   (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`) and a
@@ -605,7 +625,7 @@ on `147.010-T`.
   but the formatter is not hardcoded to it, which U7d's resolve-side assertions confirm from the
   other direction); a conforming refusal returns `unknown_fields: []` rather than omitting the
   key.
-* **Expected red**: all four fail.
+* **Expected red**: all three fail.
 * **Depends on**: U1, U3b, U4, U5.
 
 ### U7d — `handleResolveCheckpoint` routes disposition refusals through the disposition shape
@@ -642,14 +662,45 @@ on `147.010-T`.
   and explicitly asserts the payload is **not** `"error":"internal"`; invoking it on a
   valid-but-non-conforming document returns `code: checkpoint_non_conforming` with `unknown_fields`
   non-empty and a `remediation` string naming `backlogit_resolve_checkpoint` as the originating
-  verb; a missing file still returns the pre-existing not-found refusal; an already-abandoned
-  target still returns its pre-existing `validation_failed` refusal, proving the non-disposition
-  path still reaches `domainError`.
-* **Expected red**: cases 1, 2, and 4 fail (routing, both remediation-verb assertions, and the
-  pre-impl `InternalError` vs post-impl `validation_failed` delta); case 3 is a declared
-  regression guard.
+  verb; a missing file still returns the pre-existing not-found refusal.
+* **Expected red**: cases 1 and 2 fail (routing and both remediation-verb assertions); case 3 is a
+  declared regression guard.
 * **Depends on**: U1 (the predicate and its host package), U7 (the response shape, the code, and
   the op-derived remediation the resolve-side assertions read).
+* **Split note (cycle 14)**: The `ErrCheckpointCannotResolveAbandoned` → `validation_failed`
+  mapping and its handler-level test (original case 4) are moved to **U7e** (147.029-T) because
+  they are a `domainError` mapping in `internal/mcp/errors.go` and keeping them here pushed this
+  task to 3 files and 4 scenarios. The original plan text incorrectly called `validation_failed`
+  "pre-existing" — `domainError` has no explicit case for `ErrCheckpointCannotResolveAbandoned`
+  and falls to `default: InternalError`; the `validation_failed` mapping is a **genuine red delta**
+  created by U7e. This task's file scope is now `internal/mcp/tools.go` +
+  `internal/mcp/checkpoint_disposition_test.go` (2 files, 3 scenarios).
+
+### U7e — domainError safety-net mappings (cycle-14 split)
+
+* **Domain**: code (mcp)
+* **Files**: `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`.
+* **Change**: add explicit `domainError` cases for three sentinels that currently fall to
+  `default: InternalError`:
+  1. `ErrCheckpointUseQuarantine` → `checkpoint_use_quarantine`
+  2. `ErrCheckpointNonConforming` → `checkpoint_non_conforming`
+  3. `ErrCheckpointCannotResolveAbandoned` → `validation_failed`
+
+  Without these rows, a refusal reaching a handler that has not been rerouted through
+  `checkpointDispositionError` surfaces as a 500 `InternalError`. Add the three rows to the
+  mapping-table doc comment (`internal/mcp/errors.go:127-144`). The `ErrCheckpointCannotResolveAbandoned`
+  mapping is a **genuine red delta**: `domainError` has no explicit case for this sentinel today
+  and falls to `default: InternalError`; the new mapping creates the `validation_failed` code
+  that U7d's handler-level test originally asserted.
+* **Split rationale**: these three mappings were previously bundled into U7 (147.013-T) and U7d
+  (147.025-T), pushing both past the `<4 scenarios` and `<3 files` width limits. Isolating them
+  in a single task keeps all `domainError` mutations in one place.
+* **Tests** (3): `domainError` maps `ErrCheckpointUseQuarantine` to `checkpoint_use_quarantine`;
+  `domainError` maps `ErrCheckpointNonConforming` to `checkpoint_non_conforming`; `domainError`
+  maps `ErrCheckpointCannotResolveAbandoned` to `validation_failed`.
+* **Expected red**: all three fail (`domainError` currently falls to `default: InternalError` for
+  each).
+* **Depends on**: U1.
 
 ### U7b — MCP read-surface tool descriptions (exact replacement strings)
 
@@ -1858,3 +1909,42 @@ A thirteenth Copilot review (operator-authorized extension) flagged two current-
 Net effect: no task added, no edge added, no shipment member added. Backlog shape remains **26 tasks / 42 edges / 27 shipment members**. Prior-cycle decisions unchanged.
 
 <!-- copilot-review-remediation: pr-377-cycle-13 -->
+
+### PR #377 Copilot review remediation, cycle 14
+
+A fourteenth Copilot review (operator-authorized extension) flagged four structural findings:
+
+| Thread | Finding | Cycle-14 correction |
+|---|---|---|
+| PRRT_kwDORzozKM6b7YzW / 3849365620 on 147.018-T | Context-member duplicate safety: `CheckpointContext.UnmarshalJSON` decodes into `map[string]json.RawMessage` where exact or fold-equivalent duplicate context names silently lose data. The cycle-12 universal no-implicit-survivor invariant is not code-enforced for `context` members. | **U2g added** (147.028-T): context-member duplicate detection read boundary. Performs ordered duplicate detection for immediate `context` members BEFORE map collapse. Refuses exact-duplicate and case-fold-equivalent member names while preserving all unique extension keys. 3 scenarios, 2 files. Depends on U1 + U2b; blocks U3b + U4. |
+| PRRT_kwDORzozKM6b7Yzk / 3849365643 on 147.013-T | U7 scenario width: 147.013-T defines four independent scenarios, violating `<4 scenarios`. | domainError scope (scenario 2: two missing-sentinel safety-net mappings) moved from U7 to **U7e** (147.029-T). U7 reduced to 3 scenarios, 2 files. |
+| PRRT_kwDORzozKM6b7Yzv / 3849365657 on 147.025-T | U7d file/scenario width: 147.025-T owns 3 files and 4 scenarios, violating both `<3 files` and `<4 scenarios`. | `ErrCheckpointCannotResolveAbandoned` → `validation_failed` mapping (scenario 4, `errors.go` file) moved from U7d to **U7e** (147.029-T). U7d reduced to 3 scenarios, 2 files. |
+| PRRT_kwDORzozKM6b7Yz9 / 3849365682 on plan | U7d wording: plan called `validation_failed` "pre-existing" for the abandoned-resolve case, but current behavior is `InternalError`; the mapping is a genuine red delta. | Plan U7d section corrected: wording now states the `ErrCheckpointCannotResolveAbandoned` → `validation_failed` mapping is a genuine red delta owned by U7e, not a pre-existing code path. |
+
+**New tasks**:
+
+| Task | Unit | Scenarios | Files | Dependencies | Shipment |
+|---|---|---|---|---|---|
+| 147.028-T | U2g | 3 | 2 (`checkpoint_schema.go`, `checkpoint_schema_test.go`) | U1, U2b (declared); blocks U3b, U4 (added to their deps) | 130-S |
+| 147.029-T | U7e | 3 | 2 (`errors.go`, `checkpoint_disposition_test.go`) | U1 (declared) | 130-S |
+
+**Modified tasks**:
+
+| Task | Unit | Change | New scenarios | New files |
+|---|---|---|---|---|
+| 147.013-T | U7 | Removed domainError scope (item 3) and scenario 2 → U7e | 3 | 2 |
+| 147.025-T | U7d | Removed scenario 4 (abandoned→validation_failed) and `errors.go` → U7e; corrected wording | 3 | 2 |
+| 147.007-T | U3b | Added dependency on 147.028-T (U2g) | unchanged | unchanged |
+| 147.008-T | U4 | Added dependency on 147.028-T (U2g) | unchanged | unchanged |
+
+**New dependency edges** (5 queued-to-queued):
+
+1. 147.028-T → 147.001-T (U2g depends on U1)
+2. 147.028-T → 147.003-T (U2g depends on U2b)
+3. 147.029-T → 147.001-T (U7e depends on U1)
+4. 147.007-T → 147.028-T (U3b depends on U2g)
+5. 147.008-T → 147.028-T (U4 depends on U2g)
+
+Net effect: **2 tasks added, 5 edges added, 2 shipment members added**. Backlog shape: **28 queued tasks / 47 queued-to-queued edges / 29 shipment members**. Historical total edges: 48 (47 queued-to-queued + 1 archived 147.010-T → 147.009-T). Ready set: {147.001-T} (sole root, unchanged). U5b remains archived.
+
+<!-- copilot-review-remediation: pr-377-cycle-14 -->
