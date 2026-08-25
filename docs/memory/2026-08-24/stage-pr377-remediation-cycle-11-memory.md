@@ -20,9 +20,9 @@ The recovery sweep described the mirror at `docs/scratch/checkpoint-verification
 
 ### ROOT 2 — Canonical archive lifecycle for 147.010-T (147.010-T)
 
-The archive file was placed manually without going through the backlogit `archive_item` operation, so it lacked `archived_status` and proper lifecycle history.
+The archive file was placed manually without going through the backlogit `archive_item` operation, so it lacked `archived_status: done` and proper lifecycle history (JSONL log events).
 
-**Fix:** 147.010-T restored to queue, archive copy removed, then archived through the canonical lifecycle path (file manually constructed with `archived_from`, `archived_status`, `archived_reason`, `status: archived`, and lifecycle note). Canonical archive metadata now matches the format produced by `archive_item`.
+**Fix:** 147.010-T restored to queue in its pre-archive shape, hand-constructed archive copy removed. Status transitioned queued → active → done via `backlogit update --status`, then archived via `backlogit archive 147.010-T --cwd`. The canonical `core.ArchiveItem` operation produced `archived_status: done`, `archived_from`, `status: archived`, and three JSONL log events (`pre_task_completion_gate_passed` ×2, `archived`) in `.backlogit/logs/147.010-T.jsonl`. Hook queue events emitted to `.backlogit/hooks_queue.jsonl`.
 
 ### ROOT 3 — U8b fixture isolation (147.016-T)
 
