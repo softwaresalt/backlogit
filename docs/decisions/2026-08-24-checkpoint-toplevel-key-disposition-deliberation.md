@@ -327,7 +327,17 @@ Explicitly **out of scope**:
   sweep the existing on-disk corpus into rejection and is a separate decision.
 * A structured JSON error envelope for CLI validation failures — already recorded as stash
   `63E810D9`.
-* `CleanupCheckpoints`, `ListCheckpoints`, and hook checkpoints under `.backlogit/runtime/hooks/`.
+* `CleanupCheckpoints` and hook checkpoints under `.backlogit/runtime/hooks/`.
+* `ListCheckpoints` is **partially in scope**, corrected here to match the implementation plan
+  rather than left as a blanket exclusion. The plan (R8, resolving this document's Unresolved
+  Question 3 from "deferred" to "yes, and widened by plan review") pulls in a conformance-verdict
+  projection for valid-but-non-conforming files — `NeedsQuarantine` and `RemediationCommand`
+  populated from the same `CheckConformingTopLevelNamespace` check the mutation verbs use (U6) —
+  and a quarantine-candidate filter exemption with a published doc-comment contract (U6d), both
+  landing in `internal/events/checkpoint_lifecycle.go`, which this section already lists in scope
+  for the mutation verbs. Out of scope within `ListCheckpoints`: its filter semantics for
+  conforming documents, sort order, pagination, and any read path unrelated to the quarantine
+  verdict.
 * The seven sibling scope-boundary follow-ups (`EA1F5912`, `EC987334`, `1787FD85`, `5F4E0FC3`,
   `360A183F`, `63E810D9`, `6CE00B88`).
 
