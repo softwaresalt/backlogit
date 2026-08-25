@@ -655,9 +655,10 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   U12's red gate and scaffolds no test function of its own. Its verification command is U12's
   selector (`go test -count=1 -run '^TestU12_' ./internal/events`), which must go from three
   failures to zero. This is the plan's single behaviour-changing exemption and the explicitly
-  allowed `covered-by` carve-out under P-002.1: U12 is a declared dependency, carries
-  `harness-ready` rather than an exemption, and its red evidence must be confirmed before U13
-  builds. No other unit may claim this shape.
+  allowed `covered-by` carve-out under P-002.1: U12 is a declared dependency, must carry
+  `harness-ready` at claim time — eligible only after harness generation runs — rather than an
+  exemption, and its red evidence must be confirmed before U13 builds. No other unit may claim this
+  shape.
 * **Green-step guards**: none.
 * **Depends on**: U12.
 
@@ -2080,8 +2081,9 @@ on `147.010-T`.
   keys, with the fixture bytes unchanged after both (in-place class: SHA equality); **quarantine
   accept** — quarantine accepted into an asserted-absent destination and the archived bytes
   byte-identical to the pre-quarantine original (archive-move class).
-* **Evidence persistence (cycle-17)**: each row writes a deterministic, human-readable record to
-  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md` — a tracked file — carrying
+* **Evidence persistence (cycle-17, filename dated cycle-24)**: each row writes a deterministic,
+  human-readable record to
+  `docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md` — a tracked file — carrying
   per-file `filename`, `sha256`, `state`, `destination`, and outcome. The scratch directory stays
   git-ignored and is **not** the evidence of record: an ignored, machine-local artifact cannot be
   reviewed and does not survive teardown. Cycle-17 makes the closure file the artifact and the
@@ -2162,7 +2164,7 @@ on `147.010-T`.
   still requiring explicit operator approval immediately before execution, and still skipped and
   recorded as a cleanup follow-up when approval is withheld.
 * **Evidence persistence**: rows append to the same tracked closure file U10 writes,
-  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`.
+  `docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md`.
 * **Depends on**: U10 (scratch workspace, ignore rule, branch-built binary, and the quarantine
   archive row 2 inspects).
 
@@ -2173,7 +2175,7 @@ on `147.010-T`.
 * **Harness**: `harness-exempt: verification-only` — no Go test function is scaffolded; the gate is
   the recorded runtime evidence in `docs/closure/`.
 * **Files**: none beyond appending to
-  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`. Runs inside the scratch
+  `docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md`. Runs inside the scratch
   workspace U10 created.
 * **Change (cycle-17 — closes gate finding H3)**: cycles 14–16 parked two behaviours in a
   "Runtime Verification and Closure" table row that no unit owned, so no task carried them, no
@@ -2502,11 +2504,11 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   (`declaration-only`, `docs-only`, `verification-only`) and so owe no red of their own. Exactly
   one exempt unit does change behaviour: **U13 / `147.036-T`**, and it is the explicit, allowed
   `covered-by` carve-out — its failing harness is owned by its prerequisite **U12 /
-  `147.035-T`** (three failing seam-contract functions), which is a declared dependency, carries
-  `harness-ready` rather than an exemption, and lands red before U13 builds. No other unit may
-  claim that shape: any further behaviour-changing unit needs `harness-ready` on itself. Invariant
-  I4 (declaration → harness → implementation monotonicity) is the structural guarantee that the
-  edge exists.
+  `147.035-T`** (three failing seam-contract functions), which is a declared dependency, must carry
+  `harness-ready` at claim time — eligible only after harness generation runs — rather than an
+  exemption, and lands red before U13 builds. No other unit may claim that shape: any further
+  behaviour-changing unit needs `harness-ready` on itself. Invariant I4 (declaration → harness →
+  implementation monotonicity) is the structural guarantee that the edge exists.
 * **Application.** Ship (or its harness-architect / build-feature skill) MUST treat all ten tasks
   in the table above as already harness-satisfied once P-002.1 evaluation passes, and MUST NOT
   scaffold a red harness for any of them; it still schedules and implements each in dependency
@@ -4461,8 +4463,86 @@ membership, or unit definition changed in this pass.
 
 **Still outstanding.** The `cycle: 21` remediation queue is unchanged, and cycle 23 adds to it: the
 independent confirmation review must now cover the cycle-21, cycle-22, and cycle-23 changes
-together. Two pre-existing P-003 gaps are recorded but **not** fixed here, because closing them
-means authoring acceptance criteria rather than correcting the exemption contract: `147.036-T` and
-`147.041-T` carry no `acceptance-criteria` block at all. Their deliverables are declared in body
-prose and, for `147.041-T`, in the cycle-23 evidence-manifest requirement, so neither task is
-undefined — but P-003 requires at least one acceptance criterion per task and both are missing one.
+together. **Nine pre-existing P-003 gaps are recorded but not fixed here — corrected cycle 24 from
+this pass's own undercount of two.** This pass's review scope was bounded to the harness-exemption
+contract and did not re-audit every task's `acceptance-criteria` block, so it named only
+`147.036-T` and `147.041-T` as carrying none. A fuller audit in cycle 24 found seven more:
+`147.031-T`, `147.033-T`, `147.034-T`, `147.035-T`, `147.037-T`, `147.039-T`, and `147.040-T` also
+carried no `acceptance-criteria` block at all, because closing any of the nine means authoring
+acceptance criteria rather than correcting the exemption contract, which was out of scope here.
+Every deliverable was declared in body prose — and, for `147.036-T` and `147.041-T`, in this
+cycle's own contract and evidence-manifest requirements — so no task was ever undefined, but P-003
+requires at least one recorded acceptance criterion per task and all nine were missing one. Cycle 24
+authors the missing block for all nine against each task's existing contract; see the cycle-24
+appendix below.
+
+### PR #377 plan remediation, cycle 24 — acceptance-criteria gap closed, appendix count corrected, exempt contract hardened
+
+**This appendix is remediation evidence, not a gate outcome.** It records a third bounded
+prompt/policy/backlog-artifact pass over the cycle-23 contract, run in a dedicated worktree at HEAD
+`35aac6c0` on branch `chore/cycle-24-remediation`. It appends no `## Plan Review` record, claims no
+`PASS`, and does not clear the `cycle: 21` `FAIL`. The current gate state remains the `cycle: 21`
+record above, whose `restage_recommendation: confirmatory-review-of-cycle-21-fixes` is still
+outstanding — and cycles 22, 23, and now 24 are all unreviewed. No Go source, test, or production
+configuration file was touched; no subagent was invoked; no push, PR action, shipment claim, or
+Ship handoff occurred.
+
+**Trigger.** A fresh review of the cycle-23 artifacts found the cycle-23 appendix's own P-003
+undercount (it named two tasks lacking `acceptance-criteria`, not the actual nine), plus three P2
+advisories against the exempt-execution contract cycle 23 introduced: the completion gate accepted
+a bare `exit 0` with no positive signal, none of the ten declared commands was ever screened for a
+destructive operation before execution, and `147.036-T` (plus two normative plan locations)
+described U12 as "carries `harness-ready`" in the present tense where P-002.1's own two-gate split
+only guarantees that at claim time. A fifth item — the closure-evidence filename's missing day
+component — was raised as optional.
+
+**Corrections applied.**
+
+| ID | Finding | Fix |
+|---|---|---|
+| E1 | **Acceptance-criteria gap undercounted.** The cycle-23 "Still outstanding" paragraph named only `147.036-T` and `147.041-T` as carrying no `acceptance-criteria` block; a full audit of all 42 queued tasks found seven more with the same gap — `147.031-T`, `147.033-T`, `147.034-T`, `147.035-T`, `147.037-T`, `147.039-T`, `147.040-T` — a P-003 violation on all nine, not two. | All nine authored against their own existing unit contract (files, scenarios, harness/exempt lifecycle, dependencies, evidence paths) — no invented scope, none exceeding three scenarios. `147.036-T` and `147.041-T` (the two harness-exempt members) additionally cross-reference their own exemption class, owner, and evidence grammar. The cycle-23 "Still outstanding" paragraph is corrected in place from "two" to "nine", naming the fuller audit and all nine task IDs. All 42 queued tasks — 43 counting the archived `147.010-T`, which already carried one — now carry an `acceptance-criteria` block; re-verified independently by parsing every queue file rather than trusting the prior claim. |
+| E2 | **Exempt completion gate accepted a bare `exit 0`.** All ten `exempt_verification_command` values terminated on a plain `exit 0` reached only through preceding `exit 1` guards, with no positive signal distinguishing a genuine pass from a cmd/shell wrapper that inverts the real exit code or a no-op that always returns 0. | New P-002.3 paragraph requires every `exempt_verification_command` to print `EXEMPT_VERIFY_OK:{task_id}` as its last statement before its own `exit 0`; a pass is now exit 0 **and** the exact marker. All ten task commands updated consistently — `Write-Output 'EXEMPT_VERIFY_OK:<task-id>'` inserted immediately before each command's final `exit 0`. `147.036-T`'s `harness_owner_command` is deliberately unchanged: it is the `build-feature` loop command, checked by its own named `--- PASS:` count against U12's harness, not the exempt completion gate. New halt code `EXEMPT_MARKER_MISSING`. `.ship.agent.md` Step 4.1a and Step 4.3, and `build-feature/SKILL.md` Step 0, Step 2, and the post-loop completion gate, all updated to require the marker before treating an exit 0 as a pass. |
+| E3 | **No pre-execution screening for destructive operations.** Neither Ship nor `build-feature` screened a task-authored `exempt_verification_command` / `harness_owner_command` for a destructive pattern before running it. | New **P-002.5** requires a static Constitution Principle VII destructive-operation screen (deletion, force-overwrite, config/history mutation, data drops, package install/removal, untrusted code) immediately before either command is ever executed. A match is rejected outright — never executed by this gate — and routed to Principle VII operator approval instead; new halt code `EXEMPT_COMMAND_DESTRUCTIVE`. `.ship.agent.md` Step 4.1a and `build-feature/SKILL.md` Step 0 / post-loop gate screen both `exempt_gate_cmd` and, when distinct under `covered-by`, `harness_cmd`/`harness_owner_command`, before running either. All eleven live commands (ten `exempt_verification_command` plus `147.036-T`'s `harness_owner_command`) re-audited against a destructive-pattern list and confirmed read-only — probes only (`Test-Path`, `Get-Content`, `Select-String`, `go doc`, `go test -run`, `go run … docs lint`). |
+| E4 | **U12's status was misstated in the present tense.** Three normative locations — `147.036-T`'s own body, the plan's U13 unit section, and the plan's "Ship ready-selection contract" bullets — said U12 "carries `harness-ready` rather than an exemption", contradicting the same two-gate split cycle 23 itself introduced: static intake never observes red evidence, only claim time does. | All three corrected to "must carry `harness-ready` at claim time — eligible only after harness generation runs — rather than an exemption." The cycle-22 historical appendix cell (`C2`) that used the original wording is left unmodified as the historical record of what cycle 22 said at the time; normative text, not historical evidence, carried the defect. |
+| E5 | **Workflow policy `Version` header stale.** The registry header read `1.0.0` while the Amendment Log's own last row already recorded `1.16.0` (cycle 23's P-002.3/P-002.4 addition) — a documentation-sync defect independent of any content change. | Header corrected to `1.16.0`. The existing `1.16.0` amendment-log row is extended in place — rather than minting a further version number — to also describe this cycle's P-002.3 marker mandate, the new P-002.5, and the two new halt codes, and to note that the header itself was previously stale. |
+| E6 | **Optional: closure-evidence filename did not follow the `YYYY-MM-DD` convention** every other `docs/closure/` artifact uses (for example `docs/closure/2026-08-24-130-s-adversarial-review.md`). | The not-yet-created planned path `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md` is renamed to `docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md` (dated to the governing plan document) across every **live** reference: `147.019-T`, `147.026-T`, `147.041-T`, and the plan's U10/U10b/U10c unit sections. The two historical mentions (the cycle-17 `H3` blocker-disposition row and the cycle-23 `D4` finding row) keep the name as it was written at the time — renaming history would misstate what those cycles actually named. No topology, dependency, or task-count change; the file still does not exist. |
+
+**No fabricated REDs; no behaviour change.** This pass touches no `*.go` file, adds no dependency
+edge, and creates no new task. The nine acceptance-criteria blocks restate each task's own
+already-declared contract; none extends scope beyond what the task body already specified.
+
+**Baseline evidence, re-verified after the marker/screening changes.** All ten
+`exempt_verification_command` values — now each carrying its `EXEMPT_VERIFY_OK:{task_id}` marker —
+were re-executed against this worktree's pre-work tree (HEAD `35aac6c0`); all ten exited **1** and
+none printed its marker, because none of the ten deliverables exists yet, so the marker branch is
+never reached and the failing branch is unchanged. `147.036-T`'s `harness_owner_command` was
+re-executed the same way and also exited **1**. All eleven commands were independently re-audited
+against a destructive-operation pattern list with zero matches.
+
+**Validation.**
+
+| Gate | Result |
+|---|---|
+| All 10 `exempt_verification_command` values, re-executed at this worktree's HEAD | 10/10 exit 1, 0/10 marker printed (declared baseline unchanged) |
+| `147.036-T` `harness_owner_command`, re-executed | exit 1 |
+| Destructive-operation pattern audit, all 10 exempt commands + 1 owner command | 0 matches — all read-only |
+| `sync` | 1208 artifacts indexed |
+| `doctor` | 23 issues, all pre-existing orphans (`106.0xx-T`, `016.001-R`) outside `147-F`; 0 new |
+| `docs lint` | `valid: true, violation_count: 0` |
+| `scripts/md-lint.ps1` (markdownlint-cli2 0.23.1, repo-wide) | 2286 files, 0 issues, exit 0 |
+| `go test ./tests/integration/... -count=1` | `ok` — existing structural prompt/plugin/CI guards pass |
+| Frontmatter YAML validity + balanced section markers, all 21 changed Markdown files | 21/21 valid; the one raw-text match on a historical table cell's backtick-quoted example is not a real marker |
+| Exemption-class vocabulary (`declaration-only`, `docs-only`, `verification-only`, `covered-by`) | present and consistent across policy, `.ship.agent.md`, `harness-architect/SKILL.md`, `build-feature/SKILL.md` |
+| Halt-code cross-references, including the two new codes | all 12 codes referenced in policy; the 5 codes owned at execution time (including the 2 new ones) referenced in both `.ship.agent.md` and `build-feature/SKILL.md`; the 7 static-intake-only codes referenced in `.ship.agent.md` only, matching the pre-existing pattern |
+| Topology, recomputed independently from queue frontmatter (not from the index) | 42 queued tasks / 104 queued-to-queued executable edges / 43 shipment members / ready roots exactly `{147.001-T, 147.032-T}` / acyclic (42/42 Kahn-ordered) |
+| Acceptance criteria | 42/42 queued tasks carry an `acceptance-criteria` block (43/43 counting the archived `147.010-T`) |
+
+**Topology unchanged.** 42 queued tasks, 104 queued-to-queued executable edges, 43 shipment
+members, ready roots exactly `{147.001-T, 147.032-T}`. No dependency edge, task count, shipment
+membership, or unit definition changed in this pass.
+
+**Still outstanding.** The `cycle: 21` remediation queue is unchanged, and cycle 24 adds to it: the
+independent confirmation review must now cover the cycle-21, cycle-22, cycle-23, and cycle-24
+changes together. No P-003 gap remains: all 42 queued tasks (43 with the archived `147.010-T`)
+carry at least one acceptance criterion. No push, merge approval, or shipment claim was performed,
+and no subagent was invoked.
