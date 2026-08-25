@@ -88,7 +88,7 @@ The checkpoint referenced `docs/memory/2026-08-24/stage-pr377-remediation-cycle-
 
 - `docs/memory/` directory: 11 files in 2026-08-24, ~313KB total — below both triggers (>40 files, >500KB). No compaction required.
 
-## Adversarial Review Follow-Up (cycle 12)
+## Adversarial Review Follow-Up (Cycle 11)
 
 A three-model adversarial review returned READY_WITH_FOLLOWUPS with zero HIGH-confidence blockers. Seven synchronization findings (2 MEDIUM P1, 2 LOW P1, 2 LOW P2, 1 LOW P3) were resolved:
 
