@@ -316,25 +316,39 @@ defect.
 ### Scope boundary
 
 In scope: `internal/events/checkpoint_lifecycle.go`, `internal/events/checkpoint_strict.go`,
+`internal/events/checkpoint_conformance.go` (new), `internal/events/checkpoint_rewrite.go` (new),
 `internal/core/checkpoint_disposition.go`, `internal/errors/checkpoint_errors.go`, their tests, the
 `checkpoint-administrative-disposition.md` design doc, and the CLI/MCP error surfacing for the new
 refusals.
+
+**Cycle-17 addition to scope (recorded here so this document does not read as narrower than the
+plan).** The implementation plan's cycle-17 formal decomposition centralizes every in-place
+checkpoint rewrite behind one guarded seam, `events.RewriteCheckpointFile`, which requires parse,
+validate, and conformance to succeed before any marshal or atomic replace. That is the enforcement
+mechanism for the plan's protected invariant I1, replacing an AST write-site enumeration the
+cycle-16 plan-review gate found insufficient. It adds `internal/events/checkpoint_rewrite.go` to
+the in-scope set and migrates the two existing rewrite call sites onto it. It does **not** widen the
+decided behaviour: quarantine's verbatim `moveNoReplace`, `CleanupCheckpoints`' rename, and
+`CreateCheckpoint`'s new-file writes stay explicitly outside the seam and outside this scope.
 
 Explicitly **out of scope**:
 
 * Disposing of the nine live legacy checkpoint files, and the stale active `129-S` checkpoint
   `checkpoint-20260822-212617.json` — workspace hygiene, recorded as a follow-up, not a code
-  change.
+  change. The plan classifies any such mutation as risky action **A5** and forbids it in this work.
 * Any change to `CreateCheckpoint`'s legacy (non-V1) verbatim passthrough. Tightening it would
   sweep the existing on-disk corpus into rejection and is a separate decision.
+* Create-boundary duplicate handling for `context` members — deferred under stash `E429A031`. No
+  universal cross-boundary no-implicit-survivor guarantee is claimed anywhere in this work.
 * A structured JSON error envelope for CLI validation failures — already recorded as stash
   `63E810D9`.
 * `CleanupCheckpoints` and hook checkpoints under `.backlogit/runtime/hooks/`.
 * `ListCheckpoints` is **partially in scope**, corrected here to match the implementation plan
   rather than left as a blanket exclusion. The plan (R8, resolving this document's Unresolved
   Question 3 from "deferred" to "yes, and widened by plan review") pulls in a conformance-verdict
-  projection for valid-but-non-conforming files — `NeedsQuarantine` and `RemediationCommand`
-  populated from the same `CheckConformingTopLevelNamespace` check the mutation verbs use (U6) —
+  projection for valid-but-non-conforming files — `NeedsQuarantine` and, since cycle 17, a
+  **structured non-executable** `RemediationIntent` rather than a command string, populated from the
+  same `CheckConformingTopLevelNamespace` check the mutation verbs use (U6) —
   and a quarantine-candidate filter exemption with a published doc-comment contract (U6d), both
   landing in `internal/events/checkpoint_lifecycle.go`, which this section already lists in scope
   for the mutation verbs. Out of scope within `ListCheckpoints`: its filter semantics for

@@ -62,10 +62,13 @@ strand a valid-but-non-conforming file with no disposition verb at all.
 | R4 | `QuarantineCheckpoint` widens malformed classification so the verb pair stays total over its scoped population | source doc, Decided behaviour §4 | U5 |
 | R5 | No preservation carrier is added to `CheckpointV1` **for this scope** (decision-anchored, not a permanent ban) | source doc, Decided behaviour §5 | negative requirement — guarded in U2 |
 | R6 | The nine live legacy files are left untouched by this work | source doc, Decided behaviour §6 | negative requirement — asserted in U10 (live-corpus hash guard) and U10b (mirror, not live, for the sweep) |
-| R7 | Typed, machine-readable refusal naming the offending keys, with one canonical "quarantine is the remedy" predicate and one bounded diagnostic projection | plan-originated (source doc Unresolved Q1); bounding added in cycle 15, isolated as its own unit in cycle 16 | U1, U1b, U7, U7d, U7e, U8 |
-| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe, and exposes the offending members atomically per file | plan-originated (source doc Unresolved Q3, widened by plan review; offender projection added in cycle 16) | U6, U6b, U6c, U6d, U8c |
+| R7 | Typed, machine-readable refusal naming the offending keys, with one canonical "quarantine is the remedy" predicate, one bounded **raw** machine projection, and one separate human-facing rendering | plan-originated (source doc Unresolved Q1); bounding added in cycle 15, isolated in cycle 16, split machine/human in cycle 17 | U1, U1b, U1c, U7, U7d, U7e, U8 |
+| R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe, and exposes the offending members atomically per file | plan-originated (source doc Unresolved Q3, widened by plan review; offender projection added in cycle 16) | U6, U6b, U6c, U6d, U8c, U15 |
 | R9 | Human-facing design doc restates the verb pair as total over its scoped population | plan-originated (source doc Option B cons) | U9 |
-| R10 | Agent-facing instruction surfaces teach the new `resolve` failure mode and the quarantine remedy, without publishing an unsafe repair runbook | plan-originated (plan review; narrowed in cycle 16) | U9b |
+| R10 | Agent-facing instruction surfaces teach the new `resolve` failure mode and the quarantine remedy, without publishing an unsafe repair runbook and without publishing an unbound executable command | plan-originated (plan review; narrowed in cycle 16, executable text removed in cycle 17) | U9b |
+| R11 | Every in-place checkpoint rewrite routes through **one guarded seam** that requires parse, validate, and conformance to succeed before any marshal or atomic replace | cycle-16 gate finding H8 | U11, U12, U13, U14, U2f |
+| R12 | Remediation is published as **structured, non-executable intent** by `core`/`events`; only the CLI boundary renders an operator command, bound to the canonical workspace and to the A4c approval / preimage / no-clobber contract | cycle-16 gate finding H1 | U1d, U6, U6b, U6c, U16, U9b |
+| R13 | The `AbandonCheckpoint` validation wrap preserves both `ErrCheckpointUseQuarantine` and `ErrCheckpointInvalid` through multi-`%w` | cycle-16 gate finding H7 (Principle I is NON-waivable on a touched path) | U17 |
 
 ## Resolved Design Questions
 
@@ -124,6 +127,20 @@ plan-originated rather than inherited — the Requirements Trace labels it as su
 
 ## Implementation Units
 
+**Cycle-17 formal decomposition (normative).** The cycle-16 gate returned `decision: FAIL` with
+`restage_recommendation: formal-decomposition`. The remaining work is organised into five DAG
+partitions. Partition order is a hard execution order: no unit in partition *n* may begin before
+every unit in partitions `1..n-1` that it depends on has landed. Each partition is independently
+reviewable, and the partition a unit belongs to is stated in that unit's section.
+
+| # | Partition | Units | Owns |
+|---|---|---|---|
+| 1 | Foundation diagnostics and conformance | U1, U1b, U1c, U1d, U2, U2b, U2c, U2d, U2e, U2g, U2h | The typed refusal carrier, the bounded machine projection, the human rendering, the structured remediation intent, and the read-boundary conformance predicate |
+| 2 | Guarded rewrite seam | U11, U12, U13, U14, U2f | One centralized, precondition-guarded rewrite seam for every in-place checkpoint rewrite, plus a supplemental caller-set regression guard |
+| 3 | Declarations and genuine RED harness order | U15, U8b | The read-result carrier declaration and the cross-surface parity harness, both landing **before** any behavioural implementation in partition 4 |
+| 4 | Implementation plus MCP/CLI/instruction contracts | U3, U3b, U4, U17, U5, U6, U6d, U6b, U6c, U7, U7d, U7e, U7b, U7c, U8, U16, U8c, U9, U9b | The per-verb gates and sentinel contracts, the read-surface projections, the MCP and CLI surfaces, and the agent-facing instruction delta |
+| 5 | Runtime verification and closure | U10, U10b, U10c | Runtime proof of refusal, acceptance, evidence integrity, cross-surface context-duplicate behaviour, and the abandoned-resolve handler mapping |
+
 **Test-first posture (two-step red, mandatory).** A test file that references an undeclared
 symbol does not compile, and a build error is **not** a red assertion. Development Workflow #1
 requires a *compiling but failing* harness. Every code unit therefore runs in two steps:
@@ -152,6 +169,8 @@ run is indistinguishable from a genuine pass.
 |---|---|---|
 | U1 | `147.001-T` | `go test -count=1 -run '^TestU1_' ./internal/errors` |
 | U1b | `147.030-T` | `go test -count=1 -run '^TestU1b_' ./internal/errors` |
+| U1c | `147.031-T` | `go test -count=1 -run '^TestU1c_' ./internal/errors` |
+| U1d | `147.032-T` | `go test -count=1 -run '^TestU1d_' ./internal/events` |
 | U2 | `147.002-T` | `go test -count=1 -run '^TestU2_' ./internal/events` |
 | U2b | `147.003-T` | `go test -count=1 -run '^TestU2b_' ./internal/events` |
 | U2c | `147.004-T` | `go test -count=1 -run '^TestU2c_' ./internal/events` |
@@ -159,9 +178,16 @@ run is indistinguishable from a genuine pass.
 | U2e | `147.020-T` | `go test -count=1 -run '^TestU2e_' ./internal/events` |
 | U2f | `147.021-T` | `go test -count=1 -run '^TestU2f_' ./internal/events` |
 | U2g | `147.028-T` | `go test -count=1 -run '^TestU2g_' ./internal/events` |
+| U2h | `147.033-T` | `go test -count=1 -run '^TestU2h_' ./internal/events` |
+| U11 | `147.034-T` | `go test -count=1 -run '^TestU11_' ./internal/events` |
+| U12 | `147.035-T` | `go test -count=1 -run '^TestU12_' ./internal/events` |
+| U13 | `147.036-T` | `go test -count=1 -run '^TestU12_' ./internal/events` (U12 owns the seam harness; U13 turns it green) |
+| U14 | `147.037-T` | `go test -count=1 -run '^TestU14_' ./internal/events ./internal/core` |
+| U15 | `147.038-T` | `go test -count=1 -run '^TestU15_' ./internal/events` |
 | U3 | `147.006-T` | `go test -count=1 -run '^TestU3_' ./internal/events` |
 | U3b | `147.007-T` | `go test -count=1 -run '^TestU3b_' ./internal/events` |
 | U4 | `147.008-T` | `go test -count=1 -run '^TestU4_' ./internal/core` |
+| U17 | `147.040-T` | `go test -count=1 -run '^TestU17_' ./internal/core` |
 | U5 | `147.009-T` | `go test -count=1 -run '^TestU5_' ./internal/core` |
 | U6 | `147.011-T` | `go test -count=1 -run '^TestU6_' ./internal/events` |
 | U6b | `147.012-T` | `go test -count=1 -run '^TestU6b_' ./internal/events` |
@@ -175,8 +201,15 @@ run is indistinguishable from a genuine pass.
 | U8 | `147.015-T` | `go test -count=1 -run '^TestU8_' ./internal/cli` |
 | U8b | `147.016-T` | `go test -count=1 -run '^TestU8b_' ./internal/cli` |
 | U8c | `147.027-T` | `go test -count=1 -run '^TestU8c_' ./internal/cli` |
+| U16 | `147.039-T` | `go test -count=1 -run '^TestU16_' ./internal/cli` |
 | U9, U9b | `147.017-T`, `147.018-T` | `backlogit --cwd . docs lint` — docs units, no Go harness |
-| U10, U10b | `147.019-T`, `147.026-T` | verification units — see Deepened runtime verification |
+| U10, U10b, U10c | `147.019-T`, `147.026-T`, `147.041-T` | verification units — see Deepened runtime verification |
+
+**Selector disjointness holds for every label above.** The mandatory `_` separator in
+`TestU<unit>_<Descriptor>` is what makes the regexes exact: `^TestU1_` cannot match `TestU1b_`,
+`TestU1c_`, `TestU1d_`, `TestU11_`, `TestU14_`, `TestU15_`, `TestU16_`, or `TestU17_`; `^TestU2_`
+cannot match `TestU2f_`, `TestU2g_`, or `TestU2h_`; `^TestU10_` cannot match `TestU10b_` or
+`TestU10c_`. Every new cycle-17 label was chosen against this rule.
 
 This table is the single source of truth for red verification. Each unit's **Expected red** line
 names *which* cases fail; this table names *how* the implementer observes them. Tasks reference the
@@ -194,51 +227,154 @@ assertion — it does not replace one (cycle-8 correction).
 
 ### U1 — Non-conforming sentinel, typed error, and the canonical remedy predicate
 
+* **Partition**: 1 (foundation diagnostics and conformance)
 * **Domain**: code (errors)
 * **Files**: `internal/errors/checkpoint_errors.go`, `internal/errors/checkpoint_errors_test.go`
 * **Change**: add `ErrCheckpointNonConforming`, `CheckpointNonConformingError{Fields []string}`
   with `Error()` and `Unwrap() error` returning the sentinel (mirroring
   `CheckpointUnknownFieldError`, `internal/errors/checkpoint_errors.go:81-108`), and the exported
   `QuarantineIsRemedy(err error) bool` predicate from Q1. `Fields` is sorted, de-duplicated key
-  paths only — **never** key values. **Diagnostic bounding is not in this unit (cycle-16 split)**:
-  quoting, capping, and the truncation marker are the single bounded projection owned by **U1b**
-  (`147.030-T`), because they must serve `Error()`, the MCP `unknown_fields` array, and the CLI key
-  list from one implementation, and because a cap-trip case is a fourth effective flow that this
-  unit cannot carry inside the four-scenario limit. U1 declares the carrier; U1b renders it.
+  paths only — **never** key values. **Neither bounding nor quoting is in this unit**: the bounded
+  **raw** machine projection is owned by **U1b** (`147.030-T`) and the **human-facing quoted**
+  rendering is owned by **U1c** (`147.031-T`). U1 declares the carrier; U1b bounds it for machines;
+  U1c renders it for humans. Splitting machine from human is the cycle-17 resolution of gate
+  finding H4: a machine array must carry raw paths, and escaping belongs only where a human reads
+  the text.
 * **Tests** (3): `errors.Is` matches the sentinel through the typed error and `errors.As` recovers
-  `Fields` from a wrapped error; `Error()` renders the sorted joined field list; `QuarantineIsRemedy`
-  is true for both `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming` and false for
-  `ErrCheckpointNotActive` and `nil`.
+  `Fields` from a wrapped error; `Error()` renders a non-empty message naming the field count;
+  `QuarantineIsRemedy` is true for both `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming`
+  and false for `ErrCheckpointNotActive` and `nil`.
 * **Expected red**: all three fail on assertions after the declaration step (typed error returns
-  zero-value `Fields`, `QuarantineIsRemedy` returns `false`).
+  zero-value `Fields`, `Error()` returns the bare sentinel text, `QuarantineIsRemedy` returns
+  `false`).
 
-### U1b — Bounded diagnostic projection for offending field paths
+### U1b — Bounded raw offender path projection with truncation metadata
 
+* **Partition**: 1 (foundation diagnostics and conformance)
+* **Domain**: code (errors)
+* **Files**: `internal/errors/checkpoint_errors.go`, `internal/errors/checkpoint_errors_test.go`
+* **Change (cycle-17 rewrite — machine form is raw)**: add the exported method
+
+  ```go
+  // BoundedFieldPaths returns the sorted, de-duplicated offender paths in RAW form,
+  // bounded for machine consumption. Truncation is reported structurally, never as
+  // a synthetic path element.
+  func (e *CheckpointNonConformingError) BoundedFieldPaths() BoundedFieldPathSet
+  ```
+
+  where `BoundedFieldPathSet` is an exported struct with
+  `Paths []string \`json:"paths"\``, `Truncated bool \`json:"truncated"\``,
+  `OmittedPaths int \`json:"omitted_paths"\``, and
+  `TruncatedPaths int \`json:"truncated_paths"\`` — none with `omitempty`, per
+  `docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`.
+* **Raw-path rule (this is the point of the cycle-17 rewrite)**: `Paths` carries the offender key
+  paths **verbatim**, exactly as decoded from the document. It MUST NOT contain `strconv.Quote`
+  output, and it MUST NOT contain a synthetic `"+N more"` pseudo-element. Cycle 15 and cycle 16
+  put both into the machine array; the cycle-16 gate ruled that blocking (H4). A consumer that
+  receives a quoted path cannot compare it against the document's own key without re-parsing a Go
+  string literal, and a `+N more` element is indistinguishable from a real offender named
+  `+N more`. Truncation is therefore reported in `Truncated`, `OmittedPaths`, and `TruncatedPaths`,
+  which are unambiguous and machine-checkable.
+* **Cap semantics (UTF-8 safe, decided here)**:
+  * at most **16** paths are returned; when more offenders exist, `Truncated` is `true` and
+    `OmittedPaths` carries the exact count of paths not returned;
+  * each returned path is capped at **128 bytes**; a path longer than the cap is cut at the last
+    rune boundary at or before byte 128 (`utf8.DecodeLastRuneInString` / `utf8.RuneStart`), so a
+    returned path is **always** valid UTF-8 and never ends mid-rune;
+  * when at least one path was byte-capped, `Truncated` is `true` and `TruncatedPaths` carries how
+    many paths were shortened;
+  * a path whose **first** rune already exceeds the byte cap is returned as the empty string and
+    counted in `TruncatedPaths`, so the caller still learns an offender existed without receiving
+    invalid bytes;
+  * selection is deterministic: sort, de-duplicate, then take the first 16.
+* **Single-projection rule**: `BoundedFieldPaths()` is the **only** sanctioned source of machine
+  offender data. U6b's `NonConformingFields`, U7's `unknown_fields`, and U6c's
+  `non_conforming_fields` all read it; none re-derives a list from the raw `Fields` slice, and none
+  applies its own cap. Copying the raw slice into the MCP payload would leave one surface bounded
+  and another unbounded — the exact cross-surface drift R8 exists to prevent.
+* **Tests** (3): an under-cap field list round-trips verbatim and unquoted with `Truncated: false`,
+  `OmittedPaths: 0`, `TruncatedPaths: 0`; a 21-path list yields exactly 16 raw entries with
+  `Truncated: true`, `OmittedPaths: 5`, and **no** synthetic marker element; a path built from
+  multi-byte runes that crosses the 128-byte cap is returned cut on a rune boundary, is valid UTF-8
+  (`utf8.ValidString`), and is counted in `TruncatedPaths`.
+* **Expected red**: all three fail (`BoundedFieldPaths` returns the zero `BoundedFieldPathSet`
+  after the declaration step, so the raw round-trip, the truncation-metadata, and the rune-boundary
+  assertions all fail on assertions rather than on a build error).
+* **Consumed by**: U6b (`NonConformingFields`), U6c (`non_conforming_fields`), U7 (`unknown_fields`),
+  U1c (human rendering).
+* **Depends on**: U1.
+
+### U1c — Human-facing quoted rendering of offender paths
+
+* **Partition**: 1 (foundation diagnostics and conformance)
 * **Domain**: code (errors)
 * **Files**: `internal/errors/checkpoint_errors.go`, `internal/errors/checkpoint_errors_test.go`
 * **Change**: add the exported method
-  `func (e *CheckpointNonConformingError) BoundedFieldPaths() []string`. It returns the sorted,
-  de-duplicated paths from `Fields`, each rendered through `strconv.Quote`, capped at **16 paths**
-  and **128 bytes per path**, with a truncation marker element carrying the omitted count when
-  either cap trips. `Error()` is re-pointed to render from this method rather than joining `Fields`
-  directly. A key path is untrusted text read out of a document that is by definition already
-  malformed, and it lands in an operator-facing message, an MCP JSON payload, and a CLI line, so
-  unbounded interpolation is a disclosure and log-injection surface.
-* **Single-projection rule (this is the point of the unit)**: `BoundedFieldPaths()` is the **only**
-  sanctioned source of offender text. U7's `unknown_fields` array, U8's CLI key list, and U6b's
-  `NonConformingFields` all read it; none re-derives a list from the raw `Fields` slice. Copying
-  the raw slice into the MCP payload would leave the CLI bounded and the MCP surface unbounded —
-  the exact cross-surface drift R8 exists to prevent — and would make the bound a property of one
-  renderer instead of a property of the error.
-* **Tests** (3): an under-cap field list round-trips with every path quoted and no marker; a
-  21-path list yields exactly 16 entries plus a truncation marker naming the 5 omitted paths; a
-  path longer than 128 bytes is truncated with a marker and `Error()` emits no raw unquoted key
-  text for it.
-* **Expected red**: all three fail (`BoundedFieldPaths` returns `nil` after the declaration step,
-  so the quoted-and-capped assertions, the marker assertion, and the per-path truncation assertion
-  all fail on assertions rather than on a build error).
-* **Consumed by**: U6b (`NonConformingFields`), U7 (`unknown_fields`), U8 (CLI key list).
-* **Depends on**: U1.
+  `func (e *CheckpointNonConformingError) FieldPathsForDisplay() string`, and re-point `Error()`
+  onto it. `FieldPathsForDisplay` reads `BoundedFieldPaths()` and renders each path through
+  `strconv.Quote`, joined with `", "`, followed by an explicit human clause when the set is
+  truncated — for example `… (5 more omitted, 1 shortened)`. This is the **only** place quoting or
+  escaping happens.
+* **Why this is a separate unit from U1b**: quoting is a presentation concern with a different
+  correctness criterion (no raw control bytes reach an operator terminal or a log line) than
+  bounding (no unbounded interpolation reaches any consumer). Folding them together is what
+  produced the cycle-16 H4 finding: one method served a machine array and a human string, so the
+  machine array inherited the human escaping. Keeping them apart makes the invariant checkable —
+  no machine surface may call `FieldPathsForDisplay`, and no human surface may print `Paths`
+  directly.
+* **Tests** (3): `Error()` contains every offender path in quoted form and contains no raw
+  unescaped control byte; a truncated set renders the omitted and shortened counts in the human
+  clause; a path containing a double quote and a newline is escaped rather than emitted verbatim.
+* **Expected red**: all three fail (`FieldPathsForDisplay` returns `""` after the declaration step
+  and `Error()` still renders the bare sentinel text from U1).
+* **Consumed by**: U8 (CLI refusal text), U16 (CLI remediation block).
+* **Depends on**: U1b.
+
+### U1d — Structured, non-executable remediation intent
+
+* **Partition**: 1 (foundation diagnostics and conformance)
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_schema.go`,
+  `internal/events/checkpoint_remediation_test.go` (new)
+* **Change (cycle-17 — closes gate finding H1)**: declare an exported, **non-executable** carrier
+
+  ```go
+  // RemediationIntent describes what an operator must do to dispose of a checkpoint
+  // that cannot be safely rewritten. It carries no shell text and is not runnable.
+  type RemediationIntent struct {
+      Verb             string `json:"verb"`               // "quarantine"
+      TargetFilename   string `json:"target_filename"`    // bare filename, never a path
+      RequiresApproval bool   `json:"requires_approval"`  // always true
+      ApprovalClass    string `json:"approval_class"`     // "A4c"
+      Reason           string `json:"reason"`             // "schema_invalid" | "non_conforming" | "unparseable"
+  }
+  ```
+
+  and add `RemediationIntent *RemediationIntent \`json:"remediation_intent"\`` to
+  `CheckpointSummary` (`internal/events/checkpoint_schema.go:371`). `TargetFilename` is the bare,
+  already-validated filename; it is **never** a path, never shell-quoted, and never concatenated
+  with a directory.
+* **Why a struct and not a string**: the shipped `CheckpointSummary.RemediationCommand`
+  (`internal/events/checkpoint_schema.go:396-398`) is "the exact CLI invocation an operator or
+  agent can run". Emitting that from `internal/events` means a library with no knowledge of the
+  caller's working directory publishes a command whose meaning depends on an ambient cwd, and every
+  consumer — MCP payload, agent instruction file, plan text — inherits a paste-runnable string that
+  is not bound to the workspace it was computed for and carries no approval, preimage, or
+  no-clobber obligation. That is the cycle-16 P0. A struct cannot be pasted into a shell.
+* **Shipped-field disposition (bounded, no silent contract change)**: `RemediationCommand` keeps
+  its shipped meaning and its shipped population on the **parse-failure** branch exactly as it is
+  today. It is marked `// Deprecated: use RemediationIntent; RemediationCommand is an unbound
+  command string and will be removed.` This unit adds **no** new `RemediationCommand` population —
+  in particular U6's new conformance branch populates `RemediationIntent` only. Removing the
+  deprecated field is a separate contract change recorded as follow-up stash **`F1A47C02`**.
+* **Tests** (3): a `RemediationIntent` marshals with all five keys present and no `omitempty`
+  elision; `TargetFilename` round-trips a bare filename unchanged and the struct contains no field
+  holding shell text; a `CheckpointSummary` with a nil intent marshals `remediation_intent: null`
+  rather than omitting the key.
+* **Expected red**: cases 1 and 2 fail (the type does not exist until the declaration step, then
+  returns zero values). Case 3 is a declared regression guard for the always-present-key contract.
+* **Consumed by**: U6, U6b, U6c, U16, U9b.
+* **Depends on**: none inside this plan (it is a leaf declaration in partition 1).
 
 ### U2 — Conformance helper: unknown top-level key rule
 
@@ -366,34 +502,139 @@ assertion — it does not replace one (cycle-8 correction).
   exemption.
 * **Depends on**: U2.
 
-### U2f — Protected invariant I1: checkpoint rewrite write-site enumeration
+### U11 — Guarded rewrite seam: declaration
 
+* **Partition**: 2 (guarded rewrite seam)
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_rewrite.go` (new),
+  `internal/events/checkpoint_rewrite_test.go` (new)
+* **Change (cycle-17 — closes gate finding H8)**: declare the single seam through which **every**
+  in-place checkpoint rewrite must pass:
+
+  ```go
+  // RewriteCheckpointFile is the only sanctioned in-place rewrite path for a stored
+  // checkpoint. It reads the file, requires ParseCheckpoint, ValidateCheckpoint, and
+  // CheckConformingTopLevelNamespace to all succeed, applies mutate to the parsed
+  // document, and only then marshals and atomically replaces the file.
+  func RewriteCheckpointFile(
+      ctx context.Context,
+      checkpointDir, filename string,
+      mutate func(*CheckpointV1) error,
+  ) error
+  ```
+
+  The declaration step lands a compilable stub whose body performs the **currently shipped**
+  behaviour of the callers it will absorb — read, parse, mutate, marshal, atomic replace — with no
+  validity and no conformance precondition. That is deliberate: the stub must compile and must not
+  yet exhibit the guard, so U12's harness fails on assertions rather than on a build error.
+* **Scope boundary — quarantine is not in the seam**: `QuarantineCheckpoint`'s `moveNoReplace`
+  path never parses and never re-marshals; it moves bytes verbatim. It is **correct by
+  construction** and MUST NOT be routed through this seam. Doing so would introduce a parse
+  precondition on the one verb whose entire purpose is to dispose of documents that cannot be
+  parsed. `CleanupCheckpoints`' `os.Rename` is excluded for the same reason, and
+  `CreateCheckpoint` is excluded because it creates a new file rather than rewriting an existing
+  one.
+* **Tests** (2): the seam is declared with the stated signature and is reachable from
+  `internal/core` (an exported-surface compile assertion); calling it with a `mutate` that returns
+  an error propagates that error and leaves the file byte-unchanged.
+* **Expected red**: case 2 fails against the declaration stub, which writes before checking the
+  mutate result. Case 1 is a declared regression guard for the exported surface.
+* **Depends on**: U2 (the conformance predicate the seam will call).
+
+### U12 — Guarded rewrite seam: contract harness
+
+* **Partition**: 2 (guarded rewrite seam)
+* **Domain**: tests
+* **Files**: `internal/events/checkpoint_rewrite_contract_test.go` (new). **No production change.**
+* **Change**: land the executable contract for the seam. This is a harness-only unit: it compiles
+  against U11's declaration stub and fails on assertions because the stub has no preconditions.
+* **Tests** (3): an unparseable document is refused with `ErrCheckpointCorrupt` and the file bytes
+  are SHA-identical afterwards; a parseable but schema-invalid document is refused with
+  `ErrCheckpointInvalid` and the bytes are SHA-identical; a valid-but-non-conforming document is
+  refused with `*CheckpointNonConformingError` naming the offender paths and the bytes are
+  SHA-identical.
+* **Verdict contract (decided here)**: the seam returns the **raw verdict errors** —
+  `ErrCheckpointCorrupt`, `ErrCheckpointInvalid`, and `*CheckpointNonConformingError`. It does
+  **not** choose a verb-facing sentinel. Wrapping the verdict into `ErrCheckpointUseQuarantine` or
+  `ErrCheckpointNonConforming` is the caller's job, because the wrap differs per verb and per
+  gate-ordering rule (I2). This keeps the seam a mechanism and leaves the contract with the verb.
+* **Expected red**: all three fail — the U11 stub performs no validity and no conformance check, so
+  every case currently rewrites the file and returns `nil`.
+* **Depends on**: U11, U2c (the completed top-level conformance predicate the assertions expect).
+
+### U13 — Guarded rewrite seam: implementation
+
+* **Partition**: 2 (guarded rewrite seam)
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_rewrite.go`
+* **Change**: implement the preconditions U12 asserts, in this exact order: `ParseCheckpoint` →
+  `ValidateCheckpoint` → `CheckConformingTopLevelNamespace` → `mutate` → `jsonutil.MarshalReadable`
+  → `syncWriteFileAtomic`. Any precondition failure returns the raw verdict error **before** any
+  marshal or write. Filename validation and path containment
+  (`validateCheckpointFilename`, `ensurePathContained`) run first and are unchanged.
+* **Tests**: none new — U12 owns the contract. This unit turns U12's three assertions green.
+* **Expected red**: not applicable; U13 is the implementation half of U12's red gate. Its
+  verification command is U12's selector (`go test -count=1 -run '^TestU12_' ./internal/events`),
+  which must go from three failures to zero.
+* **Depends on**: U12.
+
+### U14 — Caller migration onto the guarded seam
+
+* **Partition**: 2 (guarded rewrite seam)
+* **Domain**: code (events, core)
+* **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/core/checkpoint_disposition.go`,
+  `internal/events/checkpoint_migration_test.go` (new)
+* **Change**: replace the two in-place rewrite sites with seam calls.
+  `ResolveCheckpoint` (`internal/events/checkpoint_lifecycle.go:178`) and `AbandonCheckpoint`
+  (`internal/core/checkpoint_disposition.go:105-118`) stop calling `syncWriteFileAtomic` /
+  `atomicfile.WriteFileAtomic` directly and call `RewriteCheckpointFile` with their existing
+  mutation closure. **This unit introduces no new verb-facing sentinel and changes no ordering.**
+  Its only claim is that the write mechanism moved.
+* **Why the migration is its own unit**: the seam and the per-verb contracts are different skill
+  problems. Folding them together would mean one task changed a write mechanism in two packages
+  **and** three error contracts **and** two gate orderings — far past the 2-Hour Rule and past
+  width isolation. Keeping the migration bare also gives U3, U3b, and U4 an honest red: after U14
+  the two verbs refuse untrustworthy documents with the seam's **raw** verdict errors, so each
+  verb's own `errors.Is` sentinel assertion still fails until that verb's unit lands.
+* **Tests** (3): `ResolveCheckpoint` on a conforming active document still resolves and the
+  resulting bytes are unchanged from the pre-migration expectation (shipped-accept-path guard);
+  `AbandonCheckpoint` on a conforming active document still abandons and still appends exactly one
+  audit event (shipped-accept-path guard); neither `internal/events/checkpoint_lifecycle.go` nor
+  `internal/core/checkpoint_disposition.go` retains a direct atomic-write call whose target
+  resolves under the checkpoint directory — asserted structurally against the two files.
+* **Expected red**: case 3 fails before the migration. Cases 1 and 2 are declared regression
+  guards pinning the shipped accept paths, which the migration must not disturb. **P-004 is
+  satisfied** by case 3 as the single red assertion.
+* **Depends on**: U13.
+
+### U2f — Supplemental caller-set regression guard for the guarded seam
+
+* **Partition**: 2 (guarded rewrite seam)
 * **Domain**: tests
 * **Files**: `internal/events/checkpoint_writesite_test.go` (new). No production change.
-* **Change**: land the executable form of **I1** described in "Entry-point completeness audit"
-  below, as a write-site enumeration test. The test walks the sources of **both** `internal/events`
-  and `internal/core` for calls to `syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` /
-  `os.WriteFile` whose target resolves under the checkpoint directory and asserts the resulting
-  call-site set equals the audited allow-list. `internal/core` is in scope because
-  `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~110-125`) calls
-  `atomicfile.WriteFileAtomic` directly inside its `MutationEnvelope`; an enumeration limited to
-  `internal/events` would leave that rewrite invisible — the exact hole I1 exists to close.
-* **Mechanism is decided here, not deferred**: the previously offered "or a single exported
-  `events.RewriteCheckpointFile` seam" fallback is **withdrawn**. Carrying both mechanisms made the
-  unit's file set either one new test file or five files across two packages and two skill domains,
-  so its size could not be known before work started and the larger branch breached both the
-  three-file heuristic and width isolation. The withdrawal is recorded in Decisions and Rationale.
-* **Halt condition**: if the enumeration cannot be implemented reliably — for example if call-target
-  resolution proves ambiguous — mark the unit `blocked` and re-plan the gated-seam alternative as
-  its own units under a new task ID. Do **not** grow this unit into the seam.
-* **Why this is a separate unit from U2d**: I1's executable form is a distinct deliverable that U3b
-  and U4 must satisfy, so the allow-list must be pinned before those units touch their call sites.
-  Bundling it into U2d would take that unit to four scenarios across two skill domains — breaching
-  both the width-isolation rule and the 2-hour granularity rule.
-* **Tests** (2): the enumerated call-site set equals the allow-list across both packages; a
-  synthetic ungated rewrite site added to the fixture corpus fails the assertion.
+* **Change (cycle-17 rewrite — no longer the authoritative I1 mechanism)**: the cycle-16 gate ruled
+  (H8) that an AST enumeration of write calls cannot fully enforce I1: it must resolve call
+  targets, alias-imported helpers, indirect writers, and any future helper that wraps an atomic
+  write, and any gap in that resolution is a silent hole in the invariant. **The authoritative I1
+  enforcement is now architectural** — U11/U12/U13/U14 make one guarded seam the only in-place
+  rewrite path, so an ungated rewrite cannot exist without adding a new direct write site.
+  This unit keeps the enumeration as a **supplemental caller-set regression guard**: it walks
+  `internal/events` and `internal/core` for calls to `syncWriteFileAtomic` /
+  `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target resolves under the checkpoint
+  directory and asserts the resulting call-site set equals the post-migration allow-list — which
+  after U14 contains the seam's own write and the excluded verbatim-move / create sites, and
+  nothing else.
+* **Honest bound on what this test proves**: it proves that no **direct, statically resolvable**
+  atomic-write call to the checkpoint directory was added outside the seam. It does **not** prove
+  the absence of an indirect or dynamically dispatched writer, and it is not relied on for that.
+  The seam is what makes the invariant hold; this test makes a common regression loud.
+* **Halt condition**: if the enumeration cannot be implemented reliably, mark the unit `blocked`
+  and record it as a follow-up. Because I1 no longer depends on it, a blocked U2f does **not**
+  block the release unit — this is the concrete benefit of moving enforcement into the seam.
+* **Tests** (2): the enumerated call-site set equals the post-migration allow-list across both
+  packages; a synthetic ungated rewrite site added to the fixture corpus fails the assertion.
 * **Expected red**: case 2 fails until the enumeration exists.
-* **Depends on**: U2d.
+* **Depends on**: U14.
 
 ### U2g — Context-member duplicate detection read boundary
 
@@ -438,6 +679,13 @@ assertion — it does not replace one (cycle-8 correction).
   4. **Unicode semantics are Go `strings.EqualFold`, no normalization.** This is the same matcher
      `isFoldKeyIn` already uses and the same equivalence relation `encoding/json` itself applies to
      field matching. No `strings.ToLower`, no NFC/NFD folding.
+  5. **Scope of the scan is the canonical `context` spelling only.** This unit walks the top-level
+     member whose key is literally `context`. The wider question — that `encoding/json` routes
+     **every** top-level key satisfying `strings.EqualFold(name, "context")` to the modeled
+     `Context` field, so a document carrying a lone `Context`, `CONTEXT`, or `conTexT` and no
+     literal `context` still has its members decoded into `CheckpointContext` — is owned by
+     **U2h** (`147.033-T`). Splitting it out keeps this unit at three scenarios; folding it in
+     would make four.
 * **Modeled-collision disposition**: a refused fold-collision against a modeled context field is
   **not** auto-repairable — `legacy_top_level` cannot relocate a pair that both members of collapse
   into the same modeled slot. It carries the operator-choice-or-quarantine semantics U9b already
@@ -453,15 +701,56 @@ assertion — it does not replace one (cycle-8 correction).
   Cycle 15 split these preservation assertions across the tail of case 2 and the whole of case 3,
   which read as four effective flows; they are one predicate ("the open namespace is not narrowed")
   and belong in one already-green regression scenario.
-* **Expected red**: cases 1 and 2 fail (no context-member walk exists). Case 3 is a **declared
-  regression guard** — every row of it is shipped 146-F behaviour and is green from the moment it
-  lands. **P-004 is satisfied** by cases 1 and 2; case 3 is not counted as red. Verified with
-  `go test -count=1 -run '^TestU2g_' ./internal/events`.
+* **Expected red, with green guards separated from the red gate (cycle-17)**: the red gate for this
+  unit is **only** `go test -count=1 -run '^TestU2g_Duplicate' ./internal/events`, which selects
+  exactly `TestU2g_DuplicateExactContextMember` and
+  `TestU2g_DuplicateFoldVariantAliasingModeledField`. Both fail before implementation because no
+  context-member walk exists. The open-namespace preservation guard is
+  `TestU2g_OpenNamespacePreserved`; it is green from the moment it lands, is deliberately outside
+  the red selector, and MUST NOT be counted toward the red gate. The full-unit selector
+  `go test -count=1 -run '^TestU2g_' ./internal/events` is what the implementer runs after the
+  implementation lands, when all three must pass. Separating the two selectors is the cycle-17
+  resolution of the timing ambiguity: a guard that is green on landing can never be evidence that
+  the harness was red.
 * **Depends on**: U2b (the helper's `context` handling and the open-namespace guard it must not
   narrow), U2c (the `duplicate:` reporting form this unit reuses one level down). The backlog also
   carries a direct `147.028-T -> 147.001-T` (U1) edge from cycle 14; it is redundant with the
   transitive path through U2 but is retained so the typed error this unit returns is explicitly
   pinned as a prerequisite.
+
+### U2h — Context routing under fold-variant `context` spellings
+
+* **Partition**: 1 (foundation diagnostics and conformance)
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_conformance.go`,
+  `internal/events/checkpoint_conformance_test.go`
+* **Change (cycle-17 — closes gate finding H, false-negative in the U2g scan)**: `encoding/json`
+  matches struct fields case-insensitively, so **every** top-level member whose key satisfies
+  `strings.EqualFold(name, "context")` is decoded into `CheckpointV1.Context`. A document carrying
+  a lone `Context` — one occurrence, no literal `context` sibling — therefore routes its members
+  through `CheckpointContext.UnmarshalJSON` and is subject to the identical collapse loss U2g
+  refuses, yet a scan keyed on the literal spelling `context` never inspects it. Extend the
+  read-boundary helper so the context-member walk runs against **whichever** top-level member the
+  decoder would route to the modeled field, selecting it with `isFoldKeyIn` against the single-key
+  set `{"context"}` rather than a literal string comparison. Offenders keep U2g's reporting form,
+  `duplicate:context.<key>`, so the reported path names the **modeled** member regardless of the
+  spelling found on disk.
+* **Interaction with U2c (no double refusal, no gap)**: when a document carries **two or more**
+  fold-equal `context` spellings, U2c already refuses it at the top level as `duplicate:context`
+  and this unit's walk is not reached. This unit closes only the **lone non-canonical spelling**
+  case, which U2c cannot see because there is no duplicate at the top level.
+* **Explicitly not claimed**: this unit makes no claim about the **create** boundary. Create-side
+  duplicate handling remains deferred under stash `E429A031`, and no universal cross-boundary
+  guarantee is stated here or anywhere else in this plan.
+* **Tests** (2): a document whose only context-routing member is spelled `Context` and whose inner
+  members carry an exact duplicate is non-conforming and reports `duplicate:context.<key>`; a
+  document whose only context-routing member is spelled `CONTEXT` and whose inner members are all
+  distinct unmodeled extensions stays conforming and every key survives the `Extra` round-trip.
+* **Expected red**: case 1 fails — the U2g walk keys on the literal spelling and never inspects a
+  `Context` member. Case 2 is a declared regression guard for the open namespace under a
+  non-canonical spelling; it is green on landing and is outside the red selector
+  (`go test -count=1 -run '^TestU2h_Duplicate' ./internal/events`).
+* **Depends on**: U2g.
 
 ### U3 — `ResolveCheckpoint` validity gate
 
@@ -480,10 +769,12 @@ assertion — it does not replace one (cycle-8 correction).
   are regression guards. Verified with `go test -count=1 -run '^TestU3_' ./internal/events`.
 * **Depends on**: U2c (the completed predicate, including the duplicate rule — this is the declared
   backlog edge `147.006-T -> 147.004-T`; cycle-15 prose said "U2", which named a transitive
-  ancestor rather than the real prerequisite).
+  ancestor rather than the real prerequisite), U14 (the guarded seam and caller migration), and
+  U8b (the parity harness that must be red first).
 
 ### U3b — `ResolveCheckpoint` conformance gate and the named already-resolved exception
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (events)
 * **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/events/checkpoint_lifecycle_test.go`
 * **Change**: after the U3 validity gate, add `CheckConformingTopLevelNamespace(data)` returning its
@@ -508,12 +799,15 @@ assertion — it does not replace one (cycle-8 correction).
   `checkpoint_lifecycle_test.go` for U3b combined with any still-open U6 work; if the total reaches
   5, split the cross-unit assertion into a separate `U3c` regression unit rather than breaching the
   2-Hour Rule.
-* **Depends on**: U3, U6, U2f, U2g — the four declared backlog edges (`147.007-T` ->
-  `147.006-T`, `147.011-T`, `147.021-T`, `147.028-T`). Cycle-15 prose listed only U3 and U6 and
-  omitted the two that were added in cycle 14.
+* **Depends on**: U3, U6, U2g, U14, U8b — the declared backlog edges (`147.007-T` ->
+  `147.006-T`, `147.011-T`, `147.028-T`, `147.037-T`, `147.016-T`). The cycle-14 `147.007-T ->
+  147.021-T` (U2f) edge is replaced by `147.007-T -> 147.037-T` (U14): U2f is no longer the I1
+  mechanism, so the guarded seam — not the enumeration test — is what must land before this gate
+  touches its call site.
 
 ### U4 — `AbandonCheckpoint` conformance gate
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (core)
 * **Files**: `internal/core/checkpoint_disposition.go`, `internal/core/checkpoint_disposition_test.go`
 * **Change**: call `events.CheckConformingTopLevelNamespace(data)` **immediately after
@@ -523,15 +817,57 @@ assertion — it does not replace one (cycle-8 correction).
   success, no write) from abandon while U5's widened quarantine accepts it and U6 reports
   `NeedsQuarantine: true` — three surfaces disagreeing about one file. It is a non-writing refusal,
   so nothing is lost by refusing earlier. It remains strictly before
-  `appendCheckpointDispositionAudit`, preserving the shipped audit-then-mutate ordering.
+  `appendCheckpointDispositionAudit`, preserving the shipped audit-then-mutate ordering. **The seam
+  does not satisfy this unit.** After U14 the guarded seam refuses the same document, but it does
+  so at the *write* step — which in `AbandonCheckpoint` is **after** the audit append and after the
+  already-abandoned short-circuit. The ordering this unit installs is what makes the refusal
+  audit-free and short-circuit-proof, and it is what U4's assertions pin.
 * **Tests** (3): a valid-but-non-conforming active document is refused with
   `ErrCheckpointNonConforming` naming the keys; the disposition audit JSONL is byte-unchanged after
   that refusal; a non-conforming **already-abandoned** document returns `ErrCheckpointNonConforming`
   rather than `nil`. The existing "conforming active document abandons successfully" test must stay
   green as a regression guard.
 * **Expected red**: all three fail. Verified with `go test -count=1 -run '^TestU4_' ./internal/core`.
-* **Depends on**: U2c, U2f, U2g — the three declared backlog edges (`147.008-T` -> `147.004-T`,
-  `147.021-T`, `147.028-T`). Cycle-15 prose listed only U2c.
+* **Depends on**: U2c, U2g, U14 (the guarded seam and caller migration), U8b (the parity harness).
+  The cycle-16 `147.008-T -> 147.021-T` (U2f) edge is replaced by `147.008-T -> 147.037-T` (U14):
+  U2f is no longer the I1 mechanism, so it is no longer a prerequisite for touching this call site.
+
+### U17 — `AbandonCheckpoint` validation wrap preserves both sentinels
+
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
+* **Domain**: code (core)
+* **Files**: `internal/core/checkpoint_disposition.go`, `internal/core/checkpoint_disposition_test.go`
+* **Change (cycle-17 — closes gate finding H7)**: `AbandonCheckpoint` wraps its validation failure
+  as `fmt.Errorf("%w: %v", ErrCheckpointUseQuarantine, valErr)`
+  (`internal/core/checkpoint_disposition.go:~76-81`). The `%v` verb drops the
+  `ErrCheckpointInvalid` sentinel that `ValidateCheckpoint` returns, so
+  `errors.Is(err, ErrCheckpointInvalid)` is false on a path this plan **already touches** in U4 and
+  U14. Change the verb to multi-`%w`:
+  `fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointUseQuarantine, valErr)`. Go 1.20+ supports
+  multiple `%w` verbs and the module is Go 1.24, so both sentinels stay traversable — exactly the
+  idiom Q2 already requires of `ResolveCheckpoint` (U3).
+* **Why the deviation cannot stand (Principle I is not waivable here)**: cycles 1–16 recorded this
+  as a "documented deviation" from Constitution Principle I on the grounds that the wrap is
+  pre-existing. The cycle-16 gate rejected that: Principle I says *all* errors must be wrapped with
+  context and sentinels must remain traversable, and the deviation table's own escape hatch —
+  "fixing it changes an unrelated shipped error contract" — does not apply once U4 and U14 modify
+  the very function that contains it. A one-verb change in a function this plan already edits is
+  not an unrelated contract change; leaving it is a knowingly-shipped Principle I violation on a
+  touched path.
+* **Bounded blast radius**: the change is strictly **additive** for consumers. Every existing
+  `errors.Is(err, ErrCheckpointUseQuarantine)` match still holds because the first `%w` is
+  unchanged, the rendered message text is identical (`%w` and `%v` format an `error` the same
+  way), and only the previously-lost `errors.Is(err, ErrCheckpointInvalid)` match becomes true.
+  `QuarantineIsRemedy` (U1) is unaffected.
+* **Tests** (2): abandoning a schema-invalid document yields an error for which **both**
+  `errors.Is(err, ErrCheckpointUseQuarantine)` and `errors.Is(err, ErrCheckpointInvalid)` hold; the
+  rendered `Error()` string is unchanged from the shipped form, asserted against the same fixture,
+  so no consumer parsing the message regresses.
+* **Expected red**: case 1 fails — `errors.Is(err, ErrCheckpointInvalid)` is false against the
+  shipped `%v` wrap. Case 2 is a declared regression guard for the message text.
+* **Width**: 2 files, 2 scenarios, one function, one verb.
+* **Depends on**: U4 (same function, same file — U4 lands the gate, U17 corrects the wrap beside
+  it), U8b.
 
 ### U5 — `QuarantineCheckpoint` widened classification (deadlock closure)
 
@@ -562,7 +898,7 @@ assertion — it does not replace one (cycle-8 correction).
   byte-identity postcondition is green on landing. Scenario 2 is a declared regression guard.
   **P-004 is satisfied** by scenario 1. Verified with
   `go test -count=1 -run '^TestU5_' ./internal/core`.
-* **Depends on**: U4 — the single declared backlog edge (`147.009-T` -> `147.008-T`). The
+* **Depends on**: U4 — the single declared backlog edge (`147.009-T` -> `147.008-T`) — and U8b. The
   conformance predicate this unit calls arrives transitively through U4 -> U2c; cycle-15 prose
   listed U2c as a direct prerequisite, which the graph does not carry and which does not need to be
   added because the transitive path already orders it.
@@ -595,25 +931,25 @@ on `147.010-T`.
 
 ### U6 — `ListCheckpoints` surfaces non-conforming files
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (events)
 * **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/events/checkpoint_lifecycle_test.go`
 * **Change**: after the existing `ValidateCheckpoint` branch, run
   `CheckConformingTopLevelNamespace(data)`; on failure set `NeedsQuarantine = true` and
-  `RemediationCommand`, and **append** to `ValidationErr` rather than overwriting it — a file can
+  `RemediationIntent`, and **append** to `ValidationErr` rather than overwriting it — a file can
   fail both validation and conformance and the operator needs both reasons.
-  `RemediationCommand` must be **POSIX-safe** — paste-runnable verbatim in `bash`, `sh`, or `zsh`
-  via the single-quote-and-escape idiom that `shellQuoteSingle` already emits. It is **not**
-  claimed PowerShell-safe for arbitrary accepted filenames: the POSIX `'\''` escape idiom is not
-  a valid PowerShell literal, and no single command string can be paste-runnable in both shells
-  for a filename containing a single quote. Windows-first workspace note: `CreateCheckpoint`
-  (`internal/events/memory.go:59`) only ever writes filenames of the form
-  `checkpoint-YYYYMMDD-HHMMSS.json` — digits, hyphens, and the fixed extension — so the natural
-  corpus contains no shell-special characters and the emitted command is therefore also literally
-  paste-safe in `pwsh` for every backlogit-generated file. The POSIX-safe form only differs from
-  a hypothetical PowerShell-safe form for filenames with single quotes, spaces, or other
-  metacharacters, which the generator does not produce; a Windows operator who encounters an
-  out-of-band file recovers via Git Bash / WSL / `bash -c`, hand-adapts the `'\''` escape to
-  PowerShell's doubled `''`, or renames the file to the generator's shape.
+  **The conformance branch publishes structured intent, never a command string (cycle-17, closes
+  gate finding H1).** It sets `RemediationIntent = &RemediationIntent{Verb: "quarantine",
+  TargetFilename: <bare filename>, RequiresApproval: true, ApprovalClass: "A4c", Reason:
+  "non_conforming"}` — the carrier U1d declares — and leaves `RemediationCommand` untouched.
+  `internal/events` has no knowledge of the caller's working directory, so any command string it
+  emits is bound to an ambient cwd, carries no approval, preimage, or no-clobber obligation, and is
+  paste-runnable by whoever reads it. Rendering an operator command is the **CLI boundary's** job
+  and is owned by **U16** (`147.039-T`), which binds it to the resolved storage root and prints the
+  A4c preamble. The MCP surface publishes the structured intent as-is (U6c) and never a shell
+  string. The shipped `RemediationCommand` population on the pre-existing **parse-failure** branch
+  is left exactly as it is — this unit neither extends nor removes it; removal is follow-up stash
+  `F1A47C02`.
   `ListCheckpoints` stays strictly read-only — no move, no rewrite, no error propagation — and the
   conformance branch must run **before** the filter block, so the verdict is computed for every
   parsed document rather than only for documents the caller's filter happens to select.
@@ -624,17 +960,18 @@ on `147.010-T`.
   filter-exempt is a separate behavioural change owned by **U6d**; this unit must not claim a
   drop-through guarantee it does not implement.
 * **Tests** (3): a valid-but-non-conforming file lists with `NeedsQuarantine: true` and a
-  POSIX-safe remediation command; a file failing **both** validation and conformance reports
-  both reasons in `ValidationErr`; the verdict is computed before the filter block, asserted by a
-  case whose filter matches the document. **Byte-identity is a postcondition of all three, not a
-  fourth scenario** (cycle-15 width normalization): each case records the corpus SHA before and
-  after its own `ListCheckpoints` call and asserts equality, which is a stronger guarantee than the
-  separate untouched-corpus case it replaces because it binds read-only-ness to the three code
-  paths this unit actually changes.
+  `RemediationIntent` naming verb `quarantine`, the bare target filename, `requires_approval: true`,
+  and approval class `A4c` — and the summary carries **no** shell text; a file failing **both**
+  validation and conformance reports both reasons in `ValidationErr`; the verdict is computed before
+  the filter block, asserted by a case whose filter matches the document. **Byte-identity is a
+  postcondition of all three, not a fourth scenario** (cycle-15 width normalization): each case
+  records the corpus SHA before and after its own `ListCheckpoints` call and asserts equality, which
+  is a stronger guarantee than the separate untouched-corpus case it replaces because it binds
+  read-only-ness to the three code paths this unit actually changes.
 * **Expected red**: cases 1 and 2 fail. Case 3 and the byte-identity postconditions are declared
   regression guards — `ListCheckpoints` is already read-only, so the postcondition holds before
   implementation. **P-004 is satisfied** by cases 1 and 2.
-* **Depends on**: U2c.
+* **Depends on**: U2c, U1d, U8b.
 
 ### U6d — quarantine candidates survive the `ListCheckpoints` filter block
 
@@ -664,67 +1001,114 @@ on `147.010-T`.
   when `filter.Agent` names a different agent, matching the parse-failure precedent.
 * **Expected red**: cases 1 and 3 fail; case 2 is a declared regression guard. The doc-comment
   update is a contract obligation carried by this unit, not a fourth scenario.
-* **Depends on**: U6.
+* **Depends on**: U6, U8b.
+
+### U15 — `CheckpointReadResult` carrier declaration
+
+* **Partition**: 3 (declarations and genuine RED harness order)
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_lifecycle.go`,
+  `internal/events/checkpoint_readresult_test.go` (new)
+* **Change (cycle-17 — closes gate finding H2's compile premise)**: `GetCheckpoint`
+  (`internal/events/checkpoint_lifecycle.go:108`) returns `(*CheckpointV1, error)` and there is no
+  get-result type at all, so the cross-surface parity harness (U8b) cannot even compile until a
+  carrier exists. Declare it here, ahead of every behavioural unit, so partition 3's harness lands
+  before partition 4's implementations:
+
+  ```go
+  type CheckpointReadResult struct {
+      Checkpoint          *CheckpointV1
+      Valid               bool
+      Conforming          bool
+      NeedsQuarantine     bool
+      RemediationIntent   *RemediationIntent
+      NonConformingFields backlogiterrors.BoundedFieldPathSet
+  }
+
+  func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*CheckpointReadResult, error)
+  ```
+
+  The declaration step lands `GetCheckpointResult` as a thin wrapper that calls the **existing**
+  `GetCheckpoint` and returns `&CheckpointReadResult{Checkpoint: cp, Valid: err == nil}` with every
+  other field at its zero value. `GetCheckpoint` is retained unchanged as a wrapper returning
+  `res.Checkpoint`, so every existing caller compiles untouched.
+* **Declaration-only boundary**: this unit adds **no** conformance evaluation, **no** intent
+  population, and **no** offender projection. Those are U6b's production delta. Keeping the
+  declaration separate is what makes U8b's red honest — the harness compiles against a real type
+  and fails because the fields are unpopulated, not because a symbol is missing.
+* **Tests** (2): `GetCheckpointResult` on a conforming active document returns a non-nil result
+  whose `Checkpoint` matches `GetCheckpoint`'s return and whose `Valid` is true; on a schema-invalid
+  document it returns the pre-existing `ErrCheckpointInvalid` **unwrapped**, so
+  `errors.Is(err, ErrCheckpointInvalid)` holds and `QuarantineIsRemedy(err)` is false — a read is
+  not a rewrite and there is nothing to refuse.
+* **Expected red**: case 1 fails against the pre-declaration state (the symbol does not exist until
+  the declaration step, then the wrapper must be wired to return the parsed document rather than
+  nil). Case 2 is a declared regression guard pinning the shipped read contract that U6b, U6c, U8c,
+  and U8b all depend on **not** changing.
+* **Depends on**: U1b (the `BoundedFieldPathSet` field type), U1d (the `RemediationIntent` field
+  type).
 
 ### U6b — `GetCheckpoint` agrees with `ListCheckpoints`
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (events)
 * **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/events/checkpoint_lifecycle_test.go`
 * **Change**: `GetCheckpoint` currently reports `valid: true` for any document that parses and
   validates (`internal/events/checkpoint_lifecycle.go:105-137`). After U4/U5 that is actively
   misleading: an agent running the canonical `list` → `get` → choose-verb sequence would read
   `needs_quarantine: true` from list and `valid: true` from get, then pick the verb the plan just
-  closed. Add a `Conforming bool` field (and reuse `NeedsQuarantine` / `RemediationCommand`) to the
-  get result so both read surfaces answer the same question. **There is no get-result type today**:
-  `GetCheckpoint` (`internal/events/checkpoint_lifecycle.go:108`) returns `(*CheckpointV1, error)`,
-  and `NeedsQuarantine` / `RemediationCommand` exist only on `CheckpointSummary`
-  (`internal/events/checkpoint_schema.go:371`), so this unit must declare the carrier before it can
-  populate it. Declare an exported
-  `CheckpointReadResult{Checkpoint *CheckpointV1; Valid, Conforming, NeedsQuarantine bool; RemediationCommand string; NonConformingFields []string}`
-  returned by a new `GetCheckpointResult(ctx, checkpointDir, filename) (*CheckpointReadResult, error)`,
-  and retain `GetCheckpoint` as a thin wrapper returning `res.Checkpoint` so every existing caller
-  compiles unchanged. `valid` retains its existing meaning (schema-valid) and is **not** repurposed;
-  conformance is reported as a distinct field so no existing consumer's contract silently changes.
-  Schema-invalid documents keep returning `ErrCheckpointInvalid` — this unit adds conformance
-  reporting for **valid-but-non-conforming** documents only. That sentinel is returned
-  **unwrapped**: `GetCheckpointResult` does not wrap it in `ErrCheckpointUseQuarantine`, because a
-  read is not a rewrite and there is nothing to refuse. Downstream surfaces must therefore expect
-  the pre-existing validation-class refusal on `get`, not a disposition code.
-* **Offending-field projection (cycle-16 addition)**: `NonConformingFields` carries the offender
-  paths for a valid-but-non-conforming document, recovered with `errors.As` from the conformance
-  verdict and rendered through **U1b's `BoundedFieldPaths()`** — never from the raw `Fields` slice.
-  This is what makes `checkpoint get` an **atomic, bounded, per-file** offender source. Without it,
-  U9b's operator guidance would have to tell an operator to read offender names out of a collapsed
-  decoded checkpoint (which no longer contains them) or out of a whole-directory `list` result
-  (which is neither atomic nor per-file). It is a field on a carrier this unit is already
-  declaring and it rides on scenario 1's existing projection assertion, so it adds no file and no
-  scenario.
+  closed. **The carrier is declared by U15** (`147.038-T`); this unit is the **production delta
+  only** — it populates `Conforming`, `NeedsQuarantine`, `RemediationIntent`, and
+  `NonConformingFields` on the result U15 declared. `valid` retains its existing meaning
+  (schema-valid) and is **not** repurposed; conformance is reported as a distinct field so no
+  existing consumer's contract silently changes. Schema-invalid documents keep returning
+  `ErrCheckpointInvalid` — this unit adds conformance reporting for **valid-but-non-conforming**
+  documents only. That sentinel is returned **unwrapped**: `GetCheckpointResult` does not wrap it
+  in `ErrCheckpointUseQuarantine`, because a read is not a rewrite and there is nothing to refuse.
+  Downstream surfaces must therefore expect the pre-existing validation-class refusal on `get`, not
+  a disposition code.
+* **Offending-field projection (cycle-16 addition, cycle-17 corrected to raw)**:
+  `NonConformingFields` is the `BoundedFieldPathSet` recovered with `errors.As` from the conformance
+  verdict and produced by **U1b's `BoundedFieldPaths()`** — never from the raw `Fields` slice and
+  never re-capped here. Its `Paths` carry **raw** offender paths; quoting belongs only to U1c's
+  human rendering. This is what makes `checkpoint get` an **atomic, bounded, per-file** offender
+  source with machine-checkable truncation metadata.
+* **Remediation is structured**: the result carries `RemediationIntent` (U1d), not a command
+  string. Nothing in `internal/events` renders a shell command.
 * **Tests** (3): a valid-but-non-conforming file returns `valid: true, conforming: false,
-  needs_quarantine: true` with a non-empty `RemediationCommand` **and** a `NonConformingFields`
-  slice naming the offenders in bounded, quoted form; a conforming file returns `conforming: true`
-  with an empty `NonConformingFields`; the file is byte-unchanged after get.
-* **Expected red**: cases 1 and 2 fail (the result type does not exist until the declaration step,
-  then returns zero values). Verified with
-  `go test -count=1 -run '^TestU6b_' ./internal/events`.
-* **Consumed by**: U6c projects this result onto the MCP `get_checkpoint` response; U8c
+  needs_quarantine: true` with a `RemediationIntent` naming verb `quarantine` and approval class
+  `A4c` **and** a `NonConformingFields.Paths` slice naming the offenders in raw, unquoted form; a
+  conforming file returns `conforming: true`, a nil `RemediationIntent`, and an empty
+  `NonConformingFields.Paths` with `Truncated: false`; the file is byte-unchanged after get.
+* **Expected red**: cases 1 and 2 fail — U15's declaration wrapper leaves every projected field at
+  its zero value, so `Conforming` is false for a conforming file and `NeedsQuarantine` is false for
+  a non-conforming one. Case 3 is a declared regression guard (`GetCheckpoint` is already
+  read-only). Verified with `go test -count=1 -run '^TestU6b_' ./internal/events`.
+* **Consumed by**: U6c projects this result onto the MCP `backlogit_get_checkpoint` response; U8c
   (`147.027-T`) projects it onto `backlogit checkpoint get`.
-* **Depends on**: U6 — the declared backlog edge (`147.012-T` -> `147.011-T`); cycle-15 prose said
-  "U2c", which is a transitive ancestor, not the real prerequisite. Also U1b (`147.012-T` ->
-  `147.030-T`), the bounded projection `NonConformingFields` renders through.
+* **Depends on**: U6 — the declared backlog edge (`147.012-T` -> `147.011-T`) — plus U15 (the
+  carrier), U1b (the bounded raw projection), U1d (the intent), and U8b (the parity harness that
+  must be red before this implementation lands).
 
-### U6c — MCP `get_checkpoint` projects the conformance verdict
+### U6c — MCP `backlogit_get_checkpoint` projects the conformance verdict
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (mcp)
 * **Files**: `internal/mcp/tools.go`, `internal/mcp/checkpoint_disposition_test.go`
 * **Change**: `handleGetCheckpoint` (`internal/mcp/tools.go:1194-1212`) returns a **literal**
   `"valid": true` and carries no conformance field, so the MCP read surface would keep answering the
   superseded question after U6b lands. Call `events.GetCheckpointResult` and project `valid`,
-  `conforming`, `needs_quarantine`, `remediation_command`, and `non_conforming_fields` from the
-  returned result; the hardcoded `"valid": true` is removed, not shadowed. `non_conforming_fields`
-  is copied straight from `CheckpointReadResult.NonConformingFields`, which U6b already rendered
-  through U1b's bounded projection — this handler must not re-derive it from a typed error, or the
-  MCP surface could emit an unbounded list while the CLI emits a bounded one.
-  Without this unit U7b's `get_checkpoint`
+  `conforming`, `needs_quarantine`, `remediation_intent`, and `non_conforming_fields` from the
+  returned result; the hardcoded `"valid": true` is removed, not shadowed.
+  `non_conforming_fields` is the **object** `{"paths": [...], "truncated": bool,
+  "omitted_paths": int, "truncated_paths": int}` copied straight from
+  `CheckpointReadResult.NonConformingFields`, which U6b already produced through U1b's bounded raw
+  projection — this handler must not re-derive it from a typed error, must not re-cap it, and must
+  not quote its entries, or the MCP surface would drift from the CLI for the same stored bytes.
+  `remediation_intent` is the **structured** `RemediationIntent` object (U1d): the MCP surface
+  publishes no shell string, so an agent cannot paste an unbound command out of a tool response
+  (cycle-17, gate finding H1).
+  Without this unit U7b's `backlogit_get_checkpoint`
   description and U8b's MCP `get` parity rows would describe behaviour no unit implements.
   **Schema-invalid documents keep their existing refusal.** `handleGetCheckpoint` routes errors
   through `domainError` (`internal/mcp/errors.go:148`), which takes no filename and already maps
@@ -734,20 +1118,26 @@ on `147.010-T`.
   *mutation* handlers. Demanding a disposition code here would require re-routing the read handler
   through a mutation-shaped error path, widening this unit into U7's file set and changing a
   shipped read contract for no safety gain: the quarantine remedy is already discoverable from
-  `list_checkpoints`, which reports `needs_quarantine: true` for the same file (U6).
+  `backlogit_list_checkpoints`, which reports `needs_quarantine: true` for the same file (U6).
 * **Tests** (3): a valid-but-non-conforming file returns `valid: true, conforming: false,
-  needs_quarantine: true`, a non-empty `remediation_command`, and a `non_conforming_fields` array
-  matching the `events` result; a conforming file returns `conforming: true`; a schema-invalid file
-  returns the pre-existing `validation_failed` refusal
+  needs_quarantine: true`, a `remediation_intent` object whose `verb` is `quarantine` and whose
+  `approval_class` is `A4c`, and a `non_conforming_fields.paths` array matching the `events` result
+  byte-for-byte with no added quoting; a conforming file returns `conforming: true`,
+  `remediation_intent: null`, and `non_conforming_fields.paths: []` read through a `.([]any)` type
+  assertion so an absent or `null` key fails
+  (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`); a schema-invalid
+  file returns the pre-existing `validation_failed` refusal
   produced by `domainError` from an unwrapped `ErrCheckpointInvalid`, rather than a success payload
   asserting validity, asserted against the handler's actual payload.
 * **Expected red**: cases 1 and 2 fail; case 3 is a declared regression guard pinning the shipped
   read contract. Verified with `go test -count=1 -run '^TestU6c_' ./internal/mcp`.
-* **Depends on**: U6b (result type). The former dependency on U7 is removed — this unit pins the
-  existing error mapping rather than consuming the new one.
+* **Depends on**: U6b (result type and projection), U8b (the parity harness that must be red
+  first). The former dependency on U7 is removed — this unit pins the existing error mapping rather
+  than consuming the new one.
 
 ### U7 — MCP error mapping and response shape
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (mcp)
 * **Files**: `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`
 * **Change**: three owned defects in the mapping layer, plus one correction of record. The
@@ -762,22 +1152,30 @@ on `147.010-T`.
      (`internal/mcp/errors.go:29-39`) carries `error`/`message`/`unknown_fields` while
      `checkpointDispositionErrorResponse` (`:291-299`) carries
      `error`/`message`/`code`/`filename`/`retryable`/`outcome`/`remediation`. Extend
-     `checkpointDispositionErrorResponse` with `UnknownFields []string \`json:"unknown_fields"\`` —
-     **no `omitempty`** — populated via `errors.As` **and rendered through U1b's
-     `BoundedFieldPaths()`**, so one refusal shape answers both "what went wrong" and "which keys",
-     and so the MCP array carries exactly the bounded, quoted projection the CLI prints. Copying
-     the raw `Fields` slice here is **forbidden**: it would leave the MCP payload unbounded while
-     the CLI is bounded, which is the cross-surface drift R8 exists to prevent.
+     `checkpointDispositionErrorResponse` with
+     `UnknownFields []string \`json:"unknown_fields"\``,
+     `UnknownFieldsTruncated bool \`json:"unknown_fields_truncated"\``,
+     `UnknownFieldsOmitted int \`json:"unknown_fields_omitted"\``, and
+     `UnknownFieldsShortened int \`json:"unknown_fields_shortened"\`` — **none with `omitempty`** —
+     populated via `errors.As` from **U1b's `BoundedFieldPaths()`**, so one refusal shape answers
+     both "what went wrong" and "which keys". **`unknown_fields` carries RAW paths (cycle-17, gate
+     finding H4)**: no `strconv.Quote` output and no synthetic `"+N more"` element ever appears in
+     the array. Truncation is reported by the three sibling scalars, which are unambiguous and
+     machine-checkable, and quoting is confined to U1c's human rendering. Copying the raw `Fields`
+     slice here is still **forbidden** — that would leave the MCP payload unbounded while the CLI
+     is bounded, which is the cross-surface drift R8 exists to prevent. Re-capping here is equally
+     forbidden: the bound is a property of the error, not of a renderer.
   3. `domainError` (`internal/mcp/errors.go:148`) is the fallback surface for handlers that carry no
-     filename. **Correcting a stale claim in this plan**: earlier text asserted it had "no case for
-     `ErrCheckpointUseQuarantine`, `ErrCheckpointInvalid`, or `ErrCheckpointNonConforming`". The
-     `ErrCheckpointInvalid` third of that is false — `internal/mcp/errors.go:~188-193` already maps
-     it to `validation_failed`, grouped with `ErrValidation` and `ErrCheckpointCorrupt`, and a
-     dedicated `ErrCheckpointUnknownField` case already precedes it. Only
-     `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming` are genuinely absent; those two
-     **safety net** mappings are moved to **U7e** (147.029-T, cycle-14 split) to satisfy the `<4
-     scenarios` width limit. This task no longer owns the `domainError` rows or the mapping-table
-     doc comment update.
+     filename. **This unit owns no `domainError` row and no mapping-table doc-comment change.**
+     Cycle 16 audited the three rows cycle 15 had planned: `ErrCheckpointUseQuarantine` and
+     `ErrCheckpointNonConforming` were **removed as unreachable** — after U7d, resolve reroutes
+     every `QuarantineIsRemedy` match to `checkpointDispositionError`, and `get` never produces
+     either sentinel — and only `ErrCheckpointCannotResolveAbandoned` remains, owned by **U7e**
+     (`147.029-T`). Cycle-17 correction: earlier text in this unit described those two rows as
+     "moved to U7e", which is stale — they were **deleted**, not relocated, and U7e never carried
+     them. `ErrCheckpointInvalid` already maps to `validation_failed`
+     (`internal/mcp/errors.go:~188-193`), grouped with `ErrValidation` and `ErrCheckpointCorrupt`,
+     and a dedicated `ErrCheckpointUnknownField` case already precedes it; neither is touched here.
   4. The three disposition-class remediation strings — `checkpoint_use_quarantine`,
      `checkpoint_use_abandon`, and the new `checkpoint_non_conforming` — currently name a hardcoded
      originating verb (the shipped `checkpoint_use_quarantine` string is `"this target is
@@ -799,14 +1197,17 @@ on `147.010-T`.
   invoking `handleAbandonCheckpoint` on a non-conforming target returns
   `checkpoint_non_conforming` with a populated `unknown_fields` read through a `.([]any)` type
   assertion so an absent or `null` key fails
-  (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`) and a
+  (`docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md`), whose entries are
+  **raw and unquoted**, alongside `unknown_fields_truncated: false`, `unknown_fields_omitted: 0`,
+  and `unknown_fields_shortened: 0`, and a
   `remediation` string naming `backlogit_abandon_checkpoint` as the originating verb (proving the
   op-derived interpolation is in place — the assertion holds because abandon is the caller here,
   but the formatter is not hardcoded to it, which U7d's resolve-side assertions confirm from the
-  other direction); a conforming refusal returns `unknown_fields: []` rather than omitting the
-  key.
+  other direction); a conforming refusal returns `unknown_fields: []` with all three truncation
+  scalars present rather than omitting any of the four keys.
 * **Expected red**: all three fail. Verified with `go test -count=1 -run '^TestU7_' ./internal/mcp`.
-* **Depends on**: U1, U1b (the bounded projection `unknown_fields` renders through), U3b, U4, U5.
+* **Depends on**: U1, U1b (the bounded raw projection `unknown_fields` renders through), U3b, U4,
+  U5, U8b (the parity harness that must be red first).
 
 ### U7d — `handleResolveCheckpoint` routes disposition refusals through the disposition shape
 
@@ -848,9 +1249,10 @@ on `147.010-T`.
 * **Expected red**: cases 1 and 2 fail (routing and both remediation-verb assertions); case 3 is a
   declared regression guard.
 * **Depends on**: U1 (the predicate and its host package), U7 (the response shape, the code, and
-  the op-derived remediation the resolve-side assertions read).
-* **Split note (cycle 14)**: The `ErrCheckpointCannotResolveAbandoned` → `validation_failed`
-  mapping and its handler-level test (original case 4) are moved to **U7e** (147.029-T) because
+  the op-derived remediation the resolve-side assertions read), U8b (the parity harness).
+* **Split note (cycle 14, corrected cycle 17)**: The
+  `ErrCheckpointCannotResolveAbandoned` → `validation_failed`
+  mapping and its handler-level test (original case 4) are owned by **U7e** (147.029-T) because
   they are a `domainError` mapping in `internal/mcp/errors.go` and keeping them here pushed this
   task to 3 files and 4 scenarios. The original plan text incorrectly called `validation_failed`
   "pre-existing" — `domainError` has no explicit case for `ErrCheckpointCannotResolveAbandoned`
@@ -858,18 +1260,23 @@ on `147.010-T`.
   created by U7e. This task's file scope is now `internal/mcp/tools.go` +
   `internal/mcp/checkpoint_disposition_test.go` (2 files, 3 scenarios).
 
-### U7e — domainError safety-net mapping for the abandoned-resolve sentinel (cycle-16 narrowing)
+### U7e — `domainError` maps `ErrCheckpointCannotResolveAbandoned` to `validation_failed`
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (mcp)
 * **Files**: `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`.
-* **Retain/narrow adjudication (cycle 16)**: cycle 15 retained three `domainError` rows. A
-  cycle-16 reachability audit against the current source keeps **one** and removes two.
+* **Sole ownership (cycle-17 restatement)**: this unit owns **one** `domainError` row and nothing
+  else. It does **not** own, retain, or reinstate any `ErrCheckpointUseQuarantine` or
+  `ErrCheckpointNonConforming` mapping — cycle 16 **deleted** both as unreachable, and cycle 17
+  removes every remaining sentence in this plan that described them as "moved to U7e" or as a
+  "safety net". No unit in this plan may add either row. The reachability audit that produced the
+  deletion is preserved below as the record of why.
 
-  | Row | Sentinel | Reachable at `domainError`? | Cycle-16 disposition |
+  | Row | Sentinel | Reachable at `domainError`? | Disposition |
   |---|---|---|---|
-  | 1 | `ErrCheckpointUseQuarantine` | **No** | **Removed.** The only checkpoint handlers routing through `domainError` are `handleGetCheckpoint` (`internal/mcp/tools.go:1205`) and `handleResolveCheckpoint` (`:1224`). Get never produces this sentinel — U6b returns `ErrCheckpointInvalid` unwrapped — and after U7d resolve reroutes every `QuarantineIsRemedy` match to `checkpointDispositionError`. No live filename-less path reaches it. |
-  | 2 | `ErrCheckpointNonConforming` | **No** | **Removed.** Same two handlers. Get returns a *result* carrying `conforming: false` rather than this error; resolve is rerouted by U7d. |
-  | 3 | `ErrCheckpointCannotResolveAbandoned` | **Yes** | **Retained.** `QuarantineIsRemedy` does not match it, so after U7d it still falls through to `domainError` at `internal/mcp/tools.go:1224` and still surfaces as `default: InternalError` — a 500 on a shipped agent-facing path. |
+  | 1 | `ErrCheckpointUseQuarantine` | **No** | **Deleted (cycle 16).** The only checkpoint handlers routing through `domainError` are `handleGetCheckpoint` (`internal/mcp/tools.go:1205`) and `handleResolveCheckpoint` (`:1224`). Get never produces this sentinel — U6b returns `ErrCheckpointInvalid` unwrapped — and after U7d resolve reroutes every `QuarantineIsRemedy` match to `checkpointDispositionError`. No live filename-less path reaches it. |
+  | 2 | `ErrCheckpointNonConforming` | **No** | **Deleted (cycle 16).** Same two handlers. Get returns a *result* carrying `conforming: false` rather than this error; resolve is rerouted by U7d. |
+  | 3 | `ErrCheckpointCannotResolveAbandoned` | **Yes** | **Owned by this unit.** `QuarantineIsRemedy` does not match it, so after U7d it still falls through to `domainError` at `internal/mcp/tools.go:1224` and still surfaces as `default: InternalError` — a 500 on a shipped agent-facing path. |
 
   Rows 1 and 2 were written as a "safety net for any handler that carries no filename". No such
   handler exists, and a mapping no code path can reach is a green-looking table entry that proves
@@ -896,84 +1303,105 @@ on `147.010-T`.
   `default: InternalError` for this sentinel. Verified with
   `go test -count=1 -run '^TestU7e_' ./internal/mcp`. Width: 2 files, 1 scenario. A unit below the
   four-scenario ceiling is compliant; the ceiling is a maximum, not a target.
-* **Handler and CLI coverage**: the MCP handler-level assertion for abandoned-resolve lives in the
-  cycle-16 runtime verification row (`resolve` on an already-abandoned scratch fixture returns
-  `validation_failed`, not `"error":"internal"`). The **CLI** twin — `backlogit checkpoint resolve`
+* **Handler and CLI coverage**: the MCP handler-level assertion for abandoned-resolve lives in
+  **U10c** (`147.041-T`), the owned bounded runtime unit added in cycle 17 — `backlogit_resolve_checkpoint`
+  on an already-abandoned scratch fixture returns `validation_failed`, not `"error":"internal"`.
+  The **CLI** twin — `backlogit checkpoint resolve`
   on an already-abandoned document — is deliberately **not** added to U8: U8 already carries three
   scenarios and a fourth would breach the granularity limit, and the CLI does not consume
   `domainError` at all, so no CLI behaviour changes here. It is recorded as follow-up stash
   `DBBA62AA` rather than left as an unstated gap.
-* **Depends on**: U1.
+* **Depends on**: U1, U8b.
 
 ### U7b — MCP read-surface tool descriptions (exact replacement strings)
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: docs (agent-facing tool contract)
-* **Files**: `internal/mcp/tools.go` (descriptions at `:176-192`), `internal/mcp/tools_test.go`;
+* **Files**: `internal/mcp/tools.go` (descriptions at `:178` and `:189`, one line after each
+  `mcplib.NewTool` name literal at `:177` and `:188`), `internal/mcp/tools_test.go`;
   `.autoharness/backlog-registry.yaml` and an `internal/cli/registry_parity_test.go` re-run only if
   the registry carries description text for these two tools
 * **Change**: the **two read-surface** descriptions. The three mutation-surface descriptions moved
   to **U7c**: five rows in one unit exceeded the four-scenario limit and mixed a read contract with
   a refusal contract. This table is the single source of truth and is reproduced verbatim in
-  `147.014-T`; the two must not drift.
+  `147.014-T`; the two must not drift. **Tool names are the registered `backlogit_*` identifiers
+  (cycle-17, gate finding H6)** — verified against the `mcplib.NewTool` literals in
+  `internal/mcp/tools.go` at `:177`, `:188`, `:195`, `:209`, and `:218`. A description that names
+  a bare `quarantine_checkpoint` tells an agent to call a tool that is not registered.
 
-  | Line | Tool | Delta |
+  | Line | Registered tool | Delta |
   |---|---|---|
-  | `:178` | `list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use quarantine_checkpoint, not resolve_checkpoint or abandon_checkpoint. Such a summary is returned regardless of the status, agent, shipment_id, feature_id, and max_age filters, so a filtered result can contain rows that do not match the filter.` |
-  | `:189` | `get_checkpoint` | append: ` For a schema-valid document, returns conforming false when it carries unmodeled top-level keys; such a document cannot be resolved or abandoned. A schema-invalid document is refused before any conformance verdict is produced.` |
+  | `:178` | `backlogit_list_checkpoints` | append: ` A summary with needs_quarantine true is not safely rewritable; use backlogit_quarantine_checkpoint, not backlogit_resolve_checkpoint or backlogit_abandon_checkpoint. Such a summary is returned regardless of the status, agent, shipment_id, feature_id, and max_age filters, so a filtered result can contain rows that do not match the filter. The accompanying remediation_intent is a structured record of the required disposition, not a runnable command.` |
+  | `:189` | `backlogit_get_checkpoint` | append: ` For a schema-valid document, returns conforming false when it carries unmodeled top-level keys; such a document cannot be resolved or abandoned. non_conforming_fields carries raw offender paths with explicit truncation counts. A schema-invalid document is refused before any conformance verdict is produced.` |
 
-  The `get_checkpoint` qualifier is load-bearing: `GetCheckpoint` runs `ValidateCheckpoint` and
-  returns `ErrCheckpointInvalid` before any conformance result exists
+  The `backlogit_get_checkpoint` qualifier is load-bearing: `GetCheckpoint` runs `ValidateCheckpoint`
+  and returns `ErrCheckpointInvalid` before any conformance result exists
   (`internal/events/checkpoint_lifecycle.go:~105-137`), so an unqualified "returns conforming
   false for a document with unmodeled top-level keys" would promise a verdict the read path
-  cannot produce for the nine legacy files. The `list_checkpoints` filter sentence was added in
-  PR #377 review cycle 4 and is why this unit now depends on **U6d**: a published tool description
-  must not promise an exemption no shipped code performs.
+  cannot produce for the nine legacy files. The `backlogit_list_checkpoints` filter sentence was
+  added in PR #377 review cycle 4 and is why this unit depends on **U6d**: a published tool
+  description must not promise an exemption no shipped code performs. The `remediation_intent`
+  sentence was added in cycle 17 so the description does not imply a runnable string.
 * **Tests** (2): a table-driven assertion over the two registered read descriptions, read from the
-  **built tool set** rather than a duplicated literal; and the existing registry-parity /
+  **built tool set** rather than a duplicated literal, each row keyed by the registered
+  `backlogit_*` name; and the existing registry-parity /
   fallback-map drift test
   (`docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`, Rule 1)
   re-run and staying green, with `.autoharness/backlog-registry.yaml` updated in the same commit
   if it carries description text for these tools.
 * **Expected red**: both rows of case 1 fail. Case 2 is a declared regression guard.
-* **Depends on**: U6b, U6c, U6d.
+* **Depends on**: U6b, U6c, U6d, U8b.
 
 ### U7c — MCP mutation-surface tool descriptions (exact replacement strings)
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: docs (agent-facing tool contract)
-* **Files**: `internal/mcp/tools.go` (descriptions at `:193-224`), `internal/mcp/tools_test.go`;
+* **Files**: `internal/mcp/tools.go` (descriptions at `:196`, `:211`, and `:220`, one line after
+  each `mcplib.NewTool` name literal at `:195`, `:209`, and `:218`), `internal/mcp/tools_test.go`;
   `.autoharness/backlog-registry.yaml` and an `internal/cli/registry_parity_test.go` re-run only if
   the registry carries description text for these three tools
 * **Change**: the **three mutation-surface** descriptions. Split out of U7b. This table is the
-  single source of truth and is reproduced verbatim in `147.024-T`; the two must not drift.
+  single source of truth and is reproduced verbatim in `147.024-T`; the two must not drift. **Tool
+  names are the registered `backlogit_*` identifiers (cycle-17, gate finding H6)**, verified
+  against the `mcplib.NewTool` literals cited above.
 
-  | Line | Tool | Delta |
+  | Line | Registered tool | Delta |
   |---|---|---|
-  | `:196` | `resolve_checkpoint` | append: ` Refuses a stored document it cannot safely rewrite rather than replacing it: checkpoint_use_quarantine when the document is schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. Use quarantine_checkpoint instead.` |
-  | `:211` | `abandon_checkpoint` | append: ` Also refuses when the document carries unmodeled top-level keys.` |
-  | `:220` | `quarantine_checkpoint` | replace `malformed checkpoint file` → `checkpoint file that cannot be safely rewritten (malformed, schema-invalid, or carrying unmodeled top-level keys)` |
+  | `:196` | `backlogit_resolve_checkpoint` | append: ` Refuses a stored document it cannot safely rewrite rather than replacing it: checkpoint_use_quarantine when the document is schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. Use backlogit_quarantine_checkpoint instead.` |
+  | `:211` | `backlogit_abandon_checkpoint` | append: ` Also refuses when the document carries unmodeled top-level keys.` |
+  | `:220` | `backlogit_quarantine_checkpoint` | replace `malformed checkpoint file` → `checkpoint file that cannot be safely rewritten (malformed, schema-invalid, or carrying unmodeled top-level keys)` |
 
-  The `resolve_checkpoint` row promises two **codes**, which only reach that surface once U7d
-  routes the handler through `checkpointDispositionError` — hence the dependency on U7d as well as
-  on the U7 mapping.
+  The `backlogit_resolve_checkpoint` row promises two **codes**, which only reach that surface once
+  U7d routes the handler through `checkpointDispositionError` — hence the dependency on U7d as well
+  as on the U7 mapping.
 * **Tests** (2): a table-driven assertion over the three registered mutation descriptions, read
-  from the **built tool set**, each row asserting its required substring and that
-  `resolve_checkpoint` distinguishes `checkpoint_use_quarantine` from `checkpoint_non_conforming`;
+  from the **built tool set**, each row keyed by the registered `backlogit_*` name, asserting its
+  required substring and that
+  `backlogit_resolve_checkpoint` distinguishes `checkpoint_use_quarantine` from
+  `checkpoint_non_conforming`;
   and the registry-parity / fallback-map drift test re-run and staying green.
 * **Expected red**: all three rows of case 1 fail. Case 2 is a declared regression guard.
-* **Depends on**: U7, U7d.
+* **Depends on**: U7, U7d, U8b.
 
 ### U8 — CLI refusal surfacing
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (cli)
 * **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_test.go`
-* **Change**: surface the new refusals on `backlogit checkpoint resolve` and
-  `backlogit checkpoint abandon` as actionable operator messages carrying the POSIX-safe
-  quarantine remediation command (see U6 for the shell-contract rationale; PowerShell-safety
-  for arbitrary accepted filenames is not claimed, and the shipped `shellQuoteSingle` idiom is
-  POSIX-specific). The rendered command matches the existing CLI error idiom. **The
+* **Change (cycle-17 — no command string in this unit)**: surface the new refusals on
+  `backlogit checkpoint resolve` and
+  `backlogit checkpoint abandon` as actionable operator messages naming the offending keys through
+  **U1c's `FieldPathsForDisplay()`** and stating the required disposition verb from the structured
+  `RemediationIntent`. **Rendering an executable remediation command is not in this unit** — it is
+  owned by **U16** (`147.039-T`), which binds the command to the resolved storage root and prints
+  the A4c approval, preimage, and no-clobber preamble. This unit prints the refusal and the
+  offender list; U16 prints the bound command block underneath it. Splitting them is the cycle-17
+  resolution of gate finding H1: a refusal message that carries a paste-runnable command with no
+  workspace binding and no approval obligation is the P0 the gate rejected.
+  **The
   offending-key list is only available for a valid-but-non-conforming target.** A schema-invalid
   legacy document is refused by the U3 validity gate before conformance runs, so no key list
-  exists for it; that refusal prints the validation reason and the remediation command instead.
+  exists for it; that refusal prints the validation reason and the required verb instead.
   **The `checkpoint get` conformance projection is not in this unit**: it moved to **U8c** in
   PR #377 review cycle 4, because a read projection is a different contract from a refusal
   rendering and folding it in made a fourth scenario. This unit must not touch
@@ -985,30 +1413,79 @@ on `147.010-T`.
   nothing. Repaired by naming the record that actually exists rather than by growing U9b, which is
   already the widest docs unit in the plan and carries the hard merge gate.)*
 * **Tests** (3): `checkpoint resolve` on a **schema-invalid legacy** document exits non-zero,
-  reports the `checkpoint_use_quarantine` class with the validation reason and the remediation
-  command, and prints **no** key list; `checkpoint resolve` on a **valid-but-non-conforming**
-  document exits non-zero and names the offending top-level keys alongside the same command;
-  `checkpoint abandon` on that same valid-but-non-conforming document does likewise. The
-  POSIX-safety assertion rides on the rendered command in cases 2 and 3 rather than being a
-  fourth scenario, keeping this unit inside the 2-Hour Rule. The named key list in cases 2 and 3 is
-  rendered from **U1b's `BoundedFieldPaths()`**, so the CLI text and the MCP `unknown_fields` array
-  carry the same bounded, quoted offender set for the same stored bytes.
+  reports the `checkpoint_use_quarantine` class with the validation reason and names `quarantine`
+  as the required verb, and prints **no** key list; `checkpoint resolve` on a
+  **valid-but-non-conforming**
+  document exits non-zero and names the offending top-level keys in quoted, bounded form; `checkpoint
+  abandon` on that same valid-but-non-conforming document does likewise. No case asserts a
+  paste-runnable command — that assertion belongs to U16. The named key list in cases 2 and 3 is
+  rendered from **U1c's `FieldPathsForDisplay()`**, whose bound comes from U1b, so the CLI text and
+  the MCP `unknown_fields` array describe the same offender set for the same stored bytes while
+  differing only in escaping.
 * **Expected red**: all three fail. Verified with
   `go test -count=1 -run '^TestU8_' ./internal/cli`.
 * **Not in scope (cycle 16)**: a CLI assertion for `checkpoint resolve` on an **already-abandoned**
   document. That path does not consume `domainError`, so U7e changes nothing about it, and a fourth
   scenario would breach the granularity limit. Recorded as follow-up stash `DBBA62AA`.
-* **Depends on**: U7, U1b (the bounded projection the key list renders through).
+* **Depends on**: U7, U1c (the human rendering the key list uses), U8b.
+
+### U16 — CLI-boundary remediation command rendering
+
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
+* **Domain**: code (cli)
+* **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_remediation_test.go` (new)
+* **Change (cycle-17 — the safe half of gate finding H1)**: the CLI is the **only** surface allowed
+  to render an operator-runnable command, because it is the only layer that knows the resolved
+  workspace. Add a single renderer that consumes `events.RemediationIntent` (U1d) and emits a
+  bound, approval-gated block wherever a refusal or a `needs_quarantine` summary is printed:
+
+  ```text
+  Disposition required: quarantine
+    Workspace : <resolved storage root, absolute>
+    Target    : <bare filename>
+    Approval  : A4c — operator approval is REQUIRED immediately before execution
+    Preimage  : take a byte copy of the target before running the command
+    Destination: archive/checkpoints/<bare filename> must be ABSENT (no-clobber)
+  Command (run only after approval):
+    backlogit --cwd <resolved storage root parent> checkpoint quarantine <bare filename> --operator <you> --reason "<why>"
+  ```
+
+* **Binding rules (all mandatory)**:
+  1. the rendered command **always** carries an explicit `--cwd` bound to the workspace the intent
+     was computed for; a command without `--cwd` is forbidden, because an ambient cwd is exactly
+     what made the cycle-16 form unsafe;
+  2. the argument is the **bare filename** from `RemediationIntent.TargetFilename`, never a path
+     and never a concatenation;
+  3. the A4c approval line, the preimage line, and the no-clobber destination line are part of the
+     block and cannot be suppressed by a flag;
+  4. when the resolved workspace path or the filename contains a character the target shell would
+     treat specially, the renderer emits the block **without** the command line and prints
+     `command not rendered: workspace or filename requires manual quoting` instead. Refusing to
+     render is the safe failure mode; emitting a half-quoted command is not. The natural corpus
+     never hits this branch — `CreateCheckpoint` (`internal/events/memory.go:59`) only ever writes
+     `checkpoint-YYYYMMDD-HHMMSS.json` — so the branch exists for out-of-band files only.
+* **Explicitly not claimed**: no cross-shell paste-safety claim is made. The block is rendered for
+  the operator to read and adapt; the approval step is a human step by construction, so a command
+  that needs hand-adaptation on one shell costs nothing this plan needs.
+* **Tests** (3): a rendered block for a valid-but-non-conforming target contains an absolute
+  `--cwd`, the bare filename, and all three of the approval, preimage, and no-clobber lines; a
+  target whose filename contains a shell metacharacter renders the block with the
+  `command not rendered` line and **no** command; the renderer emits nothing at all when
+  `RemediationIntent` is nil, so a conforming file's output is unchanged.
+* **Expected red**: cases 1 and 2 fail (no renderer exists). Case 3 is a declared regression guard
+  for the conforming path.
+* **Depends on**: U1d, U8, U8b.
 
 ### U8c — CLI `checkpoint get` projects the conformance verdict
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: code (cli)
 * **Files**: `internal/cli/checkpoint.go`, `internal/cli/checkpoint_test.go`
 * **Change**: `newCheckpointGetCmd` (`internal/cli/checkpoint.go:180-210`) calls
   `events.GetCheckpoint` and prints a **literal** `"valid": true` with no conformance field, so the
   CLI read surface would keep answering the superseded question after U6b lands. Call
   `events.GetCheckpointResult` and project `valid`, `conforming`, `needs_quarantine`,
-  `remediation_command`, and `non_conforming_fields`; the hardcoded literal is removed, not
+  `remediation_intent`, and `non_conforming_fields`; the hardcoded literal is removed, not
   shadowed. `non_conforming_fields` is copied from `CheckpointReadResult.NonConformingFields`
   unchanged — already bounded by U1b through U6b — so CLI and MCP cannot render different offender
   lists for the same file. This is the CLI twin of
@@ -1023,7 +1500,8 @@ on `147.010-T`.
   legacy file surfaces the pre-existing validation-class refusal rather than a disposition code.
   This unit **pins** that behaviour rather than changing it.
 * **Tests** (3): a valid-but-non-conforming file reports `valid: true`, `conforming: false`,
-  `needs_quarantine: true`, a non-empty `remediation_command`, and a `non_conforming_fields` list
+  `needs_quarantine: true`, a `remediation_intent` naming verb `quarantine` and approval class
+  `A4c`, and a `non_conforming_fields.paths` list
   identical to the MCP projection for the same stored bytes; a conforming file reports
   `conforming: true`; a schema-invalid file exits non-zero with the pre-existing validation-class
   refusal rather than a success payload asserting validity, asserted against the command's actual
@@ -1031,12 +1509,20 @@ on `147.010-T`.
   and 2 rather than being a fourth scenario.
 * **Expected red**: cases 1 and 2 fail; case 3 is a declared regression guard pinning the shipped
   read contract. Verified with `go test -count=1 -run '^TestU8c_' ./internal/cli`.
-* **Depends on**: U6b.
+* **Depends on**: U6b, U8b.
 
-### U8b — Cross-surface parity from one stored state
+### U8b — Cross-surface parity harness (RED) from one stored state
 
+* **Partition**: 3 (declarations and genuine RED harness order)
 * **Domain**: tests
 * **Files**: `internal/cli/checkpoint_parity_test.go` (new). **No production change.**
+* **Ordering contract (cycle-17 — closes gate finding H2)**: this harness lands **after** the
+  partition-1 and partition-2 declarations and **before** every partition-4 implementation. Its
+  dependencies are declarations only — U1, U1b, U1d, U2, U15 — and the eleven behavioural units it
+  pins (U3, U3b, U4, U5, U6, U6b, U6c, U7, U7d, U8, U8c) each depend on **it**, so the harness is
+  observably red before any of them lands. Cycle 15 and cycle 16 wired the reverse direction, which
+  is why the gate ruled the RED premise unsatisfiable: a harness that depends on the
+  implementations it pins can never be red against a pre-implementation state.
 * **Change**: `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`
   Rule 3 requires that a guard spanning CLI and MCP exercise **both surfaces from the same stored
   state**. U6/U6b/U6c/U7/U7b/U8/U8c each build their own fixtures, so they could drift apart and
@@ -1054,35 +1540,42 @@ on `147.010-T`.
   accept/refuse verdict and the same remedy verb. Byte-identity postcondition applies only to
   refused mutation paths; accepted mutations (conforming-active row's `abandon`) verify the
   intended rewrite/archive outcome using a fresh fixture copy.
-* **Batch-harness posture**: U8b's harness lands during the batch harness generation phase, when
-  its dep tasks (U6b/147.012-T, U6c/147.022-T, U7b/147.014-T, U7c/147.024-T, U8/147.015-T,
-  U8c/147.027-T) have their **declaration stubs** but not yet their implementations. Against that
-  state, U8b's parity assertions target projections and refusal shapes that the declaration stubs
-  do not yet produce. The batch-harness model is what makes the assertions runnable while the
-  deps' implementations are still pending: the test file compiles against the declaration stubs,
-  and the assertions fail because the stubs do not yet exhibit the parity U8b is written to pin.
-* **Expected red** (against declaration stubs / current handlers, per row):
+* **Harness posture (cycle-17 replacement for the batch-harness model)**: U8b compiles against the
+  partition-3 declaration `events.GetCheckpointResult` / `CheckpointReadResult` (U15), the
+  partition-1 carriers `BoundedFieldPathSet` (U1b) and `RemediationIntent` (U1d), and the
+  already-shipped CLI and MCP handlers. Every symbol it references exists at the moment it lands,
+  so it **compiles**; every projection and refusal it asserts is unimplemented, so it **fails on
+  assertions**. That is the two-step red posture applied across surfaces instead of inside one
+  package. The cycle-15/16 "batch harness generation phase" framing is withdrawn: it made the red
+  gate depend on when an implementer chose to generate harnesses rather than on the dependency
+  graph.
+* **Already-green assertions removed (cycle-17, gate finding H2)**: cycle 16 claimed the
+  `legacy-shaped` row's `get` assertions were red. They were not. `GetCheckpoint` already runs
+  `ValidateCheckpoint` and already returns `ErrCheckpointInvalid` for a schema-invalid document
+  (`internal/events/checkpoint_lifecycle.go:~105-137`), `domainError` already maps that sentinel to
+  `validation_failed` (`internal/mcp/errors.go:~188-193`), and the CLI already exits non-zero on
+  it. Those three assertions are **declared regression guards**, green from the moment they land,
+  and they are removed from this unit's red gate rather than being counted as failures that never
+  occur.
+* **Expected red** (against the partition-3 declaration state, per row):
 
-  * **`legacy-shaped` row**: `events.GetCheckpoint(data)` — currently returns a success payload
-    for a schema-invalid document because the U6b/147.012-T validity gate is not yet in the
-    declaration stub; the assertion `errors.Is(err, ErrCheckpointInvalid)` **fails**. MCP
-    `get_checkpoint(filename)` — currently returns a success payload before U6c/147.022-T's
-    domainError mapping stub is filled in; assertion `code == "validation_failed"` **fails**.
-    CLI `checkpoint get filename` — currently prints hardcoded `"valid": true` and exits 0
-    (see cycle-4 finding on `newCheckpointGetCmd` at `internal/cli/checkpoint.go:180-210` before
-    U8c/147.027-T reprojects it); assertion `exit_code != 0` **fails**. `resolve` — currently
-    succeeds and rewrites the file with a fabricated skeleton (F2 in memory) before U3's
-    validity gate and U7d's route-through-disposition-shape stub complete; assertion that
-    resolve is refused with `checkpoint_use_quarantine` **fails**.
-  * **`valid-but-non-conforming` row**: `events.GetCheckpointResult` — the U6b
-    declaration stub returns a zero-value result before its projection fields are populated
-    by the U6b implementation; assertions `result.Valid == true`, `result.NeedsQuarantine == true`,
-    `result.RemediationCommand != ""`, and `result.Conforming == false` **fail** because the
-    zero-value struct yields `Valid: false`, `NeedsQuarantine: false`, `RemediationCommand: ""`,
-    and `Conforming: false` — where `Conforming == false` alone is ambiguous (matches zero value),
-    the positive-projection assertions (`Valid == true`, `NeedsQuarantine == true`,
-    `RemediationCommand != ""`) prove the stub is unpopulated. MCP `get_checkpoint` — before U6c's
-    projection stub is filled in, the response has no `conforming` field; assertion that
+  * **`legacy-shaped` row**: the three `get` assertions —
+    `errors.Is(events.GetCheckpointResult(...), ErrCheckpointInvalid)`, MCP
+    `backlogit_get_checkpoint` → `code: validation_failed`, and CLI `checkpoint get` → non-zero
+    exit — are **declared regression guards**, green on landing, and are excluded from the red
+    gate. The row's single **RED** assertion is `resolve`: it currently succeeds and rewrites the
+    file with a fabricated skeleton (F2 in memory) before U3's validity gate and U7d's routing
+    land, so the assertion that resolve is refused with `checkpoint_use_quarantine` **fails** on
+    all three surfaces.
+  * **`valid-but-non-conforming` row**: `events.GetCheckpointResult` — the U15
+    declaration returns a result whose projected fields are all zero-valued; assertions
+    `result.NeedsQuarantine == true`, `result.RemediationIntent != nil`,
+    and `result.Conforming == false` **fail** on the first two, because the declaration yields
+    `NeedsQuarantine: false` and `RemediationIntent: nil` — where `Conforming == false` alone is
+    ambiguous (it matches the zero value), the positive-projection assertions
+    (`NeedsQuarantine == true`, `RemediationIntent != nil`, `NonConformingFields.Paths` non-empty)
+    prove the declaration is unpopulated. MCP `backlogit_get_checkpoint` — before U6c's
+    projection lands, the response has no `conforming` field; assertion that
     `conforming: false` appears in the payload **fails**. CLI `checkpoint get` — before
     U8c/147.027-T reprojects `newCheckpointGetCmd` from `events.GetCheckpointResult`, the CLI
     prints hardcoded `"valid": true` with no conformance field; assertion that `conforming:
@@ -1091,9 +1584,9 @@ on `147.010-T`.
     document; assertions of refusal with `checkpoint_non_conforming` **fail** on both surfaces.
   * **`conforming-active` row**: every surface accepts `abandon` — this is pre-existing shipped
     behaviour and passes from the moment the assertion lands. The three `get` assertions
-    (`events.GetCheckpointResult` → `conforming: true`, MCP `get_checkpoint` → `conforming: true`,
-    CLI `checkpoint get` → `conforming: true`) are **RED** until U6b/U6c/U8c land:
-    `GetCheckpointResult` begins as a zero-value declaration stub (`Conforming: false`), the
+    (`events.GetCheckpointResult` → `conforming: true`, MCP `backlogit_get_checkpoint` →
+    `conforming: true`, CLI `checkpoint get` → `conforming: true`) are **RED** until U6b/U6c/U8c
+    land: the U15 declaration yields `Conforming: false`, the
     MCP payload lacks a `conforming` field before U6c, and the CLI prints hardcoded
     `"valid": true` with no conformance field before U8c. Only accepted `abandon` is an
     already-green regression guard.
@@ -1104,10 +1597,11 @@ on `147.010-T`.
     `ResolveCheckpoint` — which rewrites on the `valid-but-non-conforming` row — the assertion
     **fails** for row 2's fixture.
 
-  Rows 1 and 2 together carry the batch-harness red gate; row 3 is the parity/regression guard
-  that pins the accept path. This unit no longer claims an all-guards exemption — case 1 and
-  case 2 each produce concrete assertion failures against the pre-implementation state, and P-004
-  is satisfied by their aggregate red load.
+  Rows 1 and 2 carry this unit's red gate; row 3's three `get` assertions add to it, and row 3's
+  accepted `abandon` plus row 1's three `get` assertions are the parity/regression guards that pin
+  already-shipped behaviour. This unit claims no all-guards exemption — rows 1, 2, and 3 each
+  produce concrete assertion failures against the partition-3 declaration state, and P-004 is
+  satisfied by their aggregate red load.
 
 * **Parity/regression-guard role after impls land**: once U3, U3b, U4, U5, U6, U6b, U6c, U7,
   U7b, U7c, U7d, U8, U8c have landed in dep order, the assertions above turn green: every
@@ -1116,7 +1610,8 @@ on `147.010-T`.
   in any one surface (a stale MCP projection, a CLI hardcode, an events-layer default) surfaces
   as a failing test instead of a silent drift.
 
-* **Depends on**: U6c, U7b, U7c, U8, U8c.
+* **Depends on**: U1, U1b, U1d, U2, U15 — declarations only. **Depended on by**: U3, U3b, U4, U5,
+  U6, U6b, U6c, U7, U7d, U8, U8c.
 
 ### U9 — Design doc: total classification
 
@@ -1143,11 +1638,12 @@ on `147.010-T`.
   directions with `context` remaining the sole open one. Regenerate CLI reference docs via
   `gen-docs` if any command help text changed.
 * **Tests**: `backlogit docs lint` reports 0 violations; the CLI Reference Drift check is clean.
-* **Expected red**: n/a (docs-only; runs after behaviour is final).
-* **Depends on**: U6b, U8b.
+* **Expected red**: n/a (docs-only; runs after behaviour is final and claims no RED behaviour).
+* **Depends on**: U2e, U6b, U8b, U16, U17.
 
 ### U9b — Agent instruction file and quarantine-first disposition guidance
 
+* **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: docs (agent-facing)
 * **Files**: `.github/instructions/backlogit.instructions.md`
 * **Change (cycle-16 rewrite — quarantine-only)**: the Lifecycle Hygiene Protocol currently teaches
@@ -1180,8 +1676,10 @@ on `147.010-T`.
      `archive/checkpoints/` with a `<filename>.disposition.json` sidecar. Within `status: "active"`
      exactly one verb accepts any given file.
   2. **The offender-diagnosis step, with its exact source.** Offending members are read from
-     `checkpoint get` — the `non_conforming_fields` projection declared by U6b and surfaced by U6c
-     (MCP) and U8c (CLI). It is atomic, per-file, and bounded. Explicitly forbid the two wrong
+     `checkpoint get` — the `non_conforming_fields` projection declared by U15, populated by U6b,
+     and surfaced by U6c (MCP) and U8c (CLI). It is atomic, per-file, and bounded, its `paths`
+     carry **raw** offender key paths, and its `truncated` / `omitted_paths` / `truncated_paths`
+     scalars say explicitly when the list is incomplete. Explicitly forbid the two wrong
      sources: the decoded `checkpoint` object in the same payload, because the collapsing decode has
      already destroyed the duplicate members and they are not in it; and a whole-directory
      `checkpoint list` scan, which is neither atomic nor per-file.
@@ -1232,6 +1730,18 @@ on `147.010-T`.
      create "means retry with the offending keys nested under context… there is nothing to recover".
      That is correct for **create** and wrong for a **stored legacy** document, whose keys are
      already on disk. Scope §6 explicitly to create.
+  9. **No executable remediation text (cycle-17, closes gate finding H1).** This file MUST NOT
+     contain a paste-runnable disposition command, a repair procedure, a restore procedure, or a
+     cleanup sweep. It states the required **verb** and points at the structured
+     `remediation_intent` record (`verb`, `target_filename`, `requires_approval`, `approval_class`,
+     `reason`) that `checkpoint list` and `checkpoint get` return. The only surface that renders a
+     runnable command is the CLI (U16), which binds it to the resolved workspace with an explicit
+     `--cwd` and prints the A4c approval, preimage, and no-clobber preamble with it. An instruction
+     file that applies to **every** agent in this workspace (`applyTo: "**"`) cannot publish a
+     command whose meaning depends on whatever directory the reader happens to be in, and cannot
+     publish one without the approval obligation attached. Any acceptance check for this unit
+     greps the changed file for `backlogit checkpoint quarantine` and fails if a bare invocation
+     is present.
 * **Tests**: `backlogit docs lint` reports 0 violations on the changed file.
 * **Acceptance / merge gate**: this unit and U9 must land in the **same merge commit** as U3b/U4/U5.
   A pull request that includes any of U3b, U4, or U5 **MUST NOT be merged** unless the
@@ -1248,6 +1758,7 @@ on `147.010-T`.
 
 ### U10 — Runtime verification of the refusal path
 
+* **Partition**: 5 (runtime verification and closure)
 * **Domain**: verification
 * **Files**: `.gitignore` (scratch-directory ignore rule); otherwise none (produces `docs/closure/`
   evidence)
@@ -1276,7 +1787,8 @@ on `147.010-T`.
   and `--no-update-check` suppresses the remote release lookup so the assertion is hermetic. A plain
   `go build ./cmd/backlogit` leaves `internal/version.Version` at its `DevVersion` default with an
   **empty** commit and proves nothing about provenance.
-* **Execution contract (cycle 16 — mandatory, fail-closed)**: every command in this unit MUST
+* **Execution contract (cycle 16, corrected cycle 17 — mandatory, fail-closed)**: every command in
+  this unit MUST
   1. **run under an explicit A4c approval batch** obtained immediately before execution, naming the
      files and the directory it will touch;
   2. **bind to the canonical workspace** with `--cwd docs/scratch/checkpoint-verification` and pass
@@ -1287,32 +1799,52 @@ on `147.010-T`.
      path the step will write or move to;
   4. **take a pre-run byte copy (preimage)** of every fixture a mutating verb will touch, as a
      precondition of the approval request;
-  5. **assert the destination is absent** before any write or move, and **refuse to clobber** an
-     occupied destination — matching the shipped `moveNoReplace` semantics;
+  5. **apply the precondition that matches the operation class** — the two classes are different
+     and cycle 16 conflated them:
+     * **in-place rewrite** (`resolve`, `abandon`): the destination **is** the target file and is
+       necessarily present. Absent-destination and no-clobber are **not** applicable and must not
+       be asserted. The required preconditions are the preimage byte copy from step 4, the
+       guarded-seam verdict (parse, validate, conformance), and a post-step SHA comparison that is
+       *equality* on a refusal and *inequality plus a re-parse that validates* on an acceptance.
+     * **archive move** (`quarantine`): the destination is a new path under `archive/checkpoints/`.
+       The destination MUST be asserted absent before the move and the move MUST refuse to clobber
+       an occupied destination, matching the shipped `moveNoReplace` semantics.
+     * **intentional-collision tests** are the deliberate exception: a row that exists to prove
+       no-clobber *must* create the collision first. Such a row declares itself as an intentional
+       collision, and its expected outcome is a **refusal**, not a successful move.
   6. **fail closed**: a destination outside the bound root, a missing preimage, an occupied
-     destination, or an unclassifiable state is a **halt**, not a warning, and not a retry.
-* **Rows** (3): **read verdict** — `list` reports `needs_quarantine: true` with a paste-runnable
-  POSIX-safe remediation command (see U6 for the shell-contract rationale) and `get` reports
-  `conforming: false` **and a `non_conforming_fields` list naming the offenders** for the same
-  fixture;
+     destination on a move that is not an intentional-collision row, or an unclassifiable state is
+     a **halt**, not a warning, and not a retry.
+* **Rows** (3): **read verdict** — `list` reports `needs_quarantine: true` with a structured
+  `remediation_intent` naming verb `quarantine` and approval class `A4c` (and **no** shell string),
+  and `get` reports `conforming: false` **and a `non_conforming_fields.paths` list naming the
+  offenders in raw form** for the same fixture;
   **refusal** — legacy-shaped resolve refused and valid-but-non-conforming abandon refused naming
-  keys, with the fixture bytes unchanged after both; **quarantine accept** — quarantine accepted
-  and the archived bytes byte-identical to the pre-quarantine original.
+  keys, with the fixture bytes unchanged after both (in-place class: SHA equality); **quarantine
+  accept** — quarantine accepted into an asserted-absent destination and the archived bytes
+  byte-identical to the pre-quarantine original (archive-move class).
+* **Evidence persistence (cycle-17)**: each row writes a deterministic, human-readable record to
+  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md` — a tracked file — carrying
+  per-file `filename`, `sha256`, `state`, `destination`, and outcome. The scratch directory stays
+  git-ignored and is **not** the evidence of record: an ignored, machine-local artifact cannot be
+  reviewed and does not survive teardown. Cycle-17 makes the closure file the artifact and the
+  scratch directory a working area.
 * **Scratch containment**: the scratch workspace is created **inside the repository working tree**
   at `docs/scratch/checkpoint-verification/` (never `%TEMP%`, never outside the cwd — Constitution
   IV), the resolved path is asserted to be repo-root-relative **before the first write**, it is
   added to the freeze-scope declaration, and — because `.gitignore` carries no `docs/scratch/` rule
   today (`*.exe` already covers the built binary, the copied fixtures are not covered) — adding that
-  ignore rule is owned by this unit. U10b inherits all of it. **Teardown does not run here** (PR
-  #377 review cycle 4): U10b consumes this unit's quarantine archive, fixtures, and branch-built
-  binary, so the workspace is handed over intact and teardown ownership moves to U10b. It stays
-  classified `ActionRisk: destructive` (A4b) requiring
-  operator approval (Constitution VII) at the point U10b performs it. If approval is not granted
+  ignore rule is owned by this unit. U10b and U10c inherit all of it. **Teardown does not run
+  here**: U10b and U10c consume this unit's quarantine archive, fixtures, and branch-built binary,
+  so the workspace is handed over intact and teardown ownership moves to **U10c** (cycle-17; it was
+  U10b through cycle 16). It stays classified `ActionRisk: destructive` (A4b) requiring
+  operator approval (Constitution VII) at the point U10c performs it. If approval is not granted
   the directory is left in place and recorded as a cleanup follow-up.
 * **Depends on**: U9b.
 
 ### U10b — Runtime verification of acceptance, evidence integrity, and the recovery sweep
 
+* **Partition**: 5 (runtime verification and closure)
 * **Domain**: verification
 * **Files**: none. Runs entirely inside the scratch workspace U10 created; no repository file
   changes.
@@ -1333,12 +1865,24 @@ on `147.010-T`.
   scratch root and the mirror root.
 * **Rows** (3): **acceptance is not over-refused** — a conforming active fixture is accepted by
   abandon and a second conforming active fixture is accepted by resolve; **quarantine evidence
-  integrity** — the archive U10 row 3 produced is verified as a complete, no-clobber, verbatim
-  record: the archived bytes are SHA-identical to the preimage, the `<filename>.disposition.json`
-  sidecar names the original filename, and a **second** quarantine of a fixture with the same
-  filename is refused rather than overwriting the existing evidence pair; **recovery sweep
+  integrity** — the archive U10 row 3 produced is verified as a verbatim record whose **payload**
+  move is no-clobber: the archived bytes are SHA-identical to the preimage, the
+  `<filename>.disposition.json` sidecar names the original filename, and a **second** quarantine of
+  a fixture with the same filename is refused rather than overwriting the existing evidence pair
+  — this is an **intentional-collision row** under U10's step-5 classification, and its expected
+  outcome is the refusal; **recovery sweep
   discrimination** — against the mirror, a session-start recovery sweep refuses **exactly** the nine
   enumerated legacy filenames and succeeds on every other mirrored file.
+* **Narrowed evidence-pair claim (cycle-17)**: the payload move uses `moveNoReplace`
+  (`internal/core/checkpoint_disposition.go:~259-282`) and is genuinely no-clobber; the **sidecar**
+  is written with `atomicfile.WriteFileAtomic` (`:229-231`), which is documented as an *idempotent
+  upsert* and **replaces** an existing destination. The pair is therefore protected in aggregate
+  only because the payload move runs first and refuses the collision before the sidecar step is
+  reached. This unit asserts exactly that — payload no-clobber, and the pair intact after a refused
+  second quarantine — and makes **no** claim that the sidecar write is itself no-replace. Cycles
+  16 and earlier stated the stronger claim; it is false against the shipped code. Giving the
+  sidecar its own `O_EXCL` create is a production behaviour change outside this plan's gate
+  findings and is recorded as follow-up stash **`9C4B10D7`**.
 * **Restore row withdrawn (cycle 16)**: cycles 4-15 carried a mandatory "restore path" row that
   executed U9b's rename-aside, copy-back, and hand-repair sequence and called it proof that
   quarantine is recoverable. U9b's executable restore procedure is withdrawn in cycle 16 on security
@@ -1353,128 +1897,186 @@ on `147.010-T`.
 * **Inherited inputs and teardown**: U10 hands this unit a **live** workspace — the branch-built
   binary, the copied fixtures, the mirror source, and the quarantine archive row 2 inspects.
   Confirm those inputs are present before row 1 rather than rebuilding them; a missing workspace
-  blocks this unit on re-running U10, it does not license a hand-rebuild. **Teardown of
-  `docs/scratch/checkpoint-verification/` is owned by this unit** and runs only after all three
-  rows pass, still `ActionRisk: destructive` (A4b) requiring explicit operator approval immediately
-  before execution, and still skipped and recorded as a cleanup follow-up when approval is withheld.
+  blocks this unit on re-running U10, it does not license a hand-rebuild. **Teardown is deferred to
+  U10c (cycle-17)**: U10c consumes the same scratch workspace, so tearing it down here would
+  destroy U10c's inputs. Teardown ownership moves to U10c, still `ActionRisk: destructive` (A4b),
+  still requiring explicit operator approval immediately before execution, and still skipped and
+  recorded as a cleanup follow-up when approval is withheld.
+* **Evidence persistence**: rows append to the same tracked closure file U10 writes,
+  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`.
 * **Depends on**: U10 (scratch workspace, ignore rule, branch-built binary, and the quarantine
   archive row 2 inspects).
 
+### U10c — Runtime verification of context-duplicate parity and the abandoned-resolve handler
+
+* **Partition**: 5 (runtime verification and closure)
+* **Domain**: verification
+* **Files**: none beyond appending to
+  `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`. Runs inside the scratch
+  workspace U10 created.
+* **Change (cycle-17 — closes gate finding H3)**: cycles 14–16 parked two behaviours in a
+  "Runtime Verification and Closure" table row that no unit owned, so no task carried them, no
+  dependency scheduled them, and nothing forced them to run. This unit owns them.
+* **Execution contract**: U10's six-point contract applies unchanged, including the cycle-17
+  step-5 operation-class split (in-place rewrite versus archive move versus intentional collision).
+* **Rows** (3):
+  1. **Exact-duplicate `context` member, cross-surface** — a fixture whose `context` carries an
+     exact-duplicate member (including an escape-equivalent spelling) is refused by `resolve`
+     **and** by `abandon` with `checkpoint_non_conforming` naming `duplicate:context.<key>` in a
+     raw, bounded `unknown_fields` array; is reported `needs_quarantine: true` by `list` **and**
+     `get` with a matching `non_conforming_fields.paths` list; is **accepted** by `quarantine`; and
+     its bytes are SHA-identical across both refusals.
+  2. **Fold variant aliasing a modeled field, plus the open-namespace guard** — a fixture whose
+     `context` carries `shipment_id` + `Shipment_Id` is refused the same way, while a sibling
+     fixture carrying distinct unmodeled `foo` + `Foo` **resolves successfully** and both keys
+     survive the rewrite. A third fixture whose only context-routing member is spelled `Context`
+     with an inner exact duplicate is refused, pinning U2h at runtime.
+  3. **Abandoned-resolve handler mapping** — invoking `backlogit_resolve_checkpoint` on an
+     already-abandoned document returns `validation_failed`, **not** `"error":"internal"`, proving
+     U7e's retained `domainError` row reaches the handler.
+* **Why this is its own unit and not more rows on U10/U10b**: U10 and U10b each already carry
+  three rows, which is the granularity ceiling. Adding these would put either at five or six.
+  Splitting also gives the context-duplicate behaviour (U2g, U2h) and the abandoned-resolve
+  mapping (U7e) a named owner, so a reviewer can see which unit fails if either regresses.
+* **Teardown**: `docs/scratch/checkpoint-verification/` teardown is owned by this unit and runs
+  only after all three rows pass — `ActionRisk: destructive` (A4b), explicit operator approval
+  immediately before execution, skipped and recorded as a cleanup follow-up when approval is
+  withheld. The tracked closure evidence file survives teardown by construction.
+* **Depends on**: U10b (the workspace and its inherited inputs), U2h, U6c, U7d, U7e, U8c.
+
 ## Dependency Graph
 
-Canonical as of **cycle 16**. Every active unit and every executable edge appears below; U5b is
+Canonical as of **cycle 17**. Every active unit and every executable edge appears below; U5b is
 retired and appears only in the historical count. This section, the edge table, the requirements
 trace, the execution order, and the counts are all regenerated from one authoritative source — the
 `item_deps` rows for queued tasks under `147-F`, read back with `backlogit --cwd . query` after
 `backlogit --cwd . sync`. No edge appears here that is not in the backlog, and no backlog edge is
 missing here.
 
+The graph is layered by the five cycle-17 partitions. Partition order is the hard execution order:
+every edge crosses a partition boundary forward or stays inside one partition, and no edge points
+backward from a later partition to an earlier one.
+
 ```text
-U1 ──▶ U2 ──┬──▶ U2b ──┬──▶ U2e ─────────────────────────────▶ U9
-            │          └──▶ U2g ──┬──▶ U3b
-            │                     └──▶ U4
-            ├──▶ U2c ──┬──▶ U2e
-            │          ├──▶ U2g       (U1 ──▶ U2g direct edge also declared)
-            │          ├──▶ U3 ──▶ U3b
-            │          ├──▶ U4 ──▶ U5
-            │          └──▶ U6 ──┬──▶ U6b ──┬──▶ U6c ──┬──▶ U7b
-            │                    │          └──▶ U8c   │
-            │                    ├──▶ U6d ─────────────┘
-            │                    └──▶ U3b
-            └──▶ U2d ──▶ U2f ──┬──▶ U3b
-                               └──▶ U4
+PARTITION 1 — foundation diagnostics and conformance
+  U1 ──┬──▶ U1b ──▶ U1c
+       ├──▶ U2 ──┬──▶ U2b ──┬──▶ U2e
+       │         │          └──▶ U2g ──▶ U2h
+       │         ├──▶ U2c ──┬──▶ U2e
+       │         │          ├──▶ U2g
+       │         │          └──▶ U2d
+       │         └──▶ U2d
+       └──▶ U2g
+  U1d                                    (independent leaf declaration — second ready root)
 
-U1 ──┬──▶ U1b ──┬──▶ U6b
-     │          ├──▶ U7
-     │          └──▶ U8
-     ├──▶ U7d
-     └──▶ U7e
+PARTITION 2 — guarded rewrite seam
+  U2 ──▶ U11 ──▶ U12 ──▶ U13 ──▶ U14 ──▶ U2f
+  U2c ─▶ U12          U2d ─▶ U11
 
-U3b ─┐
-U4 ──┼──▶ U7 ──┬──▶ U7d ──▶ U7c ──┐
-U5 ──┘         └──▶ U8 ───────────┤
-                                  ├──▶ U8b ──▶ U9 ──▶ U9b ──▶ U10 ──▶ U10b
-U6c ──────────────────────────────┤
-U7b ──────────────────────────────┤
-U8c ──────────────────────────────┘
+PARTITION 3 — declarations and genuine RED harness order
+  U1b ─┐
+  U1d ─┴──▶ U15 ─┐
+  U1 ────────────┤
+  U1b ───────────┼──▶ U8b        (U8b compiles against declarations, fails on assertions)
+  U1d ───────────┤
+  U2 ────────────┘
 
-U6b ──▶ U9
-U2e ──▶ U9
+PARTITION 4 — implementation plus MCP/CLI/instruction contracts
+  U8b ──┬──▶ U3 ──▶ U3b ─┐
+        ├──▶ U4 ──┬──▶ U17          U14 ──┬──▶ U3
+        │         └──▶ U5            │    ├──▶ U3b
+        ├──▶ U6 ──┬──▶ U6d           │    └──▶ U4
+        │         └──▶ U6b ──┬──▶ U6c
+        └──▶ U7e             └──▶ U8c
+  U3b ─┐
+  U4 ──┼──▶ U7 ──┬──▶ U7d ──▶ U7c
+  U5 ──┘         └──▶ U8 ──▶ U16
+  U6b ──▶ U7b        U6c ──▶ U7b        U6d ──▶ U7b
+  U1c ──▶ U8
+  U2e ─┐
+  U6b ─┤
+  U8b ─┼──▶ U9 ──▶ U9b
+  U16 ─┤
+  U17 ─┤
+  U7b ─┤
+  U7c ─┘
+
+PARTITION 5 — runtime verification and closure
+  U9b ──▶ U10 ──▶ U10b ──▶ U10c
+  U2h ─┐
+  U6c ─┼──▶ U10c
+  U7d ─┤
+  U7e ─┤
+  U8c ─┘
 ```
 
-Edges declared, no cycles. The table below carries all **52** executable edges, grouped by source.
+Edges declared, no cycles. The table below carries all **98** executable edges, grouped by source
+task. Each row lists one dependent task and every prerequisite it declares, so the row count (39)
+is the number of tasks that declare at least one dependency, not the edge count.
 
-| Edge | Backlog edge | Reason |
-|---|---|---|
-| U1 → U2 | `147.002-T -> 147.001-T` | Helper returns the typed error declared in U1. |
-| U1 → U1b | `147.030-T -> 147.001-T` | The bounded projection is a method on the typed error U1 declares. |
-| U1 → U2g | `147.028-T -> 147.001-T` | Redundant with the transitive path through U2, retained from cycle 14 so the typed error U2g returns is explicitly pinned. |
-| U1 → U7d | `147.025-T -> 147.001-T` | The handler routes on U1's `QuarantineIsRemedy` predicate. |
-| U1 → U7e | `147.029-T -> 147.001-T` | The `domainError` row matches a sentinel in U1's package. |
-| U1b → U6b | `147.012-T -> 147.030-T` | `NonConformingFields` renders through `BoundedFieldPaths()`. |
-| U1b → U7 | `147.013-T -> 147.030-T` | The `unknown_fields` array renders through the same projection. |
-| U1b → U8 | `147.015-T -> 147.030-T` | The CLI key list renders through the same projection. |
-| U2 → U2b | `147.003-T -> 147.002-T` | Extends the same helper. |
-| U2 → U2c | `147.004-T -> 147.002-T` | Extends the same helper. |
-| U2 → U2d | `147.005-T -> 147.002-T` | Extends the same helper. |
-| U2b → U2e | `147.020-T -> 147.003-T` | The nested duplicate rule extends U2b's recursion. |
-| U2b → U2g | `147.028-T -> 147.003-T` | The context-member rule must not narrow the open `context` namespace U2b protects. |
-| U2c → U2e | `147.020-T -> 147.004-T` | Reuses U2c's `duplicate:` reporting form. |
-| U2c → U2g | `147.028-T -> 147.004-T` | Reuses the same reporting form one level down. |
-| U2c → U3 | `147.006-T -> 147.004-T` | The validity gate lands beside the completed predicate. |
-| U2c → U4 | `147.008-T -> 147.004-T` | The abandon gate calls the completed predicate. |
-| U2c → U6 | `147.011-T -> 147.004-T` | The list verdict calls the completed predicate. |
-| U2d → U2f | `147.021-T -> 147.005-T` | I1's executable form builds on U2d's reflection guards. |
-| U2e → U9 | `147.017-T -> 147.020-T` | The design doc's totality claim covers the completed predicate. |
-| U2f → U3b | `147.007-T -> 147.021-T` | The audited rewrite allow-list is pinned before the gate touches its call site. |
-| U2f → U4 | `147.008-T -> 147.021-T` | Same, for the abandon call site. |
-| U2g → U3b | `147.007-T -> 147.028-T` | Both gates must inherit the context-member verdict from one predicate. |
-| U2g → U4 | `147.008-T -> 147.028-T` | Same, for abandon. |
-| U3 → U3b | `147.007-T -> 147.006-T` | Conformance gate sits after the validity gate. |
-| U4 → U5 | `147.009-T -> 147.008-T` | U5's paired row asserts the refusal U4 introduces. |
-| U4 → U7 | `147.013-T -> 147.008-T` | MCP maps the sentinel U4 emits. |
-| U3b → U7 | `147.013-T -> 147.007-T` | MCP maps the sentinel U3b emits. |
-| U5 → U7 | `147.013-T -> 147.009-T` | MCP maps the sentinel U5's refusal path emits. |
-| U6 → U6b | `147.012-T -> 147.011-T` | Both read surfaces must report the same field set. |
-| U6 → U6d | `147.023-T -> 147.011-T` | The filter exemption extends U6's conformance branch. |
-| U6 → U3b | `147.007-T -> 147.011-T` | U3b's residual test asserts U6 flags the same file. |
-| U6b → U6c | `147.022-T -> 147.012-T` | The MCP handler projects U6b's result type. |
-| U6b → U8c | `147.027-T -> 147.012-T` | The CLI handler projects the same result type. |
-| U6b → U7b | `147.014-T -> 147.012-T` | The read description promises U6b's new field. |
-| U6b → U9 | `147.017-T -> 147.012-T` | The design doc restates the final read contract. |
-| U6c → U7b | `147.014-T -> 147.022-T` | The description promises the field as U6c projects it. |
-| U6c → U8b | `147.016-T -> 147.022-T` | Parity drives the MCP `get` projection. |
-| U6d → U7b | `147.014-T -> 147.023-T` | A published description must not promise unshipped filter behaviour. |
-| U7 → U7d | `147.025-T -> 147.013-T` | The handler routes into U7's response shape. |
-| U7 → U7c | `147.024-T -> 147.013-T` | The mutation descriptions promise U7's codes. |
-| U7 → U8 | `147.015-T -> 147.013-T` | The CLI consumes the mapping layer. |
-| U7d → U7c | `147.024-T -> 147.025-T` | Those codes only reach `resolve` once U7d routes them. |
-| U7b → U8b | `147.016-T -> 147.014-T` | Parity drives the completed read descriptions. |
-| U7c → U8b | `147.016-T -> 147.024-T` | Parity drives the completed mutation descriptions. |
-| U8 → U8b | `147.016-T -> 147.015-T` | Parity drives the CLI refusal rendering. |
-| U8c → U8b | `147.016-T -> 147.027-T` | Parity drives the CLI `get` projection. |
-| U8b → U9 | `147.017-T -> 147.016-T` | Design doc restates final behaviour. |
-| U9 → U9b | `147.018-T -> 147.017-T` | Agent guidance follows the design doc. |
-| U9b → U10 | `147.019-T -> 147.018-T` | Refusal verification follows the published guidance. |
-| U10 → U10b | `147.026-T -> 147.019-T` | Acceptance and evidence verification consume U10's workspace. |
+| Dependent | Unit | Prerequisites (`item_deps` rows) | Reason |
+|---|---|---|---|
+| `147.002-T` | U2 | `147.001-T` | The helper returns the typed error U1 declares. |
+| `147.003-T` | U2b | `147.002-T` | Extends the same helper. |
+| `147.004-T` | U2c | `147.002-T` | Extends the same helper. |
+| `147.005-T` | U2d | `147.002-T`, `147.004-T` | Extends the same helper, and the derived-set refactor lands only after the duplicate rule makes the predicate feature-complete. |
+| `147.006-T` | U3 | `147.004-T`, `147.037-T`, `147.016-T` | Calls the completed predicate; the guarded seam and its caller migration land first; the parity harness must be red before this gate. |
+| `147.007-T` | U3b | `147.006-T`, `147.011-T`, `147.028-T`, `147.037-T`, `147.016-T` | Conformance gate sits after the validity gate; its residual test asserts U6 flags the same file; inherits the context-member verdict; seam first; harness first. |
+| `147.008-T` | U4 | `147.004-T`, `147.028-T`, `147.037-T`, `147.016-T` | Calls the completed predicate; inherits the context-member verdict; seam first; harness first. |
+| `147.009-T` | U5 | `147.008-T`, `147.016-T` | U5's paired row asserts the refusal U4 introduces; harness first. |
+| `147.011-T` | U6 | `147.004-T`, `147.032-T`, `147.016-T` | The list verdict calls the completed predicate and publishes the structured remediation intent; harness first. |
+| `147.012-T` | U6b | `147.011-T`, `147.030-T`, `147.038-T`, `147.032-T`, `147.016-T` | Both read surfaces must report the same field set; renders through the bounded raw projection; populates the carrier U15 declares; carries the intent; harness first. |
+| `147.013-T` | U7 | `147.001-T`, `147.030-T`, `147.007-T`, `147.008-T`, `147.009-T`, `147.016-T` | The mapping layer matches U1's sentinel; `unknown_fields` renders through the bounded raw projection; MCP maps the sentinels U3b, U4, and U5 emit; harness first. |
+| `147.014-T` | U7b | `147.012-T`, `147.022-T`, `147.023-T`, `147.016-T` | The read descriptions promise U6b's field as U6c projects it and must not promise U6d's unshipped filter exemption; harness first. |
+| `147.015-T` | U8 | `147.013-T`, `147.030-T`, `147.031-T`, `147.016-T` | The CLI consumes the mapping layer and renders the key list through the human projection, whose bound comes from U1b; harness first. |
+| `147.016-T` | U8b | `147.001-T`, `147.030-T`, `147.032-T`, `147.002-T`, `147.038-T` | **Declarations only.** The harness compiles against the typed error, the bounded projection, the remediation intent, the conformance helper, and the read-result carrier — and fails on assertions because none of the behaviour exists. |
+| `147.017-T` | U9 | `147.020-T`, `147.012-T`, `147.016-T`, `147.039-T`, `147.040-T`, `147.014-T`, `147.024-T` | The design doc restates the completed predicate, the final read contract, cross-surface parity, the CLI remediation block, the corrected wrap, and the published tool descriptions. |
+| `147.018-T` | U9b | `147.017-T` | Agent guidance follows the design doc. |
+| `147.019-T` | U10 | `147.018-T` | Refusal verification follows the published guidance. |
+| `147.020-T` | U2e | `147.003-T`, `147.004-T` | The nested duplicate rule extends U2b's recursion and reuses U2c's `duplicate:` reporting form. |
+| `147.021-T` | U2f | `147.037-T` | The supplemental caller-set guard enumerates the post-migration allow-list, so the migration lands first. |
+| `147.022-T` | U6c | `147.012-T`, `147.016-T` | The MCP handler projects U6b's result type; harness first. |
+| `147.023-T` | U6d | `147.011-T`, `147.016-T` | The filter exemption extends U6's conformance branch; harness first. |
+| `147.024-T` | U7c | `147.013-T`, `147.025-T`, `147.016-T` | The mutation descriptions promise U7's codes, which only reach `resolve` once U7d routes them; harness first. |
+| `147.025-T` | U7d | `147.001-T`, `147.013-T`, `147.016-T` | The handler routes on U1's predicate into U7's response shape; harness first. |
+| `147.026-T` | U10b | `147.019-T` | Acceptance and evidence verification consume U10's workspace. |
+| `147.027-T` | U8c | `147.012-T`, `147.016-T` | The CLI handler projects U6b's result type; harness first. |
+| `147.028-T` | U2g | `147.001-T`, `147.003-T`, `147.004-T` | Returns U1's typed error; must not narrow the open `context` namespace U2b protects; reuses U2c's reporting form one level down. |
+| `147.029-T` | U7e | `147.001-T`, `147.016-T` | The `domainError` row matches a sentinel in U1's package; harness first. |
+| `147.030-T` | U1b | `147.001-T` | The bounded projection is a method on the typed error U1 declares. |
+| `147.031-T` | U1c | `147.030-T` | The human rendering reads the bounded raw projection. |
+| `147.033-T` | U2h | `147.028-T` | Extends U2g's context-member walk to every routing spelling. |
+| `147.034-T` | U11 | `147.002-T`, `147.005-T` | The seam calls the conformance predicate, and takes that dependency only after the predicate's key source is pinned. |
+| `147.035-T` | U12 | `147.034-T`, `147.004-T` | The contract harness compiles against the seam declaration and asserts the completed top-level predicate. |
+| `147.036-T` | U13 | `147.035-T` | The implementation turns U12's contract green. |
+| `147.037-T` | U14 | `147.036-T` | Callers migrate onto a seam that already enforces its preconditions. |
+| `147.038-T` | U15 | `147.030-T`, `147.032-T` | The carrier's fields are the bounded projection set and the remediation intent. |
+| `147.039-T` | U16 | `147.032-T`, `147.015-T`, `147.016-T` | The renderer consumes the structured intent and attaches to U8's refusal output; harness first. |
+| `147.040-T` | U17 | `147.008-T`, `147.016-T` | The wrap correction lands beside the gate U4 installs in the same function; harness first. |
+| `147.041-T` | U10c | `147.026-T`, `147.033-T`, `147.022-T`, `147.025-T`, `147.029-T`, `147.027-T` | Consumes U10b's workspace and verifies the routing rule, both read projections, the resolve routing, and the abandoned-resolve mapping at runtime. |
 
-**Suggested execution order**: U1, U1b, U2, U2b, U2c, U2d, U2e, U2g, U2f, U3, U6, U6b, U6c, U6d,
-U7b, U3b, U4, U5, U7, U7e, U7d, U7c, U8, U8c, U8b, U9, U9b, U10, U10b. U1b is independent of
-everything after U1 but must land before U6b, U7, and U8. U2b, U2c, and U2d are mutually
-independent once U2 lands; U2g requires both U2b and U2c and must land before U3b and U4; U6 and U4
-are mutually independent once U2c and U2g land; U6d is independent of everything after U6 but must
-land before U7b; U8c is independent of everything after U6b and only has to land before U8b; U2e is
-independent of the gate units and only has to land before U9; U7e depends only on U1 and may land
-any time after it.
+`147.032-T` (U1d) declares no prerequisites and is the second ready root.
 
-**Measured topology (cycle 16, `backlogit --cwd . query` after `backlogit --cwd . sync`)**: 29
-queued tasks, **52** queued-to-queued executable edges, 30 shipment members in `130-S`, ready set
-exactly `{147.001-T}` (sole root). **Historical total edges: 53** — the 52 executable edges plus the
+**Suggested execution order**: U1, U1d, U1b, U1c, U2, U2b, U2c, U2d, U2e, U2g, U2h, U11, U12, U13,
+U14, U2f, U15, U8b, U3, U6, U6d, U6b, U6c, U8c, U7b, U3b, U4, U17, U5, U7, U7e, U7d, U7c, U8, U16,
+U9, U9b, U10, U10b, U10c.
+
+Partition boundaries are the load-bearing part of that order: everything through U2h is partition 1;
+U11 through U2f is partition 2; U15 and U8b are partition 3; U3 through U9b is partition 4; U10
+through U10c is partition 5. Inside a partition, units that share no edge may be taken in any order.
+U1d is independent of everything in partition 1 and only has to land before U15, U8b, U6, U6b, and
+U16. U2f is terminal by design — nothing depends on it, and a blocked U2f does not block the release
+unit, because the guarded seam rather than the enumeration is what enforces I1.
+
+**Measured topology (cycle 17, `backlogit --cwd . query` after `backlogit --cwd . sync`)**: 40
+queued tasks, **98** queued-to-queued executable edges, 41 shipment members in `130-S`, ready set
+exactly `{147.001-T, 147.032-T}` (two roots — `U1`, the typed-error declaration, and `U1d`, the
+remediation-intent declaration). **Historical total edges: 99** — the 98 executable edges plus the
 one archived edge `147.010-T -> 147.009-T` retained in the archived U5b artifact. The historical
-count is deliberately kept distinguishable from the executable topology: only the 52
+count is deliberately kept distinguishable from the executable topology: only the 98
 queued-to-queued edges govern execution order, and an agent must never schedule against the
-historical figure. The graph is verified acyclic by Kahn topological sort — all 29 nodes ordered
-from the sole root.
+historical figure. The graph is verified acyclic by Kahn topological sort — all 40 nodes ordered
+from the two roots.
 
 ## Decisions and Rationale
 
@@ -1491,8 +2093,12 @@ from the sole root.
 | Enforce in the mutation seam, not only at create | Same learning: "the setter protects the file (source of truth)". The create boundary cannot protect a file written by an older binary or edited by hand — which is precisely how all nine live legacy files came to exist. This is the one point where `2026-07-28-attach-commit-repersist-must-reload-from-markdown.md` **is** honoured. |
 | Round-trip safety, not "no unknown keys", is the predicate | A document with `"status"` and `"Status"` has zero *unknown* keys yet still loses a member on rewrite. Naming the predicate correctly is what makes U2c non-optional. |
 | Conformance is a **new** reported field, not a redefinition of `valid` | `GetCheckpoint`'s `valid` already has consumers. U6b adds `conforming` alongside it so no shipped contract changes meaning underneath a caller. |
-| **U2f's gated-seam fallback withdrawn** (PR #377 review cycle 3) | Offering "enumeration test **or** exported `events.RewriteCheckpointFile` seam" inside one unit meant its real file set was either one new test file or five files spanning `internal/events`, `internal/core`, and two skill domains — so the unit's size could not be known before work started, and the larger branch breached both the three-file heuristic and width isolation. The enumeration is now the only mechanism; if it proves unimplementable, U2f halts as `blocked` and the seam is re-planned as its own units under a new ID rather than absorbed. |
-| **MCP `get` keeps its validation-class refusal for schema-invalid documents** (PR #377 review cycle 3) | `handleGetCheckpoint` routes through `domainError`, which takes no filename and already maps `ErrCheckpointInvalid` to `validation_failed`. Making `get` emit `checkpoint_use_quarantine` would mean routing a **read** through a mutation-shaped error path, widening U6c into U7's file set and changing a shipped contract. The quarantine remedy is already discoverable from `list_checkpoints` (`needs_quarantine: true`), so the safety value is nil and the churn is real. Disposition codes stay on the mutation verbs. |
+| **U2f's gated-seam fallback reinstated as the primary mechanism** (cycle 17, gate finding H8) | Cycle 3 withdrew the "enumeration test **or** exported `events.RewriteCheckpointFile` seam" fallback and made the enumeration the only mechanism, on width grounds. The cycle-16 gate ruled that an AST enumeration cannot fully enforce I1: it must resolve call targets, aliased imports, indirect writers, and any future helper wrapping an atomic write, and each unresolved case is a silent hole. Cycle 17 therefore builds the seam — but as **four bounded units** (U11 declaration, U12 contract harness, U13 implementation, U14 caller migration) rather than one five-file unit, which is what made the fallback unshippable in cycle 3. The enumeration survives as U2f, a supplemental caller-set regression guard that is explicitly not load-bearing. |
+| **Quarantine's verbatim move stays outside the seam** (cycle 17) | `moveNoReplace` never parses and never re-marshals, so it cannot drop keys. Routing it through a parse-and-validate seam would impose a parse precondition on the one verb whose purpose is disposing of documents that cannot be parsed. `CleanupCheckpoints`' `os.Rename` and `CreateCheckpoint`'s new-file writes are excluded for the same structural reason. |
+| **Machine offender arrays carry raw paths; only human text is quoted** (cycle 17, gate finding H4) | A quoted path in a machine array forces the consumer to parse a Go string literal before it can compare the value against the document's own key, and a synthetic `"+N more"` element is indistinguishable from a real offender of that name. Truncation is therefore structural — `truncated`, `omitted_paths`, `truncated_paths` — and escaping moves to U1c, which owns the only human rendering. |
+| **Remediation is published as structured intent, not a command string** (cycle 17, gate finding H1) | `internal/events` does not know the caller's working directory, so any command string it emits is bound to an ambient cwd and carries no approval, preimage, or no-clobber obligation. The CLI is the only layer that knows the resolved workspace, so it is the only layer allowed to render a command — with an explicit `--cwd`, a bare filename, and the A4c preamble attached (U16). The MCP surface and the agent instruction file publish the structured record only. |
+| **The `AbandonCheckpoint` `%v` wrap is fixed, not deviated from** (cycle 17, gate finding H7) | Cycles 1-16 recorded it as a documented Principle I deviation on "pre-existing" grounds. That escape hatch closes the moment U4 and U14 edit the same function: a one-verb change in a function this plan already touches is not an unrelated contract change. U17 makes it multi-`%w`, and the Constitution Check row moves from deviation to pass. |
+| **MCP `get` keeps its validation-class refusal for schema-invalid documents** (PR #377 review cycle 3) | `handleGetCheckpoint` routes through `domainError`, which takes no filename and already maps `ErrCheckpointInvalid` to `validation_failed`. Making `get` emit `checkpoint_use_quarantine` would mean routing a **read** through a mutation-shaped error path, widening U6c into U7's file set and changing a shipped contract. The quarantine remedy is already discoverable from `backlogit_list_checkpoints` (`needs_quarantine: true`), so the safety value is nil and the churn is real. Disposition codes stay on the mutation verbs. |
 
 ## Risks and Caveats
 
@@ -1507,7 +2113,9 @@ from the sole root.
 | Conformance key set drifts from `CheckpointV1` | Medium | U2d asserts set equality against the create-boundary set plus the reserved keys, guarding the hand-written reserved literal. |
 | A future change reintroduces a top-level preservation carrier | Low | U2d asserts `CheckpointV1` declares no `json:"-"` map carrier, anchored to the deliberation so the guard reads as "revisit the decision", not "never". |
 | Widened quarantine increases traffic into `archive/checkpoints/`, where `CleanupCheckpoints` `os.Remove`s a colliding destination | Medium | `moveNoReplace` already refuses to overwrite on the quarantine path. The reverse direction — copying archived bytes back under the original name — is the real hazard, and cycle 16 removes it from this release entirely: U9b no longer publishes an executable restore, and U10b no longer executes one. U10b's evidence-integrity row instead asserts that a second quarantine of the same filename is refused rather than clobbering the existing pair. Restoring archived evidence safely (real-root / no-follow open, handle-or-content CAS, no-clobber destinations, adversarial tests) is deferred to stash `35A27CD0`. |
-| The offender list is unbounded or drifts between CLI and MCP | Medium | U1b owns the single bounded projection `BoundedFieldPaths()` (quoted, 16 paths, 128 bytes per path, truncation marker). U6b, U7, and U8 all render through it and are forbidden from re-deriving a list from the raw `Fields` slice, so neither surface can emit an unbounded or differing set. |
+| The offender list is unbounded or drifts between CLI and MCP | Medium | U1b owns the single bounded **raw** projection `BoundedFieldPaths()` (16 paths, 128 bytes per path cut on a rune boundary, structural truncation counts). U6b, U6c, and U7 all render through it and are forbidden from re-deriving or re-capping, so neither surface can emit an unbounded or differing set. U1c owns the only quoted rendering, so escaping cannot leak into a machine array. |
+| **An ungated in-place rewrite path is added later** | **High** | The guarded seam (U11/U12/U13/U14) is the only in-place rewrite path after cycle 17, so a new ungated rewrite requires adding a new direct atomic-write call. U2f's supplemental enumeration makes the common form of that regression loud, but the invariant does not depend on it — an honest bound recorded in U2f itself. |
+| **An agent or operator pastes an unbound remediation command** | **High** | No library surface emits one. `internal/events` publishes `RemediationIntent`; the MCP surface publishes the same structure; the agent instruction file states the verb and points at the record. The CLI renderer (U16) is the only command surface and always emits an explicit `--cwd`, a bare filename, and the A4c approval / preimage / no-clobber preamble, and refuses to render at all when quoting would be required. |
 | The nine live legacy files are mutated during verification | Medium | U10 and U10b run against an in-tree scratch workspace only — U10b's recovery sweep uses a **copied mirror**, never the live directory. Live files are read for shape reference and never used as mutation targets. Every file under `.backlogit/checkpoints/` is hash-compared programmatically before and after. |
 | Windows atomic-write regression | Low | No change to `atomicfile.WriteFileAtomic` or `syncWriteFileAtomic`; only additional pre-write gates. |
 | CLI reference drift blocks the PR | Low | U9 regenerates `gen-docs` output and runs `backlogit docs lint` before handoff. |
@@ -1517,7 +2125,7 @@ from the sole root.
 
 | Principle | Verdict | Notes |
 |---|---|---|
-| I. Safety-First Go | **deviation (documented)** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Deviation**: `AbandonCheckpoint` already wraps its validation failure with `%v` (`internal/core/checkpoint_disposition.go:~76-81`), losing `ErrCheckpointInvalid`. This plan does not fix that pre-existing wrap — it is recorded as a named follow-up rather than silently claimed as compliant. |
+| I. Safety-First Go | **pass** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Cycle-17 change**: the pre-existing `%v` validation wrap in `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~76-81`) is **fixed** by U17 rather than recorded as a deviation. The cycle-16 gate ruled the deviation unavailable: Principle I is not satisfiable by documenting a departure from it, and the "unrelated shipped contract" justification lapses once U4 and U14 edit that same function. |
 | II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every code unit uses the two-step red posture declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a harness that **fails on assertions**. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. U2d owns a real production delta with a compiling-but-failing harness case that fails against the pre-delta state. U8b's parity harness lands during batch harness generation and fails against the declaration stubs of U6b/U6c/U7b/U7c/U8/U8c (see U8b's Expected red enumeration). U5's withdrawn state-conflict rows never contributed to its red gate; U5 retains its genuine red assertion (scenario 1's accept-half). P-004 does not permit an all-guards exemption, so cycle-8 replaced the earlier exemption claims with concrete red-load statements, cycle-10 retired U5b whose production delta contradicted the decision's scope boundary, and cycle-16 corrected U7e's expected-red statement, which had claimed `default: InternalError` for a row that in fact shadows through the generic `validation_failed` case. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
@@ -1533,8 +2141,15 @@ from the sole root.
 
 | Principle | Deviation | Justification | Simpler alternative rejected |
 |---|---|---|---|
-| I. Safety-First Go | `AbandonCheckpoint`'s pre-existing `%v` validation wrap is left in place. | Fixing it changes an unrelated shipped error contract inside a bounded-scope plan and would need its own red phase and cross-surface assertions. | "Fix it while we're in the file" — rejected: it is a silent contract change to a governed path, invisible in this plan's tests, and belongs in its own unit. |
 | V. Structured Observability | No refusal counter, log, or telemetry event. | The refusal is already agent-visible and typed; adding a telemetry surface pulls `internal/telemetry` into a freeze-scoped change and widens the blast radius past the defect. | "Emit a telemetry event per refusal" — rejected: nine known refusals on day one would immediately produce noise with no consumer defined. |
+
+**Principle I carries no deviation (cycle 17).** The row recorded here through cycle 16 —
+`AbandonCheckpoint`'s `%v` validation wrap left in place — is withdrawn. The cycle-16 gate found
+(H7) that the justification depended on the wrap living in code this plan does not touch, which
+stopped being true when U4 placed a gate in that function and U14 moved its write onto the seam.
+**U17** corrects the verb to multi-`%w`, asserts both `errors.Is` matches, and pins the rendered
+message text so no consumer regresses. The alternative "leave it and record a follow-up" is
+rejected: it is a knowingly-shipped Principle I violation on a touched path.
 
 **Principle VII carries no deviation (cycle 16).** The two rows recorded here through cycle 15 were
 withdrawn. A NON-NEGOTIABLE principle is not satisfiable by documenting a departure from it, so
@@ -1577,11 +2192,11 @@ Requires plan hardening: yes
 | U3, U3b | CLI `backlogit checkpoint resolve`, MCP `backlogit_resolve_checkpoint` | A legacy-shaped document in the scratch workspace is refused and its bytes are byte-identical (SHA before/after). A valid-but-non-conforming document is refused with `checkpoint_non_conforming`. A conforming active checkpoint still resolves. The MCP payload is **not** `"error":"internal"`. |
 | U4 | CLI `backlogit checkpoint abandon`, MCP `backlogit_abandon_checkpoint` | A valid-but-non-conforming document is refused, the offending keys are named, and the disposition audit JSONL is unchanged. |
 | U5 | CLI `backlogit checkpoint quarantine`, MCP `backlogit_quarantine_checkpoint` | The same document is accepted, moved byte-identically into the archive, and given a disposition sidecar. A conforming `status:"active"` file is refused by quarantine with `ErrCheckpointUseAbandon` (U5's scenario-2 hard gate). The conforming `status:"resolved"` double-refusal row is **not** verified here — cycle 16 withdrew U5's absorbed state-conflict guards as out-of-scope (follow-up stash `6FA45E69`), so no runtime row asserts an assertion the plan no longer owns. |
-| U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **POSIX-runnable** remediation command on **both** read surfaces (see U6 for the shell-contract rationale; PowerShell-safety for arbitrary accepted filenames is not claimed, and the natural filename generator produces shapes that are literally paste-safe in `pwsh` as well), and the file is unchanged after reading. |
-| U8, U8b | CLI error output, cross-surface parity | Both refusals exit non-zero with actionable text, and CLI, MCP, and the `events` read layer reach the same classification from the same stored file. |
+| U6, U6b | CLI `backlogit checkpoint list` / `get`, MCP `backlogit_list_checkpoints` / `backlogit_get_checkpoint` | A non-conforming file reports `needs_quarantine: true` with a **structured** `remediation_intent` on **both** read surfaces — verb, bare target filename, `requires_approval: true`, approval class `A4c`, and no shell text — and the file is unchanged after reading. |
+| U8, U8b, U16 | CLI error output, cross-surface parity, CLI remediation block | Both refusals exit non-zero with actionable text naming the offenders in quoted form; CLI, MCP, and the `events` read layer reach the same classification from the same stored file; and the CLI remediation block carries an explicit `--cwd`, a bare filename, and the approval / preimage / no-clobber lines. |
 | U10 | Live workspace, read-only | Every live SHA-256 hash under `.backlogit/checkpoints/` is unchanged across the whole verification run. |
-| U10b | Scratch mirror of `.backlogit/checkpoints/` | A session-start recovery sweep against the mirror refuses **exactly** the nine enumerated legacy filenames and succeeds on every other mirrored file. The quarantine archive is a complete, no-clobber, verbatim evidence pair, and a second quarantine of the same filename is refused rather than overwriting it. |
-| U2g, U7e (cycle-16 revision) | CLI `checkpoint resolve` / `abandon` / `quarantine` / `list` / `get`, MCP `backlogit_resolve_checkpoint` and `backlogit_abandon_checkpoint` | Three scenarios, run against scratch fixtures under an A4c approval batch and U10's six-point execution contract: (1) a fixture whose `context` carries an **exact-duplicate** member is refused by `resolve` **and** by `abandon` with `checkpoint_non_conforming` naming `duplicate:context.<key>` in a bounded `unknown_fields` array, is reported `needs_quarantine: true` by `list` **and** `get` with a matching `non_conforming_fields` list, is **accepted** by `quarantine`, and its bytes are SHA-identical across both refusals; (2) a fixture whose `context` carries a **fold variant aliasing a modeled field** (`shipment_id` + `Shipment_Id`) is refused the same way, while a sibling fixture carrying distinct unmodeled `foo` + `Foo` **resolves successfully** and both keys survive the rewrite — the open-namespace guard; (3) invoking `backlogit_resolve_checkpoint` on an already-abandoned document returns `validation_failed`, **not** `"error":"internal"`, proving U7e's retained row reaches the handler. Width: 3 scenarios, one runtime surface family. |
+| U10b | Scratch mirror of `.backlogit/checkpoints/` | A session-start recovery sweep against the mirror refuses **exactly** the nine enumerated legacy filenames and succeeds on every other mirrored file. The quarantine **payload** archive is a verbatim, no-clobber record, and a second quarantine of the same filename is refused rather than overwriting it. The sidecar's replace semantics are not claimed as no-clobber (see U10b). |
+| U10c | CLI `checkpoint resolve` / `abandon` / `quarantine` / `list` / `get`, MCP `backlogit_resolve_checkpoint` and `backlogit_abandon_checkpoint` | The three rows U10c owns, run against scratch fixtures under an A4c approval batch and U10's six-point execution contract: (1) an exact-duplicate `context` member is refused by `resolve` **and** `abandon` with `checkpoint_non_conforming` naming `duplicate:context.<key>` in a raw bounded `unknown_fields` array, is reported `needs_quarantine: true` by `list` **and** `get` with a matching `non_conforming_fields.paths` list, is **accepted** by `quarantine`, and its bytes are SHA-identical across both refusals; (2) a fold variant aliasing a modeled field (`shipment_id` + `Shipment_Id`) is refused the same way, a sibling carrying distinct unmodeled `foo` + `Foo` **resolves successfully** with both keys surviving, and a fixture whose only routing member is spelled `Context` with an inner exact duplicate is refused (U2h); (3) invoking `backlogit_resolve_checkpoint` on an already-abandoned document returns `validation_failed`, **not** `"error":"internal"`, proving U7e's row reaches the handler. |
 
 **The nine expected-refusal filenames** (enumerated so a correct refusal is never misread as a
 regression — recorded from the live corpus inspection performed during deliberation; the exact list
@@ -1594,26 +2209,40 @@ is re-captured and pinned in the closure artifact before merge):
 
 **Operational closure artifacts required before the work is absorbed**:
 
-* **Healthy signal** — `checkpoint resolve` / `abandon` succeed on **conforming** checkpoints, and
-  refusals occur **only** on filenames in the enumerated nine-file set. Refusals on that set are
-  expected, correct, and are **not** a failure signal.
-* **Failure signal** — any refusal of a conforming checkpoint; any refusal on a filename **outside**
-  the enumerated set; any audit event appended for a refused disposition; any MCP refusal that
-  surfaces as `"error":"internal"`.
+* **Healthy signal** — `checkpoint resolve` / `abandon` succeed on checkpoints that are
+  **schema-valid, top-level-conforming, `status: "active"`, and carry no administrative
+  disposition**, and refusals occur **only** on filenames in the enumerated nine-file set. That
+  scoping is load-bearing (cycle-17): a `status: "resolved"` conforming file is an idempotent no-op
+  on resolve and is refused by abandon with `ErrCheckpointNotActive` (I3 row 3, pre-existing and
+  out of scope), and a document carrying `disposition: "abandoned"` is refused by resolve with
+  `ErrCheckpointCannotResolveAbandoned`. Neither is a failure of this work, and an unscoped
+  "conforming checkpoints resolve and abandon" signal would misclassify both as incidents.
+* **Failure signal** — any refusal of a **conforming, active, undisposed** checkpoint; any refusal
+  on a filename **outside** the enumerated set; any audit event appended for a refused disposition;
+  any MCP refusal that surfaces as `"error":"internal"`.
 * **Rollback trigger** — a refusal on any checkpoint filename outside the enumerated nine, **or**
-  any conforming checkpoint failing to resolve. Revert the merge commit; there is no data migration
-  to unwind. A refusal *within* the nine does not trigger rollback at any frequency.
+  any **conforming, active, undisposed** checkpoint failing to resolve or abandon. Revert the merge
+  commit; there is no data migration to unwind. A refusal *within* the nine does not trigger
+  rollback at any frequency, and neither does a state-scoped refusal on a non-active or
+  administratively disposed document.
 * **Pre-merge acknowledgement** — the merging operator must confirm in the PR that day-one refusals
   on the nine legacy files are expected behaviour, so the post-merge observation window is not
   interpreted as an incident.
 * **Ownership and validation window** — one Ship session post-merge, verified by running Stage and
-  Ship session-start recovery against the live workspace.
-* **Blocked-path handling** — if agent recovery is blocked by a refusal on one of the nine, the
-  remedy is `checkpoint quarantine` under an A4c approval, **not** a revert and **not** an
-  in-place hand repair (the repair runbook is deferred — see `35A27CD0`).
+  Ship session-start recovery against the live workspace **using the read verbs only** (A4d).
+* **Blocked-path handling (cycle-17 correction)** — if agent recovery is blocked by a refusal on
+  one of the nine, the remedy is **not** a revert and **not** an in-place hand repair. Disposing of
+  any of the nine live legacy files is **A5**, which this plan classifies `abandoned` and forbids:
+  it requires its own separately approved unit of work. Until that unit exists, the operator's
+  options inside this scope are (a) leave the file in place — recovery reads `list` and `get`,
+  which report it as a quarantine candidate and do not block, or (b) authorize a new unit of work
+  for live disposition. Cycles 15 and 16 said "the remedy is `checkpoint quarantine` under an A4c
+  approval", which contradicts A5 for exactly the nine files the sentence is about; the
+  contradiction is removed rather than reconciled, because A5 is the more conservative rule.
 * **Follow-ups recorded (not in scope)**: dispose of the nine live legacy checkpoint files and the
-  stale active `129-S` checkpoint `checkpoint-20260822-212617.json` as workspace hygiene;
-  `AbandonCheckpoint`'s `%v` validation wrap; refusal observability; the `CreateCheckpoint`
+  stale active `129-S` checkpoint `checkpoint-20260822-212617.json` as workspace hygiene (this is
+  the **A5** unit of work referenced by Blocked-path handling above);
+  refusal observability; the `CreateCheckpoint`
   same-second filename collision; the CLI/MCP error-shape asymmetry (stash `63E810D9`); the
   cycle-15 security-lens items adjudicated out of this bounded scope — create-boundary `context`
   duplicate handling (**stash `E429A031`**), and symlink / no-follow containment together with the
@@ -1621,9 +2250,26 @@ is re-captured and pinned in the closure artifact before merge):
   the withdrawn conforming + `resolved` state-conflict guards (**stash `6FA45E69`**), CLI coverage
   for `checkpoint resolve` on an already-abandoned document (**stash `DBBA62AA`**), and the
   body-preserving repair and post-quarantine restore runbook, which is folded into **`35A27CD0`**
-  because it cannot be published safely until that stash's containment work lands. Rollback safety
+  because it cannot be published safely until that stash's containment work lands. **Cycle-17
+  additions**: removing the deprecated `CheckpointSummary.RemediationCommand` string field once
+  every consumer reads `RemediationIntent` (**stash `F1A47C02`**), and giving the quarantine
+  disposition sidecar its own no-replace create so the evidence pair is protected in both halves
+  rather than only through the payload move's `moveNoReplace` (**stash `9C4B10D7`**). Rollback
+  safety
   beyond revert-the-merge is not recorded as a follow-up: with no data migration, no schema change,
   and no on-disk format change, revert is already complete for this scope.
+
+**P-016 is a Ship execution precondition, not a plan defect (cycle-17).** At the time this
+decomposition was written the repository carried a second linked worktree
+(`.copilot/session-state/ecebe820-.../files/dark-factory-worktree`, branch `chore/121-s-closure`)
+unrelated to this shipment. It does not invalidate this plan and it is not a containment violation
+— the cycle-14, cycle-15, and cycle-16 gates each rejected that claim, and the linked worktree
+remains the valid mechanism for the single dedicated implementation branch `chore/stage-130-s`.
+It is recorded here as an explicit **precondition Ship must verify before claiming `130-S`**:
+exactly one active implementation worktree may exist for this release unit, so the unrelated
+worktree must be finished or removed by its own owner first. Stage does not touch it — removing
+another agent's worktree is outside Stage's Role Boundary and would be a destructive action
+requiring its own approval.
 
 ### Final mandatory gate sequence
 
@@ -1636,48 +2282,93 @@ against the final branch state before handoff — including when the last task m
 happens to be docs-only. A docs-only unit does not exempt the branch from the Go gates; it only
 means that unit's own commit introduced no Go delta.
 
-```text
-# Gate 1 — Tests
-go test ./...
+**Every gate below is written to be executable in Windows PowerShell against the whole branch
+(cycle-17).** The repository's `Makefile` uses GNU-make shell syntax (`$$(...)`) and `bash`, so
+`make` targets are not portable to the implementing session's shell. Each gate therefore states the
+PowerShell form and, where one exists, the equivalent Makefile target it reproduces. Gates that
+report by writing to stdout rather than by exit code assert **empty output** explicitly.
 
-# Gate 2 — Vet
+```powershell
+# Gate 1 — Tests (Makefile: test)
+go test -race ./...
+if ($LASTEXITCODE -ne 0) { throw 'Gate 1 FAILED: go test' }
+
+# Gate 2 — Vet (Makefile: vet)
 go vet ./...
+if ($LASTEXITCODE -ne 0) { throw 'Gate 2 FAILED: go vet' }
 
-# Gate 3 — Lint
+# Gate 3 — Lint (Makefile: lint)
 golangci-lint run
+if ($LASTEXITCODE -ne 0) { throw 'Gate 3 FAILED: golangci-lint' }
 
-# Gate 4 — Format (must FAIL the branch on drift)
-make fmt
+# Gate 4 — Format (Makefile: fmt). gofmt -l reports by STDOUT, not exit code.
+$bad = gofmt -l .
+if ($bad) { $bad; throw 'Gate 4 FAILED: unformatted files' }
 
-# Gate 5 — Markdown (P-008: MD001 / MD025 / MD041, repo-wide)
-make md-lint
+# Gate 4b — Import ordering (go.instructions.md Commands; same stdout-not-exit-code trap)
+$badimp = go run golang.org/x/tools/cmd/goimports@v0.39.0 -l .
+if ($LASTEXITCODE -ne 0) { throw 'Gate 4b HALTED: goimports unavailable (cold module cache / offline)' }
+if ($badimp) { $badimp; throw 'Gate 4b FAILED: import ordering' }
 
-# Gate 6 — Docline frontmatter compliance on authored docs
-make docs-lint
+# Gate 5 — Markdown (P-008: MD001 / MD025 / MD041, repo-wide; Makefile: md-lint)
+bash scripts/md-lint.sh
+if ($LASTEXITCODE -ne 0) { throw 'Gate 5 FAILED: markdownlint' }
+
+# Gate 6 — Docline frontmatter compliance on authored docs (Makefile: docs-lint)
+go run ./cmd/backlogit docs lint
+if ($LASTEXITCODE -ne 0) { throw 'Gate 6 FAILED: docs lint' }
 
 # Gate 7 — Docline compliance on the changed backlog and plan artifacts
 backlogit --cwd . docs lint
+if ($LASTEXITCODE -ne 0) { throw 'Gate 7 FAILED: backlog docs lint' }
 
 # Gate 8 — CLI Reference Drift (no-diff check; U9 owns regeneration if Cobra metadata changed)
-make docs
-git diff --exit-code docs/cli-reference
+go run ./cmd/gen-docs docs/cli-reference
+git diff --exit-code -- docs/cli-reference
+if ($LASTEXITCODE -ne 0) { throw 'Gate 8 FAILED: CLI reference drift' }
 
-# Gate 9 — Build and provenance
-go build -ldflags "$(LDFLAGS)" -o bin/backlogit ./cmd/backlogit    # or: make build
-bin/backlogit version --format json --no-update-check              # commit must equal git rev-parse --short HEAD
+# Gate 9 — Build and provenance (reproduces Makefile: build, LDFLAGS at Makefile:6-8)
+$sha  = (git rev-parse --short HEAD).Trim()
+$ver  = (git describe --tags --always --dirty).Trim()
+$date = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+$ld = "-X github.com/softwaresalt/backlogit/internal/version.Version=$ver " +
+      "-X github.com/softwaresalt/backlogit/internal/version.Commit=$sha "  +
+      "-X github.com/softwaresalt/backlogit/internal/version.BuildDate=$date"
+go build -ldflags $ld -o bin/backlogit.exe ./cmd/backlogit
+if ($LASTEXITCODE -ne 0) { throw 'Gate 9 FAILED: build' }
+$reported = (& ./bin/backlogit.exe version --format json --no-update-check | ConvertFrom-Json).commit
+if ($reported -ne $sha) { throw "Gate 9 FAILED: provenance mismatch - binary reports '$reported', HEAD is '$sha'" }
 ```
 
-**Gate 4 is `make fmt`, not a bare `gofmt -l .` (cycle-16 correction).** `gofmt -l .` exits **0**
+**Gate 4 is not a bare `gofmt -l .` (cycle-16 correction, retained).** `gofmt -l .` exits **0**
 even when it lists unformatted files — it reports by writing filenames to stdout, not by status
 code — so a CI step or a checklist item that only inspects the exit code passes on a
-formatting-dirty tree. `Makefile:38-39` already implements the correct gate
-(`bad=$(gofmt -l .); test -z "$bad" || { printf '%s\n' "$bad"; exit 1; }`). Use it, or assert
-explicitly that the command's **output is empty**; never rely on the bare exit code.
+formatting-dirty tree. `Makefile:24-25` implements the correct gate in `bash`
+(`bad=$(gofmt -l .); test -z "$bad" || { printf '%s\n' "$bad"; exit 1; }`); the PowerShell form
+above is its exact equivalent. Gate 4b has the identical trap and is written the same way.
 
-Gates 1-4 are the constitutional Go gates. Gates 5-8 are the repository's already-required
-documentation gates, restated here in one place so the implementing session does not have to
-reassemble them from U9, U9b, and the Risks table. Gate 9 pins the branch-built binary's provenance
-and is the same mechanism U10's environment precheck uses.
+**Gate 4b is version-pinned and network-free by construction (cycle-17).** `golang.org/x/tools`
+is pinned at `v0.39.0` in `go.sum`, and `go run <pkg>@<version>` executes in module-independent
+mode, so the invocation neither adds a module dependency (Principle VI) nor floats its version. If
+the module cache is cold and the environment is offline, the gate **halts** — it is never skipped,
+and the implementing session asks the operator to warm the cache. `go.instructions.md` states the
+three-group import ordering rule normatively and lists `goimports -l .` as the check for it; the
+default `golangci-lint` linter set does not include `goimports` and this repository has no
+`.golangci.yml`, so nothing else enforces the rule.
+
+**Gate 9 asserts provenance programmatically (cycle-17).** Cycles 1-16 wrote the SHA comparison as
+a trailing comment (`# commit must equal git rev-parse --short HEAD`), which no runner evaluates.
+The form above captures `git rev-parse --short HEAD` into `$sha`, reproduces the Makefile's own
+`LDFLAGS` shape (`Makefile:6-8`), and **throws** on inequality. `--format json` is the JSON
+selector (`internal/cli/version_cmd.go:98`) — there is no `--json` flag — and `--no-update-check`
+(`:99`) suppresses the remote release lookup so the assertion is hermetic. A plain
+`go build ./cmd/backlogit` leaves `internal/version.Version` at its `DevVersion` default with an
+**empty** commit and proves nothing about provenance.
+
+Gates 1-4b are the constitutional Go gates plus the import-ordering check. Gates 5-8 are the
+repository's already-required documentation gates, restated here in one place so the implementing
+session does not have to reassemble them from U9, U9b, and the Risks table. Gate 9 pins the
+branch-built binary's provenance and is the same mechanism U10's environment precheck uses.
 
 ## Plan Hardening
 
@@ -1705,30 +2396,33 @@ finding of the 117-S review cycle.
 ### Entry-point completeness audit (protected invariant I1)
 
 **I1 — Every code path that rewrites an existing checkpoint file in place must be gated, not just
-the two named in the stash text.** Audit of every checkpoint write site in `internal/`:
+the two named in the stash text.** Audit of every checkpoint write site in `internal/`, with the
+cycle-17 post-migration verdict:
 
 | Write site | Kind | Verdict |
 |---|---|---|
-| `internal/events/checkpoint_lifecycle.go:178` (`ResolveCheckpoint`) | in-place rewrite of an existing file | **In scope — U3.** Currently ungated. |
-| `internal/core/checkpoint_disposition.go:105` (`AbandonCheckpoint`) | in-place rewrite of an existing file | **In scope — U4.** Parse + validate gated; conformance gate added. |
-| `internal/events/memory.go:106` (`CreateCheckpoint`, V1 branch) | new file | **Already gated** by `checkClosedSchemaNamespace` (146.011-T/U4). No change. |
-| `internal/events/memory.go:112` (`CreateCheckpoint`, legacy branch) | new file, verbatim bytes | **Deliberately unchanged.** This is the legitimate origin of arbitrary top-level keys on disk; making it strict was rejected in the source document. |
-| `internal/events/checkpoint_lifecycle.go:242` (`CleanupCheckpoints`) | `os.Rename` — verbatim move | **Correct by construction.** Never parses or re-marshals, so it cannot drop keys. No change. |
-| `internal/core/checkpoint_disposition.go` `moveNoReplace` (`QuarantineCheckpoint`) | verbatim move | **Correct by construction.** U5 widens *which* files reach it, not how it writes. |
+| `internal/events/checkpoint_rewrite.go` (`RewriteCheckpointFile`, **new** — U11/U13) | in-place rewrite of an existing file | **The seam.** The only sanctioned in-place rewrite path. Requires parse, validate, and conformance before any marshal or atomic replace. |
+| `internal/events/checkpoint_lifecycle.go:178` (`ResolveCheckpoint`) | in-place rewrite of an existing file | **Migrated onto the seam — U14.** Its verb-specific sentinel mapping and gate ordering are U3 and U3b. |
+| `internal/core/checkpoint_disposition.go:105` (`AbandonCheckpoint`) | in-place rewrite of an existing file | **Migrated onto the seam — U14.** Its conformance-gate ordering ahead of the already-abandoned short-circuit and the audit append is U4; its multi-`%w` wrap is U17. |
+| `internal/events/memory.go:106` (`CreateCheckpoint`, V1 branch) | new file | **Already gated** by `checkClosedSchemaNamespace` (146.011-T/U4). Not a rewrite; outside the seam. No change. |
+| `internal/events/memory.go:112` (`CreateCheckpoint`, legacy branch) | new file, verbatim bytes | **Deliberately unchanged.** This is the legitimate origin of arbitrary top-level keys on disk; making it strict was rejected in the source document. Not a rewrite; outside the seam. |
+| `internal/events/checkpoint_lifecycle.go:242` (`CleanupCheckpoints`) | `os.Rename` — verbatim move | **Correct by construction.** Never parses or re-marshals, so it cannot drop keys. Explicitly outside the seam. No change. |
+| `internal/core/checkpoint_disposition.go` `moveNoReplace` (`QuarantineCheckpoint`) | verbatim move | **Correct by construction and deliberately outside the seam.** U5 widens *which* files reach it, not how it writes. Routing it through a parse-and-validate seam would impose a parse precondition on the one verb that exists to dispose of unparseable documents. |
+| `internal/core/checkpoint_disposition.go:~231` (quarantine disposition sidecar) | new sidecar file, replace semantics | **Out of the seam and out of this scope.** It writes a generated record, not the checkpoint document, so it cannot drop checkpoint keys. Its replace-on-collision behaviour is recorded honestly in U10b and deferred as stash `9C4B10D7`. |
 | `internal/telemetry/checkpoint.go:94` | different artifact (telemetry harvest cursor), different schema, not under `.backlogit/checkpoints/` | **Out of scope.** Named here so the audit is total and a reviewer does not read its absence as an omission. |
 
-**Making I1 executable.** A table in a plan document decays. **U2f** lands a
-**write-site enumeration test**: it walks the sources of **both** `internal/events` and
-`internal/core` for calls to
-`syncWriteFileAtomic` / `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target resolves under
-the checkpoint directory and asserts the resulting call-site set equals the enumerated allow-list
-above. A new in-place rewrite path added later fails that test rather than silently joining the
-ungated set. `internal/core` is in scope because U4's write site lives there. The previously
-offered "or a single exported `events.RewriteCheckpointFile` seam" fallback is **withdrawn**: see
-Decisions and Rationale. If the enumeration cannot be implemented reliably, U2f halts as `blocked`
-and the seam is re-planned as its own units rather than absorbed. A comment does not satisfy I1.
-The mechanism decision is taken in U2f, which is why U2f precedes U3b and U4 in the dependency
-graph and is not folded into U2d's schema-reflection guards.
+**Making I1 enforceable (cycle-17 rewrite).** A table in a plan document decays, and cycle 16 ruled
+that an AST write-call enumeration cannot carry the invariant on its own: it must resolve call
+targets, aliased imports, indirect writers, and any future helper that wraps an atomic write, and
+each unresolved case is a silent hole in the guarantee. **The enforcement is therefore
+architectural.** U11/U12/U13/U14 make `RewriteCheckpointFile` the single in-place rewrite path and
+migrate both existing callers onto it, so an ungated rewrite cannot exist without someone adding a
+new direct atomic-write call to the checkpoint directory. **U2f** keeps the enumeration as a
+*supplemental* caller-set regression guard over `internal/events` and `internal/core`, with an
+explicitly stated bound: it proves no new **direct, statically resolvable** write was added outside
+the seam, and it makes that common regression loud. It does not carry I1 by itself, nothing depends
+on it, and a blocked U2f does not block the release unit. A comment does not satisfy I1; neither
+does an enumeration alone.
 
 **Hardening-surfaced adjacent defect, explicitly NOT fixed here.** `CreateCheckpoint`
 (`internal/events/memory.go:58`) derives its filename at **one-second** granularity
@@ -1754,7 +2448,15 @@ by comment.** Reordering any of these produces either a false refusal or a silen
 6. `cp.Disposition == DispositionAbandoned` → `ErrCheckpointCannotResolveAbandoned`
 7. **NEW** `ValidateCheckpoint` → `ErrCheckpointUseQuarantine`
 8. **NEW** `CheckConformingTopLevelNamespace` → `ErrCheckpointNonConforming`
-9. mutate + `syncWriteFileAtomic`
+9. mutate + write **through `RewriteCheckpointFile`** (the guarded seam)
+
+**Cycle-17 note on steps 7-9.** After U14 the seam re-checks validity and conformance immediately
+before it marshals, so steps 7 and 8 are not the *only* thing standing between an untrustworthy
+document and a rewrite — they are what makes the refusal carry the **correct verb-facing sentinel**
+and what places it ahead of the mutation closure. The seam is defence in depth; steps 7 and 8 are
+the contract. Removing either half is a regression: without the seam an ungated caller could be
+added later, and without steps 7 and 8 the refusal would surface as a raw verdict error that no
+MCP mapping row matches.
 
 Steps 5 and 6 stay ahead of 7 and 8 deliberately: both are non-writing terminal answers, and
 moving the validity gate ahead of them would convert a shipped idempotent no-op into a new
@@ -1827,8 +2529,8 @@ highest-value assertion in the plan; if review trims anything, it must not be th
 | A2 | Widen `QuarantineCheckpoint` classification so more files become movable to the archive | `internal/core/checkpoint_disposition.go` | contract change on a file-moving verb | **high** | not required; move is verbatim and audited, and `moveNoReplace` never overwrites | revert; quarantined files are recoverable from the archive dir with their sidecar | planned |
 | A3 | Change five MCP tool descriptions (`list`, `get`, `resolve`, `abandon`, `quarantine`) and update `.github/instructions/backlogit.instructions.md` | `internal/mcp/tools.go`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml` | agent-facing contract change | moderate | not required | revert | planned |
 | A4 | Create and seed the scratch verification workspace — `mkdir`, byte-copy fixtures in, build the verify binary, and run the **read** verbs (`list`, `get`, `version`) against it | `docs/scratch/checkpoint-verification/` only | local file creation, no checkpoint mutation | moderate | not required — creation and reads only; **this row grants no authority to run a disposition verb**. Cycle 15's wording ("run disposition verbs … not required") contradicted A4c and is removed: any command that moves or overwrites a checkpoint file, in scratch or anywhere else, is A4c | discard the scratch contents | planned |
-| A4c | Execute a **disposition command that overwrites or moves a checkpoint file** — `checkpoint quarantine` (moves the file into `archive/checkpoints/` and writes a sidecar), `checkpoint abandon` (rewrites the document in place), `checkpoint resolve` (rewrites the document in place), and any operator-performed archive copy-back | scratch fixtures, scratch mirror, live corpus, and any archive/sidecar they create | file move / in-place overwrite | **destructive** | **required, and A4c is the sole operative contract for this class** — obtain explicit operator approval **immediately before each execution batch**, not once at plan time (Constitution VII). Approval covers the named files in the named directory only; a new directory or a new filename set needs a fresh approval. The batch request MUST carry the U10 execution contract: `--cwd` binding with bare filenames, per-file filename/hash/state/destination display, a pre-run preimage byte copy, an absent-destination and no-clobber assertion, and fail-closed halting | quarantine is reversible in principle by operator copy-back from `archive/checkpoints/`; an in-place rewrite is reversible only from the pre-run byte copy, so a pre-run byte copy of every mutating fixture is a **precondition** of the approval request | planned |
-| A4b | Tear down the scratch verification workspace after closure (**owned by U10b**, only after its three rows pass — U10 hands the workspace over intact) | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) — obtained immediately before execution | none needed — contents are reproducible from the plan | planned |
+| A4c | Execute a **disposition command that overwrites or moves a checkpoint file** — `checkpoint quarantine` (moves the file into `archive/checkpoints/` and writes a sidecar), `checkpoint abandon` (rewrites the document in place), `checkpoint resolve` (rewrites the document in place), and any operator-performed archive copy-back | scratch fixtures, scratch mirror, live corpus, and any archive/sidecar they create | file move / in-place overwrite | **destructive** | **required, and A4c is the sole operative contract for this class** — obtain explicit operator approval **immediately before each execution batch**, not once at plan time (Constitution VII). Approval covers the named files in the named directory only; a new directory or a new filename set needs a fresh approval. The batch request MUST carry the U10 execution contract: `--cwd` binding with bare filenames, per-file filename/hash/state/destination display, a pre-run preimage byte copy, the **operation-class-appropriate** destination precondition (cycle-17: absent-destination and no-clobber for an **archive move**; preimage plus a post-step SHA comparison for an **in-place rewrite**, where the destination is necessarily present and absent-destination must not be asserted; a declared intentional-collision row expects a refusal), and fail-closed halting | quarantine is reversible in principle by operator copy-back from `archive/checkpoints/`; an in-place rewrite is reversible only from the pre-run byte copy, so a pre-run byte copy of every mutating fixture is a **precondition** of the approval request | planned |
+| A4b | Tear down the scratch verification workspace after closure (**owned by U10c** since cycle 17, only after its three rows pass — U10 and U10b hand the workspace over intact) | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) — obtained immediately before execution | none needed — contents are reproducible from the plan, and the durable evidence lives in the tracked closure artifact rather than in the scratch directory | planned |
 | A4d | Post-merge observation of the live workspace | `.backlogit/checkpoints/` | **read-only** — `checkpoint list` and `checkpoint get` only | low | not required **while read-only**; any mutating verb against the live corpus leaves this row and becomes A4c or A5 | n/a | planned |
 | A5 | Mutate the nine live legacy checkpoints or the stale `129-S` checkpoint | `.backlogit/checkpoints/` | destructive, irreversible | **destructive** | **FORBIDDEN in this work.** Out of scope; requires explicit operator approval in a separate unit of work. | n/a | **abandoned** |
 
@@ -2759,3 +3461,75 @@ No blocker fix and no restage decomposition is attempted in this persistence pas
 backlog, checkpoint, and memory are updated only to record this gate outcome. Do not push this
 branch and do not hand this shipment to Ship until the formal decomposition is planned and passes
 its own plan-review gate.
+
+**Cycle-17 status of this record.** The formal decomposition this gate required was executed in
+cycle 17 and is documented in "PR #377 plan remediation, cycle 17 — formal decomposition" below.
+That appendix is remediation evidence, **not** a gate outcome: this `cycle: 16` record remains the
+current gate state at `decision: FAIL` until a fresh, independent plan review is dispatched against
+the decomposed plan. All eight blockers (1 P0, 7 P1) are dispositioned as closed in the appendix,
+and the decomposition is ready for that review.
+
+### PR #377 plan remediation, cycle 17 — formal decomposition
+
+This appendix is **historical evidence of the cycle-17 remediation pass**. It does not override the
+normative sections above; where this appendix and a normative section disagree, the normative
+section governs. The `cycle: 16` `## Plan Review` record remains the **current gate state**: it is
+`decision: FAIL`, and nothing in this appendix clears it. Cycle 17 executed the
+`restage_recommendation: formal-decomposition` that gate required; the result must now pass a fresh,
+independent plan-review gate before any implementation begins.
+
+**Method.** Unit-by-unit patching was rejected by the cycle-16 gate. The remaining work was
+re-partitioned into the five DAG partitions the gate named, each independently reviewable, and the
+plan's normative sections — Requirements Trace, Implementation Units, Dependency Graph, Decisions,
+Risks, Constitution Check, Runtime Verification and Closure, gate sequence, and the I1/I2 invariants
+— were rewritten against that structure rather than annotated.
+
+#### Blocker disposition
+
+| Gate ID | Severity | Cycle-17 disposition |
+|---|---|---|
+| H1 | P0 | **Closed.** `internal/events` no longer emits any command string for the new conformance branch. **U1d** declares a structured, non-executable `RemediationIntent` (`verb`, `target_filename`, `requires_approval`, `approval_class`, `reason`); U6, U6b, and U6c publish it; **U16** is the sole surface that renders an operator command, always with an explicit `--cwd` bound to the resolved storage root, a bare filename, and the A4c approval / preimage / no-clobber preamble, and refuses to render at all when quoting would be needed. U8 no longer asserts a runnable command; U9b gains a normative rule (item 9) forbidding executable remediation, repair, restore, or sweep text and an acceptance grep. The shipped `RemediationCommand` field is deprecated in place, not silently redefined; removal is stash `F1A47C02`. |
+| H2 | P1 | **Closed.** Partition 3 exists for this: **U15** declares `CheckpointReadResult` / `GetCheckpointResult` ahead of every behavioural unit, and **U8b** is rewritten as a partition-3 harness whose prerequisites are declarations only (U1, U1b, U1d, U2, U15). Seventeen partition-4 units now depend on U8b instead of the reverse. The already-green schema-invalid `get` assertions were reclassified as declared regression guards and removed from U8b's red gate; the "batch harness generation phase" framing is withdrawn. |
+| H3 | P1 | **Closed.** **U10c** (`147.041-T`) owns the context-duplicate cross-surface runtime verification and the abandoned-resolve MCP handler verification, wired after U10b, U2h, U6c, U7d, U7e, and U8c and before closure. U10 and U10b stay at three rows each. All three runtime units now persist deterministic, human-readable evidence to the tracked `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`; the git-ignored scratch directory is a working area, not the artifact of record. Teardown moved from U10b to U10c so it cannot destroy U10c's inputs. |
+| H4 | P1 | **Closed.** **U1b** returns `BoundedFieldPathSet{Paths, Truncated, OmittedPaths, TruncatedPaths}` carrying **raw** paths — no `strconv.Quote`, no `"+N more"` pseudo-element — with UTF-8-safe cap semantics (16 paths, 128 bytes per path cut on a rune boundary, empty string plus a count when the first rune exceeds the cap). **U1c** owns the only quoted rendering and backs `Error()` and the CLI text. U7's `unknown_fields` gains three sibling truncation scalars, none with `omitempty`. U6b, U6c, U8, and U8c were synchronized to the split. |
+| H5 | P1 | **Closed.** U7 item 3 no longer says the two unreachable `domainError` rows were "moved to U7e" — they were **deleted**, and the text says so. U7e is retitled to name the one row it owns and carries an explicit sole-ownership clause forbidding reintroduction. U7d's split note was corrected the same way. |
+| H6 | P1 | **Closed.** U7b and U7c tables now key on the registered identifiers `backlogit_list_checkpoints`, `backlogit_get_checkpoint`, `backlogit_resolve_checkpoint`, `backlogit_abandon_checkpoint`, and `backlogit_quarantine_checkpoint`, verified against the `mcplib.NewTool` literals at `internal/mcp/tools.go:177`, `:188`, `:195`, `:209`, and `:218`. The description bodies were corrected too — a description that told an agent to call a bare `quarantine_checkpoint` named a tool that is not registered. Both units' tests are keyed by registered name and read from the built tool set. |
+| H7 | P1 | **Closed.** **U17** (`147.040-T`) changes `AbandonCheckpoint`'s validation wrap from `%v` to multi-`%w`, asserts both `errors.Is(err, ErrCheckpointUseQuarantine)` and `errors.Is(err, ErrCheckpointInvalid)`, and pins the rendered message text. Width: 2 files, 2 scenarios. The Constitution Check row for Principle I moves from `deviation (documented)` to `pass`, and the deviation row is withdrawn from the deviations table. |
+| H8 | P1 | **Closed.** The AST enumeration is no longer the authoritative I1 mechanism. **U11** declares the guarded seam `events.RewriteCheckpointFile`, **U12** lands its contract harness, **U13** implements parse → validate → conformance → mutate → marshal → atomic replace, and **U14** migrates `ResolveCheckpoint` and `AbandonCheckpoint` onto it. Quarantine's verbatim `moveNoReplace`, `CleanupCheckpoints`' rename, and `CreateCheckpoint`'s new-file writes stay explicitly outside the seam. **U2f** is retitled and rewritten as a supplemental caller-set regression guard with an honest bound; nothing depends on it, and a blocked U2f no longer blocks the release unit. |
+
+#### Additional corrections made in this pass
+
+| Area | Correction |
+|---|---|
+| U2g context scan | The refusal rule gains item 5 scoping the scan to the canonical `context` spelling, and **U2h** (`147.033-T`) closes the false negative: `encoding/json` routes every top-level key satisfying `strings.EqualFold(name, "context")` to the modeled field, so a lone `Context` / `CONTEXT` / `conTexT` member is subject to the same collapse loss. No universal create-boundary claim is made — the create boundary stays deferred under stash `E429A031`. |
+| U2g red timing | Green guards are separated from the red gate by selector: the red gate is `-run '^TestU2g_Duplicate'` (two failing cases); the open-namespace preservation guard runs under the full `-run '^TestU2g_'` selector and is explicitly excluded from the red count. U2h uses the same split. |
+| Safety-contract classes | U10's execution contract step 5 is split into three operation classes — in-place rewrite (preimage plus SHA comparison; absent-destination must **not** be asserted), archive move (absent destination, no-clobber), and declared intentional-collision rows (expected outcome is a refusal). Cycle 16 imposed absent-destination on all three, which is wrong for `resolve` and `abandon`. |
+| Evidence-pair claim | U10b's no-clobber claim is narrowed to the **payload** move (`moveNoReplace`). The sidecar is written with `atomicfile.WriteFileAtomic` and is documented as an idempotent upsert, so it has replace semantics; the pair survives a second quarantine only because the payload move refuses first. Giving the sidecar its own no-replace create is stash `9C4B10D7`. |
+| Live-corpus contradiction | Blocked-path handling no longer tells an operator to quarantine one of the nine live legacy files under A4c. That contradicted **A5**, which classifies live-corpus mutation `abandoned` and forbids it in this work. The remedy is now either "leave it — the read verbs report it and recovery is not blocked" or "authorize a separate unit of work". A5 remains read-only-forbidden. |
+| Closure signals | Healthy, failure, and rollback signals are scoped to **conforming, active, undisposed** checkpoints. An unscoped signal would misclassify the pre-existing `ErrCheckpointNotActive` and `ErrCheckpointCannotResolveAbandoned` refusals as incidents. |
+| Gate sequence | Rewritten as executable Windows PowerShell, branch-wide, with explicit empty-output assertions for the stdout-reporting checks. **Gate 4b** adds the import-ordering check `go run golang.org/x/tools/cmd/goimports@v0.39.0 -l .` — version-pinned from `go.sum`, module-independent so it adds no dependency, halting rather than skipping on a cold offline cache. **Gate 9** now captures `git rev-parse --short HEAD`, reproduces the Makefile `LDFLAGS` shape from `Makefile:6-8`, and **throws** on SHA inequality instead of leaving the assertion in a trailing comment. |
+| P-016 | Recorded as a **Ship execution precondition**, not a plan defect: an unrelated linked worktree existed at decomposition time and must be finished or removed by its owner before Ship claims `130-S`. It is not a containment violation, and Stage does not touch it. |
+| Adjacent intake | Stash `B2657A3E` (malformed / truncated V1 JSON treated as legacy and written) and stash `E429A031` (create-boundary duplicate handling) are linked as related context only. Neither is absorbed: both concern the **create** boundary, this plan governs the **stored-document read and rewrite** boundaries, and absorbing either would breach the bounded scope of `D3CE9E81`. |
+
+#### Topology delta
+
+| Measure | Cycle 16 | Cycle 17 |
+|---|---|---|
+| Queued tasks under `147-F` | 29 | 40 |
+| Queued-to-queued executable edges | 52 | 98 |
+| Shipment `130-S` members | 30 | 41 |
+| Ready roots | `{147.001-T}` | `{147.001-T, 147.032-T}` |
+| Historical total edges | 53 | 99 |
+
+Eleven tasks were created: `147.031-T` (U1c), `147.032-T` (U1d), `147.033-T` (U2h), `147.034-T`
+(U11), `147.035-T` (U12), `147.036-T` (U13), `147.037-T` (U14), `147.038-T` (U15), `147.039-T`
+(U16), `147.040-T` (U17), `147.041-T` (U10c). Five were retitled: `147.021-T` (U2f), `147.030-T`
+(U1b), `147.016-T` (U8b), `147.029-T` (U7e), `147.015-T` (U8). No task was archived and no task ID
+was renumbered. The second ready root is `147.032-T` (U1d), an independent leaf declaration; cycle
+16 had a single root.
+
+Shipment `130-S` remains one release unit and one future Ship PR. The five partitions are execution
+phases inside that shipment, not separate release units: they share one branch, one merge commit,
+and the U9/U9b hard merge gate, and splitting them would violate that gate by deferring the
+instruction delta to a later PR.
+
