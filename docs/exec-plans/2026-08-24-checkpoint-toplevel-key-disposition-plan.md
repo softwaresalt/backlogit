@@ -1966,9 +1966,9 @@ the entry-point audit.
 ## Plan Review
 
 > [!IMPORTANT]
-> **Historical record — cycles 1 through 13 only.** This gate result does **not** cover cycle 14 or
-> cycle 15. The current gate state is the **third** `## Plan Review` record at the end of this
-> document (`cycle: 15`, `decision: FAIL`), and the cycle-16 remediation appendix beneath it.
+> **Historical record — cycles 1 through 13 only.** This gate result does **not** cover cycle 14,
+> cycle 15, or cycle 16. The current gate state is the **fourth** `## Plan Review` record at the
+> end of this document (`cycle: 16`, `decision: FAIL`).
 
 dispatch_mode: multi-agent-dispatch
 
@@ -2379,12 +2379,12 @@ dispatch_mode: multi-agent-dispatch
 
 decision: FAIL
 
-**Superseded by the cycle-15 gate record at the end of this document.** This record remains the
-authoritative history of the cycle-14 dispatch and its findings; the current gate state is
-`cycle: 15`, `decision: FAIL`. It supersedes the earlier `## Plan Review` record in
-this document, which is scoped to cycles 1-13 and does **not** cover the cycle-14 dispatch. The
-prior PASS is retained as history and must not be read as clearance for the plan in its cycle-14
-state.
+**Superseded by the cycle-15 gate record immediately below, which is itself superseded by the
+cycle-16 gate record at the end of this document.** This record remains the authoritative history
+of the cycle-14 dispatch and its findings; the current gate state is `cycle: 16`, `decision: FAIL`.
+It supersedes the earlier `## Plan Review` record in this document, which is scoped to cycles 1-13
+and does **not** cover the cycle-14 dispatch. The prior PASS is retained as history and must not be
+read as clearance for the plan in its cycle-14 state.
 
 ### Dispatch record
 
@@ -2524,10 +2524,12 @@ dispatch_mode: multi-agent-dispatch
 
 decision: FAIL
 
-**This record is the current gate state.** It supersedes both earlier `## Plan Review` records: the
-cycles 1-13 `PASS` and the `cycle: 14` `FAIL`. Neither may be read as clearance for the plan in its
-cycle-15 state. The cycle-16 remediation appendix beneath this record documents what changed in
-response; it does **not** clear the gate. Clearance requires a fresh, independent cycle-16 review.
+**This record is superseded by the cycle-16 gate record at the end of this document.** It
+supersedes both earlier `## Plan Review` records: the cycles 1-13 `PASS` and the `cycle: 14`
+`FAIL`. Neither may be read as clearance for the plan in its cycle-15 state. The cycle-16
+remediation appendix beneath this record documents what changed in response; it did **not** clear
+the gate. The required fresh, independent cycle-16 review is recorded at the end of this document
+and also returned `FAIL`.
 
 ### Dispatch record
 
@@ -2650,3 +2652,110 @@ safe. The withdrawn runbook and its required safety properties are recorded unde
 | Historical total edges | 49 | **53** (52 executable + 1 archived `147.010-T -> 147.009-T`) |
 
 <!-- copilot-review-remediation: pr-377-cycle-16 -->
+
+## Plan Review
+
+cycle: 16
+
+dispatch_mode: single-agent-declared-degradation
+
+TOOL_DEGRADED: reviewer-subagent-dispatch
+
+decision: FAIL
+
+severity counts: P0=1, P1=7, P2=3, P3=2
+
+**This record is the current gate state.** It supersedes the cycles 1-13 `PASS`, the `cycle: 14`
+`FAIL`, and the `cycle: 15` `FAIL`. None of the three earlier records may be read as clearance for
+the plan in its cycle-16 state.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+The cycle-16 review is the fresh, independent dispatch the cycle-15 gate required, run against the
+plan as it stood after the "PR #377 plan remediation, cycle 16" appendix above. The first attempt
+used `multi-agent-dispatch`, matching cycles 14 and 15. That attempt is **invalid**: the Learnings
+Researcher sub-agent returned findings without inspecting the full plan text, so its coverage
+cannot be trusted. Per the plan-review skill's terminal-states rule, a dispatch that fails
+mid-gate for any selected persona cannot be partially merged into a full-fidelity decision. The
+multi-agent attempt is discarded in its entirety rather than salvaged, and the gate re-ran as a
+complete sequential, single-agent pass applying every persona's adapter (identity file plus
+plan-focused Focus criteria) over the full plan text, one lens at a time.
+`TOOL_DEGRADED: reviewer-subagent-dispatch` records the degradation. All seven selected personas
+completed under the fallback; coverage is complete, with the Learnings Researcher's pass re-run in
+full rather than reused from the invalid attempt.
+
+| Persona | Coverage mode | Coverage assignment |
+|---|---|---|
+| Constitution | sequential (single-agent) | P-002 / P-004 test-first posture and red honesty, task granularity, destructive-approval and worktree policy |
+| Go | sequential (single-agent) | sentinel and typed-error contracts, `errors.Is` traversal and case ordering, wrap verbs, `encoding/json` semantics |
+| Scope | sequential (single-agent) | YAGNI, unit reachability, effective scenario width, scope creep against the origin decision |
+| Learnings | sequential (single-agent), re-run after the invalid attempt | `docs/compound/` precedent for round-trip loss, `omitempty` array contracts, version skew and fresh-binary provenance |
+| Architecture | sequential (single-agent) | unit cohesion, read-boundary versus create-boundary separation, dependency direction, named invariants |
+| Agent-Native Parity | sequential (single-agent) | cross-surface agreement between CLI, MCP, and the `events` read layer; offender-source reachability |
+| Security | sequential (single-agent) | data-loss paths, diagnostic disclosure and bounding, filesystem containment, restore collisions, runbook safety |
+
+### Gate rationale
+
+The gate is **FAIL**. The merged finding set carries 1 P0 and 7 P1 blocking entries (severity
+counts: P0=1, P1=7, P2=3, P3=2). The decisive P0 is that the remediated plan still describes, in U6
+and U9b, an ambient-cwd runnable command that is not bound to the A4c cwd / approval / preimage /
+no-clobber contract — the same class of risk the cycle-15 gate closed by withdrawing the repair and
+restore runbook, recurring in different unit content. A plan that reintroduces an unsafe executable
+path cannot be cleared, regardless of how many other findings are resolved.
+
+### Findings by severity
+
+**P0 — 1**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| H1 | Unsafe executable remediation: U6 and U9b advertised an ambient-cwd runnable command without binding it to the A4c cwd / approval / preimage / no-clobber contract. | Blocking. Requires a non-executable remediation intent, or rendering safely bound at the CLI/MCP boundaries. |
+
+**P1 — 7**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| H2 | U8b cannot satisfy the RED ordering / current-source premise as written. | Blocking. Restage the unit: declarations before harness before implementation. |
+| H3 | Runtime coverage is orphaned: the context-duplicate and abandoned-resolve behaviors have no owned, bounded runtime verification unit. | Blocking. Add an owned bounded runtime unit (recommended `U10c`). |
+| H4 | Machine-readable arrays must carry bounded raw field paths with structured truncation metadata; quoting belongs only in the human-facing presentation. | Blocking. Separate the machine and human representations at the boundary that currently conflates them. |
+| H5 | U7 and U7e carry stale normative ownership claims. | Blocking. Only the abandoned-resolve mapping is retained; the remaining stale ownership must be corrected. |
+| H6 | U7b and U7c exact descriptions do not use the registered `backlogit_*` tool names. | Blocking. Correct the descriptions to the registered tool names. |
+| H7 | Principle I `%v` wrap in the touched `AbandonCheckpoint` path cannot be waived. | Blocking. Add a focused multi-`%w` harness and implementation unit. |
+| H8 | U2f AST sink enumeration cannot fully enforce I1 as structured. | Blocking. Formal decomposition should centralize the rewrites behind a guarded seam. |
+
+**P2 — 3 (advisory, not itemized in this persistence record)**
+
+**P3 — 2 (advisory, not itemized in this persistence record)**
+
+The P2 and P3 findings are non-blocking and are counted in the severity summary above only. This
+entry persists the gate verdict the sequential-fallback dispatch returned; it does not reproduce
+every advisory observation, none of which changes the FAIL outcome.
+
+### Rejected / stale findings
+
+| Claim | Disposition |
+|---|---|
+| A repair/restore runbook is still live in the plan | Rejected — already withdrawn in the cycle-16 remediation appendix above (U9b rewritten quarantine-only). |
+| A universal create-boundary claim still stands | Rejected — already narrowed in the cycle-16 remediation appendix (create-boundary hardening deferred to stash `E429A031`). |
+| The linked worktree is a P-016 or containment violation | Rejected, unchanged from cycles 14 and 15 — the linked worktree remains a valid mechanism for the single dedicated implementation branch `chore/stage-130-s`. |
+| A bounded create-boundary duplicate-detection unit belongs in this shipment | Rejected, unchanged from cycle 15 — the create boundary remains tracked as follow-up stash `E429A031`. |
+| U7e mappings for the two unreachable sentinel rows should be re-added | Rejected — cycle 15 already removed the unreachable `ErrCheckpointUseQuarantine` / `ErrCheckpointNonConforming` rows from `domainError`; do not reintroduce them. |
+
+### Remediation queue and restage recommendation
+
+restage_recommendation: formal-decomposition
+
+The gate stays **FAIL**. Given the P0 and the breadth of the P1 set, unit-by-unit patching is
+rejected in favor of a formal decomposition of the remaining work into five DAG partitions, to be
+planned and re-gated before any implementation begins:
+
+1. Foundation diagnostics and conformance
+2. Guarded rewrite seam
+3. Declarations and genuine RED harness order
+4. Implementation plus MCP/CLI/instruction contracts
+5. Runtime `U10` / `U10b` / `U10c` and closure
+
+No blocker fix and no restage decomposition is attempted in this persistence pass. The plan,
+backlog, checkpoint, and memory are updated only to record this gate outcome. Do not push this
+branch and do not hand this shipment to Ship until the formal decomposition is planned and passes
+its own plan-review gate.
