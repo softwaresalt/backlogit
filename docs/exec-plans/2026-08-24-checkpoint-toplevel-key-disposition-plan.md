@@ -129,9 +129,13 @@ plan-originated rather than inherited — the Requirements Trace labels it as su
 
 **Cycle-17 formal decomposition (normative).** The cycle-16 gate returned `decision: FAIL` with
 `restage_recommendation: formal-decomposition`. The remaining work is organised into five DAG
-partitions. Partition order is a hard execution order: no unit in partition *n* may begin before
-every unit in partitions `1..n-1` that it depends on has landed. Each partition is independently
-reviewable, and the partition a unit belongs to is stated in that unit's section.
+partitions, numbered to reflect the dependency structure rather than to impose an ordering rule of
+their own: the binding constraint on any unit is its own declared dependencies (the Dependency
+Graph and the per-task prerequisite table), and the partition number is a descriptive label that
+follows from those edges, not an independent execution gate. In practice this means no unit in
+partition *n* begins before every unit in partitions `1..n-1` that it actually depends on has
+landed; it does **not** require every other unit in `1..n-1` to have landed first. Each partition is
+independently reviewable, and the partition a unit belongs to is stated in that unit's section.
 
 | # | Partition | Units | Owns |
 |---|---|---|---|
@@ -1518,9 +1522,10 @@ on `147.010-T`.
 * **Files**: `internal/cli/checkpoint_parity_test.go` (new). **No production change.**
 * **Ordering contract (cycle-17 — closes gate finding H2)**: this harness lands **after** the
   partition-1 and partition-2 declarations and **before** every partition-4 implementation. Its
-  dependencies are declarations only — U1, U1b, U1d, U2, U15 — and the eleven behavioural units it
-  pins (U3, U3b, U4, U5, U6, U6b, U6c, U7, U7d, U8, U8c) each depend on **it**, so the harness is
-  observably red before any of them lands. Cycle 15 and cycle 16 wired the reverse direction, which
+  dependencies are declarations only — U1, U1b, U1d, U2, U15 — and the eighteen behavioural units it
+  pins (U3, U3b, U4, U5, U6, U6b, U6c, U6d, U7, U7b, U7c, U7d, U7e, U8, U8c, U9, U16, U17) each
+  depend on **it**, so the harness is observably red before any of them lands. Cycle 15 and cycle 16
+  wired the reverse direction, which
   is why the gate ruled the RED premise unsatisfiable: a harness that depends on the
   implementations it pins can never be red against a pre-implementation state.
 * **Change**: `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`
@@ -1637,7 +1642,8 @@ on `147.010-T`.
   already-resolved residual from U3b, and record that the top-level namespace is closed in both
   directions with `context` remaining the sole open one. Regenerate CLI reference docs via
   `gen-docs` if any command help text changed.
-* **Tests**: `backlogit docs lint` reports 0 violations; the CLI Reference Drift check is clean.
+* **Tests**: `go run ./cmd/backlogit --cwd . docs lint` reports 0 violations; the CLI Reference
+  Drift check is clean.
 * **Expected red**: n/a (docs-only; runs after behaviour is final and claims no RED behaviour).
 * **Depends on**: U2e, U6b, U8b, U16, U17.
 
@@ -1742,7 +1748,7 @@ on `147.010-T`.
      publish one without the approval obligation attached. Any acceptance check for this unit
      greps the changed file for `backlogit checkpoint quarantine` and fails if a bare invocation
      is present.
-* **Tests**: `backlogit docs lint` reports 0 violations on the changed file.
+* **Tests**: `go run ./cmd/backlogit --cwd . docs lint` reports 0 violations on the changed file.
 * **Acceptance / merge gate**: this unit and U9 must land in the **same merge commit** as U3b/U4/U5.
   A pull request that includes any of U3b, U4, or U5 **MUST NOT be merged** unless the
   `.github/instructions/backlogit.instructions.md` delta from this unit is present in that same
@@ -2118,7 +2124,7 @@ from the two roots.
 | **An agent or operator pastes an unbound remediation command** | **High** | No library surface emits one. `internal/events` publishes `RemediationIntent`; the MCP surface publishes the same structure; the agent instruction file states the verb and points at the record. The CLI renderer (U16) is the only command surface and always emits an explicit `--cwd`, a bare filename, and the A4c approval / preimage / no-clobber preamble, and refuses to render at all when quoting would be required. |
 | The nine live legacy files are mutated during verification | Medium | U10 and U10b run against an in-tree scratch workspace only — U10b's recovery sweep uses a **copied mirror**, never the live directory. Live files are read for shape reference and never used as mutation targets. Every file under `.backlogit/checkpoints/` is hash-compared programmatically before and after. |
 | Windows atomic-write regression | Low | No change to `atomicfile.WriteFileAtomic` or `syncWriteFileAtomic`; only additional pre-write gates. |
-| CLI reference drift blocks the PR | Low | U9 regenerates `gen-docs` output and runs `backlogit docs lint` before handoff. |
+| CLI reference drift blocks the PR | Low | U9 regenerates `gen-docs` output and runs `go run ./cmd/backlogit --cwd . docs lint` before handoff. |
 | `CreateCheckpoint` same-second filename collision silently overwrites (adjacent, **out of scope**) | Medium | Surfaced during the entry-point audit (I1). Not fixed here and not stashed, to hold the bounded scope. Recorded in Plan Hardening as a named follow-up. |
 
 ## Constitution Check
@@ -2392,6 +2398,9 @@ finding of the 117-S review cycle.
 | `.github/instructions/strict-safety.instructions.md` | Risky actions expressed as `ProposedAction` / `ActionRisk` / `ActionResult` below. |
 | `.github/instructions/constitution.instructions.md`, `.github/instructions/circuit-breaker.instructions.md` | Constitution Check above; stop conditions below. |
 | `.github/instructions/backlogit.instructions.md` | Identified as an **artifact to update** (R10, U9b), not merely consulted — its Lifecycle Hygiene Protocol currently teaches every agent that `resolve` is infallible and that the abandon/quarantine split is validity-only. |
+| `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md` (cycle 18) | Directly corroborates the pre-existing `os.Remove(dst)`-before-`os.Rename` hazard this plan already names in U9b item 7 and the Risks table's "Windows atomic-write regression" row: gating pre-remove on `runtime.GOOS == "windows"` is the shipped pattern the guarded seam (U11-U14) and `moveNoReplace` must not regress. |
+| `docs/compound/best-practices/crash-safe-delete-rename-rollback-go-2026-04-23.md` (cycle 18) | Corroborates U10/U10b's no-clobber-and-rollback posture for the archive payload move: on a failed post-rename step, roll back to a discoverable canonical path rather than leaving evidence stranded under a temp name. |
+| `docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md` (cycle 18) | Corroborates U9's `gen-docs`-then-lint sequencing: CLI reference docs must be regenerated from the Cobra command `Long` field, not hand-edited, before the drift check and `go run ./cmd/backlogit --cwd . docs lint` are run. |
 
 ### Entry-point completeness audit (protected invariant I1)
 
@@ -2684,8 +2693,8 @@ the entry-point audit.
 
 > [!IMPORTANT]
 > **Historical record — cycles 1 through 13 only.** This gate result does **not** cover cycle 14,
-> cycle 15, or cycle 16. The current gate state is the **fourth** `## Plan Review` record at the
-> end of this document (`cycle: 16`, `decision: FAIL`).
+> cycle 15, cycle 16, cycle 17, or cycle 18. The current gate state is the **last** `## Plan Review`
+> record at the end of this document (`cycle: 18`, `decision: ADVISORY`).
 
 dispatch_mode: multi-agent-dispatch
 
@@ -3097,11 +3106,11 @@ dispatch_mode: multi-agent-dispatch
 decision: FAIL
 
 **Superseded by the cycle-15 gate record immediately below, which is itself superseded by the
-cycle-16 gate record at the end of this document.** This record remains the authoritative history
-of the cycle-14 dispatch and its findings; the current gate state is `cycle: 16`, `decision: FAIL`.
-It supersedes the earlier `## Plan Review` record in this document, which is scoped to cycles 1-13
-and does **not** cover the cycle-14 dispatch. The prior PASS is retained as history and must not be
-read as clearance for the plan in its cycle-14 state.
+cycle-16, cycle-17, and cycle-18 gate records that follow.** This record remains the authoritative
+history of the cycle-14 dispatch and its findings; the current gate state is `cycle: 18`,
+`decision: ADVISORY`. It supersedes the earlier `## Plan Review` record in this document, which is
+scoped to cycles 1-13 and does **not** cover the cycle-14 dispatch. The prior PASS is retained as
+history and must not be read as clearance for the plan in its cycle-14 state.
 
 ### Dispatch record
 
@@ -3241,12 +3250,13 @@ dispatch_mode: multi-agent-dispatch
 
 decision: FAIL
 
-**This record is superseded by the cycle-16 gate record at the end of this document.** It
+**This record is superseded by the cycle-16, cycle-17, and cycle-18 gate records that follow.** It
 supersedes both earlier `## Plan Review` records: the cycles 1-13 `PASS` and the `cycle: 14`
 `FAIL`. Neither may be read as clearance for the plan in its cycle-15 state. The cycle-16
 remediation appendix beneath this record documents what changed in response; it did **not** clear
-the gate. The required fresh, independent cycle-16 review is recorded at the end of this document
-and also returned `FAIL`.
+the gate. The required fresh, independent cycle-16 review follows later in this document and also
+returned `FAIL`; it was in turn superseded by cycle 17 (`FAIL`) and then cycle 18 (`ADVISORY`, the
+current gate state).
 
 ### Dispatch record
 
@@ -3382,9 +3392,10 @@ decision: FAIL
 
 severity counts: P0=1, P1=7, P2=3, P3=2
 
-**This record is the current gate state.** It supersedes the cycles 1-13 `PASS`, the `cycle: 14`
-`FAIL`, and the `cycle: 15` `FAIL`. None of the three earlier records may be read as clearance for
-the plan in its cycle-16 state.
+**This record was the current gate state through cycle 16; it is superseded by the `cycle: 17`
+`FAIL` record and then the `cycle: 18` `ADVISORY` record below, the current gate state.** It
+supersedes the cycles 1-13 `PASS`, the `cycle: 14` `FAIL`, and the `cycle: 15` `FAIL`. None of the
+three earlier records may be read as clearance for the plan in its cycle-16 state.
 
 ### Dispatch record — degraded to a single-agent sequential pass
 
@@ -3479,19 +3490,24 @@ its own plan-review gate.
 
 **Cycle-17 status of this record.** The formal decomposition this gate required was executed in
 cycle 17 and is documented in "PR #377 plan remediation, cycle 17 — formal decomposition" below.
-That appendix is remediation evidence, **not** a gate outcome: this `cycle: 16` record remains the
-current gate state at `decision: FAIL` until a fresh, independent plan review is dispatched against
-the decomposed plan. All eight blockers (1 P0, 7 P1) are dispositioned as closed in the appendix,
-and the decomposition is ready for that review.
+That appendix is remediation evidence, **not** a gate outcome: this `cycle: 16` record was the
+current gate state at `decision: FAIL` until the fresh, independent `cycle: 17` plan review below
+was dispatched against the decomposed plan, and it is now superseded in turn by the `cycle: 18`
+`ADVISORY` record at the end of this document, the current gate state. All eight blockers (1 P0, 7
+P1) are dispositioned as closed in the appendix, and the decomposition passed both the cycle-17 and
+cycle-18 reviews.
 
 ### PR #377 plan remediation, cycle 17 — formal decomposition
 
 This appendix is **historical evidence of the cycle-17 remediation pass**. It does not override the
 normative sections above; where this appendix and a normative section disagree, the normative
-section governs. The `cycle: 16` `## Plan Review` record remains the **current gate state**: it is
-`decision: FAIL`, and nothing in this appendix clears it. Cycle 17 executed the
-`restage_recommendation: formal-decomposition` that gate required; the result must now pass a fresh,
-independent plan-review gate before any implementation begins.
+section governs. The `cycle: 16` `## Plan Review` record was the **current gate state** at the time
+this appendix was written; it was `decision: FAIL`, and nothing in this appendix cleared it on its
+own. It has since been superseded by the `cycle: 17` `FAIL` record and then the `cycle: 18`
+`ADVISORY` record at the end of this document, the current gate state. Cycle 17 executed the
+`restage_recommendation: formal-decomposition` that gate required; the result passed a fresh,
+independent plan-review gate, as the `cycle: 17` record below records, and cycle 18 confirms the
+topology and closes the remaining synchronization gaps.
 
 **Method.** Unit-by-unit patching was rejected by the cycle-16 gate. The remaining work was
 re-partitioned into the five DAG partitions the gate named, each independently reviewable, and the
@@ -3504,7 +3520,7 @@ Risks, Constitution Check, Runtime Verification and Closure, gate sequence, and 
 | Gate ID | Severity | Cycle-17 disposition |
 |---|---|---|
 | H1 | P0 | **Closed.** `internal/events` no longer emits any command string for the new conformance branch. **U1d** declares a structured, non-executable `RemediationIntent` (`verb`, `target_filename`, `requires_approval`, `approval_class`, `reason`); U6, U6b, and U6c publish it; **U16** is the sole surface that renders an operator command, always with an explicit `--cwd` bound to the resolved storage root, a bare filename, and the A4c approval / preimage / no-clobber preamble, and refuses to render at all when quoting would be needed. U8 no longer asserts a runnable command; U9b gains a normative rule (item 9) forbidding executable remediation, repair, restore, or sweep text and an acceptance grep. The shipped `RemediationCommand` field is deprecated in place, not silently redefined; removal is stash `F350503F`. |
-| H2 | P1 | **Closed.** Partition 3 exists for this: **U15** declares `CheckpointReadResult` / `GetCheckpointResult` ahead of every behavioural unit, and **U8b** is rewritten as a partition-3 harness whose prerequisites are declarations only (U1, U1b, U1d, U2, U15). Seventeen partition-4 units now depend on U8b instead of the reverse. The already-green schema-invalid `get` assertions were reclassified as declared regression guards and removed from U8b's red gate; the "batch harness generation phase" framing is withdrawn. |
+| H2 | P1 | **Closed.** Partition 3 exists for this: **U15** declares `CheckpointReadResult` / `GetCheckpointResult` ahead of every behavioural unit, and **U8b** is rewritten as a partition-3 harness whose prerequisites are declarations only (U1, U1b, U1d, U2, U15). Eighteen partition-4 units now depend on U8b instead of the reverse. The already-green schema-invalid `get` assertions were reclassified as declared regression guards and removed from U8b's red gate; the "batch harness generation phase" framing is withdrawn. |
 | H3 | P1 | **Closed.** **U10c** (`147.041-T`) owns the context-duplicate cross-surface runtime verification and the abandoned-resolve MCP handler verification, wired after U10b, U2h, U6c, U7d, U7e, and U8c and before closure. U10 and U10b stay at three rows each. All three runtime units now persist deterministic, human-readable evidence to the tracked `docs/closure/2026-08-checkpoint-disposition-runtime-verification.md`; the git-ignored scratch directory is a working area, not the artifact of record. Teardown moved from U10b to U10c so it cannot destroy U10c's inputs. |
 | H4 | P1 | **Closed.** **U1b** returns `BoundedFieldPathSet{Paths, Truncated, OmittedPaths, TruncatedPaths}` carrying **raw** paths — no `strconv.Quote`, no `"+N more"` pseudo-element — with UTF-8-safe cap semantics (16 paths, 128 bytes per path cut on a rune boundary, empty string plus a count when the first rune exceeds the cap). **U1c** owns the only quoted rendering and backs `Error()` and the CLI text. U7's `unknown_fields` gains three sibling truncation scalars, none with `omitempty`. U6b, U6c, U8, and U8c were synchronized to the split. |
 | H5 | P1 | **Closed.** U7 item 3 no longer says the two unreachable `domainError` rows were "moved to U7e" — they were **deleted**, and the text says so. U7e is retitled to name the one row it owns and carries an explicit sole-ownership clause forbidding reintroduction. U7d's split note was corrected the same way. |
@@ -3560,12 +3576,13 @@ decision: FAIL
 
 severity counts: P0=0, P1=3, P2=2, P3=4
 
-**This record is the current gate state.** It supersedes the `cycle: 16` `FAIL` record for
-gate-decision purposes; cycle 16 and every earlier record remain the historical trace of how the
-plan reached its present shape. The "PR #377 plan remediation, cycle 17 — formal decomposition"
-appendix above is remediation evidence, not a gate outcome, and this record supersedes it as
-*evidence of closure* wherever a finding below identifies a gap between that appendix's disposition
-claims and the plan's actual normative text or the live backlog state.
+**This record was the current gate state through cycle 17; it is superseded by the `cycle: 18`
+`ADVISORY` record at the end of this document, the current gate state.** It supersedes the
+`cycle: 16` `FAIL` record for gate-decision purposes; cycle 16 and every earlier record remain the
+historical trace of how the plan reached its present shape. The "PR #377 plan remediation, cycle 17
+— formal decomposition" appendix above is remediation evidence, not a gate outcome, and this record
+supersedes it as *evidence of closure* wherever a finding below identifies a gap between that
+appendix's disposition claims and the plan's actual normative text or the live backlog state.
 
 ### Dispatch record — degraded to a single-agent sequential pass
 
@@ -3649,4 +3666,115 @@ non-blocking Gate 7 correction (S4) and two of the four non-blocking citation/co
 non-blocking follow-ups. A fresh, independent plan review must still be dispatched against the
 corrected plan before implementation begins. Do not push this branch and do not hand this shipment
 to Ship until that review passes.
+
+<!-- copilot-review-remediation: pr-377-cycle-18 -->
+
+## Plan Review
+
+cycle: 18
+
+dispatch_mode: single-agent-declared-degradation
+
+TOOL_DEGRADED: reviewer-subagent-dispatch
+
+decision: ADVISORY
+
+operator_authorization: approved
+
+severity counts: P0=0, P1=0, P2=1, P3=5
+
+push_allowed: yes
+
+**This record is the current gate state.** It supersedes the `cycle: 17` `FAIL` record immediately
+above for gate-decision purposes; cycle 17 and every earlier record remain the historical trace of
+how the plan reached its present shape.
+
+### Authorization basis
+
+`operator_authorization: approved` records that the operator explicitly directed autonomous
+continuation until this bounded cycle is fully complete, so the advisory (P2/P3) corrections found
+in this pass are accepted and applied in the same pass rather than deferred to a further review
+cycle. **This is not merge approval.** It authorizes Stage to apply the corrections below, record
+the gate outcome, and mark the branch cleared for push pending PR checks; it does not authorize
+Ship to build, does not authorize a shipment claim, and does not authorize a merge. Those remain
+separate, later gates owned by Ship and the operator respectively.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+This is the fresh, independent dispatch that follows the cycle-17 gate's synchronization fixes.
+Reviewer sub-agent dispatch was unavailable for this pass; `TOOL_DEGRADED:
+reviewer-subagent-dispatch` records the degradation, matching the cycle-16 and cycle-17 precedent.
+The gate ran as a complete sequential, single-agent pass applying all seven personas' adapters over
+the full plan text and the referenced backlog artifacts (`147-F` and its forty queued tasks),
+achieving **complete seven-adapter coverage**: all seven selected personas completed; none was
+skipped or partially dispatched.
+
+| Persona | Coverage mode | Coverage assignment |
+|---|---|---|
+| Constitution | sequential (single-agent) | current-gate-state self-consistency; `operator_authorization` framing against the P-014 merge-approval boundary |
+| Go | sequential (single-agent) | source-line and count claims (U8b dependent count) against the live dependency graph |
+| Scope | sequential (single-agent) | topology and task-count claims against the live `147-F` queue; confirms no topology or task drift is introduced |
+| Learnings | sequential (single-agent) | citation completeness in the consulted-learnings table against `docs/compound/` |
+| Architecture | sequential (single-agent) | partition-preamble wording against the actual DAG dependency semantics |
+| Agent-Native Parity | sequential (single-agent) | ambient-versus-current-source command form consistency across U9 Tests, U9b Tests, Gate 6/7, and the Risks table |
+| Security | sequential (single-agent) | confirms no destructive or ambient-executable text is introduced by any correction |
+
+### Gate rationale
+
+The gate is **ADVISORY**. The five DAG partitions, the dependency graph, the 40-task /
+98-executable-edge / 41-member topology, and the two-root ready set (`147.001-T`, `147.032-T`) are
+confirmed **SOUND** and unchanged by this pass — this cycle finds no P0 and no P1. The six findings
+below (one P2, five P3) are documentation-consistency and citation-completeness gaps: a stale
+"current gate state" pointer chain that let more than one `## Plan Review` record read as
+authoritative at once, an off-by-one dependent count in prose, a residual ambient-command form in
+three normative locations whose sibling locations were already corrected in cycle 17, and an
+optional same-file wording and citation polish. None of them bears on architecture, safety, or the
+implementation contract, so the gate is advisory rather than blocking, and every finding is
+corrected in this same pass under the `operator_authorization` above. `push_allowed: yes`.
+
+### Findings by severity
+
+**P0 — 0**
+
+None.
+
+**P1 — 0**
+
+None.
+
+**P2 — 1**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| N1 | Stale "current gate state" pointer chain: the cycles 1-13 admonition, the cycle-14 record, the cycle-15 record, the cycle-16 record's self-declaration and its "Cycle-17 status of this record" paragraph, the cycle-17 formal-decomposition appendix's intro, and the cycle-17 record's own self-declaration each either pointed at `cycle: 16` as current (already once-stale after cycle 17 landed) or independently declared themselves "the current gate state" with no forward pointer, so more than one record could be read as authoritative at once. | Fixed in this pass. Every earlier self-declaration is corrected to state which cycle superseded it and to point forward to `cycle: 18` as the sole current gate state; the cycles 1-13 admonition box no longer hardcodes an ordinal position for the current record. Exactly one current-gate-state claim now exists in this document. |
+
+**P3 — 5**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| N2 | The U8b unit section's ordering-contract prose named "the eleven behavioural units it pins," and the cycle-17 appendix's H2 disposition said "Seventeen partition-4 units now depend on U8b." The live dependency graph's per-task prerequisite table shows **18** tasks — `147.006-T`, `147.007-T`, `147.008-T`, `147.009-T`, `147.011-T`, `147.012-T`, `147.013-T`, `147.014-T`, `147.015-T`, `147.017-T`, `147.022-T`, `147.023-T`, `147.024-T`, `147.025-T`, `147.027-T`, `147.029-T`, `147.039-T`, `147.040-T` (units U3, U3b, U4, U5, U6, U6b, U6c, U6d, U7, U7b, U7c, U7d, U7e, U8, U8c, U9, U16, U17) — declaring `147.016-T` as a prerequisite. | Fixed in this pass. Both the U8b section's unit list and the cycle-17 appendix's H2 row are corrected to the count of eighteen and the full unit list above; no dependency edge was added, removed, or renumbered. |
+| N3a | U9's Tests bullet still invoked the ambient/installed `backlogit docs lint` rather than the current-source form Gate 6, the Dependency Graph regeneration note, and the U9/U9b red-verification row already use. | Fixed in this pass. Replaced with `go run ./cmd/backlogit --cwd . docs lint`. |
+| N3b | U9b's Tests bullet carried the same ambient `backlogit docs lint` form. | Fixed in this pass. Replaced with `go run ./cmd/backlogit --cwd . docs lint`. |
+| N3c | The Risks table's "CLI reference drift blocks the PR" row cited the ambient `backlogit docs lint` form. | Fixed in this pass. Replaced with `go run ./cmd/backlogit --cwd . docs lint`, preserving the surrounding `gen-docs` clause. |
+| N4 | (Optional, same-file.) The cycle-17 formal-decomposition preamble stated "Partition order is a hard execution order" without grounding that in the DAG edges that are the actual binding constraint, reading as though partition number were itself an independent ordering rule rather than a label following from declared dependencies; separately, the consulted-learnings table was missing three directly applicable, already-shipped learnings on Windows-safe atomic rename, crash-safe rename rollback, and CLI reference drift, each bearing on mechanisms this plan already relies on. | Fixed in this pass, same file, no unit or topology change. The preamble now states the dependency graph is the binding constraint and partition number is a descriptive label following from it; the consulted-learnings table gained three rows: `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md`, `docs/compound/best-practices/crash-safe-delete-rename-rollback-go-2026-04-23.md`, and `docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md`. |
+
+### Rejected / stale findings
+
+| Claim | Disposition |
+|---|---|
+| The five-partition decomposition, the dependency graph, or the 40/98/41 topology needs restructuring | Rejected — this pass re-confirms the topology against the live `147-F` queue via the worktree-scoped CLI; unchanged by this gate. |
+| The three P1 synchronization defects cycle 17 fixed (S1-S3) have regressed | Rejected — verified still corrected: the Deepened runtime verification recap names U10c, the Constitution Check Principle II narrative reads the corrected partition-3 framing, and stash `F350503F` / `A12BBAFA` / `3A33E404` are present and referenced correctly throughout. |
+
+### Remediation queue and authorization
+
+restage_recommendation: none (advisory corrections applied in-pass)
+
+All findings in this cycle are P2/P3 and are fixed in the same pass under
+`operator_authorization: approved`. No P0 or P1 finding exists. The plan, backlog, checkpoint, and
+memory are updated to record this gate outcome and the corrections applied. Feature `147-F`'s
+plan-review state is set to **ADVISORY authorized / cleared for push pending PR checks**; the
+recorded next action is to push branch `chore/stage-130-s` and reconcile PR #377. This authorization
+is scoped to *pushing the already-reviewed branch and letting PR checks run*; it is explicitly
+**not** merge approval, not a shipment claim, and not authorization for Ship to begin
+implementation — those remain separate gates owned by Ship and the operator.
 

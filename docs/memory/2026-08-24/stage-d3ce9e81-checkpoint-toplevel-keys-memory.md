@@ -236,3 +236,29 @@ Ship agent picks up shipment `130-S`. Sequence is dependency-ordered from
 
 Stage's Role Boundary forbids feature branches and pull requests, so this
 session stops at the committed-on-`main` staging handoff.
+
+## Canonical status update (cycle 19, 2026-08-25)
+
+The narrative above predates the branch `chore/stage-130-s` / PR #377 workflow
+and the cycle 14-18 plan-review remediation cycles; it is left unedited as the
+historical record of the original staging pass. This addendum is the current
+canonical "next action" pointer for the initiative:
+
+* Plan review is at **`cycle: 18`, `decision: ADVISORY`**
+  (`dispatch_mode: single-agent-declared-degradation`,
+  `TOOL_DEGRADED: reviewer-subagent-dispatch`, `operator_authorization: approved`,
+  severity counts P0=0/P1=0/P2=1/P3=5, `push_allowed: yes`). Full record:
+  `docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md`
+  (final `## Plan Review` section).
+* Topology is **SOUND** and unchanged this cycle: 40 queued tasks under `147-F`,
+  98 queued-to-queued executable edges, 41 members in shipment `130-S`, ready
+  set exactly `{147.001-T, 147.032-T}`.
+* **NEXT REQUIRED ACTION: push branch `chore/stage-130-s` and reconcile
+  GitHub PR #377.** `operator_authorization: approved` records that the
+  operator explicitly directed autonomous continuation until this bounded
+  cycle is fully complete, so the advisory corrections are accepted — **this is
+  not merge approval**, not a shipment claim, and not a Ship handoff. Ship must
+  not claim `130-S` until its own build, review, and PR-lifecycle gates run
+  against the pushed branch.
+* Session checkpoint of record: `checkpoint-20260825-190220.json`
+  (`phase: cycle-19-advisory-closure-complete`).
