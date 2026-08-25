@@ -611,7 +611,7 @@ on `147.010-T`.
 ### U7d — `handleResolveCheckpoint` routes disposition refusals through the disposition shape
 
 * **Domain**: code (mcp)
-* **Files**: `internal/mcp/tools.go`, `internal/mcp/checkpoint_disposition_test.go`
+* **Files**: `internal/mcp/tools.go`, `internal/mcp/errors.go`, `internal/mcp/checkpoint_disposition_test.go`
 * **Change**: U7 extends `checkpointDispositionErrorResponse` with `code`, `filename`, and
   `unknown_fields`, but `handleResolveCheckpoint` (`internal/mcp/tools.go:1214-1232`) calls
   `domainError("resolve checkpoint", err)`. `domainError` takes **no filename argument**, so it can
@@ -626,9 +626,10 @@ on `147.010-T`.
   is what the U7 op-derived remediation reads to render `backlogit_resolve_checkpoint` as the
   wronged verb rather than the hardcoded `backlogit_abandon_checkpoint` a shipped resolve refusal
   would otherwise advertise. A wholesale swap would regress the errors
-  `checkpointDispositionError` does not name — `ErrCheckpointCannotResolveAbandoned` and
-  `ErrCheckpointCorrupt` map to `validation_failed` through `domainError` today and would fall to
-  that function's `default: InternalError` tail. `ErrCheckpointNotFound` is safe either way: it is
+  `checkpointDispositionError` does not name — `ErrCheckpointCannotResolveAbandoned` has no
+  explicit case in `domainError` and currently falls to `default: InternalError`; the planned
+  U7d delta adds the explicit `validation_failed` mapping. `ErrCheckpointCorrupt` already maps
+  to `validation_failed` through `domainError`. `ErrCheckpointNotFound` is safe either way: it is
   handled explicitly at `internal/mcp/errors.go:~358` before the default. The predicate matches both
   new refusals: U3 wraps the validity gate as
   `fmt.Errorf("%w: %w", ErrCheckpointUseQuarantine, valErr)` and U3b returns
@@ -644,8 +645,9 @@ on `147.010-T`.
   verb; a missing file still returns the pre-existing not-found refusal; an already-abandoned
   target still returns its pre-existing `validation_failed` refusal, proving the non-disposition
   path still reaches `domainError`.
-* **Expected red**: cases 1 and 2 fail (routing and both remediation-verb assertions); cases 3 and
-  4 are declared regression guards.
+* **Expected red**: cases 1, 2, and 4 fail (routing, both remediation-verb assertions, and the
+  pre-impl `InternalError` vs post-impl `validation_failed` delta); case 3 is a declared
+  regression guard.
 * **Depends on**: U1 (the predicate and its host package), U7 (the response shape, the code, and
   the op-derived remediation the resolve-side assertions read).
 
@@ -781,8 +783,9 @@ on `147.010-T`.
   non-zero exit — instead of a success payload, while `checkpoint_use_quarantine` belongs to the
   `resolve` column, where U7d routes it.
 * **Tests** (3): one row per fixture shape, each asserting CLI, MCP, and `events` reach the same
-  accept/refuse verdict and the same remedy verb, and that every fixture file is byte-identical
-  after all three surfaces have been exercised.
+  accept/refuse verdict and the same remedy verb. Byte-identity postcondition applies only to
+  refused mutation paths; accepted mutations (conforming-active row's `abandon`) verify the
+  intended rewrite/archive outcome using a fresh fixture copy.
 * **Batch-harness posture**: U8b's harness lands during the batch harness generation phase, when
   its dep tasks (U6b/147.012-T, U6c/147.022-T, U7b/147.014-T, U7c/147.024-T, U8/147.015-T,
   U8c/147.027-T) have their **declaration stubs** but not yet their implementations. Against that
@@ -848,7 +851,7 @@ on `147.010-T`.
 * **Files**: `docs/design-docs/checkpoint-administrative-disposition.md`, regenerated
   `docs/cli-reference/backlogit_checkpoint_*.md`
 * **Change**: restate the "Malformed-Only vs Valid-Only Split Rationale" section as a
-  **state-scoped four-class** classification. For a `status: "active"` target:
+  **state-scoped four-class** classification. For a `status: "active"` target with no administrative disposition:
 
   | Class | `abandon` | `resolve` | `quarantine` |
   |---|---|---|---|
@@ -1810,7 +1813,7 @@ An eleventh Copilot review (operator-authorized extension) flagged nine root cau
 | Thread | Issue | Cycle-11 correction |
 |---|---|---|
 | U10b mirror workspace (147.026-T) | The recovery sweep described its mirror at `docs/scratch/checkpoint-verification/mirror/` but CLI operations (`checkpoint resolve`, `checkpoint abandon`, `checkpoint list`) use `--cwd` to locate `.backlogit/checkpoints/` — the mirror must be a proper workspace with a `.backlogit/checkpoints/` subdirectory. | Mirror copy target changed to `docs/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/`; all sweep CLI invocations updated to use `--cwd docs/scratch/checkpoint-verification/mirror` with bare filename arguments. 147.026-T and plan U10b updated. |
-| 147.010-T canonical archive lifecycle | The archive file was placed manually into `.backlogit/archive/` without going through `archive_item`, so it lacked `archived_status`, `archived_reason`, and the canonical lifecycle metadata. | 147.010-T restored to queue temporarily; archive copy removed; canonical archive file created with `archived_from`, `archived_status`, `archived_reason`, `status: archived`, and retirement notice. Lifecycle metadata now matches the `archive_item` format. |
+| 147.010-T canonical archive lifecycle | The archive file was placed manually into `.backlogit/archive/` without going through `archive_item`, so it lacked `archived_status`, `archived_from`, and the canonical lifecycle metadata (JSONL log events, hook queue events). | 147.010-T restored to queue temporarily; archive copy removed; canonical archive file created with `archived_from`, `archived_status: done`, `status: archived`, and retirement notice; three JSONL log events and hook queue events emitted. Lifecycle metadata now matches the `archive_item` format. |
 | U8b fixture isolation (147.016-T) | The conforming-active row accepts `abandon`, which mutates the checkpoint. The task stated every fixture must be byte-identical after all surfaces are exercised — which cannot hold when an accepted mutation rewrites the file. | Task body clarified: one canonical fixture per state; each mutating test case gets a fresh copy; byte-identity postcondition applies only to refused mutation paths; the conforming-active row's `abandon` acceptance asserts the intended rewrite/archive outcome, not byte identity. |
 | ErrCheckpointCannotResolveAbandoned mapping (147.025-T) | The task body incorrectly stated that `ErrCheckpointCannotResolveAbandoned` already mapped to `validation_failed` through `domainError`. It has no explicit case and falls to `default: InternalError`. Case 4 therefore asserted a pre-existing behavior that did not exist. | Task body corrected: `ErrCheckpointCannotResolveAbandoned` falls to `default: InternalError` before U7d's explicit mapping. Case 4 is a genuine red delta: pre-impl `InternalError`, post-impl `validation_failed` with exact message `"resolve checkpoint: backlogit: checkpoint has been administratively abandoned; resolve is refused"`. Expected red updated. |
 | gen-docs / output projection mismatch (147.017-T) | `gen-docs` renders Cobra help metadata, not runtime JSON projection. U8/U8c are output-only changes, not Cobra help-text changes, so `gen-docs` produces no diff for them. The acceptance criterion wrongly said the drift check would be "clean" only when the files match a fresh run — it needed to state the expected outcome is NO diff for output-only changes. | Task body and acceptance criterion updated: CLI Reference Drift check verifies no-diff when only output projection changed; committed files are updated only when actual Cobra metadata changes cause a diff. |

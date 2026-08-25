@@ -88,6 +88,20 @@ The checkpoint referenced `docs/memory/2026-08-24/stage-pr377-remediation-cycle-
 
 - `docs/memory/` directory: 11 files in 2026-08-24, ~313KB total — below both triggers (>40 files, >500KB). No compaction required.
 
+## Adversarial Review Follow-Up (cycle 12)
+
+A three-model adversarial review returned READY_WITH_FOLLOWUPS with zero HIGH-confidence blockers. Seven synchronization findings (2 MEDIUM P1, 2 LOW P1, 2 LOW P2, 1 LOW P3) were resolved:
+
+1. Plan U7d body: corrected false `validation_failed` claim for `ErrCheckpointCannotResolveAbandoned` to `InternalError` fallthrough; synchronized with 147.025-T
+2. Plan U7d Expected Red: case 4 reclassified from regression guard to genuine RED assertion
+3. 147.025-T and plan U7d Files list: added `internal/mcp/errors.go`
+4. Plan U9 four-class matrix: added `with no administrative disposition` qualifier matching 147.017-T
+5. Plan U8b Tests(3): scoped byte-identity to refused mutation paths only
+6. Checkpoint resume_hint: cycle-9 shape `27/43/28` marked as historical
+7. Plan cycle-11 ROOT 2: removed unsupported `archived_reason` claim
+
+Backlog shape unchanged: 26 tasks / 42 edges / 27 shipment members.
+
 ## Next Steps
 
 - Ship to receive handoff at PR #377 head
