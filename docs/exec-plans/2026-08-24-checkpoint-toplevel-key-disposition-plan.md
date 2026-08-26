@@ -6094,3 +6094,127 @@ ungranted, and the next Stage cycle should take the two deferred findings first:
    `.copilot/scratch/checkpoint-verification/` root, and re-check U10b's and U10c's declared
    evidence paths and `verification-only` exempt surfaces against the move.
 
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 38
+reviewed_at: 2026-08-26
+reviewed_head: ae28bec8e43409074be93417e753448f70ca920c
+dispatch_mode: single-agent-operator-constrained
+subagents: prohibited-by-operator
+decision: ADVISORY
+pending: none
+operator_authorization: approved-additional-review-fix-cycles
+severity_counts: "P0=0, P1=2 (the two findings cycle 37 deferred at the §1.8 cycle limit — both remediated in-pass), P2=0, P3=0"
+topology: "S=44 explicit shipment members; M=43 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 106 executable edges; 18 waves; acyclic"
+push_allowed: yes
+push_performed: yes
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: ADVISORY
+
+**This record is the current gate state.** It supersedes cycle 37 for gate-decision purposes and
+closes both findings cycle 37 recorded as deliberately unresolved. Cycle 37 remains the historical
+record of the convergence-gate corrections it made; its fourth-wave disposition rows are left
+verbatim, as every superseded row in this plan is.
+
+### Authorization boundary
+
+The operator authorized additional review-fix cycles beyond the `github-pr-automation` §1.8
+three-cycle limit, so the deferral rationale recorded in cycle 37 no longer applies. This
+authorization covers the two remediations below, a push of the reviewed branch, replies to and
+resolution of the two bot-authored threads, and a fresh Copilot review. It is **not** merge
+approval, **not** a shipment claim, and **not** authorization for Ship to begin implementation.
+This cycle dispatched no subagent, ran no Go build or test command against production source, and
+changed no Go source file.
+
+### Finding 1 — `build-feature` had no red-deliverable execution branch
+
+| Thread | Path | Classification | Disposition |
+|---|---|---|---|
+| `PRRT_kwDORzozKM6cmx8M` | `.github/skills/build-feature/SKILL.md` | Valid — pre-existing, now fixed | **Fixed.** New Step 0.5 branch; `workflow-policies.md` moves to **1.24.0** |
+
+`red_deliverable` was declared as a `build-feature` input in policy 1.20.0, and 1.23.0 built the
+whole cross-wave open-red accounting on top of it, but the loop underneath was never branched: a
+passing `harness_cmd` read as success and a failing one as code to repair, and Step 2 advanced only
+on green. A red-deliverable task dispatched through the skill was therefore driven toward green or
+exhausted its 5-attempt budget, destroying exactly the red that `147.016-T` / U8b, `147.035-T` /
+U12, and `147.042-T` / U3c exist to hold and starving Step 4.6 items 4 and 5 of the entries they
+re-confirm.
+
+`build-feature` gains **Step 0.5**, which replaces the generic loop for these tasks rather than
+modifying it, and is fail closed at four boundaries:
+
+* **Dispatch preconditions** — a `harness-exempt` pairing, or a `harness_cmd` that is not the
+  declared `red_selector_command` verbatim, halts `WAVE_RED_MAPPING_UNRESOLVED`. The delta surface
+  is the named harness file(s) only; a red deliverable declares no production change.
+* **Pre-landing baseline (0.5a)** — the repo-wide compile check must pass, and the anchored
+  selector must match nothing. Already passing halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; already
+  failing halts new `WAVE_RED_DELIVERABLE_PRELANDED`, because that dispatch would re-land an
+  existing deliverable against an empty delta.
+* **Landing and compilation (0.5b, 0.5c)** — the harness lands with its declared assertions and no
+  balancing green assertion. The only permitted iteration repairs the landed harness's
+  **compilation** under the same 5-attempt breaker; it never edits a non-test file, never changes
+  what an assertion asserts, and never narrows the repo-wide compile check.
+* **Assertion RED (0.5d)** — the run must fail on named `--- FAIL:` functions. Exit 0 in any form
+  halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; a no-tests-to-run signal at any exit code halts new
+  `WAVE_RED_DELIVERABLE_VACUOUS`, the exact mirror of the P-002.3 false-green rule.
+
+Step 0.5e then returns the evidence Ship Step 4.5 turns into the `open_red_deliverables` entry —
+executed selector, failing function names and exit code, passing compile check, declared
+green-makers and closing wave — and 0.5f runs the inverted gates with no fix iteration, tolerating
+exactly `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`.
+
+Coupled surfaces moved together: P-002.2 gains the two codes and extends
+`WAVE_RED_DELIVERABLE_EARLY_GREEN` to the new gate points; P-002.6 gains the execution rule;
+`.ship.agent.md` Step 4.2 passes `red_deliverable` explicitly and names the branch and its halt
+codes, and Step 4.5 builds its record from the Step 0.5e report rather than re-deriving it. The
+scheduler simulation is unchanged by design — the branch alters no wave arithmetic, and the fixture
+was re-run to confirm it.
+
+### Finding 2 — U10b recreated its mirror under an unignored path
+
+| Thread | Path | Classification | Disposition |
+|---|---|---|---|
+| `PRRT_kwDORzozKM6cmx7t` | `.backlogit/queue/147.026-T.md` | Valid — pre-existing, now fixed | **Fixed.** Mirror re-sited under U10's canonical ignored root |
+
+Cycle 29 relocated U10's verification workspace to the already-ignored
+`.copilot/scratch/checkpoint-verification/` precisely so `verification-only` would not have to
+commit a `.gitignore` rule. The plan's U10b unit section moved with it, but the task artifact did
+not: `147.026-T` still sited its mirror at `docs/scratch/checkpoint-verification/mirror/`, a path
+`git check-ignore` does not match, which would dirty the tracked tree during verification and force
+this unit to commit an ignore rule its own P-002.4 surface rejects.
+
+The mirror is now `.copilot/scratch/checkpoint-verification/mirror/`, with the copied checkpoints at
+`.copilot/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/` and every sweep invocation
+bound by `--cwd .copilot/scratch/checkpoint-verification/mirror`. Ignore state was proved rather
+than assumed before the change was accepted:
+
+```text
+git check-ignore -v .copilot/scratch/checkpoint-verification/mirror/x.json
+  -> .gitignore:5:.copilot/    (exit 0, ignored)
+git check-ignore -v docs/scratch/checkpoint-verification/mirror/x.json
+  -> (exit 1, NOT ignored — rejected)
+git ls-files .copilot
+  -> 0 entries
+```
+
+The task now carries that check as an acceptance criterion, and its class delta surface states the
+no-configuration-file rule explicitly, matching U10. The three coupled surfaces were re-checked
+against the move: the plan's U10b section already named the canonical root and needed no change;
+`147.041-T` / U10c owns teardown of `.copilot/scratch/checkpoint-verification/`, which contains the
+mirror as a child, so its teardown scope is unchanged; and both units' `exempt_verification_command`
+values and evidence-manifest rows address the tracked closure artifact, never the scratch path, so
+neither gate moved. The mirror root is a child of U10's root and inherits its containment proof
+rather than establishing a second one.
+
+### Closure and next action
+
+The Stage plan gate is **ADVISORY authorized / pushed with no open findings**. Both threads cycle 37
+left unresolved are fixed, replied to with the fixing SHA, and resolved, so §1.9 Check 3 no longer
+fails on them. Operator merge approval remains unrequested and ungranted; Ship has not been
+authorized to claim `130-S` or begin implementation.

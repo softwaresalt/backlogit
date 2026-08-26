@@ -488,6 +488,39 @@
 #       The green-regression parser also enforces the easy P3 shape rule: object
 #       root, exactly one key, array value. Repo-authored; no path entry needed.
 #       Version header and Amendment Log are 1.22.0.
+#
+# NOTE (2026-08-26, cycle 38): the declared `red_deliverable` input finally has an
+# implementing branch. A template adoption that keeps P-002.6 MUST carry it, not
+# just the input name:
+#   .github/skills/build-feature/SKILL.md — new Step 0.5 red-deliverable execution
+#       branch that REPLACES the generic loop for these tasks rather than adding a
+#       flag to it. Dispatch preconditions reject a harness-exempt pairing or a
+#       harness_cmd that is not the declared red_selector_command verbatim
+#       (WAVE_RED_MAPPING_UNRESOLVED). Step 0.5a requires the repo-wide compile
+#       check to pass and the anchored selector to match NOTHING: already passing
+#       is WAVE_RED_DELIVERABLE_EARLY_GREEN, already failing is the new
+#       WAVE_RED_DELIVERABLE_PRELANDED. Step 0.5c allows exactly one repair loop,
+#       for the landed harness's COMPILATION only — never an assertion, never a
+#       non-test *.go file, never a narrowed compile check. Step 0.5d requires
+#       named --- FAIL: assertions: exit 0 is EARLY_GREEN, and a no-tests-to-run
+#       signal at ANY exit code is the new WAVE_RED_DELIVERABLE_VACUOUS, the
+#       mirror of the P-002.3 false-green rule. Step 0.5e's evidence report is
+#       mandatory; Ship builds the open_red_deliverables entry from it. Step 0.5f
+#       tolerates exactly sibling_red_selectors + open_red_selectors + the task's
+#       own declared selector, and that singleton is the only permitted addition.
+#   .github/policies/workflow-policies.md — P-002.2 gains
+#       WAVE_RED_DELIVERABLE_PRELANDED and WAVE_RED_DELIVERABLE_VACUOUS and
+#       extends WAVE_RED_DELIVERABLE_EARLY_GREEN to the Step 0.5 gate points;
+#       P-002.6 gains the red-deliverable execution rule. Do NOT reconstruct
+#       1.23.0, which declared the input with no branch behind it.
+#   .github/agents/.ship.agent.md — Step 4.2 passes red_deliverable explicitly and
+#       names the branch and its four halt codes; Step 4.5 builds the open-red
+#       record from the Step 0.5e report instead of re-deriving it.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — unchanged by design. The
+#       branch alters no wave arithmetic, so the 150/21 suite still holds; only
+#       the fixture's display-only policy_version moves to 1.24.0.
+#       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
