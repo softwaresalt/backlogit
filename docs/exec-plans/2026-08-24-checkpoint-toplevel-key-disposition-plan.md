@@ -66,7 +66,7 @@ strand a valid-but-non-conforming file with no disposition verb at all.
 | R8 | Every checkpoint **read** surface agrees with the mutation verbs about which files are rewrite-safe, and exposes the offending members atomically per file | plan-originated (source doc Unresolved Q3, widened by plan review; offender projection added in cycle 16) | U6, U6b, U6c, U6d, U8c, U15 |
 | R9 | Human-facing design doc restates the verb pair as total over its scoped population | plan-originated (source doc Option B cons) | U9 |
 | R10 | Agent-facing instruction surfaces teach the new `resolve` failure mode and the quarantine remedy, without publishing an unsafe repair runbook and without publishing an unbound executable command | plan-originated (plan review; narrowed in cycle 16, executable text removed in cycle 17) | U9b |
-| R11 | Every in-place checkpoint rewrite routes through **one guarded seam** that requires parse, validate, and conformance to succeed before any marshal or atomic replace | cycle-16 gate finding H8 | U11, U12, U13, U14, U3c, U2f |
+| R11 | Every in-place checkpoint rewrite routes through **one guarded seam** that requires parse, validate, and conformance to succeed before any marshal or atomic replace | cycle-16 gate finding H8 | U11, U12, U13, U14, U14b, U3c, U2f |
 | R12 | Remediation is published as **structured, non-executable intent** by `core`/`events` on **every** quarantine-candidate branch; only the CLI boundary renders an operator command, bound to the canonical workspace and to the A4c approval / preimage / no-clobber contract | cycle-16 gate finding H1; totality over all three branches added in cycle 20 | U1d, U6, U6e, U6b, U6c, U16, U9b |
 | R13 | The `AbandonCheckpoint` validation wrap preserves both `ErrCheckpointUseQuarantine` and `ErrCheckpointInvalid` through multi-`%w` | cycle-16 gate finding H7 (Principle I is NON-waivable on a touched path) | U17 |
 
@@ -140,7 +140,7 @@ independently reviewable, and the partition a unit belongs to is stated in that 
 | # | Partition | Units | Owns |
 |---|---|---|---|
 | 1 | Foundation diagnostics and conformance | U1, U1b, U1c, U1d, U2, U2b, U2c, U2d, U2e, U2g, U2h | The typed refusal carrier, the bounded machine projection, the human rendering, the structured remediation intent, and the read-boundary conformance predicate |
-| 2 | Guarded rewrite seam | U11, U12, U13, U14, U2f, U3c | One centralized, precondition-guarded rewrite seam for every in-place checkpoint rewrite, the resolve-verb conformance harness the migration turns green, plus a supplemental caller-set regression guard |
+| 2 | Guarded rewrite seam | U11, U12, U13, U14, U14b, U2f, U3c | One centralized, precondition-guarded rewrite seam for every in-place checkpoint rewrite, one caller migration per verb, the resolve-verb conformance harness the resolve migration turns green, plus a supplemental caller-set regression guard |
 | 3 | Declarations and genuine RED harness order | U15, U8b | The read-result carrier declaration and the cross-surface parity harness, both landing **before** any behavioural implementation in partition 4 |
 | 4 | Implementation plus MCP/CLI/instruction contracts | U3, U3b, U4, U17, U5, U6, U6d, U6e, U6b, U6c, U7, U7d, U7e, U7b, U7c, U8, U16, U8c, U9, U9b | The per-verb gates and sentinel contracts, the read-surface projections and their total remediation-intent population, the MCP and CLI surfaces, and the agent-facing instruction delta |
 | 5 | Runtime verification and closure | U10, U10b, U10c | Runtime proof of refusal, acceptance, evidence integrity, cross-surface context-duplicate behaviour, and the abandoned-resolve handler mapping |
@@ -252,7 +252,8 @@ selector matches must fail, and nothing the guard selector matches may exist in 
 | U11 | `147.034-T` | `go test -count=1 -run '^TestU11_' ./internal/events` |
 | U12 | `147.035-T` | `go test -count=1 -run '^TestU12_' ./internal/events` |
 | U13 | `147.036-T` | `go test -count=1 -run '^TestU12_' ./internal/events` (U12 owns the seam harness; U13 turns it green) |
-| U14 | `147.037-T` | `go test -count=1 -run '^TestU14_' ./internal/events ./internal/core` |
+| U14 | `147.037-T` | `go test -count=1 -run '^TestU14_' ./internal/events` |
+| U14b | `147.044-T` | `go test -count=1 -run '^TestU14b_' ./internal/core` |
 | U15 | `147.038-T` | `go test -count=1 -run '^TestU15_' ./internal/events` (source-shape harness; cycle-29 — no longer exempt) |
 | U3 | `147.006-T` | `go test -count=1 -run '^TestU3_' ./internal/events` |
 | U3c | `147.042-T` | `go test -count=1 -run '^TestU3c_' ./internal/events` |
@@ -279,7 +280,8 @@ selector matches must fail, and nothing the guard selector matches may exist in 
 
 **Selector disjointness holds for every label above.** The mandatory `_` separator in
 `TestU<unit>_<Descriptor>` is what makes the regexes exact: `^TestU1_` cannot match `TestU1b_`,
-`TestU1c_`, `TestU1d_`, `TestU11_`, `TestU14_`, `TestU15_`, `TestU16_`, or `TestU17_`; `^TestU2_`
+`TestU1c_`, `TestU1d_`, `TestU11_`, `TestU14_`, `TestU15_`, `TestU16_`, or `TestU17_`; `^TestU14_`
+cannot match `TestU14b_`; `^TestU2_`
 cannot match `TestU2f_`, `TestU2g_`, or `TestU2h_`; `^TestU10_` cannot match `TestU10b_` or
 `TestU10c_`. Every new cycle-17 label was chosen against this rule.
 
@@ -747,42 +749,75 @@ selector.
 * **Green-step guards**: none.
 * **Depends on**: U12.
 
-### U14 — Caller migration onto the guarded seam
+### U14 — Resolve-verb caller migration onto the guarded seam
 
 * **Partition**: 2 (guarded rewrite seam)
-* **Domain**: code (events, core)
-* **Files**: `internal/events/checkpoint_lifecycle.go`, `internal/core/checkpoint_disposition.go`,
+* **Domain**: code (events)
+* **Files**: `internal/events/checkpoint_lifecycle.go`,
   `internal/events/checkpoint_migration_test.go` (new)
-* **Change**: replace the two in-place rewrite sites with seam calls.
-  `ResolveCheckpoint` (`internal/events/checkpoint_lifecycle.go:178`) and `AbandonCheckpoint`
-  (`internal/core/checkpoint_disposition.go:105-118`) stop calling `syncWriteFileAtomic` /
-  `atomicfile.WriteFileAtomic` directly and call `RewriteCheckpointFile` with their existing
+* **Change**: replace the resolve-verb in-place rewrite site with a seam call.
+  `ResolveCheckpoint` (`internal/events/checkpoint_lifecycle.go:178`) stops calling
+  `syncWriteFileAtomic` directly and calls `RewriteCheckpointFile` with its existing
   mutation closure. **This unit introduces no new verb-facing sentinel and changes no ordering.**
   Its only claim is that the write mechanism moved.
 * **Why the migration is its own unit**: the seam and the per-verb contracts are different skill
   problems. Folding them together would mean one task changed a write mechanism in two packages
   **and** three error contracts **and** two gate orderings — far past the 2-Hour Rule and past
-  width isolation. Keeping the migration bare also gives U3 and U4 an honest red: after U14
-  the two verbs refuse untrustworthy documents with the seam's **raw** verdict errors, so each
-  verb's own `errors.Is` sentinel assertion still fails until that verb's unit lands. **U3b is the
+  width isolation. Keeping the migration bare also gives U3 an honest red: after U14
+  the verb refuses untrustworthy documents with the seam's **raw** verdict errors, so its
+  own `errors.Is` sentinel assertion still fails until that verb's unit lands. **U3b is the
   exception the cycle-20 review found** (`147.007-T`): the resolve verb's *conformance* refusal
   contract asks only for `ErrCheckpointNonConforming` with the offender keys and unchanged bytes,
   and the seam's raw `*CheckpointNonConformingError` already unwraps to exactly that sentinel. That
   contract is therefore **delivered by this unit**, not by U3b, and its failing harness is **U3c**
   (`147.042-T`), which lands before this migration and goes green when it completes.
-* **Tests** (3): `ResolveCheckpoint` on a conforming active document still resolves and the
+* **Why the abandon verb is no longer here (cycle 37)**: through cycle 36 this unit also migrated
+  `AbandonCheckpoint` in `internal/core`, which made it two production packages plus a new test
+  file — three files, which is not *fewer than three* and therefore outside the 2-Hour Rule
+  heuristic this plan has already enforced against `147.021-T` and `147.014-T`. The abandon-site
+  migration is now **U14b** (`147.044-T`). The two migrations touch disjoint packages and share no
+  code, so each is independently verifiable at two files, and the split needs no new mechanism: it
+  is the same bounding move cycle 17 made when it broke the original five-file seam unit into
+  U11/U12/U13/U14 and cycle 20 made when it split U7b into U7b and U7c.
+* **Tests** (2): `ResolveCheckpoint` on a conforming active document still resolves and the
   resulting bytes are unchanged from the pre-migration expectation (shipped-accept-path guard);
-  `AbandonCheckpoint` on a conforming active document still abandons and still appends exactly one
-  audit event (shipped-accept-path guard); neither `internal/events/checkpoint_lifecycle.go` nor
-  `internal/core/checkpoint_disposition.go` retains a direct atomic-write call whose target
-  resolves under the checkpoint directory — asserted structurally against the two files.
-* **Expected red** (1 harness function): case 3 fails before the migration. This unit additionally
-  turns **U3c**'s (`147.042-T`) already-red `TestU3c_` function green — U3c is the verb-level
-  conformance harness that must be red before this migration lands.
-* **Green-step guards** (2, `TestU14Guard_<Descriptor>`): cases 1 and 2 pin the shipped accept
-  paths, which the migration must not disturb; they land with the migration commit.
+  `internal/events/checkpoint_lifecycle.go` retains no direct atomic-write call whose target
+  resolves under the checkpoint directory — asserted structurally against that file.
+* **Expected red** (1 harness function): the structural case fails before the migration. This unit
+  additionally turns **U3c**'s (`147.042-T`) already-red `TestU3c_` function green — U3c is the
+  verb-level conformance harness that must be red before this migration lands.
+* **Green-step guards** (1, `TestU14Guard_ResolveAcceptPathUnchanged`): the shipped accept path,
+  which the migration must not disturb; it lands with the migration commit.
 * **Depends on**: U13, U3c (the resolve-verb conformance harness this unit turns green — the
   backlog edge `147.037-T -> 147.042-T`).
+
+### U14b — Abandon-verb caller migration onto the guarded seam
+
+* **Partition**: 2 (guarded rewrite seam)
+* **Domain**: code (core)
+* **Files**: `internal/core/checkpoint_disposition.go`,
+  `internal/core/checkpoint_migration_test.go` (new)
+* **Change**: replace the abandon-verb in-place rewrite site with a seam call.
+  `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:105-118`) stops calling
+  `atomicfile.WriteFileAtomic` directly and calls `events.RewriteCheckpointFile` with its existing
+  mutation closure. **This unit introduces no new verb-facing sentinel and changes no ordering.**
+  Its only claim is that the write mechanism moved.
+* **Why it is a separate unit (cycle 37)**: see U14 above. Splitting the two verb migrations is
+  what brings both inside the three-file heuristic, and it costs nothing in coupling — the two
+  sites live in different packages, use different write helpers, and have no shared symbol.
+* **Why it does not satisfy U4**: after this unit the seam refuses an untrustworthy document at the
+  *write* step, which in `AbandonCheckpoint` is **after** the audit append and after the
+  already-abandoned short-circuit. The audit-free, short-circuit-proof ordering is U4's delta and
+  U4's assertions pin it, so U4 stays honestly red until it lands.
+* **Tests** (2): `AbandonCheckpoint` on a conforming active document still abandons and still
+  appends exactly one audit event (shipped-accept-path guard);
+  `internal/core/checkpoint_disposition.go` retains no direct atomic-write call whose target
+  resolves under the checkpoint directory — asserted structurally against that file.
+* **Expected red** (1 harness function): the structural case fails before the migration.
+* **Green-step guards** (1, `TestU14bGuard_AbandonAcceptPathUnchanged`): the shipped accept path,
+  which the migration must not disturb; it lands with the migration commit.
+* **Depends on**: U13 (the implemented seam). It does **not** depend on U3c, which is a
+  resolve-verb harness.
 
 ### U2f — Supplemental caller-set regression guard for the guarded seam
 
@@ -793,14 +828,14 @@ selector.
   (H8) that an AST enumeration of write calls cannot fully enforce I1: it must resolve call
   targets, alias-imported helpers, indirect writers, and any future helper that wraps an atomic
   write, and any gap in that resolution is a silent hole in the invariant. **The authoritative I1
-  enforcement is now architectural** — U11/U12/U13/U14 make one guarded seam the only in-place
+  enforcement is now architectural** — U11/U12/U13/U14/U14b make one guarded seam the only in-place
   rewrite path, so an ungated rewrite cannot exist without adding a new direct write site.
   This unit keeps the enumeration as a **supplemental caller-set regression guard**: it walks
   `internal/events` and `internal/core` for calls to `syncWriteFileAtomic` /
   `atomicfile.WriteFileAtomic` / `os.WriteFile` whose target resolves under the checkpoint
   directory and asserts the resulting call-site set equals the post-migration allow-list — which
-  after U14 contains the seam's own write and the excluded verbatim-move / create sites, and
-  nothing else.
+  after U14 and U14b contains the seam's own write and the excluded verbatim-move / create sites,
+  and nothing else.
 * **Honest bound on what this test proves**: it proves that no **direct, statically resolvable**
   atomic-write call to the checkpoint directory was added outside the seam. It does **not** prove
   the absence of an indirect or dynamically dispatched writer, and it is not relied on for that.
@@ -828,7 +863,8 @@ selector.
 * **Where the RED for I1 lives**: architecturally, in U12 (`147.035-T`), whose three seam-contract
   functions are red before U13 implements the preconditions. This unit is supplemental and is not
   load-bearing for the invariant.
-* **Depends on**: U14.
+* **Depends on**: U14, U14b. Both caller migrations must land before the enumerated call-site set
+  can equal the post-migration allow-list.
 
 ### U2g — Context-member duplicate detection read boundary
 
@@ -970,7 +1006,8 @@ selector.
   idempotent-no-op paths and land with the implementation.
 * **Depends on**: U2c (the completed predicate, including the duplicate rule — this is the declared
   backlog edge `147.006-T -> 147.004-T`; cycle-15 prose said "U2", which named a transitive
-  ancestor rather than the real prerequisite), U14 (the guarded seam and caller migration), and
+  ancestor rather than the real prerequisite), U14 (the resolve-verb caller migration onto the
+  guarded seam), and
   U8b (the parity harness that must be red first).
 
 ### U3c — Resolve-verb conformance refusal harness (RED, lands before the migration)
@@ -1059,7 +1096,7 @@ selector.
   `NeedsQuarantine: true` — three surfaces disagreeing about one file. It is a non-writing refusal,
   so nothing is lost by refusing earlier. It remains strictly before
   `appendCheckpointDispositionAudit`, preserving the shipped audit-then-mutate ordering. **The seam
-  does not satisfy this unit.** After U14 the guarded seam refuses the same document, but it does
+  does not satisfy this unit.** After U14b the guarded seam refuses the same document, but it does
   so at the *write* step — which in `AbandonCheckpoint` is **after** the audit append and after the
   already-abandoned short-circuit. The ordering this unit installs is what makes the refusal
   audit-free and short-circuit-proof, and it is what U4's assertions pin.
@@ -1070,9 +1107,12 @@ selector.
   green as a regression guard.
 * **Expected red**: all three fail. Verified with `go test -count=1 -run '^TestU4_' ./internal/core`.
 * **Green-step guards**: none. Every scenario is a red harness function.
-* **Depends on**: U2c, U2g, U14 (the guarded seam and caller migration), U8b (the parity harness).
-  The cycle-16 `147.008-T -> 147.021-T` (U2f) edge is replaced by `147.008-T -> 147.037-T` (U14):
-  U2f is no longer the I1 mechanism, so it is no longer a prerequisite for touching this call site.
+* **Depends on**: U2c, U2g, U14b (the abandon-verb caller migration onto the guarded seam), U8b
+  (the parity harness). The cycle-16 `147.008-T -> 147.021-T` (U2f) edge is replaced by
+  `147.008-T -> 147.044-T` (U14b): U2f is no longer the I1 mechanism, so it is no longer a
+  prerequisite for touching this call site. Cycle 37 retargeted this edge from `147.037-T` to
+  `147.044-T` when the caller migration split by verb — this unit edits
+  `internal/core/checkpoint_disposition.go`, which is U14b's file, not U14's.
 
 ### U17 — `AbandonCheckpoint` validation wrap preserves both sentinels
 
@@ -1084,7 +1124,7 @@ selector.
   (`internal/core/checkpoint_disposition.go:~70-73`). The `%v` verb drops the
   `ErrCheckpointInvalid` sentinel that `ValidateCheckpoint` returns, so
   `errors.Is(err, ErrCheckpointInvalid)` is false on a path this plan **already touches** in U4 and
-  U14. Change the verb to multi-`%w`:
+  U14b. Change the verb to multi-`%w`:
   `fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointUseQuarantine, valErr)`. Go 1.20+ supports
   multiple `%w` verbs and the module is Go 1.24, so both sentinels stay traversable — exactly the
   idiom Q2 already requires of `ResolveCheckpoint` (U3).
@@ -1092,7 +1132,7 @@ selector.
   as a "documented deviation" from Constitution Principle I on the grounds that the wrap is
   pre-existing. The cycle-16 gate rejected that: Principle I says *all* errors must be wrapped with
   context and sentinels must remain traversable, and the deviation table's own escape hatch —
-  "fixing it changes an unrelated shipped error contract" — does not apply once U4 and U14 modify
+  "fixing it changes an unrelated shipped error contract" — does not apply once U4 and U14b modify
   the very function that contains it. A one-verb change in a function this plan already edits is
   not an unrelated contract change; leaving it is a knowingly-shipped Principle I violation on a
   touched path.
@@ -2345,10 +2385,11 @@ PARTITION 1 — foundation diagnostics and conformance
   U1d                                    (independent leaf declaration — second ready root)
 
 PARTITION 2 — guarded rewrite seam
-  U2 ──▶ U11 ──▶ U12 ──▶ U13 ──▶ U14 ──▶ U2f
+  U2 ──▶ U11 ──▶ U12 ──▶ U13 ──┬──▶ U14  ─┬──▶ U2f
+                               └──▶ U14b ─┘
   U2c ─▶ U12          U2d ─▶ U11
   U1 ──┐
-  U2c ─┴──▶ U3c ──▶ U14   (verb-level conformance harness: red before the migration turns it green)
+  U2c ─┴──▶ U3c ──▶ U14   (verb-level conformance harness: red before the resolve migration turns it green)
 
 PARTITION 3 — declarations and genuine RED harness order
   U1b ─┐
@@ -2361,9 +2402,9 @@ PARTITION 3 — declarations and genuine RED harness order
 PARTITION 4 — implementation plus MCP/CLI/instruction contracts
   U8b ──┬──▶ U3 ──▶ U3b ─┐
         ├──▶ U4 ──┬──▶ U17          U14 ──┬──▶ U3
-        │         └──▶ U5            │    ├──▶ U3b
-        ├──▶ U6 ──┬──▶ U6d           │    └──▶ U4
-        │         ├──▶ U6e
+        │         └──▶ U5            │    └──▶ U3b
+        ├──▶ U6 ──┬──▶ U6d           │
+        │         ├──▶ U6e          U14b ──▶ U4
         │         └──▶ U6b ──┬──▶ U6c
         └──▶ U7e             └──▶ U8c
   U1d ──▶ U6e
@@ -2389,8 +2430,8 @@ PARTITION 5 — runtime verification and closure
   U8c ─┘
 ```
 
-Edges declared, no cycles. The table below carries all **104** executable edges, grouped by source
-task. Each row lists one dependent task and every prerequisite it declares, so the row count (40)
+Edges declared, no cycles. The table below carries all **106** executable edges, grouped by source
+task. Each row lists one dependent task and every prerequisite it declares, so the row count (41)
 is the number of tasks that declare at least one dependency, not the edge count.
 
 | Dependent | Unit | Prerequisites (`item_deps` rows) | Reason |
@@ -2428,28 +2469,30 @@ is the number of tasks that declare at least one dependency, not the edge count.
 | `147.034-T` | U11 | `147.002-T`, `147.005-T` | The seam calls the conformance predicate, and takes that dependency only after the predicate's key source is pinned. |
 | `147.035-T` | U12 | `147.034-T`, `147.004-T` | The contract harness compiles against the seam declaration and asserts the completed top-level predicate. |
 | `147.036-T` | U13 | `147.035-T` | The implementation turns U12's contract green. |
-| `147.037-T` | U14 | `147.036-T`, `147.042-T` | Callers migrate onto a seam that already enforces its preconditions, and the verb-level conformance harness U3c owns must be red before the migration turns it green. |
+| `147.037-T` | U14 | `147.036-T`, `147.042-T` | The resolve-verb caller migrates onto a seam that already enforces its preconditions, and the verb-level conformance harness U3c owns must be red before the migration turns it green. |
 | `147.038-T` | U15 | `147.030-T`, `147.032-T` | The carrier's fields are the bounded projection set and the remediation intent. |
 | `147.039-T` | U16 | `147.032-T`, `147.015-T`, `147.016-T` | The renderer consumes the structured intent and attaches to U8's refusal output; harness first. |
 | `147.040-T` | U17 | `147.008-T`, `147.016-T` | The wrap correction lands beside the gate U4 installs in the same function; harness first. |
 | `147.041-T` | U10c | `147.026-T`, `147.033-T`, `147.022-T`, `147.025-T`, `147.029-T`, `147.027-T` | Consumes U10b's workspace and verifies the routing rule, both read projections, the resolve routing, and the abandoned-resolve mapping at runtime. |
 | `147.042-T` | U3c | `147.001-T`, `147.004-T` | The verb-level conformance harness matches U1's sentinel and typed error and asserts the completed top-level predicate; it must be red before U14 migrates the call site. |
 | `147.043-T` | U6e | `147.011-T`, `147.032-T` | The remaining quarantine-candidate branches extend U6's branch structure and populate the carrier U1d declares. |
+| `147.044-T` | U14b | `147.036-T` | The abandon-verb caller migrates onto a seam that already enforces its preconditions; it needs no resolve-verb harness. |
 
 `147.032-T` (U1d) declares no prerequisites and is the second ready root. The cycle-20 additions do
 not change the root set: `147.042-T` (U3c) depends on `147.001-T` and `147.004-T`, and `147.043-T`
 (U6e) depends on `147.011-T` and `147.032-T`, so both are interior nodes.
 
 **Suggested execution order**: U1, U1d, U1b, U1c, U2, U2b, U2c, U2d, U2e, U2g, U2h, U11, U12, U3c,
-U13, U14, U2f, U15, U8b, U3, U6, U6e, U6d, U6b, U6c, U8c, U7b, U3b, U4, U17, U5, U7, U7e, U7d, U7c,
-U8, U16, U9, U9b, U10, U10b, U10c.
+U13, U14, U14b, U2f, U15, U8b, U3, U6, U6e, U6d, U6b, U6c, U8c, U7b, U3b, U4, U17, U5, U7, U7e,
+U7d, U7c, U8, U16, U9, U9b, U10, U10b, U10c.
 
 Partition boundaries are the load-bearing part of that order: everything through U2h is partition 1;
 U11 through U2f — including U3c — is partition 2; U15 and U8b are partition 3; U3 through U9b is
 partition 4; U10 through U10c is partition 5. Inside a partition, units that share no edge may be
 taken in any order. U1d is independent of everything in partition 1 and only has to land before
 U15, U8b, U6, U6e, U6b, and U16. U3c must land before U14, which is what turns it green. U2f is
-terminal by design — nothing depends on it, and a blocked U2f does not block the release unit,
+terminal by design — nothing depends on it, and it now waits on both caller migrations, U14 and
+U14b; a blocked U2f does not block the release unit,
 because the guarded seam rather than the enumeration is what enforces I1; when it is blocked it
 must also be removed from `130-S` with `return_blocked`.
 
@@ -2467,17 +2510,17 @@ is gated by its own `TestU11_` source-shape harness; and `U1d` and `U15` — for
 harness-exempt unit implements behaviour, and **no unit lands a production stub ahead of its own
 harness**.
 
-**Wave schedule (cycle-29, corrected cycles 33-34, P-002.6)**: shipment `130-S` has **43 explicit
-manifest members** in set `S`. The scheduler freezes
-`M = { id in S : artifact_type(id) = task }`, so `count(M) = 42`; the one excluded non-task ID is
+**Wave schedule (cycle-29, corrected cycles 33-34 and 37, P-002.6)**: shipment `130-S` has **44
+explicit manifest members** in set `S`. The scheduler freezes
+`M = { id in S : artifact_type(id) = task }`, so `count(M) = 43`; the one excluded non-task ID is
 the covering `147-F` (`feature`), which release closure handles and no wave schedules. The
-42-task / 104-edge DAG partitions into **18** dependency waves that schedule all 42 members of `M`
+43-task / 106-edge DAG partitions into **18** dependency waves that schedule all 43 members of `M`
 with **zero** stalls and **zero** compile-order violations (every dependency lands in a strictly
 earlier wave than its dependent). Retired archived sibling `147.010-T` remains under parent
 `147-F` but is absent from `S`; parentage is not membership, so neither it nor covering feature
 `147-F` enters `M` or a snapshot. Every SQL snapshot filters on `artifact_type = 'task'` and an
-exact safely bound/quoted frozen-`M` ID list, never `parent_id`, and must return exactly 42 distinct
-IDs. Without SQL, Ship gets each of those 42 IDs directly and exactly once at every status;
+exact safely bound/quoted frozen-`M` ID list, never `parent_id`, and must return exactly 43 distinct
+IDs. Without SQL, Ship gets each of those 43 IDs directly and exactly once at every status;
 `list --type task` is forbidden. Non-shipment mode requires the same closed explicit
 `frozen_task_ids` set or halts `WAVE_MANIFEST_UNAVAILABLE`; it never enumerates all feature
 children. Ship interleaves harness generation and implementation per wave rather than scaffolding
@@ -2492,7 +2535,7 @@ the shipment up front.
 | 5 | `147.011-T` (U6), `147.029-T` (U7e), `147.033-T` (U2h), `147.034-T` (U11) | 14 | `147.017-T` (U9, exempt) |
 | 6 | `147.012-T` (U6b), `147.023-T` (U6d), `147.035-T` (U12), `147.043-T` (U6e) | 15 | `147.018-T` (U9b, exempt) |
 | 7 | `147.022-T` (U6c), `147.027-T` (U8c), `147.036-T` (U13, exempt) | 16 | `147.019-T` (U10, exempt) |
-| 8 | `147.014-T` (U7b), `147.037-T` (U14) | 17 | `147.026-T` (U10b, exempt) |
+| 8 | `147.014-T` (U7b), `147.037-T` (U14), `147.044-T` (U14b) | 17 | `147.026-T` (U10b, exempt) |
 | 9 | `147.006-T` (U3), `147.008-T` (U4), `147.021-T` (U2f, exempt) | 18 | `147.041-T` (U10c, exempt) |
 
 **Persistent red deliverables and convergence scope (cycle-32, P-002.6).** Three members of this
@@ -2510,8 +2553,10 @@ the wave at which the last of them lands:
 
 `open_red_deliverables_k` is therefore non-empty from the wave-4 convergence gate through the
 wave-12 one. Wave 4 **advances** with U8b and U3c legitimately red — the convergence gate runs the
-repo-wide compile check, `go vet`, lint, format, and every member's declared scoped command, and
-**defers** the unfiltered `go test ./...` with an explicit `FULL_SUITE_DEFERRED` record. The
+repo-wide compile check, `go vet`, lint, format, every member's declared scoped command, and the
+`red_selector_command` of every entry still open in the recomputed set (each re-confirmed RED,
+including entries carried in from earlier waves), and **defers** the unfiltered `go test ./...`
+with an explicit `FULL_SUITE_DEFERRED` record. The
 unfiltered suite runs at the convergence gate of waves 1–3 (before any red deliverable lands) and
 again from **wave 13**, the wave at which U8b's last green-maker (`147.024-T` / U7c) completes and
 empties the set, through wave 18 and final closure. A green-maker `archived` rather than `done`
@@ -2535,16 +2580,16 @@ so the claim-time `EXEMPT_OWNER_NOT_RED` condition is satisfiable by constructio
 into the graph as a negative control halts the scheduler at `WAVE_NO_PROGRESS` after 9 waves rather
 than looping.
 
-**Measured topology (cycle 20, count semantics corrected cycle 33,
-`backlogit --cwd . query` after `backlogit --cwd . sync`)**: shipment `130-S` has 43 explicit
-members; task-type wave set `M` has 42 queued tasks; excluded non-task members are exactly
-`147-F` (`feature`). `M` has **104** queued-to-queued executable edges and ready set exactly
+**Measured topology (cycle 20, count semantics corrected cycle 33, recounted cycle 37,
+`backlogit --cwd . query` after `backlogit --cwd . sync`)**: shipment `130-S` has 44 explicit
+members; task-type wave set `M` has 43 queued tasks; excluded non-task members are exactly
+`147-F` (`feature`). `M` has **106** queued-to-queued executable edges and ready set exactly
 `{147.001-T, 147.032-T}` (two roots — `U1`, the typed-error declaration, and `U1d`, the
-remediation-intent declaration). **Historical total edges: 105** — the 104 executable edges plus
+remediation-intent declaration). **Historical total edges: 107** — the 106 executable edges plus
 the one archived edge `147.010-T -> 147.009-T` retained in the archived U5b artifact. The
-historical count is deliberately kept distinguishable from the executable topology: only the 104
+historical count is deliberately kept distinguishable from the executable topology: only the 106
 queued-to-queued edges govern execution order, and an agent must never schedule against the
-historical figure. The graph is verified acyclic by Kahn topological sort — all 42 nodes ordered
+historical figure. The graph is verified acyclic by Kahn topological sort — all 43 nodes ordered
 from the two roots.
 
 ## Decisions and Rationale
@@ -2746,7 +2791,7 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
 **Principle I carries no deviation (cycle 17).** The row recorded here through cycle 16 —
 `AbandonCheckpoint`'s `%v` validation wrap left in place — is withdrawn. The cycle-16 gate found
 (H7) that the justification depended on the wrap living in code this plan does not touch, which
-stopped being true when U4 placed a gate in that function and U14 moved its write onto the seam.
+stopped being true when U4 placed a gate in that function and U14b moved its write onto the seam.
 **U17** corrects the verb to multi-`%w`, asserts both `errors.Is` matches, and pins the rendered
 message text so no consumer regresses. The alternative "leave it and record a follow-up" is
 rejected: it is a knowingly-shipped Principle I violation on a touched path.
@@ -5912,3 +5957,88 @@ The Stage plan gate is **ADVISORY authorized / ready for later push**. No push o
 cycle. After a later push, PR #377 checks and review threads must be reconciled against that pushed
 HEAD before the separate §1.9 readiness gate can clear. Operator merge approval remains
 unrequested and ungranted.
+
+### PR #377 Copilot review remediation, cycle 37 — caller migration split by verb, convergence gate widened to earlier-wave open reds
+
+Three Copilot review threads were raised against pushed HEAD `88ced429`. All three were reviewed
+against the artifacts they cite; two required artifact changes and one required a pull-request
+metadata refresh.
+
+| Thread | Path | Finding | Classification | Disposition |
+|---|---|---|---|---|
+| `PRRT_kwDORzozKM6cjdUQ` | `.github/agents/.ship.agent.md` | The Step 4.6 convergence gate re-confirms RED only for red deliverables that completed *in the current wave*. Entries carried into `open_red_deliverables_k` from an earlier wave are never executed at any later gate, so an earlier deliverable can go green before its declared green-maker and still pass convergence — while the unfiltered suite that would catch it is deferred for exactly as long as the set is non-empty | Valid | Fixed. P-002.6's always-run list and `.ship.agent.md` Step 4.6 item 2 gain a fourth element: after the single per-wave recomputation of `open_red_deliverables_k`, the gate runs the `red_selector_command` of every entry still open — including entries carried in from earlier waves — and requires each to be observed RED. An entry the wave closed is deliberately not run there; its selector is expected green and is covered by the unfiltered suite the moment the set empties. `workflow-policies.md` moves to **1.23.0** |
+| `PRRT_kwDORzozKM6cjdUy` | `.backlogit/queue/147.037-T.md` | U14 spanned three files (`internal/events/checkpoint_lifecycle.go`, `internal/core/checkpoint_disposition.go`, and a new test file), which is not *fewer than three* and therefore outside the 2-Hour Rule heuristic this plan has already enforced against `147.021-T` (cycle 3) and `147.014-T` (cycle 20) | Valid | Fixed by splitting the caller migration by verb. **U14** (`147.037-T`) keeps the resolve site in `internal/events`; new **U14b** (`147.044-T`) takes the abandon site in `internal/core`. Each unit is two files and two scenarios. The alternative — reducing U14 to two files by borrowing another unit's harness, as U13 borrows U12's — was rejected: it would leave the abandon migration with no red evidence of its own |
+| `PRRT_kwDORzozKM6cjdVm` | `docs/memory/2026-08-26/stage-pr377-cycle-35-planning-data-correction-memory.md` | The pull-request description is stale relative to the branch: it names cycle 29 current, reports 108 changed files, and claims six unresolved threads | Valid | Fixed outside the repository: the PR description is refreshed after this cycle's review wave resolves, so cycle, changed-file count, thread state, and topology match the pushed HEAD. No repository artifact carries the PR description, so nothing in-tree changes for this thread |
+
+**Why the split, and why it needs no new mechanism.** Cycle 17 already used exactly this move when
+it broke the original five-file seam unit into U11 (declaration), U12 (contract harness), U13
+(implementation), and U14 (caller migration); cycle 20 used it again when it split U7b into U7b and
+U7c on width-isolation grounds. The two verb migrations touch disjoint packages, use different
+write helpers (`syncWriteFileAtomic` in `internal/events`, `atomicfile.WriteFileAtomic` in
+`internal/core`), and share no symbol, so the split is clean and each half stays independently
+verifiable.
+
+**Edge retargeting.** `147.008-T` / U4 edits `internal/core/checkpoint_disposition.go`, so its
+prerequisite moves from `147.037-T` to `147.044-T` — the migration that actually touches its file.
+`147.021-T` / U2f enumerates the post-migration allow-list across **both** packages, so it now
+depends on `147.037-T` **and** `147.044-T`. `147.006-T` / U3, `147.007-T` / U3b, and `147.042-T` /
+U3c are resolve-verb units and keep their `147.037-T` edges unchanged; U3c's green-maker is still
+`147.037-T`, closing at wave 8.
+
+**Topology delta.** Two edges added net: `147.044-T -> 147.036-T` and `147.021-T -> 147.044-T`;
+`147.008-T -> 147.037-T` was replaced by `147.008-T -> 147.044-T`. Counts move from
+42 tasks / 104 edges / 43 shipment members to **43 tasks / 106 edges / 44 shipment members**. The
+ready set is unchanged at `{147.001-T, 147.032-T}` — U14b is an interior node. The schedule stays
+at **18 waves**: U14b depends only on U13 (wave 7), so it lands in wave 8 beside U14, and wave 8
+grows from two members to three. No dependent's wave moves, because U4 and U2f already sat strictly
+after wave 8.
+
+### Validation evidence
+
+| Gate | Result |
+|---|---|
+| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 115/115; S=44; M=43; 106 edges; 18 waves; acyclic; 0 stalls; 0 compile-order violations |
+| Markdown P-008 | 0 issues |
+| Docline frontmatter | `valid: true`, 0 violations |
+| Index sync | 0 parse failures |
+| Go commands / Go source changes | none / none |
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 37
+reviewed_at: 2026-08-26
+reviewed_head: 88ced429218f31ef424e24f149471522b771a6c6
+dispatch_mode: single-agent-operator-constrained
+subagents: prohibited-by-operator
+decision: ADVISORY
+pending: none
+operator_authorization: approved
+severity_counts: "P0=0, P1=1 (convergence gate open-red omission, remediated in-pass), P2=1 (U14 three-file width, remediated in-pass), P3=0"
+topology: "S=44 explicit shipment members; M=43 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 106 executable edges; 18 waves; acyclic"
+push_allowed: yes
+push_performed: yes
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: ADVISORY
+
+**This record is the current gate state.** It supersedes cycle 36 for gate-decision purposes.
+Cycle 36 remains the historical foundation for the checkpoint-provenance corrections it made.
+
+### Authorization boundary
+
+`operator_authorization: approved` authorizes this bounded Stage review, its remediations, a push
+of the reviewed branch, and replies to and resolution of bot-authored review threads. It is **not**
+merge approval, **not** a shipment claim, and **not** authorization for Ship to begin
+implementation. This cycle dispatched no subagent, ran no Go build or test command against
+production source, and changed no Go source file.
+
+### Closure and next action
+
+The Stage plan gate is **ADVISORY authorized / pushed**. PR #377 checks and review threads are
+reconciled against the pushed HEAD before the separate §1.9 readiness gate is evaluated. Operator
+merge approval remains unrequested and ungranted.
+

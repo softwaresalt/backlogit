@@ -4,7 +4,7 @@
   "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.22.0",
+    "policy_version": "1.23.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -75,8 +75,8 @@
     "fallback": "explicit-frozen-task-id-set",
     "fail_closed_code": "WAVE_MANIFEST_UNAVAILABLE",
     "wave_member_type": "task",
-    "member_count": 42,
-    "shipment_member_count": 43,
+    "member_count": 43,
+    "shipment_member_count": 44,
     "excluded_non_task_members": [
       {
         "id": "147-F",
@@ -129,9 +129,10 @@
       "147.040-T",
       "147.041-T",
       "147.042-T",
-      "147.043-T"
+      "147.043-T",
+      "147.044-T"
     ],
-    "note": "S is all 43 explicit members of shipment 130-S. M is exactly the 42 IDs in S whose resolved artifact_type is task. The explicit non-shipment fallback is the same closed 42-ID set, supplied rather than inferred from parent children. The covering feature 147-F and retired archived sibling 147.010-T are forbidden wave IDs: neither is in M, the fallback, or a snapshot.",
+    "note": "S is all 44 explicit members of shipment 130-S. M is exactly the 43 IDs in S whose resolved artifact_type is task. The explicit non-shipment fallback is the same closed 43-ID set, supplied rather than inferred from parent children. The covering feature 147-F and retired archived sibling 147.010-T are forbidden wave IDs: neither is in M, the fallback, or a snapshot.",
     "members": [
       {
         "id": "147.001-T",
@@ -226,7 +227,7 @@
           "147.004-T",
           "147.016-T",
           "147.028-T",
-          "147.037-T"
+          "147.044-T"
         ]
       },
       {
@@ -388,7 +389,8 @@
         "exempt_class": "verification-only",
         "red_deliverable": false,
         "deps": [
-          "147.037-T"
+          "147.037-T",
+          "147.044-T"
         ]
       },
       {
@@ -654,6 +656,17 @@
           "147.011-T",
           "147.032-T"
         ]
+      },
+      {
+        "id": "147.044-T",
+        "unit": "U14b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.036-T"
+        ]
       }
     ]
   },
@@ -841,7 +854,7 @@
           4,
           4,
           3,
-          2,
+          3,
           3,
           3,
           1,
@@ -853,7 +866,7 @@
           1,
           1
         ],
-        "scheduled": 42,
+        "scheduled": 43,
         "stalls": 0,
         "compile_order_violations": 0,
         "snapshot_calls": 19,

@@ -2,9 +2,9 @@
 
 `wave-scheduler-contract.json` is a tracked, read-only fixture that pins the behaviour of the
 **P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`) against
-shipment `130-S` and its live backlog artifacts. The shipment contains **43** explicit members;
-the scheduler's `M` is exactly its **42 task-type IDs**. The excluded non-task report is
-`147-F=feature`. The explicit non-shipment fallback is the same closed 42-ID task set; retired
+shipment `130-S` and its live backlog artifacts. The shipment contains **44** explicit members;
+the scheduler's `M` is exactly its **43 task-type IDs**. The excluded non-task report is
+`147-F=feature`. The explicit non-shipment fallback is the same closed 43-ID task set; retired
 archived sibling `147.010-T` is in neither source and can never enter a snapshot.
 
 It exists because the scheduler is a *contract executed by agents*, not compiled code: nothing in
