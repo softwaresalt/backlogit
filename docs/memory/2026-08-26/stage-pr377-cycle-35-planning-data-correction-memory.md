@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h2
-description: "PR #377 cycle-35 planning-data correction for two invalid V1 checkpoint agents and an executable current-source checkpoint corpus gate; gate remains FAIL pending independent review"
+description: "PR #377 cycle-35 planning-data correction for two invalid V1 checkpoint agents and an executable current-source checkpoint corpus gate; normalized by cycle 36 to ADVISORY"
 doc_type: memory
 schema_version: "1.0"
 source: cycle-35-planning-data-correction-session
@@ -59,8 +59,11 @@ fails the command.
 
 ## Gate state
 
-`cycle: 35`, `decision: FAIL`, `pending: independent-review-required`, `push_allowed: no`;
-severity P0=0 / P1=1 (remediated in-pass) / P2=1 (remediated in-pass) / P3=0.
+Cycle 36 normalized the cycle-35 review to `decision: ADVISORY`, `pending: none`,
+`operator_authorization: approved`, and `push_allowed: yes`; severity P0=0 / P1=0 / P2=2
+(both remediated in-pass) / P3=0. The invalid agent values affected staged continuity evidence,
+not production code or the implementation contract, so J1 is P2 rather than P1.
 
-Independent review is required before push. PR-thread reconciliation, shipment claim, and merge
-remain blocked. Operator merge approval has not been requested.
+The authorization permits bounded Stage closure and a later push. It is not merge approval, not a
+shipment claim, and not authorization for Ship to begin implementation. Cycle 36 supersedes this
+record as the current gate.

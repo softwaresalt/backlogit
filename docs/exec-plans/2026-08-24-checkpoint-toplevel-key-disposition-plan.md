@@ -2871,6 +2871,20 @@ worktree must be finished or removed by its own owner first. Stage does not touc
 another agent's worktree is outside Stage's Role Boundary and would be a destructive action
 requiring its own approval.
 
+### Stage handoff checkpoint provenance
+
+Before Stage hands shipment `130-S` to Ship, every checkpoint write or state update for this
+initiative MUST use a validated backlogit checkpoint operation. New Stage checkpoints MUST be
+created through the registered operation or workspace-bound CLI with `agent: stage`, then loaded
+through `checkpoint get` so `ParseCheckpoint` and `ValidateCheckpoint` both succeed before the
+checkpoint is cited as continuity evidence.
+
+A direct edit to a checkpoint file is exceptional. It MUST be followed immediately by the complete
+current-source checkpoint corpus gate in the final Plan Review section. Until that gate passes,
+the direct edit is not persisted state and MUST NOT be used for recovery, review evidence, or the
+Stage-to-Ship handoff. A failure blocks handoff. This is a shipment-local provenance rule; it
+changes no global agent, policy, or production-code contract.
+
 ### Final mandatory gate sequence
 
 Run in constitutional order before the work is handed to review. Do not skip or reorder a gate;
@@ -5654,22 +5668,23 @@ reviewed_at: 2026-08-26
 reviewed_head: c246eee3189485d77930a45327a1f24d5c1fbb2e
 dispatch_mode: single-agent-operator-constrained
 subagents: prohibited-by-operator
-decision: FAIL
-pending: independent-review-required
+decision: ADVISORY
+pending: none
 operator_authorization: approved
-severity_counts: "P0=0, P1=1 (remediated in-pass), P2=1 (remediated in-pass), P3=0"
+severity_counts: "P0=0, P1=0, P2=2 (both remediated in-pass), P3=0"
 topology: "S=43 explicit shipment members; M=42 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 104 executable edges; 18 waves; acyclic"
 checkpoint_validation: "18 V1-era checkpoints valid; 9 explicitly accepted pre-V1 legacy files"
-push_allowed: no
+push_allowed: yes
 restage_recommendation: none
 ```
 <!-- END:plan-review -->
 
-decision: FAIL - pending independent review
+decision: ADVISORY
 
-**This record is the current gate state.** It supersedes `cycle: 34` `FAIL` for gate-decision
-purposes. Cycle 34 and every earlier record remain historical; their corrections stand. This cycle
-changes only checkpoint planning data and the executable current-source checkpoint corpus gate.
+**Cycle 36 supersedes this record as the current gate state.** Cycle 35 superseded `cycle: 34`
+`FAIL` for gate-decision purposes. Cycle 34 and every earlier record remain historical; their
+corrections stand. Cycle 35 changed only checkpoint planning data and the executable current-source
+checkpoint corpus gate.
 
 ### Baseline and correction
 
@@ -5684,6 +5699,13 @@ because `prompt-builder` is not an accepted V1 checkpoint agent:
 Both files now record `agent: stage`. No other key, value, array member, or context field in either
 file changed.
 
+Cycle 36 normalizes J1 from P1 to P2. The invalid agent values made two staged continuity artifacts
+unusable, but did not alter production code, the implementation contract, topology, or a persisted
+runtime checkpoint mutation. With J1 and J2 both corrected in-pass, cycle 35 has P0=0/P1=0/P2=2
+and is `ADVISORY` under `operator_authorization: approved`. That authorization completes the
+bounded Stage review; it is not merge approval, not a shipment claim, and not authorization for
+Ship to begin implementation.
+
 ### Current-source Stage checkpoint gate
 
 Run this exact PowerShell command from the repository root before accepting this plan's Stage gate
@@ -5694,6 +5716,7 @@ set, and fails on every unlisted legacy file, JSON parse error, or V1
 
 ```powershell
 $ErrorActionPreference = 'Stop'
+$checkpointDir = '.backlogit\checkpoints'
 $acceptedPreV1 = @(
   'checkpoint-20260406-171334.json',
   'checkpoint-20260411-051040.json',
@@ -5705,16 +5728,50 @@ $acceptedPreV1 = @(
   'checkpoint-20260426-045333.json',
   'checkpoint-20260801-051014.json'
 )
+$minimumV1Count = 18
 $failures = @()
 $legacyCount = 0
 $v1Count = 0
-$checkpoints = @(
-  Get-ChildItem -LiteralPath '.backlogit\checkpoints' -Filter 'checkpoint-*.json' -File |
+
+if ($acceptedPreV1.Count -ne 9 -or
+    @($acceptedPreV1 | Sort-Object -Unique).Count -ne 9) {
+  throw 'checkpoint corpus declaration must contain exactly 9 unique pre-V1 filenames'
+}
+
+$jsonFiles = @(
+  Get-ChildItem -LiteralPath $checkpointDir -File |
+    Where-Object { $_.Extension -ieq '.json' } |
     Sort-Object Name
 )
+
+$unexpectedJson = @(
+  $jsonFiles | Where-Object { $_.Name -notlike 'checkpoint-*.json' }
+)
+foreach ($unexpected in $unexpectedJson) {
+  $failures += "$($unexpected.Name): JSON filename is outside checkpoint-*.json"
+}
+
+$checkpoints = @(
+  $jsonFiles | Where-Object { $_.Name -like 'checkpoint-*.json' }
+)
+$checkpointNames = @($checkpoints | ForEach-Object { $_.Name })
+foreach ($expected in $acceptedPreV1) {
+  if ($expected -notin $checkpointNames) {
+    $failures += "$expected`: expected pre-V1 file is missing"
+  }
+}
+
 foreach ($checkpoint in $checkpoints) {
+  try {
+    $document = Get-Content -LiteralPath $checkpoint.FullName -Raw |
+      ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    $failures += "$($checkpoint.Name): JSON parse failed: $($_.Exception.Message)"
+    Write-Host "JSON_FAIL: $($checkpoint.Name)"
+    continue
+  }
+
   if ($acceptedPreV1 -contains $checkpoint.Name) {
-    $document = Get-Content -LiteralPath $checkpoint.FullName -Raw | ConvertFrom-Json
     if ($document.PSObject.Properties.Name -contains 'schema_version') {
       $failures += "$($checkpoint.Name): accepted pre-V1 file now declares schema_version"
       Write-Host "PRE_V1_FAIL: $($checkpoint.Name)"
@@ -5722,6 +5779,13 @@ foreach ($checkpoint in $checkpoints) {
       $legacyCount++
       Write-Host "PRE_V1_ACCEPTED: $($checkpoint.Name)"
     }
+    continue
+  }
+
+  if ($document.PSObject.Properties.Name -notcontains 'schema_version' -or
+      $document.schema_version -ne 1) {
+    $failures += "$($checkpoint.Name): unlisted file is not schema_version 1"
+    Write-Host "UNLISTED_LEGACY_FAIL: $($checkpoint.Name)"
     continue
   }
 
@@ -5736,15 +5800,29 @@ foreach ($checkpoint in $checkpoints) {
     Write-Host "V1_FAIL: $($checkpoint.Name)"
   }
 }
+
+if ($legacyCount -ne 9) {
+  $failures += "accepted pre-V1 count is $legacyCount; expected exactly 9"
+}
+if ($v1Count -lt $minimumV1Count) {
+  $failures += "V1 count is $v1Count; expected at least $minimumV1Count"
+}
 if ($failures.Count -gt 0) {
   $failures | ForEach-Object { Write-Host $_ }
   throw "checkpoint corpus validation failed for $($failures.Count) file(s)"
 }
-Write-Host "CHECKPOINT_VALIDATION_OK: $v1Count V1, $legacyCount accepted pre-V1"
+Write-Host (
+  "CHECKPOINT_VALIDATION_OK: $v1Count V1, " +
+  "$legacyCount named pre-V1, $($unexpectedJson.Count) unexpected JSON"
+)
 ```
 
-The post-correction run reports
-`CHECKPOINT_VALIDATION_OK: 18 V1, 9 accepted pre-V1`, including the new cycle-35 checkpoint.
+The cycle-35 post-correction run reported 18 V1 and 9 accepted pre-V1 files. After the validated
+cycle-36 CLI checkpoint operations, the exact current result is
+`CHECKPOINT_VALIDATION_OK: 20 V1, 9 named pre-V1, 0 unexpected JSON`. This honestly includes the
+CLI-resolved pre-validation checkpoint and the final active closure checkpoint. The lower bound
+remains 18 so future validated checkpoint creation does not make a healthy corpus fail solely
+because it grew; the output always reports the exact observed count.
 
 ### Validation evidence
 
@@ -5759,8 +5837,78 @@ The post-correction run reports
 
 ### Gate and next action
 
-Both findings are remediated in-pass, but cycle 35 cannot certify its own planning-data and gate
-changes. The gate remains **FAIL**, `pending: independent-review-required`, and
-`push_allowed: no`. Independent review of this diff is required before any push. PR-thread
-reconciliation, shipment claim, and merge remain blocked; operator merge approval has not been
-requested. No subagent, Go source edit, push, or merge occurred.
+Both cycle-35 findings were remediated in-pass. Cycle 36 normalizes this review to **ADVISORY**,
+`pending: none`, and `push_allowed: yes` under the operator's explicit bounded authorization.
+That authorization permits a later push and PR-thread reconciliation; it is not merge approval,
+not a shipment claim, and not authorization for Ship to begin implementation. No subagent, Go
+source edit, push, or merge occurred in cycle 35.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 36
+reviewed_at: 2026-08-26
+reviewed_head: fbbcc0d01d5da4e769f74225330bd3a01851d3db
+dispatch_mode: single-agent-operator-constrained
+subagents: prohibited-by-operator
+decision: ADVISORY
+pending: none
+operator_authorization: approved
+severity_counts: "P0=0, P1=0, P2=4 (all remediated in-pass), P3=1 (pre-existing advisory recorded and prevented)"
+topology: "S=43 explicit shipment members; M=42 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 104 executable edges; 18 waves; acyclic"
+checkpoint_validation: "20 V1 valid; exactly 9 named pre-V1; 0 unexpected JSON files"
+push_allowed: yes
+push_performed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: ADVISORY
+
+**This record is the current gate state.** It supersedes cycle 35 for gate-decision purposes.
+Cycle 35 is normalized to `ADVISORY`; its two planning-data corrections remain historical
+foundations. The operator explicitly authorized final bounded cycle-36 closure, so these
+documentation and provenance corrections do not open another self-review loop.
+
+### Authorization boundary
+
+`operator_authorization: approved` authorizes this bounded Stage review, its advisory corrections,
+and a later push of the reviewed branch. It is **not merge approval**, not a shipment claim, and
+not authorization for Ship to begin implementation. This cycle dispatched no subagent, ran no Go
+command, changed no Go or global agent/policy file, and performed no push or merge.
+
+### Findings and dispositions
+
+| ID | Sev | Finding | Disposition |
+|---|---|---|---|
+| K1 | P2 | Cycle 35 classified corrected planning-data defects as one P1 and left its review `FAIL` despite the bounded operator authorization | Normalized cycle 35 to `ADVISORY`, `operator_authorization: approved`, P0=0/P1=0/P2=2/P3=0, and `push_allowed: yes`; the authorization is expressly not merge approval |
+| K2 | P2 | Feature `147-F` retained cycle 34's full “Current gate” block beneath cycle 35, leaving two current blocks | Removed the duplicate block and made cycle 36 the sole current block; cycle 34 remains concise historical context |
+| K3 | P2 | The checkpoint corpus command did not prove all nine named legacy files existed, impose a V1 floor, or notice JSON files outside `checkpoint-*.json` | Added exact unique nine-name declaration and presence checks, an exact post-loop legacy count, a minimum of 18 V1 files, and an all-JSON namespace check; every parsed V1 still runs current-source `checkpoint get` and therefore `ValidateCheckpoint` |
+| K4 | P2 | The plan did not state when a directly edited checkpoint became trustworthy Stage handoff state | Added the normative Stage handoff provenance rule: validated backlogit operations own writes and updates; a direct edit is not persisted evidence until immediate full-corpus validation passes |
+| K5 | P3 | At baseline, `147-F.updated_at` was `2026-08-26T08:02:14.3640000Z`, earlier than the CLI-created cycle-35 checkpoint at `2026-08-26T14:50:50.2684865Z` even though the feature text described that checkpoint | Recorded as a pre-existing timestamp-provenance concern. The historical checkpoint timestamp is unchanged; this feature update uses a captured UTC value, and future checkpoint timestamps remain CLI-owned |
+
+K5 is advisory. The ordering proves the feature timestamp was not a reliable provenance marker,
+but it does not prove the clock-conversion mechanism that produced it and does not invalidate the
+CLI-created checkpoint. The prevention is procedural rather than global: use validated checkpoint
+operations, do not hand-author checkpoint timestamps, and apply the immediate corpus gate after
+any exceptional direct edit.
+
+### Validation evidence
+
+| Gate | Result |
+|---|---|
+| Checkpoint corpus through validated workspace-bound CLI | 20 V1 valid; exactly 9 named pre-V1; 0 unexpected JSON files |
+| Cycle-36 checkpoint create/get | final `checkpoint-20260826-152441.json` created with `agent: stage`; `valid: true` |
+| Markdown P-008 | 0 issues |
+| Docline frontmatter | `valid: true`, 0 violations |
+| Index sync | 0 parse failures |
+| Topology and live source drift | `WAVE_SIM_OK` 115/115; S=43; M=42; 104 edges; 18 waves; acyclic |
+| Go commands / Go source changes | none / none |
+
+### Closure and next action
+
+The Stage plan gate is **ADVISORY authorized / ready for later push**. No push occurred in this
+cycle. After a later push, PR #377 checks and review threads must be reconciled against that pushed
+HEAD before the separate §1.9 readiness gate can clear. Operator merge approval remains
+unrequested and ungranted.
