@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "agent": "prompt-builder",
+  "agent": "stage",
   "session_id": "stage-pr377-cycle-34",
   "phase": "cycle-34-snapshot-correction-complete",
   "status": "active",

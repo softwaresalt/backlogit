@@ -5644,3 +5644,123 @@ The gate remains **FAIL**, `pending: independent-review-required`, and `push_all
 Independent review of this diff is required before any push. PR-thread reconciliation, shipment
 claim, and merge remain blocked; operator merge approval has not been requested. No subagent, Go
 source edit, push, or merge occurred.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 35
+reviewed_at: 2026-08-26
+reviewed_head: c246eee3189485d77930a45327a1f24d5c1fbb2e
+dispatch_mode: single-agent-operator-constrained
+subagents: prohibited-by-operator
+decision: FAIL
+pending: independent-review-required
+operator_authorization: approved
+severity_counts: "P0=0, P1=1 (remediated in-pass), P2=1 (remediated in-pass), P3=0"
+topology: "S=43 explicit shipment members; M=42 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 104 executable edges; 18 waves; acyclic"
+checkpoint_validation: "18 V1-era checkpoints valid; 9 explicitly accepted pre-V1 legacy files"
+push_allowed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: FAIL - pending independent review
+
+**This record is the current gate state.** It supersedes `cycle: 34` `FAIL` for gate-decision
+purposes. Cycle 34 and every earlier record remain historical; their corrections stand. This cycle
+changes only checkpoint planning data and the executable current-source checkpoint corpus gate.
+
+### Baseline and correction
+
+At canonical HEAD `c246eee3189485d77930a45327a1f24d5c1fbb2e`, the current-source corpus check
+enumerated 26 checkpoint files. Nine explicitly accepted pre-V1 legacy files were distinguished
+from 17 V1-era files. Fifteen V1-era files passed, while these two failed `ValidateCheckpoint`
+because `prompt-builder` is not an accepted V1 checkpoint agent:
+
+* `checkpoint-20260826-064716.json`
+* `checkpoint-20260826-072421.json`
+
+Both files now record `agent: stage`. No other key, value, array member, or context field in either
+file changed.
+
+### Current-source Stage checkpoint gate
+
+Run this exact PowerShell command from the repository root before accepting this plan's Stage gate
+or recording any later plan-review result. It uses the current source rather than a pinned binary,
+enumerates the complete live checkpoint directory, distinguishes the explicitly accepted pre-V1
+set, and fails on every unlisted legacy file, JSON parse error, or V1
+`ParseCheckpoint`/`ValidateCheckpoint` error.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$acceptedPreV1 = @(
+  'checkpoint-20260406-171334.json',
+  'checkpoint-20260411-051040.json',
+  'checkpoint-20260421-164238.json',
+  'checkpoint-20260424-162622.json',
+  'checkpoint-20260424-174043.json',
+  'checkpoint-20260424-204116.json',
+  'checkpoint-20260426-031618.json',
+  'checkpoint-20260426-045333.json',
+  'checkpoint-20260801-051014.json'
+)
+$failures = @()
+$legacyCount = 0
+$v1Count = 0
+$checkpoints = @(
+  Get-ChildItem -LiteralPath '.backlogit\checkpoints' -Filter 'checkpoint-*.json' -File |
+    Sort-Object Name
+)
+foreach ($checkpoint in $checkpoints) {
+  if ($acceptedPreV1 -contains $checkpoint.Name) {
+    $document = Get-Content -LiteralPath $checkpoint.FullName -Raw | ConvertFrom-Json
+    if ($document.PSObject.Properties.Name -contains 'schema_version') {
+      $failures += "$($checkpoint.Name): accepted pre-V1 file now declares schema_version"
+      Write-Host "PRE_V1_FAIL: $($checkpoint.Name)"
+    } else {
+      $legacyCount++
+      Write-Host "PRE_V1_ACCEPTED: $($checkpoint.Name)"
+    }
+    continue
+  }
+
+  $v1Count++
+  $output = @(
+    & go run .\cmd\backlogit --cwd . --no-update-check checkpoint get $checkpoint.Name 2>&1
+  )
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "V1_OK: $($checkpoint.Name)"
+  } else {
+    $failures += "$($checkpoint.Name): $($output -join ' | ')"
+    Write-Host "V1_FAIL: $($checkpoint.Name)"
+  }
+}
+if ($failures.Count -gt 0) {
+  $failures | ForEach-Object { Write-Host $_ }
+  throw "checkpoint corpus validation failed for $($failures.Count) file(s)"
+}
+Write-Host "CHECKPOINT_VALIDATION_OK: $v1Count V1, $legacyCount accepted pre-V1"
+```
+
+The post-correction run reports
+`CHECKPOINT_VALIDATION_OK: 18 V1, 9 accepted pre-V1`, including the new cycle-35 checkpoint.
+
+### Validation evidence
+
+| Gate | Result |
+|---|---|
+| Current-source checkpoint corpus | 18 V1 valid; 9 explicitly accepted pre-V1; exit 0 |
+| Markdown P-008 | 0 issues |
+| Docline frontmatter (`go run ./cmd/backlogit --cwd . --no-update-check docs lint`) | `valid: true`, 0 violations |
+| Index sync (`go run ./cmd/backlogit --cwd . --no-update-check sync`) | 0 parse failures |
+| Topology and live source drift | `WAVE_SIM_OK` 115/115; S=43; M=42; 104 edges; 18 waves; acyclic |
+| Production Go touched | **none** |
+
+### Gate and next action
+
+Both findings are remediated in-pass, but cycle 35 cannot certify its own planning-data and gate
+changes. The gate remains **FAIL**, `pending: independent-review-required`, and
+`push_allowed: no`. Independent review of this diff is required before any push. PR-thread
+reconciliation, shipment claim, and merge remain blocked; operator merge approval has not been
+requested. No subagent, Go source edit, push, or merge occurred.

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "agent": "prompt-builder",
+  "agent": "stage",
   "session_id": "stage-pr377-cycle-33",
   "phase": "cycle-33-review-remediation-complete",
   "status": "active",
