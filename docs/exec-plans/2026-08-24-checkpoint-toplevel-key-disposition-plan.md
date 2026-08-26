@@ -170,17 +170,35 @@ executable — it named no package, no test selector, and no cache-defeating fla
 could report "red" from a stale cached result or from an unrelated failing test in the same
 package. Cycle 16 replaced it with the per-unit table below.
 
-**Units that scaffold no harness (cycle-20).** A unit whose entire delta is a declaration, a
-document, or a runtime-verification run has no missing behaviour for a Go test to fail against.
+**Units that scaffold no harness (cycle-20, narrowed cycle-29).** A unit whose entire delta is a
+document or a runtime-verification run has no missing behaviour for a Go test to fail against.
 Such a unit scaffolds **zero** harness test functions, so P-002/P-004's universal quantifier over
 scaffolded harness functions holds vacuously. It is recorded as `harness-exempt` with its class —
-`declaration-only`, `docs-only`, `verification-only`, or `covered-by:<unit>` when a prior unit
+`docs-only`, `verification-only`, or `covered-by:<unit>` when a prior unit
 already owns the failing harness that this unit turns green — and it MUST name the downstream or
 owning unit whose red harness fails for the behaviour involved. Fabricating a failing assertion for
 such a unit is forbidden: a test that can only fail because a symbol does not yet exist is a build
-error, and a test that passes the moment the declared shape lands was never red. The cycle-8 rule
-"every unit still needs at least one assertion that fails" is what forced those fabrications on
-U1d and U15, and cycle 20 **withdraws** it. Test-first is preserved exactly where it is
+error, and a test that passes the moment the declared shape lands was never red.
+
+**Declarations are NOT in that set (cycle-29).** Cycle 20 extended the exemption to a
+`declaration-only` class covering U1d and U15. PR #377 review (`workflow-policies.md:75`) found
+that this let observable production surface — a serialized `remediation_intent` field on
+`CheckpointSummary`, an exported `GetCheckpointResult` wrapper — land with no observed failing
+test, which is a carve-out from NON-NEGOTIABLE Constitution Principle II. The class is **withdrawn**
+from the global policy, and U1d and U15 are **normal harness-required units**.
+
+The dilemma cycle 20 was resolving is genuine but has a third answer: a **source-shape harness**.
+It parses the named production file with `go/parser` and asserts the declared shape through
+`go/ast`, so it references no undeclared identifier. It therefore **compiles** against the
+pre-declaration tree (satisfying P-002's harness-compiles postcondition) and **fails on an
+assertion** rather than on a build error (satisfying P-004's red phase), and it turns green only
+when the declaration lands. It is neither the build error P-004 rejects nor the tautology cycle 20
+rejected. Both U1d's `TestU1d_*` and U15's `TestU15_*` harnesses were executed against worktree
+HEAD `6a822ceb` and observed compiling-and-red. The cycle-8 rule "every unit still needs at least
+one assertion that fails" is therefore **reinstated for declaration units** in this corrected form;
+cycle 20's withdrawal of it stands only for docs and verification units.
+
+Test-first is preserved exactly where it is
 load-bearing: **every behaviour-changing implementation unit still has a failing harness that
 lands before it**, and the harness-exempt classes are enumerated in the Documented deviations
 section rather than left to implementer judgement.
@@ -206,7 +224,7 @@ selector matches must fail, and nothing the guard selector matches may exist in 
 | U1 | `147.001-T` | `go test -count=1 -run '^TestU1_' ./internal/errors` |
 | U1b | `147.030-T` | `go test -count=1 -run '^TestU1b_' ./internal/errors` |
 | U1c | `147.031-T` | `go test -count=1 -run '^TestU1c_' ./internal/errors` |
-| U1d | `147.032-T` | harness-exempt (declaration-only); green-step guards `go test -count=1 -run '^TestU1dGuard_' ./internal/events` |
+| U1d | `147.032-T` | `go test -count=1 -run '^TestU1d_' ./internal/events` (source-shape harness; cycle-29 — no longer exempt) |
 | U2 | `147.002-T` | `go test -count=1 -run '^TestU2_' ./internal/events` |
 | U2b | `147.003-T` | `go test -count=1 -run '^TestU2b_' ./internal/events` |
 | U2c | `147.004-T` | `go test -count=1 -run '^TestU2c_' ./internal/events` |
@@ -219,7 +237,7 @@ selector matches must fail, and nothing the guard selector matches may exist in 
 | U12 | `147.035-T` | `go test -count=1 -run '^TestU12_' ./internal/events` |
 | U13 | `147.036-T` | `go test -count=1 -run '^TestU12_' ./internal/events` (U12 owns the seam harness; U13 turns it green) |
 | U14 | `147.037-T` | `go test -count=1 -run '^TestU14_' ./internal/events ./internal/core` |
-| U15 | `147.038-T` | harness-exempt (declaration-only); green-step guards `go test -count=1 -run '^TestU15Guard_' ./internal/events` |
+| U15 | `147.038-T` | `go test -count=1 -run '^TestU15_' ./internal/events` (source-shape harness; cycle-29 — no longer exempt) |
 | U3 | `147.006-T` | `go test -count=1 -run '^TestU3_' ./internal/events` |
 | U3c | `147.042-T` | `go test -count=1 -run '^TestU3c_' ./internal/events` |
 | U3b | `147.007-T` | harness-exempt (verification-only); green-step guards `go test -count=1 -run '^TestU3bGuard_' ./internal/events` |
@@ -419,19 +437,27 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   elision; `TargetFilename` round-trips a bare filename unchanged and the struct contains no field
   holding shell text; a `CheckpointSummary` with a nil intent marshals `remediation_intent: null`
   rather than omitting the key.
-* **Expected red**: **none — `harness-exempt: declaration-only` (cycle-20).** This unit's whole
-  delta is a struct declaration plus one tagged field. Once the declared shape lands, all three
-  scenarios pass immediately: a struct literal marshals its five tagged keys, a bare filename
-  round-trips, and a nil pointer without `omitempty` marshals as `null`. There is no compilable
-  intermediate state in which any of them fails on an assertion, so cycle 19's "cases 1 and 2 fail
-  (the type does not exist until the declaration step, then returns zero values)" described a build
-  error, not a red phase — the cycle-20 Copilot review raised this as a P1. No harness test
-  function is scaffolded for this unit.
-* **Green-step guards** (3, landing in the declaration commit as
-  `TestU1dGuard_<Descriptor>`): a `RemediationIntent` marshals with all five keys present and no
-  `omitempty` elision; `TargetFilename` round-trips a bare filename unchanged and the struct
-  contains no field holding shell text; a `CheckpointSummary` with a nil intent marshals
-  `remediation_intent: null` rather than omitting the key.
+* **Expected red**: **3 source-shape harness functions (cycle-29).** This unit is **not**
+  `harness-exempt`; the `declaration-only` class it carried from cycle 20 was withdrawn after PR
+  #377 review found it admitted observable production surface — a serialized `remediation_intent`
+  field — with no observed failing test, a carve-out from NON-NEGOTIABLE Principle II. Cycle 19's
+  "cases 1 and 2 fail (the type does not exist until the declaration step)" did describe a **build
+  error**, which P-004 rejects, and the value-marshalling assertions would indeed pass the instant
+  the shape landed. The resolution is neither of those: a **source-shape** harness in
+  `internal/events/checkpoint_remediation_test.go` parses `checkpoint_schema.go` with `go/parser`
+  and asserts the declared shape via `go/ast`, referencing no undeclared identifier. It compiles
+  against the pre-declaration tree and fails on assertions —
+  `TestU1d_RemediationIntentCarrierDeclared` ("RemediationIntent struct is not declared in
+  checkpoint_schema.go"), `TestU1d_CheckpointSummaryCarriesIntentField` ("CheckpointSummary has no
+  field tagged json:\"remediation_intent\""), and `TestU1d_RemediationIntentHoldsNoShellText`.
+  **Verified at worktree HEAD `6a822ceb`**: `go vet ./internal/events` exits 0 and
+  `go test -run='^$' -count=1 ./internal/events` reports `[no tests to run]` (compiles), while
+  `go test -count=1 -v -run '^TestU1d_' ./internal/events` exits 1 with assertion failures, not
+  build errors.
+* **Red-verification command**: `go test -count=1 -run '^TestU1d_' ./internal/events`.
+* **Green-step guards**: none separate. The three harness functions above are the guards — they go
+  red first and green when the declaration lands, so the value-marshalling behaviour they express
+  is still asserted, now with a genuine red phase in front of it.
 * **Where the RED for this carrier lives**: the behaviour that populates the carrier is owned by
   **U6** (`147.011-T`, the non-conforming branch) and **U6e** (`147.043-T`, the parse-failure and
   schema-invalid branches); its projection is owned by **U6c** and its rendering by **U16**. Each
@@ -1244,7 +1270,7 @@ on `147.010-T`.
   `GetCheckpoint` and returns `&CheckpointReadResult{Checkpoint: cp, Valid: err == nil}` with every
   other field at its zero value. `GetCheckpoint` is retained unchanged as a wrapper returning
   `res.Checkpoint`, so every existing caller compiles untouched.
-* **Declaration-only boundary**: this unit adds **no** conformance evaluation, **no** intent
+* **Declaration boundary**: this unit adds **no** conformance evaluation, **no** intent
   population, and **no** offender projection. Those are U6b's production delta. Keeping the
   declaration separate is what makes U8b's red honest — the harness compiles against a real type
   and fails because the fields are unpopulated, not because a symbol is missing.
@@ -1253,16 +1279,27 @@ on `147.010-T`.
   document it returns the pre-existing `ErrCheckpointInvalid` **unwrapped**, so
   `errors.Is(err, ErrCheckpointInvalid)` holds and `QuarantineIsRemedy(err)` is false — a read is
   not a rewrite and there is nothing to refuse.
-* **Expected red**: **none — `harness-exempt: declaration-only` (cycle-20).** The declaration step
-  lands a wrapper that already returns `&CheckpointReadResult{Checkpoint: cp, Valid: err == nil}`,
-  so case 1 passes the instant the symbol exists and case 2 asserts the shipped, unchanged read
-  contract. Cycle 19's "case 1 fails against the pre-declaration state (the symbol does not exist)"
-  described a build error, which P-004 explicitly does not accept as a red phase; the cycle-20
-  Copilot review raised this as a P1. No harness test function is scaffolded for this unit.
-* **Green-step guards** (2, landing in the declaration commit as `TestU15Guard_<Descriptor>`):
-  `GetCheckpointResult` on a conforming active document returns a non-nil result whose `Checkpoint`
-  matches `GetCheckpoint`'s return and whose `Valid` is true; on a schema-invalid document it
-  returns the pre-existing `ErrCheckpointInvalid` **unwrapped**.
+* **Expected red**: **3 source-shape harness functions (cycle-29).** This unit is **not**
+  `harness-exempt`; the `declaration-only` class it carried from cycle 20 was withdrawn after PR
+  #377 review found it admitted an exported executable wrapper (`GetCheckpointResult`) with no
+  observed failing test. Cycle 19's "case 1 fails against the pre-declaration state (the symbol
+  does not exist)" did describe a **build error**, and the `Valid: err == nil` assertion would pass
+  the instant the symbol landed. A **source-shape** harness in
+  `internal/events/checkpoint_readresult_test.go` is neither: it parses
+  `checkpoint_lifecycle.go` with `go/parser` and asserts the declared shape via `go/ast`, so it
+  compiles against the pre-declaration tree and fails on assertions —
+  `TestU15_CheckpointReadResultDeclared`, `TestU15_GetCheckpointResultDeclared`, and
+  `TestU15_GetCheckpointRetainedAsWrapper` (which carries the behaviour-preserving re-expression
+  pin the withdrawn class used to require of the exempt gate). **Verified at worktree HEAD
+  `6a822ceb`**: the package compiles with the harness present (`go vet` exit 0;
+  `go test -run='^$' -count=1` reports `[no tests to run]`), and
+  `go test -count=1 -v -run '^TestU15_' ./internal/events` exits 1 with assertion failures, not
+  build errors.
+* **Red-verification command**: `go test -count=1 -run '^TestU15_' ./internal/events`.
+* **Green-step guards**: none separate. The three harness functions above are the guards.
+* **Wave placement (P-002.6)**: wave 3 — after U1b (wave 2) and U1d (wave 1), before U8b (wave 4).
+  This ordering is what removes the deadlock PR #377 review identified: U8b's harness needs U15
+  landed, U15 needs non-exempt U1b landed, and one up-front harness pass cannot satisfy both.
 * **Where the RED for this carrier lives**: **U6b** (`147.012-T`) owns the failing harness for the
   projected fields — its cases 1 and 2 fail precisely *because* this declaration leaves
   `Conforming`, `NeedsQuarantine`, `RemediationIntent`, and `NonConformingFields` at their zero
@@ -2021,8 +2058,9 @@ on `147.010-T`.
 * **Domain**: verification
 * **Harness**: `harness-exempt: verification-only` — no Go test function is scaffolded; the gate is
   the recorded runtime evidence in `docs/closure/`.
-* **Files**: `.gitignore` (scratch-directory ignore rule); otherwise none (produces `docs/closure/`
-  evidence)
+* **Files**: none (produces `docs/closure/` evidence only). **Cycle-29**: the `.gitignore`
+  scratch-directory rule is removed from this unit's delta — the workspace moved to an
+  already-ignored path, so no ignore rule is committed.
 * **Change**: none to product code. Build the binary **from the branch under test** (not the pinned
   repo-root `backlogit.exe`, which predates the change) and exercise the **refusal** path against a
   **scratch** workspace seeded with copies of the legacy document shapes. The acceptance and
@@ -2039,12 +2077,12 @@ on `147.010-T`.
   `.github/workflows/release.yml:99-107`:
 
   ```text
-  go build -ldflags "-X github.com/softwaresalt/backlogit/internal/version.Version=verify-<short-sha> -X github.com/softwaresalt/backlogit/internal/version.Commit=<short-sha> -X github.com/softwaresalt/backlogit/internal/version.BuildDate=<rfc3339>" -o docs/scratch/checkpoint-verification/backlogit-verify.exe ./cmd/backlogit
+  go build -ldflags "-X github.com/softwaresalt/backlogit/internal/version.Version=verify-<short-sha> -X github.com/softwaresalt/backlogit/internal/version.Commit=<short-sha> -X github.com/softwaresalt/backlogit/internal/version.BuildDate=<rfc3339>" -o .copilot/scratch/checkpoint-verification/backlogit-verify.exe ./cmd/backlogit
   ```
 
   where `<short-sha>` is `git rev-parse --short HEAD`, matching the Makefile's `COMMIT` derivation.
   Then assert that
-  `docs/scratch/checkpoint-verification/backlogit-verify.exe version --format json --no-update-check`
+  `.copilot/scratch/checkpoint-verification/backlogit-verify.exe version --format json --no-update-check`
   reports a `commit` field **equal to that `<short-sha>`**. The flags are exact:
   `--format json` is the JSON selector (`internal/cli/version_cmd.go`) — there is no `--json` flag —
   and `--no-update-check` suppresses the remote release lookup so the assertion is hermetic. A plain
@@ -2054,7 +2092,7 @@ on `147.010-T`.
   this unit MUST
   1. **run under an explicit A4c approval batch** obtained immediately before execution, naming the
      files and the directory it will touch;
-  2. **bind to the canonical workspace** with `--cwd docs/scratch/checkpoint-verification` and pass
+  2. **bind to the canonical workspace** with `--cwd .copilot/scratch/checkpoint-verification` and pass
      **bare filenames**, never paths, and log the resolved storage root before the first mutating
      verb;
   3. **display, per file, before and after each step**: the bare `filename`, its SHA-256 `hash`,
@@ -2093,13 +2131,21 @@ on `147.010-T`.
   git-ignored and is **not** the evidence of record: an ignored, machine-local artifact cannot be
   reviewed and does not survive teardown. Cycle-17 makes the closure file the artifact and the
   scratch directory a working area.
-* **Scratch containment**: the scratch workspace is created **inside the repository working tree**
-  at `docs/scratch/checkpoint-verification/` (never `%TEMP%`, never outside the cwd — Constitution
-  IV), the resolved path is asserted to be repo-root-relative **before the first write**, it is
-  added to the freeze-scope declaration, and — because `.gitignore` carries no `docs/scratch/` rule
-  today (`*.exe` already covers the built binary, the copied fixtures are not covered) — adding that
-  ignore rule is owned by this unit. U10b and U10c inherit all of it. **Teardown does not run
-  here**: U10b and U10c consume this unit's quarantine archive, fixtures, and branch-built binary,
+* **Scratch containment (cycle-29 relocation)**: the scratch workspace is created **inside the
+  repository working tree** at `.copilot/scratch/checkpoint-verification/` (never `%TEMP%`, never
+  outside the cwd — Constitution IV), and the resolved path is asserted to be repo-root-relative
+  **before the first write**. It is added to the freeze-scope declaration. `.copilot/` is
+  **already** ignored by the committed `.gitignore` (`git check-ignore -v` resolves to
+  `.gitignore:5:.copilot/`; `git ls-files .copilot` returns 0 tracked entries), and `*.exe`
+  (`.gitignore:25`) additionally covers the built binary — so **this unit commits no ignore rule
+  at all**. Cycles 17-28 placed the workspace at `.copilot/scratch/checkpoint-verification/`, which
+  `.gitignore` does **not** cover, which forced U10 to commit a `.gitignore` rule that its own
+  `verification-only` class surface rejects (`EXEMPT_DELTA_EXCEEDS_CLASS`) while omitting the rule
+  left the tree dirty and halted U10b's claim-time baseline. PR #377 review raised the
+  unsatisfiable constraint on `147.019-T.md:83`; relocating to an existing ignored path removes the
+  rule from the delta instead of widening the class contract, and adds no task and no edge. U10b
+  and U10c inherit all of it. **Teardown does not run here**: U10b and U10c consume this unit's
+  quarantine archive, fixtures, and branch-built binary,
   so the workspace is handed over intact and teardown ownership moves to **U10c** (cycle-17; it was
   U10b through cycle 16). It stays classified `ActionRisk: destructive` (A4b) requiring
   operator approval (Constitution VII) at the point U10c performs it. If approval is not granted
@@ -2119,9 +2165,9 @@ on `147.010-T`.
   while the nine-file acknowledgement requires a sweep that "succeeds on every other file in that
   directory" — a real `resolve` against the conforming active checkpoints there. The two cannot
   both hold against the live corpus, so the sweep operates on a **copied mirror** inside the
-  scratch workspace (workspace root: `docs/scratch/checkpoint-verification/mirror/`; checkpoints go
-  into `docs/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/`). All sweep CLI
-  invocations use `--cwd docs/scratch/checkpoint-verification/mirror` with bare filename
+  scratch workspace (workspace root: `.copilot/scratch/checkpoint-verification/mirror/`; checkpoints go
+  into `.copilot/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/`). All sweep CLI
+  invocations use `--cwd .copilot/scratch/checkpoint-verification/mirror` with bare filename
   arguments. The nine enumerated legacy
   filenames keep their names in the mirror, so the discrimination assertion is unchanged while the
   live bytes stay read-only.
@@ -2206,7 +2252,7 @@ on `147.010-T`.
   three rows, which is the granularity ceiling. Adding these would put either at five or six.
   Splitting also gives the context-duplicate behaviour (U2g, U2h) and the abandoned-resolve
   mapping (U7e) a named owner, so a reviewer can see which unit fails if either regresses.
-* **Teardown**: `docs/scratch/checkpoint-verification/` teardown is owned by this unit and runs
+* **Teardown**: `.copilot/scratch/checkpoint-verification/` teardown is owned by this unit and runs
   only after all three rows pass — `ActionRisk: destructive` (A4b), explicit operator approval
   immediately before execution, skipped and recorded as a cleanup follow-up when approval is
   withheld. The tracked closure evidence file survives teardown by construction.
@@ -2346,14 +2392,43 @@ terminal by design — nothing depends on it, and a blocked U2f does not block t
 because the guarded seam rather than the enumeration is what enforces I1; when it is blocked it
 must also be removed from `130-S` with `return_blocked`.
 
-**Declaration → harness → implementation monotonicity (cycle-20 invariant I4)**: every unit whose
-delta changes behaviour has a failing harness that lands no later than its own harness step and no
-earlier than the declarations it compiles against. Concretely: units with their own red harness
-satisfy this internally (declaration step → red harness step → green step, in that order inside the
-task); `U13` is covered by `U12`; `U14`'s verb-level conformance contract is covered by `U3c`; and
-the two declaration-only units (`U1d`, `U15`) have their behaviour covered downstream by
-`U6`/`U6e`/`U6c`/`U16` and by `U6b`/`U8b` respectively. No behaviour-changing unit in this plan
+**Declaration → harness → implementation monotonicity (cycle-20 invariant I4, restated cycle-29)**:
+every unit whose delta changes behaviour has a failing harness that lands no later than its own
+harness step and no earlier than the declarations it compiles against. Concretely: units with their
+own red harness satisfy this internally (declaration step → red harness step → green step, in that
+order inside the task); `U13` is covered by `U12`; `U14`'s verb-level conformance contract is
+covered by `U3c`; and `U1d` and `U15` — formerly the two `declaration-only` units — now carry their
+**own** failing source-shape harnesses (`TestU1d_*`, `TestU15_*`) in addition to the downstream
+behaviour REDs in `U6`/`U6e`/`U6c`/`U16` and `U6b`/`U8b`. No behaviour-changing unit in this plan
 lacks a transitive harness prerequisite, and no harness-exempt unit implements behaviour.
+
+**Wave schedule (cycle-29, P-002.6)**: the 42-task / 104-edge DAG partitions into **18** dependency
+waves that schedule all 42 tasks with **zero** stalls and **zero** compile-order violations (every
+dependency lands in a strictly earlier wave than its dependent). Ship interleaves harness
+generation and implementation per wave rather than scaffolding the shipment up front.
+
+| Wave | Tasks | Wave | Tasks |
+|---|---|---|---|
+| 1 | `147.001-T` (U1), `147.032-T` (U1d) | 10 | `147.007-T` (U3b, exempt), `147.009-T` (U5), `147.040-T` (U17) |
+| 2 | `147.002-T` (U2), `147.030-T` (U1b) | 11 | `147.013-T` (U7) |
+| 3 | `147.003-T` (U2b), `147.004-T` (U2c), `147.031-T` (U1c), `147.038-T` (U15) | 12 | `147.015-T` (U8), `147.025-T` (U7d) |
+| 4 | `147.005-T` (U2d), `147.016-T` (U8b), `147.020-T` (U2e), `147.028-T` (U2g), `147.042-T` (U3c) | 13 | `147.024-T` (U7c), `147.039-T` (U16) |
+| 5 | `147.011-T` (U6), `147.029-T` (U7e), `147.033-T` (U2h), `147.034-T` (U11) | 14 | `147.017-T` (U9, exempt) |
+| 6 | `147.012-T` (U6b), `147.023-T` (U6d), `147.035-T` (U12), `147.043-T` (U6e) | 15 | `147.018-T` (U9b, exempt) |
+| 7 | `147.022-T` (U6c), `147.027-T` (U8c), `147.036-T` (U13, exempt) | 16 | `147.019-T` (U10, exempt) |
+| 8 | `147.014-T` (U7b), `147.037-T` (U14) | 17 | `147.026-T` (U10b, exempt) |
+| 9 | `147.006-T` (U3), `147.008-T` (U4), `147.021-T` (U2f, exempt) | 18 | `147.041-T` (U10c, exempt) |
+
+**The wave schedule is what dissolves the U15/U8b deadlock** PR #377 review raised on
+`.ship.agent.md:254`. U8b (`147.016-T`) cannot compile until U15 (`147.038-T`) lands, but U15
+depends on U1b (`147.030-T`), which is harness-required and so cannot be implemented before its own
+harness exists. One up-front pass has no valid order. Under waves the chain is U1d (wave 1) → U1b
+(wave 2) → U15 (wave 3) → U8b (wave 4): each harness is scaffolded only after every declaration it
+compiles against is `done`. No early-execution pass, no exemption, and no waiver is required.
+Every `covered-by` owner likewise precedes its dependent — U12 lands in wave 6 and U13 in wave 7 —
+so the claim-time `EXEMPT_OWNER_NOT_RED` condition is satisfiable by construction. A cycle injected
+into the graph as a negative control halts the scheduler at `WAVE_NO_PROGRESS` after 9 waves rather
+than looping.
 
 **Measured topology (cycle 20, `backlogit --cwd . query` after `backlogit --cwd . sync`)**: 42
 queued tasks, **104** queued-to-queued executable edges, 43 shipment members in `130-S`, ready set
@@ -2413,13 +2488,13 @@ from the two roots.
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | **pass** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Cycle-17 change**: the pre-existing `%v` validation wrap in `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~70-73`) is **fixed** by U17 rather than recorded as a deviation. The cycle-16 gate ruled the deviation unavailable: Principle I is not satisfiable by documenting a departure from it, and the "unrelated shipped contract" justification lapses once U4 and U14 edit that same function. |
-| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single three-step lifecycle declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a red harness step that lands **only** functions that **fail on assertions**, then a green step that lands the implementation together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 also withdrew the cycle-8 rule that every unit needs at least one failing assertion, which had forced fabricated REDs on the declaration-only units U1d and U15 — a test that can only fail because a symbol does not yet exist is a build error, and a test that passes the moment the declared shape lands was never red. Those units are now `harness-exempt: declaration-only` and their behaviour carries a genuine failing harness downstream (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15). Test-first is preserved for behaviour with exactly one explicitly allowed, edge-backed carve-out: every behaviour-changing unit is backed by a failing harness observed red before its implementation lands, carried on the unit itself except for **U13**, whose harness is owned by its declared prerequisite **U12** under the `covered-by` class (invariant I4). No other unit may claim that shape. U2d owns a real production delta with a compiling-but-failing harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
+| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single three-step lifecycle declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a red harness step that lands **only** functions that **fail on assertions**, then a green step that lands the implementation together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 withdrew the cycle-8 rule that every unit needs at least one failing assertion, on the grounds that a test failing only because a symbol does not exist is a build error and a test passing the moment the declared shape lands was never red. **Cycle 29 reinstates that rule for declaration units in corrected form** after PR #377 review (`workflow-policies.md:75`) held that the resulting `declaration-only` exemption admitted observable production surface — a serialized `CheckpointSummary` field, an exported `GetCheckpointResult` wrapper — with no observed failing test, which is a carve-out from a NON-NEGOTIABLE principle. U1d and U15 are no longer exempt: each carries a **source-shape** harness that parses its own production file with `go/parser` and asserts the declared shape via `go/ast`, so it compiles before the declaration exists (no build error) and fails on an assertion (a genuine red), verified at HEAD `6a822ceb`. Both units' downstream behaviour REDs (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15) are retained on top of that. **No Principle II deviation is recorded for any declaration unit** — the principle is satisfied outright. Test-first is preserved for behaviour with exactly one explicitly allowed, edge-backed carve-out: every behaviour-changing unit is backed by a failing harness observed red before its implementation lands, carried on the unit itself except for **U13**, whose harness is owned by its declared prerequisite **U12** under the `covered-by` class (invariant I4). No other unit may claim that shape. U2d owns a real production delta with a compiling-but-failing harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
-| IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `docs/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
+| IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `.copilot/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` (raw paths plus structural truncation scalars) on MCP, named keys on CLI, `NeedsQuarantine` + a structured `RemediationIntent` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
 | VI. Single Responsibility | **pass** | No new dependencies. The helper reuses `decodeTopLevelEntries`, `isFoldKeyIn`, `modeledJSONTagKeys`, and `unknownNestedProgressKeys` already present in `internal/events`. |
 | VII. Destructive Command Approval (NON-NEGOTIABLE) | **pass (conditional — see the approval condition below)** | Cycle 16 withdraws the two cycle-15 "documented deviations" against this principle. A NON-NEGOTIABLE principle cannot be satisfied by documenting a departure from it; either every destructive action is approval-gated or the plan fails the check. Both are now gated. **A4c is the single operative contract for every checkpoint-file-moving or checkpoint-file-overwriting command** — `quarantine`, `abandon`, `resolve`, and any operator-performed copy-back — and requires explicit operator approval **immediately before each execution batch**, never once at plan time. **A4b** (scratch teardown) requires its own approval immediately before execution. **A4d** confines live post-merge observation to the read verbs or a byte-copy mirror. **A5** (mutating the live corpus) stays forbidden without separate authorization. The change itself remains net **anti**-destructive: it removes a silent data-destruction path. **Condition**: this verdict is `pass` only while every live quarantine, resolve, abandon, or operator repair batch carries a recorded approval taken immediately before execution. An unapproved batch is a P-005 violation and a halt, not a documented exception. |
-| VIII. Explicit Safety Modes | **pass** | Work executes under **freeze-scope**. Declared boundary: `internal/errors/`, `internal/events/`, `internal/core/`, `internal/mcp/`, `internal/cli/`, `docs/design-docs/checkpoint-administrative-disposition.md`, `docs/cli-reference/backlogit_checkpoint_*.md`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml`, `docs/closure/`, and `docs/scratch/checkpoint-verification/`. The nine live checkpoint files are explicitly **outside** the mutation boundary. |
+| VIII. Explicit Safety Modes | **pass** | Work executes under **freeze-scope**. Declared boundary: `internal/errors/`, `internal/events/`, `internal/core/`, `internal/mcp/`, `internal/cli/`, `docs/design-docs/checkpoint-administrative-disposition.md`, `docs/cli-reference/backlogit_checkpoint_*.md`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml`, `docs/closure/`, and `.copilot/scratch/checkpoint-verification/`. The nine live checkpoint files are explicitly **outside** the mutation boundary. |
 | IX. Git-Friendly Persistence | **pass** | Checkpoint JSON stays human-readable; `jsonutil.MarshalReadable` and the atomic-write helpers are unchanged. |
 | X. Agent Context Efficiency | **pass** | Refusals carry structured field lists so an agent does not parse message text to learn which keys were rejected. U6b closes the `list` / `get` disagreement that would otherwise cost an agent an extra round trip and a wrong verb. |
 | XI. Merge Commit History Preservation (NON-NEGOTIABLE) | **pass** | Ships through a merge commit. Squash and rebase merge are forbidden and must be verified before merge. |
@@ -2429,15 +2504,15 @@ from the two roots.
 | Principle | Deviation | Justification | Simpler alternative rejected |
 |---|---|---|---|
 | V. Structured Observability | No refusal counter, log, or telemetry event. | The refusal is already agent-visible and typed; adding a telemetry surface pulls `internal/telemetry` into a freeze-scoped change and widens the blast radius past the defect. | "Emit a telemetry event per refusal" — rejected: nine known refusals on day one would immediately produce noise with no consumer defined. |
-| II. Test-First Development | Ten units scaffold **zero** harness test functions and are recorded `harness-exempt`. | P-004's precondition quantifies over every scaffolded harness test function; when a unit scaffolds none, it holds vacuously. The exempt set is closed and enumerated below, each entry names where its behaviour's failing harness lives, and exactly one member changes behaviour — U13, the explicitly allowed `covered-by` carve-out whose red harness is owned by its prerequisite U12. | "Give every unit a failing assertion" — rejected in cycle 20. That rule is what produced U1d's and U15's fabricated REDs, where the only way to fail was for a symbol not to exist (a build error) or for the declared shape not to have landed yet. Manufacturing behaviour purely to create a red assertion was already rejected once, in cycle 10, when U5b's invented delta reopened a scoped-out decision. |
+| II. Test-First Development | **Eight** units scaffold **zero** harness test functions and are recorded `harness-exempt`. | P-004's precondition quantifies over every scaffolded harness test function; when a unit scaffolds none, it holds vacuously. The exempt set is closed and enumerated below, each entry names where its behaviour's failing harness lives, and exactly one member changes behaviour — U13, the explicitly allowed `covered-by` carve-out whose red harness is owned by its prerequisite U12. **No declaration unit is in this set** (cycle 29). | "Give every unit a failing assertion" — rejected in cycle 20 *for docs and verification units*, where the only available assertion would be vacuous. It is **not** rejected for declaration units: cycle 29 reinstates a genuine failing assertion for U1d and U15 in source-shape form, which is neither a build error nor a tautology. Manufacturing *behaviour* purely to create a red assertion remains rejected, as in cycle 10 when U5b's invented delta reopened a scoped-out decision. |
 
-**The `harness-exempt` set is closed (cycle 20).** No unit outside this table may claim the
-exemption, and adding one requires a plan amendment.
+**The `harness-exempt` set is closed and has exactly eight members (cycle 29).** No unit outside
+this table may claim the exemption, and adding one requires a plan amendment. Cycle 20 enumerated
+ten; cycle 29 removed **U1d (`147.032-T`)** and **U15 (`147.038-T`)** when the `declaration-only`
+class was withdrawn, and both are now normal harness-required units carrying source-shape REDs.
 
 | Unit | Task | Class | Where the failing harness lives |
 |---|---|---|---|
-| U1d | `147.032-T` | `declaration-only` | U6 (`147.011-T`), U6e (`147.043-T`), U6c (`147.022-T`), U16 (`147.039-T`) |
-| U15 | `147.038-T` | `declaration-only` | U6b (`147.012-T`), U8b (`147.016-T`) |
 | U13 | `147.036-T` | `covered-by` (`harness_owner: 147.035-T`) | U12 (`147.035-T`) — three failing seam-contract functions |
 | U3b | `147.007-T` | `verification-only` | U3c (`147.042-T`), turned green by U14 (`147.037-T`) |
 | U2f | `147.021-T` | `verification-only` | U12 (`147.035-T`) — I1 is enforced by the seam, not the enumeration |
@@ -2447,9 +2522,18 @@ exemption, and adding one requires a plan amendment.
 | U10b | `147.026-T` | `verification-only` | not applicable — runtime evidence |
 | U10c | `147.041-T` | `verification-only` | not applicable — runtime evidence |
 
+**Units removed from the exempt set in cycle 29** — both now carry `harness-ready` and a red
+source-shape harness, and neither carries a `harness-exemption-contract` block or an
+`EXEMPT_VERIFY_OK` gate any more:
+
+| Unit | Task | Former class | Replacement red gate | Baseline probe at HEAD `6a822ceb` |
+|---|---|---|---|---|
+| U1d | `147.032-T` | `declaration-only` | `go test -count=1 -run '^TestU1d_' ./internal/events` | compiles (`go vet` exit 0; `-run='^$'` reports `[no tests to run]`), 2/2 assertion FAILs |
+| U15 | `147.038-T` | `declaration-only` | `go test -count=1 -run '^TestU15_' ./internal/events` | compiles (same probe), 2/2 assertion FAILs |
+
 **Every exempt unit carries an executable, must-fail-before-deliverable gate (cycle 23).** The
-exemption removes the *scaffolded red harness*, not the *observed failure*. Each of the ten tasks
-above now carries a canonical `harness-exemption-contract` body block with five keys in identical
+exemption removes the *scaffolded red harness*, not the *observed failure*. Each of the eight tasks
+above carries a canonical `harness-exemption-contract` body block with five keys in identical
 order — `harness_exemption_class`, `harness_exemption_reason`, `harness_owner`,
 `exempt_verification_command`, `exempt_precondition` — plus `harness_owner_command` on U13 alone.
 Every command was executed at HEAD `e8b974e` and observed **failing**, so no unit's gate is
@@ -2457,8 +2541,6 @@ vacuous:
 
 | Unit | Gate shape | Why it cannot pass before the deliverable |
 |---|---|---|
-| U1d | `go doc` symbol + tag probe, then 3 named `--- PASS: TestU1dGuard_` lines | `go doc` exits non-zero while `RemediationIntent` is absent; a generic compile check would pass |
-| U15 | `go doc` type + function probe, then 2 named `--- PASS: TestU15Guard_` lines | same; the guards also pin the pre-existing `GetCheckpoint` contract unchanged |
 | U13 | seam-file precondition-set probe, then 3 named `--- PASS: TestU12_` lines | the seam file does not exist and U12's selector returns `[no tests to run]` |
 | U3b | named test file exists, then 2 named `--- PASS: TestU3bGuard_` lines | the file does not exist; the bare selector exits 0 with `[no tests to run]` |
 | U2f | named test file exists, then 2 named `--- PASS: TestU2fGuard_` lines | same |
@@ -2468,22 +2550,28 @@ vacuous:
 | U10b | ≥5 `evidence_row: unit=U10b …` records plus 3 declared scalars | same |
 | U10c | ≥3 `evidence_row: unit=U10c …` records plus 2 declared scalars | same |
 
+**The `EXEMPT_VERIFY_OK:{task_id}` marker is required on `exempt_verification_command` only.**
+`harness_owner_command` — which only U13 carries — is deliberately unmarked and is validated by its
+named `--- PASS: TestU12_` count against U12's scaffolded harness (`workflow-policies.md` P-002.3,
+Loop-command-versus-gate-command). Requiring a marker on it would mean editing U12's harness to
+emit a string on U13's behalf, which every other rule in this contract forbids.
+
 **Objective class boundary (P-002.4).** `covered-by` is the only exempt class that may modify
 production behaviour, and U13 is this plan's only member of it. The check is mechanical: at the
 completion gate the task's changed-file set must be a subset of its class delta surface —
-`docs-only` changes zero `*.go` files, `verification-only` changes zero non-test `*.go` files,
-`declaration-only` changes only the production files it names (added top-level declarations, plus
-a behaviour-preserving wrapper re-expression only when its guards pin the pre-existing contract)
-and its own guard file, and `covered-by` changes no `*_test.go` file at all. Anything outside the
-surface is a halt (`EXEMPT_DELTA_EXCEEDS_CLASS`, or `EXEMPT_BEHAVIOR_NO_OWNER` when a
-no-behaviour class produces production behaviour). Fail closed on any unclassifiable delta.
+`docs-only` changes zero `*.go` files, and `verification-only` changes zero non-test `*.go` files
+**and zero repository-configuration files** (no `.gitignore`, no CI or build config — cycle 29;
+`verification-only` is not a repository-hygiene class), and `covered-by` changes no `*_test.go`
+file at all. Anything outside the surface is a halt (`EXEMPT_DELTA_EXCEEDS_CLASS`, or
+`EXEMPT_BEHAVIOR_NO_OWNER` when a no-behaviour class produces production behaviour). An **empty**
+changed-file set is also a halt, never a trivial pass. Fail closed on any unclassifiable delta.
 
 **Ship ready-selection contract (cycle 21 adapter, generalized into global policy in cycle 22).**
 Cycle 21 recorded this rule as a shipment-local adapter because the repository-wide ready-queue
 policy (`.github/policies/workflow-policies.md`, `.github/agents/.ship.agent.md`) filtered strictly
 on `harness-ready` and had no vocabulary for `harness-exempt`; read literally, that global policy
 would have told Ship's harness-architect / build-feature selection to scaffold a red harness for
-all ten units in the table above, contradicting the closed-set exemption this plan enumerates.
+all eight units in the table above, contradicting the closed-set exemption this plan enumerates.
 Cycle 22 closed that gap in the global policy itself — **P-002.1 (Harness-Exempt Alternative
 Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — so this plan is now a
 *conforming consumer* of a general contract rather than the carrier of a local exception:
@@ -2494,8 +2582,8 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   applied only after P-002.1 has validated each exempt task:
   `SELECT id FROM items WHERE parent_id = '147-F' AND status = 'queued' AND (labels LIKE
   '%harness-ready%' OR labels LIKE '%harness-exempt%')`.
-* **Fail-closed evaluation.** The label alone is not admission. Each of the ten tasks declares a
-  class from the closed P-002.1 vocabulary (`declaration-only`, `docs-only`, `verification-only`,
+* **Fail-closed evaluation.** The label alone is not admission. Each of the eight tasks declares a
+  class from the closed P-002.1 vocabulary (`docs-only`, `verification-only`,
   `covered-by`, with the owner in `harness_owner`), a one-line reason, and membership in the closed set enumerated above,
   which is this plan's declared exempt contract. An unrecognized class, a task not in that closed
   set, or a behaviour-changing task without a valid predecessor harness owner is a **halt** and a
@@ -2505,8 +2593,8 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   Documented deviations row above.
 * **Behaviour requires red evidence; U13 is the single edge-backed carve-out.** Every
   behaviour-changing unit in this plan is backed by a failing harness that was observed red before
-  its implementation lands. Nine of the ten exempt units carry no behaviour at all
-  (`declaration-only`, `docs-only`, `verification-only`) and so owe no red of their own. Exactly
+  its implementation lands. Seven of the eight exempt units carry no behaviour at all
+  (`docs-only`, `verification-only`) and so owe no red of their own. Exactly
   one exempt unit does change behaviour: **U13 / `147.036-T`**, and it is the explicit, allowed
   `covered-by` carve-out — its failing harness is owned by its prerequisite **U12 /
   `147.035-T`** (three failing seam-contract functions), which is a declared dependency, must carry
@@ -2514,7 +2602,7 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   exemption, and lands red before U13 builds. No other unit may claim that shape: any further
   behaviour-changing unit needs `harness-ready` on itself. Invariant I4 (declaration → harness →
   implementation monotonicity) is the structural guarantee that the edge exists.
-* **Application.** Ship (or its harness-architect / build-feature skill) MUST treat all ten tasks
+* **Application.** Ship (or its harness-architect / build-feature skill) MUST treat all eight tasks
   in the table above as already harness-satisfied once P-002.1 evaluation passes, and MUST NOT
   scaffold a red harness for any of them; it still schedules and implements each in dependency
   order like any other queued task. For U13, "in dependency order" additionally means after U12's
@@ -2936,9 +3024,9 @@ highest-value assertion in the plan; if review trims anything, it must not be th
 | A1 | Add a refusal gate to `ResolveCheckpoint`, a path both Stage and Ship session-start recovery call | `internal/events/checkpoint_lifecycle.go` | behaviour change on a governed write path | **high** | not required (net anti-destructive), but must be called out at PR review | revert the merge commit; no data migration | planned |
 | A2 | Widen `QuarantineCheckpoint` classification so more files become movable to the archive | `internal/core/checkpoint_disposition.go` | contract change on a file-moving verb | **high** | not required; move is verbatim and audited, and `moveNoReplace` never overwrites | revert; quarantined files are recoverable from the archive dir with their sidecar | planned |
 | A3 | Change five MCP tool descriptions (`list`, `get`, `resolve`, `abandon`, `quarantine`) and update `.github/instructions/backlogit.instructions.md` | `internal/mcp/tools.go`, `.github/instructions/backlogit.instructions.md`, `.autoharness/backlog-registry.yaml` | agent-facing contract change | moderate | not required | revert | planned |
-| A4 | Create and seed the scratch verification workspace — `mkdir`, byte-copy fixtures in, build the verify binary, and run the **read** verbs (`list`, `get`, `version`) against it | `docs/scratch/checkpoint-verification/` only | local file creation, no checkpoint mutation | moderate | not required — creation and reads only; **this row grants no authority to run a disposition verb**. Cycle 15's wording ("run disposition verbs … not required") contradicted A4c and is removed: any command that moves or overwrites a checkpoint file, in scratch or anywhere else, is A4c | discard the scratch contents | planned |
+| A4 | Create and seed the scratch verification workspace — `mkdir`, byte-copy fixtures in, build the verify binary, and run the **read** verbs (`list`, `get`, `version`) against it | `.copilot/scratch/checkpoint-verification/` only | local file creation, no checkpoint mutation | moderate | not required — creation and reads only; **this row grants no authority to run a disposition verb**. Cycle 15's wording ("run disposition verbs … not required") contradicted A4c and is removed: any command that moves or overwrites a checkpoint file, in scratch or anywhere else, is A4c | discard the scratch contents | planned |
 | A4c | Execute a **disposition command that overwrites or moves a checkpoint file** — `checkpoint quarantine` (moves the file into `archive/checkpoints/` and writes a sidecar), `checkpoint abandon` (rewrites the document in place), `checkpoint resolve` (rewrites the document in place), and any operator-performed archive copy-back | scratch fixtures, scratch mirror, live corpus, and any archive/sidecar they create | file move / in-place overwrite | **destructive** | **required, and A4c is the sole operative contract for this class** — obtain explicit operator approval **immediately before each execution batch**, not once at plan time (Constitution VII). Approval covers the named files in the named directory only; a new directory or a new filename set needs a fresh approval. The batch request MUST carry the U10 execution contract: `--cwd` binding with bare filenames, per-file filename/hash/state/destination display, a pre-run preimage byte copy, the **operation-class-appropriate** destination precondition (cycle-17: absent-destination and no-clobber for an **archive move**; preimage plus a post-step SHA comparison for an **in-place rewrite**, where the destination is necessarily present and absent-destination must not be asserted; a declared intentional-collision row expects a refusal), and fail-closed halting | quarantine is reversible in principle by operator copy-back from `archive/checkpoints/`; an in-place rewrite is reversible only from the pre-run byte copy, so a pre-run byte copy of every mutating fixture is a **precondition** of the approval request | planned |
-| A4b | Tear down the scratch verification workspace after closure (**owned by U10c** since cycle 17, only after its three rows pass — U10 and U10b hand the workspace over intact) | `docs/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) — obtained immediately before execution | none needed — contents are reproducible from the plan, and the durable evidence lives in the tracked closure artifact rather than in the scratch directory | planned |
+| A4b | Tear down the scratch verification workspace after closure (**owned by U10c** since cycle 17, only after its three rows pass — U10 and U10b hand the workspace over intact) | `.copilot/scratch/checkpoint-verification/` | directory deletion | **destructive** | **required** (Constitution VII) — obtained immediately before execution | none needed — contents are reproducible from the plan, and the durable evidence lives in the tracked closure artifact rather than in the scratch directory | planned |
 | A4d | Post-merge observation of the live workspace | `.backlogit/checkpoints/` | **read-only** — `checkpoint list` and `checkpoint get` only | low | not required **while read-only**; any mutating verb against the live corpus leaves this row and becomes A4c or A5 | n/a | planned |
 | A5 | Mutate the nine live legacy checkpoints or the stale `129-S` checkpoint | `.backlogit/checkpoints/` | destructive, irreversible | **destructive** | **FORBIDDEN in this work.** Out of scope; requires explicit operator approval in a separate unit of work. | n/a | **abandoned** |
 
@@ -2947,7 +3035,7 @@ closure step "run one Stage and one Ship session-start recovery against the live
 NOT invoke `resolve`, `abandon`, or `quarantine` against `.backlogit/checkpoints/`. Session-start
 recovery protocols do call `resolve` on leftover checkpoints, so the observation is performed either
 (a) with the read verbs only, reading `needs_quarantine`, `conforming`, and `non_conforming_fields`
-from `checkpoint list` / `checkpoint get`, or (b) against a byte-copy mirror under `docs/scratch/`,
+from `checkpoint list` / `checkpoint get`, or (b) against a byte-copy mirror under `.copilot/scratch/`,
 exactly as U10b's sweep already does. Any live mutating disposition is A4c at minimum and A5 if it
 targets one of the nine legacy files or the stale `129-S` checkpoint; neither is authorized by this
 plan. **No automatic session-start repair, restore, or quarantine sweep of live checkpoints is
@@ -2977,7 +3065,7 @@ prescribed anywhere in this plan**, and U9b is explicitly forbidden from publish
   `backlogit.exe`: it predates this work, so a green run against it would prove nothing
   (self-hosted version-skew learning).
 * **Scratch workspace** — create the verification workspace *inside* the repository working tree at
-  `docs/scratch/checkpoint-verification/` (Constitution IV; never `%TEMP%`), assert the resolved
+  `.copilot/scratch/checkpoint-verification/` (Constitution IV; never `%TEMP%`), assert the resolved
   path is repo-root-relative before the first write, add the directory to the freeze-scope
   declaration and to `.gitignore` if it is not already covered, seed it with byte-copies of the
   legacy document shapes, and confirm `.backlogit/checkpoints/` is not the target directory before
@@ -2997,9 +3085,9 @@ prescribed anywhere in this plan**, and U9b is explicitly forbidden from publish
   is proved by U10b's evidence-integrity row. A verified automated round trip moves to stash
   `35A27CD0` together with the containment work that makes it safe.
 * **Mirror, not live corpus** — U10b's recovery-sweep row runs against
-  `docs/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/` (workspace root:
-  `docs/scratch/checkpoint-verification/mirror/`), a byte-copy of `.backlogit/checkpoints/`; all
-  sweep CLI invocations use `--cwd docs/scratch/checkpoint-verification/mirror` with bare filename
+  `.copilot/scratch/checkpoint-verification/mirror/.backlogit/checkpoints/` (workspace root:
+  `.copilot/scratch/checkpoint-verification/mirror/`), a byte-copy of `.backlogit/checkpoints/`; all
+  sweep CLI invocations use `--cwd .copilot/scratch/checkpoint-verification/mirror` with bare filename
   arguments. The
   sweep needs successful `resolve` calls on the conforming files to prove discrimination, and those
   succeed by rewriting; running it against the live directory would contradict the live-corpus
@@ -3051,7 +3139,7 @@ prescribed anywhere in this plan**, and U9b is explicitly forbidden from publish
 
 * **Monitoring signal (no metrics backend — manual observation)** — after merge, run one Stage and
   one Ship session-start recovery against the live workspace **using the read verbs only**
-  (`checkpoint list`, `checkpoint get`) or against a byte-copy mirror under `docs/scratch/`, per
+  (`checkpoint list`, `checkpoint get`) or against a byte-copy mirror under `.copilot/scratch/`, per
   A4d, and confirm neither is blocked by a **false** refusal. Refusals on the nine enumerated
   legacy filenames are expected and healthy. A mutating disposition against
   `.backlogit/checkpoints/` is **not** part of this observation. Record the outcome in the closure
@@ -4720,3 +4808,67 @@ implementation — those remain separate gates owned by Ship and the operator.
 
 This authorization covers **planning artifacts only**. It is not merge approval, not a shipment
 claim, and not authorization for Ship to begin implementation.
+
+---
+
+### PR #377 review remediation, cycle 29 — declaration-only withdrawn, harness waves introduced
+
+**Trigger.** Six threads remained unresolved on HEAD `6a822ceb` after the cycle 26-28 fix budget
+was exhausted (`github-pr-automation` §1.8 limits review-fix cycles to 3 per HEAD; the limit stops
+automated fixing but does not clear the merge gate). Each was accepted as valid at the time and
+explicitly deferred rather than waived. Three of them — the `declaration-only` class challenge, the
+topological-waves finding, and the U10 `.gitignore` conflict — were recorded as requiring a fresh
+plan review because they change contracts rather than wording, and the first two were recorded as
+having to be decided **together**. This cycle decides them together.
+
+| Thread | Location | Classification | Disposition |
+|---|---|---|---|
+| T4 | `workflow-policies.md:75` | foundational | **`declaration-only` withdrawn.** Option (A) from the deferral note is taken: the class admitted observable production surface with no observed failing test, which is a carve-out from NON-NEGOTIABLE Principle II, and cycle 20's tension is resolved by a **source-shape** harness rather than by an exemption or a signed deviation. Closed vocabulary drops to three tokens; the exempt set drops from ten to **eight**. |
+| T2 | `.ship.agent.md:254` | requires decomposition | **Waves adopted** as new policy **P-002.6**. Ship Step 2 becomes a per-wave procedure invoked from a new Step 4.0 wave-admission step; Step 3 builds the wave schedule; Step 4 is an outer loop over waves. The cycle-26 declaration-prerequisite early-execution pass is removed — it was only ever one wave and could not satisfy a chain of depth > 1. |
+| T1 | `workflow-policies.md:261` | bounded | **Fixed.** P-002.3's must-fail signal list no longer admits an unmarked exit 0 as the required pre-work failure; the probe classifies three ways and `EXEMPT_MARKER_MISSING` is stated as a halt at both gates, matching Ship 4.1a item 4 and `build-feature` Step 0 item 4. |
+| T3 | `build-feature/SKILL.md:213` | bounded | **Fixed.** The skill's completion gate diffs the baseline against the **working tree** (two-dot with no right-hand side, plus `--cached`) because it runs before its own Commit step; an empty changed-file set is now a halt. Ship Step 4.3 keeps `..HEAD` and now states why. |
+| T6 | `.autoharness/drift-ignore:70` | bounded | **Fixed.** The cycle-24 re-apply note said the `EXEMPT_VERIFY_OK` marker applied to `harness_owner_command` "distinctly"; corrected to state the marker is required on `exempt_verification_command` only and that owner commands are validated by named `--- PASS:` count and are intentionally unmarked. |
+| T5 | `147.019-T.md:83` | requires decomposition | **Fixed without decomposition.** The scratch workspace moves from the un-ignored `docs/scratch/checkpoint-verification/` to the already-ignored `.copilot/scratch/checkpoint-verification/` (`git check-ignore -v` → `.gitignore:5:.copilot/`; `git ls-files .copilot` → 0 entries), so U10 commits no ignore rule at all. The `verification-only` class contract is **narrowed**, not widened: P-002.4 now explicitly rejects `.gitignore` and other configuration files. Topology is unchanged. |
+
+**Why T4 and T2 had to be decided together, and how the resolution composes.** The waves design
+depends on whether declarations are exempt. With `declaration-only` gone, U1d and U15 become
+harness-required, which *adds* two harness-generation obligations to the DAG — and it is precisely
+the wave scheduler that makes those obligations satisfiable. The concrete chain the reviewer named
+resolves as U1d (wave 1) → U1b (wave 2) → U15 (wave 3) → U8b (wave 4): each harness is scaffolded
+only after every declaration it compiles against is `done`, so no waiver, no early-execution pass,
+and no exemption is required anywhere in the chain.
+
+**The source-shape harness is the third option cycle 20 missed.** Cycle 20 saw only two: a test
+that references the missing symbol (a build error, which P-004 rejects) or a test that passes the
+instant the shape lands (never red). A test that parses the production file with `go/parser` and
+asserts the declared shape via `go/ast` is neither — it names no undeclared identifier, so it
+compiles; and it fails on an assertion, so the red is genuine. Both harnesses were executed against
+worktree HEAD `6a822ceb`: `go vet ./internal/events` exits 0 and `go test -run='^$' -count=1
+./internal/events` reports `ok … [no tests to run]` (compiles without the declaration), while
+`go test -count=1 -v -run '^TestU1d_'` and `-run '^TestU15_'` each exit 1 with two assertion
+failures naming the absent shape. `RemediationIntent`, `remediation_intent`, `CheckpointReadResult`,
+and `GetCheckpointResult` have 0 occurrences under `internal/events/` at that HEAD.
+
+**Wave verification.** The 42-task / 104-edge DAG was simulated under the P-002.6 wave rule: **18
+waves, 42 tasks scheduled, 0 stalls, 0 compile-order violations** (every dependency lands in a
+strictly earlier wave than its dependent). The `covered-by` owner U12 lands in wave 6 and U13 in
+wave 7, so `EXEMPT_OWNER_NOT_RED` is satisfiable by construction. As a negative control, injecting
+the cycle `147.032-T → 147.038-T` halts the scheduler with `WAVE_NO_PROGRESS` after 9 waves with 26
+tasks blocked, rather than looping — confirming the no-progress detector fires. The full schedule
+is tabulated in the Execution Order section.
+
+**Contract changes.**
+
+| Artifact | Change |
+|---|---|
+| `workflow-policies.md` | 1.16.0 → **1.17.0**. P-002 postcondition restated per wave; P-002.1 vocabulary 4 → 3 tokens plus the source-shape rule; P-002.2 gains `WAVE_NO_PROGRESS`, `WAVE_CYCLE_DETECTED`, `WAVE_BUDGET_EXCEEDED`; P-002.3 three-way probe classification and marker scoping; P-002.4 per-consumer diff form, empty-delta halt, and the repository-hygiene prohibition; P-004 wave scoping and declaration-task applicability; **new P-002.6**. |
+| `.ship.agent.md` | Step 2 wave-scoped (cycle-26 early pass removed); Step 3 → wave schedule; **new Step 4.0** wave admission; Step 4.2 routing; Step 4.3 diff-form rationale and empty-delta halt; two new circuit breakers; branch rule pinning all waves to one branch/worktree/PR (P-016). |
+| `build-feature/SKILL.md` | Completion gate uses the working-tree diff form; empty delta halts; Commit step must not be reordered ahead of the gate; `declaration-only` removed from Inputs and the Step 5 exception. |
+| `harness-architect/SKILL.md` | Wave-scoped Step 1; missing-dependency-edge reporting; source-shape harness rule in Step 1a with no production stub; Steps 4 and 5.2 aligned. |
+| `.autoharness/drift-ignore` | Cycle-24 marker note corrected; cycle-26 notes marked SUPERSEDED; cycle-29 re-apply obligation appended. |
+| Tasks | `147.032-T` and `147.038-T` lose `harness-exempt` and their contract blocks, gain source-shape harness specs and red selectors; `147.019-T` loses the `.gitignore` delta and relocates its workspace; `147.041-T` teardown path updated. |
+
+**Gate state.** This is a plan-and-prompt-artifact correction only. No production Go code is
+written here, and no push or merge is performed. The §1.9 readiness gate remains **FAIL on Check 3**
+pending a fresh local review of these changes and re-review of PR #377 on the new HEAD; the six
+threads are addressed but are not self-resolved by this session.

@@ -47,30 +47,40 @@ warn the operator that visibility is degraded and continue locally.
 ## Inputs
 
 * `${input:feature}`: (Required) Feature or chore ID such as `001-F`
-* `${input:tasks}`: (Optional) Comma-separated task IDs to scaffold.
-  When omitted, use all ready tasks under the feature.
+* `${input:tasks}`: (Required in wave mode) Comma-separated task IDs for the
+  **current P-002.6 wave** — the tasks whose dependencies are all `done`. Ship
+  supplies this set from its Step 4.0 wave admission. When omitted, use all
+  ready tasks under the feature whose dependencies are complete; never scaffold
+  a task with an unfinished dependency.
 
 ## Workflow
 
 ### Step 1: Claim the ready task set
 
+**This skill is invoked once per wave** (P-002.6), not once per shipment. Its
+scope is the current wave's ready set and nothing else.
+
 1. Load the feature or chore and its ready descendants through backlog
    query or queue operations.
 2. If `${input:tasks}` is present, restrict the scope to that explicit
-   task set.
+   task set — it is the wave, and it is authoritative.
 3. Exclude blocked, done, or otherwise non-ready work items.
 4. Exclude tasks that are already harness-satisfied: those carrying
    `harness-ready`, and those carrying `harness-exempt` that pass the
    P-002.1 static intake in Step 1a. Do **not** exclude a `covered-by` task's
    named harness owner — the owner is a scaffolding target.
-5. Preserve the work-item-to-task mapping so each harness can be traced
+5. **Exclude every task with an unfinished dependency.** Such a task belongs to
+   a later wave. Its harness may not compile yet, and scaffolding it now is the
+   one-pass deadlock waves exist to prevent.
+6. Preserve the work-item-to-task mapping so each harness can be traced
    back to the correct backlog item.
-6. Assume any `declaration-only` prerequisite has already landed — Ship's
-   Step 2 ordering rule executes those declaration tasks before invoking this
-   skill on their dependents. If a scaffold still cannot compile because a
-   declared type or field is absent, halt and report the missing prerequisite
-   to Ship. Do not fabricate the declaration, and do not stub it into the test
-   file to force compilation.
+7. Assume every declaration this wave's harnesses compile against has **already
+   landed**, because the tasks that own those declarations are dependencies and
+   are therefore `done`. If a scaffold still cannot compile because a declared
+   type or field is absent, the dependency graph is missing an edge: halt and
+   report the missing prerequisite to Ship for a plan amendment. Do not
+   fabricate the declaration, do not stub it into the test file to force
+   compilation, and do not scaffold ahead of the wave.
 
 ### Step 1a: Harness-exempt static intake (P-002.1, fail-closed)
 
@@ -93,8 +103,9 @@ the following hold:
   order: `harness_exemption_class`, `harness_exemption_reason`, `harness_owner`,
   `exempt_verification_command`, `exempt_precondition` (plus
   `harness_owner_command` when the class is `covered-by`)
-* `harness_exemption_class` is exactly one of `declaration-only`, `docs-only`,
-  `verification-only`, or `covered-by`
+* `harness_exemption_class` is exactly one of `docs-only`,
+  `verification-only`, or `covered-by`. `declaration-only` was withdrawn in
+  cycle 29 and is `EXEMPT_CLASS_UNRECOGNIZED`
 * `harness_exemption_reason` is one non-empty line
 * `exempt_verification_command` is an exact runnable command and
   `exempt_precondition` is the literal `must-fail-before-deliverable`
@@ -125,6 +136,32 @@ outside the exempt set still require a genuine failing harness before
 implementation. An exempt task's observed failure is its
 `exempt_verification_command` run at Ship Step 4.1a, not a fabricated test file
 authored here.
+
+**A declaration task is not exempt and gets a source-shape harness.** A task
+whose delta lands an exported type, a serialized struct field, a function or
+method signature, or a sentinel is behavior-changing production code (P-002.1,
+cycle 29). It is a scaffolding target like any other. Scaffold it a harness that
+asserts over the package's **own source text** rather than over the missing
+symbol:
+
+* parse the named production file with `go/parser` into a `*ast.File` and assert
+  the declared shape through `go/ast` — the type exists, the struct carries a
+  field with the exact `json:"…"` tag, the function is declared with the
+  expected name and receiver-less form;
+* import only `go/ast`, `go/parser`, `go/token`, `strings`, and `testing`, so the
+  file **compiles before the declaration exists** and
+  `go test -run=^$ -count=1 ./...` exits 0 (P-002 postcondition);
+* fail with an assertion message naming what is missing — for example
+  `RemediationIntent struct is not declared in checkpoint_schema.go` — so the
+  red is a genuine P-004 red phase, not a build error;
+* name the functions `TestU<unit>_<Descriptor>` like any other harness, so the
+  unit's red selector matches them.
+
+This is the correct resolution of the old tension between "a build error is not
+a red" and "a test that passes the instant the shape lands was never red": the
+source-shape harness is neither. Do **not** instead reference the undeclared
+symbol — that is the build error P-004 rejects — and do **not** ask for an
+exemption.
 
 ### Step 2: Read task intent
 
@@ -162,6 +199,13 @@ For each task, select the appropriate harness strategy:
    reason.
 4. Keep signatures, types, and module names aligned with the current
    codebase.
+5. For a **declaration** task, use the source-shape (`go/ast`) form from Step 1a
+   instead of a stub-plus-behavior harness. The declaration is the deliverable,
+   so there is no behavior to stub and no signature to align against — the
+   harness parses the named production file and asserts the shape is present.
+   A production stub is **not** written for such a task: writing one would make
+   the harness pass on the scaffolding commit, which is the "never red" failure
+   mode P-004 rejects.
 
 ### File placement rules
 
@@ -193,6 +237,13 @@ the expected failure marker (// TODO: implement).
 
 If any test passes (false positive) or fails with an unexpected error
 (compilation vs runtime), fix the harness.
+
+For a **declaration** task's source-shape harness, the expected failure marker
+is the assertion message naming the absent shape (for example
+`… is not declared in <file>.go`), not a `// TODO: implement` panic. It MUST be
+an assertion failure reported by `testing`, never a build error — if
+`go test -run=^$ -count=1 ./...` fails for that package, the harness references
+the undeclared symbol and must be rewritten in the `go/ast` form.
 
 ### Step 6: Apply harness-ready label
 

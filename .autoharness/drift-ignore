@@ -55,8 +55,10 @@
 #       / exempt_class; Step 4.3 adds the exempt completion gate.
 #   .github/skills/build-feature/SKILL.md — new Step 0 pre-work probe; Step 2
 #       false-green parsing; Step 5 narrow new-test-file exception for
-#       verification-only / declaration-only deliverables that still forbids
+#       verification-only deliverables that still forbids
 #       weakening any existing assertion; post-loop exempt completion gate.
+#       [Cycle 29: the exception no longer extends to declaration-only, which
+#        is not a class any more.]
 #   .github/skills/harness-architect/SKILL.md — Step 1a is static intake only,
 #       must not raise EXEMPT_OWNER_NOT_RED, and must scaffold covered-by owners
 #       (repo-authored; still needs no drift-ignore entry).
@@ -65,10 +67,20 @@
 # and a destructive-command screen; the re-apply obligation above now also
 # covers:
 #   .github/policies/workflow-policies.md  — P-002.3 requires every
-#       exempt_verification_command (and, distinctly, harness_owner_command
-#       under covered-by) to print EXEMPT_VERIFY_OK:{task_id} as its last
-#       statement before its own exit 0; exit 0 alone is no longer a pass
-#       (EXEMPT_MARKER_MISSING). New P-002.5 statically screens both commands
+#       exempt_verification_command to print EXEMPT_VERIFY_OK:{task_id} as its
+#       last statement before its own exit 0; exit 0 alone is no longer a pass
+#       (EXEMPT_MARKER_MISSING). CORRECTED (cycle 29): the marker requirement
+#       applies to exempt_verification_command ONLY. harness_owner_command is
+#       deliberately UNMARKED and is validated by its own named `--- PASS:`
+#       count against the owner's scaffolded harness
+#       (workflow-policies.md P-002.3, Loop-command-versus-gate-command).
+#       147.036-T / U13's harness_owner_command carries no marker by design.
+#       An earlier revision of this note said the requirement applied to
+#       harness_owner_command "distinctly", which is wrong: reconstructing the
+#       contract from that note after a template adoption would impose an
+#       owner-command marker the policy does not have, and U13 would then fail
+#       a gate it satisfies. Do not reintroduce it.
+#       New P-002.5 statically screens both commands
 #       for a Constitution Principle VII destructive-operation pattern before
 #       either is ever executed (EXEMPT_COMMAND_DESTRUCTIVE), routing a match
 #       to Principle VII operator approval instead of running it. Version
@@ -111,6 +123,10 @@
 # NOTE (2026-08-26, cycle 26): PR #377's fresh Copilot review on 18d41b1f raised
 # two ordering defects in the contract above; the re-apply obligation now also
 # covers:
+#   [SUPERSEDED BY CYCLE 29 — do NOT re-apply the declaration-prerequisite
+#    early-execution rule described in this note. It was replaced by the
+#    P-002.6 wave scheduler, and the declaration-only class it depends on no
+#    longer exists. Retained for history only.]
 #   .github/agents/.ship.agent.md         — Step 2 gains an explicit
 #       declaration-prerequisite ordering rule (new item 3, shifting the
 #       harness-architect invocation to item 4 and the harness-satisfied
@@ -120,16 +136,21 @@
 #       it the up-front gate deadlocks a declaration-first DAG. It is an
 #       ordering rule only; it does not admit implementation ahead of a red
 #       harness, and a non-declaration-only blocker halts instead.
+#       [Cycle 29 finding: one up-front pass is still only ONE wave, which is
+#        insufficient for a dependency chain of depth > 1 — U15 needed U1b,
+#        which is not exempt. Waves, not an early pass, are the fix.]
 #   .github/skills/build-feature/SKILL.md — Step 5's narrow new-test-file
 #       exception gains a no-collision rule: "new" is evaluated against the
 #       execution order, so a named *_test.go file that an earlier task in the
 #       dependency order already creates is pre-existing and not admitted
 #       (EXEMPT_DELTA_EXCEEDS_CLASS). The exception is explicitly NOT relaxed to
-#       permit appends.
+#       permit appends. [Still in force; cycle 29 narrows it to
+#        verification-only only.]
 #   .github/skills/harness-architect/SKILL.md — Step 1 gains item 6: assume
 #       declaration-only prerequisites have landed, and halt reporting the
 #       missing prerequisite rather than fabricating or stubbing a declaration
 #       to force compilation (repo-authored; still needs no entry here).
+#       [SUPERSEDED BY CYCLE 29 — replaced by wave-scoped Step 1 item 7.]
 #
 # NOTE (2026-08-26, cycle 26 confirmatory review): the two fixes above were
 # themselves reviewed and corrected; the re-apply obligation covers the
@@ -165,6 +186,73 @@
 #   .github/skills/build-feature/SKILL.md — exempt_baseline_sha added to Inputs
 #       as required for harness-exempt tasks and must not be re-derived from
 #       HEAD; the post-loop completion gate runs both passes against it.
+#
+# NOTE (2026-08-25, cycle 29): PR #377's six unresolved review threads are
+# closed here. Three of them are coupled and change the contract's shape, so a
+# template adoption MUST reconstruct the corrected form, not the cycle-20/26
+# form. The re-apply obligation now covers:
+#   .github/policies/workflow-policies.md  — (a) the declaration-only exemption
+#       class is WITHDRAWN. The closed vocabulary is three tokens: docs-only,
+#       verification-only, covered-by. A task landing a production declaration
+#       (exported type, serialized field, signature, sentinel) is behaviour-
+#       changing production code and is a NORMAL harness-required task; a
+#       declaration-only value is EXEMPT_CLASS_UNRECOGNIZED. Its harness is a
+#       SOURCE-SHAPE harness: it asserts over the package's own source text via
+#       go/parser + go/ast, so it compiles before the declaration exists AND
+#       fails on an assertion rather than on a build error, satisfying P-002's
+#       compile postcondition and P-004's red phase together with no exemption
+#       and no Principle II deviation. Do NOT restore the class; it was a
+#       carve-out from a NON-NEGOTIABLE principle.
+#       (b) new P-002.6 defines dependency-aware harness WAVES: harness
+#       generation and implementation interleave per topological wave (admit the
+#       ready frontier, statically classify it, scaffold its non-exempt members,
+#       build and complete it, requery) with WAVE_NO_PROGRESS,
+#       WAVE_CYCLE_DETECTED, and WAVE_BUDGET_EXCEEDED halt codes, mandatory
+#       deterministic blocked reporting, and explicit preservation of P-001,
+#       P-016, and the Ship circuit breakers. P-002's postcondition is restated
+#       per wave; the global form is the union over waves.
+#       (c) P-002.3's must-fail signal list no longer admits an unmarked exit 0
+#       as the required pre-work failure. The pre-work probe classifies three
+#       ways: required failure -> proceed; exit 0 WITH marker ->
+#       EXEMPT_FALSE_GREEN; exit 0 WITHOUT marker -> EXEMPT_MARKER_MISSING
+#       (malformed command). The marker scope statement is explicit:
+#       exempt_verification_command only, never harness_owner_command.
+#       (d) P-002.4 defines the diff form PER CONSUMER and makes an empty
+#       changed-file set a halt rather than a trivial pass; verification-only is
+#       explicitly not a repository-hygiene class and admits no .gitignore or
+#       other configuration file.
+#       Version header and Amendment Log at 1.17.0.
+#   .github/agents/.ship.agent.md         — Step 2 is now a per-wave procedure
+#       invoked from the new Step 4.0 wave-admission step, not a one-shot
+#       up-front pass; the cycle-26 declaration-prerequisite early-execution
+#       rule is REMOVED and replaced by wave membership. Step 3 builds a wave
+#       schedule (task set, acyclicity check, wave partition, wave budget).
+#       Step 4 is an outer loop over waves wrapping the unchanged 4.1a-4.5
+#       per-task loop. Step 4.2 drops declaration-only from harness_cmd
+#       routing. Step 4.3 keeps the {baseline}..HEAD diff form and now states
+#       WHY that form is correct there (it runs after build-feature's commit)
+#       and halts on an empty delta. Circuit Breakers gain the two wave
+#       counters; Branch Management Rules state that all waves share one
+#       branch/worktree/PR per P-016.
+#   .github/skills/build-feature/SKILL.md — the post-loop completion gate now
+#       diffs the baseline against the WORKING TREE (two-dot with no right-hand
+#       side, plus --cached) because the gate runs BEFORE this skill's Commit
+#       step; the previous {baseline}..HEAD form compared the baseline against
+#       itself and made the fail-closed gate vacuous. An empty changed-file set
+#       is EXEMPT_DELTA_EXCEEDS_CLASS, never a pass. The two forms are
+#       deliberately different from Ship Step 4.3's and must not be harmonized.
+#       declaration-only is removed from Inputs and from the Step 5 narrow
+#       new-test-file exception.
+#   .github/skills/harness-architect/SKILL.md — Step 1 is wave-scoped (the
+#       ${input:tasks} set is the wave and is authoritative; tasks with
+#       unfinished dependencies are excluded); the cycle-26 "assume
+#       declaration-only prerequisites landed" item is replaced by "every
+#       declaration this wave compiles against is already done because it is a
+#       dependency", and a non-compiling harness now reports a MISSING
+#       DEPENDENCY EDGE for plan amendment. Step 1a scaffolds declaration tasks
+#       with the source-shape harness and writes no production stub for them;
+#       Steps 4 and 5.2 carry the corresponding rules (repo-authored; still
+#       needs no entry here).
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

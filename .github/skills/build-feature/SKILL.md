@@ -13,10 +13,10 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 ## Inputs
 
 * `task_id`: (Required) The backlog task ID to implement.
-* `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`). For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `declaration-only`, `docs-only`, and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
+* `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`). For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `docs-only` and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
-* `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `declaration-only`, `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4).
-* `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's.
+* `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4). `declaration-only` is **not** a valid value; the class was withdrawn in cycle 29 and a declaration task arrives here as a normal `harness-ready` task with a source-shape harness.
+* `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's. This skill's completion gate runs **before** its own commit, so it pairs this SHA with the working-tree diff form, never with `..HEAD`.
 
 ## Output
 
@@ -164,9 +164,11 @@ create the new `*_test.go` files and evidence artifacts the task names. The exce
 * Every function added must be a green-step guard that asserts shipped or prerequisite-delivered
   behavior. Adding a failing assertion here is a fabricated RED and a P-002.1 violation.
 
-The same bounded exception applies to the guard files a `declaration-only` task names. It does
-**not** apply to `docs-only` (zero `*.go` changes) or to `covered-by` (the owner owns the harness;
-any `*_test.go` change is `EXEMPT_DELTA_EXCEEDS_CLASS`).
+This exception is specific to `verification-only`. It does **not** apply to `docs-only` (zero
+`*.go` changes) or to `covered-by` (the owner owns the harness; any `*_test.go` change is
+`EXEMPT_DELTA_EXCEEDS_CLASS`). It also has no bearing on a **declaration** task: such a task is not
+exempt at all (P-002.1, cycle 29), it arrives here with a `harness-ready` source-shape harness
+already red, and its implementation drives that harness green like any other harness-ready task.
 
 **No-collision rule.** "New" is evaluated against the execution order, not against the repository
 state when the task was written. A task's named `*_test.go` file must not be a file that an earlier
@@ -198,32 +200,55 @@ After the harness passes:
      declared evidence — the named `--- PASS:` guard count, the declared content assertions, or the
      declared evidence-manifest rows and scalars. A vacuous pass is `EXEMPT_EVIDENCE_MISMATCH`; an
      exit-0 run without the marker is `EXEMPT_MARKER_MISSING`. Report either and stop.
+   * **Diff against the working tree, not against `HEAD`.** This gate runs **before** the `###
+     Commit` step below, so the task's work is staged and/or unstaged in the working tree and is
+     **not yet in `HEAD`**. `git diff {exempt_baseline_sha}..HEAD` at this moment compares the
+     baseline commit against itself, yields an empty delta, and passes every check trivially — a
+     gate that reads as fail-closed while enforcing nothing. Use the two-dot form with **no
+     right-hand side**, which diffs the commit against the working tree, and add the `--cached`
+     pass so staged changes are included:
+     * path pass — `git diff --name-only {exempt_baseline_sha}` **and**
+       `git diff --cached --name-only {exempt_baseline_sha}`; the union of the two is the task's
+       changed-file set.
+     * content pass — `git diff {exempt_baseline_sha} -- <each allowed file>` **and**
+       `git diff --cached {exempt_baseline_sha} -- <each allowed file>`.
+   * **An empty changed-file set is a halt, never a pass.** If the union above is empty, report
+     `EXEMPT_DELTA_EXCEEDS_CLASS` with detail `empty delta — gate measured a range that does not
+     contain the task's work` and stop. An exempt task that changed nothing has no deliverable and
+     cannot have legitimately passed `exempt_gate_cmd`.
    * Confirm the changed-file set is a subset of the P-002.4 delta surface for `exempt_class`,
-     diffing from `exempt_baseline_sha` rather than from a self-derived range:
-     `git diff --name-only {exempt_baseline_sha}..HEAD`. Anything outside the surface is
-     `EXEMPT_DELTA_EXCEEDS_CLASS`; report it and stop. Do not "fix" a class violation by editing
-     the contract.
-   * Run the P-002.4 **content pass** as well — `git diff {exempt_baseline_sha}..HEAD -- <each
-     allowed file>`. The class surfaces are content restrictions, so a path-only check passes
-     changes it should reject. Under `declaration-only`, a hunk touching a line inside a
-     pre-existing function body is `EXEMPT_BEHAVIOR_NO_OWNER` unless it is the behavior-preserving
-     re-expression P-002.4 permits and `exempt_gate_cmd` pins the unchanged contract. Under
-     `verification-only`, a hunk that weakens, deletes, renames, or narrows the selector of a
-     pre-existing assertion is `EXEMPT_DELTA_EXCEEDS_CLASS`. Report and stop; Ship re-runs both
-     passes at its own Step 4.3 against the same baseline.
+     diffing from `exempt_baseline_sha` rather than from a self-derived range. Anything outside the
+     surface is `EXEMPT_DELTA_EXCEEDS_CLASS`; report it and stop. Do not "fix" a class violation by
+     editing the contract.
+   * Run the P-002.4 **content pass** as well. The class surfaces are content restrictions, so a
+     path-only check passes changes it should reject. Under `verification-only`, a hunk that
+     weakens, deletes, renames, or narrows the selector of a pre-existing assertion is
+     `EXEMPT_DELTA_EXCEEDS_CLASS`, and so is any hunk in `.gitignore` or another
+     repository-configuration file — `verification-only` is not a repository-hygiene class. Under
+     `docs-only`, any `*.go` hunk is `EXEMPT_BEHAVIOR_NO_OWNER`. Under `covered-by`, any
+     `*_test.go` hunk is `EXEMPT_DELTA_EXCEEDS_CLASS`.
+   * Ship re-runs both passes at its own Step 4.3 against the same baseline — but **after** this
+     skill's commit, so Ship correctly uses the `{exempt_baseline_sha}..HEAD` form there. The two
+     forms are intentionally different because the two gates sit on opposite sides of the commit.
+     Do not copy Ship's form into this step or this step's form into Ship's.
 
 ### Commit
 
-If all quality gates pass:
+If all quality gates pass — including the harness-exempt completion gate above, which ran against
+the working tree precisely because this commit had not happened yet:
 
 1. Stage all changes
 2. Create a conventional commit message referencing the task ID
 3. Report success to the caller
 
+Do **not** reorder this step ahead of the completion gate to make an `..HEAD` diff work. The gate
+must observe the delta before it is committed so that a failing class check can stop the task
+without leaving a non-compliant commit behind.
+
 ## Behavioral Constraints
 
 * No subagent spawning (leaf executor)
-* Never modify an existing test file to reach green (tests are the specification). Creating the new test or evidence files a `verification-only` or `declaration-only` task names is the single narrow exception, bounded by Step 5
+* Never modify an existing test file to reach green (tests are the specification). Creating the new test or evidence files a `verification-only` task names is the single narrow exception, bounded by Step 5
 * Never weaken, delete, relax, rename the selector of, skip, or build-tag away an existing harness assertion to reach green — including on a `harness-exempt` task whose deliverable is a new green-step guard
 * Never author a failing assertion for a `harness-exempt` task; a fabricated RED is a P-002.1 violation, not compliance
 * Never begin the loop for a `harness-exempt` task without first observing `exempt_gate_cmd` fail (Step 0)
