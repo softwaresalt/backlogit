@@ -494,40 +494,49 @@
 # just the input name:
 #   .github/skills/build-feature/SKILL.md — new Step 0.5 red-deliverable execution
 #       branch that REPLACES the generic loop for these tasks rather than adding a
-#       flag to it. Dispatch preconditions reject a harness-exempt pairing or a
-#       harness_cmd that is not the declared red_selector_command verbatim
+#       flag to it. It CONSUMES the harness harness-architect already scaffolded
+#       with the wave; it never lands one and never writes. Dispatch preconditions
+#       reject a harness-exempt pairing, a harness_cmd that is not the declared
+#       red_selector_command verbatim, or an absent red_baseline_sha
 #       (WAVE_RED_MAPPING_UNRESOLVED). Step 0.5a requires the repo-wide compile
-#       check to pass and the anchored selector to match NOTHING: already passing
-#       is WAVE_RED_DELIVERABLE_EARLY_GREEN, already failing is the new
-#       WAVE_RED_DELIVERABLE_PRELANDED. Step 0.5c allows exactly one repair loop,
-#       for the landed harness's COMPILATION only — never an assertion, never a
-#       non-test *.go file, never a narrowed compile check. Step 0.5d requires
-#       named --- FAIL: assertions: exit 0 is EARLY_GREEN, and a no-tests-to-run
-#       signal at ANY exit code is the new WAVE_RED_DELIVERABLE_VACUOUS, the
-#       mirror of the P-002.3 false-green rule. Step 0.5e's evidence report is
-#       mandatory; Ship builds the open_red_deliverables entry from it. Step 0.5f
+#       check to pass — a failure is RED_DELIVERABLE_HARNESS_UNCOMPILABLE, returned
+#       to harness-architect — and requires named --- FAIL: assertions on the
+#       anchored selector: exit 0 is WAVE_RED_DELIVERABLE_EARLY_GREEN, a
+#       no-tests-to-run signal at ANY exit code is WAVE_RED_DELIVERABLE_VACUOUS
+#       (the mirror of the P-002.3 false-green rule), and a panic, timeout, or
+#       package abort is RED_DELIVERABLE_NOT_ASSERTION_RED. Step 0.5b is a
+#       ZERO-DELTA gate against red_baseline_sha: a non-test *.go file is
+#       RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED and anything else is
+#       RED_DELIVERABLE_DELTA_OUT_OF_SURFACE. Step 0.5c's evidence report is
+#       mandatory; Ship builds the open_red_deliverables entry from it. Step 0.5d
 #       tolerates exactly sibling_red_selectors + open_red_selectors + the task's
 #       own declared selector, and that singleton is the only permitted addition.
+#       There is no commit: the delta is empty by contract.
 #   .github/policies/workflow-policies.md — P-002.2 gains
-#       WAVE_RED_DELIVERABLE_PRELANDED and WAVE_RED_DELIVERABLE_VACUOUS and
-#       extends WAVE_RED_DELIVERABLE_EARLY_GREEN to the Step 0.5 gate points;
+#       WAVE_RED_DELIVERABLE_VACUOUS and extends WAVE_RED_DELIVERABLE_EARLY_GREEN
+#       to the Step 0.5 gate points;
 #       P-002.6 gains the red-deliverable execution rule. Do NOT reconstruct
 #       1.23.0, which declared the input with no branch behind it.
-#   .github/agents/.ship.agent.md — Step 4.2 passes red_deliverable explicitly and
-#       names the branch and its four halt codes; Step 4.5 builds the open-red
-#       record from the Step 0.5e report instead of re-deriving it.
+#   .github/agents/.ship.agent.md — Step 4.2 passes red_deliverable and
+#       red_baseline_sha explicitly and names the branch and its halt codes;
+#       Step 4.5 builds the open-red
+#       record from the Step 0.5c report instead of re-deriving it.
+#       `red_deliverable` MUST be dispatched with a `red_baseline_sha` captured
+#       AFTER the wave's scaffolding commit. Do NOT
+#       reintroduce a landing branch: Ship Step 4.0 item 10 scaffolds red
+#       deliverables with the wave, so a landing branch halts on its own
+#       baseline for exactly the tasks it should complete.
+#       `WAVE_RED_DELIVERABLE_PRELANDED` was proposed and withdrawn in the same
+#       cycle; it described what is now the expected dispatch state.
 #   scripts/wave-scheduler-sim.ps1 and
 #       tests/simulation/wave-scheduler-contract.json — new
 #       `red_deliverable_branch_controls` block and its classifier. The wave
-#       arithmetic is unchanged; the 18 controls pin Step 0.5 routing and result
-#       classification, which no scheduler scenario can reach. Totals move to 186
-#       assertions with -VerifyAgainstQueue / 164 without. The load-bearing
+#       arithmetic is unchanged; the 16 controls pin Step 0.5 routing and result
+#       classification, which no scheduler scenario can reach. Totals move to 182
+#       assertions with -VerifyAgainstQueue / 160 without. The load-bearing
 #       control is `red-deliverable-never-enters-generic-loop`: with the branch
-#       removed it fails on both assertions. The precondition-3 delta check is an
-#       explicit set comparison against declared_harness_files, NOT a non-test
-#       *.go heuristic; an extra *_test.go, a config file, and a docs file are
-#       all out of surface, and an absent declared set fails closed. An adopting
-#       template MUST carry an equivalent control suite, not just the branch prose.
+#       removed it fails on both assertions. An adopting template MUST carry an
+#       equivalent control suite, not just the branch prose.
 #       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---

@@ -6147,59 +6147,80 @@ U12, and `147.042-T` / U3c exist to hold and starving Step 4.6 items 4 and 5 of 
 re-confirm.
 
 `build-feature` gains **Step 0.5**, which replaces the generic loop for these tasks rather than
-modifying it, and is fail closed at four boundaries:
+modifying it. In its final form — corrected in review wave 4, below — it **consumes and validates
+the harness `harness-architect` already scaffolded with the wave, and writes nothing**. It is fail
+closed at four boundaries:
 
-* **Dispatch preconditions** — a `harness-exempt` pairing, or a `harness_cmd` that is not the
-  declared `red_selector_command` verbatim, halts `WAVE_RED_MAPPING_UNRESOLVED`. The delta surface
-  is the named harness file(s) only; a red deliverable declares no production change.
-* **Pre-landing baseline (0.5a)** — the repo-wide compile check must pass, and the anchored
-  selector must match nothing. Already passing halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; already
-  failing halts new `WAVE_RED_DELIVERABLE_PRELANDED`, because that dispatch would re-land an
-  existing deliverable against an empty delta.
-* **Landing and compilation (0.5b, 0.5c)** — the harness lands with its declared assertions and no
-  balancing green assertion. The only permitted iteration repairs the landed harness's
-  **compilation** under the same 5-attempt breaker; it never edits a non-test file, never changes
-  what an assertion asserts, and never narrows the repo-wide compile check.
-* **Assertion RED (0.5d)** — the run must fail on named `--- FAIL:` functions. Exit 0 in any form
-  halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; a no-tests-to-run signal at any exit code halts new
-  `WAVE_RED_DELIVERABLE_VACUOUS`, the exact mirror of the P-002.3 false-green rule.
+* **Dispatch preconditions** — a `harness-exempt` pairing, a `harness_cmd` that is not the declared
+  `red_selector_command` verbatim, or an absent `red_baseline_sha` halts
+  `WAVE_RED_MAPPING_UNRESOLVED`.
+* **Compilation (0.5a item 1)** — the repo-wide compile check must pass. A failure contradicts the
+  P-002 compiling-but-failing harness contract and halts `RED_DELIVERABLE_HARNESS_UNCOMPILABLE`,
+  returning the task to `harness-architect` rather than repairing the harness here.
+* **Assertion RED (0.5a item 2)** — the run must fail on named `--- FAIL:` functions. Exit 0 in any
+  form halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; a no-tests-to-run signal at any exit code halts new
+  `WAVE_RED_DELIVERABLE_VACUOUS`, the exact mirror of the P-002.3 false-green rule; a panic,
+  timeout, or package abort halts `RED_DELIVERABLE_NOT_ASSERTION_RED`.
+* **Zero-delta gate (0.5b)** — the changed-file set against `red_baseline_sha` must be empty. A
+  non-test `*.go` file halts `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`; anything else halts
+  `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`.
 
-Step 0.5e then returns the evidence Ship Step 4.5 turns into the `open_red_deliverables` entry —
-executed selector, failing function names and exit code, passing compile check, declared
-green-makers and closing wave — and 0.5f runs the inverted gates with no fix iteration, tolerating
-exactly `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`.
+Step 0.5c then returns the evidence Ship Step 4.5 turns into the `open_red_deliverables` entry —
+executed selector, failing function names and exit code, passing compile check and empty delta,
+declared green-makers and closing wave — and 0.5d runs the inverted gates with no fix iteration,
+tolerating exactly `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`.
+There is no commit, because the delta is empty by contract.
 
-Coupled surfaces moved together: P-002.2 gains the two codes and extends
+Coupled surfaces moved together: P-002.2 gains `WAVE_RED_DELIVERABLE_VACUOUS` and extends
 `WAVE_RED_DELIVERABLE_EARLY_GREEN` to the new gate points; P-002.6 gains the execution rule and its
-executable-coverage requirement; `.ship.agent.md` Step 4.2 passes `red_deliverable` explicitly and
-names the branch and its halt codes, and Step 4.5 builds its record from the Step 0.5e report rather
-than re-deriving it.
+executable-coverage requirement; `.ship.agent.md` Step 4.2 passes `red_deliverable` and
+`red_baseline_sha` explicitly and names the branch and its halt codes, and Step 4.5 builds its
+record from the Step 0.5c report rather than re-deriving it.
 
-**Executable coverage (second review wave, thread `PRRT_kwDORzozKM6cnqV4`).** The first form of this
-fix left Step 0.5 as prose with no control, which is the same defect class cycle 37 recorded as a P1
-follow-up when its convergence items had no simulation coverage. The tracked simulation now carries
-a `red_deliverable_branch_controls` block and a classifier that applies this branch's ordering:
-15 controls cover the accepted assertion-RED deliverable, pre-landed green and pre-landed red
-baselines, a vacuous post-landing result, panic and timeout rejection, build-error routing back to
-Step 0.5c, a pre-existing broken tree, all three dispatch-precondition refusals, an incomplete
-evidence report, and both routing directions. Step 0.5d was tightened in the same pass: a panic,
-timeout, or package abort is now an explicit `RED_DELIVERABLE_NOT_ASSERTION_RED` halt rather than
-falling into the repairable build-error row, because a non-zero exit is not evidence that an
-assertion failed. The load-bearing control is `red-deliverable-never-enters-generic-loop`, which
-feeds the exact observation the generic loop reads as SUCCESS; with the branch removed it fails on
-both assertions, and the suite drops 28 assertions.
+**Executable coverage and a design correction (review waves 2-4, threads `PRRT_kwDORzozKM6cnqV4`,
+`PRRT_kwDORzozKM6cn_pZ`, `PRRT_kwDORzozKM6coLsh`, `PRRT_kwDORzozKM6coLtY`).** Three follow-up waves
+against this cycle's own edits corrected two coverage gaps and one design error, in that order.
 
-**Delta-surface enforcement (third review wave, thread `PRRT_kwDORzozKM6cn_pZ`).** The first
-classifier enforced precondition 3 with a "non-test `*.go`" heuristic, so an extra `*_test.go`, a
-configuration file, or a documentation file passed a rule whose stated scope is "the harness file(s)
-the task names and nothing else". The check is now an explicit set comparison against the task's
-declared harness files: a non-test `*.go` outside the set stays
-`RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`, anything else outside it is the new
-`RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`, and an absent or empty declared set halts with
-`WAVE_RED_MAPPING_UNRESOLVED` rather than making the comparison vacuous. Three controls were added —
-`extra-test-file-refused`, `extra-non-go-file-refused`, and `missing-declared-harness-set-refused` —
-and all three fail when the comparison is removed. Totals move to 186 assertions with
-`-VerifyAgainstQueue` and 164 without.
+*Wave 2 — no executable coverage.* The first form of the fix left Step 0.5 as prose with no control,
+the same defect class cycle 37 recorded as a P1 follow-up when its convergence items had no
+simulation coverage. The tracked simulation now carries a `red_deliverable_branch_controls` block
+and a classifier applying this branch's ordering. Step 0.5's assertion check was tightened at the
+same time: a panic, timeout, or package abort is an explicit `RED_DELIVERABLE_NOT_ASSERTION_RED`
+halt, because a non-zero exit is not evidence that an assertion failed.
+
+*Wave 3 — the delta rule was a heuristic.* The classifier rejected only non-test `*.go` files, so an
+extra `*_test.go`, a configuration file, or a documentation file passed a rule whose stated scope
+was "the harness file(s) the task names and nothing else".
+
+*Wave 4 — the branch was unsatisfiable, and the delta set had no runtime source.* The reviewer
+found the load-bearing error: Ship Step 4.0 item 10 and `harness-architect` item 9 scaffold **every**
+non-exempt wave member, red deliverables included, and confirm RED before `build-feature` is
+invoked. A branch that *lands* the harness therefore sees a matching `--- FAIL:` at its own baseline
+and halts as "pre-landed" for exactly the tasks it exists to complete. The companion finding was
+that the wave-3 declared-file set had no runtime source at all — the canonical
+`red-deliverable-contract` has five keys, none naming harness files, and deriving the set from the
+working tree would sweep in every sibling harness scaffolded in the same wave.
+
+Both are resolved by inverting the branch: **Step 0.5 consumes and validates the already-scaffolded
+harness and writes nothing.** Its expected dispatch state is *already RED*, which is what
+`harness-architect` recorded. It runs the repo-wide compile check (failure →
+`RED_DELIVERABLE_HARNESS_UNCOMPILABLE`, returned to `harness-architect`), requires named assertion
+RED (`WAVE_RED_DELIVERABLE_EARLY_GREEN` on a pass, `WAVE_RED_DELIVERABLE_VACUOUS` when no test
+matches the selector, `RED_DELIVERABLE_NOT_ASSERTION_RED` on a panic or timeout), and then applies a
+**zero-delta gate** against a new `red_baseline_sha` that Ship captures at Step 4.1a item 5 —
+*after* the wave's scaffolding commit, so a sibling's harness can never enter this task's delta. A
+non-test `*.go` file there is `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`; anything else is
+`RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`. The branch produces no commit, so Ship Step 4.5 completes
+the task without one. `WAVE_RED_DELIVERABLE_PRELANDED` is withdrawn: the state it described is now
+the expected one.
+
+The control suite was rebuilt against the corrected model — 16 controls covering the confirmed
+deliverable, an early-green selector, a selector matching no test, an uncompilable scaffolded
+harness, panic and timeout rejection, both zero-delta refusals, all three dispatch-precondition
+refusals including an absent `red_baseline_sha`, an incomplete evidence report, and both routing
+directions. The load-bearing control is `red-deliverable-never-enters-generic-loop`, which feeds the
+exact observation the generic loop reads as SUCCESS; with the branch removed it fails on both
+assertions. Totals are 182 assertions with `-VerifyAgainstQueue` and 160 without.
 
 ### Finding 2 — U10b recreated its mirror under an unignored path
 

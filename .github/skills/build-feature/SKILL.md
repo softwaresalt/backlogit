@@ -22,7 +22,8 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
   discover a package by judgement, or reinterpret an omitted input as permission to choose.
 * `sibling_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors belonging to the other non-exempt members of the current wave that have not been built yet.
 * `open_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors in `open_red_deliverables_k` — red harnesses that were the *declared deliverable* of a task completed in an **earlier** wave and whose declared green-makers have not all closed. Together with `sibling_red_selectors` this is the **entire** tolerated-red set. Both are supplied by Ship, neither may be widened, inferred, or extended by this skill, and any failure outside their union is a real failure that fails the gate.
-* `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. Ship sets it from the task's canonical `red-deliverable-contract` and passes `harness_cmd` as the declared `red_selector_command`. It selects **Step 0.5**, the fail-closed red-deliverable execution branch, which **replaces** the generic harness loop rather than modifying it: Step 0.5 lands the declared harness, confirms it compiles (`go test -run=^$ -count=1 ./...`) and fails on assertions rather than on a build error or on a vacuous no-tests-to-run result, reports the red evidence Ship needs for open-red accounting, and enters the inverted quality gates with no fix iteration. Do not iterate toward green, and never report success on a `harness_cmd` that passes — a red deliverable that passes on landing was never red.
+* `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. Ship sets it from the task's canonical `red-deliverable-contract` and passes `harness_cmd` as the declared `red_selector_command`. It selects **Step 0.5**, the fail-closed red-deliverable execution branch, which **replaces** the generic harness loop rather than modifying it: the harness was already scaffolded with the wave by `harness-architect`, so Step 0.5 consumes and validates it — repo-wide compile check, assertion RED on the anchored selector, an empty changed-file set — reports the red evidence Ship needs for open-red accounting, and enters the inverted quality gates with no fix iteration. Do not iterate toward green, and never report success on a `harness_cmd` that passes — a red deliverable that passes at dispatch was never red.
+* `red_baseline_sha`: (Required for `red_deliverable` tasks) The commit SHA Ship captured at its Step 4.1a item 5, **after** the wave's harness scaffolding commit and before this task was claimed. Use this exact value as the left side of the Step 0.5b zero-delta check. Do not re-derive it from `HEAD`: a self-derived range would either measure nothing or sweep in the wave's sibling harnesses and reject valid work. An absent baseline halts with `WAVE_RED_MAPPING_UNRESOLVED`.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
 * `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4). `declaration-only` is **not** a valid value; the class was withdrawn in cycle 29 and a declaration task arrives here as a normal `harness-ready` task with a source-shape harness.
 * `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's. This skill's completion gate runs **before** its own commit, so it pairs this SHA with the working-tree diff form, never with `..HEAD`.
@@ -32,9 +33,9 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * All harness tests passing
 * For a `harness-exempt` task: `exempt_gate_cmd` observed failing (no marker) before the work and
   passing — exit 0 plus the exact `EXEMPT_VERIFY_OK:{task_id}` marker, non-vacuously — after it
-* For a `red_deliverable` task: the declared harness landed, `go test -run=^$ -count=1 ./...`
-  passing, `harness_cmd` observed failing on assertions, and the Step 0.5e red-evidence report
-  returned to Ship
+* For a `red_deliverable` task: `go test -run=^$ -count=1 ./...` passing, `harness_cmd` observed
+  failing on named assertions, an empty changed-file set against `red_baseline_sha`, and the
+  Step 0.5c red-evidence report returned to Ship
 * Code changes committed
 * Task marked complete in backlog
 
@@ -93,14 +94,20 @@ red-deliverable task never enters that loop. When `red_deliverable` is `false` o
 step entirely.
 
 The deliverable of such a task **is** the landed, compiling, failing harness. Its declared
-`green_maker_tasks` turn it green in a later wave, and Ship carries its selector in
-`open_red_deliverables` until they do. Driving it green here destroys the ordering contract it
-exists to pin.
+The deliverable of such a task **is** a compiling, failing harness. `harness-architect` scaffolded
+that harness with the rest of the wave at Ship Step 4.0, so this branch **consumes and validates it
+— it does not land it**. Its declared `green_maker_tasks` turn it green in a later wave, and Ship
+carries its selector in `open_red_deliverables` until they do. Driving it green here destroys the
+ordering contract it exists to pin.
+
+**This branch writes nothing.** The harness already exists at dispatch; the task completes when its
+RED is confirmed and recorded. Its changed-file set is therefore required to be **empty**, and that
+is checked, not assumed.
 
 #### Dispatch preconditions (halt, never repair)
 
-1. `red_deliverable: true` and `harness-exempt` are mutually exclusive. An exempt task lands no
-   harness and may never author a failing assertion (P-002.1). If `exempt_class` or
+1. `red_deliverable: true` and `harness-exempt` are mutually exclusive. An exempt task has no
+   scaffolded harness and may never author a failing assertion (P-002.1). If `exempt_class` or
    `exempt_gate_cmd` arrives alongside `red_deliverable: true`, halt with
    `WAVE_RED_MAPPING_UNRESOLVED` and report both inputs.
 2. `harness_cmd` MUST be the task's declared `red_selector_command` verbatim, and MUST satisfy
@@ -108,92 +115,68 @@ exists to pin.
    task's own `^TestU<unit>_` selector, and no `-short`, added build tag, `t.Skip`, or `|| true`. A
    mismatch or a weakening is a contract defect: halt with `WAVE_RED_MAPPING_UNRESOLVED`. Do not
    substitute a command of your own.
-3. The delta surface is **the harness file(s) the task names and nothing else**, compared as an
-   explicit set rather than by file-type heuristic. The task's declared harness-file set is the
-   whole permitted surface: a documentation file, a configuration file, and an unrelated `*_test.go`
-   file are all outside it, exactly as a production file is. A red deliverable declares no
-   production change; the behaviour that turns it green belongs to its green-makers.
-   * A non-test `*.go` file outside the declared set → halt and report
-     `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`. Do not make the harness pass by editing the code
-     under test.
-   * Any other file outside the declared set → halt and report
-     `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`. "Nothing else" is literal; a `*_test.go` extension is
-     not an exemption.
-   * An absent or empty declared harness-file set → halt with `WAVE_RED_MAPPING_UNRESOLVED`. The
-     comparison would be vacuous and admit every delta, so a missing declaration is a contract
-     defect, not a permissive default.
+3. `red_baseline_sha` MUST be present — the SHA Ship captured at Step 4.1a item 5, after the wave's
+   harnesses were scaffolded and committed and before this task was claimed. It is the left side of
+   the zero-delta check in Step 0.5b. An absent or self-derived baseline halts with
+   `WAVE_RED_MAPPING_UNRESOLVED`; a gate that picks its own range measures nothing.
 
-#### Step 0.5a: Pre-landing baseline
+#### Step 0.5a: Consume and validate the scaffolded harness
 
-Establish that the deliverable does not already exist.
+The expected state at dispatch is **already RED**. That is the whole point: Ship Step 4.0 item 10
+leaves every non-exempt member of the wave red at once, and `harness-architect` records
+`Compilation: PASS` / `Red Phase: CONFIRMED` for each. This step re-confirms that evidence
+independently rather than trusting the handoff.
 
 1. Run the repo-wide compile check `go test -run=^$ -count=1 ./...`. It executes no test, so no
-   sibling's red harness can redden it. A failure here is a **pre-existing broken tree**, not this
-   task's work: report the compile output and stop without landing anything.
-2. Run `harness_cmd` **exactly once** against the pre-work tree and classify the result. The
-   selector is anchored to this task's own unit, so the only admissible baseline is that it matches
-   nothing:
-   * A P-002.3 no-tests-to-run signal — `[no tests to run]`, `testing: warning: no tests to run`,
-     `no test files`, or zero matching `--- PASS:` and `--- FAIL:` lines → **expected**. Record the
-     output as this task's pre-work evidence and proceed to Step 0.5b.
-   * Any `--- PASS:` line matching the anchored selector → the selector is already green before any
-     declared green-maker has closed. Halt with `WAVE_RED_DELIVERABLE_EARLY_GREEN`.
-   * Any `--- FAIL:` line matching the anchored selector → the harness has already landed and is
-     already red, so this dispatch would re-land an existing deliverable against an empty delta.
-     Halt with `WAVE_RED_DELIVERABLE_PRELANDED`.
-
-#### Step 0.5b: Land the harness
-
-Create exactly the harness file(s) the task names, carrying the assertions the task declares.
-
-* Never scaffold a green assertion into a red deliverable to "balance" it, and never soften a
-  declared assertion so that it will pass.
-* The Step 5 no-collision rule applies unchanged: if a named file already exists because an earlier
-  task in the dependency order creates it, halt and report the collision rather than appending.
-* Never weaken, delete, relax, rename the selector of, skip, or build-tag away a pre-existing
-  assertion in any file.
-
-#### Step 0.5c: Compilation, and the only repair loop allowed
-
-Run `go test -run=^$ -count=1 ./...` again. If it fails on the file(s) just landed, repair **the
-harness's compilation only** — an undeclared import, a wrong signature, a missing helper reference
-— under the same 5-attempt circuit breaker as the generic loop, re-running the check after each
-repair.
-
-This is not a fix iteration. It never edits a non-test file, never changes what an assertion
-asserts, and never moves the harness toward passing. If compilation is still broken at the attempt
-limit, mark the task blocked and stop. Never narrow this check to the task's own package.
-
-#### Step 0.5d: Require assertion RED
-
-Run `harness_cmd` exactly once more and require a failure that is genuinely an assertion failure.
+   sibling's red harness can redden it. A failure means the scaffolded harness or the tree does not
+   compile, which contradicts the harness contract P-002 requires: halt with
+   `RED_DELIVERABLE_HARNESS_UNCOMPILABLE` and return the task to `harness-architect`. Do not repair
+   the harness here — this branch does not write.
+2. Run `harness_cmd` **exactly once** and classify the result.
 
 | Observed | Meaning | Action |
 |---|---|---|
-| Non-zero exit with `--- FAIL:` lines matching the anchored selector | The deliverable | **Success** — record the evidence and go to Step 0.5e |
-| Exit 0 in any form | Green on landing, so it was never red | Halt with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
-| A no-tests-to-run signal at any exit code | The harness did not land under the declared selector, so the red is vacuous | Halt with `WAVE_RED_DELIVERABLE_VACUOUS` |
-| Non-zero exit with a build error and no `--- FAIL:` line | Red for the wrong reason, and the one repairable case | Return to Step 0.5c; at the attempt limit, mark blocked |
-| Any other non-zero exit with no `--- FAIL:` line matching the anchored selector — panic, timeout, package abort, harness runtime error | The harness ran but never asserted, so its red is not assertion RED | **Halt.** Report `RED_DELIVERABLE_NOT_ASSERTION_RED` to Ship as a defective harness. Do not iterate: repairing a panic or a timeout means changing what the harness does, which this branch may not do |
+| Non-zero exit with `--- FAIL:` lines matching the anchored selector | The deliverable, confirmed | **Success** — record the evidence and go to Step 0.5b |
+| Exit 0 in any form | The selector is green before any declared green-maker has closed | Halt with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
+| A no-tests-to-run signal at any exit code | No test matches the declared selector, so the harness was never scaffolded under it and the red is vacuous | Halt with `WAVE_RED_DELIVERABLE_VACUOUS` |
+| Any other non-zero exit with no matching `--- FAIL:` line — panic, timeout, package abort, harness runtime error | The harness ran but never asserted, so its red is not assertion RED | Halt with `RED_DELIVERABLE_NOT_ASSERTION_RED` and return the harness for repair |
 
 A vacuous red is the exact mirror of the P-002.3 false-green rule: an exit code alone proves
 nothing, and a selector that matches no test cannot be the deliverable. The same reasoning bars a
 panic or a timeout — a non-zero exit is not evidence that an assertion failed.
 
-#### Step 0.5e: Red evidence for open-red accounting
+#### Step 0.5b: Zero-delta gate
+
+This branch consumes an existing harness, so the task's own changed-file set must be **empty**.
+Compute it exactly as the harness-exempt gate does, against the Ship-supplied baseline and the
+working tree — never against `..HEAD`, which at this point would compare the baseline with itself:
+
+* `git diff --name-only {red_baseline_sha}` **and** `git diff --cached --name-only {red_baseline_sha}`
+
+Because `red_baseline_sha` is captured **after** the wave's scaffolding commit, the wave's sibling
+harnesses are already behind the baseline and cannot appear in this set. Any file that does appear
+was written by this dispatch, which the branch is not permitted to do:
+
+* a non-test `*.go` file → halt with `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`. A red deliverable
+  declares no production change; the behaviour that turns it green belongs to its green-makers.
+* any other file → halt with `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`. There is no permitted surface
+  at all, so a `*_test.go` extension, a configuration file, and a documentation file are equally
+  out of it.
+
+#### Step 0.5c: Red evidence for open-red accounting
 
 Report to Ship, verbatim:
 
 * the exact `harness_cmd` executed, which is the declared `red_selector_command`
 * the observed `--- FAIL:` function names and the exit code
-* confirmation that `go test -run=^$ -count=1 ./...` passed after landing
+* confirmation that `go test -run=^$ -count=1 ./...` passed and that the zero-delta gate was empty
 * the declared `green_maker_tasks` and `green_maker_closes_wave`, carried through unchanged
 
 Ship Step 4.5 builds the `open_red_deliverables` entry from this report, and Step 4.6 items 4 and 5
 re-confirm that entry at every later gate. An incomplete report leaves the entry unaccounted for:
-report all four items or halt.
+report all four items or halt with `RED_DELIVERABLE_EVIDENCE_INCOMPLETE`.
 
-#### Step 0.5f: Inverted quality gates, no fix iteration
+#### Step 0.5d: Inverted quality gates, no fix iteration
 
 Run the Post-Loop Quality Gates below with these substitutions, and do not iterate on a failure:
 
@@ -208,8 +191,8 @@ Run the Post-Loop Quality Gates below with these substitutions, and do not itera
    the union is a real failure.
 4. **Harness-exempt completion gate**: does not apply — precondition 1 excluded it.
 
-Then proceed to `### Commit` unchanged. The commit records a compiling, failing harness, which is
-the completed deliverable.
+Then skip `### Commit`: the zero-delta gate has just proved there is nothing to commit. Report
+success to Ship, which completes the task at its Step 4.5 and records the open-red entry there.
 
 #### Step 0.5 executable coverage
 
@@ -220,20 +203,17 @@ instead: `tests/simulation/wave-scheduler-contract.json` declares the
 with the same ordering this step specifies. Run it with
 `pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1`.
 
-The controls cover every outcome above: the accepted assertion-RED deliverable, pre-landed green and
-pre-landed red baselines, a vacuous post-landing result, panic and timeout rejection, build-error
-routing back to Step 0.5c, a pre-existing broken tree, every dispatch-precondition refusal —
-including a production file, an extra `*_test.go`, an extra non-Go file, and an absent declared
-harness-file set — an incomplete evidence report, and two routing controls proving a
-`red_deliverable` dispatch never enters the generic loop while an ordinary dispatch still does. The
-load-bearing control is
+The controls cover every outcome above: the confirmed assertion-RED deliverable, an early-green
+selector, a selector matching no test, panic and timeout rejection, an uncompilable scaffolded
+harness, every dispatch-precondition refusal, both zero-delta refusals, an incomplete evidence
+report, and two routing controls proving a `red_deliverable` dispatch never enters the generic loop
+while an ordinary dispatch still does. The load-bearing control is
 `red-deliverable-never-enters-generic-loop`: it feeds the exact observation the generic loop reads
 as SUCCESS and requires this branch to halt on it instead, so deleting the branch fails the suite
 rather than passing it silently.
 
 When this step changes, update the controls in the same commit. A branch rule with no control is a
 rule the simulation would still pass without.
-
 ### The Harness Loop (5-Attempt Circuit Breaker)
 
 Enter this loop only when `red_deliverable` is `false` or absent. A `red_deliverable` task is
@@ -269,7 +249,7 @@ After 5 failures → mark task as BLOCKED → exit
 #### Step 1: Run the Harness
 
 Execute `harness_cmd` and capture the full output. Record execution time. This step and everything
-that follows it belong to the generic loop; a `red_deliverable` task completed at Step 0.5f and
+that follows it belong to the generic loop; a `red_deliverable` task completed at Step 0.5d and
 never arrives here.
 
 **Stall timeouts**:
@@ -371,7 +351,7 @@ After the harness passes:
      `sibling_red_selectors ∪ open_red_selectors`; neither may be widened, and a failure outside
      that union is a real failure that fails this gate. The full repository suite is **not
      skipped** — it runs at Ship Step 4.6 whenever the open-red set is empty, and at final closure.
-     For a `red_deliverable` task this item inverts exactly as Step 0.5f specifies: `harness_cmd`
+     For a `red_deliverable` task this item inverts exactly as Step 0.5d specifies: `harness_cmd`
      must still be **RED**, and a green result fails the gate.
    * **`wave_scoped: false` or absent**: `go test ./...`, unchanged.
 4. **Harness-exempt completion gate** (P-002.3 / P-002.4), for `harness-exempt` tasks only:
@@ -438,16 +418,17 @@ without leaving a non-compliant commit behind.
 * Never treat an exit-0 run carrying a P-002.3 false-green signal as success
 * Never treat an exit-0 run on `exempt_gate_cmd` that is missing its declared `EXEMPT_VERIFY_OK:{task_id}` marker as success — this is the distinct `EXEMPT_MARKER_MISSING` evidence failure (Step 0 item 4, Step 2), explicitly **not** a P-002.3 false-green signal
 * Never execute an `exempt_gate_cmd` or `harness_owner_command` that the P-002.5 screen matches as destructive; report `EXEMPT_COMMAND_DESTRUCTIVE` and route it to Principle VII approval instead
-* Never widen, infer, or extend `sibling_red_selectors` or `open_red_selectors`. They are closed sets supplied by Ship, and their union is the only red this skill may tolerate; a failure outside it is a real failure. Treating a wave as a blanket "ignore failing tests" mode is a P-002.6 violation. The single documented addition is Step 0.5f's `{this task's own declared selector}` on a `red_deliverable` dispatch, which is that task's deliverable and widens neither supplied set
+* Never widen, infer, or extend `sibling_red_selectors` or `open_red_selectors`. They are closed sets supplied by Ship, and their union is the only red this skill may tolerate; a failure outside it is a real failure. Treating a wave as a blanket "ignore failing tests" mode is a P-002.6 violation. The single documented addition is Step 0.5d's `{this task's own declared selector}` on a `red_deliverable` dispatch, which is that task's deliverable and widens neither supplied set
 * Never substitute implementer judgement for `green_regression_cmds`. The post-loop suite runs
   exactly Ship's supplied canonical array (default `[]`) and nothing else; task prose and "a
   package that looked green before" are not gate inputs
 * Never drive a `red_deliverable` task to green, and never report success on its `harness_cmd` passing. Its deliverable is a compiling, failing harness; a green result is a contract violation to report
 * Never run a `red_deliverable` task through the generic harness loop. Step 0.5 is the only branch that may execute it, and the loop's success condition is the inverse of its contract
 * Never accept a `red_deliverable` result that is red only because the selector matched nothing. A no-tests-to-run signal at any exit code is `WAVE_RED_DELIVERABLE_VACUOUS`, never the deliverable
-* Never re-land a red deliverable whose harness is already present and already failing; that is `WAVE_RED_DELIVERABLE_PRELANDED` and its delta would be empty
-* Never change a non-test `*.go` file on a `red_deliverable` dispatch. A red deliverable declares no production change, and the behaviour that turns it green belongs to its declared `green_maker_tasks`
-* Never complete a `red_deliverable` task without returning the Step 0.5e red-evidence report; Ship builds the `open_red_deliverables` entry from it, and an unaccounted entry cannot be re-confirmed at Step 4.6
+* Never scaffold, land, edit, or repair a red deliverable's harness inside this skill. `harness-architect` owns it and already scaffolded it with the wave; an uncompilable or non-asserting harness returns to that skill as `RED_DELIVERABLE_HARNESS_UNCOMPILABLE` or `RED_DELIVERABLE_NOT_ASSERTION_RED`
+* Never write any file on a `red_deliverable` dispatch. The changed-file set against `red_baseline_sha` must be empty; a non-test `*.go` file is `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED` and anything else is `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`
+* Never re-derive `red_baseline_sha` from `HEAD` or diff against `..HEAD` on this branch. Ship captures the baseline after the wave's scaffolding commit precisely so a sibling's harness cannot appear in this task's delta
+* Never complete a `red_deliverable` task without returning the Step 0.5c red-evidence report; Ship builds the `open_red_deliverables` entry from it, and an unaccounted entry cannot be re-confirmed at Step 4.6
 * Never accept a `harness_cmd` that fails the P-002.6 task-scoped requirements — a bare `./...`, a missing `-count=1`, an unanchored or sibling-matching selector, a `-short`/build-tag/`t.Skip`/`|| true` weakening, or a command that passes vacuously. Halt and report the contract defect rather than substituting a weaker command
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
@@ -469,10 +450,10 @@ without leaving a non-compliant commit behind.
   completion gate passes non-vacuously with the exact marker present, both commands cleared the
   P-002.5 read-only screen before either ran, and the changed-file set stays inside the P-002.4
   class delta surface
-* For a `red_deliverable` task: Step 0.5 ran instead of the generic loop, the pre-landing baseline
-  matched nothing, the repo-wide compile check passes after landing, `harness_cmd` fails on named
-  assertions rather than on a build error or a no-tests-to-run signal, no non-test `*.go` file
-  changed, and the Step 0.5e evidence report was returned in full
+* For a `red_deliverable` task: Step 0.5 ran instead of the generic loop, the repo-wide compile
+  check passes, `harness_cmd` fails on named assertions rather than on a build error, a
+  no-tests-to-run signal, or a panic, the changed-file set against `red_baseline_sha` is empty, and
+  the Step 0.5c evidence report was returned in full
 
 ## Model Routing
 

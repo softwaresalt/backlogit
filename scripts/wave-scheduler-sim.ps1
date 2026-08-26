@@ -507,48 +507,34 @@ function Get-RedDeliverableBranchOutcome {
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
 
-    # Dispatch precondition 3 - the delta is the named harness file(s) and nothing else.
-    $declared = @((ConvertTo-List $Control.declared_harness_files))
-    if ($declared.Count -eq 0) {
-        # A red deliverable with no declared harness file has no deliverable to land.
+    # Dispatch precondition 3 - Ship must supply the post-scaffolding baseline SHA.
+    $baseline = if (Test-HasProperty $Control 'red_baseline_sha') { "$($Control.red_baseline_sha)" } else { '' }
+    if ([string]::IsNullOrWhiteSpace($baseline)) {
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
-    $changed = @((ConvertTo-List $Control.changed_files))
-    $outside = @($changed | Where-Object { $declared -notcontains $_ })
-    $production = @($outside | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
-    if ($production.Count -gt 0) {
-        return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'
-    }
-    if ($outside.Count -gt 0) {
-        return & $out 'RED_DELIVERABLE_DELTA_OUT_OF_SURFACE'
-    }
 
-    # Step 0.5a - pre-landing baseline.
-    if (-not [bool]$Control.baseline_compile_ok) {
-        return & $out 'RED_DELIVERABLE_BASELINE_TREE_BROKEN'
+    # Step 0.5a - consume and validate the harness harness-architect already scaffolded.
+    if (-not [bool]$Control.compile_ok) {
+        return & $out 'RED_DELIVERABLE_HARNESS_UNCOMPILABLE'
     }
-    switch ("$($Control.baseline_signal)") {
-        'no_tests_to_run' { }
-        'pass' { return & $out 'WAVE_RED_DELIVERABLE_EARLY_GREEN' }
-        'assertion_fail' { return & $out 'WAVE_RED_DELIVERABLE_PRELANDED' }
-        default { return & $out 'WAVE_RED_DELIVERABLE_PRELANDED' }
-    }
-
-    # Step 0.5c - compilation of the landed harness; the only permitted repair loop.
-    if (-not [bool]$Control.post_compile_ok) {
-        return & $out 'RED_DELIVERABLE_COMPILE_REPAIR'
-    }
-
-    # Step 0.5d - assertion RED, or a fail-closed rejection.
-    switch ("$($Control.post_signal)") {
+    switch ("$($Control.selector_signal)") {
         'assertion_fail' { }
         'pass' { return & $out 'WAVE_RED_DELIVERABLE_EARLY_GREEN' }
         'no_tests_to_run' { return & $out 'WAVE_RED_DELIVERABLE_VACUOUS' }
-        'build_error' { return & $out 'RED_DELIVERABLE_COMPILE_REPAIR' }
         default { return & $out 'RED_DELIVERABLE_NOT_ASSERTION_RED' }
     }
 
-    # Step 0.5e - the evidence report Ship turns into the open_red_deliverables entry.
+    # Step 0.5b - zero-delta gate against the Ship-supplied baseline.
+    $changed = @((ConvertTo-List $Control.changed_files))
+    $production = @($changed | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
+    if ($production.Count -gt 0) {
+        return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'
+    }
+    if ($changed.Count -gt 0) {
+        return & $out 'RED_DELIVERABLE_DELTA_OUT_OF_SURFACE'
+    }
+
+    # Step 0.5c - the evidence report Ship turns into the open_red_deliverables entry.
     if (-not [bool]$Control.evidence_report_complete) {
         return & $out 'RED_DELIVERABLE_EVIDENCE_INCOMPLETE'
     }

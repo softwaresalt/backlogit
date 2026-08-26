@@ -743,363 +743,236 @@
   "red_deliverable_branch_controls": [
     {
       "id": "accepted-assertion-red",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "The deliverable: harness lands, tree compiles, anchored selector fails on named assertions, evidence report complete.",
+      "note": "The deliverable: the scaffolded harness compiles, the anchored selector fails on named assertions, the delta is empty, and the evidence report is complete.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_ACCEPTED",
       "expect_enters_generic_loop": false
     },
     {
       "id": "not-red-deliverable-uses-generic-loop",
-      "declared_harness_files": [
-        "internal/events/checkpoint_rewrite_test.go"
-      ],
-      "note": "Routing control: a task without red_deliverable still enters the generic loop, so Step 0.5 does not capture ordinary dispatches.",
+      "note": "Routing: an ordinary dispatch still enters the generic loop, so Step 0.5 does not capture tasks it does not own.",
       "red_deliverable": false,
       "harness_cmd": "go test -count=1 -run '^TestU13_' ./internal/events",
       "red_selector_command": "",
+      "red_baseline_sha": "",
+      "compile_ok": true,
+      "selector_signal": "pass",
       "changed_files": [
         "internal/events/checkpoint_rewrite.go"
       ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "assertion_fail",
-      "post_compile_ok": true,
-      "post_signal": "pass",
       "evidence_report_complete": true,
       "expect_outcome": "GENERIC_LOOP",
       "expect_enters_generic_loop": true
     },
     {
       "id": "red-deliverable-never-enters-generic-loop",
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "note": "Load-bearing control: the same green-on-landing observation that the generic loop reads as SUCCESS must halt here instead.",
+      "note": "Load-bearing control: the same green observation the generic loop reads as SUCCESS must halt here instead.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
       "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "pass",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "pass",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "pre-landed-green",
-      "declared_harness_files": [
-        "internal/core/checkpoint_disposition_u8b_test.go"
-      ],
-      "note": "Step 0.5a: the anchored selector already passes before the task lands anything.",
+      "id": "early-green-at-dispatch",
+      "note": "Step 0.5a: the scaffolded selector already passes before any declared green-maker has closed.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU8b_' ./internal/core",
       "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_disposition_u8b_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "pass",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "pass",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "pre-landed-red",
-      "declared_harness_files": [
-        "internal/core/checkpoint_disposition_u8b_test.go"
-      ],
-      "note": "Step 0.5a: the harness is already landed and already failing, so this dispatch would re-land against an empty delta.",
-      "red_deliverable": true,
-      "harness_cmd": "go test -count=1 -run '^TestU8b_' ./internal/core",
-      "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_disposition_u8b_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "assertion_fail",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": true,
-      "expect_outcome": "WAVE_RED_DELIVERABLE_PRELANDED",
-      "expect_enters_generic_loop": false
-    },
-    {
-      "id": "vacuous-after-landing",
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "note": "Step 0.5d: the selector matches no test after landing, so the red proves nothing.",
+      "id": "harness-not-scaffolded-under-selector",
+      "note": "Step 0.5a: no test matches the declared selector, so the harness was never scaffolded under it and the red is vacuous.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
       "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "no_tests_to_run",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "no_tests_to_run",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_VACUOUS",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "panic-is-not-assertion-red",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Step 0.5d: a panic aborts the package without a matching --- FAIL: line, so it is not the deliverable.",
+      "id": "uncompilable-scaffolded-harness",
+      "note": "Step 0.5a item 1: a harness that does not compile contradicts the P-002 compiling-but-failing contract and returns to harness-architect.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "panic",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": false,
+      "selector_signal": "build_error",
+      "changed_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_HARNESS_UNCOMPILABLE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "panic-is-not-assertion-red",
+      "note": "Step 0.5a: a panic aborts the package with no matching --- FAIL: line, so it is not the deliverable.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "panic",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
       "expect_enters_generic_loop": false
     },
     {
       "id": "timeout-is-not-assertion-red",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Step 0.5d: a test timeout is a non-zero exit with no matching assertion failure.",
+      "note": "Step 0.5a: a timeout is a non-zero exit that proves no assertion failed.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "timeout",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "timeout",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "build-error-routes-to-compile-repair",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Step 0.5c/0.5d: a build error is the one condition the branch may iterate on, and only for compilation.",
-      "red_deliverable": true,
-      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": false,
-      "post_signal": "build_error",
-      "evidence_report_complete": true,
-      "expect_outcome": "RED_DELIVERABLE_COMPILE_REPAIR",
-      "expect_enters_generic_loop": false
-    },
-    {
-      "id": "baseline-tree-already-broken",
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "note": "Step 0.5a item 1: a pre-work compile failure is a pre-existing broken tree; nothing is landed.",
-      "red_deliverable": true,
-      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [],
-      "baseline_compile_ok": false,
-      "baseline_signal": "build_error",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": true,
-      "expect_outcome": "RED_DELIVERABLE_BASELINE_TREE_BROKEN",
-      "expect_enters_generic_loop": false
-    },
-    {
-      "id": "exempt-pairing-refused",
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "note": "Dispatch precondition 1: red_deliverable and harness-exempt are mutually exclusive.",
-      "red_deliverable": true,
-      "exempt_class": "verification-only",
-      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": true,
-      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
-      "expect_enters_generic_loop": false
-    },
-    {
-      "id": "selector-mismatch-refused",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Dispatch precondition 2: harness_cmd must be the declared red_selector_command verbatim.",
-      "red_deliverable": true,
-      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/core",
-      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": true,
-      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
-      "expect_enters_generic_loop": false
-    },
-    {
-      "id": "weakened-selector-refused",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Dispatch precondition 2: a bare ./... with no -count=1 and no anchored selector is a contract defect, not a substitute command.",
-      "red_deliverable": true,
-      "harness_cmd": "go test ./... || true",
-      "red_selector_command": "go test ./... || true",
-      "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": true,
-      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
-      "expect_enters_generic_loop": false
-    },
-    {
       "id": "production-delta-refused",
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
-      "note": "Dispatch precondition 3: a red deliverable declares no production change, so a non-test *.go edit is out of surface.",
+      "note": "Step 0.5b: the branch writes nothing, and a non-test *.go file is the production change a red deliverable may never make.",
       "red_deliverable": true,
       "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
       "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go",
         "internal/events/checkpoint_lifecycle.go"
       ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "incomplete-evidence-report-refused",
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "note": "Step 0.5e: without the report Ship cannot build the open_red_deliverables entry that convergence items 4 and 5 re-confirm.",
-      "red_deliverable": true,
-      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
-      "evidence_report_complete": false,
-      "expect_outcome": "RED_DELIVERABLE_EVIDENCE_INCOMPLETE",
-      "expect_enters_generic_loop": false
-    },
-    {
       "id": "extra-test-file-refused",
-      "note": "Precondition 3: an unrelated *_test.go file outside the declared harness set is still outside the surface, even though it is a test file.",
+      "note": "Step 0.5b: a *_test.go file is still a write; the permitted delta is empty, so a test extension is not an exemption.",
       "red_deliverable": true,
-      "declared_harness_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go"
-      ],
       "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
       "changed_files": [
-        "internal/events/checkpoint_lifecycle_conformance_test.go",
-        "internal/core/checkpoint_disposition_extra_test.go"
+        "internal/events/checkpoint_lifecycle_conformance_test.go"
       ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
       "expect_enters_generic_loop": false
     },
     {
       "id": "extra-non-go-file-refused",
-      "note": "Precondition 3: a documentation or configuration file is not a harness file; 'nothing else' is literal.",
+      "note": "Step 0.5b: a configuration or documentation file is a write too.",
       "red_deliverable": true,
-      "declared_harness_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
       "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
       "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
       "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go",
         ".gitignore",
         "docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md"
       ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
       "expect_enters_generic_loop": false
     },
     {
-      "id": "missing-declared-harness-set-refused",
-      "note": "Precondition 3 fails closed: with no declared harness-file set the comparison is vacuous and every delta would pass, so the dispatch is a contract defect.",
+      "id": "missing-baseline-sha-refused",
+      "note": "Precondition 3 fails closed: without the Ship-supplied post-scaffolding baseline the zero-delta gate would measure a self-chosen range.",
       "red_deliverable": true,
-      "declared_harness_files": [],
       "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
       "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
-      "changed_files": [
-        "internal/core/checkpoint_seam_contract_test.go"
-      ],
-      "baseline_compile_ok": true,
-      "baseline_signal": "no_tests_to_run",
-      "post_compile_ok": true,
-      "post_signal": "assertion_fail",
+      "red_baseline_sha": "",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "exempt-pairing-refused",
+      "note": "Precondition 1: red_deliverable and harness-exempt are mutually exclusive.",
+      "red_deliverable": true,
+      "exempt_class": "verification-only",
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "selector-mismatch-refused",
+      "note": "Precondition 2: harness_cmd must be the declared red_selector_command verbatim.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "weakened-selector-refused",
+      "note": "Precondition 2: a bare ./... with no -count=1, no anchored selector, and a || true suffix is a contract defect, not a substitute command.",
+      "red_deliverable": true,
+      "harness_cmd": "go test ./... || true",
+      "red_selector_command": "go test ./... || true",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "incomplete-evidence-report-refused",
+      "note": "Step 0.5c: without the report Ship cannot build the open_red_deliverables entry that convergence items 4 and 5 re-confirm.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "evidence_report_complete": false,
+      "expect_outcome": "RED_DELIVERABLE_EVIDENCE_INCOMPLETE",
       "expect_enters_generic_loop": false
     }
   ],

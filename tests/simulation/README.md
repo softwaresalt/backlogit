@@ -34,13 +34,13 @@ five** canonical red-deliverable keys:
 that task/exclusion drift, status-catalog drift, registry mapping/feature drift, archived sibling
 inclusion, every red-contract-key mutation, and a non-empty green-regression mutation are detected.
 Three parser controls also require a green-regression payload to be a JSON object whose
-`green_regression_cmds` value is an array, and 18 red-deliverable branch controls pin
+`green_regression_cmds` value is an array, and 16 red-deliverable branch controls pin
 `build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
 below). Both control suites run unconditionally, with or without `-VerifyAgainstQueue`.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. The current totals are **186 assertions** with
-`-VerifyAgainstQueue` and **164** without, across 21 scheduler scenarios plus 21 controls. It is
+line, exiting non-zero on any failed assertion. The current totals are **182 assertions** with
+`-VerifyAgainstQueue` and **160** without, across 21 scheduler scenarios plus 19 controls. It is
 **pure**: it reads the fixture and backlog
 Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
 `go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
@@ -77,33 +77,33 @@ and is safe to run at any gate point.
 The scenarios above pin the **scheduler**. The `red_deliverable_branch_controls` block pins the
 **per-task execution** of a red deliverable — `build-feature` Step 0.5 — which the scheduler
 scenarios cannot reach, because a wave schedule says nothing about how one dispatch is classified.
-Each control declares an observation record (dispatch inputs, the declared harness-file set, changed
-files, pre-landing and post-landing compile state and signal, evidence completeness) and the branch
-outcome Step 0.5 requires; the runner classifies it in the same order the skill specifies. The delta
-check is an explicit set comparison against `declared_harness_files`, not a file-type heuristic — a
-`*_test.go` extension is not an exemption, and an absent declared set fails closed rather than
-admitting every delta.
+
+Step 0.5 **consumes** a harness `harness-architect` already scaffolded with the wave at Ship
+Step 4.0 item 10; it never lands one and never writes. Each control declares an observation record
+(dispatch inputs, the Ship-supplied post-scaffolding `red_baseline_sha`, compile state, selector
+signal, changed files, evidence completeness) and the branch outcome Step 0.5 requires; the runner
+classifies it in the same order the skill specifies. The delta rule is **zero files**, measured
+against `red_baseline_sha` — captured after the scaffolding commit, so a sibling's harness cannot
+enter this task's delta.
 
 | Control | Contract obligation |
 |---|---|
-| `accepted-assertion-red` | The deliverable: harness lands, tree compiles, the anchored selector fails on named assertions, evidence report complete |
+| `accepted-assertion-red` | The deliverable: the scaffolded harness compiles, the anchored selector fails on named assertions, the delta is empty, evidence complete |
 | `not-red-deliverable-uses-generic-loop` | Routing: an ordinary dispatch still enters the generic loop, so Step 0.5 does not capture tasks it does not own |
 | `red-deliverable-never-enters-generic-loop` | **Load-bearing control.** The exact observation the generic loop reads as SUCCESS must halt here with `WAVE_RED_DELIVERABLE_EARLY_GREEN` and never route to the loop. Removing the branch fails this control on both assertions |
-| `pre-landed-green` | Step 0.5a: a selector already passing before anything lands halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
-| `pre-landed-red` | Step 0.5a: a selector already failing means the harness is already landed, so the dispatch would re-land against an empty delta — `WAVE_RED_DELIVERABLE_PRELANDED` |
-| `vacuous-after-landing` | Step 0.5d: a no-tests-to-run signal after landing is `WAVE_RED_DELIVERABLE_VACUOUS`, the mirror of the P-002.3 false-green rule |
-| `panic-is-not-assertion-red` | Step 0.5d: a panic aborts the package with no matching `--- FAIL:` line, so it is rejected rather than accepted or repaired |
-| `timeout-is-not-assertion-red` | Step 0.5d: a timeout is likewise a non-zero exit that proves no assertion failed |
-| `build-error-routes-to-compile-repair` | Step 0.5c: a build error is the one condition the branch may iterate on, and only for compilation |
-| `baseline-tree-already-broken` | Step 0.5a item 1: a pre-work compile failure is a pre-existing broken tree; nothing is landed |
+| `early-green-at-dispatch` | Step 0.5a: a scaffolded selector already passing before any green-maker closed halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
+| `harness-not-scaffolded-under-selector` | Step 0.5a: a no-tests-to-run signal means no test matches the declared selector — `WAVE_RED_DELIVERABLE_VACUOUS`, the mirror of the P-002.3 false-green rule |
+| `uncompilable-scaffolded-harness` | Step 0.5a item 1: a harness that does not compile contradicts the P-002 compiling-but-failing contract and returns to `harness-architect` |
+| `panic-is-not-assertion-red` | Step 0.5a: a panic aborts the package with no matching `--- FAIL:` line, so it is rejected rather than accepted |
+| `timeout-is-not-assertion-red` | Step 0.5a: a timeout is likewise a non-zero exit that proves no assertion failed |
+| `production-delta-refused` | Step 0.5b: the branch writes nothing, and a non-test `*.go` file is the production change a red deliverable may never make |
+| `extra-test-file-refused` | Step 0.5b: a `*_test.go` file is still a write — the permitted delta is empty, so a test extension is not an exemption |
+| `extra-non-go-file-refused` | Step 0.5b: a configuration or documentation file is a write too |
+| `missing-baseline-sha-refused` | Precondition 3 fails closed: without the Ship-supplied post-scaffolding baseline the zero-delta gate would measure a self-chosen range |
 | `exempt-pairing-refused` | Precondition 1: `red_deliverable` and `harness-exempt` are mutually exclusive — `WAVE_RED_MAPPING_UNRESOLVED` |
 | `selector-mismatch-refused` | Precondition 2: `harness_cmd` must be the declared `red_selector_command` verbatim |
 | `weakened-selector-refused` | Precondition 2: a bare `./...` with no `-count=1`, no anchored selector, and a `\|\| true` suffix is a contract defect, never a substitute command |
-| `production-delta-refused` | Precondition 3: a non-test `*.go` file outside the declared harness set is a production change a red deliverable may not make |
-| `extra-test-file-refused` | Precondition 3: an unrelated `*_test.go` file is outside the surface too — a test extension is not an exemption |
-| `extra-non-go-file-refused` | Precondition 3: a configuration or documentation file is not a harness file; "nothing else" is literal |
-| `missing-declared-harness-set-refused` | Precondition 3 fails closed: with no declared harness-file set the comparison is vacuous and would admit every delta, so the dispatch is a contract defect |
-| `incomplete-evidence-report-refused` | Step 0.5e: without the report Ship cannot build the `open_red_deliverables` entry that convergence items 4 and 5 re-confirm |
+| `incomplete-evidence-report-refused` | Step 0.5c: without the report Ship cannot build the `open_red_deliverables` entry that convergence items 4 and 5 re-confirm |
 
 ## Keeping it honest
 
