@@ -781,8 +781,11 @@ selector.
   U11/U12/U13/U14 and cycle 20 made when it split U7b into U7b and U7c.
 * **Tests** (2): `ResolveCheckpoint` on a conforming active document still resolves and the
   resulting bytes are unchanged from the pre-migration expectation (shipped-accept-path guard);
-  `internal/events/checkpoint_lifecycle.go` retains no direct atomic-write call whose target
-  resolves under the checkpoint directory — asserted structurally against that file.
+  `internal/events/checkpoint_lifecycle.go` contains no direct atomic-write call whose target
+  resolves under the checkpoint directory **and** contains a `RewriteCheckpointFile` call inside
+  `ResolveCheckpoint` — asserted structurally against that file. Both halves are load-bearing:
+  asserting only the removal would be satisfied by routing the write through any other helper,
+  which is not this unit's contract.
 * **Expected red** (1 harness function): the structural case fails before the migration. This unit
   additionally turns **U3c**'s (`147.042-T`) already-red `TestU3c_` function green — U3c is the
   verb-level conformance harness that must be red before this migration lands.
@@ -811,8 +814,11 @@ selector.
   U4's assertions pin it, so U4 stays honestly red until it lands.
 * **Tests** (2): `AbandonCheckpoint` on a conforming active document still abandons and still
   appends exactly one audit event (shipped-accept-path guard);
-  `internal/core/checkpoint_disposition.go` retains no direct atomic-write call whose target
-  resolves under the checkpoint directory — asserted structurally against that file.
+  `internal/core/checkpoint_disposition.go` contains no direct atomic-write call whose target
+  resolves under the checkpoint directory **and** contains an `events.RewriteCheckpointFile` call
+  inside `AbandonCheckpoint` — asserted structurally against that file. Both halves are
+  load-bearing: asserting only the removal would be satisfied by routing the write through any
+  other helper, which is not this unit's contract.
 * **Expected red** (1 harness function): the structural case fails before the migration.
 * **Green-step guards** (1, `TestU14bGuard_AbandonAcceptPathUnchanged`): the shipped accept path,
   which the migration must not disturb; it lands with the migration commit.
@@ -5970,6 +5976,17 @@ metadata refresh.
 | `PRRT_kwDORzozKM6cjdUy` | `.backlogit/queue/147.037-T.md` | U14 spanned three files (`internal/events/checkpoint_lifecycle.go`, `internal/core/checkpoint_disposition.go`, and a new test file), which is not *fewer than three* and therefore outside the 2-Hour Rule heuristic this plan has already enforced against `147.021-T` (cycle 3) and `147.014-T` (cycle 20) | Valid | Fixed by splitting the caller migration by verb. **U14** (`147.037-T`) keeps the resolve site in `internal/events`; new **U14b** (`147.044-T`) takes the abandon site in `internal/core`. Each unit is two files and two scenarios. The alternative — reducing U14 to two files by borrowing another unit's harness, as U13 borrows U12's — was rejected: it would leave the abandon migration with no red evidence of its own |
 | `PRRT_kwDORzozKM6cjdVm` | `docs/memory/2026-08-26/stage-pr377-cycle-35-planning-data-correction-memory.md` | The pull-request description is stale relative to the branch: it names cycle 29 current, reports 108 changed files, and claims six unresolved threads | Valid | Fixed outside the repository: the PR description is refreshed after this cycle's review wave resolves, so cycle, changed-file count, thread state, and topology match the pushed HEAD. No repository artifact carries the PR description, so nothing in-tree changes for this thread |
 
+**Second review wave (against `84d53b79`).** Five further threads were raised after the first wave
+was fixed, replied to, and resolved.
+
+| Thread | Path | Finding | Classification | Disposition |
+|---|---|---|---|---|
+| `PRRT_kwDORzozKM6cmKT6` | `.github/policies/workflow-policies.md` | The tracked scheduler simulation does not exercise the new always-run item: `Invoke-WaveScheduler` computes `open_red_after_wave` but never runs an open selector or models one becoming green, so the reported result would still pass with the item removed | Valid | Fixed. The early-green outcome gains a named fail-closed code, **`WAVE_RED_DELIVERABLE_EARLY_GREEN`** (P-002.2), used by both the in-wave case and the carried-in case. The runner models the re-confirmation step and records `open_red_reconfirmed_at_wave`; the fixture gains an `open_red_early_green` mutation and two scenarios — `open_red_early_green_carried_in` (a carried-in entry injected green three waves before its green-maker halts the loop at the wave-5 gate) and `open_red_closed_entry_not_reconfirmed` (an entry the wave closed is deliberately not re-run, so the same injection is not a violation). `persistent_red_mapping` additionally asserts the exact re-confirmed set at waves 3, 4, 7, 8, 12, and 13. The first scenario is the load-bearing control: with the always-run item removed it expects `WAVE_RED_DELIVERABLE_EARLY_GREEN` and observes `COMPLETE` |
+| `PRRT_kwDORzozKM6cmKUm` | `.backlogit/queue/147.037-T.md` | The `TestU14_` RED can pass without performing the required migration — removing `syncWriteFileAtomic` and routing through any other helper satisfies a removal-only assertion | Valid | Fixed. The structural assertion now requires **both** halves: no direct atomic-write call under the checkpoint directory **and** a `RewriteCheckpointFile` call inside `ResolveCheckpoint` |
+| `PRRT_kwDORzozKM6cmKU9` | `.backlogit/queue/147.044-T.md` | Same defect in the new `TestU14b_` harness | Valid | Fixed identically, requiring an `events.RewriteCheckpointFile` call inside `AbandonCheckpoint`. Both plan unit sections carry the same two-part assertion, so the task text and the plan cannot drift |
+| `PRRT_kwDORzozKM6cmKVX` | `tests/simulation/README.md` | The `baseline` scenario row still reported the pre-split 42-task / 104-edge topology, contradicting the updated fixture and the same document's 43-task description | Valid | Fixed to 43 tasks / 106 edges; the two new scenario rows were added in the same table |
+| `PRRT_kwDORzozKM6cmKV6` | this plan | The disposition claims the PR metadata was refreshed, but the live description still shows cycle 29, 42/104/43, and six unresolved threads | Invalid — stale premise | Declined with evidence. The description was refreshed before the second review wave completed; the review's PR-metadata snapshot predates the edit. The live description records cycle 37, 129 changed files, 43 tasks / 106 edges / 44 shipment members, and no open findings. Re-verified after the fact; no further change was needed for the claim to be true |
+
 **Why the split, and why it needs no new mechanism.** Cycle 17 already used exactly this move when
 it broke the original five-file seam unit into U11 (declaration), U12 (contract harness), U13
 (implementation), and U14 (caller migration); cycle 20 used it again when it split U7b into U7b and
@@ -5997,7 +6014,7 @@ after wave 8.
 
 | Gate | Result |
 |---|---|
-| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 115/115; S=44; M=43; 106 edges; 18 waves; acyclic; 0 stalls; 0 compile-order violations |
+| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 137/137 across 20 scenarios; S=44; M=43; 106 edges; 18 waves; acyclic; 0 stalls; 0 compile-order violations |
 | Markdown P-008 | 0 issues |
 | Docline frontmatter | `valid: true`, 0 violations |
 | Index sync | 0 parse failures |
@@ -6015,7 +6032,7 @@ subagents: prohibited-by-operator
 decision: ADVISORY
 pending: none
 operator_authorization: approved
-severity_counts: "P0=0, P1=1 (convergence gate open-red omission, remediated in-pass), P2=1 (U14 three-file width, remediated in-pass), P3=0"
+severity_counts: "P0=0, P1=2 (convergence gate open-red omission and its missing simulation coverage, both remediated in-pass), P2=3 (U14 three-file width, removal-only structural harnesses, stale simulation README baseline row — all remediated in-pass), P3=0"
 topology: "S=44 explicit shipment members; M=43 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 106 executable edges; 18 waves; acyclic"
 push_allowed: yes
 push_performed: yes

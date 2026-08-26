@@ -24,6 +24,10 @@
       * canonical empty-default green-regression contract projection
       * baseline 18-wave schedule, zero stalls, zero compile-order violations
       * persistent red-deliverable mapping and the open-red convergence rule
+      * open-red re-confirmation: every still-open selector, including carried-in
+        entries, is re-run at each convergence gate and must stay RED; an
+        early-green entry halts with WAVE_RED_DELIVERABLE_EARLY_GREEN, while an
+        entry the wave closed is deliberately not re-run
       * blocked-member injection (initial and mid-run)
       * unsupported status tokens (catalog, off-catalog, catalog unavailable)
       * active residual at wave admission
@@ -902,6 +906,8 @@ function Invoke-WaveScheduler {
         unclosed                 = @()
         open_red_after_wave      = @{}
         open_red_closed_at_wave  = @{}
+        open_red_reconfirmed_at_wave = @{}
+        early_green              = @()
         full_suite_waves         = @()
         deferred_waves           = @()
         compile_gate_waves       = @()
@@ -1109,6 +1115,16 @@ function Invoke-WaveScheduler {
     $gateCompareWave = $null
     if (Test-HasProperty $mut 'gate_compare_wave') { $gateCompareWave = [int]$mut.gate_compare_wave }
 
+    # early-green injection: an open red deliverable whose selector starts passing at a stated
+    # wave while its declared green-makers are still open. Models the P-002.6 contract violation
+    # the convergence gate's open-red re-confirmation exists to catch.
+    $earlyGreenAtWave = @{}
+    if (Test-HasProperty $mut 'open_red_early_green') {
+        foreach ($eg in (ConvertTo-List $mut.open_red_early_green)) {
+            $earlyGreenAtWave[$eg.id] = [int]$eg.wave
+        }
+    }
+
     while ($true) {
         $waveIndex++
         if ($waveIndex -gt $budget) {
@@ -1258,6 +1274,24 @@ function Invoke-WaveScheduler {
         # the compile / vet / scoped-green part of the gate always runs
         $result.compile_gate_waves = @($result.compile_gate_waves + $waveIndex)
 
+        # P-002.6 always-run item 4: re-run the red_selector_command of EVERY entry still open
+        # after this wave's completions - including entries carried in from an earlier wave - and
+        # require each to be observed RED. An entry the wave closed is deliberately not re-run.
+        # An entry observed green before its declared green-makers close fails the gate closed.
+        $result.open_red_reconfirmed_at_wave["$waveIndex"] = $openNow
+        $earlyGreen = @()
+        foreach ($k in $openNow) {
+            if ($earlyGreenAtWave.ContainsKey($k) -and [int]$earlyGreenAtWave[$k] -le $waveIndex) {
+                $earlyGreen = @($earlyGreen + $k)
+            }
+        }
+        if ($earlyGreen.Count -gt 0) {
+            $result.outcome = 'WAVE_RED_DELIVERABLE_EARLY_GREEN'; $result.halt_wave = $waveIndex
+            $result.early_green = @($earlyGreen | Sort-Object)
+            $result.halt_detail = "open red observed green before its declared green-maker: $($result.early_green -join ',')"
+            break
+        }
+
         # deferral budget: an entry still open past its declared closing wave fails closed
         $overdue = @($openNow | Where-Object { $redMap[$_].closesWave -lt $waveIndex })
         if ($overdue.Count -gt 0) {
@@ -1359,6 +1393,19 @@ function Test-Scenario {
                     $actual = if ($r.open_red_closed_at_wave.ContainsKey($p)) { $r.open_red_closed_at_wave[$p] } else { -1 }
                     Test-Equal $id "open_red_closed_at_wave[$p]" $want.$p $actual
                 }
+            }
+            'early_green' { Test-Equal $id $key (ConvertTo-List $want) $r.early_green }
+            'open_red_reconfirmed_at_wave' {
+                foreach ($p in (Get-PropertyNames $want)) {
+                    $actual = if ($r.open_red_reconfirmed_at_wave.ContainsKey($p)) { $r.open_red_reconfirmed_at_wave[$p] } else { @() }
+                    Test-Equal $id "open_red_reconfirmed_at_wave[$p]" (ConvertTo-List $want.$p) (ConvertTo-List $actual)
+                }
+            }
+            'open_red_reconfirmed_waves' {
+                $actual = @($r.open_red_reconfirmed_at_wave.Keys |
+                    Where-Object { @($r.open_red_reconfirmed_at_wave[$_]).Count -gt 0 } |
+                    ForEach-Object { [int]$_ } | Sort-Object)
+                Test-Equal $id $key (ConvertTo-List $want) $actual
             }
             'gate_compare_wave' {
                 $actualWave = -1

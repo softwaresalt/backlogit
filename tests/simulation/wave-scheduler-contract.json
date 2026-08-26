@@ -875,11 +875,41 @@
     },
     {
       "id": "persistent_red_mapping",
-      "description": "Red-deliverable selectors stay open across waves; wave 4 advances while U8b and U3c are legitimately red; the unfiltered full suite runs only when the open-red set is empty, and immediately at the wave where the last green-maker closes it.",
+      "description": "Red-deliverable selectors stay open across waves; wave 4 advances while U8b and U3c are legitimately red; every entry still open after a wave's completions - including entries carried in from an earlier wave - has its red_selector_command re-run and re-confirmed RED at that wave's convergence gate; the unfiltered full suite runs only when the open-red set is empty, and immediately at the wave where the last green-maker closes it.",
       "mutations": {},
       "expect": {
         "outcome": "COMPLETE",
         "wave_4_advanced": true,
+        "early_green": [],
+        "open_red_reconfirmed_waves": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "open_red_reconfirmed_at_wave": {
+          "3": [],
+          "4": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "7": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "8": [
+            "147.016-T"
+          ],
+          "12": [
+            "147.016-T"
+          ],
+          "13": []
+        },
         "open_red_after_wave_4": [
           "147.016-T",
           "147.042-T"
@@ -1222,6 +1252,71 @@
           "147.035-T"
         ],
         "completion_claimed": false
+      }
+    },
+    {
+      "id": "open_red_early_green_carried_in",
+      "description": "Negative control for the convergence gate's open-red re-confirmation. 147.042-T / U3c completes red in wave 4 and its declared green-maker 147.037-T / U14 does not land until wave 8. Its selector is injected green from wave 5 - three waves early. Because the gate re-runs the red_selector_command of every entry still open after the wave's completions, including entries carried in from an earlier wave, the violation is caught at the wave-5 gate and the loop halts with WAVE_RED_DELIVERABLE_EARLY_GREEN instead of advancing. Without that always-run item the entry would never be executed again while the unfiltered suite stayed deferred, and the early green would pass unnoticed through waves 5 to 8.",
+      "mutations": {
+        "open_red_early_green": [
+          {
+            "id": "147.042-T",
+            "wave": 5
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
+        "halt_wave": 5,
+        "early_green": [
+          "147.042-T"
+        ],
+        "completion_claimed": false,
+        "open_red_reconfirmed_at_wave": {
+          "4": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "5": [
+            "147.016-T",
+            "147.042-T"
+          ]
+        },
+        "full_suite_at_final_closure": false,
+        "compile_gate_waves": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    },
+    {
+      "id": "open_red_closed_entry_not_reconfirmed",
+      "description": "Complement of the control above: an entry the wave CLOSED is deliberately not re-run by the gate. 147.035-T / U12 is closed by 147.036-T / U13 at wave 7, and its selector is injected green from wave 7. Because a closed entry leaves the open set before the re-confirmation step, the injection is not a violation and the schedule completes - proving the gate re-confirms exactly the still-open set and no more.",
+      "mutations": {
+        "open_red_early_green": [
+          {
+            "id": "147.035-T",
+            "wave": 7
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "early_green": [],
+        "waves": 18,
+        "scheduled": 43,
+        "open_red_closed_at_wave": {
+          "147.035-T": 7
+        },
+        "open_red_reconfirmed_at_wave": {
+          "7": [
+            "147.016-T",
+            "147.042-T"
+          ]
+        }
       }
     }
   ]
