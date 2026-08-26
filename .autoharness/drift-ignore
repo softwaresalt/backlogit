@@ -429,6 +429,31 @@
 #       over 16 scenarios, re-derivable from the live queue with
 #       -VerifyAgainstQueue. Repo-authored; needs no entry below, but a template
 #       adoption that keeps P-002.6 MUST carry an equivalent artifact.
+#
+# NOTE (2026-08-26, cycle 33): four review findings corrected the cycle-32 form;
+# a template adoption MUST preserve the corrections rather than reconstruct
+# 1.20.0 literally:
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       distinguish complete shipment set S from wave set M. S is every explicit
+#       manifest ID; M is exactly the task-type IDs in S. For 130-S, count(S)=43,
+#       count(M)=42, and excluded_non_task_members is 147-F (feature). Snapshot
+#       row counts and wave budgets use count(M), never count(S). Compare the
+#       covering-unit TASK enumeration with filtered M, not with raw S.
+#   .github/policies/workflow-policies.md, .github/agents/.ship.agent.md, and
+#       .github/skills/build-feature/SKILL.md — green_regression_cmds has one
+#       optional canonical JSON body block. An absent block means exactly [];
+#       no current 130-S task needs one. Do NOT infer commands from prose or
+#       restore discretionary package selection.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — -VerifyAgainstQueue
+#       parses 130-S itself, resolves member types, compares filtered task IDs
+#       exactly with M, reports excluded non-task IDs, compares all five
+#       red-deliverable keys (including selector and close wave), and runs
+#       fixture-declared in-memory mutation checks. Repo-authored; no path entry
+#       is needed below, but an equivalent validation artifact remains required.
+#   The descope-provenance citation is archivedFromDescopeEligibleStatus in
+#       internal/core/shipment_gate.go, not the lower-level status predicate.
+#       Version header and Amendment Log are 1.21.0.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

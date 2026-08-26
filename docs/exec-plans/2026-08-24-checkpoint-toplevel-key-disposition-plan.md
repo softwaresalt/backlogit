@@ -2467,10 +2467,15 @@ is gated by its own `TestU11_` source-shape harness; and `U1d` and `U15` — for
 harness-exempt unit implements behaviour, and **no unit lands a production stub ahead of its own
 harness**.
 
-**Wave schedule (cycle-29, P-002.6)**: the 42-task / 104-edge DAG partitions into **18** dependency
-waves that schedule all 42 tasks with **zero** stalls and **zero** compile-order violations (every
-dependency lands in a strictly earlier wave than its dependent). Ship interleaves harness
-generation and implementation per wave rather than scaffolding the shipment up front.
+**Wave schedule (cycle-29, corrected cycle-33, P-002.6)**: shipment `130-S` has **43 explicit
+manifest members** in set `S`. The scheduler freezes
+`M = { id in S : artifact_type(id) = task }`, so `count(M) = 42`; the one excluded non-task ID is
+the covering `147-F` (`feature`), which release closure handles and no wave schedules. The
+42-task / 104-edge DAG partitions into **18** dependency waves that schedule all 42 members of `M`
+with **zero** stalls and **zero** compile-order violations (every dependency lands in a strictly
+earlier wave than its dependent). Every wave snapshot expects exactly 42 task rows (`count(M)`),
+not 43 shipment rows (`count(S)`). Ship interleaves harness generation and implementation per wave
+rather than scaffolding the shipment up front.
 
 | Wave | Tasks | Wave | Tasks |
 |---|---|---|---|
@@ -2508,6 +2513,11 @@ does not close its entry; an entry still open past its declared closing wave hal
 `WAVE_OPEN_RED_UNCLOSED`. The 1.19.0 claim that the tolerated-red set is empty at every convergence
 gate was false from wave 4 onward and is corrected.
 
+**Optional green-regression commands (cycle-33).** The only declaration form is the canonical
+`green-regression-contract` JSON body block in P-002.6. An absent block means exactly
+`green_regression_cmds: []`; it does not authorize Ship or `build-feature` to choose a package or
+infer a command from prose. No task in `M` currently needs the block, so all 42 arrays are empty.
+
 **The wave schedule is what dissolves the U15/U8b deadlock** PR #377 review raised on
 `.ship.agent.md:254`. U8b (`147.016-T`) cannot compile until U15 (`147.038-T`) lands, but U15
 depends on U1b (`147.030-T`), which is harness-required and so cannot be implemented before its own
@@ -2519,12 +2529,14 @@ so the claim-time `EXEMPT_OWNER_NOT_RED` condition is satisfiable by constructio
 into the graph as a negative control halts the scheduler at `WAVE_NO_PROGRESS` after 9 waves rather
 than looping.
 
-**Measured topology (cycle 20, `backlogit --cwd . query` after `backlogit --cwd . sync`)**: 42
-queued tasks, **104** queued-to-queued executable edges, 43 shipment members in `130-S`, ready set
-exactly `{147.001-T, 147.032-T}` (two roots — `U1`, the typed-error declaration, and `U1d`, the
-remediation-intent declaration). **Historical total edges: 105** — the 104 executable edges plus the
-one archived edge `147.010-T -> 147.009-T` retained in the archived U5b artifact. The historical
-count is deliberately kept distinguishable from the executable topology: only the 104
+**Measured topology (cycle 20, count semantics corrected cycle 33,
+`backlogit --cwd . query` after `backlogit --cwd . sync`)**: shipment `130-S` has 43 explicit
+members; task-type wave set `M` has 42 queued tasks; excluded non-task members are exactly
+`147-F` (`feature`). `M` has **104** queued-to-queued executable edges and ready set exactly
+`{147.001-T, 147.032-T}` (two roots — `U1`, the typed-error declaration, and `U1d`, the
+remediation-intent declaration). **Historical total edges: 105** — the 104 executable edges plus
+the one archived edge `147.010-T -> 147.009-T` retained in the archived U5b artifact. The
+historical count is deliberately kept distinguishable from the executable topology: only the 104
 queued-to-queued edges govern execution order, and an agent must never schedule against the
 historical figure. The graph is verified acyclic by Kahn topological sort — all 42 nodes ordered
 from the two roots.
@@ -5352,7 +5364,7 @@ with `WAVE_STATUS_UNSUPPORTED` naming each ID and its observed token; an unreada
 self-inconsistent model halts with `WAVE_STATUS_CATALOG_UNAVAILABLE` rather than falling back to a
 built-in vocabulary. A related sub-finding is fixed alongside: `archived` satisfies a *dependency*
 but does **not** discharge a *green-maker* obligation, because a member may be archived as a
-descope (`isDescopeEligibleStatus`, `internal/core/shipment_gate.go`).
+descope (`archivedFromDescopeEligibleStatus`, `internal/core/shipment_gate.go`).
 
 **G3 — freeze anchor and the non-shipment path.** 1.19.0 froze `M` "at Ship Step 0.5 shipment
 intake". Step 0.5 loads the shipment, validates membership, creates the branch, and claims — it
@@ -5433,3 +5445,101 @@ the fresh review can concentrate on whether the *contract* is right rather than 
 This authorization covers **planning, policy, skill-prose, and simulation artifacts only**. It is
 not merge approval, not a shipment claim, and not authorization for Ship to begin implementation.
 The §1.9 readiness gate remains **FAIL on Check 3**.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 33
+reviewed_at: 2026-08-26
+reviewed_head: c9fa17044cdd0585d0cfa7a2cca54f15adcb6f4d
+dispatch_mode: single-agent-declared-degradation
+tool_degraded: reviewer-subagent-dispatch
+decision: FAIL
+pending: independent-review-required
+operator_authorization: approved
+severity_counts: "P0=0, P1=2 (both remediated in-pass), P2=2 (both remediated in-pass), P3=0"
+topology: "S=43 explicit shipment members; M=42 task-type IDs; excluded 147-F (feature); 104 executable edges; 18 waves; acyclic"
+push_allowed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: FAIL — pending independent review
+
+**This record is the current gate state.** It supersedes `cycle: 32` `FAIL` for gate-decision
+purposes. Cycle 32 and every earlier record remain the historical trace; their remediation content
+stands except where this cycle explicitly narrows the manifest, verification, citation, and
+green-regression declaration semantics.
+
+### Baseline
+
+Before edits,
+`pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue` reported
+`WAVE_SIM_OK: 84/84 assertions PASS across 16 scenario(s)`. That pass is the baseline and also
+reproduces H2: verification globbed `147.*-T.md` rather than parsing `130-S.md`, compared only a
+count plus fixture-member fields, and checked only `green_maker_tasks` from each red-deliverable
+block. It could therefore pass while shipment membership, the excluded covering feature, the red
+flag/reason/selector, or the close-wave declaration drifted.
+
+### Findings and remediation
+
+| ID | Sev | Finding | Remediation |
+|---|---|---|---|
+| H1 | P1 | Policy and Ship said every shipment member was `M`, while the fixture and plan scheduled 42 tasks from a 43-member manifest | Defined complete shipment set `S`; `M` is exactly task-type IDs in `S`; report excluded IDs/types; `130-S`: S=43, M=42, excluded `147-F` (`feature`) |
+| H2 | P1 | The scheduler drift gate did not parse the shipment and omitted four of five red-contract keys | Parse `130-S.md`; resolve each item type; exact-set compare filtered task IDs with `M`; compare all five keys; nine data-driven in-memory mutations; selector and close-wave scheduler negatives |
+| H3 | P2 | Descope provenance cited the lower-level `isDescopeEligibleStatus` predicate | Corrected to `archivedFromDescopeEligibleStatus` in `internal/core/shipment_gate.go` |
+| H4 | P2 | `green_regression_cmds` had no declaration grammar, so “task declares” was not executable | Added one optional canonical JSON body block, exact absent-block default `[]`, fail-closed malformed-block handling, and explicit statement that no current task needs a block |
+
+**H1 — two accounting universes.** `S` is the shipment artifact's complete explicit item-ID set.
+Ship resolves every listed artifact type before filtering. `M = { id in S : artifact_type(id) =
+task }` is the immutable scheduler universe. Non-task IDs remain visible in a stable excluded
+report, but do not consume a wave, satisfy a task dependency, or appear in a per-wave snapshot.
+For `130-S`, `count(S)=43`, `count(M)=42`, and the sole excluded member is `147-F` (`feature`).
+The covering-unit fallback is compared with filtered task IDs, not raw `S`; snapshot reliability
+expects `count(M)` rows.
+
+**H2 — verification now tests what it claims.** The PowerShell runner reads `130-S.md` first and
+loads only the artifacts named there, from queue or archive. It compares shipment IDs, task-filtered
+`M`, excluded non-task IDs/types, statuses, dependencies, exemption metadata, the empty
+green-regression projection, and every canonical red-deliverable field. Fixture-declared mutations
+remove a shipment task, improperly add the feature to `M`, suppress the excluded report, mutate
+each of the five red keys, and inject a green-regression command. Every mutation must produce its
+specific drift code. Scheduler scenarios also prove an empty selector and a false close wave halt
+with `WAVE_RED_MAPPING_UNRESOLVED`.
+
+**H3 — provenance helper.** `isDescopeEligibleStatus` classifies a status value; it does not read
+an archived artifact's provenance. The green-maker rule relies on the helper that does that read,
+`archivedFromDescopeEligibleStatus`, so the policy, prior memory, plan, and checkpoint cite that
+symbol.
+
+**H4 — canonical optional array.** A present `green-regression-contract` is a delimited fenced JSON
+object with exactly one key, `green_regression_cmds`, whose value is a non-empty array of unique
+command strings satisfying the scoped-command constraints. Absence means exactly `[]`; an empty
+block is not authored. Ship freezes the parsed array at Step 3 and `build-feature` consumes it
+unchanged. No current `130-S` task needs the block.
+
+### Simulation and validation evidence
+
+The corrected read-only command reports
+`WAVE_SIM_OK: 104/104 assertions PASS across 18 scenario(s)`. It also reports the parsed census:
+43 total shipment members, 42 task members in `M`, excluded `147-F=feature`, and nine mutation
+checks.
+
+| Gate | Result |
+|---|---|
+| Scheduler simulator + live shipment drift + mutations | `WAVE_SIM_OK` 104/104, 18 scenarios, exit 0 |
+| Docline frontmatter (`backlogit docs lint`) | `valid: true`, 0 violations |
+| Markdown P-008 (`scripts/md-lint.ps1`, repo-wide) | 0 issues |
+| Integration (`go test ./tests/integration/ -count=1`) | exit 0 |
+| Index sync (`backlogit sync`) | 0 parse failures |
+| Topology | S=43; M=42; excluded `147-F` (`feature`); 104 executable edges; 18 waves; acyclic |
+| Production Go touched | **none** — 0 `*.go` files modified |
+
+### Gate and next action
+
+All four findings are remediated in-pass, but this remediation is not self-certifying. The gate
+therefore stays **FAIL**, `pending: independent-review-required`, and `push_allowed: no`. The next
+action is an independent review of the cycle-33 diff. Push, PR-thread reconciliation, shipment
+claim, and merge remain blocked; operator merge approval has not been requested. No subagent was
+used, and no push or merge occurred.

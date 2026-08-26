@@ -69,8 +69,8 @@ with its selectors and unclosed green-makers, and it is bounded by `green_maker_
 
 A sub-finding closed alongside: `archived` satisfies a *dependency* but does **not** discharge a
 *green-maker* obligation, because a member may be archived as a descope
-(`isDescopeEligibleStatus`). A descoped green-maker leaves its entry open and the loop halts rather
-than retiring a red no one made green.
+(`archivedFromDescopeEligibleStatus`, `internal/core/shipment_gate.go`). A descoped green-maker
+leaves its entry open and the loop halts rather than retiring a red no one made green.
 
 ## G2 — the status model was cited, not read
 

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "artifact": "wave-scheduler-contract-simulation",
-  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Data is mirrored from the live .backlogit/queue manifest of release unit 147-F / shipment 130-S; scenarios and expectations encode the cycle-32 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-33 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.20.0",
+    "policy_version": "1.21.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -20,8 +20,8 @@
     "release_unit": "147-F",
     "shipment": "130-S",
     "queue_dir": ".backlogit/queue",
-    "mirrored_head": "d57bbd8a456383c0a98283f2637642b34ffa5c54",
-    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to re-derive members, statuses, dependency edges, exemption labels, and red-deliverable contracts from the live queue and fail on any drift."
+    "mirrored_head": "c9fa17044cdd0585d0cfa7a2cca54f15adcb6f4d",
+    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, resolve artifact types, compare its filtered task IDs exactly with M, report excluded non-task IDs, verify task projections and every red-deliverable key, and run in-memory mutation checks."
   },
   "status_model": {
     "catalog_source": ".backlogit/config.yaml -> fields.status.values",
@@ -70,9 +70,16 @@
     "freeze_source": "shipment-manifest",
     "fallback": "covering-release-unit-enumeration",
     "fail_closed_code": "WAVE_MANIFEST_UNAVAILABLE",
+    "wave_member_type": "task",
     "member_count": 42,
     "shipment_member_count": 43,
-    "note": "M is the 42 task members of 130-S. The 43rd shipment member is the covering feature 147-F, which is not scheduled as a wave member and reaches terminal status through release closure.",
+    "excluded_non_task_members": [
+      {
+        "id": "147-F",
+        "artifact_type": "feature"
+      }
+    ],
+    "note": "S is all 43 explicit members of shipment 130-S. M is exactly the 42 IDs in S whose resolved artifact_type is task. The covering feature 147-F is reported as excluded and reaches terminal status through release closure; it is never a wave member or snapshot row.",
     "members": [
       {
         "id": "147.001-T",
@@ -602,6 +609,8 @@
     {
       "task": "147.035-T",
       "unit": "U12",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Harness-only behaviour contract for the guarded rewrite seam; the seam's implementation is 147.036-T / U13, so this task's three TestU12_ functions are red by design when it completes.",
       "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/events",
       "green_maker_tasks": [
         "147.036-T"
@@ -611,6 +620,8 @@
     {
       "task": "147.042-T",
       "unit": "U3c",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Verb-level conformance refusal harness that must be observed red before the seam migration; the refusal is delivered by 147.037-T / U14, so this task's single TestU3c_ function is red by design when it completes.",
       "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
       "green_maker_tasks": [
         "147.037-T"
@@ -620,6 +631,8 @@
     {
       "task": "147.016-T",
       "unit": "U8b",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Cross-surface parity harness with no production change; its assertions turn green only after every surface implementation it pins has landed, so its TestU8b_ functions are red by design when it completes.",
       "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/cli",
       "green_maker_tasks": [
         "147.006-T",
@@ -637,6 +650,79 @@
         "147.027-T"
       ],
       "green_maker_closes_wave": 13
+    }
+  ],
+  "green_regression_contracts": [],
+  "verification_mutations": [
+    {
+      "id": "shipment-task-removed",
+      "operation": "remove_shipment_item",
+      "item": "147.043-T",
+      "expect_code": "WAVE_MEMBER_IDS"
+    },
+    {
+      "id": "covering-feature-improperly-added-to-m",
+      "operation": "include_excluded_in_m",
+      "item": "147-F",
+      "expect_code": "WAVE_MEMBER_IDS"
+    },
+    {
+      "id": "excluded-non-task-report-removed",
+      "operation": "remove_excluded_report",
+      "item": "147-F",
+      "expect_code": "EXCLUDED_NON_TASKS"
+    },
+    {
+      "id": "red-deliverable-flag-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_deliverable",
+      "value": false,
+      "expect_code": "RED_CONTRACT_RED_DELIVERABLE"
+    },
+    {
+      "id": "red-deliverable-reason-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_deliverable_reason",
+      "value": "MUTATED",
+      "expect_code": "RED_CONTRACT_RED_DELIVERABLE_REASON"
+    },
+    {
+      "id": "red-selector-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_selector_command",
+      "value": "go test -count=1 -run '^TestMutated_' ./internal/events",
+      "expect_code": "RED_CONTRACT_RED_SELECTOR_COMMAND"
+    },
+    {
+      "id": "green-maker-list-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "green_maker_tasks",
+      "value": [
+        "147.036-T",
+        "147.037-T"
+      ],
+      "expect_code": "RED_CONTRACT_GREEN_MAKER_TASKS"
+    },
+    {
+      "id": "green-maker-close-wave-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "green_maker_closes_wave",
+      "value": 99,
+      "expect_code": "RED_CONTRACT_GREEN_MAKER_CLOSES_WAVE"
+    },
+    {
+      "id": "empty-default-green-regression-mutated",
+      "operation": "add_green_regression_contract",
+      "task": "147.001-T",
+      "commands": [
+        "go test -count=1 -run '^TestUnexpected_' ./internal/errors"
+      ],
+      "expect_code": "GREEN_REGRESSION_CONTRACTS"
     }
   ],
   "scenarios": [
@@ -958,6 +1044,40 @@
           "147.042-T": [
             "147.999-T"
           ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.042-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "missing_red_selector",
+      "description": "An empty red_selector_command fails closed at schedule construction; selector scope is never inferred from the task title, unit, or package.",
+      "mutations": {
+        "override_red_selector": {
+          "147.035-T": ""
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.035-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "wrong_green_maker_close_wave",
+      "description": "A green_maker_closes_wave value that does not equal the actual latest green-maker wave fails closed at schedule construction.",
+      "mutations": {
+        "override_closes_wave": {
+          "147.042-T": 9
         }
       },
       "expect": {

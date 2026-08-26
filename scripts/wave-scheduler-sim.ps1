@@ -15,7 +15,10 @@
     therefore safe to run at any gate point, including under the P-002.5
     read-only command screen.
 
-    Assertion coverage (cycle-32):
+    Assertion coverage (cycle-33):
+      * real shipment-manifest parsing, task-type filtering, and excluded-ID report
+      * all five red-deliverable keys, with data-driven in-memory mutation checks
+      * canonical empty-default green-regression contract projection
       * baseline 18-wave schedule, zero stalls, zero compile-order violations
       * persistent red-deliverable mapping and the open-red convergence rule
       * blocked-member injection (initial and mid-run)
@@ -31,9 +34,11 @@
     tests/simulation/wave-scheduler-contract.json relative to the repository root.
 
 .PARAMETER VerifyAgainstQueue
-    Additionally re-derive the manifest (members, statuses, dependency edges,
-    harness-exempt labels, red-deliverable contracts) from the live backlog queue
-    Markdown and fail if the fixture has drifted from it.
+    Parse the real shipment artifact, resolve and filter its task-type members into
+    M, report excluded non-task IDs, and re-derive statuses, dependency edges,
+    harness-exempt labels, all red-deliverable keys, and green-regression contracts
+    from the live backlog Markdown. Also run fixture-declared in-memory mutation
+    checks proving that each comparison detects drift.
 
 .PARAMETER QueueDir
     Backlog queue directory used by -VerifyAgainstQueue. Default `.backlogit/queue`.
@@ -125,64 +130,468 @@ function Test-HasProperty {
     return [bool](@($Object.PSObject.Properties | ForEach-Object { $_.Name }) -contains $Name)
 }
 
-# --- optional live-queue drift check ------------------------------------------
-function Get-QueueManifest {
-    param([string]$Dir)
-    $out = @{}
-    foreach ($f in Get-ChildItem $Dir -Filter '147.*-T.md' | Sort-Object Name) {
-        $raw = Get-Content $f.FullName -Raw
-        $lines = Get-Content $f.FullName
-        $inFm = $false; $inDeps = $false; $inLabels = $false
-        $id = $null; $status = $null; $deps = @(); $labels = @()
-        foreach ($l in $lines) {
-            if ($l -eq '---') { if (-not $inFm) { $inFm = $true; continue } else { break } }
-            if (-not $inFm) { continue }
-            if ($l -match '^dependencies:\s*$') { $inDeps = $true; $inLabels = $false; continue }
-            if ($l -match '^labels:\s*$') { $inLabels = $true; $inDeps = $false; continue }
-            if ($l -match '^[a-z_]+:') { $inDeps = $false; $inLabels = $false }
-            if ($inDeps -and $l -match '^\s+-\s+(\S+)') { $deps += $Matches[1]; continue }
-            if ($inLabels -and $l -match '^\s+-\s+(\S+)') { $labels += $Matches[1]; continue }
-            if ($l -match '^id:\s*(\S+)') { $id = $Matches[1] }
-            if ($l -match '^status:\s*(\S+)') { $status = $Matches[1] }
+# --- optional live-shipment drift check ---------------------------------------
+function Find-ArtifactPath {
+    param([string]$Dir, [string]$Id)
+    $workspaceDir = Split-Path -Parent $Dir
+    $candidates = @(
+        (Join-Path $Dir "$Id.md"),
+        (Join-Path (Join-Path $workspaceDir 'archive') "$Id.md")
+    )
+    $found = @($candidates | Where-Object { Test-Path $_ })
+    if ($found.Count -ne 1) { return $null }
+    return $found[0]
+}
+
+function Get-DelimitedContractBlock {
+    param([string]$Raw, [string]$Name, [string]$Fence)
+    $begin = "<!-- BEGIN:$Name -->"
+    $end = "<!-- END:$Name -->"
+    $beginCount = [regex]::Matches($Raw, [regex]::Escape($begin)).Count
+    $endCount = [regex]::Matches($Raw, [regex]::Escape($end)).Count
+    if ($beginCount -eq 0) {
+        return [pscustomobject]@{ Present = $false; Content = ''; Errors = @() }
+    }
+    $pattern = '(?s){0}\s*```{1}\s*(.*?)\s*```\s*{2}' -f
+        [regex]::Escape($begin), [regex]::Escape($Fence), [regex]::Escape($end)
+    $matches = [regex]::Matches($Raw, $pattern)
+    $errors = @()
+    if ($beginCount -ne 1) { $errors += "$Name block count is $beginCount, expected 1" }
+    if ($endCount -ne 1) { $errors += "$Name end-marker count is $endCount, expected 1" }
+    if ($matches.Count -ne 1) { $errors += "$Name block is malformed or missing its $Fence fence" }
+    $content = if ($matches.Count -eq 1) { $matches[0].Groups[1].Value.Trim() } else { '' }
+    return [pscustomobject]@{ Present = $true; Content = $content; Errors = $errors }
+}
+
+function Read-RedDeliverableContract {
+    param([string]$Raw)
+    $block = Get-DelimitedContractBlock -Raw $Raw -Name 'red-deliverable-contract' -Fence 'text'
+    if (-not $block.Present) {
+        return [pscustomobject]@{ Contract = $null; Errors = @() }
+    }
+
+    $expectedKeys = @(
+        'red_deliverable',
+        'red_deliverable_reason',
+        'red_selector_command',
+        'green_maker_tasks',
+        'green_maker_closes_wave'
+    )
+    $values = @{}
+    $keys = @()
+    $errors = @($block.Errors)
+    foreach ($line in ($block.Content -split "\r?\n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -notmatch '^([a-z_]+):\s*(.*)$') {
+            $errors += "unparseable red-deliverable line: $line"
+            continue
         }
-        $green = @()
-        if ($raw -match '(?m)^green_maker_tasks:\s*(.+)$') {
-            $green = @($Matches[1] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $key = $Matches[1]
+        $value = $Matches[2].Trim()
+        if ($values.ContainsKey($key)) { $errors += "duplicate red-deliverable key: $key" }
+        $keys += $key
+        $values[$key] = $value
+    }
+    if (($keys -join ',') -cne ($expectedKeys -join ',')) {
+        $errors += "red-deliverable keys/order [$($keys -join ',')] != [$($expectedKeys -join ',')]"
+    }
+    foreach ($key in $expectedKeys) {
+        if (-not $values.ContainsKey($key)) { $values[$key] = '' }
+    }
+
+    $closeWave = 0
+    if (-not [int]::TryParse($values['green_maker_closes_wave'], [ref]$closeWave)) {
+        $errors += 'green_maker_closes_wave is not an integer'
+    }
+    $greenMakers = @(
+        $values['green_maker_tasks'] -split ',' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    $contract = [pscustomobject]@{
+        red_deliverable          = [bool]($values['red_deliverable'] -ceq 'true')
+        red_deliverable_reason   = $values['red_deliverable_reason']
+        red_selector_command     = $values['red_selector_command']
+        green_maker_tasks        = $greenMakers
+        green_maker_closes_wave  = $closeWave
+    }
+    return [pscustomobject]@{ Contract = $contract; Errors = $errors }
+}
+
+function Read-GreenRegressionContract {
+    param([string]$Raw)
+    $block = Get-DelimitedContractBlock -Raw $Raw -Name 'green-regression-contract' -Fence 'json'
+    if (-not $block.Present) {
+        return [pscustomobject]@{ Commands = @(); Errors = @() }
+    }
+
+    $errors = @($block.Errors)
+    $commands = @()
+    try {
+        $payload = $block.Content | ConvertFrom-Json
+        $keys = Get-PropertyNames $payload
+        if (($keys -join ',') -cne 'green_regression_cmds') {
+            $errors += "green-regression keys [$($keys -join ',')] != [green_regression_cmds]"
         }
-        $out[$id] = [pscustomobject]@{
-            id              = $id
-            status          = $status
-            deps            = @($deps | Sort-Object)
-            harness_exempt  = [bool]($labels -contains 'harness-exempt')
-            red_deliverable = [bool]($raw -match '(?m)^red_deliverable:\s*true')
-            green_makers    = $green
+        if (-not (Test-HasProperty $payload 'green_regression_cmds')) {
+            $errors += 'green_regression_cmds is absent'
+        }
+        else {
+            $commands = ConvertTo-List $payload.green_regression_cmds
+            if ($commands.Count -eq 0) { $errors += 'green_regression_cmds must be non-empty when the block is present' }
+            foreach ($command in $commands) {
+                if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace("$command")) {
+                    $errors += 'green_regression_cmds contains a non-string or empty entry'
+                }
+            }
+            if (@($commands | Sort-Object -Unique).Count -ne $commands.Count) {
+                $errors += 'green_regression_cmds contains a duplicate'
+            }
         }
     }
-    return $out
+    catch {
+        $errors += "green-regression JSON is invalid: $($_.Exception.Message)"
+    }
+    return [pscustomobject]@{ Commands = @($commands); Errors = $errors }
+}
+
+function Get-ArtifactProjection {
+    param([string]$Path)
+    $raw = Get-Content $Path -Raw
+    $lines = Get-Content $Path
+    $inFm = $false
+    $inDeps = $false
+    $inLabels = $false
+    $id = $null
+    $artifactType = $null
+    $status = $null
+    $deps = @()
+    $labels = @()
+    foreach ($line in $lines) {
+        if ($line -eq '---') {
+            if (-not $inFm) { $inFm = $true; continue }
+            break
+        }
+        if (-not $inFm) { continue }
+        if ($line -match '^dependencies:\s*$') { $inDeps = $true; $inLabels = $false; continue }
+        if ($line -match '^labels:\s*$') { $inLabels = $true; $inDeps = $false; continue }
+        if ($line -match '^[a-z_]+:') { $inDeps = $false; $inLabels = $false }
+        if ($inDeps -and $line -match '^\s+-\s+(\S+)') { $deps += $Matches[1]; continue }
+        if ($inLabels -and $line -match '^\s+-\s+(\S+)') { $labels += $Matches[1]; continue }
+        if ($line -match '^artifact_type:\s*(\S+)') { $artifactType = $Matches[1] }
+        if ($line -match '^id:\s*(\S+)') { $id = $Matches[1] }
+        if ($line -match '^status:\s*(\S+)') { $status = $Matches[1] }
+    }
+
+    $red = Read-RedDeliverableContract -Raw $raw
+    $green = Read-GreenRegressionContract -Raw $raw
+    $exemptClass = $null
+    if ($raw -match '(?m)^harness_exemption_class:\s*(\S+)\s*$') { $exemptClass = $Matches[1] }
+    return [pscustomobject]@{
+        id                         = $id
+        artifact_type              = $artifactType
+        status                     = $status
+        deps                       = @($deps | Sort-Object)
+        harness_exempt             = [bool]($labels -contains 'harness-exempt')
+        exempt_class               = $exemptClass
+        red_deliverable            = [bool]($null -ne $red.Contract -and $red.Contract.red_deliverable)
+        red_contract               = $red.Contract
+        green_regression_cmds      = @($green.Commands)
+        contract_errors            = @($red.Errors + $green.Errors)
+    }
+}
+
+function Get-ShipmentItemIDs {
+    param([string]$Path)
+    $items = @()
+    $inFm = $false
+    $inCustomFields = $false
+    $inItems = $false
+    foreach ($line in (Get-Content $Path)) {
+        if ($line -eq '---') {
+            if (-not $inFm) { $inFm = $true; continue }
+            break
+        }
+        if (-not $inFm) { continue }
+        if ($line -match '^custom_fields:\s*$') {
+            $inCustomFields = $true
+            $inItems = $false
+            continue
+        }
+        if ($line -match '^[a-z_]+:' -and $line -notmatch '^custom_fields:') {
+            $inCustomFields = $false
+            $inItems = $false
+        }
+        if ($inCustomFields -and $line -match '^\s{4}items:\s*$') { $inItems = $true; continue }
+        if (-not $inItems) { continue }
+        if ($line -match '^\s{8}-\s+(\S+)\s*$') { $items += $Matches[1]; continue }
+        if (-not [string]::IsNullOrWhiteSpace($line) -and $line -match '^\s{0,7}\S') { break }
+    }
+    return , $items
+}
+
+function Get-LiveShipmentProjection {
+    param([string]$Dir, [string]$ShipmentID)
+    $errors = [System.Collections.Generic.List[string]]::new()
+    $shipmentPath = Find-ArtifactPath -Dir $Dir -Id $ShipmentID
+    if ($null -eq $shipmentPath) {
+        $errors.Add("shipment artifact $ShipmentID was not found exactly once")
+        return [pscustomobject]@{
+            shipment_items = @(); members = @(); excluded_non_task_members = @(); errors = @($errors)
+        }
+    }
+
+    $shipmentItems = Get-ShipmentItemIDs -Path $shipmentPath
+    if ($shipmentItems.Count -eq 0) { $errors.Add("shipment $ShipmentID has no parseable custom_fields.items") }
+    $members = @()
+    $excluded = @()
+    foreach ($itemID in $shipmentItems) {
+        $path = Find-ArtifactPath -Dir $Dir -Id $itemID
+        if ($null -eq $path) {
+            $errors.Add("manifest item $itemID was not found exactly once")
+            $excluded += [pscustomobject]@{ id = $itemID; artifact_type = '<unresolved>' }
+            continue
+        }
+        $item = Get-ArtifactProjection -Path $path
+        if ($item.id -cne $itemID) { $errors.Add("manifest ID $itemID resolved to artifact ID $($item.id)") }
+        if ([string]::IsNullOrWhiteSpace($item.artifact_type)) {
+            $errors.Add("manifest item $itemID has no artifact_type")
+            $excluded += [pscustomobject]@{ id = $itemID; artifact_type = '<unresolved>' }
+        }
+        elseif ($item.artifact_type -ceq 'task') {
+            $members += $item
+        }
+        else {
+            $excluded += [pscustomobject]@{ id = $itemID; artifact_type = $item.artifact_type }
+        }
+    }
+    return [pscustomobject]@{
+        shipment_items            = @($shipmentItems)
+        members                   = @($members)
+        excluded_non_task_members = @($excluded)
+        errors                    = @($errors)
+    }
+}
+
+function Add-Drift {
+    param($List, [string]$Code, [string]$Detail)
+    $List.Add([pscustomobject]@{ Code = $Code; Detail = $Detail })
+}
+
+function Compare-LiveShipmentProjection {
+    param($Fx, $Live)
+    $drift = [System.Collections.Generic.List[object]]::new()
+    foreach ($errorText in (ConvertTo-List $Live.errors)) {
+        Add-Drift -List $drift -Code 'PARSE_ERROR' -Detail "$errorText"
+    }
+
+    $fixtureMembers = ConvertTo-List $Fx.manifest.members
+    $expectedMIDs = @($fixtureMembers | ForEach-Object { $_.id } | Sort-Object)
+    $actualMIDs = @($Live.members | ForEach-Object { $_.id } | Sort-Object)
+    $expectedExcluded = @(
+        (ConvertTo-List $Fx.manifest.excluded_non_task_members) |
+            ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
+            Sort-Object
+    )
+    $actualExcluded = @(
+        (ConvertTo-List $Live.excluded_non_task_members) |
+            ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
+            Sort-Object
+    )
+    $expectedShipmentIDs = @(
+        $expectedMIDs + ((ConvertTo-List $Fx.manifest.excluded_non_task_members) | ForEach-Object { $_.id }) |
+            Sort-Object
+    )
+    $actualShipmentIDs = @($Live.shipment_items | Sort-Object)
+
+    if ([int]$Fx.manifest.shipment_member_count -ne $Live.shipment_items.Count) {
+        Add-Drift $drift 'SHIPMENT_MEMBER_COUNT' "expected $($Fx.manifest.shipment_member_count), observed $($Live.shipment_items.Count)"
+    }
+    if ([int]$Fx.manifest.member_count -ne $Live.members.Count) {
+        Add-Drift $drift 'WAVE_MEMBER_COUNT' "expected $($Fx.manifest.member_count), observed $($Live.members.Count)"
+    }
+    if (($expectedShipmentIDs -join ',') -cne ($actualShipmentIDs -join ',')) {
+        Add-Drift $drift 'SHIPMENT_MEMBER_IDS' "expected [$($expectedShipmentIDs -join ',')], observed [$($actualShipmentIDs -join ',')]"
+    }
+    if (($expectedMIDs -join ',') -cne ($actualMIDs -join ',')) {
+        Add-Drift $drift 'WAVE_MEMBER_IDS' "expected [$($expectedMIDs -join ',')], observed [$($actualMIDs -join ',')]"
+    }
+    if (($expectedExcluded -join ',') -cne ($actualExcluded -join ',')) {
+        Add-Drift $drift 'EXCLUDED_NON_TASKS' "expected [$($expectedExcluded -join ',')], observed [$($actualExcluded -join ',')]"
+    }
+
+    $liveByID = @{}
+    foreach ($member in $Live.members) { $liveByID[$member.id] = $member }
+    foreach ($fixtureMember in $fixtureMembers) {
+        if (-not $liveByID.ContainsKey($fixtureMember.id)) { continue }
+        $liveMember = $liveByID[$fixtureMember.id]
+        foreach ($contractError in (ConvertTo-List $liveMember.contract_errors)) {
+            Add-Drift $drift 'CONTRACT_PARSE' "$($fixtureMember.id): $contractError"
+        }
+        if ($liveMember.status -cne $fixtureMember.status) {
+            Add-Drift $drift 'MEMBER_STATUS' "$($fixtureMember.id): $($liveMember.status) != $($fixtureMember.status)"
+        }
+        $expectedDeps = @((ConvertTo-List $fixtureMember.deps) | Sort-Object)
+        $actualDeps = @((ConvertTo-List $liveMember.deps) | Sort-Object)
+        if (($expectedDeps -join ',') -cne ($actualDeps -join ',')) {
+            Add-Drift $drift 'MEMBER_DEPS' "$($fixtureMember.id): [$($actualDeps -join ',')] != [$($expectedDeps -join ',')]"
+        }
+        if ([bool]$liveMember.harness_exempt -ne [bool]$fixtureMember.harness_exempt) {
+            Add-Drift $drift 'MEMBER_HARNESS_EXEMPT' "$($fixtureMember.id): harness_exempt drift"
+        }
+        $expectedClass = if ($null -eq $fixtureMember.exempt_class) { '' } else { "$($fixtureMember.exempt_class)" }
+        $actualClass = if ($null -eq $liveMember.exempt_class) { '' } else { "$($liveMember.exempt_class)" }
+        if ($actualClass -cne $expectedClass) {
+            Add-Drift $drift 'MEMBER_EXEMPT_CLASS' "$($fixtureMember.id): exempt_class [$actualClass] != [$expectedClass]"
+        }
+        if ([bool]$liveMember.red_deliverable -ne [bool]$fixtureMember.red_deliverable) {
+            Add-Drift $drift 'MEMBER_RED_DELIVERABLE' "$($fixtureMember.id): red_deliverable drift"
+        }
+    }
+
+    $fixtureRed = @{}
+    foreach ($contract in (ConvertTo-List $Fx.red_deliverables)) { $fixtureRed[$contract.task] = $contract }
+    $liveRed = @{}
+    foreach ($member in $Live.members) {
+        if ($null -ne $member.red_contract) { $liveRed[$member.id] = $member.red_contract }
+    }
+    $expectedRedIDs = @($fixtureRed.Keys | Sort-Object)
+    $actualRedIDs = @($liveRed.Keys | Sort-Object)
+    if (($expectedRedIDs -join ',') -cne ($actualRedIDs -join ',')) {
+        Add-Drift $drift 'RED_CONTRACT_TASK_IDS' "expected [$($expectedRedIDs -join ',')], observed [$($actualRedIDs -join ',')]"
+    }
+    foreach ($taskID in $expectedRedIDs) {
+        if (-not $liveRed.ContainsKey($taskID)) { continue }
+        $expected = $fixtureRed[$taskID]
+        $actual = $liveRed[$taskID]
+        if ([bool]$actual.red_deliverable -ne [bool]$expected.red_deliverable) {
+            Add-Drift $drift 'RED_CONTRACT_RED_DELIVERABLE' "${taskID}: red_deliverable drift"
+        }
+        if ($actual.red_deliverable_reason -cne $expected.red_deliverable_reason) {
+            Add-Drift $drift 'RED_CONTRACT_RED_DELIVERABLE_REASON' "${taskID}: red_deliverable_reason drift"
+        }
+        if ($actual.red_selector_command -cne $expected.red_selector_command) {
+            Add-Drift $drift 'RED_CONTRACT_RED_SELECTOR_COMMAND' "${taskID}: red_selector_command drift"
+        }
+        $expectedGreen = @((ConvertTo-List $expected.green_maker_tasks) | Sort-Object)
+        $actualGreen = @((ConvertTo-List $actual.green_maker_tasks) | Sort-Object)
+        if (($expectedGreen -join ',') -cne ($actualGreen -join ',')) {
+            Add-Drift $drift 'RED_CONTRACT_GREEN_MAKER_TASKS' "${taskID}: green_maker_tasks drift"
+        }
+        if ([int]$actual.green_maker_closes_wave -ne [int]$expected.green_maker_closes_wave) {
+            Add-Drift $drift 'RED_CONTRACT_GREEN_MAKER_CLOSES_WAVE' "${taskID}: green_maker_closes_wave drift"
+        }
+    }
+
+    $expectedGreenContracts = @(
+        (ConvertTo-List $Fx.green_regression_contracts) |
+            ForEach-Object { "$($_.task)::$((ConvertTo-List $_.green_regression_cmds) -join '||')" } |
+            Sort-Object
+    )
+    $actualGreenContracts = @(
+        $Live.members |
+            Where-Object { (ConvertTo-List $_.green_regression_cmds).Count -gt 0 } |
+            ForEach-Object { "$($_.id)::$((ConvertTo-List $_.green_regression_cmds) -join '||')" } |
+            Sort-Object
+    )
+    if (($expectedGreenContracts -join ',') -cne ($actualGreenContracts -join ',')) {
+        Add-Drift $drift 'GREEN_REGRESSION_CONTRACTS' "expected [$($expectedGreenContracts -join ',')], observed [$($actualGreenContracts -join ',')]"
+    }
+    return , @($drift)
+}
+
+function Copy-Projection {
+    param($Projection)
+    return ($Projection | ConvertTo-Json -Depth 30 | ConvertFrom-Json)
+}
+
+function Apply-VerificationMutation {
+    param($Projection, $Mutation)
+    switch ($Mutation.operation) {
+        'remove_shipment_item' {
+            $Projection.shipment_items = @($Projection.shipment_items | Where-Object { $_ -cne $Mutation.item })
+            $Projection.members = @($Projection.members | Where-Object { $_.id -cne $Mutation.item })
+            $Projection.excluded_non_task_members = @(
+                $Projection.excluded_non_task_members | Where-Object { $_.id -cne $Mutation.item }
+            )
+        }
+        'include_excluded_in_m' {
+            $excluded = @($Projection.excluded_non_task_members | Where-Object { $_.id -ceq $Mutation.item })
+            if ($excluded.Count -ne 1) { throw "verification mutation $($Mutation.id) cannot find excluded item $($Mutation.item)" }
+            $Projection.excluded_non_task_members = @(
+                $Projection.excluded_non_task_members | Where-Object { $_.id -cne $Mutation.item }
+            )
+            $Projection.members = @($Projection.members) + [pscustomobject]@{
+                id = $Mutation.item; artifact_type = $excluded[0].artifact_type; status = 'queued'; deps = @()
+                harness_exempt = $false; exempt_class = $null; red_deliverable = $false
+                red_contract = $null; green_regression_cmds = @(); contract_errors = @()
+            }
+        }
+        'remove_excluded_report' {
+            $Projection.excluded_non_task_members = @(
+                $Projection.excluded_non_task_members | Where-Object { $_.id -cne $Mutation.item }
+            )
+        }
+        'set_red_contract_key' {
+            $member = @($Projection.members | Where-Object { $_.id -ceq $Mutation.task })
+            if ($member.Count -ne 1 -or $null -eq $member[0].red_contract) {
+                throw "verification mutation $($Mutation.id) cannot find red contract for $($Mutation.task)"
+            }
+            $key = "$($Mutation.key)"
+            $member[0].red_contract.$key = $Mutation.value
+            if ($key -ceq 'red_deliverable') { $member[0].red_deliverable = [bool]$Mutation.value }
+        }
+        'add_green_regression_contract' {
+            $member = @($Projection.members | Where-Object { $_.id -ceq $Mutation.task })
+            if ($member.Count -ne 1) {
+                throw "verification mutation $($Mutation.id) cannot find task $($Mutation.task)"
+            }
+            $member[0].green_regression_cmds = ConvertTo-List $Mutation.commands
+        }
+        default { throw "unknown verification mutation operation: $($Mutation.operation)" }
+    }
+    return $Projection
 }
 
 function Invoke-QueueDriftCheck {
-    $live = Get-QueueManifest -Dir $QueueDir
+    $live = Get-LiveShipmentProjection -Dir $QueueDir -ShipmentID $fx.source.shipment
     $sc = 'queue_drift'
-    Test-Equal -Scenario $sc -Name 'member count' -Expected $fx.manifest.member_count -Actual $live.Count
-    $drift = @()
-    foreach ($fm in $fx.manifest.members) {
-        if (-not $live.ContainsKey($fm.id)) { $drift += "$($fm.id): absent from queue"; continue }
-        $l = $live[$fm.id]
-        if ($l.status -ne $fm.status) { $drift += "$($fm.id): status $($l.status) != $($fm.status)" }
-        $fd = (ConvertTo-List $fm.deps) -join ','
-        $ld = ($l.deps) -join ','
-        if ($fd -ne $ld) { $drift += "$($fm.id): deps [$ld] != [$fd]" }
-        if ($l.harness_exempt -ne $fm.harness_exempt) { $drift += "$($fm.id): harness_exempt drift" }
-        if ($l.red_deliverable -ne $fm.red_deliverable) { $drift += "$($fm.id): red_deliverable drift" }
+    $expectedMIDs = @($fx.manifest.members | ForEach-Object { $_.id } | Sort-Object)
+    $actualMIDs = @($live.members | ForEach-Object { $_.id } | Sort-Object)
+    $expectedExcluded = @(
+        (ConvertTo-List $fx.manifest.excluded_non_task_members) |
+            ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
+            Sort-Object
+    )
+    $actualExcluded = @(
+        $live.excluded_non_task_members |
+            ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
+            Sort-Object
+    )
+    Test-Equal -Scenario $sc -Name 'shipment member count' -Expected $fx.manifest.shipment_member_count -Actual $live.shipment_items.Count
+    Test-Equal -Scenario $sc -Name 'M task count' -Expected $fx.manifest.member_count -Actual $live.members.Count
+    Test-Equal -Scenario $sc -Name 'M task IDs' -Expected $expectedMIDs -Actual $actualMIDs
+    Test-Equal -Scenario $sc -Name 'excluded non-task members' -Expected $expectedExcluded -Actual $actualExcluded
+    $drift = Compare-LiveShipmentProjection -Fx $fx -Live $live
+    $driftText = @($drift | ForEach-Object { "$($_.Code): $($_.Detail)" }) -join '; '
+    Test-Equal -Scenario $sc -Name 'no shipment or contract drift' -Expected '' -Actual $driftText
+
+    if (-not $Quiet) {
+        Write-Host "manifest : $($fx.source.shipment) $($live.shipment_items.Count) total member(s)"
+        Write-Host "wave M   : $($live.members.Count) task member(s)"
+        Write-Host "excluded : $(if ($actualExcluded.Count -eq 0) { '<none>' } else { $actualExcluded -join ', ' })"
+        Write-Host "mutations: $(@($fx.verification_mutations).Count) in-memory drift check(s)"
+        Write-Host ""
     }
-    foreach ($rd in $fx.red_deliverables) {
-        if (-not $live.ContainsKey($rd.task)) { $drift += "$($rd.task): red-deliverable absent from queue"; continue }
-        $fg = (ConvertTo-List $rd.green_maker_tasks) -join ','
-        $lg = ($live[$rd.task].green_makers) -join ','
-        if ($fg -ne $lg) { $drift += "$($rd.task): green_maker_tasks [$lg] != [$fg]" }
+
+    foreach ($mutation in (ConvertTo-List $fx.verification_mutations)) {
+        $mutated = Copy-Projection -Projection $live
+        $mutated = Apply-VerificationMutation -Projection $mutated -Mutation $mutation
+        $mutationDrift = Compare-LiveShipmentProjection -Fx $fx -Live $mutated
+        $codes = @($mutationDrift | ForEach-Object { $_.Code } | Sort-Object -Unique)
+        Test-Equal -Scenario "queue_mutation/$($mutation.id)" -Name "detect $($mutation.expect_code)" `
+            -Expected $true -Actual ([bool]($codes -contains $mutation.expect_code))
     }
-    Test-Equal -Scenario $sc -Name 'no manifest drift' -Expected '' -Actual ($drift -join '; ')
 }
 
 # --- scheduler ------------------------------------------------------------------
@@ -280,20 +689,45 @@ function Invoke-WaveScheduler {
         if ((Test-HasProperty $mut 'override_green_makers') -and ((Get-PropertyNames $mut.override_green_makers) -contains $rd.task)) {
             $gm = ConvertTo-List $mut.override_green_makers.($rd.task)
         }
+        $redFlag = [bool]$rd.red_deliverable
+        if ((Test-HasProperty $mut 'override_red_deliverable') -and ((Get-PropertyNames $mut.override_red_deliverable) -contains $rd.task)) {
+            $redFlag = [bool]$mut.override_red_deliverable.($rd.task)
+        }
+        $reason = "$($rd.red_deliverable_reason)"
+        if ((Test-HasProperty $mut 'override_red_reason') -and ((Get-PropertyNames $mut.override_red_reason) -contains $rd.task)) {
+            $reason = "$($mut.override_red_reason.($rd.task))"
+        }
+        $selector = "$($rd.red_selector_command)"
+        if ((Test-HasProperty $mut 'override_red_selector') -and ((Get-PropertyNames $mut.override_red_selector) -contains $rd.task)) {
+            $selector = "$($mut.override_red_selector.($rd.task))"
+        }
+        $closesWave = [int]$rd.green_maker_closes_wave
+        if ((Test-HasProperty $mut 'override_closes_wave') -and ((Get-PropertyNames $mut.override_closes_wave) -contains $rd.task)) {
+            $closesWave = [int]$mut.override_closes_wave.($rd.task)
+        }
         $redMap[$rd.task] = [ordered]@{
-            task        = $rd.task
-            selector    = $rd.red_selector_command
-            greenMakers = $gm
-            closesWave  = [int]$rd.green_maker_closes_wave
-            open        = $false
-            closedWave  = $null
+            task           = $rd.task
+            redDeliverable = $redFlag
+            reason         = $reason
+            selector       = $selector
+            greenMakers    = $gm
+            closesWave     = $closesWave
+            open           = $false
+            closedWave     = $null
         }
     }
     $unresolved = @()
+    foreach ($redTask in $redMap.Keys) {
+        if (-not $M.Contains($redTask) -or -not $M[$redTask].red_deliverable) { $unresolved += $redTask }
+    }
     foreach ($k in $M.Keys) {
         if (-not $M[$k].red_deliverable) { continue }
         if (-not $redMap.ContainsKey($k)) { $unresolved += $k; continue }
         $entry = $redMap[$k]
+        if (-not $entry.redDeliverable) { $unresolved += $k; continue }
+        if ([string]::IsNullOrWhiteSpace($entry.reason)) { $unresolved += $k; continue }
+        if ([string]::IsNullOrWhiteSpace($entry.selector)) { $unresolved += $k; continue }
+        if ($entry.closesWave -le 0) { $unresolved += $k; continue }
         if ($entry.greenMakers.Count -eq 0) { $unresolved += $k; continue }
         foreach ($g in $entry.greenMakers) {
             if (-not $M.Contains($g)) { $unresolved += $k; break }
@@ -332,6 +766,49 @@ function Invoke-WaveScheduler {
         $result.halt_wave = 0
         $result.cycle_path = @($M.Keys | Where-Object { $indegWork[$_] -gt 0 } | Sort-Object)
         $result.halt_detail = "cycle over $($result.cycle_path.Count) member(s)"
+        return [pscustomobject]$result
+    }
+
+    # Static wave map validates strict-later red mappings and their declared close wave.
+    $staticWaveOf = @{}
+    $remaining = @($M.Keys)
+    $staticWave = 0
+    while ($remaining.Count -gt 0) {
+        $staticWave++
+        $frontier = @(
+            $remaining |
+                Where-Object {
+                    $taskID = $_
+                    @($deps[$taskID] | Where-Object { $M.Contains($_) -and -not $staticWaveOf.ContainsKey($_) }).Count -eq 0
+                } |
+                Sort-Object
+        )
+        if ($frontier.Count -eq 0) { break }
+        foreach ($taskID in $frontier) { $staticWaveOf[$taskID] = $staticWave }
+        $remaining = @($remaining | Where-Object { $frontier -notcontains $_ })
+    }
+    $unresolved = @()
+    foreach ($taskID in $redMap.Keys) {
+        $entry = $redMap[$taskID]
+        $latestGreenWave = 0
+        foreach ($greenMaker in $entry.greenMakers) {
+            if (-not $staticWaveOf.ContainsKey($greenMaker) -or
+                $staticWaveOf[$greenMaker] -le $staticWaveOf[$taskID]) {
+                $unresolved += $taskID
+                break
+            }
+            if ($staticWaveOf[$greenMaker] -gt $latestGreenWave) {
+                $latestGreenWave = $staticWaveOf[$greenMaker]
+            }
+        }
+        if ($entry.closesWave -ne $latestGreenWave) { $unresolved += $taskID }
+    }
+    $unresolved = @($unresolved | Sort-Object -Unique)
+    if ($unresolved.Count -gt 0) {
+        $result.outcome = 'WAVE_RED_MAPPING_UNRESOLVED'
+        $result.halt_wave = 0
+        $result.unresolved = $unresolved
+        $result.halt_detail = "red-deliverable green-maker mapping missing or ambiguous: $($unresolved -join ',')"
         return [pscustomobject]$result
     }
 

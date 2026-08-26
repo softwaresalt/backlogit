@@ -1,8 +1,10 @@
 # Wave scheduler contract simulation
 
 `wave-scheduler-contract.json` is a tracked, read-only fixture that pins the behaviour of the
-**P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`) against the
-live backlog manifest of release unit `147-F` / shipment `130-S`.
+**P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`) against
+shipment `130-S` and its live backlog artifacts. The shipment contains **43** explicit members;
+the scheduler's `M` is exactly its **42 task-type IDs**. The excluded non-task report is
+`147-F=feature`.
 
 It exists because the scheduler is a *contract executed by agents*, not compiled code: nothing in
 the Go test suite can fail when the contract regresses. The fixture plus its runner make the
@@ -14,24 +16,32 @@ contract reproducibly checkable by a human, by CI, or by an agent at a gate poin
 pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1
 ```
 
-Add `-VerifyAgainstQueue` to additionally re-derive the manifest from `.backlogit/queue/*.md`
-and fail on any drift between the fixture and the live backlog:
+Add `-VerifyAgainstQueue` to parse `.backlogit/queue/130-S.md` itself, resolve every listed
+artifact's type, filter task IDs into `M`, report excluded non-task IDs, and fail on any drift
+between the fixture and the live backlog:
 
 ```pwsh
 pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue
 ```
 
+Verification compares the exact filtered task-ID set, statuses, dependencies, exemption metadata,
+the optional green-regression projection, and **all five** canonical red-deliverable keys:
+`red_deliverable`, `red_deliverable_reason`, `red_selector_command`, `green_maker_tasks`, and
+`green_maker_closes_wave`. It then runs nine fixture-declared mutation checks in memory, proving
+that task/exclusion drift, every red-contract-key mutation, and a non-empty green-regression
+mutation are detected.
+
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. It is **pure**: it reads the fixture (and the queue
-Markdown under `-VerifyAgainstQueue`), computes in memory, and writes nothing. It starts no
-process, runs no `go` command, and mutates no repository state, so it clears the P-002.5 read-only
-command screen and is safe to run at any gate point.
+line, exiting non-zero on any failed assertion. It is **pure**: it reads the fixture and backlog
+Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
+`go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
+and is safe to run at any gate point.
 
 ## What it checks
 
 | Scenario | Contract obligation |
 |---|---|
-| `baseline` | The 42-member / 104-edge DAG partitions into **18** waves with 0 stalls and 0 compile-order violations, on one snapshot per wave |
+| `baseline` | The 42-task `M` / 104-edge DAG partitions into **18** waves with 0 stalls and 0 compile-order violations, on one `count(M)` snapshot per wave |
 | `persistent_red_mapping` | `open_red_deliverables` tracks completed red-harness tasks whose green-maker is not terminal; wave 4 advances while U8b and U3c are legitimately red; the unfiltered full suite runs only when the set is empty, and immediately at the wave that empties it |
 | `blocked_injection` | A `blocked` member halts with `WAVE_MEMBER_BLOCKED`, reports transitive dependency impact, stays in `M`, and never permits a completion claim |
 | `blocked_mid_run` | The same halt fires at the next admission when a member is blocked mid-run |
@@ -46,12 +56,15 @@ command screen and is safe to run at any gate point.
 | `non_frozen_m_control` | Negative control: re-deriving `M` each wave lets `return_blocked` shrink the accounting universe and strands the loop |
 | `missing_green_maker` | A red deliverable with no declared green-maker fails closed with `WAVE_RED_MAPPING_UNRESOLVED` |
 | `ambiguous_green_maker` | A green-maker outside `M` fails closed; it is never resolved by nearest match |
+| `missing_red_selector` | An empty selector fails closed; scope is never inferred |
+| `wrong_green_maker_close_wave` | A close-wave value that differs from the actual last green-maker wave fails closed |
 | `green_maker_descoped` | A green-maker `archived` rather than `done` satisfies dependencies but does **not** close its open-red obligation; the deferral budget halts with `WAVE_OPEN_RED_UNCLOSED` |
 
 ## Keeping it honest
 
-* The fixture mirrors the live queue. `-VerifyAgainstQueue` is the drift gate: run it whenever the
-  manifest, a dependency edge, an exemption label, or a `red-deliverable-contract` block changes.
+* The fixture mirrors the real shipment projection. `-VerifyAgainstQueue` is the drift gate: run
+  it whenever shipment membership, a member type, a dependency edge, an exemption label, a
+  `red-deliverable-contract`, or a `green-regression-contract` changes.
 * Every expectation lives in the fixture, not in the runner. A contract change is a fixture change,
   and it shows up as a diff.
 * The runner implements the contract; it does not implement the repository. It proves the wave

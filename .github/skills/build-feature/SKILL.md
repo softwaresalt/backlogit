@@ -15,7 +15,11 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `task_id`: (Required) The backlog task ID to implement.
 * `harness_cmd`: (Required) The **task-scoped** test command to run. Under P-002.6 it MUST be executable as written, name an explicit package path (never a bare `./...`), carry `-count=1`, be anchored to the task's own `^TestU<unit>_` selector, fail closed on a vacuous pass, and carry no `-short`, added build tag, `t.Skip`, or `|| true`. For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `docs-only` and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `wave_scoped`: (Optional, default `false`) `true` when Ship dispatches this task from inside a P-002.6 wave. When `true`, the post-loop suite is **task-scoped** and the full-repository suite is Ship's Step 4.6 wave convergence gate, not this skill's. When `false` or absent, the post-loop suite is the full repository suite as before — this input relocates a gate inside a wave, it never removes one.
-* `green_regression_cmds`: (Optional; meaningful only when `wave_scoped` is `true`) The task's declared, closed list of additional scoped commands that must pass alongside `harness_cmd`. Empty unless the task declares otherwise. This list **replaces** the withdrawn "any package that was already green before this wave began" allowance — run exactly these commands, never a package chosen by judgement.
+* `green_regression_cmds`: (Optional; meaningful only when `wave_scoped` is `true`; default `[]`)
+  The exact array Ship parsed and froze from the task's canonical optional
+  `green-regression-contract` at Step 3. The contract format is defined by P-002.6; an absent block
+  means exactly `[]`. Run the supplied array unchanged. Never infer a command from task prose,
+  discover a package by judgement, or reinterpret an omitted input as permission to choose.
 * `sibling_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors belonging to the other non-exempt members of the current wave that have not been built yet.
 * `open_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors in `open_red_deliverables_k` — red harnesses that were the *declared deliverable* of a task completed in an **earlier** wave and whose declared green-makers have not all closed. Together with `sibling_red_selectors` this is the **entire** tolerated-red set. Both are supplied by Ship, neither may be widened, inferred, or extended by this skill, and any failure outside their union is a real failure that fails the gate.
 * `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. The loop then lands the harness, confirms it compiles (`go test -run=^$ -count=1 ./...`) and fails on assertions rather than on a build error, and **stops there**. Do not iterate toward green, and never report success on a `harness_cmd` that passes — a red deliverable that passes on landing was never red.
@@ -201,11 +205,8 @@ After the harness passes:
    * If violations found: `gofmt -w .` and re-check
 3. **Test suite** — scope depends on `wave_scoped`:
    * **`wave_scoped: true`** (a P-002.6 wave dispatch): run the task's own scoped `harness_cmd`
-     plus the task's declared `green_regression_cmds` — the closed, task-declared list, empty
-     unless the task declares otherwise — **and nothing else**. **Do not run `go test ./...`
-     here**, and do not add a package by judgement: the withdrawn "any package that was already
-     green before this wave began" allowance was implementer discretion, unenumerated and
-     unreviewable, and it could be silently narrowed to nothing or widened into a sibling's red.
+     plus exactly the supplied `green_regression_cmds` array (default `[]`) **and nothing else**.
+     **Do not run `go test ./...` here**, infer commands from prose, or add a package by judgement.
      Step 4.0 of Ship leaves every non-exempt member of the wave red at once and then builds them
      one at a time, and earlier waves may have completed red deliverables that are still failing by
      design, so a repo-wide suite would fail no matter how correct this task is — an unsatisfiable
@@ -281,7 +282,9 @@ without leaving a non-compliant commit behind.
 * Never treat an exit-0 run on `exempt_gate_cmd` that is missing its declared `EXEMPT_VERIFY_OK:{task_id}` marker as success — this is the distinct `EXEMPT_MARKER_MISSING` evidence failure (Step 0 item 4, Step 2), explicitly **not** a P-002.3 false-green signal
 * Never execute an `exempt_gate_cmd` or `harness_owner_command` that the P-002.5 screen matches as destructive; report `EXEMPT_COMMAND_DESTRUCTIVE` and route it to Principle VII approval instead
 * Never widen, infer, or extend `sibling_red_selectors` or `open_red_selectors`. They are closed sets supplied by Ship, and their union is the only red this skill may tolerate; a failure outside it is a real failure. Treating a wave as a blanket "ignore failing tests" mode is a P-002.6 violation
-* Never substitute implementer judgement for `green_regression_cmds`. The post-loop suite runs the declared commands and nothing else; "a package that looked green before" is not a gate input
+* Never substitute implementer judgement for `green_regression_cmds`. The post-loop suite runs
+  exactly Ship's supplied canonical array (default `[]`) and nothing else; task prose and "a
+  package that looked green before" are not gate inputs
 * Never drive a `red_deliverable` task to green, and never report success on its `harness_cmd` passing. Its deliverable is a compiling, failing harness; a green result is a contract violation to report
 * Never accept a `harness_cmd` that fails the P-002.6 task-scoped requirements — a bare `./...`, a missing `-count=1`, an unanchored or sibling-matching selector, a `-short`/build-tag/`t.Skip`/`|| true` weakening, or a command that passes vacuously. Halt and report the contract defect rather than substituting a weaker command
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
