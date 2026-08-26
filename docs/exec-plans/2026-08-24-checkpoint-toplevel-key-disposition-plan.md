@@ -2467,15 +2467,21 @@ is gated by its own `TestU11_` source-shape harness; and `U1d` and `U15` — for
 harness-exempt unit implements behaviour, and **no unit lands a production stub ahead of its own
 harness**.
 
-**Wave schedule (cycle-29, corrected cycle-33, P-002.6)**: shipment `130-S` has **43 explicit
+**Wave schedule (cycle-29, corrected cycles 33-34, P-002.6)**: shipment `130-S` has **43 explicit
 manifest members** in set `S`. The scheduler freezes
 `M = { id in S : artifact_type(id) = task }`, so `count(M) = 42`; the one excluded non-task ID is
 the covering `147-F` (`feature`), which release closure handles and no wave schedules. The
 42-task / 104-edge DAG partitions into **18** dependency waves that schedule all 42 members of `M`
 with **zero** stalls and **zero** compile-order violations (every dependency lands in a strictly
-earlier wave than its dependent). Every wave snapshot expects exactly 42 task rows (`count(M)`),
-not 43 shipment rows (`count(S)`). Ship interleaves harness generation and implementation per wave
-rather than scaffolding the shipment up front.
+earlier wave than its dependent). Retired archived sibling `147.010-T` remains under parent
+`147-F` but is absent from `S`; parentage is not membership, so neither it nor covering feature
+`147-F` enters `M` or a snapshot. Every SQL snapshot filters on `artifact_type = 'task'` and an
+exact safely bound/quoted frozen-`M` ID list, never `parent_id`, and must return exactly 42 distinct
+IDs. Without SQL, Ship gets each of those 42 IDs directly and exactly once at every status;
+`list --type task` is forbidden. Non-shipment mode requires the same closed explicit
+`frozen_task_ids` set or halts `WAVE_MANIFEST_UNAVAILABLE`; it never enumerates all feature
+children. Ship interleaves harness generation and implementation per wave rather than scaffolding
+the shipment up front.
 
 | Wave | Tasks | Wave | Tasks |
 |---|---|---|---|
@@ -5543,3 +5549,98 @@ therefore stays **FAIL**, `pending: independent-review-required`, and `push_allo
 action is an independent review of the cycle-33 diff. Push, PR-thread reconciliation, shipment
 claim, and merge remain blocked; operator merge approval has not been requested. No subagent was
 used, and no push or merge occurred.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 34
+reviewed_at: 2026-08-26
+reviewed_head: 47925de28b61a39ff3dd3860f8d90a12886a298a
+dispatch_mode: single-agent-operator-constrained
+subagents: prohibited-by-operator
+decision: FAIL
+pending: independent-review-required
+operator_authorization: approved
+severity_counts: "P0=0, P1=2 (both remediated in-pass), P2=2 (both remediated in-pass), P3=1 (remediated in-pass)"
+topology: "S=43 explicit shipment members; M=42 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 104 executable edges; 18 waves; acyclic"
+push_allowed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: FAIL - pending independent review
+
+**This record is the current gate state.** It supersedes `cycle: 33` `FAIL` for gate-decision
+purposes. Cycle 33 and every earlier record remain historical; their corrections stand except
+where this cycle narrows snapshot membership, replaces child enumeration, and strengthens the
+simulator's source verification.
+
+### Baseline
+
+At canonical HEAD `47925de28b61a39ff3dd3860f8d90a12886a298a`, before edits:
+
+```text
+pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1
+WAVE_SIM_OK: 90/90 assertions PASS across 18 scenario(s)
+
+pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue
+WAVE_SIM_OK: 104/104 assertions PASS across 18 scenario(s)
+```
+
+Those passes reproduced the review gap. The policy's documented SQL selected task rows by
+`parent_id = '147-F'`; the live query returned **43** tasks, including retired archived
+`147.010-T`, although frozen `M` has 42 IDs. Its non-SQL path used `list --type task`, and its
+non-shipment path inferred all task children. The simulator copied status sources from its fixture
+without parsing either YAML file, and `frozen_m_counterpart` compared the expected value with
+itself.
+
+### Findings and remediation
+
+| ID | Sev | Finding | Remediation |
+|---|---|---|---|
+| I1 | P1 | SQL snapshot selected by `parent_id`, widening 42-member `M` to 43 task children through archived `147.010-T` | Query `artifact_type = 'task'` plus exact frozen-M IDs; bind placeholders when supported or construct validated, escaped quoted literals for CLI SQL; never query `parent_id` |
+| I2 | P1 | Non-SQL and non-shipment fallbacks could enumerate unrelated children | Direct-get each frozen M ID exactly once at every status; forbid `list --type task`; require explicit `frozen_task_ids` in non-shipment mode or halt `WAVE_MANIFEST_UNAVAILABLE` |
+| I3 | P2 | `-VerifyAgainstQueue` did not verify the configured status sources or source-selection features | Parse and compare live config status values, registry status mapping, and `sql_query`/`shipments`; add three drift mutations |
+| I4 | P2 | `frozen_m_counterpart` was a tautology and no control injected the archived sibling | Exact-compare manifest M with the explicit fallback set; add a `147.010-T` fallback-inclusion mutation; forbid both `147-F` and `147.010-T` |
+| I5 | P3 | Green-regression parsing accepted a root array or scalar `green_regression_cmds` | Require a JSON object root and JSON array value; add valid/root-array/scalar parser controls |
+
+**I1/I2 - a closed snapshot universe.** SQL receives only the already-frozen ID set. The result
+must contain exactly the 42 distinct task IDs in `M`; dependency join multiplicity does not alter
+that cardinality. The direct path issues 42 exact-ID reads and rejects a missing, duplicate, extra,
+or non-task response. Both paths include all statuses and cannot discover scope. Covering feature
+`147-F` and archived historical sibling `147.010-T` are absent by construction.
+
+**I3/I4 - verification now checks independent sources.** The live drift gate reads
+`.backlogit/config.yaml` and `.autoharness/backlog-registry.yaml`, compares the status catalog,
+mapping, and snapshot/manifest features, then compares the shipment-filtered M with the explicit
+non-shipment set. Thirteen in-memory mutations include each status source and archived-sibling
+inclusion. The negative non-frozen-M scenario now carries a real set-equality assertion rather
+than an expected-value tautology.
+
+**I5 - bounded P3 folded in.** Shape enforcement was local to the existing parser and did not
+require a new declaration grammar. Three synthetic read-only controls prove a valid array passes
+and the two previously accepted wrong shapes fail.
+
+### Simulation and validation evidence
+
+| Gate | Result |
+|---|---|
+| Scheduler simulator | `WAVE_SIM_OK` 93/93, 18 scenarios, exit 0 |
+| Live manifest/config/registry drift + 13 mutations | `WAVE_SIM_OK` 115/115, 18 scenarios, exit 0 |
+| Actual exact-M SQL snapshot | 42 distinct task IDs / 104 dependency edges; `147-F` and `147.010-T` absent |
+| Direct-get sample/full parity | sample PASS; 42/42 exact IDs read once, status/dependency parity with SQL, no extras |
+| Markdown P-008 | 0 issues |
+| Docline frontmatter (`backlogit docs lint`) | `valid: true`, 0 violations |
+| Integration tests | `go test ./tests/integration/ -count=1`, exit 0 |
+| Index sync | 0 parse failures |
+| Topology | S=43; M=42; 104 executable edges; 18 waves; acyclic |
+| Production Go touched | **none** |
+
+### Gate and next action
+
+All five findings are remediated in-pass, but cycle 34 cannot certify its own contract changes.
+The gate remains **FAIL**, `pending: independent-review-required`, and `push_allowed: no`.
+Independent review of this diff is required before any push. PR-thread reconciliation, shipment
+claim, and merge remain blocked; operator merge approval has not been requested. No subagent, Go
+source edit, push, or merge occurred.

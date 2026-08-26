@@ -454,6 +454,37 @@
 #   The descope-provenance citation is archivedFromDescopeEligibleStatus in
 #       internal/core/shipment_gate.go, not the lower-level status predicate.
 #       Version header and Amendment Log are 1.21.0.
+#
+# NOTE (2026-08-26, cycle 34): the independent correction against canonical
+# HEAD 47925de2 found that cycle 33 fixed the M count but left both snapshot
+# implementations able to widen it. A template adoption MUST preserve:
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       the SQL snapshot filters on `artifact_type = 'task'` AND an exact
+#       safely-bound/safely-quoted frozen-M ID list. It NEVER filters on
+#       `parent_id`: that query returns 43 task children for 147-F by absorbing
+#       retired archived 147.010-T. The SQL result has exactly 42 distinct IDs.
+#       Without SQL, retrieve every frozen-M ID DIRECTLY and exactly once with
+#       get-item / `backlogit get {id} --format json` (or an exact-ID batch),
+#       including every status; reject missing, duplicate, extra, and non-task
+#       results. `list --type task`, parent-child enumeration, and status
+#       filtering are forbidden. A degraded SQL tool falls back only to these
+#       exact-ID gets.
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       non-shipment mode requires a closed explicit `frozen_task_ids` input,
+#       persisted verbatim, or halts WAVE_MANIFEST_UNAVAILABLE. It MUST NOT infer
+#       scope from all children of a covering release unit. Covering feature
+#       147-F and archived historical sibling 147.010-T never enter M, the
+#       explicit fallback, or any snapshot.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — -VerifyAgainstQueue
+#       parses and compares `.backlogit/config.yaml` status values and the live
+#       registry status mapping plus sql_query/shipments features. The old
+#       `frozen_m_counterpart` expected-value-vs-itself tautology is gone;
+#       manifest M is exact-compared with the explicit fallback set. Mutation
+#       controls cover all three status sources and archived-sibling inclusion.
+#       The green-regression parser also enforces the easy P3 shape rule: object
+#       root, exactly one key, array value. Repo-authored; no path entry needed.
+#       Version header and Amendment Log are 1.22.0.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

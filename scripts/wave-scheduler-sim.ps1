@@ -10,13 +10,16 @@
     expectation the fixture declares.
 
     The simulation is PURE: it reads the fixture (and, with -VerifyAgainstQueue,
-    the backlog queue Markdown), computes in memory, and writes nothing. It runs
-    no `go` command, starts no process, and touches no repository state. It is
-    therefore safe to run at any gate point, including under the P-002.5
-    read-only command screen.
+    the backlog Markdown plus workspace/registry YAML configuration), computes
+    in memory, and writes nothing. It runs no `go` command, starts no process,
+    and touches no repository state. It is therefore safe to run at any gate
+    point, including under the P-002.5 read-only command screen.
 
-    Assertion coverage (cycle-33):
+    Assertion coverage (cycle-34):
       * real shipment-manifest parsing, task-type filtering, and excluded-ID report
+      * live workspace status catalog plus registry status-mapping/feature parsing
+      * exact manifest-M versus explicit non-shipment fallback-set comparison
+      * archived historical sibling exclusion from M and the fallback set
       * all five red-deliverable keys, with data-driven in-memory mutation checks
       * canonical empty-default green-regression contract projection
       * baseline 18-wave schedule, zero stalls, zero compile-order violations
@@ -35,9 +38,11 @@
 
 .PARAMETER VerifyAgainstQueue
     Parse the real shipment artifact, resolve and filter its task-type members into
-    M, report excluded non-task IDs, and re-derive statuses, dependency edges,
+    M, report excluded non-task IDs, parse the live workspace status catalog and
+    registry status mapping/features, and re-derive statuses, dependency edges,
     harness-exempt labels, all red-deliverable keys, and green-regression contracts
-    from the live backlog Markdown. Also run fixture-declared in-memory mutation
+    from repository artifacts. Also compare M with the fixture's explicit
+    non-shipment fallback task-ID set and run fixture-declared in-memory mutation
     checks proving that each comparison detects drift.
 
 .PARAMETER QueueDir
@@ -128,6 +133,165 @@ function Test-HasProperty {
     param($Object, [string]$Name)
     if ($null -eq $Object) { return $false }
     return [bool](@($Object.PSObject.Properties | ForEach-Object { $_.Name }) -contains $Name)
+}
+
+function ConvertFrom-SimpleYamlScalar {
+    param([string]$Text)
+    $value = $Text.Trim()
+    if ($value -match '^(.*?)(?:\s+#.*)?$') { $value = $Matches[1].Trim() }
+    if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
+        try { return ($value | ConvertFrom-Json) }
+        catch { return $value.Substring(1, $value.Length - 2) }
+    }
+    if ($value.Length -ge 2 -and $value.StartsWith("'") -and $value.EndsWith("'")) {
+        return $value.Substring(1, $value.Length - 2).Replace("''", "'")
+    }
+    if ($value -ceq 'true') { return $true }
+    if ($value -ceq 'false') { return $false }
+    return $value
+}
+
+function Read-WorkspaceStatusCatalog {
+    param([string]$Path)
+    $errors = [System.Collections.Generic.List[string]]::new()
+    if (-not (Test-Path $Path)) {
+        $errors.Add("workspace status catalog not found: $Path")
+        return [pscustomobject]@{ Values = @(); Errors = @($errors) }
+    }
+
+    $lines = @(Get-Content $Path)
+    $fields = @(
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^fields:\s*(?:#.*)?$') { $i }
+        }
+    )
+    if ($fields.Count -ne 1) {
+        $errors.Add("fields block count is $($fields.Count), expected 1")
+        return [pscustomobject]@{ Values = @(); Errors = @($errors) }
+    }
+
+    $fieldEnd = $lines.Count
+    for ($i = $fields[0] + 1; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\S') { $fieldEnd = $i; break }
+    }
+    $status = @(
+        for ($i = $fields[0] + 1; $i -lt $fieldEnd; $i++) {
+            if ($lines[$i] -match '^\s{2}status:\s*(?:#.*)?$') { $i }
+        }
+    )
+    if ($status.Count -ne 1) {
+        $errors.Add("fields.status block count is $($status.Count), expected 1")
+        return [pscustomobject]@{ Values = @(); Errors = @($errors) }
+    }
+
+    $statusEnd = $fieldEnd
+    for ($i = $status[0] + 1; $i -lt $fieldEnd; $i++) {
+        if ($lines[$i] -match '^\s{2}\S') { $statusEnd = $i; break }
+    }
+    $valuesLine = @(
+        for ($i = $status[0] + 1; $i -lt $statusEnd; $i++) {
+            if ($lines[$i] -match '^\s{4}values:\s*(?:#.*)?$') { $i }
+        }
+    )
+    if ($valuesLine.Count -ne 1) {
+        $errors.Add("fields.status.values block count is $($valuesLine.Count), expected 1")
+        return [pscustomobject]@{ Values = @(); Errors = @($errors) }
+    }
+
+    $values = @()
+    for ($i = $valuesLine[0] + 1; $i -lt $statusEnd; $i++) {
+        if ($lines[$i] -match '^\s{6}-\s+(.+?)\s*$') {
+            $values += "$(ConvertFrom-SimpleYamlScalar $Matches[1])"
+            continue
+        }
+        if ($lines[$i] -match '^\s{0,4}\S') { break }
+    }
+    if ($values.Count -eq 0) { $errors.Add('fields.status.values is empty') }
+    if (@($values | Sort-Object -Unique).Count -ne $values.Count) {
+        $errors.Add('fields.status.values contains a duplicate')
+    }
+    return [pscustomobject]@{ Values = @($values); Errors = @($errors) }
+}
+
+function Read-TopLevelYamlMapping {
+    param([string]$Path, [string]$Name)
+    $errors = [System.Collections.Generic.List[string]]::new()
+    if (-not (Test-Path $Path)) {
+        $errors.Add("registry file not found: $Path")
+        return [pscustomobject]@{ Entries = [pscustomobject]@{}; Errors = @($errors) }
+    }
+
+    $lines = @(Get-Content $Path)
+    $heads = @(
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match ('^{0}:\s*(?:#.*)?$' -f [regex]::Escape($Name))) { $i }
+        }
+    )
+    if ($heads.Count -ne 1) {
+        $errors.Add("$Name block count is $($heads.Count), expected 1")
+        return [pscustomobject]@{ Entries = [pscustomobject]@{}; Errors = @($errors) }
+    }
+
+    $entries = [ordered]@{}
+    for ($i = $heads[0] + 1; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') { continue }
+        if ($line -match '^\S') { break }
+        if ($line -notmatch '^\s{2}([A-Za-z0-9_-]+):\s*(.*?)\s*$') {
+            $errors.Add("unparseable $Name mapping line: $line")
+            continue
+        }
+        $key = $Matches[1]
+        if ($entries.Contains($key)) {
+            $errors.Add("duplicate $Name key: $key")
+            continue
+        }
+        $entries[$key] = ConvertFrom-SimpleYamlScalar $Matches[2]
+    }
+    if ($entries.Count -eq 0) { $errors.Add("$Name mapping is empty") }
+    return [pscustomobject]@{ Entries = [pscustomobject]$entries; Errors = @($errors) }
+}
+
+function Get-LiveStatusSourceProjection {
+    param([string]$Dir)
+    $workspaceDir = Split-Path -Parent $Dir
+    $root = Split-Path -Parent $workspaceDir
+    $catalog = Read-WorkspaceStatusCatalog -Path (Join-Path $workspaceDir 'config.yaml')
+    $registryPath = Join-Path $root '.autoharness/backlog-registry.yaml'
+    $mapping = Read-TopLevelYamlMapping -Path $registryPath -Name 'status_values'
+    $allFeatures = Read-TopLevelYamlMapping -Path $registryPath -Name 'features'
+    $errors = @($catalog.Errors + $mapping.Errors + $allFeatures.Errors)
+
+    $features = [ordered]@{}
+    foreach ($name in @('sql_query', 'shipments')) {
+        if (-not (Test-HasProperty $allFeatures.Entries $name)) {
+            $errors += "features.$name is absent"
+            continue
+        }
+        $value = $allFeatures.Entries.$name
+        if ($value -isnot [bool]) {
+            $errors += "features.$name is not a boolean"
+            continue
+        }
+        $features[$name] = $value
+    }
+
+    return [pscustomobject]@{
+        status_catalog         = @($catalog.Values)
+        registry_status_mapping = $mapping.Entries
+        registry_features      = [pscustomobject]$features
+        source_errors          = @($errors)
+    }
+}
+
+function Format-KeyValueProjection {
+    param($Object)
+    if ($null -eq $Object) { return @() }
+    return @(
+        Get-PropertyNames $Object |
+            Sort-Object |
+            ForEach-Object { "$_=$(Format-Value $Object.$_)" }
+    )
 }
 
 # --- optional live-shipment drift check ---------------------------------------
@@ -228,24 +392,34 @@ function Read-GreenRegressionContract {
     $errors = @($block.Errors)
     $commands = @()
     try {
-        $payload = $block.Content | ConvertFrom-Json
-        $keys = Get-PropertyNames $payload
-        if (($keys -join ',') -cne 'green_regression_cmds') {
-            $errors += "green-regression keys [$($keys -join ',')] != [green_regression_cmds]"
-        }
-        if (-not (Test-HasProperty $payload 'green_regression_cmds')) {
-            $errors += 'green_regression_cmds is absent'
+        $payload = $block.Content | ConvertFrom-Json -NoEnumerate
+        if ($payload -is [System.Array] -or $payload -isnot [pscustomobject]) {
+            $errors += 'green-regression payload must be a JSON object'
         }
         else {
-            $commands = ConvertTo-List $payload.green_regression_cmds
-            if ($commands.Count -eq 0) { $errors += 'green_regression_cmds must be non-empty when the block is present' }
-            foreach ($command in $commands) {
-                if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace("$command")) {
-                    $errors += 'green_regression_cmds contains a non-string or empty entry'
-                }
+            $keys = Get-PropertyNames $payload
+            if (($keys -join ',') -cne 'green_regression_cmds') {
+                $errors += "green-regression keys [$($keys -join ',')] != [green_regression_cmds]"
             }
-            if (@($commands | Sort-Object -Unique).Count -ne $commands.Count) {
-                $errors += 'green_regression_cmds contains a duplicate'
+            if (-not (Test-HasProperty $payload 'green_regression_cmds')) {
+                $errors += 'green_regression_cmds is absent'
+            }
+            elseif ($payload.green_regression_cmds -isnot [System.Array]) {
+                $errors += 'green_regression_cmds must be a JSON array'
+            }
+            else {
+                $commands = @($payload.green_regression_cmds)
+                if ($commands.Count -eq 0) {
+                    $errors += 'green_regression_cmds must be non-empty when the block is present'
+                }
+                foreach ($command in $commands) {
+                    if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace("$command")) {
+                        $errors += 'green_regression_cmds contains a non-string or empty entry'
+                    }
+                }
+                if (@($commands | Sort-Object -Unique).Count -ne $commands.Count) {
+                    $errors += 'green_regression_cmds contains a duplicate'
+                }
             }
         }
     }
@@ -253,6 +427,33 @@ function Read-GreenRegressionContract {
         $errors += "green-regression JSON is invalid: $($_.Exception.Message)"
     }
     return [pscustomobject]@{ Commands = @($commands); Errors = $errors }
+}
+
+function Invoke-GreenRegressionParserControls {
+    foreach ($control in (ConvertTo-List $fx.green_regression_parser_controls)) {
+        $raw = @(
+            '<!-- BEGIN:green-regression-contract -->'
+            '```json'
+            "$($control.payload)"
+            '```'
+            '<!-- END:green-regression-contract -->'
+        ) -join "`n"
+        $parsed = Read-GreenRegressionContract -Raw $raw
+        if ([bool]$control.expect_valid) {
+            $expectedCommands = @((ConvertTo-List $control.commands))
+            $actual = [bool](
+                $parsed.Errors.Count -eq 0 -and
+                ($expectedCommands -join '||') -ceq (@($parsed.Commands) -join '||')
+            )
+        }
+        else {
+            $actual = [bool](
+                @($parsed.Errors | Where-Object { $_ -like "*$($control.error_contains)*" }).Count -gt 0
+            )
+        }
+        Test-Equal -Scenario "green_parser/$($control.id)" -Name 'shape enforcement' `
+            -Expected $true -Actual $actual
+    }
 }
 
 function Get-ArtifactProjection {
@@ -331,13 +532,20 @@ function Get-ShipmentItemIDs {
 }
 
 function Get-LiveShipmentProjection {
-    param([string]$Dir, [string]$ShipmentID)
+    param([string]$Dir, [string]$ShipmentID, $FallbackTaskIDs)
     $errors = [System.Collections.Generic.List[string]]::new()
+    $statusSources = Get-LiveStatusSourceProjection -Dir $Dir
     $shipmentPath = Find-ArtifactPath -Dir $Dir -Id $ShipmentID
     if ($null -eq $shipmentPath) {
         $errors.Add("shipment artifact $ShipmentID was not found exactly once")
         return [pscustomobject]@{
-            shipment_items = @(); members = @(); excluded_non_task_members = @(); errors = @($errors)
+            shipment_items = @(); members = @(); excluded_non_task_members = @()
+            fallback_frozen_task_ids = @($FallbackTaskIDs)
+            status_catalog = @($statusSources.status_catalog)
+            registry_status_mapping = $statusSources.registry_status_mapping
+            registry_features = $statusSources.registry_features
+            source_errors = @($statusSources.source_errors)
+            errors = @($errors)
         }
     }
 
@@ -369,6 +577,11 @@ function Get-LiveShipmentProjection {
         shipment_items            = @($shipmentItems)
         members                   = @($members)
         excluded_non_task_members = @($excluded)
+        fallback_frozen_task_ids   = @($FallbackTaskIDs)
+        status_catalog             = @($statusSources.status_catalog)
+        registry_status_mapping    = $statusSources.registry_status_mapping
+        registry_features          = $statusSources.registry_features
+        source_errors              = @($statusSources.source_errors)
         errors                    = @($errors)
     }
 }
@@ -384,10 +597,15 @@ function Compare-LiveShipmentProjection {
     foreach ($errorText in (ConvertTo-List $Live.errors)) {
         Add-Drift -List $drift -Code 'PARSE_ERROR' -Detail "$errorText"
     }
+    foreach ($errorText in (ConvertTo-List $Live.source_errors)) {
+        Add-Drift -List $drift -Code 'STATUS_SOURCE_PARSE' -Detail "$errorText"
+    }
 
     $fixtureMembers = ConvertTo-List $Fx.manifest.members
     $expectedMIDs = @($fixtureMembers | ForEach-Object { $_.id } | Sort-Object)
     $actualMIDs = @($Live.members | ForEach-Object { $_.id } | Sort-Object)
+    $fallbackMIDs = @((ConvertTo-List $Live.fallback_frozen_task_ids) | Sort-Object)
+    $fallbackUnique = @($fallbackMIDs | Sort-Object -Unique)
     $expectedExcluded = @(
         (ConvertTo-List $Fx.manifest.excluded_non_task_members) |
             ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
@@ -416,8 +634,38 @@ function Compare-LiveShipmentProjection {
     if (($expectedMIDs -join ',') -cne ($actualMIDs -join ',')) {
         Add-Drift $drift 'WAVE_MEMBER_IDS' "expected [$($expectedMIDs -join ',')], observed [$($actualMIDs -join ',')]"
     }
+    if ($fallbackUnique.Count -ne $fallbackMIDs.Count) {
+        Add-Drift $drift 'FROZEN_FALLBACK_DUPLICATE' "fallback contains $($fallbackMIDs.Count - $fallbackUnique.Count) duplicate ID(s)"
+    }
+    if (($expectedMIDs -join ',') -cne ($fallbackMIDs -join ',')) {
+        Add-Drift $drift 'FROZEN_FALLBACK_IDS' "M [$($expectedMIDs -join ',')] != explicit fallback [$($fallbackMIDs -join ',')]"
+    }
+    if (($actualMIDs -join ',') -cne ($fallbackMIDs -join ',')) {
+        Add-Drift $drift 'MANIFEST_FALLBACK_DISAGREEMENT' "manifest M [$($actualMIDs -join ',')] != explicit fallback [$($fallbackMIDs -join ',')]"
+    }
     if (($expectedExcluded -join ',') -cne ($actualExcluded -join ',')) {
         Add-Drift $drift 'EXCLUDED_NON_TASKS' "expected [$($expectedExcluded -join ',')], observed [$($actualExcluded -join ',')]"
+    }
+    foreach ($forbiddenID in (ConvertTo-List $Fx.manifest.forbidden_wave_ids)) {
+        if ($actualMIDs -contains $forbiddenID -or $fallbackMIDs -contains $forbiddenID) {
+            Add-Drift $drift 'FORBIDDEN_WAVE_MEMBER' "$forbiddenID entered M or the explicit fallback set"
+        }
+    }
+
+    $expectedCatalog = @((ConvertTo-List $Fx.status_model.catalog) | Sort-Object)
+    $actualCatalog = @((ConvertTo-List $Live.status_catalog) | Sort-Object)
+    if (($expectedCatalog -join ',') -cne ($actualCatalog -join ',')) {
+        Add-Drift $drift 'STATUS_CATALOG' "expected [$($expectedCatalog -join ',')], observed [$($actualCatalog -join ',')]"
+    }
+    $expectedMapping = Format-KeyValueProjection $Fx.status_model.registry_status_mapping
+    $actualMapping = Format-KeyValueProjection $Live.registry_status_mapping
+    if (($expectedMapping -join ',') -cne ($actualMapping -join ',')) {
+        Add-Drift $drift 'REGISTRY_STATUS_MAPPING' "expected [$($expectedMapping -join ',')], observed [$($actualMapping -join ',')]"
+    }
+    $expectedFeatures = Format-KeyValueProjection $Fx.status_model.registry_features
+    $actualFeatures = Format-KeyValueProjection $Live.registry_features
+    if (($expectedFeatures -join ',') -cne ($actualFeatures -join ',')) {
+        Add-Drift $drift 'REGISTRY_FEATURES' "expected [$($expectedFeatures -join ',')], observed [$($actualFeatures -join ',')]"
     }
 
     $liveByID = @{}
@@ -548,16 +796,38 @@ function Apply-VerificationMutation {
             }
             $member[0].green_regression_cmds = ConvertTo-List $Mutation.commands
         }
+        'remove_status_catalog_token' {
+            $Projection.status_catalog = @(
+                $Projection.status_catalog | Where-Object { $_ -cne $Mutation.token }
+            )
+        }
+        'set_registry_status_mapping' {
+            if (-not (Test-HasProperty $Projection.registry_status_mapping "$($Mutation.key)")) {
+                throw "verification mutation $($Mutation.id) cannot find registry status key $($Mutation.key)"
+            }
+            $Projection.registry_status_mapping.("$($Mutation.key)") = $Mutation.value
+        }
+        'set_registry_feature' {
+            if (-not (Test-HasProperty $Projection.registry_features "$($Mutation.key)")) {
+                throw "verification mutation $($Mutation.id) cannot find registry feature $($Mutation.key)"
+            }
+            $Projection.registry_features.("$($Mutation.key)") = [bool]$Mutation.value
+        }
+        'include_fallback_id' {
+            $Projection.fallback_frozen_task_ids = @($Projection.fallback_frozen_task_ids) + "$($Mutation.item)"
+        }
         default { throw "unknown verification mutation operation: $($Mutation.operation)" }
     }
     return $Projection
 }
 
 function Invoke-QueueDriftCheck {
-    $live = Get-LiveShipmentProjection -Dir $QueueDir -ShipmentID $fx.source.shipment
+    $live = Get-LiveShipmentProjection -Dir $QueueDir -ShipmentID $fx.source.shipment `
+        -FallbackTaskIDs $fx.manifest.explicit_non_shipment_task_ids
     $sc = 'queue_drift'
     $expectedMIDs = @($fx.manifest.members | ForEach-Object { $_.id } | Sort-Object)
     $actualMIDs = @($live.members | ForEach-Object { $_.id } | Sort-Object)
+    $fallbackMIDs = @((ConvertTo-List $live.fallback_frozen_task_ids) | Sort-Object)
     $expectedExcluded = @(
         (ConvertTo-List $fx.manifest.excluded_non_task_members) |
             ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
@@ -571,7 +841,17 @@ function Invoke-QueueDriftCheck {
     Test-Equal -Scenario $sc -Name 'shipment member count' -Expected $fx.manifest.shipment_member_count -Actual $live.shipment_items.Count
     Test-Equal -Scenario $sc -Name 'M task count' -Expected $fx.manifest.member_count -Actual $live.members.Count
     Test-Equal -Scenario $sc -Name 'M task IDs' -Expected $expectedMIDs -Actual $actualMIDs
+    Test-Equal -Scenario $sc -Name 'manifest M equals explicit non-shipment fallback' -Expected $expectedMIDs -Actual $fallbackMIDs
     Test-Equal -Scenario $sc -Name 'excluded non-task members' -Expected $expectedExcluded -Actual $actualExcluded
+    Test-Equal -Scenario $sc -Name 'workspace status catalog' `
+        -Expected @((ConvertTo-List $fx.status_model.catalog) | Sort-Object) `
+        -Actual @((ConvertTo-List $live.status_catalog) | Sort-Object)
+    Test-Equal -Scenario $sc -Name 'registry status mapping' `
+        -Expected (Format-KeyValueProjection $fx.status_model.registry_status_mapping) `
+        -Actual (Format-KeyValueProjection $live.registry_status_mapping)
+    Test-Equal -Scenario $sc -Name 'registry snapshot features' `
+        -Expected (Format-KeyValueProjection $fx.status_model.registry_features) `
+        -Actual (Format-KeyValueProjection $live.registry_features)
     $drift = Compare-LiveShipmentProjection -Fx $fx -Live $live
     $driftText = @($drift | ForEach-Object { "$($_.Code): $($_.Detail)" }) -join '; '
     Test-Equal -Scenario $sc -Name 'no shipment or contract drift' -Expected '' -Actual $driftText
@@ -579,6 +859,8 @@ function Invoke-QueueDriftCheck {
     if (-not $Quiet) {
         Write-Host "manifest : $($fx.source.shipment) $($live.shipment_items.Count) total member(s)"
         Write-Host "wave M   : $($live.members.Count) task member(s)"
+        Write-Host "fallback : $($fallbackMIDs.Count) explicit task ID(s), exact M match"
+        Write-Host "statuses : $($live.status_catalog.Count) catalog token(s); registry mapping/features parsed live"
         Write-Host "excluded : $(if ($actualExcluded.Count -eq 0) { '<none>' } else { $actualExcluded -join ', ' })"
         Write-Host "mutations: $(@($fx.verification_mutations).Count) in-memory drift check(s)"
         Write-Host ""
@@ -637,9 +919,14 @@ function Invoke-WaveScheduler {
     $executable = ConvertTo-List $Fx.status_model.executable
     $terminalSuccess = ConvertTo-List $Fx.status_model.terminal_success
     $greenClosing = ConvertTo-List $Fx.status_model.green_maker_closing
+    $registryMapping = $Fx.status_model.registry_status_mapping
+    $registryValues = @(
+        Get-PropertyNames $registryMapping | ForEach-Object { "$($registryMapping.$_)" }
+    )
     if (Test-HasProperty $mut 'add_executable_status') { $executable = @($executable + $mut.add_executable_status) }
 
-    if ($catalog.Count -eq 0 -or $executable.Count -eq 0 -or $terminalSuccess.Count -eq 0) {
+    if ($catalog.Count -eq 0 -or $registryValues.Count -eq 0 -or
+        $executable.Count -eq 0 -or $terminalSuccess.Count -eq 0) {
         $result.outcome = 'WAVE_STATUS_CATALOG_UNAVAILABLE'
         $result.halt_wave = 0
         $result.halt_detail = 'configured status catalog unavailable or empty'
@@ -647,6 +934,9 @@ function Invoke-WaveScheduler {
     }
     $disagree = @()
     foreach ($s in ($executable + $terminalSuccess)) { if ($catalog -notcontains $s) { $disagree += $s } }
+    foreach ($s in ($executable + $greenClosing)) {
+        if ($registryValues -notcontains $s) { $disagree += "registry:$s" }
+    }
     foreach ($s in $executable) { if ($terminalSuccess -contains $s) { $disagree += "overlap:$s" } }
     if ($disagree.Count -gt 0) {
         $result.outcome = 'WAVE_STATUS_CATALOG_UNAVAILABLE'
@@ -1044,7 +1334,18 @@ function Test-Scenario {
             'final_open_red' { Test-Equal $id $key (ConvertTo-List $want) $r.final_open_red }
             'wave_4_advanced' { Test-Equal $id $key $want ([bool]($r.waves -ge 5)) }
             'cycle_path_non_empty' { Test-Equal $id $key $want ([bool]($r.cycle_path.Count -gt 0)) }
-            'frozen_m_counterpart' { Test-Equal $id $key $want $want }
+            'manifest_matches_explicit_fallback' {
+                $manifestIDs = @($Fx.manifest.members | ForEach-Object { $_.id } | Sort-Object)
+                $fallbackIDs = @(
+                    (ConvertTo-List $Fx.manifest.explicit_non_shipment_task_ids) | Sort-Object
+                )
+                $fallbackUnique = @($fallbackIDs | Sort-Object -Unique)
+                $actual = [bool](
+                    $fallbackUnique.Count -eq $fallbackIDs.Count -and
+                    ($manifestIDs -join ',') -ceq ($fallbackIDs -join ',')
+                )
+                Test-Equal $id $key $want $actual
+            }
             'open_red_after_wave_4' { Test-Equal $id $key (ConvertTo-List $want) (ConvertTo-List $r.open_red_after_wave['4']) }
             'open_red_after_wave_6' { Test-Equal $id $key (ConvertTo-List $want) (ConvertTo-List $r.open_red_after_wave['6']) }
             'dependency_impact' {
@@ -1085,6 +1386,7 @@ if (-not $Quiet) {
     Write-Host ""
 }
 
+Invoke-GreenRegressionParserControls
 if ($VerifyAgainstQueue) { Invoke-QueueDriftCheck }
 
 foreach ($sc in $fx.scenarios) {

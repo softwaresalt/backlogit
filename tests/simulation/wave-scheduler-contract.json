@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "artifact": "wave-scheduler-contract-simulation",
-  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-33 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.21.0",
+    "policy_version": "1.22.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -20,8 +20,8 @@
     "release_unit": "147-F",
     "shipment": "130-S",
     "queue_dir": ".backlogit/queue",
-    "mirrored_head": "c9fa17044cdd0585d0cfa7a2cca54f15adcb6f4d",
-    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, resolve artifact types, compare its filtered task IDs exactly with M, report excluded non-task IDs, verify task projections and every red-deliverable key, and run in-memory mutation checks."
+    "mirrored_head": "47925de28b61a39ff3dd3860f8d90a12886a298a",
+    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, live status catalog, and registry status mapping/features; resolve artifact types; compare filtered task IDs exactly with M and the explicit non-shipment fallback set; report excluded non-task IDs; verify task projections and every red-deliverable key; and run in-memory mutation checks."
   },
   "status_model": {
     "catalog_source": ".backlogit/config.yaml -> fields.status.values",
@@ -37,13 +37,17 @@
       "shipped",
       "abandoned"
     ],
-    "registry_source": ".autoharness/backlog-registry.yaml -> status_values",
-    "registry_status_values": [
-      "queued",
-      "active",
-      "done",
-      "blocked"
-    ],
+    "registry_source": ".autoharness/backlog-registry.yaml -> status_values and features",
+    "registry_status_mapping": {
+      "queued": "queued",
+      "active": "active",
+      "done": "done",
+      "blocked": "blocked"
+    },
+    "registry_features": {
+      "sql_query": true,
+      "shipments": true
+    },
     "executable": [
       "queued",
       "active",
@@ -63,12 +67,12 @@
       "shipped",
       "abandoned"
     ],
-    "note": "The scheduler vocabulary is CONFIGURED, never a hard-coded constant list. The workspace catalog carries ten tokens; the registry configures four; terminal-success is the two-token actual lifecycle {done, archived}. Every catalog token outside executable + terminal_success is unsupported and halts. archived satisfies a DEPENDENCY but does NOT close a green-maker obligation, because it may be a descope."
+    "note": "The scheduler vocabulary and source-selection features are CONFIGURED, never hard-coded. -VerifyAgainstQueue parses and compares the ten-token workspace catalog, the four-entry registry status mapping, and the sql_query/shipments feature flags live. Terminal-success is the two-token actual lifecycle {done, archived}. Every catalog token outside executable + terminal_success is unsupported and halts. archived satisfies a DEPENDENCY but does NOT close a green-maker obligation, because it may be a descope."
   },
   "manifest": {
     "frozen_at": "ship-step-3",
     "freeze_source": "shipment-manifest",
-    "fallback": "covering-release-unit-enumeration",
+    "fallback": "explicit-frozen-task-id-set",
     "fail_closed_code": "WAVE_MANIFEST_UNAVAILABLE",
     "wave_member_type": "task",
     "member_count": 42,
@@ -79,7 +83,55 @@
         "artifact_type": "feature"
       }
     ],
-    "note": "S is all 43 explicit members of shipment 130-S. M is exactly the 42 IDs in S whose resolved artifact_type is task. The covering feature 147-F is reported as excluded and reaches terminal status through release closure; it is never a wave member or snapshot row.",
+    "forbidden_wave_ids": [
+      "147-F",
+      "147.010-T"
+    ],
+    "explicit_non_shipment_task_ids": [
+      "147.001-T",
+      "147.002-T",
+      "147.003-T",
+      "147.004-T",
+      "147.005-T",
+      "147.006-T",
+      "147.007-T",
+      "147.008-T",
+      "147.009-T",
+      "147.011-T",
+      "147.012-T",
+      "147.013-T",
+      "147.014-T",
+      "147.015-T",
+      "147.016-T",
+      "147.017-T",
+      "147.018-T",
+      "147.019-T",
+      "147.020-T",
+      "147.021-T",
+      "147.022-T",
+      "147.023-T",
+      "147.024-T",
+      "147.025-T",
+      "147.026-T",
+      "147.027-T",
+      "147.028-T",
+      "147.029-T",
+      "147.030-T",
+      "147.031-T",
+      "147.032-T",
+      "147.033-T",
+      "147.034-T",
+      "147.035-T",
+      "147.036-T",
+      "147.037-T",
+      "147.038-T",
+      "147.039-T",
+      "147.040-T",
+      "147.041-T",
+      "147.042-T",
+      "147.043-T"
+    ],
+    "note": "S is all 43 explicit members of shipment 130-S. M is exactly the 42 IDs in S whose resolved artifact_type is task. The explicit non-shipment fallback is the same closed 42-ID set, supplied rather than inferred from parent children. The covering feature 147-F and retired archived sibling 147.010-T are forbidden wave IDs: neither is in M, the fallback, or a snapshot.",
     "members": [
       {
         "id": "147.001-T",
@@ -653,6 +705,28 @@
     }
   ],
   "green_regression_contracts": [],
+  "green_regression_parser_controls": [
+    {
+      "id": "valid-array",
+      "payload": "{\"green_regression_cmds\":[\"go test -count=1 -run '^TestNamed_' ./internal/errors\"]}",
+      "expect_valid": true,
+      "commands": [
+        "go test -count=1 -run '^TestNamed_' ./internal/errors"
+      ]
+    },
+    {
+      "id": "root-must-be-object",
+      "payload": "[\"go test -count=1 -run '^TestNamed_' ./internal/errors\"]",
+      "expect_valid": false,
+      "error_contains": "payload must be a JSON object"
+    },
+    {
+      "id": "commands-must-be-array",
+      "payload": "{\"green_regression_cmds\":\"go test -count=1 -run '^TestNamed_' ./internal/errors\"}",
+      "expect_valid": false,
+      "error_contains": "must be a JSON array"
+    }
+  ],
   "verification_mutations": [
     {
       "id": "shipment-task-removed",
@@ -723,6 +797,32 @@
         "go test -count=1 -run '^TestUnexpected_' ./internal/errors"
       ],
       "expect_code": "GREEN_REGRESSION_CONTRACTS"
+    },
+    {
+      "id": "workspace-status-catalog-drift",
+      "operation": "remove_status_catalog_token",
+      "token": "archived",
+      "expect_code": "STATUS_CATALOG"
+    },
+    {
+      "id": "registry-status-mapping-drift",
+      "operation": "set_registry_status_mapping",
+      "key": "done",
+      "value": "shipped",
+      "expect_code": "REGISTRY_STATUS_MAPPING"
+    },
+    {
+      "id": "registry-snapshot-feature-drift",
+      "operation": "set_registry_feature",
+      "key": "sql_query",
+      "value": false,
+      "expect_code": "REGISTRY_FEATURES"
+    },
+    {
+      "id": "archived-historical-sibling-improperly-added-to-fallback",
+      "operation": "include_fallback_id",
+      "item": "147.010-T",
+      "expect_code": "FROZEN_FALLBACK_IDS"
     }
   ],
   "scenarios": [
@@ -1016,7 +1116,7 @@
         ],
         "member_retained_in_m": false,
         "completion_claimed": false,
-        "frozen_m_counterpart": "blocked_injection"
+        "manifest_matches_explicit_fallback": true
       }
     },
     {
