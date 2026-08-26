@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "agent": "stage",
+  "session_id": "stage-pr377-cycle-31",
+  "phase": "cycle-31-p1-thread-closure-complete",
+  "status": "active",
+  "created_at": "2026-08-26T05:20:22.6178362Z",
+  "updated_at": "2026-08-26T05:20:22.6178362Z",
+  "context": {
+    "shipment_id": "130-S",
+    "feature_id": "147-F",
+    "branch": "chore/stage-130-s",
+    "dispatch_mode": "single-agent-declared-degradation",
+    "gate_cycle": 31,
+    "gate_decision": "FAIL",
+    "gate_pending": "fresh-local-review-required",
+    "operator_authorization": "approved",
+    "p1_threads_closed": 6,
+    "p1_roots_fixed": 3,
+    "pr_number": 377,
+    "push_allowed": false,
+    "push_performed": false,
+    "restage_recommendation": "none",
+    "session_start_head": "5212ee45c0a36c9255fcf89b5fe61d4804057c45",
+    "severity_counts": "P0=0, P1=6 (all remediated in-pass), P2=0, P3=0",
+    "supersedes_gate_cycle": 29,
+    "supersedes_gate_decision": "ADVISORY",
+    "tool_degraded": "reviewer-subagent-dispatch",
+    "policy_version": "workflow-policies.md 1.18.0 -> 1.19.0",
+    "topology": "42 tasks, 104 executable edges, 43 shipment members, 18 waves, roots 147.001-T and 147.032-T, acyclic",
+    "worktree": ".copilot/session-state/337f2436-0fad-4797-be93-b72985d25d56/files/stage-130s-worktree"
+  },
+  "progress": {
+    "tasks_completed": [
+      "R1 declaration doctrine sweep: withdrew the declaration-stub-before-harness lifecycle plan-wide. P-002.1 now fixes the ORDER - compile-capable source-shape (go/parser + go/ast) failing harness lands FIRST, declaration implementation lands second and makes it green; no agent may scaffold, request, or accept a production stub ahead of the harness that gates it",
+      "R1 split rule: behaviour beyond the declared shape needs its own prior red; a seam or declaration whose body would absorb real behaviour MUST be split into declaration -> behaviour-harness -> implementation. 147.034-T / U11 (whose stub carried real read/parse/mutate/marshal/atomic-replace behaviour) is now gated by its own TestU11_ source-shape red with its behaviour red relocated to 147.035-T / U12 - the U11 -> U12 -> U13 shape",
+      "R1 sweep beyond the four quoted anchors: 147.001-T, 147.030-T, 147.031-T, 147.034-T plus class matches 147.002-T (return nil stub), 147.005-T (empty-map stub), 147.035-T (referenced U11 stub), 147-F.md (supersession marker); plan Implementation Units head three-step -> two-step lifecycle, Green-step-guards paragraph, U1/U1b/U1c/U2/U2d/U11/U12/U15 sections, invariant I4, U8b harness posture, Constitution Check II. Historical amendment-log rows preserved unmodified as history",
+      "R2 blocked accounting: P-002.6 now tracks an IMMUTABLE shipment manifest member set M frozen at Ship Step 0.5 and never re-derived from the shipment live items list (core.ReturnBlockedItem removes a returned member from that list). Total partition M = queued + active + blocked + terminal over the five recognized statuses; terminal = done or archived; completion is terminal = M and nothing else - an empty ready frontier is never completion",
+      "R2 halt code: new P-002.2 WAVE_MEMBER_BLOCKED halts on any blocked member, reporting the full census, each blocked_reason, the transitive dependency impact, and whether the existing return_blocked process has been invoked/recorded (invoking it when applicable). Active residual halts with WAVE_NO_PROGRESS. Snapshot recipe must return blocked and active rows and no longer filters status != archived. Mandatory blocked-injection validation added",
+      "R3 wave green semantics: harness-architect may batch-scaffold all current-wave RED harnesses; the per-task modify->test loop and post-loop gate use ONLY the task scoped command; a repo-wide/full-package suite is forbidden inside a per-task loop when it would include a sibling RED; tolerated-red set is exactly sibling_red_selectors - explicit, closed, non-widenable; the -run=^$ compile check stays repo-wide because it runs no test",
+      "R3 convergence gate: new mandatory Ship Step 4.6 runs the full go test ./... plus repo-wide vet/lint/fmt once per wave after every member is individually green, with an EMPTY tolerated-red set; on failure remediate INSIDE the current wave and never advance. Six task-scoped command requirements defined so the scoping cannot become a weakening. All branch-wide gates (4.3, 4.4, Step 5) preserved unchanged",
+      "Artifacts updated: workflow-policies.md (P-002 gate points/postcondition, P-002.1 ordering + split rule, P-002.2 WAVE_MEMBER_BLOCKED + WAVE_NO_PROGRESS active residual, P-002.6 definitions/procedure/snapshot/termination/violation, version 1.18.0 -> 1.19.0 + amendment row), .ship.agent.md (Step 3 frozen M, Step 4 header, Step 4.0 rewritten to ten items, Step 2 item 4, Step 4.2 wave_scoped + sibling_red_selectors, Step 4.3 item 3 task-scoped, NEW Step 4.6, three new circuit-breaker rows), build-feature/SKILL.md (wave_scoped + sibling_red_selectors inputs, scoped harness_cmd, post-loop gate 3 branch, Step 6 note, four new constraints, quality criteria), harness-architect/SKILL.md (Step 1 item 8 batch scaffold, Step 4 items 3/5/6, Step 5.2 per-task scoped red check, Step 6 scoped command, guardrails, completion criteria)",
+      "Root 4: .autoharness/drift-ignore cycle-31 re-apply note added covering all three roots across the four artifacts; plan cycle: 31 Plan Review record appended (decision FAIL, pending fresh-local-review-required, superseding cycle 29 ADVISORY for gate purposes); 147-F.md current gate state rewritten to FAIL / push_allowed: no; cycle-31 memory doc written; this checkpoint",
+      "Root 5 simulations (17/17 assertions PASS): baseline 42-task/104-edge replay COMPLETE in 18 waves with 0 stalls and 0 compile-order violations; blocked-member injection (147.030-T) halts WAVE_MEMBER_BLOCKED at wave 1 with no false completion, member retained in M, 26-member dependency impact; mid-run, active-residual, and unrecognized-status variants all fail closed; non-frozen-M control reproduces WAVE_NO_PROGRESS at wave 10; sibling-red wave 2 progresses 0/2 under the old repo-wide gate and 2/2 under the new scoped gate with exactly 1 convergence full-suite run and 0 full-suite runs inside per-task loops; negative control confirms a failure outside the tolerated set halts",
+      "Root 5 validations: markdownlint-cli2 0.23.1 repo-wide 0 issues in 2291 files; backlogit docs lint valid true 0 violations; backlogit sync 1209 artifacts 0 parse failures; topology re-confirmed 42 tasks / 104 executable edges / 43 shipment members unchanged; go build and go vet exit 0; go test ./... exit 0 with 29 ok and 0 FAIL; zero *.go files modified"
+    ],
+    "tasks_remaining": [
+      "Fresh local plan review of the cycle-31 contract - required before push; this is what decision FAIL blocks on",
+      "Push chore/stage-130-s (blocked on the review above)",
+      "Reply to and resolve the six PR #377 review threads against the new HEAD (blocked on push)",
+      "Operator merge approval (P-014) has not been requested"
+    ],
+    "files_modified": [
+      ".github/policies/workflow-policies.md",
+      ".github/agents/.ship.agent.md",
+      ".github/skills/build-feature/SKILL.md",
+      ".github/skills/harness-architect/SKILL.md",
+      ".autoharness/drift-ignore",
+      ".backlogit/queue/147-F.md",
+      ".backlogit/queue/147.001-T.md",
+      ".backlogit/queue/147.002-T.md",
+      ".backlogit/queue/147.005-T.md",
+      ".backlogit/queue/147.030-T.md",
+      ".backlogit/queue/147.031-T.md",
+      ".backlogit/queue/147.034-T.md",
+      ".backlogit/queue/147.035-T.md",
+      "docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md",
+      "docs/memory/2026-08-25/stage-pr377-cycle-31-p1-thread-closure-memory.md"
+    ],
+    "decisions": [
+      "Gate is FAIL rather than ADVISORY: a cycle that rewrites the harness lifecycle plan-wide, the wave scheduler completion semantics, and the per-task green gate is not self-certifying. The corrected contract has been reviewed only by the session that authored it, so a fresh local review is required before push and section 1.9 Check 3 stays blocking",
+      "U11 is corrected by SPLIT rather than by reordering alone. A stub performing currently shipped read/mutate/atomic-write behaviour is not an inert declaration, so no ordering of a single unit satisfies Principle II; the behaviour red moves to U12, which already depends on U11, so no dependency edge and no task count changed",
+      "The blocked fix uses an immutable frozen M rather than removing a returned task from the working set. Removing it would let return_blocked shrink the accounting universe as a scheduler side effect; freezing M separates the accounting universe from the mutable shipment items list and makes false completion unreachable",
+      "The wave green fix scopes the per-task gate rather than tolerating red globally. The tolerated-red set is enumerated, closed, and non-widenable, and it is paired with a mandatory convergence gate whose tolerated set is empty, so scoping cannot degrade into an ignore-failing-tests escape hatch",
+      "Historical amendment-log and Plan Review rows in the plan (lines 3179+) are preserved unmodified as history; only live normative statements were rewritten, with one supersession marker added to the single live-adjacent historical bullet in 147-F.md",
+      "No Go source, test, or production configuration file touched; no subagent invoked; no push, merge, or shipment claim performed this session"
+    ]
+  },
+  "resume_hint": "Cycle-31 closed all six remaining PR #377 P1 threads at three roots: (R1) declaration-stub-before-harness withdrawn plan-wide - source-shape harness lands FIRST, declaration second, no stub ahead of any harness, and any seam whose body would absorb behaviour is split declaration -> behaviour-harness -> implementation (U11 -> U12 -> U13); (R2) blocked accounting made total and fail-closed over an IMMUTABLE frozen manifest set M with completion defined as terminal = M and a new WAVE_MEMBER_BLOCKED halt carrying transitive dependency impact and the return_blocked record; (R3) wave green semantics scoped per task with an explicit closed non-widenable tolerated-red set and the full suite relocated to a new mandatory Ship Step 4.6 convergence gate. workflow-policies.md 1.18.0 -> 1.19.0. Re-simulated 17/17 PASS: 18 waves / 0 stalls / 0 order violations; blocked injection halts with no false completion; sibling-red wave 2/2 under scoped loops versus 0/2 under the old model. go test ./... exit 0; no production Go touched. GATE IS FAIL pending a fresh local review of these changes - do NOT push until that review is run. No merge approval requested."
+}

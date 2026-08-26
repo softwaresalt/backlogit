@@ -1,0 +1,1655 @@
+{
+  "schema_version": 1,
+  "artifact": "wave-scheduler-contract-simulation",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "contract": {
+    "policy": ".github/policies/workflow-policies.md",
+    "policy_version": "1.24.0",
+    "policies": [
+      "P-002.2",
+      "P-002.6"
+    ],
+    "consumers": [
+      ".github/agents/.ship.agent.md",
+      ".github/skills/build-feature/SKILL.md",
+      ".github/skills/harness-architect/SKILL.md"
+    ]
+  },
+  "source": {
+    "plan": "docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md",
+    "release_unit": "147-F",
+    "shipment": "130-S",
+    "queue_dir": ".backlogit/queue",
+    "mirrored_head": "47925de28b61a39ff3dd3860f8d90a12886a298a",
+    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, live status catalog, and registry status mapping/features; resolve artifact types; compare filtered task IDs exactly with M and the explicit non-shipment fallback set; report excluded non-task IDs; verify task projections and every red-deliverable key; and run in-memory mutation checks."
+  },
+  "status_model": {
+    "catalog_source": ".backlogit/config.yaml -> fields.status.values",
+    "catalog": [
+      "queued",
+      "active",
+      "blocked",
+      "review",
+      "done",
+      "accepted",
+      "rejected",
+      "archived",
+      "shipped",
+      "abandoned"
+    ],
+    "registry_source": ".autoharness/backlog-registry.yaml -> status_values and features",
+    "registry_status_mapping": {
+      "queued": "queued",
+      "active": "active",
+      "done": "done",
+      "blocked": "blocked"
+    },
+    "registry_features": {
+      "sql_query": true,
+      "shipments": true
+    },
+    "executable": [
+      "queued",
+      "active",
+      "blocked"
+    ],
+    "terminal_success": [
+      "done",
+      "archived"
+    ],
+    "green_maker_closing": [
+      "done"
+    ],
+    "unsupported_expected": [
+      "review",
+      "accepted",
+      "rejected",
+      "shipped",
+      "abandoned"
+    ],
+    "note": "The scheduler vocabulary and source-selection features are CONFIGURED, never hard-coded. -VerifyAgainstQueue parses and compares the ten-token workspace catalog, the four-entry registry status mapping, and the sql_query/shipments feature flags live. Terminal-success is the two-token actual lifecycle {done, archived}. Every catalog token outside executable + terminal_success is unsupported and halts. archived satisfies a DEPENDENCY but does NOT close a green-maker obligation, because it may be a descope."
+  },
+  "manifest": {
+    "frozen_at": "ship-step-3",
+    "freeze_source": "shipment-manifest",
+    "fallback": "explicit-frozen-task-id-set",
+    "fail_closed_code": "WAVE_MANIFEST_UNAVAILABLE",
+    "wave_member_type": "task",
+    "member_count": 43,
+    "shipment_member_count": 44,
+    "excluded_non_task_members": [
+      {
+        "id": "147-F",
+        "artifact_type": "feature"
+      }
+    ],
+    "forbidden_wave_ids": [
+      "147-F",
+      "147.010-T"
+    ],
+    "explicit_non_shipment_task_ids": [
+      "147.001-T",
+      "147.002-T",
+      "147.003-T",
+      "147.004-T",
+      "147.005-T",
+      "147.006-T",
+      "147.007-T",
+      "147.008-T",
+      "147.009-T",
+      "147.011-T",
+      "147.012-T",
+      "147.013-T",
+      "147.014-T",
+      "147.015-T",
+      "147.016-T",
+      "147.017-T",
+      "147.018-T",
+      "147.019-T",
+      "147.020-T",
+      "147.021-T",
+      "147.022-T",
+      "147.023-T",
+      "147.024-T",
+      "147.025-T",
+      "147.026-T",
+      "147.027-T",
+      "147.028-T",
+      "147.029-T",
+      "147.030-T",
+      "147.031-T",
+      "147.032-T",
+      "147.033-T",
+      "147.034-T",
+      "147.035-T",
+      "147.036-T",
+      "147.037-T",
+      "147.038-T",
+      "147.039-T",
+      "147.040-T",
+      "147.041-T",
+      "147.042-T",
+      "147.043-T",
+      "147.044-T"
+    ],
+    "note": "S is all 44 explicit members of shipment 130-S. M is exactly the 43 IDs in S whose resolved artifact_type is task. The explicit non-shipment fallback is the same closed 43-ID set, supplied rather than inferred from parent children. The covering feature 147-F and retired archived sibling 147.010-T are forbidden wave IDs: neither is in M, the fallback, or a snapshot.",
+    "members": [
+      {
+        "id": "147.001-T",
+        "unit": "U1",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": []
+      },
+      {
+        "id": "147.002-T",
+        "unit": "U2",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T"
+        ]
+      },
+      {
+        "id": "147.003-T",
+        "unit": "U2b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T"
+        ]
+      },
+      {
+        "id": "147.004-T",
+        "unit": "U2c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T"
+        ]
+      },
+      {
+        "id": "147.005-T",
+        "unit": "U2d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.006-T",
+        "unit": "U3",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.007-T",
+        "unit": "U3b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.006-T",
+          "147.011-T",
+          "147.016-T",
+          "147.028-T",
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.008-T",
+        "unit": "U4",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.028-T",
+          "147.044-T"
+        ]
+      },
+      {
+        "id": "147.009-T",
+        "unit": "U5",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.008-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.011-T",
+        "unit": "U6",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.012-T",
+        "unit": "U6b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.016-T",
+          "147.030-T",
+          "147.032-T",
+          "147.038-T"
+        ]
+      },
+      {
+        "id": "147.013-T",
+        "unit": "U7",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.007-T",
+          "147.008-T",
+          "147.009-T",
+          "147.016-T",
+          "147.030-T"
+        ]
+      },
+      {
+        "id": "147.014-T",
+        "unit": "U7b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T",
+          "147.022-T",
+          "147.023-T",
+          "147.043-T"
+        ]
+      },
+      {
+        "id": "147.015-T",
+        "unit": "U8",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.013-T",
+          "147.016-T",
+          "147.030-T",
+          "147.031-T"
+        ]
+      },
+      {
+        "id": "147.016-T",
+        "unit": "U8b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.001-T",
+          "147.002-T",
+          "147.030-T",
+          "147.032-T",
+          "147.038-T"
+        ]
+      },
+      {
+        "id": "147.017-T",
+        "unit": "U9",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "docs-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.014-T",
+          "147.016-T",
+          "147.020-T",
+          "147.024-T",
+          "147.039-T",
+          "147.040-T"
+        ]
+      },
+      {
+        "id": "147.018-T",
+        "unit": "U9b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "docs-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.017-T"
+        ]
+      },
+      {
+        "id": "147.019-T",
+        "unit": "U10",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.018-T"
+        ]
+      },
+      {
+        "id": "147.020-T",
+        "unit": "U2e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.003-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.021-T",
+        "unit": "U2f",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.037-T",
+          "147.044-T"
+        ]
+      },
+      {
+        "id": "147.022-T",
+        "unit": "U6c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.023-T",
+        "unit": "U6d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.024-T",
+        "unit": "U7c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.013-T",
+          "147.016-T",
+          "147.025-T"
+        ]
+      },
+      {
+        "id": "147.025-T",
+        "unit": "U7d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.013-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.026-T",
+        "unit": "U10b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.019-T"
+        ]
+      },
+      {
+        "id": "147.027-T",
+        "unit": "U8c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.028-T",
+        "unit": "U2g",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.003-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.029-T",
+        "unit": "U7e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.030-T",
+        "unit": "U1b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T"
+        ]
+      },
+      {
+        "id": "147.031-T",
+        "unit": "U1c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.030-T"
+        ]
+      },
+      {
+        "id": "147.032-T",
+        "unit": "U1d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": []
+      },
+      {
+        "id": "147.033-T",
+        "unit": "U2h",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.028-T"
+        ]
+      },
+      {
+        "id": "147.034-T",
+        "unit": "U11",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T",
+          "147.005-T"
+        ]
+      },
+      {
+        "id": "147.035-T",
+        "unit": "U12",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.004-T",
+          "147.034-T"
+        ]
+      },
+      {
+        "id": "147.036-T",
+        "unit": "U13",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "covered-by",
+        "red_deliverable": false,
+        "deps": [
+          "147.035-T"
+        ]
+      },
+      {
+        "id": "147.037-T",
+        "unit": "U14",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.036-T",
+          "147.042-T"
+        ]
+      },
+      {
+        "id": "147.038-T",
+        "unit": "U15",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.030-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.039-T",
+        "unit": "U16",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.015-T",
+          "147.016-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.040-T",
+        "unit": "U17",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.008-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.041-T",
+        "unit": "U10c",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.022-T",
+          "147.025-T",
+          "147.026-T",
+          "147.027-T",
+          "147.029-T",
+          "147.033-T"
+        ]
+      },
+      {
+        "id": "147.042-T",
+        "unit": "U3c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.001-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.043-T",
+        "unit": "U6e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.044-T",
+        "unit": "U14b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.036-T"
+        ]
+      }
+    ]
+  },
+  "red_deliverables": [
+    {
+      "task": "147.035-T",
+      "unit": "U12",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Harness-only behaviour contract for the guarded rewrite seam; the seam's implementation is 147.036-T / U13, so this task's three TestU12_ functions are red by design when it completes.",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/events",
+      "green_maker_tasks": [
+        "147.036-T"
+      ],
+      "green_maker_closes_wave": 7
+    },
+    {
+      "task": "147.042-T",
+      "unit": "U3c",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Verb-level conformance refusal harness that must be observed red before the seam migration; the refusal is delivered by 147.037-T / U14, so this task's single TestU3c_ function is red by design when it completes.",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "green_maker_tasks": [
+        "147.037-T"
+      ],
+      "green_maker_closes_wave": 8
+    },
+    {
+      "task": "147.016-T",
+      "unit": "U8b",
+      "red_deliverable": true,
+      "red_deliverable_reason": "Cross-surface parity harness with no production change; its assertions turn green only after every surface implementation it pins has landed, so its TestU8b_ functions are red by design when it completes.",
+      "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/cli",
+      "green_maker_tasks": [
+        "147.006-T",
+        "147.007-T",
+        "147.008-T",
+        "147.009-T",
+        "147.011-T",
+        "147.012-T",
+        "147.013-T",
+        "147.014-T",
+        "147.015-T",
+        "147.022-T",
+        "147.024-T",
+        "147.025-T",
+        "147.027-T"
+      ],
+      "green_maker_closes_wave": 13
+    }
+  ],
+  "green_regression_contracts": [],
+  "green_regression_parser_controls": [
+    {
+      "id": "valid-array",
+      "payload": "{\"green_regression_cmds\":[\"go test -count=1 -run '^TestNamed_' ./internal/errors\"]}",
+      "expect_valid": true,
+      "commands": [
+        "go test -count=1 -run '^TestNamed_' ./internal/errors"
+      ]
+    },
+    {
+      "id": "root-must-be-object",
+      "payload": "[\"go test -count=1 -run '^TestNamed_' ./internal/errors\"]",
+      "expect_valid": false,
+      "error_contains": "payload must be a JSON object"
+    },
+    {
+      "id": "commands-must-be-array",
+      "payload": "{\"green_regression_cmds\":\"go test -count=1 -run '^TestNamed_' ./internal/errors\"}",
+      "expect_valid": false,
+      "error_contains": "must be a JSON array"
+    }
+  ],
+  "red_deliverable_branch_controls": [
+    {
+      "id": "accepted-assertion-red",
+      "note": "The deliverable: the scaffolded harness compiles, the anchored selector fails on named assertions, the delta is empty, and the evidence report is complete.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_ACCEPTED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "not-red-deliverable-uses-generic-loop",
+      "note": "Routing: an ordinary dispatch still enters the generic loop, so Step 0.5 does not capture tasks it does not own.",
+      "red_deliverable": false,
+      "harness_cmd": "go test -count=1 -run '^TestU13_' ./internal/events",
+      "red_selector_command": "",
+      "red_baseline_sha": "",
+      "compile_ok": true,
+      "selector_signal": "pass",
+      "changed_files": [
+        "internal/events/checkpoint_rewrite.go"
+      ],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "GENERIC_LOOP",
+      "expect_enters_generic_loop": true
+    },
+    {
+      "id": "red-deliverable-never-enters-generic-loop",
+      "note": "Load-bearing control: the same green observation the generic loop reads as SUCCESS must halt here instead.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "pass",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "early-green-at-dispatch",
+      "note": "Step 0.5a: the scaffolded selector already passes before any declared green-maker has closed.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU8b_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "pass",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "harness-not-scaffolded-under-selector",
+      "note": "Step 0.5a: no test matches the declared selector, so the harness was never scaffolded under it and the red is vacuous.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "no_tests_to_run",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_DELIVERABLE_VACUOUS",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "uncompilable-scaffolded-harness",
+      "note": "Step 0.5a item 1: a harness that does not compile contradicts the P-002 compiling-but-failing contract and returns to harness-architect.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": false,
+      "selector_signal": "build_error",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_HARNESS_UNCOMPILABLE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "panic-is-not-assertion-red",
+      "note": "Step 0.5a: a panic aborts the package with no matching --- FAIL: line, so it is not the deliverable.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "panic",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "timeout-is-not-assertion-red",
+      "note": "Step 0.5a: a timeout is a non-zero exit that proves no assertion failed.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "timeout",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "production-delta-refused",
+      "note": "Step 0.5b: the branch writes nothing, and a non-test *.go file is the production change a red deliverable may never make.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [
+        "internal/events/checkpoint_lifecycle.go"
+      ],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "extra-test-file-refused",
+      "note": "Step 0.5b: a *_test.go file is still a write; the permitted delta is empty, so a test extension is not an exemption.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [
+        "internal/events/checkpoint_lifecycle_conformance_test.go"
+      ],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "extra-non-go-file-refused",
+      "note": "Step 0.5b: a configuration or documentation file is a write too.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [
+        ".gitignore",
+        "docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md"
+      ],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "missing-baseline-sha-refused",
+      "note": "Precondition 3 fails closed: without the Ship-supplied post-scaffolding baseline the zero-delta gate would measure a self-chosen range.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "exempt-pairing-refused",
+      "note": "Precondition 1: red_deliverable and harness-exempt are mutually exclusive.",
+      "red_deliverable": true,
+      "exempt_class": "verification-only",
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "selector-mismatch-refused",
+      "note": "Precondition 2: harness_cmd must be the declared red_selector_command verbatim.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "weakened-selector-refused",
+      "note": "Precondition 2: a bare ./... with no -count=1, no anchored selector, and a || true suffix is a contract defect, not a substitute command.",
+      "red_deliverable": true,
+      "harness_cmd": "go test ./... || true",
+      "red_selector_command": "go test ./... || true",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "incomplete-evidence-report-refused",
+      "note": "Step 0.5c: without the report Ship cannot build the open_red_deliverables entry that convergence items 4 and 5 re-confirm.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "evidence_report_complete": false,
+      "expect_outcome": "RED_DELIVERABLE_EVIDENCE_INCOMPLETE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "untracked-test-file-refused",
+      "note": "Step 0.5b: a newly created *_test.go file is invisible to git diff, so the gate must include the untracked pass or an empty-delta claim would be false.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [
+        "internal/events/checkpoint_lifecycle_conformance_extra_test.go"
+      ],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "untracked-production-file-refused",
+      "note": "Step 0.5b: a newly created non-test *.go file is still the production change a red deliverable may never make.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [
+        "internal/core/checkpoint_seam.go"
+      ],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
+      "expect_enters_generic_loop": false
+    }
+  ],
+  "verification_mutations": [
+    {
+      "id": "shipment-task-removed",
+      "operation": "remove_shipment_item",
+      "item": "147.043-T",
+      "expect_code": "WAVE_MEMBER_IDS"
+    },
+    {
+      "id": "covering-feature-improperly-added-to-m",
+      "operation": "include_excluded_in_m",
+      "item": "147-F",
+      "expect_code": "WAVE_MEMBER_IDS"
+    },
+    {
+      "id": "excluded-non-task-report-removed",
+      "operation": "remove_excluded_report",
+      "item": "147-F",
+      "expect_code": "EXCLUDED_NON_TASKS"
+    },
+    {
+      "id": "red-deliverable-flag-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_deliverable",
+      "value": false,
+      "expect_code": "RED_CONTRACT_RED_DELIVERABLE"
+    },
+    {
+      "id": "red-deliverable-reason-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_deliverable_reason",
+      "value": "MUTATED",
+      "expect_code": "RED_CONTRACT_RED_DELIVERABLE_REASON"
+    },
+    {
+      "id": "red-selector-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "red_selector_command",
+      "value": "go test -count=1 -run '^TestMutated_' ./internal/events",
+      "expect_code": "RED_CONTRACT_RED_SELECTOR_COMMAND"
+    },
+    {
+      "id": "green-maker-list-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "green_maker_tasks",
+      "value": [
+        "147.036-T",
+        "147.037-T"
+      ],
+      "expect_code": "RED_CONTRACT_GREEN_MAKER_TASKS"
+    },
+    {
+      "id": "green-maker-close-wave-mutated",
+      "operation": "set_red_contract_key",
+      "task": "147.035-T",
+      "key": "green_maker_closes_wave",
+      "value": 99,
+      "expect_code": "RED_CONTRACT_GREEN_MAKER_CLOSES_WAVE"
+    },
+    {
+      "id": "empty-default-green-regression-mutated",
+      "operation": "add_green_regression_contract",
+      "task": "147.001-T",
+      "commands": [
+        "go test -count=1 -run '^TestUnexpected_' ./internal/errors"
+      ],
+      "expect_code": "GREEN_REGRESSION_CONTRACTS"
+    },
+    {
+      "id": "workspace-status-catalog-drift",
+      "operation": "remove_status_catalog_token",
+      "token": "archived",
+      "expect_code": "STATUS_CATALOG"
+    },
+    {
+      "id": "registry-status-mapping-drift",
+      "operation": "set_registry_status_mapping",
+      "key": "done",
+      "value": "shipped",
+      "expect_code": "REGISTRY_STATUS_MAPPING"
+    },
+    {
+      "id": "registry-snapshot-feature-drift",
+      "operation": "set_registry_feature",
+      "key": "sql_query",
+      "value": false,
+      "expect_code": "REGISTRY_FEATURES"
+    },
+    {
+      "id": "archived-historical-sibling-improperly-added-to-fallback",
+      "operation": "include_fallback_id",
+      "item": "147.010-T",
+      "expect_code": "FROZEN_FALLBACK_IDS"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "baseline",
+      "description": "Unmutated manifest replays the documented 18-wave schedule with no stall and no compile-order violation. snapshot_calls is 19 = one per build wave plus the final admission snapshot that observes terminal_success = M.",
+      "mutations": {},
+      "expect": {
+        "outcome": "COMPLETE",
+        "waves": 18,
+        "wave_sizes": [
+          2,
+          2,
+          4,
+          5,
+          4,
+          4,
+          3,
+          3,
+          3,
+          3,
+          1,
+          2,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "scheduled": 43,
+        "stalls": 0,
+        "compile_order_violations": 0,
+        "snapshot_calls": 19,
+        "unsupported_count": 0
+      }
+    },
+    {
+      "id": "persistent_red_mapping",
+      "description": "Red-deliverable selectors stay open across waves; wave 4 advances while U8b and U3c are legitimately red; every entry still open after a wave's completions - including entries carried in from an earlier wave - has its red_selector_command re-run and re-confirmed RED at that wave's convergence gate; the unfiltered full suite runs only when the open-red set is empty, and immediately at the wave where the last green-maker closes it.",
+      "mutations": {},
+      "expect": {
+        "outcome": "COMPLETE",
+        "wave_4_advanced": true,
+        "early_green": [],
+        "open_red_reconfirmed_waves": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "open_red_reconfirmed_at_wave": {
+          "3": [],
+          "4": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "7": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "8": [
+            "147.016-T"
+          ],
+          "12": [
+            "147.016-T"
+          ],
+          "13": []
+        },
+        "open_red_after_wave_4": [
+          "147.016-T",
+          "147.042-T"
+        ],
+        "open_red_after_wave_6": [
+          "147.016-T",
+          "147.035-T",
+          "147.042-T"
+        ],
+        "open_red_closed_at_wave": {
+          "147.035-T": 7,
+          "147.042-T": 8,
+          "147.016-T": 13
+        },
+        "full_suite_waves": [
+          1,
+          2,
+          3,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ],
+        "deferred_waves": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "compile_gate_waves": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ],
+        "final_open_red": [],
+        "full_suite_at_final_closure": true,
+        "hidden_unexpected_failures": 0
+      }
+    },
+    {
+      "id": "blocked_injection",
+      "description": "A blocked member halts the loop at the first admission that sees it, reports transitive dependency impact, stays in M, and never permits a completion claim.",
+      "mutations": {
+        "set_status": {
+          "147.030-T": "blocked"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_MEMBER_BLOCKED",
+        "halt_wave": 1,
+        "blocked_ids": [
+          "147.030-T"
+        ],
+        "dependency_impact": {
+          "147.030-T": 26
+        },
+        "member_retained_in_m": true,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "blocked_mid_run",
+      "description": "A member blocked mid-run halts at the next wave admission rather than being skipped.",
+      "mutations": {
+        "set_status_at_wave": [
+          {
+            "wave": 5,
+            "id": "147.011-T",
+            "status": "blocked"
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_MEMBER_BLOCKED",
+        "halt_wave": 5,
+        "blocked_ids": [
+          "147.011-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "active_residual",
+      "description": "An active leftover claim halts with WAVE_NO_PROGRESS rather than being read as progress.",
+      "mutations": {
+        "set_status": {
+          "147.004-T": "active"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "halt_detail": "active residual",
+        "halt_wave": 1,
+        "active_ids": [
+          "147.004-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_review",
+      "description": "A catalog token that is neither executable nor terminal-success halts with WAVE_STATUS_UNSUPPORTED naming the member and the observed token.",
+      "mutations": {
+        "set_status": {
+          "147.005-T": "review"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.005-T=review"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_abandoned",
+      "description": "A non-completion terminal token never false-completes: abandoned is unsupported, not terminal-success.",
+      "mutations": {
+        "set_status": {
+          "147.019-T": "abandoned"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.019-T=abandoned"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_off_catalog",
+      "description": "A token outside the workspace catalog entirely is unsupported and halts; it is never treated as an implicit success.",
+      "mutations": {
+        "set_status": {
+          "147.020-T": "frobnicated"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.020-T=frobnicated"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "status_catalog_unavailable",
+      "description": "An unreadable or empty configured status catalog halts before any admission; the scheduler never falls back to a built-in token list.",
+      "mutations": {
+        "clear_catalog": true
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_CATALOG_UNAVAILABLE",
+        "halt_wave": 0,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "status_catalog_disagrees",
+      "description": "A configured executable or terminal-success token absent from the workspace catalog is a disagreement, not a widening; it halts.",
+      "mutations": {
+        "add_executable_status": "in_review"
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_CATALOG_UNAVAILABLE",
+        "halt_wave": 0,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "cycle_injection",
+      "description": "A dependency cycle halts at Step 3 schedule construction with the cycle path, never at runtime and never by looping.",
+      "mutations": {
+        "add_edge": [
+          {
+            "from": "147.001-T",
+            "to": "147.041-T"
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_CYCLE_DETECTED",
+        "halt_wave": 0,
+        "cycle_path_non_empty": true,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "sibling_red_wave4",
+      "description": "Wave 4 has five simultaneously-red non-exempt members. The withdrawn repo-wide per-task gate progresses none of them; the task-scoped gate progresses all five, and no full suite runs inside a per-task loop.",
+      "mutations": {
+        "gate_compare_wave": 4
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "gate_compare_wave": 4,
+        "wave_non_exempt_members": 5,
+        "old_repo_wide_progressed": 0,
+        "new_scoped_progressed": 5,
+        "full_suite_runs_inside_per_task_loops": 0,
+        "scoped_commands_run_in_wave": 5
+      }
+    },
+    {
+      "id": "non_frozen_m_control",
+      "description": "Negative control: re-deriving M from the live shipment items list each wave lets return_blocked shrink the accounting universe. The frozen-M contract exists to prevent exactly this.",
+      "mutations": {
+        "return_blocked_at_wave": [
+          {
+            "wave": 2,
+            "id": "147.030-T"
+          }
+        ],
+        "freeze_m": "per-wave"
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "members_dropped": [
+          "147.030-T"
+        ],
+        "member_retained_in_m": false,
+        "completion_claimed": false,
+        "manifest_matches_explicit_fallback": true
+      }
+    },
+    {
+      "id": "missing_green_maker",
+      "description": "A red-deliverable task whose green-maker mapping is absent fails closed at schedule construction; the mapping is never inferred.",
+      "mutations": {
+        "drop_red_contract": [
+          "147.016-T"
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.016-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "ambiguous_green_maker",
+      "description": "A green-maker naming a task outside M is ambiguous and fails closed; it is never resolved by nearest match.",
+      "mutations": {
+        "override_green_makers": {
+          "147.042-T": [
+            "147.999-T"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.042-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "missing_red_selector",
+      "description": "An empty red_selector_command fails closed at schedule construction; selector scope is never inferred from the task title, unit, or package.",
+      "mutations": {
+        "override_red_selector": {
+          "147.035-T": ""
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.035-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "wrong_green_maker_close_wave",
+      "description": "A green_maker_closes_wave value that does not equal the actual latest green-maker wave fails closed at schedule construction.",
+      "mutations": {
+        "override_closes_wave": {
+          "147.042-T": 9
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.042-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "green_maker_descoped",
+      "description": "A green-maker archived (descoped) rather than done satisfies dependencies but does NOT close its open-red obligation; the deferral budget then halts the loop instead of carrying an unverifiable red forward.",
+      "mutations": {
+        "set_status_at_wave": [
+          {
+            "wave": 7,
+            "id": "147.036-T",
+            "status": "archived",
+            "on_completion": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_OPEN_RED_UNCLOSED",
+        "halt_wave": 8,
+        "unclosed": [
+          "147.035-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "open_red_early_green_carried_in",
+      "description": "Negative control for the convergence gate's open-red re-confirmation. 147.042-T / U3c completes red in wave 4 and its declared green-maker 147.037-T / U14 does not land until wave 8. Its selector is injected green from wave 5 - three waves early. Because the gate re-runs the red_selector_command of every entry still open after the wave's completions, including entries carried in from an earlier wave, the violation is caught at the wave-5 gate and the loop halts with WAVE_RED_DELIVERABLE_EARLY_GREEN instead of advancing. Without that always-run item the entry would never be executed again while the unfiltered suite stayed deferred, and the early green would pass unnoticed through waves 5 to 8.",
+      "mutations": {
+        "open_red_early_green": [
+          {
+            "id": "147.042-T",
+            "wave": 5
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
+        "halt_wave": 5,
+        "early_green": [
+          "147.042-T"
+        ],
+        "completion_claimed": false,
+        "open_red_reconfirmed_at_wave": {
+          "4": [
+            "147.016-T",
+            "147.042-T"
+          ],
+          "5": [
+            "147.016-T",
+            "147.042-T"
+          ]
+        },
+        "full_suite_at_final_closure": false,
+        "compile_gate_waves": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    },
+    {
+      "id": "open_red_closed_entry_not_reconfirmed",
+      "description": "Complement of the control above: an entry the wave CLOSED is not re-confirmed RED - it is re-confirmed GREEN instead. 147.035-T / U12 is closed by 147.036-T / U13 at wave 7, and its selector is injected green from wave 7. Because a closed entry leaves the open set before the RED re-confirmation and enters newly_closed_k instead, the injection is the expected outcome rather than a violation and the schedule completes - proving the gate re-confirms RED over exactly the still-open set and no more.",
+      "mutations": {
+        "open_red_early_green": [
+          {
+            "id": "147.035-T",
+            "wave": 7
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "early_green": [],
+        "green_maker_unverified": [],
+        "waves": 18,
+        "scheduled": 43,
+        "open_red_closed_at_wave": {
+          "147.035-T": 7
+        },
+        "open_red_reconfirmed_at_wave": {
+          "7": [
+            "147.016-T",
+            "147.042-T"
+          ]
+        },
+        "open_red_newly_closed_at_wave": {
+          "6": [],
+          "7": [
+            "147.035-T"
+          ],
+          "8": [
+            "147.042-T"
+          ],
+          "13": [
+            "147.016-T"
+          ]
+        }
+      }
+    },
+    {
+      "id": "green_maker_lands_but_selector_stays_red",
+      "description": "Negative control for the newly-closed verification. 147.036-T / U13 is 147.035-T / U12's only declared green-maker and completes in wave 7, so U12 leaves the open set at the wave-7 gate. Its selector is injected as still failing. Because 147.016-T / U8b keeps the open-red set non-empty until wave 13, the unfiltered full suite stays deferred and would not surface the failure until six waves later - so the gate must verify newly closed selectors itself. It halts at wave 7 with WAVE_GREEN_MAKER_UNVERIFIED rather than advancing on an unverified green-maker.",
+      "mutations": {
+        "green_maker_leaves_red": [
+          "147.035-T"
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_GREEN_MAKER_UNVERIFIED",
+        "halt_wave": 7,
+        "green_maker_unverified": [
+          "147.035-T"
+        ],
+        "early_green": [],
+        "completion_claimed": false,
+        "full_suite_at_final_closure": false,
+        "open_red_newly_closed_at_wave": {
+          "7": [
+            "147.035-T"
+          ]
+        },
+        "compile_gate_waves": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      }
+    }
+  ]
+}

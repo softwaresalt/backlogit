@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "agent": "stage",
+  "session_id": "stage-pr377-cycle-33",
+  "phase": "cycle-33-review-remediation-complete",
+  "status": "active",
+  "created_at": "2026-08-26T06:47:16.0520000Z",
+  "updated_at": "2026-08-26T06:47:16.0520000Z",
+  "context": {
+    "shipment_id": "130-S",
+    "feature_id": "147-F",
+    "branch": "chore/stage-130-s",
+    "dispatch_mode": "single-agent-declared-degradation",
+    "tool_degraded": "reviewer-subagent-dispatch",
+    "gate_cycle": 33,
+    "gate_decision": "FAIL",
+    "gate_pending": "independent-review-required",
+    "operator_authorization": "approved",
+    "severity_counts": "P0=0, P1=2 (both remediated in-pass), P2=2 (both remediated in-pass), P3=0",
+    "p1_findings_closed": 2,
+    "p2_findings_closed": 2,
+    "supersedes_gate_cycle": 32,
+    "supersedes_gate_decision": "FAIL",
+    "pr_number": 377,
+    "push_allowed": false,
+    "push_performed": false,
+    "restage_recommendation": "none",
+    "session_start_head": "c9fa17044cdd0585d0cfa7a2cca54f15adcb6f4d",
+    "policy_version": "workflow-policies.md 1.20.0 -> 1.21.0",
+    "topology": "shipment set S = 43 explicit members; wave set M = 42 task-type IDs; excluded non-task = 147-F (feature); M has 104 executable edges, 18 waves, roots 147.001-T and 147.032-T, acyclic",
+    "simulation": "scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue -> WAVE_SIM_OK 104/104 assertions across 18 scenarios, 9 in-memory mutation checks",
+    "worktree": ".copilot/session-state/337f2436-0fad-4797-be93-b72985d25d56/files/stage-130s-worktree"
+  },
+  "progress": {
+    "tasks_completed": [
+      "Baseline recorded before edits: WAVE_SIM_OK 84/84 across 16 scenarios. The passing baseline reproduced the verification defect because it globbed 147.*-T.md instead of parsing shipment 130-S and omitted red reason, selector, and close-wave comparisons",
+      "H1 (P1) fixed: complete shipment set S is every explicit ID in 130-S; immutable wave set M is exactly IDs in S whose resolved artifact_type is task. S=43, M=42, excluded_non_task_members=147-F (feature). Wave budget and snapshot expected rows use count(M), never count(S)",
+      "H2 (P1) fixed: -VerifyAgainstQueue parses 130-S.md, resolves every listed artifact from queue/archive, compares exact shipment and filtered task ID sets, reports excluded IDs/types, verifies member projections and all five red-deliverable keys, and runs nine fixture-declared in-memory mutations. Added empty-selector and wrong-close-wave scheduler scenarios",
+      "H3 (P2) fixed: policy, plan, cycle-32 memory, and checkpoint cite archivedFromDescopeEligibleStatus in internal/core/shipment_gate.go",
+      "H4 (P2) fixed: optional canonical green-regression-contract is fenced JSON with exactly green_regression_cmds; absent block defaults to []; malformed declarations halt WAVE_GREEN_REGRESSION_INVALID; no current 130-S task needs a block",
+      "Policy workflow-policies.md advanced 1.20.0 -> 1.21.0; Ship Step 3 and Step 4.0, build-feature input/gate prose, fixture, runner, README, plan, shipment, feature, drift re-apply note, checkpoint, and memory updated",
+      "Validations: scheduler WAVE_SIM_OK 104/104 across 18 scenarios; parsed S=43 / M=42 / excluded 147-F=feature; markdown P-008 0 issues; docs lint valid true 0 violations; integration exit 0; sync 0 parse failures; topology M=42 / 104 executable edges / 18 waves / acyclic; zero Go source files modified"
+    ],
+    "tasks_remaining": [
+      "Independent review of the cycle-33 diff - required before push; this is what decision FAIL blocks on",
+      "Push chore/stage-130-s - blocked on independent review",
+      "Reply to and resolve PR #377 threads against the reviewed HEAD - blocked on push",
+      "Operator merge approval (P-014) has not been requested"
+    ],
+    "files_modified": [
+      ".autoharness/drift-ignore",
+      ".backlogit/checkpoints/checkpoint-20260826-064500.json",
+      ".backlogit/checkpoints/checkpoint-20260826-064716.json",
+      ".backlogit/memories.json",
+      ".backlogit/queue/130-S.md",
+      ".backlogit/queue/147-F.md",
+      ".github/agents/.ship.agent.md",
+      ".github/policies/workflow-policies.md",
+      ".github/skills/build-feature/SKILL.md",
+      "docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md",
+      "docs/memory/2026-08-26/stage-pr377-cycle-32-contract-correction-memory.md",
+      "docs/memory/2026-08-26/stage-pr377-cycle-33-review-remediation-memory.md",
+      "scripts/wave-scheduler-sim.ps1",
+      "tests/simulation/README.md",
+      "tests/simulation/wave-scheduler-contract.json"
+    ],
+    "decisions": [
+      "S and M are distinct: S is the complete explicit shipment manifest; M is its task-type projection. Non-task members are reported, not scheduled and not silently dropped",
+      "Artifact type is read from metadata, never inferred from an ID suffix",
+      "The optional green-regression declaration is canonical JSON; absence has the exact empty default [] and no current task needs a block",
+      "Mutation checks operate only on deep in-memory copies, preserving the runner's read-only contract",
+      "Gate remains FAIL pending independent review because this remediation cannot certify itself",
+      "No Go source, subagent, push, merge, shipment claim, or operator merge approval occurred"
+    ]
+  },
+  "resume_hint": "Cycle 33 remediated four review findings against cycle 32. S=43 explicit 130-S members; M=42 task-type IDs; excluded 147-F (feature); snapshots and wave budget use M. Verification now parses 130-S, exact-compares filtered task IDs, checks all five red-deliverable keys, and runs nine in-memory mutations; scheduler has selector and close-wave negatives; WAVE_SIM_OK 104/104 across 18 scenarios. Descope citation is archivedFromDescopeEligibleStatus. green_regression_cmds uses one optional canonical JSON block with absent default []; no current task needs one. Policy 1.21.0. GATE FAIL pending independent review; do not push."
+}

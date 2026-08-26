@@ -27,6 +27,521 @@
 # Drift-ignore suppresses drift REPORTING; it does not by itself prevent a later
 # template adoption from overwriting the third branch. Re-apply the P-007 and
 # Ship-agent third branch after any autoharness template adoption.
+#
+# NOTE (2026-08-25): three generated surfaces now also carry the local P-002.1 /
+# P-002.2 harness-exempt consumer contract, which upstream templates do not
+# carry: .github/policies/workflow-policies.md (P-002 harness-satisfied
+# precondition, P-002.1, P-002.2, P-004 relationship, amendment 1.15.0),
+# .github/agents/.ship.agent.md (Step 2 three-way partition and Step 2a), and
+# .github/skills/build-feature/SKILL.md (harness-satisfied dispatch). Re-apply
+# that contract after any autoharness template adoption.
+# .github/skills/harness-architect/SKILL.md is repo-authored (no generation
+# footer, not manifest-tracked) and needs no entry here.
+#
+# NOTE (2026-08-25, cycle 23): that contract was corrected in place; the
+# re-apply obligation above now covers the corrected form, amendment 1.16.0:
+#   .github/policies/workflow-policies.md  — P-002 Applies To names ship /
+#       harness-architect / build-feature with their gates; P-002.1 split into
+#       static intake and a claim-time re-evaluation that solely owns
+#       EXEMPT_OWNER_NOT_RED; canonical greppable body-metadata contract block
+#       (harness_exemption_class / harness_exemption_reason / harness_owner /
+#       exempt_verification_command / exempt_precondition, plus
+#       harness_owner_command for covered-by); new P-002.3 (must-fail-before-
+#       deliverable probe, false-green signals, per-class command authoring) and
+#       new P-002.4 (objective behavior classification by changed-file delta
+#       surface); five added halt codes.
+#   .github/agents/.ship.agent.md         — Step 2a is static intake only; new
+#       Step 4.1a claim-time gate; Step 4.2 passes harness_cmd / exempt_gate_cmd
+#       / exempt_class; Step 4.3 adds the exempt completion gate.
+#   .github/skills/build-feature/SKILL.md — new Step 0 pre-work probe; Step 2
+#       false-green parsing; Step 5 narrow new-test-file exception for
+#       verification-only deliverables that still forbids
+#       weakening any existing assertion; post-loop exempt completion gate.
+#       [Cycle 29: the exception no longer extends to declaration-only, which
+#        is not a class any more.]
+#   .github/skills/harness-architect/SKILL.md — Step 1a is static intake only,
+#       must not raise EXEMPT_OWNER_NOT_RED, and must scaffold covered-by owners
+#       (repo-authored; still needs no drift-ignore entry).
+#
+# NOTE (2026-08-25, cycle 24): the contract gained a positive completion marker
+# and a destructive-command screen; the re-apply obligation above now also
+# covers:
+#   .github/policies/workflow-policies.md  — P-002.3 requires every
+#       exempt_verification_command to print EXEMPT_VERIFY_OK:{task_id} as its
+#       last statement before its own exit 0; exit 0 alone is no longer a pass
+#       (EXEMPT_MARKER_MISSING). CORRECTED (cycle 29): the marker requirement
+#       applies to exempt_verification_command ONLY. harness_owner_command is
+#       deliberately UNMARKED and is validated by its own named `--- PASS:`
+#       count against the owner's scaffolded harness
+#       (workflow-policies.md P-002.3, Loop-command-versus-gate-command).
+#       147.036-T / U13's harness_owner_command carries no marker by design.
+#       An earlier revision of this note said the requirement applied to
+#       harness_owner_command "distinctly", which is wrong: reconstructing the
+#       contract from that note after a template adoption would impose an
+#       owner-command marker the policy does not have, and U13 would then fail
+#       a gate it satisfies. Do not reintroduce it.
+#       New P-002.5 statically screens both commands
+#       for a Constitution Principle VII destructive-operation pattern before
+#       either is ever executed (EXEMPT_COMMAND_DESTRUCTIVE), routing a match
+#       to Principle VII operator approval instead of running it. Version
+#       header and Amendment Log corrected to 1.16.0.
+#   .github/agents/.ship.agent.md         — the claim-time gate (still named
+#       Step 4.1a) gains the P-002.5 screening bullet ahead of the pre-work
+#       probe, and its probe / completion-gate criteria require the marker;
+#       the claim action itself is renamed Step 4.1b and now runs only after
+#       Step 4.1a passes (cycle-24 confirmatory-review reorder), so a halt
+#       never strands a task `active`.
+#   .github/skills/build-feature/SKILL.md — Step 0 gains the same screening
+#       bullet for exempt_gate_cmd and, under covered-by, the distinct
+#       harness_cmd; Step 2 and the post-loop completion gate require the
+#       marker.
+#   .github/skills/harness-architect/SKILL.md — unaffected: it never executes
+#       either command (Step 1a is static-only), so the marker and screening
+#       requirements do not apply to it (repo-authored; still needs no entry
+#       here).
+#
+# NOTE (2026-08-25, cycle-24 confirmatory review): the P-002 harness-satisfied
+# consumer contract above (P-002, P-002.1-P-002.5) governs
+# .github/policies/workflow-policies.md, .github/agents/.ship.agent.md,
+# .github/skills/build-feature/SKILL.md, and .github/skills/harness-architect/
+# SKILL.md only. It is deliberately NOT propagated to
+# plugin/agents/ship.agent.md or plugin/skills/build-feature/SKILL.md, and
+# this is a pre-existing scope boundary, not a gap this contract introduced.
+# Per docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md
+# (101-F), plugin/ (the distributable product bundle) and .github/ (backlogit's
+# self-hosting harness) are not byte-identical or content-synchronized;
+# TestPluginBundleStructurallyValid (tests/integration/plugin_manifest_test.go)
+# validates the bundle's file set and frontmatter shape only, never cross-tree
+# content parity. plugin/agents/ship.agent.md and
+# plugin/skills/build-feature/SKILL.md carry no P-002 vocabulary at all — not
+# merely the cycle 22-24 additions — confirmed by direct inspection. This
+# file's own path list intentionally carries no plugin/** entries: drift-ignore
+# governs generated .github harness artifacts, and plugin/ is not one. The
+# plugin bundle is not edited by this work; see follow-up stash 633818E1 and
+# the plan's "Ship ready-selection contract" section for the same rationale.
+#
+# NOTE (2026-08-26, cycle 26): PR #377's fresh Copilot review on 18d41b1f raised
+# two ordering defects in the contract above; the re-apply obligation now also
+# covers:
+#   [SUPERSEDED BY CYCLE 29 — do NOT re-apply the declaration-prerequisite
+#    early-execution rule described in this note. It was replaced by the
+#    P-002.6 wave scheduler, and the declaration-only class it depends on no
+#    longer exists. Retained for history only.]
+#   .github/agents/.ship.agent.md         — Step 2 gains an explicit
+#       declaration-prerequisite ordering rule (new item 3, shifting the
+#       harness-architect invocation to item 4 and the harness-satisfied
+#       confirmation to item 5). A declaration-only exempt task whose declared
+#       shape a dependent's harness compiles against is executed and
+#       EXEMPT_VERIFY_OK-verified before that dependent is scaffolded. Without
+#       it the up-front gate deadlocks a declaration-first DAG. It is an
+#       ordering rule only; it does not admit implementation ahead of a red
+#       harness, and a non-declaration-only blocker halts instead.
+#       [Cycle 29 finding: one up-front pass is still only ONE wave, which is
+#        insufficient for a dependency chain of depth > 1 — U15 needed U1b,
+#        which is not exempt. Waves, not an early pass, are the fix.]
+#   .github/skills/build-feature/SKILL.md — Step 5's narrow new-test-file
+#       exception gains a no-collision rule: "new" is evaluated against the
+#       execution order, so a named *_test.go file that an earlier task in the
+#       dependency order already creates is pre-existing and not admitted
+#       (EXEMPT_DELTA_EXCEEDS_CLASS). The exception is explicitly NOT relaxed to
+#       permit appends. [Still in force; cycle 29 narrows it to
+#        verification-only only.]
+#   .github/skills/harness-architect/SKILL.md — Step 1 gains item 6: assume
+#       declaration-only prerequisites have landed, and halt reporting the
+#       missing prerequisite rather than fabricating or stubbing a declaration
+#       to force compilation (repo-authored; still needs no entry here).
+#       [SUPERSEDED BY CYCLE 29 — replaced by wave-scoped Step 1 item 7.]
+#
+# NOTE (2026-08-26, cycle 26 confirmatory review): the two fixes above were
+# themselves reviewed and corrected; the re-apply obligation covers the
+# corrected form:
+#   .github/agents/.ship.agent.md         — Step 2's declaration-prerequisite
+#       ordering rule routes each prerequisite through the FULL Step 4 loop
+#       (4.1a gate, 4.1b claim, 4.2 build-feature dispatch, 4.3 quality and
+#       exempt completion gates, status transition) rather than restating a
+#       partial marker check; any Step 4 halt code halts the early pass too.
+#       Step 4.1a item 4 is reworded so an unmarked exit 0 is stated as the
+#       EXEMPT_MARKER_MISSING halt code rather than listed among must-fail
+#       signals.
+#   .github/skills/build-feature/SKILL.md — Step 0 items 3 and 4 are split so
+#       an exit-0 probe WITHOUT the marker halts with EXEMPT_MARKER_MISSING
+#       instead of being classified as the expected failed precondition and
+#       continuing into Step 1. Both exit-0 branches now halt: with marker ->
+#       EXEMPT_FALSE_GREEN, without marker -> EXEMPT_MARKER_MISSING.
+#
+# NOTE (2026-08-26, cycle 27): the P-002.4 delta gate gained a concrete baseline
+# and a content pass; the re-apply obligation covers:
+#   .github/policies/workflow-policies.md  — P-002.4 defines exempt_baseline_sha
+#       (captured at Ship Step 4.1a before claim and before any mutation, passed
+#       unchanged to build-feature) and replaces the undefined
+#       <pre-task-commit> placeholder. The Evidence rule is now two passes: a
+#       path pass and a per-class CONTENT pass over the hunks, because the class
+#       surfaces are content restrictions, not path restrictions. An absent or
+#       disputed baseline halts with EXEMPT_DELTA_EXCEEDS_CLASS.
+#   .github/agents/.ship.agent.md         — Step 4.1a gains item 5 capturing
+#       exempt_baseline_sha (halting on a dirty tree) and renumbers Proceed to
+#       item 6; Step 4.2 passes exempt_baseline_sha; Step 4.3 runs both the path
+#       and content passes against that exact SHA and halts on baseline
+#       disagreement.
+#   .github/skills/build-feature/SKILL.md — exempt_baseline_sha added to Inputs
+#       as required for harness-exempt tasks and must not be re-derived from
+#       HEAD; the post-loop completion gate runs both passes against it.
+#
+# NOTE (2026-08-25, cycle 29): PR #377's six unresolved review threads are
+# closed here. Three of them are coupled and change the contract's shape, so a
+# template adoption MUST reconstruct the corrected form, not the cycle-20/26
+# form. The re-apply obligation now covers:
+#   .github/policies/workflow-policies.md  — (a) the declaration-only exemption
+#       class is WITHDRAWN. The closed vocabulary is three tokens: docs-only,
+#       verification-only, covered-by. A task landing a production declaration
+#       (exported type, serialized field, signature, sentinel) is behaviour-
+#       changing production code and is a NORMAL harness-required task; a
+#       declaration-only value is EXEMPT_CLASS_UNRECOGNIZED. Its harness is a
+#       SOURCE-SHAPE harness: it asserts over the package's own source text via
+#       go/parser + go/ast, so it compiles before the declaration exists AND
+#       fails on an assertion rather than on a build error, satisfying P-002's
+#       compile postcondition and P-004's red phase together with no exemption
+#       and no Principle II deviation. Do NOT restore the class; it was a
+#       carve-out from a NON-NEGOTIABLE principle.
+#       (b) new P-002.6 defines dependency-aware harness WAVES: harness
+#       generation and implementation interleave per topological wave (admit the
+#       ready frontier, statically classify it, scaffold its non-exempt members,
+#       build and complete it, requery) with WAVE_NO_PROGRESS,
+#       WAVE_CYCLE_DETECTED, and WAVE_BUDGET_EXCEEDED halt codes, mandatory
+#       deterministic blocked reporting, and explicit preservation of P-001,
+#       P-016, and the Ship circuit breakers. P-002's postcondition is restated
+#       per wave; the global form is the union over waves.
+#       (c) P-002.3's must-fail signal list no longer admits an unmarked exit 0
+#       as the required pre-work failure. The pre-work probe classifies three
+#       ways: required failure -> proceed; exit 0 WITH marker ->
+#       EXEMPT_FALSE_GREEN; exit 0 WITHOUT marker -> EXEMPT_MARKER_MISSING
+#       (malformed command). The marker scope statement is explicit:
+#       exempt_verification_command only, never harness_owner_command.
+#       (d) P-002.4 defines the diff form PER CONSUMER and makes an empty
+#       changed-file set a halt rather than a trivial pass; verification-only is
+#       explicitly not a repository-hygiene class and admits no .gitignore or
+#       other configuration file.
+#       Version header and Amendment Log at 1.17.0.
+#   .github/agents/.ship.agent.md         — Step 2 is now a per-wave procedure
+#       invoked from the new Step 4.0 wave-admission step, not a one-shot
+#       up-front pass; the cycle-26 declaration-prerequisite early-execution
+#       rule is REMOVED and replaced by wave membership. Step 3 builds a wave
+#       schedule (task set, acyclicity check, wave partition, wave budget).
+#       Step 4 is an outer loop over waves wrapping the unchanged 4.1a-4.5
+#       per-task loop. Step 4.2 drops declaration-only from harness_cmd
+#       routing. Step 4.3 keeps the {baseline}..HEAD diff form and now states
+#       WHY that form is correct there (it runs after build-feature's commit)
+#       and halts on an empty delta. Circuit Breakers gain the two wave
+#       counters; Branch Management Rules state that all waves share one
+#       branch/worktree/PR per P-016.
+#   .github/skills/build-feature/SKILL.md — the post-loop completion gate now
+#       diffs the baseline against the WORKING TREE (two-dot with no right-hand
+#       side, plus --cached) because the gate runs BEFORE this skill's Commit
+#       step; the previous {baseline}..HEAD form compared the baseline against
+#       itself and made the fail-closed gate vacuous. An empty changed-file set
+#       is EXEMPT_DELTA_EXCEEDS_CLASS, never a pass. The two forms are
+#       deliberately different from Ship Step 4.3's and must not be harmonized.
+#       declaration-only is removed from Inputs and from the Step 5 narrow
+#       new-test-file exception.
+#   .github/skills/harness-architect/SKILL.md — Step 1 is wave-scoped (the
+#       ${input:tasks} set is the wave and is authoritative; tasks with
+#       unfinished dependencies are excluded); the cycle-26 "assume
+#       declaration-only prerequisites landed" item is replaced by "every
+#       declaration this wave compiles against is already done because it is a
+#       dependency", and a non-compiling harness now reports a MISSING
+#       DEPENDENCY EDGE for plan amendment. Step 1a scaffolds declaration tasks
+#       with the source-shape harness and writes no production stub for them;
+#       Steps 4 and 5.2 carry the corresponding rules (repo-authored; still
+#       needs no entry here).
+#
+# NOTE (2026-08-26, cycle-29 confirmatory review): the fresh local plan review
+# cycle 29's own remediation queue required (§1.9 Check 3) found two P2 gaps
+# in the 1.17.0 contract above; a template adoption MUST reconstruct this
+# corrected form, not the bare cycle-29 form. The re-apply obligation now also
+# covers:
+#   .github/policies/workflow-policies.md — P-002.2 gains a fourth wave-
+#       admission halt code, WAVE_SNAPSHOT_UNRELIABLE, for a per-wave snapshot
+#       query/list call that errors, returns non-parseable output, or returns
+#       a task count that does not match the release unit's known task count.
+#       New P-002.6 subsection "Efficient wave-set computation (snapshot
+#       recipe)" requires exactly ONE status+dependency snapshot call per
+#       wave — a single items/item_deps join via `backlogit query` when
+#       `features.sql_query: true` is declared, else the one-call `backlogit
+#       list --type task --json` fallback (dependencies embedded inline) —
+#       never a per-task call repeated over the frontier at every wave.
+#       Version header and Amendment Log now at 1.18.0.
+#   .github/agents/.ship.agent.md — Step 4.0 item 1 gains a one-clause
+#       cross-reference to the snapshot recipe above; no other line changes.
+#   .github/skills/build-feature/SKILL.md — the Behavioral Constraints bullet
+#       no longer names a missing EXEMPT_VERIFY_OK:{task_id} marker as a
+#       P-002.3 false-green signal; the two are siblings — a false-green
+#       signal is one halt, a missing marker is the distinct
+#       EXEMPT_MARKER_MISSING evidence failure — matching Step 0 item 4 and
+#       Step 2 in the same file, which already stated the distinction. No
+#       version field of its own to bump.
+#
+# NOTE (2026-08-26, cycle 31): PR #377's six remaining unresolved P1 threads are
+# closed here. They reduce to THREE roots, all of which change contract shape, so
+# a template adoption MUST reconstruct the corrected form rather than the
+# cycle-29/30 form. The re-apply obligation now also covers:
+#   .github/policies/workflow-policies.md — (a) P-002.1 fixes the ORDER, not just
+#       the form, of a declaration harness: the compile-capable source-shape
+#       harness lands FIRST and the declaration SECOND. No agent may scaffold,
+#       request, or accept a production stub ahead of the harness that gates it;
+#       the cycle-20 "declaration step" is withdrawn as the same Principle II
+#       carve-out by another route (the stub is observable production surface
+#       admitted with no observed failing test). New companion rule: behaviour
+#       beyond the declared shape needs its OWN prior red, and a seam or
+#       declaration whose body would absorb real behaviour MUST be split into
+#       declaration -> behaviour-harness -> implementation (the U11 -> U12 -> U13
+#       shape). Do NOT restore any stub-first ordering.
+#       (b) P-002.6 replaces the derived-residual `queued` reading with an
+#       IMMUTABLE shipment manifest member set M, frozen at Ship Step 0.5 and
+#       never re-derived from the shipment's live items list — core.ReturnBlockedItem
+#       REMOVES a returned member from that list, so a re-derived M would let the
+#       member vanish and the loop report completion over a shrunken set. Statuses
+#       are the five recognized tokens queued/active/blocked/done/archived; the
+#       partition M = queued + active + blocked + terminal is TOTAL; terminal is
+#       done or archived; completion is `terminal = M` and nothing else (an empty
+#       ready frontier is NEVER completion). Any blocked member halts with the new
+#       P-002.2 code WAVE_MEMBER_BLOCKED, reporting the full census, each member's
+#       blocked_reason, the TRANSITIVE dependency impact, and whether the existing
+#       return_blocked process has been invoked/recorded. An `active` residual at
+#       wave admission halts with WAVE_NO_PROGRESS (detail: active residual). The
+#       snapshot recipe MUST return blocked and active rows and MUST NOT filter
+#       `status != 'archived'` (archived is terminal). A blocked-injection
+#       validation is mandatory before a wave schedule is relied on.
+#       (c) P-002.6 gains "Wave green semantics": harness-architect MAY scaffold
+#       every current-wave harness in one pass, leaving the wave red at once; each
+#       task's modify->test loop and post-loop gate then use ONLY that task's
+#       scoped command; the tolerated-red set is exactly the explicit, closed,
+#       non-widenable sibling_red_selectors Ship passes in; the full suite is
+#       RELOCATED, not skipped, to the new Ship Step 4.6 wave convergence gate.
+#       Six task-scoped command requirements are stated so the scoping cannot
+#       become a weakening. Version header and Amendment Log at 1.19.0.
+#   .github/agents/.ship.agent.md — Step 3 lists the whole manifest at every
+#       status as the frozen, immutable M (wave budget = count(M)). Step 4.0 is
+#       rewritten to ten items: snapshot ALL of M unfiltered -> halt on any
+#       blocked member -> halt on active residual -> check `terminal = M` for
+#       completion -> compute frontier -> deterministic report -> wave budget ->
+#       classify/scaffold (whole wave at once is expected) -> execute task-scoped
+#       -> converge via Step 4.6. Step 4.2 gains wave_scoped and
+#       sibling_red_selectors dispatch inputs and the task-scoped harness_cmd
+#       requirements. Step 4.3 item 3 becomes a TASK-SCOPED suite and explicitly
+#       forbids a repo-wide suite containing a sibling RED. NEW Step 4.6 is the
+#       wave convergence gate (full `go test ./...` plus repo-wide vet/lint/fmt,
+#       remediate INSIDE the current wave on failure, never advance on red).
+#       Circuit Breakers gain three wave rows. Step 4.4 and all Step 5 branch-wide
+#       gates are unchanged and MUST stay unchanged.
+#   .github/skills/build-feature/SKILL.md — new wave_scoped and
+#       sibling_red_selectors inputs; harness_cmd documented as task-scoped with
+#       the six requirements; post-loop gate 3 branches on wave_scoped (scoped
+#       inside a wave, full `go test ./...` outside one — the non-wave path is
+#       UNCHANGED, this relocates a gate rather than removing one); Step 6's
+#       `-run=^$` compile check stays repo-wide because it runs no test; four new
+#       Behavioral Constraints forbidding widening the tolerated-red set,
+#       accepting a non-conforming scoped command, and narrowing the compile
+#       check. No version field of its own.
+#   .github/skills/harness-architect/SKILL.md — Step 1 item 8 states that
+#       scaffolding the whole wave in one pass is expected and leaves it all red
+#       by design; Step 4 items 3/5/6 restrict stubs to behaviour-on-existing-symbol
+#       deltas, forbid any stub ahead of the harness, and require the
+#       declaration/behaviour split for a seam; Step 5.2 evaluates the red phase
+#       per task against its OWN scoped selector instead of `go test ./...`;
+#       Step 6 records the scoped command; Guardrails and Completion Criteria
+#       updated to match (repo-authored; still needs no entry below).
+#
+# NOTE (2026-08-26, cycle 32): the fresh local review cycle 31's FAIL blocked on
+# found TWO P1 and THREE P2 defects in the 1.19.0 contract itself. All five are
+# corrected here, and a template adoption MUST reconstruct the CORRECTED form
+# rather than the cycle-31 form. The re-apply obligation now also covers:
+#   .github/policies/workflow-policies.md — (a) P-002.6 gains
+#       `open_red_deliverables_k`: the CLOSED set of selectors belonging to
+#       completed tasks whose declared deliverable IS a red harness and whose
+#       declared green-makers are not yet `done`. Cycle 31's claim that the
+#       tolerated-red set is EMPTY at the Step 4.6 convergence gate is FALSE from
+#       wave 4 onward on this release unit (147.016-T / U8b and 147.042-T / U3c
+#       both complete red in wave 4; 147.035-T / U12 in wave 6), and would have
+#       deadlocked the loop at wave 4. Convergence now ALWAYS runs the repo-wide
+#       compile check plus vet/lint/format plus the wave's CLOSED list of declared
+#       scoped commands (a red deliverable's selector must still be observed RED);
+#       the UNFILTERED `go test ./...` runs if and only if the open-red set is
+#       empty, and is mandatory at final closure. A non-empty set DEFERS the full
+#       suite with an explicit FULL_SUITE_DEFERRED record — deliberately NOT a
+#       classified full run, because a build error/panic/timeout in a package that
+#       also contains an open red aborts the package and would silently absorb an
+#       unrelated real failure. Deferral is bounded by the declared
+#       green_maker_closes_wave and by the new WAVE_OPEN_RED_UNCLOSED code; a
+#       green-maker that reaches `archived` (a DESCOPE) rather than `done` does NOT
+#       close its obligation. Do NOT restore "the tolerated-red set is empty at
+#       this gate".
+#       (b) P-002.6's status model is read from the CONFIGURED sources, never from
+#       a hard-coded token list. Cycle 31 cited "five recognized tokens ...
+#       internal/models/artifact.go:17-22"; those lines declare TEN ArtifactStatus
+#       constants and .backlogit/config.yaml fields.status.values enumerates the
+#       same ten. M is now partitioned into configured EXECUTABLE (queued, active,
+#       blocked), configured TERMINAL-SUCCESS (done, archived — done from the
+#       registry status_values/complete_task, archived from the archive lifecycle),
+#       and UNSUPPORTED defined as the COMPLEMENT, so the partition is total by
+#       construction. An unsupported member (review/accepted/rejected/shipped/
+#       abandoned or any off-catalog token) halts with the new
+#       WAVE_STATUS_UNSUPPORTED and NEVER false-completes; an unreadable, empty, or
+#       self-inconsistent model halts with the new WAVE_STATUS_CATALOG_UNAVAILABLE
+#       rather than falling back to a built-in vocabulary. Do NOT re-introduce a
+#       five-token set and do NOT fold unsupported statuses into
+#       WAVE_MEMBER_BLOCKED.
+#       (c) M is frozen at Ship STEP 3, not Step 0.5 — Step 0.5 validates and
+#       claims a shipment but never enumerates members, and is conditional on
+#       features.shipments. The non-shipment fallback (the covering release unit's
+#       declared child enumeration, recorded verbatim) is defined, with the new
+#       WAVE_MANIFEST_UNAVAILABLE when neither path is available or the two
+#       disagree.
+#       (d) The mandatory blocked-injection validation must be a TRACKED,
+#       reproducible, READ-ONLY artifact rather than a session claim. Six new
+#       P-002.2 codes in total: WAVE_STATUS_UNSUPPORTED,
+#       WAVE_STATUS_CATALOG_UNAVAILABLE, WAVE_MANIFEST_UNAVAILABLE,
+#       WAVE_RED_MAPPING_UNRESOLVED, WAVE_OPEN_RED_UNCLOSED (plus the reworded
+#       WAVE_MEMBER_BLOCKED row). Version header and Amendment Log at 1.20.0.
+#   .github/agents/.ship.agent.md — Step 0.5 states explicitly that it does NOT
+#       freeze M; Step 3 is rewritten to eight items (status model -> freeze M with
+#       non-shipment fallback -> build the red-deliverable mapping -> dep graph ->
+#       acyclicity -> wave partition -> empty check -> replay the tracked
+#       simulation); Step 4.0 is rewritten to twelve items with the unsupported
+#       halt as item 2 and the open-red recompute as item 9; Step 4.2 gains
+#       green_regression_cmds, open_red_selectors, and the red-deliverable dispatch
+#       inversion; Step 4.3 item 3 runs the CLOSED declared list only; Step 4.5
+#       states that a red deliverable completes RED; Step 4.6 is rewritten with the
+#       always-on part, the conditional unfiltered suite, the deferral record and
+#       its budget; Step 5 requires the unfiltered suite and an EMPTY open-red set
+#       at final closure. Two new circuit-breaker rows.
+#   .github/skills/build-feature/SKILL.md — new green_regression_cmds,
+#       open_red_selectors, and red_deliverable inputs; post-loop gate 3 runs the
+#       declared closed list and tolerates exactly
+#       sibling_red_selectors + open_red_selectors; three new Behavioral
+#       Constraints. The discretionary "any package that was already green before
+#       this wave began" allowance is WITHDRAWN in both this file and
+#       .ship.agent.md — do NOT restore it.
+#   .github/skills/harness-architect/SKILL.md — Step 1 item 9 (red deliverables
+#       stay red past their own wave), Step 5.2 open-red note, Step 6 records the
+#       declared green-makers in the manifest note.
+#   tests/simulation/wave-scheduler-contract.json + scripts/wave-scheduler-sim.ps1
+#       — the tracked read-only scheduler simulation and its fixture, 150 assertions
+#       over 21 scenarios, re-derivable from the live queue with
+#       -VerifyAgainstQueue. Repo-authored; needs no entry below, but a template
+#       adoption that keeps P-002.6 MUST carry an equivalent artifact, including
+#       the convergence-gate controls: open-red RED re-confirmation
+#       (WAVE_RED_DELIVERABLE_EARLY_GREEN) and newly-closed GREEN verification
+#       (WAVE_GREEN_MAKER_UNVERIFIED).
+#
+# NOTE (2026-08-26, cycle 33): four review findings corrected the cycle-32 form;
+# a template adoption MUST preserve the corrections rather than reconstruct
+# 1.20.0 literally:
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       distinguish complete shipment set S from wave set M. S is every explicit
+#       manifest ID; M is exactly the task-type IDs in S. For 130-S, count(S)=44,
+#       count(M)=43, and excluded_non_task_members is 147-F (feature). Snapshot
+#       row counts and wave budgets use count(M), never count(S). Compare the
+#       covering-unit TASK enumeration with filtered M, not with raw S.
+#   .github/policies/workflow-policies.md, .github/agents/.ship.agent.md, and
+#       .github/skills/build-feature/SKILL.md — green_regression_cmds has one
+#       optional canonical JSON body block. An absent block means exactly [];
+#       no current 130-S task needs one. Do NOT infer commands from prose or
+#       restore discretionary package selection.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — -VerifyAgainstQueue
+#       parses 130-S itself, resolves member types, compares filtered task IDs
+#       exactly with M, reports excluded non-task IDs, compares all five
+#       red-deliverable keys (including selector and close wave), and runs
+#       fixture-declared in-memory mutation checks. Repo-authored; no path entry
+#       is needed below, but an equivalent validation artifact remains required.
+#   The descope-provenance citation is archivedFromDescopeEligibleStatus in
+#       internal/core/shipment_gate.go, not the lower-level status predicate.
+#       Version header and Amendment Log are 1.21.0.
+#
+# NOTE (2026-08-26, cycle 34): the independent correction against canonical
+# HEAD 47925de2 found that cycle 33 fixed the M count but left both snapshot
+# implementations able to widen it. A template adoption MUST preserve:
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       the SQL snapshot filters on `artifact_type = 'task'` AND an exact
+#       safely-bound/safely-quoted frozen-M ID list. It NEVER filters on
+#       `parent_id`: that query returns 44 task children for 147-F by absorbing
+#       retired archived 147.010-T. The SQL result has exactly 43 distinct IDs.
+#       Without SQL, retrieve every frozen-M ID DIRECTLY and exactly once with
+#       get-item / `backlogit get {id} --format json` (or an exact-ID batch),
+#       including every status; reject missing, duplicate, extra, and non-task
+#       results. `list --type task`, parent-child enumeration, and status
+#       filtering are forbidden. A degraded SQL tool falls back only to these
+#       exact-ID gets.
+#   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
+#       non-shipment mode requires a closed explicit `frozen_task_ids` input,
+#       persisted verbatim, or halts WAVE_MANIFEST_UNAVAILABLE. It MUST NOT infer
+#       scope from all children of a covering release unit. Covering feature
+#       147-F and archived historical sibling 147.010-T never enter M, the
+#       explicit fallback, or any snapshot.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — -VerifyAgainstQueue
+#       parses and compares `.backlogit/config.yaml` status values and the live
+#       registry status mapping plus sql_query/shipments features. The old
+#       `frozen_m_counterpart` expected-value-vs-itself tautology is gone;
+#       manifest M is exact-compared with the explicit fallback set. Mutation
+#       controls cover all three status sources and archived-sibling inclusion.
+#       The green-regression parser also enforces the easy P3 shape rule: object
+#       root, exactly one key, array value. Repo-authored; no path entry needed.
+#       Version header and Amendment Log are 1.22.0.
+#
+# NOTE (2026-08-26, cycle 38): the declared `red_deliverable` input finally has an
+# implementing branch. A template adoption that keeps P-002.6 MUST carry it, not
+# just the input name:
+#   .github/skills/build-feature/SKILL.md — new Step 0.5 red-deliverable execution
+#       branch that REPLACES the generic loop for these tasks rather than adding a
+#       flag to it. It CONSUMES the harness harness-architect already scaffolded
+#       with the wave; it never lands one and never writes. Dispatch preconditions
+#       reject a harness-exempt pairing, a harness_cmd that is not the declared
+#       red_selector_command verbatim, or an absent red_baseline_sha
+#       (WAVE_RED_MAPPING_UNRESOLVED). Step 0.5a requires the repo-wide compile
+#       check to pass — a failure is RED_DELIVERABLE_HARNESS_UNCOMPILABLE, returned
+#       to harness-architect — and requires named --- FAIL: assertions on the
+#       anchored selector: exit 0 is WAVE_RED_DELIVERABLE_EARLY_GREEN, a
+#       no-tests-to-run signal at ANY exit code is WAVE_RED_DELIVERABLE_VACUOUS
+#       (the mirror of the P-002.3 false-green rule), and a panic, timeout, or
+#       package abort is RED_DELIVERABLE_NOT_ASSERTION_RED. Step 0.5b is a
+#       ZERO-DELTA gate against red_baseline_sha, measured as the UNION of
+#       git diff, git diff --cached, AND git ls-files --others
+#       --exclude-standard — the untracked pass is mandatory, because git diff
+#       reports only tracked files and a newly created one would otherwise pass:
+#       a non-test *.go file is
+#       RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED and anything else is
+#       RED_DELIVERABLE_DELTA_OUT_OF_SURFACE. Step 0.5c's evidence report is
+#       mandatory; Ship builds the open_red_deliverables entry from it. Step 0.5d
+#       tolerates exactly sibling_red_selectors + open_red_selectors + the task's
+#       own declared selector, and that singleton is the only permitted addition.
+#       There is no commit: the delta is empty by contract.
+#   .github/policies/workflow-policies.md — P-002.2 gains
+#       WAVE_RED_DELIVERABLE_VACUOUS and extends WAVE_RED_DELIVERABLE_EARLY_GREEN
+#       to the Step 0.5 gate points;
+#       P-002.6 gains the red-deliverable execution rule. Do NOT reconstruct
+#       1.23.0, which declared the input with no branch behind it.
+#   .github/agents/.ship.agent.md — Step 4.2 passes red_deliverable and
+#       red_baseline_sha explicitly and names the branch and its halt codes;
+#       Step 4.5 builds the open-red
+#       record from the Step 0.5c report instead of re-deriving it.
+#       `red_deliverable` MUST be dispatched with a `red_baseline_sha` captured
+#       AFTER the wave's scaffolding commit. Do NOT
+#       reintroduce a landing branch: Ship Step 4.0 item 10 scaffolds red
+#       deliverables with the wave, so a landing branch halts on its own
+#       baseline for exactly the tasks it should complete.
+#       `WAVE_RED_DELIVERABLE_PRELANDED` was proposed and withdrawn in the same
+#       cycle; it described what is now the expected dispatch state.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — new
+#       `red_deliverable_branch_controls` block and its classifier. The wave
+#       arithmetic is unchanged; the 16 controls pin Step 0.5 routing and result
+#       classification, which no scheduler scenario can reach. Totals move to 182
+#       assertions with -VerifyAgainstQueue / 160 without. The load-bearing
+#       control is `red-deliverable-never-enters-generic-loop`: with the branch
+#       removed it fails on both assertions. An adopting template MUST carry an
+#       equivalent control suite, not just the branch prose.
+#       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
@@ -71,6 +586,7 @@
 .github/agents/.ship.agent.md
 
 # --- Skills ---
+.github/skills/build-feature/SKILL.md
 .github/skills/compound-refresh/SKILL.md
 .github/skills/file-lock/SKILL.md
 .github/skills/harness-doctor/SKILL.md
