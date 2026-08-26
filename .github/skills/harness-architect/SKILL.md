@@ -84,11 +84,20 @@ scope is the current wave's ready set and nothing else.
 8. **Scaffolding the whole wave in one pass is expected.** Every non-exempt
    member of the wave may be scaffolded together, which leaves them all red at
    the same time. That is the designed state, not a defect: Ship then drives
-   each member green against its **own scoped selector**, and the full
-   repository suite runs once at Ship's Step 4.6 wave convergence gate. Record
-   each task's scoped selector (Step 6) so the build loop and Ship's Step 4.3
-   share one boundary and no sibling's red is ever attributed to the task under
-   build.
+   each member green against its **own scoped selector**, and the unfiltered
+   repository suite runs at Ship's Step 4.6 wave convergence gate whenever the
+   open-red set is empty. Record each task's scoped selector (Step 6) so the
+   build loop and Ship's Step 4.3 share one boundary and no sibling's red is
+   ever attributed to the task under build.
+9. **A red-deliverable task's harness is the deliverable, and it stays red past
+   its own wave.** When a task carries a `red-deliverable-contract` block
+   (`red_deliverable: true`), the harness this skill scaffolds is what the task
+   ships: no later step in that wave drives it green, and the declared
+   `green_maker_tasks` do so in later waves. Scaffold it exactly as any other
+   red harness, record its `red_selector_command` as the task's scoped command,
+   and record the declared green-makers in the manifest note so Ship's Step 3
+   mapping and Step 4.6 open-red set can be built from artifacts rather than
+   from inference. Never scaffold a green assertion into it to "balance" it.
 
 ### Step 1a: Harness-exempt static intake (P-002.1, fail-closed)
 
@@ -254,10 +263,11 @@ harness tests it scaffolds. ALL of that task's tests MUST fail with the expected
 (// TODO: implement).
 
 **Do not run `go test ./...` for the red-phase check.** When this skill scaffolds a whole P-002.6
-wave in one pass, every non-exempt member of the wave is red simultaneously and by design; a
-repo-wide run cannot tell one task's intended red from a sibling's. Evaluate each scaffolded task
-against its own selector, and record that selector as the task's scoped harness command so
-`build-feature` and Ship Step 4.3 use the same boundary.
+wave in one pass, every non-exempt member of the wave is red simultaneously and by design, and a
+red deliverable from an earlier wave may still be failing by design too; a repo-wide run cannot
+tell one task's intended red from a sibling's or from an open-red deliverable. Evaluate each
+scaffolded task against its own selector, and record that selector as the task's scoped harness
+command so `build-feature` and Ship Step 4.3 use the same boundary.
 
 If any test passes (false positive) or fails with an unexpected error
 (compilation vs runtime), fix the harness.
@@ -286,7 +296,11 @@ Apply this label only to tasks this run scaffolded. Do not add it to
 P-002.1-valid `harness-exempt` tasks — they are already harness-satisfied and
 carry no scaffolded harness. When a scaffolded task is the named
 `harness_owner` of an exempt `covered-by` task, record that pairing in the
-manifest note so Ship's claim-time gate can find the red evidence.
+manifest note so Ship's claim-time gate can find the red evidence. When a
+scaffolded task carries a `red-deliverable-contract`, record its declared
+`green_maker_tasks` and `green_maker_closes_wave` in the same note, so Ship's
+Step 3 red-deliverable mapping is built from a recorded artifact and its Step 4.6
+deferral is traceable to a stated closing wave.
 
 ## Completion Criteria
 

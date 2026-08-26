@@ -2484,6 +2484,30 @@ generation and implementation per wave rather than scaffolding the shipment up f
 | 8 | `147.014-T` (U7b), `147.037-T` (U14) | 17 | `147.026-T` (U10b, exempt) |
 | 9 | `147.006-T` (U3), `147.008-T` (U4), `147.021-T` (U2f, exempt) | 18 | `147.041-T` (U10c, exempt) |
 
+**Persistent red deliverables and convergence scope (cycle-32, P-002.6).** Three members of this
+schedule are tasks whose *declared deliverable is a red harness*: they complete red and a later
+task turns them green. `147.042-T` / U3c and `147.016-T` / U8b both complete in **wave 4**, and
+`147.035-T` / U12 completes in **wave 6**. Each carries a machine-readable
+`red-deliverable-contract` block naming its `red_selector_command`, its `green_maker_tasks`, and
+the wave at which the last of them lands:
+
+| Red deliverable | Wave | Declared green-maker(s) | Closes at wave |
+|---|---|---|---|
+| `147.035-T` (U12) | 6 | `147.036-T` (U13) | 7 |
+| `147.042-T` (U3c) | 4 | `147.037-T` (U14) | 8 |
+| `147.016-T` (U8b) | 4 | `147.006-T`, `147.007-T`, `147.008-T`, `147.009-T`, `147.011-T`, `147.012-T`, `147.013-T`, `147.014-T`, `147.015-T`, `147.022-T`, `147.024-T`, `147.025-T`, `147.027-T` | 13 |
+
+`open_red_deliverables_k` is therefore non-empty from the wave-4 convergence gate through the
+wave-12 one. Wave 4 **advances** with U8b and U3c legitimately red — the convergence gate runs the
+repo-wide compile check, `go vet`, lint, format, and every member's declared scoped command, and
+**defers** the unfiltered `go test ./...` with an explicit `FULL_SUITE_DEFERRED` record. The
+unfiltered suite runs at the convergence gate of waves 1–3 (before any red deliverable lands) and
+again from **wave 13**, the wave at which U8b's last green-maker (`147.024-T` / U7c) completes and
+empties the set, through wave 18 and final closure. A green-maker `archived` rather than `done`
+does not close its entry; an entry still open past its declared closing wave halts with
+`WAVE_OPEN_RED_UNCLOSED`. The 1.19.0 claim that the tolerated-red set is empty at every convergence
+gate was false from wave 4 onward and is corrected.
+
 **The wave schedule is what dissolves the U15/U8b deadlock** PR #377 review raised on
 `.ship.agent.md:254`. U8b (`147.016-T`) cannot compile until U15 (`147.038-T`) lands, but U15
 depends on U1b (`147.030-T`), which is harness-required and so cannot be implemented before its own
@@ -5223,3 +5247,189 @@ because the corrected contract has been reviewed only by the session that author
 This authorization covers **planning, policy, and skill-prose artifacts only**. It is not merge
 approval, not a shipment claim, and not authorization for Ship to begin implementation. The §1.9
 readiness gate remains **FAIL on Check 3**.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 32
+reviewed_at: 2026-08-26
+reviewed_head: d57bbd8a456383c0a98283f2637642b34ffa5c54
+dispatch_mode: single-agent-declared-degradation
+tool_degraded: reviewer-subagent-dispatch
+decision: FAIL
+pending: fresh-local-review-required
+operator_authorization: approved
+severity_counts: "P0=0, P1=2 (both remediated in-pass), P2=3 (all remediated in-pass), P3=0"
+topology: "42 tasks, 104 executable edges, 43 shipment members, 18 waves, acyclic"
+push_allowed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: FAIL — pending fresh review
+
+**This record is the current gate state.** It supersedes `cycle: 31` `FAIL` for gate-decision
+purposes. Cycle 31's record and every earlier record remain the historical trace of how the plan
+reached its present shape; only the gate-state role (`decision`, `push_allowed`) is superseded here.
+
+This cycle is the **fresh local review of the cycle-31 contract** that cycle 31's `FAIL` blocked on.
+It found **two P1 defects and three P2 defects in that contract** and remediated all five in-pass.
+The gate stays `FAIL` for the same structural reason cycle 31 gave, now applied to this cycle's own
+changes: the corrected contract has again been reviewed only by the session that authored it.
+
+### Authorization basis
+
+`operator_authorization: approved` records that the operator explicitly directed autonomous
+remediation of the cycle-32 findings in one bounded cycle, with an explicit scope of **no
+subagents, no push, no merge, no production Go**. That scope was honoured: zero `*.go` files were
+modified, zero subagents were dispatched, and nothing was pushed or merged. The authorization
+covers applying the corrections and recording this gate outcome. It is **not** merge approval,
+**not** a shipment claim, and **not** authorization for Ship to begin implementation.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+Reviewer sub-agent dispatch was unavailable (the operator's explicit "no subagents" scope);
+`TOOL_DEGRADED: reviewer-subagent-dispatch` records the degradation, matching the
+cycle-16/17/18/20/21/24/29/31 precedent. The pass ran sequentially over the 1.19.0 contract
+(P-002.2, P-002.6), `.ship.agent.md` Steps 0.5/3/4.0/4.2/4.3/4.5/4.6/5, `build-feature/SKILL.md`,
+`harness-architect/SKILL.md`, the live status model (`.backlogit/config.yaml`,
+`.autoharness/backlog-registry.yaml`, `internal/models/artifact.go`,
+`internal/core/status_taxonomy.go`, `internal/core/shipment_gate.go`), and the 43 staged backlog
+artifacts, re-verified live against the worktree.
+
+### Findings by severity
+
+| ID | Sev | Root | Anchor | Disposition |
+|---|---|---|---|---|
+| G1 | P1 | Step 4.6 asserted an **empty** tolerated-red set, which is false from wave 4 onward | `.ship.agent.md` Step 4.6 item 2; `workflow-policies.md` P-002.6 *Wave green semantics* | **Fixed.** `open_red_deliverables_k`, conditional unfiltered suite, explicit deferral, `WAVE_OPEN_RED_UNCLOSED` |
+| G2 | P1 | Status model cited a **five-token** set that exists in no source | `workflow-policies.md` P-002.6 *Definitions* | **Fixed.** Configured executable / terminal-success / unsupported partition, `WAVE_STATUS_UNSUPPORTED`, `WAVE_STATUS_CATALOG_UNAVAILABLE` |
+| G3 | P2 | `M`'s freeze anchor named Step 0.5, which never enumerates members | `workflow-policies.md` P-002.6; `.ship.agent.md` Step 4.0 item 1 | **Fixed.** Anchored to Step 3, with a defined non-shipment fallback and `WAVE_MANIFEST_UNAVAILABLE` |
+| G4 | P2 | The mandatory scheduler validation was a **session claim**, not a re-runnable artifact | `workflow-policies.md` P-002.6 *Blocked-injection validation* | **Fixed.** Tracked read-only fixture + PowerShell runner, 84/84 assertions |
+| G5 | P2 | "any package that was already green before this wave began" was discretionary | `.ship.agent.md` Step 4.3 item 3; `build-feature/SKILL.md` post-loop gate 3 | **Fixed.** Replaced by the task-declared closed list `green_regression_cmds` |
+
+**G1 — open red across waves.** Cycle 31 relocated the full suite to a new Step 4.6 and justified an
+empty tolerated-red set with "every current-wave harness is now green because every member has been
+built". That premise holds only for waves whose members are all build-to-green tasks. Three members
+of this release unit are **red deliverables** — tasks whose declared deliverable *is* a failing
+harness, turned green by a later task — and two of them, `147.016-T` / U8b and `147.042-T` / U3c,
+complete in **wave 4**. An unfiltered `go test ./...` at wave 4's convergence gate would fail on
+exactly the artifacts the plan asked those tasks to produce, and Step 4.6 forbids advancing on a
+failing gate, so the release unit would deadlock at wave 4 — the same class of unsatisfiable gate
+cycle 31 fixed one level up. The correction defines `open_red_deliverables_k` as the closed set of
+selectors belonging to completed red deliverables whose declared green-makers are not all `done`,
+derived **mechanically** from a new `red-deliverable-contract` block in the task body and failing
+closed with `WAVE_RED_MAPPING_UNRESOLVED` on a missing, empty, unknown, self-referential, or
+not-strictly-later mapping. Convergence **always** runs the repo-wide compile check, `go vet`,
+lint, format, and the wave's closed list of declared scoped commands; the **unfiltered** suite runs
+if and only if the open-red set is empty, and is mandatory at final closure.
+
+**Why deferral rather than a classified full run.** Both options in the finding were evaluated. A
+classified full run (`go test ./...`, admitting only failures matching the open-red selectors) is
+the *less* robust one: Go aborts a package on a build error, panic, or timeout, so a genuine
+unrelated failure inside a package that also contains an open red produces no `--- FAIL:` line to
+classify and would be silently absorbed by the tolerated set — precisely the hidden-unexpected-
+failure mode the gate exists to prevent. Deferral has no classification step and therefore no such
+mode: what stays repo-wide (compile, vet, lint, format) cannot be reddened by a designed red at
+all, every declared scoped command is run and must pass, the deferral is recorded explicitly with
+its selectors and unclosed green-makers, and it is bounded by `green_maker_closes_wave` and
+`WAVE_OPEN_RED_UNCLOSED` rather than left open-ended. On this schedule the deferral spans waves
+4–12 and discharges at **wave 13**, the wave that completes U8b's last green-maker.
+
+**G2 — status model.** P-002.6 1.19.0 stated that `status(t)` "is exactly one of the five
+recognized tokens `queued`, `active`, `blocked`, `done`, `archived`
+(`internal/models/artifact.go:17-22`)". That citation is wrong: those lines declare **ten**
+`ArtifactStatus` constants, and `.backlogit/config.yaml` `fields.status.values` enumerates the same
+ten. Five real lifecycle tokens — `review`, `accepted`, `rejected`, `shipped`, `abandoned` — had no
+stated disposition, and the one clause that mentioned unknown tokens folded them into
+`WAVE_MEMBER_BLOCKED`, a code whose report format promises a `blocked_reason` and a `return_blocked`
+record that none of them has. The model is now read from the **configured** sources at Step 3 — the
+workspace catalog, the registry `status_values` mapping, and the actual archive lifecycle — and `M`
+is partitioned into configured **executable** (`queued`, `active`, `blocked`), configured
+**terminal-success** (`done`, `archived`), and **`unsupported`** defined as the complement, which
+makes the partition total *by construction* rather than by enumeration. An unsupported member halts
+with `WAVE_STATUS_UNSUPPORTED` naming each ID and its observed token; an unreadable, empty, or
+self-inconsistent model halts with `WAVE_STATUS_CATALOG_UNAVAILABLE` rather than falling back to a
+built-in vocabulary. A related sub-finding is fixed alongside: `archived` satisfies a *dependency*
+but does **not** discharge a *green-maker* obligation, because a member may be archived as a
+descope (`isDescopeEligibleStatus`, `internal/core/shipment_gate.go`).
+
+**G3 — freeze anchor and the non-shipment path.** 1.19.0 froze `M` "at Ship Step 0.5 shipment
+intake". Step 0.5 loads the shipment, validates membership, creates the branch, and claims — it
+never enumerates members at every status, and it is explicitly conditional on
+`features.shipments: true`. Step 3 is the step that lists every member; the anchor is moved there,
+Step 0.5 now says in one sentence that it does *not* freeze `M`, and the non-shipment path is
+defined rather than left implicit: freeze from the covering release unit's declared child
+enumeration, recorded verbatim in the session record and checkpoint, with `WAVE_MANIFEST_UNAVAILABLE`
+when neither source is available or the two disagree.
+
+**G4 — the validation became an artifact.** P-002.6 requires a blocked-injection replay before a
+wave schedule may be relied on, but cycle 31 satisfied it with an in-session simulation described
+only in a review record. The next reader cannot re-run a paragraph. The replay is now carried by
+`tests/simulation/wave-scheduler-contract.json` (a tracked fixture mirroring the live queue) and
+`scripts/wave-scheduler-sim.ps1` (a pure, read-only runner). No Go was added: the repository's test
+tree is Go-only and this cycle's scope forbids production Go, so the artifact uses the PowerShell
+already present under `scripts/` plus a JSON fixture that CI, `jq`, and any reader can parse.
+
+**G5 — discretionary package selection.** Both Ship Step 4.3 and `build-feature`'s post-loop gate
+allowed "any package that was already green before this wave began". That set was never enumerated,
+never recorded, and could be narrowed to nothing or widened into a sibling's red without any
+artifact showing it — implementer judgement inside a gate that had just been tightened elsewhere.
+It is replaced by `green_regression_cmds`: a task-declared, closed, diffable list, empty unless the
+task declares otherwise.
+
+### Simulation evidence
+
+Committed artifact, re-runnable by anyone:
+`pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue` → **`WAVE_SIM_OK:
+84/84 assertions PASS across 16 scenario(s)`**, exit 0. The runner writes nothing, starts no
+process, and runs no build, so it clears the P-002.5 read-only screen.
+
+| Scenario | Result |
+|---|---|
+| `baseline` | `COMPLETE`, **18 waves**, 42/42 scheduled, sizes 2,2,4,5,4,4,3,2,3,3,1,2,2,1,1,1,1,1, **0** stalls, **0** compile-order violations, 19 snapshot calls (one per wave plus the completion snapshot) |
+| `persistent_red_mapping` | Wave 4 **advances**; open red after wave 4 = `{147.016-T, 147.042-T}`, after wave 6 = `{147.016-T, 147.035-T, 147.042-T}`; entries close at waves 7 / 8 / 13; unfiltered full suite at waves 1,2,3,13,14,15,16,17,18; deferred at waves 4–12; compile gate at all 18; **0** hidden unexpected failures |
+| `blocked_injection` | `WAVE_MEMBER_BLOCKED` at wave 1, dependency impact **26**, member retained in `M`, no completion claim |
+| `blocked_mid_run` | `WAVE_MEMBER_BLOCKED` at wave 5 |
+| `active_residual` | `WAVE_NO_PROGRESS` (detail `active residual`) at wave 1 |
+| `unsupported_status_review` / `_abandoned` / `_off_catalog` | `WAVE_STATUS_UNSUPPORTED` at wave 1 in all three, naming the member and token; no false completion |
+| `status_catalog_unavailable` / `status_catalog_disagrees` | `WAVE_STATUS_CATALOG_UNAVAILABLE` at schedule construction |
+| `cycle_injection` | `WAVE_CYCLE_DETECTED` at schedule construction with a non-empty cycle path |
+| `sibling_red_wave4` | 5 non-exempt members; withdrawn repo-wide gate progresses **0/5**; task-scoped gate progresses **5/5**; **0** full-suite runs inside per-task loops |
+| `non_frozen_m_control` | `WAVE_NO_PROGRESS` at wave 10 with `147.030-T` dropped from the accounting universe — the failure the frozen-`M` contract prevents |
+| `missing_green_maker` / `ambiguous_green_maker` | `WAVE_RED_MAPPING_UNRESOLVED` at schedule construction |
+| `green_maker_descoped` | Green-maker `archived` instead of `done` → obligation stays open → `WAVE_OPEN_RED_UNCLOSED` at wave 8 |
+
+### Validation evidence
+
+| Gate | Result |
+|---|---|
+| Wave scheduler simulation | `WAVE_SIM_OK` 84/84, exit 0, fixture verified against the live queue |
+| Markdown P-008 (`markdownlint-cli2`, repo-wide) | 0 issues |
+| Docline frontmatter (`backlogit docs lint`) | `valid: true`, 0 violations |
+| Index sync (`backlogit sync`) | 0 parse failures |
+| Topology (`backlogit query`) | 42 tasks, 104 executable edges, 43 shipment members — unchanged |
+| `go build ./...` / `go vet ./...` | exit 0 / exit 0 |
+| `go test ./...` | exit 0 |
+| Production Go touched | **none** — 0 `*.go` files modified |
+
+### Remediation queue and authorization
+
+All five findings are remediated in-pass. The gate is nonetheless **FAIL pending fresh review**:
+this cycle rewrote the scheduler's status model, its manifest freeze anchor, and its convergence
+semantics, and — exactly as in cycle 31 — the corrected contract has been reviewed only by the
+session that authored it. The difference from cycle 31 is that the review obligation is now
+partly mechanized: `scripts/wave-scheduler-sim.ps1` re-checks the behavioural claims on demand, so
+the fresh review can concentrate on whether the *contract* is right rather than on whether the
+*simulation* was really run.
+
+| Item | Owner | State |
+|---|---|---|
+| Fresh local plan review of the cycle-32 contract | Stage / plan-review | **required before push** — this is what `decision: FAIL` blocks on |
+| Push `chore/stage-130-s` | operator / Stage | blocked on the review above |
+| Reply to and resolve the PR #377 threads on the new HEAD | Ship / pr-lifecycle | blocked on push |
+| Operator merge approval (P-014) | operator | not requested |
+
+This authorization covers **planning, policy, skill-prose, and simulation artifacts only**. It is
+not merge approval, not a shipment claim, and not authorization for Ship to begin implementation.
+The §1.9 readiness gate remains **FAIL on Check 3**.

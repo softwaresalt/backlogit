@@ -350,6 +350,85 @@
 #       per task against its OWN scoped selector instead of `go test ./...`;
 #       Step 6 records the scoped command; Guardrails and Completion Criteria
 #       updated to match (repo-authored; still needs no entry below).
+#
+# NOTE (2026-08-26, cycle 32): the fresh local review cycle 31's FAIL blocked on
+# found TWO P1 and THREE P2 defects in the 1.19.0 contract itself. All five are
+# corrected here, and a template adoption MUST reconstruct the CORRECTED form
+# rather than the cycle-31 form. The re-apply obligation now also covers:
+#   .github/policies/workflow-policies.md — (a) P-002.6 gains
+#       `open_red_deliverables_k`: the CLOSED set of selectors belonging to
+#       completed tasks whose declared deliverable IS a red harness and whose
+#       declared green-makers are not yet `done`. Cycle 31's claim that the
+#       tolerated-red set is EMPTY at the Step 4.6 convergence gate is FALSE from
+#       wave 4 onward on this release unit (147.016-T / U8b and 147.042-T / U3c
+#       both complete red in wave 4; 147.035-T / U12 in wave 6), and would have
+#       deadlocked the loop at wave 4. Convergence now ALWAYS runs the repo-wide
+#       compile check plus vet/lint/format plus the wave's CLOSED list of declared
+#       scoped commands (a red deliverable's selector must still be observed RED);
+#       the UNFILTERED `go test ./...` runs if and only if the open-red set is
+#       empty, and is mandatory at final closure. A non-empty set DEFERS the full
+#       suite with an explicit FULL_SUITE_DEFERRED record — deliberately NOT a
+#       classified full run, because a build error/panic/timeout in a package that
+#       also contains an open red aborts the package and would silently absorb an
+#       unrelated real failure. Deferral is bounded by the declared
+#       green_maker_closes_wave and by the new WAVE_OPEN_RED_UNCLOSED code; a
+#       green-maker that reaches `archived` (a DESCOPE) rather than `done` does NOT
+#       close its obligation. Do NOT restore "the tolerated-red set is empty at
+#       this gate".
+#       (b) P-002.6's status model is read from the CONFIGURED sources, never from
+#       a hard-coded token list. Cycle 31 cited "five recognized tokens ...
+#       internal/models/artifact.go:17-22"; those lines declare TEN ArtifactStatus
+#       constants and .backlogit/config.yaml fields.status.values enumerates the
+#       same ten. M is now partitioned into configured EXECUTABLE (queued, active,
+#       blocked), configured TERMINAL-SUCCESS (done, archived — done from the
+#       registry status_values/complete_task, archived from the archive lifecycle),
+#       and UNSUPPORTED defined as the COMPLEMENT, so the partition is total by
+#       construction. An unsupported member (review/accepted/rejected/shipped/
+#       abandoned or any off-catalog token) halts with the new
+#       WAVE_STATUS_UNSUPPORTED and NEVER false-completes; an unreadable, empty, or
+#       self-inconsistent model halts with the new WAVE_STATUS_CATALOG_UNAVAILABLE
+#       rather than falling back to a built-in vocabulary. Do NOT re-introduce a
+#       five-token set and do NOT fold unsupported statuses into
+#       WAVE_MEMBER_BLOCKED.
+#       (c) M is frozen at Ship STEP 3, not Step 0.5 — Step 0.5 validates and
+#       claims a shipment but never enumerates members, and is conditional on
+#       features.shipments. The non-shipment fallback (the covering release unit's
+#       declared child enumeration, recorded verbatim) is defined, with the new
+#       WAVE_MANIFEST_UNAVAILABLE when neither path is available or the two
+#       disagree.
+#       (d) The mandatory blocked-injection validation must be a TRACKED,
+#       reproducible, READ-ONLY artifact rather than a session claim. Six new
+#       P-002.2 codes in total: WAVE_STATUS_UNSUPPORTED,
+#       WAVE_STATUS_CATALOG_UNAVAILABLE, WAVE_MANIFEST_UNAVAILABLE,
+#       WAVE_RED_MAPPING_UNRESOLVED, WAVE_OPEN_RED_UNCLOSED (plus the reworded
+#       WAVE_MEMBER_BLOCKED row). Version header and Amendment Log at 1.20.0.
+#   .github/agents/.ship.agent.md — Step 0.5 states explicitly that it does NOT
+#       freeze M; Step 3 is rewritten to eight items (status model -> freeze M with
+#       non-shipment fallback -> build the red-deliverable mapping -> dep graph ->
+#       acyclicity -> wave partition -> empty check -> replay the tracked
+#       simulation); Step 4.0 is rewritten to twelve items with the unsupported
+#       halt as item 2 and the open-red recompute as item 9; Step 4.2 gains
+#       green_regression_cmds, open_red_selectors, and the red-deliverable dispatch
+#       inversion; Step 4.3 item 3 runs the CLOSED declared list only; Step 4.5
+#       states that a red deliverable completes RED; Step 4.6 is rewritten with the
+#       always-on part, the conditional unfiltered suite, the deferral record and
+#       its budget; Step 5 requires the unfiltered suite and an EMPTY open-red set
+#       at final closure. Two new circuit-breaker rows.
+#   .github/skills/build-feature/SKILL.md — new green_regression_cmds,
+#       open_red_selectors, and red_deliverable inputs; post-loop gate 3 runs the
+#       declared closed list and tolerates exactly
+#       sibling_red_selectors + open_red_selectors; three new Behavioral
+#       Constraints. The discretionary "any package that was already green before
+#       this wave began" allowance is WITHDRAWN in both this file and
+#       .ship.agent.md — do NOT restore it.
+#   .github/skills/harness-architect/SKILL.md — Step 1 item 9 (red deliverables
+#       stay red past their own wave), Step 5.2 open-red note, Step 6 records the
+#       declared green-makers in the manifest note.
+#   tests/simulation/wave-scheduler-contract.json + scripts/wave-scheduler-sim.ps1
+#       — the tracked read-only scheduler simulation and its fixture, 84 assertions
+#       over 16 scenarios, re-derivable from the live queue with
+#       -VerifyAgainstQueue. Repo-authored; needs no entry below, but a template
+#       adoption that keeps P-002.6 MUST carry an equivalent artifact.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

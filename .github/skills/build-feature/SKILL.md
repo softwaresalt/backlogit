@@ -15,7 +15,10 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `task_id`: (Required) The backlog task ID to implement.
 * `harness_cmd`: (Required) The **task-scoped** test command to run. Under P-002.6 it MUST be executable as written, name an explicit package path (never a bare `./...`), carry `-count=1`, be anchored to the task's own `^TestU<unit>_` selector, fail closed on a vacuous pass, and carry no `-short`, added build tag, `t.Skip`, or `|| true`. For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `docs-only` and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `wave_scoped`: (Optional, default `false`) `true` when Ship dispatches this task from inside a P-002.6 wave. When `true`, the post-loop suite is **task-scoped** and the full-repository suite is Ship's Step 4.6 wave convergence gate, not this skill's. When `false` or absent, the post-loop suite is the full repository suite as before — this input relocates a gate inside a wave, it never removes one.
-* `sibling_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors belonging to the other non-exempt members of the current wave that have not been built yet. This is the **entire** tolerated-red set. It is supplied by Ship, it may **not** be widened, inferred, or extended by this skill, and any failure outside it is a real failure that fails the gate.
+* `green_regression_cmds`: (Optional; meaningful only when `wave_scoped` is `true`) The task's declared, closed list of additional scoped commands that must pass alongside `harness_cmd`. Empty unless the task declares otherwise. This list **replaces** the withdrawn "any package that was already green before this wave began" allowance — run exactly these commands, never a package chosen by judgement.
+* `sibling_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors belonging to the other non-exempt members of the current wave that have not been built yet.
+* `open_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors in `open_red_deliverables_k` — red harnesses that were the *declared deliverable* of a task completed in an **earlier** wave and whose declared green-makers have not all closed. Together with `sibling_red_selectors` this is the **entire** tolerated-red set. Both are supplied by Ship, neither may be widened, inferred, or extended by this skill, and any failure outside their union is a real failure that fails the gate.
+* `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. The loop then lands the harness, confirms it compiles (`go test -run=^$ -count=1 ./...`) and fails on assertions rather than on a build error, and **stops there**. Do not iterate toward green, and never report success on a `harness_cmd` that passes — a red deliverable that passes on landing was never red.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
 * `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4). `declaration-only` is **not** a valid value; the class was withdrawn in cycle 29 and a declaration task arrives here as a normal `harness-ready` task with a source-shape harness.
 * `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's. This skill's completion gate runs **before** its own commit, so it pairs this SHA with the working-tree diff form, never with `..HEAD`.
@@ -198,13 +201,20 @@ After the harness passes:
    * If violations found: `gofmt -w .` and re-check
 3. **Test suite** — scope depends on `wave_scoped`:
    * **`wave_scoped: true`** (a P-002.6 wave dispatch): run the task's own scoped `harness_cmd`
-     plus any package that was already green before this wave began. **Do not run `go test ./...`
-     here.** Step 4.0 of Ship leaves every non-exempt member of the wave red at once and then
-     builds them one at a time, so a repo-wide suite would fail on the siblings' harnesses no
-     matter how correct this task is — an unsatisfiable gate, not a stricter one. The tolerated-red
-     set is exactly `sibling_red_selectors`; it may not be widened, and a failure outside it is a
-     real failure that fails this gate. The full repository suite is **not skipped** — it runs at
-     Ship Step 4.6, once, after every member of the wave is individually green.
+     plus the task's declared `green_regression_cmds` — the closed, task-declared list, empty
+     unless the task declares otherwise — **and nothing else**. **Do not run `go test ./...`
+     here**, and do not add a package by judgement: the withdrawn "any package that was already
+     green before this wave began" allowance was implementer discretion, unenumerated and
+     unreviewable, and it could be silently narrowed to nothing or widened into a sibling's red.
+     Step 4.0 of Ship leaves every non-exempt member of the wave red at once and then builds them
+     one at a time, and earlier waves may have completed red deliverables that are still failing by
+     design, so a repo-wide suite would fail no matter how correct this task is — an unsatisfiable
+     gate, not a stricter one. The tolerated-red set is exactly
+     `sibling_red_selectors ∪ open_red_selectors`; neither may be widened, and a failure outside
+     that union is a real failure that fails this gate. The full repository suite is **not
+     skipped** — it runs at Ship Step 4.6 whenever the open-red set is empty, and at final closure.
+     For a `red_deliverable` task this item inverts: `harness_cmd` must still be **RED**, and a
+     green result fails the gate.
    * **`wave_scoped: false` or absent**: `go test ./...`, unchanged.
 4. **Harness-exempt completion gate** (P-002.3 / P-002.4), for `harness-exempt` tasks only:
    * Screen `exempt_gate_cmd` for a Principle VII destructive pattern (P-002.5) before running it
@@ -270,7 +280,9 @@ without leaving a non-compliant commit behind.
 * Never treat an exit-0 run carrying a P-002.3 false-green signal as success
 * Never treat an exit-0 run on `exempt_gate_cmd` that is missing its declared `EXEMPT_VERIFY_OK:{task_id}` marker as success — this is the distinct `EXEMPT_MARKER_MISSING` evidence failure (Step 0 item 4, Step 2), explicitly **not** a P-002.3 false-green signal
 * Never execute an `exempt_gate_cmd` or `harness_owner_command` that the P-002.5 screen matches as destructive; report `EXEMPT_COMMAND_DESTRUCTIVE` and route it to Principle VII approval instead
-* Never widen, infer, or extend `sibling_red_selectors`. It is a closed set supplied by Ship, and it is the only red this skill may tolerate; a failure outside it is a real failure. Treating a wave as a blanket "ignore failing tests" mode is a P-002.6 violation
+* Never widen, infer, or extend `sibling_red_selectors` or `open_red_selectors`. They are closed sets supplied by Ship, and their union is the only red this skill may tolerate; a failure outside it is a real failure. Treating a wave as a blanket "ignore failing tests" mode is a P-002.6 violation
+* Never substitute implementer judgement for `green_regression_cmds`. The post-loop suite runs the declared commands and nothing else; "a package that looked green before" is not a gate input
+* Never drive a `red_deliverable` task to green, and never report success on its `harness_cmd` passing. Its deliverable is a compiling, failing harness; a green result is a contract violation to report
 * Never accept a `harness_cmd` that fails the P-002.6 task-scoped requirements — a bare `./...`, a missing `-count=1`, an unanchored or sibling-matching selector, a `-short`/build-tag/`t.Skip`/`|| true` weakening, or a command that passes vacuously. Halt and report the contract defect rather than substituting a weaker command
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
@@ -285,7 +297,8 @@ without leaving a non-compliant commit behind.
 * No lint violations
 * No format violations
 * The task-scoped suite passes; under `wave_scoped: true` the full repository suite is Ship's Step
-  4.6 wave convergence gate, which must pass before the next wave is admitted
+  4.6 wave convergence gate, which runs unfiltered whenever the open-red set is empty and must pass
+  before the next wave is admitted
 * Changes are scoped to the task requirements
 * For a `harness-exempt` task: the pre-work probe was observed failing (marker absent), the
   completion gate passes non-vacuously with the exact marker present, both commands cleared the

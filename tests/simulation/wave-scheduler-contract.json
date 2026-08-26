@@ -1,0 +1,995 @@
+{
+  "schema_version": 1,
+  "artifact": "wave-scheduler-contract-simulation",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Data is mirrored from the live .backlogit/queue manifest of release unit 147-F / shipment 130-S; scenarios and expectations encode the cycle-32 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "contract": {
+    "policy": ".github/policies/workflow-policies.md",
+    "policy_version": "1.20.0",
+    "policies": [
+      "P-002.2",
+      "P-002.6"
+    ],
+    "consumers": [
+      ".github/agents/.ship.agent.md",
+      ".github/skills/build-feature/SKILL.md",
+      ".github/skills/harness-architect/SKILL.md"
+    ]
+  },
+  "source": {
+    "plan": "docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md",
+    "release_unit": "147-F",
+    "shipment": "130-S",
+    "queue_dir": ".backlogit/queue",
+    "mirrored_head": "d57bbd8a456383c0a98283f2637642b34ffa5c54",
+    "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to re-derive members, statuses, dependency edges, exemption labels, and red-deliverable contracts from the live queue and fail on any drift."
+  },
+  "status_model": {
+    "catalog_source": ".backlogit/config.yaml -> fields.status.values",
+    "catalog": [
+      "queued",
+      "active",
+      "blocked",
+      "review",
+      "done",
+      "accepted",
+      "rejected",
+      "archived",
+      "shipped",
+      "abandoned"
+    ],
+    "registry_source": ".autoharness/backlog-registry.yaml -> status_values",
+    "registry_status_values": [
+      "queued",
+      "active",
+      "done",
+      "blocked"
+    ],
+    "executable": [
+      "queued",
+      "active",
+      "blocked"
+    ],
+    "terminal_success": [
+      "done",
+      "archived"
+    ],
+    "green_maker_closing": [
+      "done"
+    ],
+    "unsupported_expected": [
+      "review",
+      "accepted",
+      "rejected",
+      "shipped",
+      "abandoned"
+    ],
+    "note": "The scheduler vocabulary is CONFIGURED, never a hard-coded constant list. The workspace catalog carries ten tokens; the registry configures four; terminal-success is the two-token actual lifecycle {done, archived}. Every catalog token outside executable + terminal_success is unsupported and halts. archived satisfies a DEPENDENCY but does NOT close a green-maker obligation, because it may be a descope."
+  },
+  "manifest": {
+    "frozen_at": "ship-step-3",
+    "freeze_source": "shipment-manifest",
+    "fallback": "covering-release-unit-enumeration",
+    "fail_closed_code": "WAVE_MANIFEST_UNAVAILABLE",
+    "member_count": 42,
+    "shipment_member_count": 43,
+    "note": "M is the 42 task members of 130-S. The 43rd shipment member is the covering feature 147-F, which is not scheduled as a wave member and reaches terminal status through release closure.",
+    "members": [
+      {
+        "id": "147.001-T",
+        "unit": "U1",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": []
+      },
+      {
+        "id": "147.002-T",
+        "unit": "U2",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T"
+        ]
+      },
+      {
+        "id": "147.003-T",
+        "unit": "U2b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T"
+        ]
+      },
+      {
+        "id": "147.004-T",
+        "unit": "U2c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T"
+        ]
+      },
+      {
+        "id": "147.005-T",
+        "unit": "U2d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.006-T",
+        "unit": "U3",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.007-T",
+        "unit": "U3b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.006-T",
+          "147.011-T",
+          "147.016-T",
+          "147.028-T",
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.008-T",
+        "unit": "U4",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.028-T",
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.009-T",
+        "unit": "U5",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.008-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.011-T",
+        "unit": "U6",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.004-T",
+          "147.016-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.012-T",
+        "unit": "U6b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.016-T",
+          "147.030-T",
+          "147.032-T",
+          "147.038-T"
+        ]
+      },
+      {
+        "id": "147.013-T",
+        "unit": "U7",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.007-T",
+          "147.008-T",
+          "147.009-T",
+          "147.016-T",
+          "147.030-T"
+        ]
+      },
+      {
+        "id": "147.014-T",
+        "unit": "U7b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T",
+          "147.022-T",
+          "147.023-T",
+          "147.043-T"
+        ]
+      },
+      {
+        "id": "147.015-T",
+        "unit": "U8",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.013-T",
+          "147.016-T",
+          "147.030-T",
+          "147.031-T"
+        ]
+      },
+      {
+        "id": "147.016-T",
+        "unit": "U8b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.001-T",
+          "147.002-T",
+          "147.030-T",
+          "147.032-T",
+          "147.038-T"
+        ]
+      },
+      {
+        "id": "147.017-T",
+        "unit": "U9",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "docs-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.014-T",
+          "147.016-T",
+          "147.020-T",
+          "147.024-T",
+          "147.039-T",
+          "147.040-T"
+        ]
+      },
+      {
+        "id": "147.018-T",
+        "unit": "U9b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "docs-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.017-T"
+        ]
+      },
+      {
+        "id": "147.019-T",
+        "unit": "U10",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.018-T"
+        ]
+      },
+      {
+        "id": "147.020-T",
+        "unit": "U2e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.003-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.021-T",
+        "unit": "U2f",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.037-T"
+        ]
+      },
+      {
+        "id": "147.022-T",
+        "unit": "U6c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.023-T",
+        "unit": "U6d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.024-T",
+        "unit": "U7c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.013-T",
+          "147.016-T",
+          "147.025-T"
+        ]
+      },
+      {
+        "id": "147.025-T",
+        "unit": "U7d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.013-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.026-T",
+        "unit": "U10b",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.019-T"
+        ]
+      },
+      {
+        "id": "147.027-T",
+        "unit": "U8c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.012-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.028-T",
+        "unit": "U2g",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.003-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.029-T",
+        "unit": "U7e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.030-T",
+        "unit": "U1b",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.001-T"
+        ]
+      },
+      {
+        "id": "147.031-T",
+        "unit": "U1c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.030-T"
+        ]
+      },
+      {
+        "id": "147.032-T",
+        "unit": "U1d",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": []
+      },
+      {
+        "id": "147.033-T",
+        "unit": "U2h",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.028-T"
+        ]
+      },
+      {
+        "id": "147.034-T",
+        "unit": "U11",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.002-T",
+          "147.005-T"
+        ]
+      },
+      {
+        "id": "147.035-T",
+        "unit": "U12",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.004-T",
+          "147.034-T"
+        ]
+      },
+      {
+        "id": "147.036-T",
+        "unit": "U13",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "covered-by",
+        "red_deliverable": false,
+        "deps": [
+          "147.035-T"
+        ]
+      },
+      {
+        "id": "147.037-T",
+        "unit": "U14",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.036-T",
+          "147.042-T"
+        ]
+      },
+      {
+        "id": "147.038-T",
+        "unit": "U15",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.030-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.039-T",
+        "unit": "U16",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.015-T",
+          "147.016-T",
+          "147.032-T"
+        ]
+      },
+      {
+        "id": "147.040-T",
+        "unit": "U17",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.008-T",
+          "147.016-T"
+        ]
+      },
+      {
+        "id": "147.041-T",
+        "unit": "U10c",
+        "status": "queued",
+        "harness_exempt": true,
+        "exempt_class": "verification-only",
+        "red_deliverable": false,
+        "deps": [
+          "147.022-T",
+          "147.025-T",
+          "147.026-T",
+          "147.027-T",
+          "147.029-T",
+          "147.033-T"
+        ]
+      },
+      {
+        "id": "147.042-T",
+        "unit": "U3c",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": true,
+        "deps": [
+          "147.001-T",
+          "147.004-T"
+        ]
+      },
+      {
+        "id": "147.043-T",
+        "unit": "U6e",
+        "status": "queued",
+        "harness_exempt": false,
+        "exempt_class": null,
+        "red_deliverable": false,
+        "deps": [
+          "147.011-T",
+          "147.032-T"
+        ]
+      }
+    ]
+  },
+  "red_deliverables": [
+    {
+      "task": "147.035-T",
+      "unit": "U12",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/events",
+      "green_maker_tasks": [
+        "147.036-T"
+      ],
+      "green_maker_closes_wave": 7
+    },
+    {
+      "task": "147.042-T",
+      "unit": "U3c",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "green_maker_tasks": [
+        "147.037-T"
+      ],
+      "green_maker_closes_wave": 8
+    },
+    {
+      "task": "147.016-T",
+      "unit": "U8b",
+      "red_selector_command": "go test -count=1 -run '^TestU8b_' ./internal/cli",
+      "green_maker_tasks": [
+        "147.006-T",
+        "147.007-T",
+        "147.008-T",
+        "147.009-T",
+        "147.011-T",
+        "147.012-T",
+        "147.013-T",
+        "147.014-T",
+        "147.015-T",
+        "147.022-T",
+        "147.024-T",
+        "147.025-T",
+        "147.027-T"
+      ],
+      "green_maker_closes_wave": 13
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "baseline",
+      "description": "Unmutated manifest replays the documented 18-wave schedule with no stall and no compile-order violation. snapshot_calls is 19 = one per build wave plus the final admission snapshot that observes terminal_success = M.",
+      "mutations": {},
+      "expect": {
+        "outcome": "COMPLETE",
+        "waves": 18,
+        "wave_sizes": [
+          2,
+          2,
+          4,
+          5,
+          4,
+          4,
+          3,
+          2,
+          3,
+          3,
+          1,
+          2,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "scheduled": 42,
+        "stalls": 0,
+        "compile_order_violations": 0,
+        "snapshot_calls": 19,
+        "unsupported_count": 0
+      }
+    },
+    {
+      "id": "persistent_red_mapping",
+      "description": "Red-deliverable selectors stay open across waves; wave 4 advances while U8b and U3c are legitimately red; the unfiltered full suite runs only when the open-red set is empty, and immediately at the wave where the last green-maker closes it.",
+      "mutations": {},
+      "expect": {
+        "outcome": "COMPLETE",
+        "wave_4_advanced": true,
+        "open_red_after_wave_4": [
+          "147.016-T",
+          "147.042-T"
+        ],
+        "open_red_after_wave_6": [
+          "147.016-T",
+          "147.035-T",
+          "147.042-T"
+        ],
+        "open_red_closed_at_wave": {
+          "147.035-T": 7,
+          "147.042-T": 8,
+          "147.016-T": 13
+        },
+        "full_suite_waves": [
+          1,
+          2,
+          3,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ],
+        "deferred_waves": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "compile_gate_waves": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ],
+        "final_open_red": [],
+        "full_suite_at_final_closure": true,
+        "hidden_unexpected_failures": 0
+      }
+    },
+    {
+      "id": "blocked_injection",
+      "description": "A blocked member halts the loop at the first admission that sees it, reports transitive dependency impact, stays in M, and never permits a completion claim.",
+      "mutations": {
+        "set_status": {
+          "147.030-T": "blocked"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_MEMBER_BLOCKED",
+        "halt_wave": 1,
+        "blocked_ids": [
+          "147.030-T"
+        ],
+        "dependency_impact": {
+          "147.030-T": 26
+        },
+        "member_retained_in_m": true,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "blocked_mid_run",
+      "description": "A member blocked mid-run halts at the next wave admission rather than being skipped.",
+      "mutations": {
+        "set_status_at_wave": [
+          {
+            "wave": 5,
+            "id": "147.011-T",
+            "status": "blocked"
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_MEMBER_BLOCKED",
+        "halt_wave": 5,
+        "blocked_ids": [
+          "147.011-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "active_residual",
+      "description": "An active leftover claim halts with WAVE_NO_PROGRESS rather than being read as progress.",
+      "mutations": {
+        "set_status": {
+          "147.004-T": "active"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "halt_detail": "active residual",
+        "halt_wave": 1,
+        "active_ids": [
+          "147.004-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_review",
+      "description": "A catalog token that is neither executable nor terminal-success halts with WAVE_STATUS_UNSUPPORTED naming the member and the observed token.",
+      "mutations": {
+        "set_status": {
+          "147.005-T": "review"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.005-T=review"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_abandoned",
+      "description": "A non-completion terminal token never false-completes: abandoned is unsupported, not terminal-success.",
+      "mutations": {
+        "set_status": {
+          "147.019-T": "abandoned"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.019-T=abandoned"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_off_catalog",
+      "description": "A token outside the workspace catalog entirely is unsupported and halts; it is never treated as an implicit success.",
+      "mutations": {
+        "set_status": {
+          "147.020-T": "frobnicated"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.020-T=frobnicated"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "status_catalog_unavailable",
+      "description": "An unreadable or empty configured status catalog halts before any admission; the scheduler never falls back to a built-in token list.",
+      "mutations": {
+        "clear_catalog": true
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_CATALOG_UNAVAILABLE",
+        "halt_wave": 0,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "status_catalog_disagrees",
+      "description": "A configured executable or terminal-success token absent from the workspace catalog is a disagreement, not a widening; it halts.",
+      "mutations": {
+        "add_executable_status": "in_review"
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_CATALOG_UNAVAILABLE",
+        "halt_wave": 0,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "cycle_injection",
+      "description": "A dependency cycle halts at Step 3 schedule construction with the cycle path, never at runtime and never by looping.",
+      "mutations": {
+        "add_edge": [
+          {
+            "from": "147.001-T",
+            "to": "147.041-T"
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_CYCLE_DETECTED",
+        "halt_wave": 0,
+        "cycle_path_non_empty": true,
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "sibling_red_wave4",
+      "description": "Wave 4 has five simultaneously-red non-exempt members. The withdrawn repo-wide per-task gate progresses none of them; the task-scoped gate progresses all five, and no full suite runs inside a per-task loop.",
+      "mutations": {
+        "gate_compare_wave": 4
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "gate_compare_wave": 4,
+        "wave_non_exempt_members": 5,
+        "old_repo_wide_progressed": 0,
+        "new_scoped_progressed": 5,
+        "full_suite_runs_inside_per_task_loops": 0,
+        "scoped_commands_run_in_wave": 5
+      }
+    },
+    {
+      "id": "non_frozen_m_control",
+      "description": "Negative control: re-deriving M from the live shipment items list each wave lets return_blocked shrink the accounting universe. The frozen-M contract exists to prevent exactly this.",
+      "mutations": {
+        "return_blocked_at_wave": [
+          {
+            "wave": 2,
+            "id": "147.030-T"
+          }
+        ],
+        "freeze_m": "per-wave"
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "members_dropped": [
+          "147.030-T"
+        ],
+        "member_retained_in_m": false,
+        "completion_claimed": false,
+        "frozen_m_counterpart": "blocked_injection"
+      }
+    },
+    {
+      "id": "missing_green_maker",
+      "description": "A red-deliverable task whose green-maker mapping is absent fails closed at schedule construction; the mapping is never inferred.",
+      "mutations": {
+        "drop_red_contract": [
+          "147.016-T"
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.016-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "ambiguous_green_maker",
+      "description": "A green-maker naming a task outside M is ambiguous and fails closed; it is never resolved by nearest match.",
+      "mutations": {
+        "override_green_makers": {
+          "147.042-T": [
+            "147.999-T"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+        "halt_wave": 0,
+        "unresolved": [
+          "147.042-T"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "green_maker_descoped",
+      "description": "A green-maker archived (descoped) rather than done satisfies dependencies but does NOT close its open-red obligation; the deferral budget then halts the loop instead of carrying an unverifiable red forward.",
+      "mutations": {
+        "set_status_at_wave": [
+          {
+            "wave": 7,
+            "id": "147.036-T",
+            "status": "archived",
+            "on_completion": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "WAVE_OPEN_RED_UNCLOSED",
+        "halt_wave": 8,
+        "unclosed": [
+          "147.035-T"
+        ],
+        "completion_claimed": false
+      }
+    }
+  ]
+}
