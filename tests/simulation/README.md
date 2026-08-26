@@ -34,10 +34,14 @@ five** canonical red-deliverable keys:
 that task/exclusion drift, status-catalog drift, registry mapping/feature drift, archived sibling
 inclusion, every red-contract-key mutation, and a non-empty green-regression mutation are detected.
 Three parser controls also require a green-regression payload to be a JSON object whose
-`green_regression_cmds` value is an array.
+`green_regression_cmds` value is an array, and 15 red-deliverable branch controls pin
+`build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
+below). Both control suites run unconditionally, with or without `-VerifyAgainstQueue`.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. It is **pure**: it reads the fixture and backlog
+line, exiting non-zero on any failed assertion. The current totals are **180 assertions** with
+`-VerifyAgainstQueue` and **158** without, across 21 scheduler scenarios plus 18 controls. It is
+**pure**: it reads the fixture and backlog
 Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
 `go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
 and is safe to run at any gate point.
@@ -67,6 +71,33 @@ and is safe to run at any gate point.
 | `open_red_early_green_carried_in` | Negative control for the open-red RED re-confirmation: an entry carried in from an earlier wave is injected green three waves before its declared green-maker, and the gate halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` at the wave that observes it rather than advancing |
 | `open_red_closed_entry_not_reconfirmed` | Complement of the control above: an entry the wave **closed** leaves the still-open set and is re-confirmed **GREEN** rather than RED, so the same injection is the expected outcome and the schedule completes — proving RED re-confirmation covers exactly the still-open set and no more |
 | `green_maker_lands_but_selector_stays_red` | Negative control for the newly-closed verification: a green-maker completes but its entry's selector keeps failing. Because another open red defers the full suite for six more waves, the gate must catch it itself and halts with `WAVE_GREEN_MAKER_UNVERIFIED` |
+
+## Red-deliverable branch controls
+
+The scenarios above pin the **scheduler**. The `red_deliverable_branch_controls` block pins the
+**per-task execution** of a red deliverable — `build-feature` Step 0.5 — which the scheduler
+scenarios cannot reach, because a wave schedule says nothing about how one dispatch is classified.
+Each control declares an observation record (dispatch inputs, changed files, pre-landing and
+post-landing compile state and signal, evidence completeness) and the branch outcome Step 0.5
+requires; the runner classifies it in the same order the skill specifies.
+
+| Control | Contract obligation |
+|---|---|
+| `accepted-assertion-red` | The deliverable: harness lands, tree compiles, the anchored selector fails on named assertions, evidence report complete |
+| `not-red-deliverable-uses-generic-loop` | Routing: an ordinary dispatch still enters the generic loop, so Step 0.5 does not capture tasks it does not own |
+| `red-deliverable-never-enters-generic-loop` | **Load-bearing control.** The exact observation the generic loop reads as SUCCESS must halt here with `WAVE_RED_DELIVERABLE_EARLY_GREEN` and never route to the loop. Removing the branch fails this control on both assertions |
+| `pre-landed-green` | Step 0.5a: a selector already passing before anything lands halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
+| `pre-landed-red` | Step 0.5a: a selector already failing means the harness is already landed, so the dispatch would re-land against an empty delta — `WAVE_RED_DELIVERABLE_PRELANDED` |
+| `vacuous-after-landing` | Step 0.5d: a no-tests-to-run signal after landing is `WAVE_RED_DELIVERABLE_VACUOUS`, the mirror of the P-002.3 false-green rule |
+| `panic-is-not-assertion-red` | Step 0.5d: a panic aborts the package with no matching `--- FAIL:` line, so it is rejected rather than accepted or repaired |
+| `timeout-is-not-assertion-red` | Step 0.5d: a timeout is likewise a non-zero exit that proves no assertion failed |
+| `build-error-routes-to-compile-repair` | Step 0.5c: a build error is the one condition the branch may iterate on, and only for compilation |
+| `baseline-tree-already-broken` | Step 0.5a item 1: a pre-work compile failure is a pre-existing broken tree; nothing is landed |
+| `exempt-pairing-refused` | Precondition 1: `red_deliverable` and `harness-exempt` are mutually exclusive — `WAVE_RED_MAPPING_UNRESOLVED` |
+| `selector-mismatch-refused` | Precondition 2: `harness_cmd` must be the declared `red_selector_command` verbatim |
+| `weakened-selector-refused` | Precondition 2: a bare `./...` with no `-count=1`, no anchored selector, and a `\|\| true` suffix is a contract defect, never a substitute command |
+| `production-delta-refused` | Precondition 3: a red deliverable declares no production change, so a non-test `*.go` edit is out of surface |
+| `incomplete-evidence-report-refused` | Step 0.5e: without the report Ship cannot build the `open_red_deliverables` entry that convergence items 4 and 5 re-confirm |
 
 ## Keeping it honest
 

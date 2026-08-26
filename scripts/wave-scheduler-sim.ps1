@@ -461,6 +461,102 @@ function Invoke-GreenRegressionParserControls {
     }
 }
 
+function Test-TaskScopedCommandShape {
+    param([string]$Command)
+    $errors = @()
+    if ([string]::IsNullOrWhiteSpace($Command)) {
+        return , @('command is empty')
+    }
+    if ($Command -match '(^|\s)\./\.\.\.(\s|$)') { $errors += 'bare ./... package selector' }
+    if ($Command -notmatch '-count=1') { $errors += 'missing -count=1' }
+    if ($Command -notmatch "-run\s+'?\^TestU") { $errors += 'selector not anchored to ^TestU<unit>_' }
+    if ($Command -match '(^|\s)-short(\s|$)') { $errors += '-short weakening' }
+    if ($Command -match '(^|\s)-tags(=|\s)') { $errors += 'added build tag' }
+    if ($Command -match '\|\|\s*true') { $errors += '|| true weakening' }
+    return , @($errors)
+}
+
+function Get-RedDeliverableBranchOutcome {
+    <#
+        Classifies one build-feature Step 0.5 dispatch exactly as
+        .github/skills/build-feature/SKILL.md specifies. Pure: it reads a declared
+        observation record and returns the branch outcome plus the routing fact.
+        P-002.2 halt codes are returned verbatim; branch-local labels carry the
+        RED_DELIVERABLE_ prefix.
+    #>
+    param($Control)
+
+    if (-not [bool]$Control.red_deliverable) {
+        return [pscustomobject]@{ Outcome = 'GENERIC_LOOP'; EntersGenericLoop = $true }
+    }
+
+    $out = { param([string]$O) [pscustomobject]@{ Outcome = $O; EntersGenericLoop = $false } }
+
+    # Dispatch precondition 1 - red_deliverable and harness-exempt are exclusive.
+    $exemptClass = if (Test-HasProperty $Control 'exempt_class') { "$($Control.exempt_class)" } else { '' }
+    $exemptCmd = if (Test-HasProperty $Control 'exempt_gate_cmd') { "$($Control.exempt_gate_cmd)" } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($exemptClass) -or -not [string]::IsNullOrWhiteSpace($exemptCmd)) {
+        return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
+    }
+
+    # Dispatch precondition 2 - harness_cmd is the declared selector, verbatim and unweakened.
+    if ("$($Control.harness_cmd)" -cne "$($Control.red_selector_command)") {
+        return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
+    }
+    if (@((Test-TaskScopedCommandShape -Command "$($Control.harness_cmd)")).Count -gt 0) {
+        return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
+    }
+
+    # Dispatch precondition 3 - the delta is the named harness file(s) only.
+    $changed = @((ConvertTo-List $Control.changed_files))
+    $production = @($changed | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
+    if ($production.Count -gt 0) {
+        return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'
+    }
+
+    # Step 0.5a - pre-landing baseline.
+    if (-not [bool]$Control.baseline_compile_ok) {
+        return & $out 'RED_DELIVERABLE_BASELINE_TREE_BROKEN'
+    }
+    switch ("$($Control.baseline_signal)") {
+        'no_tests_to_run' { }
+        'pass' { return & $out 'WAVE_RED_DELIVERABLE_EARLY_GREEN' }
+        'assertion_fail' { return & $out 'WAVE_RED_DELIVERABLE_PRELANDED' }
+        default { return & $out 'WAVE_RED_DELIVERABLE_PRELANDED' }
+    }
+
+    # Step 0.5c - compilation of the landed harness; the only permitted repair loop.
+    if (-not [bool]$Control.post_compile_ok) {
+        return & $out 'RED_DELIVERABLE_COMPILE_REPAIR'
+    }
+
+    # Step 0.5d - assertion RED, or a fail-closed rejection.
+    switch ("$($Control.post_signal)") {
+        'assertion_fail' { }
+        'pass' { return & $out 'WAVE_RED_DELIVERABLE_EARLY_GREEN' }
+        'no_tests_to_run' { return & $out 'WAVE_RED_DELIVERABLE_VACUOUS' }
+        'build_error' { return & $out 'RED_DELIVERABLE_COMPILE_REPAIR' }
+        default { return & $out 'RED_DELIVERABLE_NOT_ASSERTION_RED' }
+    }
+
+    # Step 0.5e - the evidence report Ship turns into the open_red_deliverables entry.
+    if (-not [bool]$Control.evidence_report_complete) {
+        return & $out 'RED_DELIVERABLE_EVIDENCE_INCOMPLETE'
+    }
+
+    return & $out 'RED_DELIVERABLE_ACCEPTED'
+}
+
+function Invoke-RedDeliverableBranchControls {
+    foreach ($control in (ConvertTo-List $fx.red_deliverable_branch_controls)) {
+        $r = Get-RedDeliverableBranchOutcome -Control $control
+        Test-Equal -Scenario "red_branch/$($control.id)" -Name 'branch outcome' `
+            -Expected "$($control.expect_outcome)" -Actual $r.Outcome
+        Test-Equal -Scenario "red_branch/$($control.id)" -Name 'enters generic loop' `
+            -Expected ([bool]$control.expect_enters_generic_loop) -Actual $r.EntersGenericLoop
+    }
+}
+
 function Get-ArtifactProjection {
     param([string]$Path)
     $raw = Get-Content $Path -Raw
@@ -1470,6 +1566,7 @@ if (-not $Quiet) {
 }
 
 Invoke-GreenRegressionParserControls
+Invoke-RedDeliverableBranchControls
 if ($VerifyAgainstQueue) { Invoke-QueueDriftCheck }
 
 foreach ($sc in $fx.scenarios) {

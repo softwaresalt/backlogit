@@ -6170,11 +6170,25 @@ green-makers and closing wave — and 0.5f runs the inverted gates with no fix i
 exactly `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`.
 
 Coupled surfaces moved together: P-002.2 gains the two codes and extends
-`WAVE_RED_DELIVERABLE_EARLY_GREEN` to the new gate points; P-002.6 gains the execution rule;
-`.ship.agent.md` Step 4.2 passes `red_deliverable` explicitly and names the branch and its halt
-codes, and Step 4.5 builds its record from the Step 0.5e report rather than re-deriving it. The
-scheduler simulation is unchanged by design — the branch alters no wave arithmetic, and the fixture
-was re-run to confirm it.
+`WAVE_RED_DELIVERABLE_EARLY_GREEN` to the new gate points; P-002.6 gains the execution rule and its
+executable-coverage requirement; `.ship.agent.md` Step 4.2 passes `red_deliverable` explicitly and
+names the branch and its halt codes, and Step 4.5 builds its record from the Step 0.5e report rather
+than re-deriving it.
+
+**Executable coverage (second review wave, thread `PRRT_kwDORzozKM6cnqV4`).** The first form of this
+fix left Step 0.5 as prose with no control, which is the same defect class cycle 37 recorded as a P1
+follow-up when its convergence items had no simulation coverage. The tracked simulation now carries
+a `red_deliverable_branch_controls` block and a classifier that applies this branch's ordering:
+15 controls cover the accepted assertion-RED deliverable, pre-landed green and pre-landed red
+baselines, a vacuous post-landing result, panic and timeout rejection, build-error routing back to
+Step 0.5c, a pre-existing broken tree, all three dispatch-precondition refusals, an incomplete
+evidence report, and both routing directions. Step 0.5d was tightened in the same pass: a panic,
+timeout, or package abort is now an explicit `RED_DELIVERABLE_NOT_ASSERTION_RED` halt rather than
+falling into the repairable build-error row, because a non-zero exit is not evidence that an
+assertion failed. The load-bearing control is `red-deliverable-never-enters-generic-loop`, which
+feeds the exact observation the generic loop reads as SUCCESS; with the branch removed it fails on
+both assertions, and the suite drops 28 assertions. Totals move to 180 assertions with
+`-VerifyAgainstQueue` and 158 without.
 
 ### Finding 2 — U10b recreated its mirror under an unignored path
 

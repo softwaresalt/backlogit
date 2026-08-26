@@ -163,10 +163,12 @@ Run `harness_cmd` exactly once more and require a failure that is genuinely an a
 | Non-zero exit with `--- FAIL:` lines matching the anchored selector | The deliverable | **Success** — record the evidence and go to Step 0.5e |
 | Exit 0 in any form | Green on landing, so it was never red | Halt with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
 | A no-tests-to-run signal at any exit code | The harness did not land under the declared selector, so the red is vacuous | Halt with `WAVE_RED_DELIVERABLE_VACUOUS` |
-| Non-zero exit with a build error and no `--- FAIL:` line | Red for the wrong reason | Return to Step 0.5c; at the attempt limit, mark blocked |
+| Non-zero exit with a build error and no `--- FAIL:` line | Red for the wrong reason, and the one repairable case | Return to Step 0.5c; at the attempt limit, mark blocked |
+| Any other non-zero exit with no `--- FAIL:` line matching the anchored selector — panic, timeout, package abort, harness runtime error | The harness ran but never asserted, so its red is not assertion RED | **Halt.** Report `RED_DELIVERABLE_NOT_ASSERTION_RED` to Ship as a defective harness. Do not iterate: repairing a panic or a timeout means changing what the harness does, which this branch may not do |
 
 A vacuous red is the exact mirror of the P-002.3 false-green rule: an exit code alone proves
-nothing, and a selector that matches no test cannot be the deliverable.
+nothing, and a selector that matches no test cannot be the deliverable. The same reasoning bars a
+panic or a timeout — a non-zero exit is not evidence that an assertion failed.
 
 #### Step 0.5e: Red evidence for open-red accounting
 
@@ -198,6 +200,27 @@ Run the Post-Loop Quality Gates below with these substitutions, and do not itera
 
 Then proceed to `### Commit` unchanged. The commit records a compiling, failing harness, which is
 the completed deliverable.
+
+#### Step 0.5 executable coverage
+
+This branch is a *contract executed by agents*, so nothing in the Go test suite can fail when it
+regresses. Its routing and result classification are pinned by the tracked, read-only simulation
+instead: `tests/simulation/wave-scheduler-contract.json` declares the
+`red_deliverable_branch_controls` block and `scripts/wave-scheduler-sim.ps1` classifies each entry
+with the same ordering this step specifies. Run it with
+`pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1`.
+
+The controls cover every outcome above: the accepted assertion-RED deliverable, pre-landed green and
+pre-landed red baselines, a vacuous post-landing result, panic and timeout rejection, build-error
+routing back to Step 0.5c, a pre-existing broken tree, all three dispatch-precondition refusals, an
+incomplete evidence report, and two routing controls proving a `red_deliverable` dispatch never
+enters the generic loop while an ordinary dispatch still does. The load-bearing control is
+`red-deliverable-never-enters-generic-loop`: it feeds the exact observation the generic loop reads
+as SUCCESS and requires this branch to halt on it instead, so deleting the branch fails the suite
+rather than passing it silently.
+
+When this step changes, update the controls in the same commit. A branch rule with no control is a
+rule the simulation would still pass without.
 
 ### The Harness Loop (5-Attempt Circuit Breaker)
 

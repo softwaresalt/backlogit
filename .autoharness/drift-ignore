@@ -517,9 +517,14 @@
 #       names the branch and its four halt codes; Step 4.5 builds the open-red
 #       record from the Step 0.5e report instead of re-deriving it.
 #   scripts/wave-scheduler-sim.ps1 and
-#       tests/simulation/wave-scheduler-contract.json — unchanged by design. The
-#       branch alters no wave arithmetic, so the 150/21 suite still holds; only
-#       the fixture's display-only policy_version moves to 1.24.0.
+#       tests/simulation/wave-scheduler-contract.json — new
+#       `red_deliverable_branch_controls` block and its classifier. The wave
+#       arithmetic is unchanged; the 15 controls pin Step 0.5 routing and result
+#       classification, which no scheduler scenario can reach. Totals move to 180
+#       assertions with -VerifyAgainstQueue / 158 without. The load-bearing
+#       control is `red-deliverable-never-enters-generic-loop`: with the branch
+#       removed it fails on both assertions. An adopting template MUST carry an
+#       equivalent control suite, not just the branch prose.
 #       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---
