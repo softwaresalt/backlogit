@@ -147,6 +147,24 @@
 #       instead of being classified as the expected failed precondition and
 #       continuing into Step 1. Both exit-0 branches now halt: with marker ->
 #       EXEMPT_FALSE_GREEN, without marker -> EXEMPT_MARKER_MISSING.
+#
+# NOTE (2026-08-26, cycle 27): the P-002.4 delta gate gained a concrete baseline
+# and a content pass; the re-apply obligation covers:
+#   .github/policies/workflow-policies.md  — P-002.4 defines exempt_baseline_sha
+#       (captured at Ship Step 4.1a before claim and before any mutation, passed
+#       unchanged to build-feature) and replaces the undefined
+#       <pre-task-commit> placeholder. The Evidence rule is now two passes: a
+#       path pass and a per-class CONTENT pass over the hunks, because the class
+#       surfaces are content restrictions, not path restrictions. An absent or
+#       disputed baseline halts with EXEMPT_DELTA_EXCEEDS_CLASS.
+#   .github/agents/.ship.agent.md         — Step 4.1a gains item 5 capturing
+#       exempt_baseline_sha (halting on a dirty tree) and renumbers Proceed to
+#       item 6; Step 4.2 passes exempt_baseline_sha; Step 4.3 runs both the path
+#       and content passes against that exact SHA and halts on baseline
+#       disagreement.
+#   .github/skills/build-feature/SKILL.md — exempt_baseline_sha added to Inputs
+#       as required for harness-exempt tasks and must not be re-derived from
+#       HEAD; the post-loop completion gate runs both passes against it.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

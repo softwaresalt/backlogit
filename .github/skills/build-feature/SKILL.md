@@ -16,6 +16,7 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`). For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `declaration-only`, `docs-only`, and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
 * `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `declaration-only`, `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4).
+* `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's.
 
 ## Output
 
@@ -197,9 +198,19 @@ After the harness passes:
      declared evidence — the named `--- PASS:` guard count, the declared content assertions, or the
      declared evidence-manifest rows and scalars. A vacuous pass is `EXEMPT_EVIDENCE_MISMATCH`; an
      exit-0 run without the marker is `EXEMPT_MARKER_MISSING`. Report either and stop.
-   * Confirm the changed-file set is a subset of the P-002.4 delta surface for `exempt_class`.
-     Anything outside it is `EXEMPT_DELTA_EXCEEDS_CLASS`; report it and stop. Do not "fix" a
-     class violation by editing the contract.
+   * Confirm the changed-file set is a subset of the P-002.4 delta surface for `exempt_class`,
+     diffing from `exempt_baseline_sha` rather than from a self-derived range:
+     `git diff --name-only {exempt_baseline_sha}..HEAD`. Anything outside the surface is
+     `EXEMPT_DELTA_EXCEEDS_CLASS`; report it and stop. Do not "fix" a class violation by editing
+     the contract.
+   * Run the P-002.4 **content pass** as well — `git diff {exempt_baseline_sha}..HEAD -- <each
+     allowed file>`. The class surfaces are content restrictions, so a path-only check passes
+     changes it should reject. Under `declaration-only`, a hunk touching a line inside a
+     pre-existing function body is `EXEMPT_BEHAVIOR_NO_OWNER` unless it is the behavior-preserving
+     re-expression P-002.4 permits and `exempt_gate_cmd` pins the unchanged contract. Under
+     `verification-only`, a hunk that weakens, deletes, renames, or narrows the selector of a
+     pre-existing assertion is `EXEMPT_DELTA_EXCEEDS_CLASS`. Report and stop; Ship re-runs both
+     passes at its own Step 4.3 against the same baseline.
 
 ### Commit
 

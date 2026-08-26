@@ -317,16 +317,43 @@ function is rewritten as a thin wrapper over the new declaration with no new bra
 value, and no new output field, **and** the task's `exempt_verification_command` pins the
 pre-existing contract as unchanged. Absent that pin, treat it as a behavior change.
 
-**Evidence rule**: At the completion gate, compute the changed-file set for the task
-(`git diff --name-only <pre-task-commit>..HEAD`) and compare it against the class surface above.
+**Baseline definition**: `exempt_baseline_sha` is the commit SHA of the working tree **immediately
+before the task is claimed and before any mutation** — captured by Ship at Step 4.1a, after the
+must-fail probe and before Step 4.1b, as `git rev-parse HEAD`. It is recorded with the pre-work
+probe output and passed unchanged to `build-feature`, so the gate and the loop measure the same
+delta. There is no implicit or inferred baseline: if `exempt_baseline_sha` is absent, unrecorded,
+or disagrees between Ship and `build-feature`, **halt** with `EXEMPT_DELTA_EXCEEDS_CLASS` rather
+than guessing a range.
 
-* Any changed file outside the class surface → **halt** with P-002.2 `EXEMPT_DELTA_EXCEEDS_CLASS`.
-* Any non-test `*.go` change under `docs-only` or `verification-only` → **halt** with
-  `EXEMPT_BEHAVIOR_NO_OWNER`: the delta is behavior under a class that admits none.
-* Any `*_test.go` change under `covered-by` → **halt** with `EXEMPT_DELTA_EXCEEDS_CLASS`.
+**Evidence rule**: At the completion gate, run two passes against `exempt_baseline_sha`. Both must
+pass; a filename pass alone is not sufficient, because the class surfaces above are content
+restrictions and not merely path restrictions.
+
+1. **Path pass** — `git diff --name-only {exempt_baseline_sha}..HEAD`, compared against the class
+   surface above.
+   * Any changed file outside the class surface → **halt** with P-002.2 `EXEMPT_DELTA_EXCEEDS_CLASS`.
+   * Any non-test `*.go` change under `docs-only` or `verification-only` → **halt** with
+     `EXEMPT_BEHAVIOR_NO_OWNER`: the delta is behavior under a class that admits none.
+   * Any `*_test.go` change under `covered-by` → **halt** with `EXEMPT_DELTA_EXCEEDS_CLASS`.
+2. **Content pass** — `git diff {exempt_baseline_sha}..HEAD -- <each allowed file>`, inspecting the
+   hunks themselves. A file being inside the surface does not make its contents admissible.
+   * `declaration-only`: every non-test hunk must be an **addition** of a top-level declaration or
+     doc comment. A hunk that adds, removes, or edits a line **inside a pre-existing function body**
+     — a new conditional branch, a new error value, a new output field, a changed return — →
+     **halt** with `EXEMPT_BEHAVIOR_NO_OWNER`, unless it is the behavior-preserving re-expression
+     above **and** the task's `exempt_verification_command` pins the pre-existing contract.
+   * `verification-only`: every hunk must be in a `*_test.go` file or a `docs/closure/` artifact,
+     and no hunk may weaken, delete, rename, or narrow the selector of a pre-existing assertion.
+   * `docs-only`: no `*.go` hunk of any kind.
+   * `covered-by`: no `*_test.go` hunk of any kind; production hunks are unrestricted in shape
+     because the owner's red harness is what constrains them.
+
+When the `agent-engram` capability pack is installed, `list_symbols` or `impact_analysis` over the
+changed files is the preferred way to establish whether a hunk altered a pre-existing function body
+before falling back to reading the raw diff.
 
 Fail closed: when the delta cannot be attributed to a class surface — an unclassifiable path, a
-mixed commit, or an unreadable diff — halt rather than admitting it.
+mixed commit, an absent or disputed baseline, or an unreadable diff — halt rather than admitting it.
 
 ---
 
