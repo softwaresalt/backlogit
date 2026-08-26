@@ -34,13 +34,13 @@ five** canonical red-deliverable keys:
 that task/exclusion drift, status-catalog drift, registry mapping/feature drift, archived sibling
 inclusion, every red-contract-key mutation, and a non-empty green-regression mutation are detected.
 Three parser controls also require a green-regression payload to be a JSON object whose
-`green_regression_cmds` value is an array, and 16 red-deliverable branch controls pin
+`green_regression_cmds` value is an array, and 18 red-deliverable branch controls pin
 `build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
 below). Both control suites run unconditionally, with or without `-VerifyAgainstQueue`.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. The current totals are **182 assertions** with
-`-VerifyAgainstQueue` and **160** without, across 21 scheduler scenarios plus 19 controls. It is
+line, exiting non-zero on any failed assertion. The current totals are **186 assertions** with
+`-VerifyAgainstQueue` and **164** without, across 21 scheduler scenarios plus 21 controls. It is
 **pure**: it reads the fixture and backlog
 Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
 `go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
@@ -84,7 +84,9 @@ Step 4.0 item 10; it never lands one and never writes. Each control declares an 
 signal, changed files, evidence completeness) and the branch outcome Step 0.5 requires; the runner
 classifies it in the same order the skill specifies. The delta rule is **zero files**, measured
 against `red_baseline_sha` — captured after the scaffolding commit, so a sibling's harness cannot
-enter this task's delta.
+enter this task's delta — and the set is the union of three passes: tracked-unstaged, tracked-staged,
+and **untracked**. The third matters most: `git diff` reports only files Git already tracks, so a
+newly created file would otherwise satisfy an empty-delta claim.
 
 | Control | Contract obligation |
 |---|---|
@@ -99,6 +101,8 @@ enter this task's delta.
 | `production-delta-refused` | Step 0.5b: the branch writes nothing, and a non-test `*.go` file is the production change a red deliverable may never make |
 | `extra-test-file-refused` | Step 0.5b: a `*_test.go` file is still a write — the permitted delta is empty, so a test extension is not an exemption |
 | `extra-non-go-file-refused` | Step 0.5b: a configuration or documentation file is a write too |
+| `untracked-test-file-refused` | Step 0.5b: a **newly created** `*_test.go` file is invisible to `git diff`, so the untracked pass is what makes the empty-delta claim true |
+| `untracked-production-file-refused` | Step 0.5b: a newly created non-test `*.go` file is caught by the same pass and keeps its distinct production label |
 | `missing-baseline-sha-refused` | Precondition 3 fails closed: without the Ship-supplied post-scaffolding baseline the zero-delta gate would measure a self-chosen range |
 | `exempt-pairing-refused` | Precondition 1: `red_deliverable` and `harness-exempt` are mutually exclusive — `WAVE_RED_MAPPING_UNRESOLVED` |
 | `selector-mismatch-refused` | Precondition 2: `harness_cmd` must be the declared `red_selector_command` verbatim |

@@ -751,6 +751,7 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_ACCEPTED",
       "expect_enters_generic_loop": false
@@ -767,6 +768,7 @@
       "changed_files": [
         "internal/events/checkpoint_rewrite.go"
       ],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "GENERIC_LOOP",
       "expect_enters_generic_loop": true
@@ -781,6 +783,7 @@
       "compile_ok": true,
       "selector_signal": "pass",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
       "expect_enters_generic_loop": false
@@ -795,6 +798,7 @@
       "compile_ok": true,
       "selector_signal": "pass",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_EARLY_GREEN",
       "expect_enters_generic_loop": false
@@ -809,6 +813,7 @@
       "compile_ok": true,
       "selector_signal": "no_tests_to_run",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_DELIVERABLE_VACUOUS",
       "expect_enters_generic_loop": false
@@ -823,6 +828,7 @@
       "compile_ok": false,
       "selector_signal": "build_error",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_HARNESS_UNCOMPILABLE",
       "expect_enters_generic_loop": false
@@ -837,6 +843,7 @@
       "compile_ok": true,
       "selector_signal": "panic",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
       "expect_enters_generic_loop": false
@@ -851,6 +858,7 @@
       "compile_ok": true,
       "selector_signal": "timeout",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_NOT_ASSERTION_RED",
       "expect_enters_generic_loop": false
@@ -867,6 +875,7 @@
       "changed_files": [
         "internal/events/checkpoint_lifecycle.go"
       ],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
       "expect_enters_generic_loop": false
@@ -883,6 +892,7 @@
       "changed_files": [
         "internal/events/checkpoint_lifecycle_conformance_test.go"
       ],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
       "expect_enters_generic_loop": false
@@ -900,6 +910,7 @@
         ".gitignore",
         "docs/closure/2026-08-24-checkpoint-disposition-runtime-verification.md"
       ],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
       "expect_enters_generic_loop": false
@@ -914,6 +925,7 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
       "expect_enters_generic_loop": false
@@ -929,6 +941,7 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
       "expect_enters_generic_loop": false
@@ -943,6 +956,7 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
       "expect_enters_generic_loop": false
@@ -957,6 +971,7 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": true,
       "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
       "expect_enters_generic_loop": false
@@ -971,8 +986,43 @@
       "compile_ok": true,
       "selector_signal": "assertion_fail",
       "changed_files": [],
+      "untracked_files": [],
       "evidence_report_complete": false,
       "expect_outcome": "RED_DELIVERABLE_EVIDENCE_INCOMPLETE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "untracked-test-file-refused",
+      "note": "Step 0.5b: a newly created *_test.go file is invisible to git diff, so the gate must include the untracked pass or an empty-delta claim would be false.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_selector_command": "go test -count=1 -run '^TestU3c_' ./internal/events",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [
+        "internal/events/checkpoint_lifecycle_conformance_extra_test.go"
+      ],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "untracked-production-file-refused",
+      "note": "Step 0.5b: a newly created non-test *.go file is still the production change a red deliverable may never make.",
+      "red_deliverable": true,
+      "harness_cmd": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_selector_command": "go test -count=1 -run '^TestU12_' ./internal/core",
+      "red_baseline_sha": "ae28bec8e43409074be93417e753448f70ca920c",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [
+        "internal/core/checkpoint_seam.go"
+      ],
+      "evidence_report_complete": true,
+      "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
       "expect_enters_generic_loop": false
     }
   ],

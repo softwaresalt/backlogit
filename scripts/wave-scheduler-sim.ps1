@@ -525,7 +525,12 @@ function Get-RedDeliverableBranchOutcome {
     }
 
     # Step 0.5b - zero-delta gate against the Ship-supplied baseline.
-    $changed = @((ConvertTo-List $Control.changed_files))
+    # The set is the union of three passes: tracked-unstaged, tracked-staged, and UNTRACKED.
+    # git diff reports only files Git already tracks, so a newly created file would otherwise
+    # satisfy an "empty changed-file set" claim - the most likely way this branch could violate
+    # its own contract.
+    $changed = @((ConvertTo-List $Control.changed_files)) + @((ConvertTo-List $Control.untracked_files))
+    $changed = @($changed | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })
     $production = @($changed | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
     if ($production.Count -gt 0) {
         return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'

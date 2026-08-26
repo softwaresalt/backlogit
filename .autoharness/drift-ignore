@@ -505,7 +505,11 @@
 #       no-tests-to-run signal at ANY exit code is WAVE_RED_DELIVERABLE_VACUOUS
 #       (the mirror of the P-002.3 false-green rule), and a panic, timeout, or
 #       package abort is RED_DELIVERABLE_NOT_ASSERTION_RED. Step 0.5b is a
-#       ZERO-DELTA gate against red_baseline_sha: a non-test *.go file is
+#       ZERO-DELTA gate against red_baseline_sha, measured as the UNION of
+#       git diff, git diff --cached, AND git ls-files --others
+#       --exclude-standard — the untracked pass is mandatory, because git diff
+#       reports only tracked files and a newly created one would otherwise pass:
+#       a non-test *.go file is
 #       RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED and anything else is
 #       RED_DELIVERABLE_DELTA_OUT_OF_SURFACE. Step 0.5c's evidence report is
 #       mandatory; Ship builds the open_red_deliverables entry from it. Step 0.5d

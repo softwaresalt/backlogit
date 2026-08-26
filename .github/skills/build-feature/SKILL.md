@@ -93,7 +93,6 @@ Run this step when `red_deliverable` is `true`. It **replaces** the generic harn
 red-deliverable task never enters that loop. When `red_deliverable` is `false` or absent, skip this
 step entirely.
 
-The deliverable of such a task **is** the landed, compiling, failing harness. Its declared
 The deliverable of such a task **is** a compiling, failing harness. `harness-architect` scaffolded
 that harness with the rest of the wave at Ship Step 4.0, so this branch **consumes and validates it
 — it does not land it**. Its declared `green_maker_tasks` turn it green in a later wave, and Ship
@@ -147,15 +146,25 @@ panic or a timeout — a non-zero exit is not evidence that an assertion failed.
 
 #### Step 0.5b: Zero-delta gate
 
-This branch consumes an existing harness, so the task's own changed-file set must be **empty**.
-Compute it exactly as the harness-exempt gate does, against the Ship-supplied baseline and the
-working tree — never against `..HEAD`, which at this point would compare the baseline with itself:
+This branch consumes an existing harness, so the task's own changed-file set must be **empty** —
+and "empty" includes files Git is not yet tracking. Compute it against the Ship-supplied baseline
+and the working tree, never against `..HEAD`, which at this point would compare the baseline with
+itself. Three passes are required, and their union is the changed-file set:
 
-* `git diff --name-only {red_baseline_sha}` **and** `git diff --cached --name-only {red_baseline_sha}`
+* tracked, unstaged — `git diff --name-only {red_baseline_sha}`
+* tracked, staged — `git diff --cached --name-only {red_baseline_sha}`
+* **untracked** — `git ls-files --others --exclude-standard`
+
+The third pass is not optional. `git diff` reports only files Git already knows about, so without
+it a dispatch could create a new `*_test.go`, configuration, or documentation file and still satisfy
+a "changed-file set is empty" claim. A new file is the most likely way this branch would violate its
+own contract, so it is exactly the case the gate must see. Ignored paths are excluded by
+`--exclude-standard` because they are not repository content; if a dispatch writes to an ignored
+scratch path it has still written nothing the repository will carry.
 
 Because `red_baseline_sha` is captured **after** the wave's scaffolding commit, the wave's sibling
-harnesses are already behind the baseline and cannot appear in this set. Any file that does appear
-was written by this dispatch, which the branch is not permitted to do:
+harnesses are already behind the baseline and cannot appear in any of the three passes. Any file
+that does appear was written by this dispatch, which the branch is not permitted to do:
 
 * a non-test `*.go` file → halt with `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`. A red deliverable
   declares no production change; the behaviour that turns it green belongs to its green-makers.

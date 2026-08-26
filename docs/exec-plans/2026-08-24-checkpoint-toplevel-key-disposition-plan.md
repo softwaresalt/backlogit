@@ -6161,8 +6161,11 @@ closed at four boundaries:
   form halts `WAVE_RED_DELIVERABLE_EARLY_GREEN`; a no-tests-to-run signal at any exit code halts new
   `WAVE_RED_DELIVERABLE_VACUOUS`, the exact mirror of the P-002.3 false-green rule; a panic,
   timeout, or package abort halts `RED_DELIVERABLE_NOT_ASSERTION_RED`.
-* **Zero-delta gate (0.5b)** — the changed-file set against `red_baseline_sha` must be empty. A
-  non-test `*.go` file halts `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`; anything else halts
+* **Zero-delta gate (0.5b)** — the changed-file set against `red_baseline_sha` must be empty, where
+  the set is the union of `git diff`, `git diff --cached`, and `git ls-files --others
+  --exclude-standard`. The untracked pass is what makes the claim true: `git diff` reports only
+  tracked files, so a newly created one would otherwise pass. A non-test `*.go` file halts
+  `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`; anything else halts
   `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`.
 
 Step 0.5c then returns the evidence Ship Step 4.5 turns into the `open_red_deliverables` entry —
@@ -6214,13 +6217,20 @@ non-test `*.go` file there is `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`; anythi
 the task without one. `WAVE_RED_DELIVERABLE_PRELANDED` is withdrawn: the state it described is now
 the expected one.
 
-The control suite was rebuilt against the corrected model — 16 controls covering the confirmed
+*Wave 5 — the zero-delta gate was untracked-blind.* `git diff` and `git diff --cached` report only
+files Git already tracks, so a dispatch could create a new test, configuration, or documentation
+file and still satisfy the empty-delta claim — the most likely way this branch would violate its own
+contract. The gate now takes the union of three passes, adding `git ls-files --others
+--exclude-standard`, and two controls pin it.
+
+The control suite was rebuilt against the corrected model — 18 controls covering the confirmed
 deliverable, an early-green selector, a selector matching no test, an uncompilable scaffolded
 harness, panic and timeout rejection, both zero-delta refusals, all three dispatch-precondition
 refusals including an absent `red_baseline_sha`, an incomplete evidence report, and both routing
-directions. The load-bearing control is `red-deliverable-never-enters-generic-loop`, which feeds the
+directions, plus the two untracked-file refusals. The load-bearing control is
+`red-deliverable-never-enters-generic-loop`, which feeds the
 exact observation the generic loop reads as SUCCESS; with the branch removed it fails on both
-assertions. Totals are 182 assertions with `-VerifyAgainstQueue` and 160 without.
+assertions. Totals are 186 assertions with `-VerifyAgainstQueue` and 164 without.
 
 ### Finding 2 — U10b recreated its mirror under an unignored path
 
