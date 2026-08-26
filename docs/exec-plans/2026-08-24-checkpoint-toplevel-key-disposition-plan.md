@@ -924,8 +924,11 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
 
 * **Partition**: 4 (implementation plus MCP/CLI/instruction contracts)
 * **Domain**: tests
-* **Files**: `internal/events/checkpoint_lifecycle_conformance_test.go`. **No production change
-  (cycle-20 rewrite).**
+* **Files**: `internal/events/checkpoint_lifecycle_conformance_guard_test.go` (new). **No production
+  change (cycle-20 rewrite; guard file renamed in cycle 26).** The guards deliberately live in
+  their own file rather than in U3c's `checkpoint_lifecycle_conformance_test.go`, which is created
+  earlier in the execution order — `build-feature` Step 5's `verification-only` exception admits
+  only *new* files a task names, so appending to U3c's file would exceed the class.
 * **Change (cycle-20 — closes the Group-B P1 raised on `147.007-T`)**: cycle 17 gave this unit a
   production delta — "after the U3 validity gate, add `CheckConformingTopLevelNamespace(data)`" —
   that U14 had already made redundant. Once `ResolveCheckpoint` routes through

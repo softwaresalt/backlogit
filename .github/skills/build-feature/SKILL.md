@@ -161,6 +161,13 @@ The same bounded exception applies to the guard files a `declaration-only` task 
 **not** apply to `docs-only` (zero `*.go` changes) or to `covered-by` (the owner owns the harness;
 any `*_test.go` change is `EXEMPT_DELTA_EXCEEDS_CLASS`).
 
+**No-collision rule.** "New" is evaluated against the execution order, not against the repository
+state when the task was written. A task's named `*_test.go` file must not be a file that an earlier
+task in the dependency order already creates; if it is, the file is pre-existing by the time this
+task runs and the exception does not admit the append. Halt with
+`EXEMPT_DELTA_EXCEEDS_CLASS` and report the collision so the task can be given its own guard file.
+Do **not** relax this exception to permit appends — the narrowing is deliberate.
+
 If the root cause is still unclear after repeated attempts, or the task touches a risky subsystem, invoke **safety-modes** in `investigate-first` or `freeze-scope` mode before continuing.
 
 #### Step 6: Verify Compilation

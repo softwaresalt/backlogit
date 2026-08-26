@@ -65,6 +65,12 @@ warn the operator that visibility is degraded and continue locally.
    named harness owner — the owner is a scaffolding target.
 5. Preserve the work-item-to-task mapping so each harness can be traced
    back to the correct backlog item.
+6. Assume any `declaration-only` prerequisite has already landed — Ship's
+   Step 2 ordering rule executes those declaration tasks before invoking this
+   skill on their dependents. If a scaffold still cannot compile because a
+   declared type or field is absent, halt and report the missing prerequisite
+   to Ship. Do not fabricate the declaration, and do not stub it into the test
+   file to force compilation.
 
 ### Step 1a: Harness-exempt static intake (P-002.1, fail-closed)
 

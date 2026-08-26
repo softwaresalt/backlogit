@@ -107,6 +107,29 @@
 # governs generated .github harness artifacts, and plugin/ is not one. The
 # plugin bundle is not edited by this work; see follow-up stash 633818E1 and
 # the plan's "Ship ready-selection contract" section for the same rationale.
+#
+# NOTE (2026-08-26, cycle 26): PR #377's fresh Copilot review on 18d41b1f raised
+# two ordering defects in the contract above; the re-apply obligation now also
+# covers:
+#   .github/agents/.ship.agent.md         — Step 2 gains an explicit
+#       declaration-prerequisite ordering rule (new item 3, shifting the
+#       harness-architect invocation to item 4 and the harness-satisfied
+#       confirmation to item 5). A declaration-only exempt task whose declared
+#       shape a dependent's harness compiles against is executed and
+#       EXEMPT_VERIFY_OK-verified before that dependent is scaffolded. Without
+#       it the up-front gate deadlocks a declaration-first DAG. It is an
+#       ordering rule only; it does not admit implementation ahead of a red
+#       harness, and a non-declaration-only blocker halts instead.
+#   .github/skills/build-feature/SKILL.md — Step 5's narrow new-test-file
+#       exception gains a no-collision rule: "new" is evaluated against the
+#       execution order, so a named *_test.go file that an earlier task in the
+#       dependency order already creates is pre-existing and not admitted
+#       (EXEMPT_DELTA_EXCEEDS_CLASS). The exception is explicitly NOT relaxed to
+#       permit appends.
+#   .github/skills/harness-architect/SKILL.md — Step 1 gains item 6: assume
+#       declaration-only prerequisites have landed, and halt reporting the
+#       missing prerequisite rather than fabricating or stubbing a declaration
+#       to force compilation (repo-authored; still needs no entry here).
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
