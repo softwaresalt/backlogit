@@ -25,9 +25,10 @@
       * baseline 18-wave schedule, zero stalls, zero compile-order violations
       * persistent red-deliverable mapping and the open-red convergence rule
       * open-red re-confirmation: every still-open selector, including carried-in
-        entries, is re-run at each convergence gate and must stay RED; an
-        early-green entry halts with WAVE_RED_DELIVERABLE_EARLY_GREEN, while an
-        entry the wave closed is deliberately not re-run
+        entries, is re-run at each convergence gate and must stay RED; every
+        selector closed at that gate is re-run and must be GREEN; an early-green
+        entry halts with WAVE_RED_DELIVERABLE_EARLY_GREEN and a still-red closed
+        entry halts with WAVE_GREEN_MAKER_UNVERIFIED
       * blocked-member injection (initial and mid-run)
       * unsupported status tokens (catalog, off-catalog, catalog unavailable)
       * active residual at wave admission
@@ -907,7 +908,9 @@ function Invoke-WaveScheduler {
         open_red_after_wave      = @{}
         open_red_closed_at_wave  = @{}
         open_red_reconfirmed_at_wave = @{}
+        open_red_newly_closed_at_wave = @{}
         early_green              = @()
+        green_maker_unverified   = @()
         full_suite_waves         = @()
         deferred_waves           = @()
         compile_gate_waves       = @()
@@ -1125,6 +1128,14 @@ function Invoke-WaveScheduler {
         }
     }
 
+    # still-red-after-close injection: an entry whose declared green-makers all reach done but
+    # whose selector keeps failing. Models the green-maker contract violation the convergence
+    # gate's newly-closed verification exists to catch.
+    $stayRedAfterClose = @()
+    if (Test-HasProperty $mut 'green_maker_leaves_red') {
+        $stayRedAfterClose = ConvertTo-List $mut.green_maker_leaves_red
+    }
+
     while ($true) {
         $waveIndex++
         if ($waveIndex -gt $budget) {
@@ -1256,6 +1267,7 @@ function Invoke-WaveScheduler {
         # ---- Step 4.6 convergence gate ----
         # open-red set: completed red deliverables whose green-makers are not all closed
         foreach ($t in $ready) { if ($redMap.ContainsKey($t)) { $redMap[$t].open = $true } }
+        $newlyClosed = @()
         foreach ($k in $redMap.Keys) {
             if (-not $redMap[$k].open) { continue }
             $allClosed = $true
@@ -1266,19 +1278,23 @@ function Invoke-WaveScheduler {
                 $redMap[$k].open = $false
                 $redMap[$k].closedWave = $waveIndex
                 $result.open_red_closed_at_wave[$k] = $waveIndex
+                $newlyClosed = @($newlyClosed + $k)
             }
         }
+        $newlyClosed = @($newlyClosed | Sort-Object)
         $openNow = @($redMap.Keys | Where-Object { $redMap[$_].open } | Sort-Object)
         $result.open_red_after_wave["$waveIndex"] = $openNow
 
         # the compile / vet / scoped-green part of the gate always runs
         $result.compile_gate_waves = @($result.compile_gate_waves + $waveIndex)
 
-        # P-002.6 always-run item 4: re-run the red_selector_command of EVERY entry still open
-        # after this wave's completions - including entries carried in from an earlier wave - and
-        # require each to be observed RED. An entry the wave closed is deliberately not re-run.
-        # An entry observed green before its declared green-makers close fails the gate closed.
+        # P-002.6 always-run items 4 and 5. The pre-recomputation open set partitions exactly into
+        # entries still open (selector re-run, must stay RED) and entries newly closed at this
+        # recomputation (selector re-run, must now be GREEN). No entry is skipped: while another
+        # entry keeps the set non-empty the unfiltered suite stays deferred, so neither an
+        # early-green open entry nor a still-red newly closed entry would be caught anywhere else.
         $result.open_red_reconfirmed_at_wave["$waveIndex"] = $openNow
+        $result.open_red_newly_closed_at_wave["$waveIndex"] = $newlyClosed
         $earlyGreen = @()
         foreach ($k in $openNow) {
             if ($earlyGreenAtWave.ContainsKey($k) -and [int]$earlyGreenAtWave[$k] -le $waveIndex) {
@@ -1289,6 +1305,19 @@ function Invoke-WaveScheduler {
             $result.outcome = 'WAVE_RED_DELIVERABLE_EARLY_GREEN'; $result.halt_wave = $waveIndex
             $result.early_green = @($earlyGreen | Sort-Object)
             $result.halt_detail = "open red observed green before its declared green-maker: $($result.early_green -join ',')"
+            break
+        }
+        $unverified = @()
+        foreach ($k in $newlyClosed) {
+            $goesGreen = $earlyGreenAtWave.ContainsKey($k) -and [int]$earlyGreenAtWave[$k] -le $waveIndex
+            if ($stayRedAfterClose -contains $k) { $goesGreen = $false }
+            elseif (-not $earlyGreenAtWave.ContainsKey($k)) { $goesGreen = $true }
+            if (-not $goesGreen) { $unverified = @($unverified + $k) }
+        }
+        if ($unverified.Count -gt 0) {
+            $result.outcome = 'WAVE_GREEN_MAKER_UNVERIFIED'; $result.halt_wave = $waveIndex
+            $result.green_maker_unverified = @($unverified | Sort-Object)
+            $result.halt_detail = "green-maker landed but its open red is still failing: $($result.green_maker_unverified -join ',')"
             break
         }
 
@@ -1395,6 +1424,13 @@ function Test-Scenario {
                 }
             }
             'early_green' { Test-Equal $id $key (ConvertTo-List $want) $r.early_green }
+            'green_maker_unverified' { Test-Equal $id $key (ConvertTo-List $want) $r.green_maker_unverified }
+            'open_red_newly_closed_at_wave' {
+                foreach ($p in (Get-PropertyNames $want)) {
+                    $actual = if ($r.open_red_newly_closed_at_wave.ContainsKey($p)) { $r.open_red_newly_closed_at_wave[$p] } else { @() }
+                    Test-Equal $id "open_red_newly_closed_at_wave[$p]" (ConvertTo-List $want.$p) (ConvertTo-List $actual)
+                }
+            }
             'open_red_reconfirmed_at_wave' {
                 foreach ($p in (Get-PropertyNames $want)) {
                     $actual = if ($r.open_red_reconfirmed_at_wave.ContainsKey($p)) { $r.open_red_reconfirmed_at_wave[$p] } else { @() }

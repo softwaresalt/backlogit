@@ -47,7 +47,7 @@ and is safe to run at any gate point.
 | Scenario | Contract obligation |
 |---|---|
 | `baseline` | The 43-task `M` / 106-edge DAG partitions into **18** waves with 0 stalls and 0 compile-order violations, on one logical exact-`M` snapshot per wave |
-| `persistent_red_mapping` | `open_red_deliverables` tracks completed red-harness tasks whose green-maker is not terminal; wave 4 advances while U8b and U3c are legitimately red; every entry still open after a wave's completions — including carried-in entries — is re-run and re-confirmed RED at that wave's gate; the unfiltered full suite runs only when the set is empty, and immediately at the wave that empties it |
+| `persistent_red_mapping` | `open_red_deliverables` tracks completed red-harness tasks whose green-maker is not terminal; wave 4 advances while U8b and U3c are legitimately red; every entry still open after a wave's completions — including carried-in entries — is re-run and re-confirmed RED at that wave's gate, and every entry closed at that gate is re-run and confirmed GREEN; the unfiltered full suite runs only when the set is empty, and immediately at the wave that empties it |
 | `blocked_injection` | A `blocked` member halts with `WAVE_MEMBER_BLOCKED`, reports transitive dependency impact, stays in `M`, and never permits a completion claim |
 | `blocked_mid_run` | The same halt fires at the next admission when a member is blocked mid-run |
 | `active_residual` | An `active` leftover claim halts with `WAVE_NO_PROGRESS` (detail `active residual`) |
@@ -64,8 +64,9 @@ and is safe to run at any gate point.
 | `missing_red_selector` | An empty selector fails closed; scope is never inferred |
 | `wrong_green_maker_close_wave` | A close-wave value that differs from the actual last green-maker wave fails closed |
 | `green_maker_descoped` | A green-maker `archived` rather than `done` satisfies dependencies but does **not** close its open-red obligation; the deferral budget halts with `WAVE_OPEN_RED_UNCLOSED` |
-| `open_red_early_green_carried_in` | Negative control for the open-red re-confirmation: an entry carried in from an earlier wave is injected green three waves before its declared green-maker, and the gate halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` at the wave that observes it rather than advancing |
-| `open_red_closed_entry_not_reconfirmed` | Complement of the control above: an entry the wave **closed** is deliberately not re-run, so the same injection is not a violation and the schedule completes — proving the gate re-confirms exactly the still-open set and no more |
+| `open_red_early_green_carried_in` | Negative control for the open-red RED re-confirmation: an entry carried in from an earlier wave is injected green three waves before its declared green-maker, and the gate halts with `WAVE_RED_DELIVERABLE_EARLY_GREEN` at the wave that observes it rather than advancing |
+| `open_red_closed_entry_not_reconfirmed` | Complement of the control above: an entry the wave **closed** leaves the still-open set and is re-confirmed **GREEN** rather than RED, so the same injection is the expected outcome and the schedule completes — proving RED re-confirmation covers exactly the still-open set and no more |
+| `green_maker_lands_but_selector_stays_red` | Negative control for the newly-closed verification: a green-maker completes but its entry's selector keeps failing. Because another open red defers the full suite for six more waves, the gate must catch it itself and halts with `WAVE_GREEN_MAKER_UNVERIFIED` |
 
 ## Keeping it honest
 

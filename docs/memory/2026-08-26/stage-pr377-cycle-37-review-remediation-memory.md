@@ -39,6 +39,13 @@ no subagent, no merge, no shipment claim, no worktree deletion, no Go source cha
 | `PRRT_kwDORzozKM6cmKVX` | `tests/simulation/README.md` | Fixed — baseline scenario row recounted to 43 tasks / 106 edges |
 | `PRRT_kwDORzozKM6cmKV6` | plan cycle-37 section | Declined — the PR description was already refreshed; the review's metadata snapshot predated the edit |
 
+**Wave 3** — four threads raised against `44f4f078`, resolving to two defect classes.
+
+| Thread | Path | Disposition |
+|---|---|---|
+| `PRRT_kwDORzozKM6cmdQ0`, `PRRT_kwDORzozKM6cmdRN`, `PRRT_kwDORzozKM6cmdRb` | policy, agent, runner | Fixed — the mirror hole: a newly closed entry is now re-run and required GREEN (`WAVE_GREEN_MAKER_UNVERIFIED`), with its own control scenario |
+| `PRRT_kwDORzozKM6cmdQK` | `.github/agents/.ship.agent.md` | Fixed — Step 3's manifest census and green-regression array count recounted to 44 / 43 |
+
 ## Decisions and rationale
 
 **Convergence gate (P1).** Step 4.6 item 2 re-confirmed RED only for red deliverables that
@@ -84,6 +91,21 @@ instead of halting at 5). The copy was deleted after the probe.
 direct atomic-write call disappeared, which any other helper would satisfy. Both now require the
 `RewriteCheckpointFile` call as well, in the task text and in the matching plan unit section.
 
+**The mirror hole (wave 3, P1).** Wave 2's fix re-ran every *still-open* selector but let an entry
+that closed at the gate leave the set unverified. Because the unfiltered suite stays deferred while
+any other entry is open, a green-maker that landed without turning its selector green would not be
+caught at the wave that was supposed to prove it — for `147.035-T` / U12 that is a six-wave gap.
+Item 5 now re-runs every entry in `newly_closed_k` and requires GREEN, halting with
+`WAVE_GREEN_MAKER_UNVERIFIED`. Items 4 and 5 partition the pre-recomputation open set exactly, so
+no entry is skipped in either direction. The `green_maker_lands_but_selector_stays_red` control
+halts at wave 7 as designed.
+
+**Runner bug found while adding the control**: `$stayRedAfterClose = @(ConvertTo-List $x)` produced
+a nested array because `ConvertTo-List` already returns `,@(...)`, so `-contains` never matched and
+the new scenario silently passed as `COMPLETE`. Fixed by dropping the redundant `@()`, matching the
+existing `$dropped = ConvertTo-List ...` pattern. Worth remembering: in this runner, always assign
+`ConvertTo-List` output directly.
+
 **Edge retargeting.** `147.008-T` / U4 edits `internal/core/checkpoint_disposition.go`, so its
 prerequisite moved from `147.037-T` to `147.044-T`. `147.021-T` / U2f enumerates the post-migration
 allow-list across both packages, so it now depends on both migrations. `147.006-T` / U3,
@@ -120,7 +142,7 @@ U14b depends only on U13 (wave 7), so it lands in wave 8 beside U14 and no depen
 
 | Gate | Result |
 |---|---|
-| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 137/137 across 20 scenarios |
+| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 150/150 across 21 scenarios |
 | Markdown P-008 | 0 issues across 2300 files |
 | Docline frontmatter | `valid: true`, 0 violations |
 | Index sync | 1210 artifacts, 0 parse failures |

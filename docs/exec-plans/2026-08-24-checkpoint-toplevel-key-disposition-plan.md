@@ -5987,6 +5987,13 @@ was fixed, replied to, and resolved.
 | `PRRT_kwDORzozKM6cmKVX` | `tests/simulation/README.md` | The `baseline` scenario row still reported the pre-split 42-task / 104-edge topology, contradicting the updated fixture and the same document's 43-task description | Valid | Fixed to 43 tasks / 106 edges; the two new scenario rows were added in the same table |
 | `PRRT_kwDORzozKM6cmKV6` | this plan | The disposition claims the PR metadata was refreshed, but the live description still shows cycle 29, 42/104/43, and six unresolved threads | Invalid — stale premise | Declined with evidence. The description was refreshed before the second review wave completed; the review's PR-metadata snapshot predates the edit. The live description records cycle 37, 129 changed files, 43 tasks / 106 edges / 44 shipment members, and no open findings. Re-verified after the fact; no further change was needed for the claim to be true |
 
+**Third review wave (against `44f4f078`).** Four threads, resolving to two defect classes.
+
+| Thread(s) | Path | Finding | Classification | Disposition |
+|---|---|---|---|---|
+| `PRRT_kwDORzozKM6cmdQ0`, `PRRT_kwDORzozKM6cmdRN`, `PRRT_kwDORzozKM6cmdRb` | `workflow-policies.md`, `.ship.agent.md`, `wave-scheduler-sim.ps1` | The mirror of the wave-2 defect: an entry that *closes* at a gate leaves the open set without its selector ever being required to pass. While another entry keeps the set non-empty the unfiltered suite stays deferred, so a green-maker that landed without turning its selector green is not detected at the wave that was supposed to prove it | Valid | Fixed. The always-run list gains **item 5**: re-run the `red_selector_command` of every entry in `newly_closed_k` and require **GREEN**, halting with the new `WAVE_GREEN_MAKER_UNVERIFIED` code. Items 4 and 5 now **partition** the pre-recomputation open set exactly — still open → RED, newly closed → GREEN — so no entry is skipped. The runner tracks `newly_closed_k`, the fixture gains a `green_maker_leaves_red` mutation and the `green_maker_lands_but_selector_stays_red` control (halt at wave 7, six waves before the deferred suite would have surfaced it), and `open_red_closed_entry_not_reconfirmed` was rewritten from "not re-run" to "re-confirmed GREEN" |
+| `PRRT_kwDORzozKM6cmdQK` | `.ship.agent.md` | Step 3's required manifest census still pinned **43 total / 42 in `M`**, and its green-regression paragraph still said all **42** arrays are empty — both pre-split figures that would make Ship reject the valid current manifest or freeze the wrong wave budget | Valid | Fixed to 44 total / 43 in `M` and 43 empty arrays. The reviewer named both occurrences; a repository-wide sweep for the same census shape found no others |
+
 **Why the split, and why it needs no new mechanism.** Cycle 17 already used exactly this move when
 it broke the original five-file seam unit into U11 (declaration), U12 (contract harness), U13
 (implementation), and U14 (caller migration); cycle 20 used it again when it split U7b into U7b and
@@ -6014,7 +6021,7 @@ after wave 8.
 
 | Gate | Result |
 |---|---|
-| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 137/137 across 20 scenarios; S=44; M=43; 106 edges; 18 waves; acyclic; 0 stalls; 0 compile-order violations |
+| Wave-scheduler simulation, live-queue verification | `WAVE_SIM_OK` 150/150 across 21 scenarios; S=44; M=43; 106 edges; 18 waves; acyclic; 0 stalls; 0 compile-order violations |
 | Markdown P-008 | 0 issues |
 | Docline frontmatter | `valid: true`, 0 violations |
 | Index sync | 0 parse failures |
@@ -6032,7 +6039,7 @@ subagents: prohibited-by-operator
 decision: ADVISORY
 pending: none
 operator_authorization: approved
-severity_counts: "P0=0, P1=2 (convergence gate open-red omission and its missing simulation coverage, both remediated in-pass), P2=3 (U14 three-file width, removal-only structural harnesses, stale simulation README baseline row — all remediated in-pass), P3=0"
+severity_counts: "P0=0, P1=3 (convergence gate open-red omission, its newly-closed mirror, and the missing simulation coverage — all remediated in-pass), P2=4 (U14 three-file width, removal-only structural harnesses, stale simulation README baseline row, stale Ship Step 3 manifest census — all remediated in-pass), P3=0"
 topology: "S=44 explicit shipment members; M=43 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 106 executable edges; 18 waves; acyclic"
 push_allowed: yes
 push_performed: yes
