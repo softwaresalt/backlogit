@@ -507,11 +507,20 @@ function Get-RedDeliverableBranchOutcome {
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
 
-    # Dispatch precondition 3 - the delta is the named harness file(s) only.
+    # Dispatch precondition 3 - the delta is the named harness file(s) and nothing else.
+    $declared = @((ConvertTo-List $Control.declared_harness_files))
+    if ($declared.Count -eq 0) {
+        # A red deliverable with no declared harness file has no deliverable to land.
+        return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
+    }
     $changed = @((ConvertTo-List $Control.changed_files))
-    $production = @($changed | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
+    $outside = @($changed | Where-Object { $declared -notcontains $_ })
+    $production = @($outside | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
     if ($production.Count -gt 0) {
         return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'
+    }
+    if ($outside.Count -gt 0) {
+        return & $out 'RED_DELIVERABLE_DELTA_OUT_OF_SURFACE'
     }
 
     # Step 0.5a - pre-landing baseline.

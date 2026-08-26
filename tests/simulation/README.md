@@ -34,13 +34,13 @@ five** canonical red-deliverable keys:
 that task/exclusion drift, status-catalog drift, registry mapping/feature drift, archived sibling
 inclusion, every red-contract-key mutation, and a non-empty green-regression mutation are detected.
 Three parser controls also require a green-regression payload to be a JSON object whose
-`green_regression_cmds` value is an array, and 15 red-deliverable branch controls pin
+`green_regression_cmds` value is an array, and 18 red-deliverable branch controls pin
 `build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
 below). Both control suites run unconditionally, with or without `-VerifyAgainstQueue`.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. The current totals are **180 assertions** with
-`-VerifyAgainstQueue` and **158** without, across 21 scheduler scenarios plus 18 controls. It is
+line, exiting non-zero on any failed assertion. The current totals are **186 assertions** with
+`-VerifyAgainstQueue` and **164** without, across 21 scheduler scenarios plus 21 controls. It is
 **pure**: it reads the fixture and backlog
 Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
 `go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
@@ -77,9 +77,12 @@ and is safe to run at any gate point.
 The scenarios above pin the **scheduler**. The `red_deliverable_branch_controls` block pins the
 **per-task execution** of a red deliverable — `build-feature` Step 0.5 — which the scheduler
 scenarios cannot reach, because a wave schedule says nothing about how one dispatch is classified.
-Each control declares an observation record (dispatch inputs, changed files, pre-landing and
-post-landing compile state and signal, evidence completeness) and the branch outcome Step 0.5
-requires; the runner classifies it in the same order the skill specifies.
+Each control declares an observation record (dispatch inputs, the declared harness-file set, changed
+files, pre-landing and post-landing compile state and signal, evidence completeness) and the branch
+outcome Step 0.5 requires; the runner classifies it in the same order the skill specifies. The delta
+check is an explicit set comparison against `declared_harness_files`, not a file-type heuristic — a
+`*_test.go` extension is not an exemption, and an absent declared set fails closed rather than
+admitting every delta.
 
 | Control | Contract obligation |
 |---|---|
@@ -96,7 +99,10 @@ requires; the runner classifies it in the same order the skill specifies.
 | `exempt-pairing-refused` | Precondition 1: `red_deliverable` and `harness-exempt` are mutually exclusive — `WAVE_RED_MAPPING_UNRESOLVED` |
 | `selector-mismatch-refused` | Precondition 2: `harness_cmd` must be the declared `red_selector_command` verbatim |
 | `weakened-selector-refused` | Precondition 2: a bare `./...` with no `-count=1`, no anchored selector, and a `\|\| true` suffix is a contract defect, never a substitute command |
-| `production-delta-refused` | Precondition 3: a red deliverable declares no production change, so a non-test `*.go` edit is out of surface |
+| `production-delta-refused` | Precondition 3: a non-test `*.go` file outside the declared harness set is a production change a red deliverable may not make |
+| `extra-test-file-refused` | Precondition 3: an unrelated `*_test.go` file is outside the surface too — a test extension is not an exemption |
+| `extra-non-go-file-refused` | Precondition 3: a configuration or documentation file is not a harness file; "nothing else" is literal |
+| `missing-declared-harness-set-refused` | Precondition 3 fails closed: with no declared harness-file set the comparison is vacuous and would admit every delta, so the dispatch is a contract defect |
 | `incomplete-evidence-report-refused` | Step 0.5e: without the report Ship cannot build the `open_red_deliverables` entry that convergence items 4 and 5 re-confirm |
 
 ## Keeping it honest

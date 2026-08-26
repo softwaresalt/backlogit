@@ -519,12 +519,15 @@
 #   scripts/wave-scheduler-sim.ps1 and
 #       tests/simulation/wave-scheduler-contract.json — new
 #       `red_deliverable_branch_controls` block and its classifier. The wave
-#       arithmetic is unchanged; the 15 controls pin Step 0.5 routing and result
-#       classification, which no scheduler scenario can reach. Totals move to 180
-#       assertions with -VerifyAgainstQueue / 158 without. The load-bearing
+#       arithmetic is unchanged; the 18 controls pin Step 0.5 routing and result
+#       classification, which no scheduler scenario can reach. Totals move to 186
+#       assertions with -VerifyAgainstQueue / 164 without. The load-bearing
 #       control is `red-deliverable-never-enters-generic-loop`: with the branch
-#       removed it fails on both assertions. An adopting template MUST carry an
-#       equivalent control suite, not just the branch prose.
+#       removed it fails on both assertions. The precondition-3 delta check is an
+#       explicit set comparison against declared_harness_files, NOT a non-test
+#       *.go heuristic; an extra *_test.go, a config file, and a docs file are
+#       all out of surface, and an absent declared set fails closed. An adopting
+#       template MUST carry an equivalent control suite, not just the branch prose.
 #       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---

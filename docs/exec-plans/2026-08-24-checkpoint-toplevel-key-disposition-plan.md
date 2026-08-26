@@ -6187,8 +6187,19 @@ timeout, or package abort is now an explicit `RED_DELIVERABLE_NOT_ASSERTION_RED`
 falling into the repairable build-error row, because a non-zero exit is not evidence that an
 assertion failed. The load-bearing control is `red-deliverable-never-enters-generic-loop`, which
 feeds the exact observation the generic loop reads as SUCCESS; with the branch removed it fails on
-both assertions, and the suite drops 28 assertions. Totals move to 180 assertions with
-`-VerifyAgainstQueue` and 158 without.
+both assertions, and the suite drops 28 assertions.
+
+**Delta-surface enforcement (third review wave, thread `PRRT_kwDORzozKM6cn_pZ`).** The first
+classifier enforced precondition 3 with a "non-test `*.go`" heuristic, so an extra `*_test.go`, a
+configuration file, or a documentation file passed a rule whose stated scope is "the harness file(s)
+the task names and nothing else". The check is now an explicit set comparison against the task's
+declared harness files: a non-test `*.go` outside the set stays
+`RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`, anything else outside it is the new
+`RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`, and an absent or empty declared set halts with
+`WAVE_RED_MAPPING_UNRESOLVED` rather than making the comparison vacuous. Three controls were added —
+`extra-test-file-refused`, `extra-non-go-file-refused`, and `missing-declared-harness-set-refused` —
+and all three fail when the comparison is removed. Totals move to 186 assertions with
+`-VerifyAgainstQueue` and 164 without.
 
 ### Finding 2 — U10b recreated its mirror under an unignored path
 

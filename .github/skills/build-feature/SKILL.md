@@ -108,10 +108,20 @@ exists to pin.
    task's own `^TestU<unit>_` selector, and no `-short`, added build tag, `t.Skip`, or `|| true`. A
    mismatch or a weakening is a contract defect: halt with `WAVE_RED_MAPPING_UNRESOLVED`. Do not
    substitute a command of your own.
-3. The delta surface is **the harness file(s) the task names and nothing else**. A red deliverable
-   declares no production change; the behaviour that turns it green belongs to its green-makers. A
-   non-test `*.go` change here is out of surface — halt rather than making the harness pass by
-   editing the code under test.
+3. The delta surface is **the harness file(s) the task names and nothing else**, compared as an
+   explicit set rather than by file-type heuristic. The task's declared harness-file set is the
+   whole permitted surface: a documentation file, a configuration file, and an unrelated `*_test.go`
+   file are all outside it, exactly as a production file is. A red deliverable declares no
+   production change; the behaviour that turns it green belongs to its green-makers.
+   * A non-test `*.go` file outside the declared set → halt and report
+     `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`. Do not make the harness pass by editing the code
+     under test.
+   * Any other file outside the declared set → halt and report
+     `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`. "Nothing else" is literal; a `*_test.go` extension is
+     not an exemption.
+   * An absent or empty declared harness-file set → halt with `WAVE_RED_MAPPING_UNRESOLVED`. The
+     comparison would be vacuous and admit every delta, so a missing declaration is a contract
+     defect, not a permissive default.
 
 #### Step 0.5a: Pre-landing baseline
 
@@ -212,9 +222,11 @@ with the same ordering this step specifies. Run it with
 
 The controls cover every outcome above: the accepted assertion-RED deliverable, pre-landed green and
 pre-landed red baselines, a vacuous post-landing result, panic and timeout rejection, build-error
-routing back to Step 0.5c, a pre-existing broken tree, all three dispatch-precondition refusals, an
-incomplete evidence report, and two routing controls proving a `red_deliverable` dispatch never
-enters the generic loop while an ordinary dispatch still does. The load-bearing control is
+routing back to Step 0.5c, a pre-existing broken tree, every dispatch-precondition refusal —
+including a production file, an extra `*_test.go`, an extra non-Go file, and an absent declared
+harness-file set — an incomplete evidence report, and two routing controls proving a
+`red_deliverable` dispatch never enters the generic loop while an ordinary dispatch still does. The
+load-bearing control is
 `red-deliverable-never-enters-generic-loop`: it feeds the exact observation the generic loop reads
 as SUCCESS and requires this branch to halt on it instead, so deleting the branch fails the suite
 rather than passing it silently.
