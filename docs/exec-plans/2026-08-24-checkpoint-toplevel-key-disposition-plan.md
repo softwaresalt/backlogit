@@ -4872,3 +4872,146 @@ is tabulated in the Execution Order section.
 written here, and no push or merge is performed. The §1.9 readiness gate remains **FAIL on Check 3**
 pending a fresh local review of these changes and re-review of PR #377 on the new HEAD; the six
 threads are addressed but are not self-resolved by this session.
+
+---
+
+## Plan Review
+
+cycle: 29
+
+dispatch_mode: single-agent-declared-degradation
+
+TOOL_DEGRADED: reviewer-subagent-dispatch
+
+decision: ADVISORY
+
+operator_authorization: approved
+
+severity counts: P0=0, P1=0, P2=3, P3=2
+
+push_allowed: yes
+
+**This is the fresh local plan review that the cycle-29 remediation session's own gate state named
+`required before push` ("the §1.9 readiness gate remains FAIL on Check 3 pending a fresh local
+review of these changes"), run at canonical worktree HEAD `ef8bd954`.** It supersedes `cycle: 24`
+for gate-decision purposes; cycle 24 and every earlier record remain the historical trace of how
+the plan reached its present shape, and cycle 29's own remediation (the `declaration-only`
+withdrawal, the source-shape harness design, new policy P-002.6, the three bounded fixes T1/T3/T6,
+and the U10 workspace relocation T5) stands unmodified as history — only the gate-state role
+(`decision`, `operator_authorization`, `push_allowed`) is superseded here. **This record is the
+current gate state.**
+
+### Authorization basis
+
+`operator_authorization: approved` records that the operator explicitly directed autonomous
+completion of this bounded review-and-fix cycle — a direction to run the confirmatory review cycle
+29 required and apply any advisory corrections it found in the same pass, not to defer them to a
+further cycle. **This authorization is autonomous completion of this bounded cycle, not merge
+approval.** It authorizes Stage to record this gate outcome, apply the three P2 corrections below,
+and mark the branch **ADVISORY authorized / ready for push**; it does not authorize a shipment
+claim, does not authorize Ship to begin implementation, and does not authorize a merge. Those
+remain separate, later gates owned by Ship and the operator respectively, and this record does not
+itself resolve the §1.9 readiness gate's Check 3 — that requires PR #377's review threads to be
+re-examined against the pushed HEAD.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+Reviewer sub-agent dispatch was unavailable for this pass (this bounded session runs CLI-only,
+worktree-bound, with no subagent delegation, per the operator's explicit "no subagents" scope);
+`TOOL_DEGRADED: reviewer-subagent-dispatch` records the degradation, matching the
+cycle-16/17/18/20/21/24 precedent. The gate ran as a complete sequential, single-agent pass
+applying all seven personas' adapters over cycle 29's remediation text, the 1.17.0 policy contract,
+`build-feature/SKILL.md`, `.ship.agent.md`, `.autoharness/drift-ignore`, and the referenced backlog
+artifacts (`147-F` and its forty-two queued tasks, re-verified live), achieving **complete
+seven-adapter coverage**: all seven selected personas completed; none was skipped or partially
+dispatched.
+
+| Persona | Coverage mode | Coverage assignment |
+|---|---|---|
+| Constitution | sequential (single-agent) | Principle II framing re-confirmed for the `declaration-only` withdrawal (the P2-1 fix reclassifies a marker gap, it does not reintroduce a carve-out); Principle VII unaffected — no destructive command is touched by any of the three findings |
+| Go | sequential (single-agent) | confirms no Go source, test, or production configuration file is touched this cycle; the P-002.6 snapshot recipe, the P2-1 wording, and the U1d/U15 fail-count question describe CLI-observable and documentation-only content |
+| Scope | sequential (single-agent) | topology, task-count, wave-count, and exempt-set claims re-verified live against the `147-F` queue via `backlogit sync` / `query` / `list` / `shipment get` at this session's HEAD; confirms no drift from cycle 29's 42-task / 104-edge / 43-member / 18-wave / eight-unit figures |
+| Learnings | sequential (single-agent) | the 117-F / A6A1B47E per-row-N+1-avoidance precedent (`internal/cli/list.go`) is cited for the new P-002.6 snapshot recipe; no other new external learning required for this pass's P2-level corrections |
+| Architecture | sequential (single-agent) | the new one-snapshot-per-wave recipe's placement (P-002.6, cross-referenced from `.ship.agent.md` Step 4.0 item 1) and its interaction with P-012 degraded-tool handling; blast radius of every correction confirmed policy/skill/memory-local, no plan-topology or task-graph change |
+| Agent-Native Parity | sequential (single-agent) | CLI (`backlogit query`, `backlogit list --json`) and MCP (`backlogit_query_sql`, `backlogit_list_items`) equivalence re-confirmed for the new recipe by direct invocation against the live index (one join call returned 42 items / 104 edges; one list call returned the same 104 edges embedded inline); `.autoharness/drift-ignore` re-apply obligation extended to cover this cycle's two changed files |
+| Security | sequential (single-agent) | confirms the new recipe issues only read-only `SELECT`/list calls, introduces no destructive command, and that the P2-3 review-cycle-budget note narrows no policy limit and touches no circuit-breaker file |
+
+### Gate rationale
+
+The gate is **ADVISORY**. The 42-task / 104-executable-edge / 43-shipment-member topology and the
+18-wave schedule (0 stalls, 0 compile-order violations) that cycle 29 introduced are re-confirmed
+**SOUND** and unchanged — this cycle finds no P0 and no P1. The three P2 findings below are: a
+residual misclassification left behind by cycle 29's own P-002.3 fix (the normative policy text and
+`build-feature`'s Steps 0/2 were corrected, but one Behavioral Constraints bullet in the same file
+still named a missing marker as a false-green signal); a missing efficient-computation recipe for
+the wave admission and requery steps that same cycle introduced (P-002.6 defined the ordering rule
+but not how `ready_k` is computed without a per-task-per-wave query pattern that would cost up to
+756 calls on this release unit's own schedule); and a procedural note recording that this
+shipment's remediation arc (cycles 26-30) has now run past the global `github-pr-automation` §1.8
+three-review-fix-cycle budget, authorized by the operator as a one-shipment advisory exception
+rather than a change to any policy file. Two further P3 items were investigated for accuracy: one
+(the PowerShell-quote artifact in `.backlogit/memories.json`) was a genuine, mechanical defect and
+is corrected; the other (a possible U1d fail-count discrepancy) was investigated in depth and found
+**not** to be a defect — see P3-1 below. None of these findings bears on architecture, safety, or
+the implementation contract, so the gate is advisory rather than blocking, and every P2 finding is
+corrected (or, for P2-3, recorded as an authorized advisory exception) in this same pass under the
+`operator_authorization` above. `push_allowed: yes`.
+
+### Findings by severity
+
+**P0 — 0**
+
+None.
+
+**P1 — 0**
+
+None.
+
+**P2 — 3**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| P2-1 | Cycle 29's own contract-changes table states P-002.3's must-fail signal list "no longer counts an unmarked exit 0 as the required pre-work failure" and that it "is `EXEMPT_MARKER_MISSING`", and `workflow-policies.md`'s normative P-002.3 text is already correct throughout (the pre-work-probe three-way classification, the false-green signal table, and the explicit sentence that a missing marker is "deliberately **absent**" from that table). But `build-feature/SKILL.md`'s Behavioral Constraints section still read "Never treat an exit-0 run carrying a P-002.3 false-green signal — including a missing `EXEMPT_VERIFY_OK:{task_id}` marker on `exempt_gate_cmd` — as success", which classifies the missing marker itself *as* a false-green signal — the exact conflation cycle 29 withdrew from the normative section, left standing in the one place that paraphrased it for the skill's own constraints. Steps 0 (item 4) and 2 of the same file already stated the two as separate conditions and needed no change. | Fixed in this pass. The bullet is split into two siblings: "Never treat an exit-0 run carrying a P-002.3 false-green signal as success" and "Never treat an exit-0 run on `exempt_gate_cmd` that is missing its declared `EXEMPT_VERIFY_OK:{task_id}` marker as success — this is the distinct `EXEMPT_MARKER_MISSING` evidence failure ..., explicitly **not** a P-002.3 false-green signal". A repository-wide sweep of "false-green" in the file confirmed this was the only occurrence needing correction. |
+| P2-2 | P-002.6, introduced this same cycle-29 pass, defines wave admission (`ready_k`) and requery as an ordering rule but does not say how the underlying status/dependency snapshot is computed. The naive form — one dependency lookup per still-queued task, repeated at every wave's admission and requery — costs up to `count(T) × waves` calls; on this release unit's own 42-task / 18-wave schedule that is as many as 756 calls (the "avoid 750 calls" figure this cycle was scoped against) for information a single snapshot already contains, and nothing in the policy said not to compute it that way, nor what to do if the snapshot itself were unreliable. | Fixed in this pass. P-002.6 gains an "Efficient wave-set computation (snapshot recipe)" paragraph: one status+dependency snapshot call per wave — a single `SELECT i.id, i.status, d.depends_on, d.dep_type FROM items i LEFT JOIN item_deps d ON d.item_id = i.id WHERE ...` (`backlogit query` / `backlogit_query_sql`) when `.autoharness/backlog-registry.yaml` declares `features.sql_query: true` (true for this workspace), or the equivalent one-call `list_tasks` fallback (`backlogit list --type task --json` / `backlogit_list_items`, which already embeds each item's `dependencies` inline) preserving CLI/MCP parity when it is not. Both paths were exercised live against this worktree's index during this review (the join returned 42 items and 104 edges in one call; the list call returned the same 104 edges embedded inline in one call) to ground the recipe in the workspace's actual capabilities rather than invented tooling. A new halt code, `WAVE_SNAPSHOT_UNRELIABLE` (P-002.2), fails closed when the snapshot call errors, returns non-parseable output, or returns a task count that does not match the release unit's known task count — the snapshot is never reused across waves and never replaced by a per-task fallback. `.ship.agent.md` Step 4.0 item 1 gains a one-clause cross-reference to the recipe. `workflow-policies.md` 1.17.0 → **1.18.0**. |
+| P2-3 | Cycles 26 through 30 form one continuous remediation arc against PR #377's review threads on a single HEAD lineage. `github-pr-automation.instructions.md` §1.8 (mirrored in `circuit-breaker.instructions.md`, `constitution.instructions.md`, `.ship.agent.md`, `AGENTS.md`, and `pr-lifecycle/SKILL.md`) limits review-fix cycles to 3 per HEAD; cycle 26's own memory record already named cycles 26-28 as "review-fix cycle 1 of 3" through "third review-fix cycle" and stated "[a]ny further Copilot finding is a backlog follow-up, not a fix in this session — and per §1.8 it remains merge-blocking rather than waived." Cycles 29 and 30 are, by that accounting, a fourth and fifth cycle against the same budget. | Recorded, not fixed by relaxing any limit. Closed as an operator-authorized procedural advisory, consistent with the cycle-26 precedent quoted above: the operator's `operator_authorization: approved` for this bounded cycle-29/30 pass extends the review-fix budget for **this shipment's remediation arc only**, by explicit direction, recorded here and in `.backlogit/memories.json`. `circuit-breaker.instructions.md`, `constitution.instructions.md`, `.ship.agent.md`, `AGENTS.md`, `github-pr-automation.instructions.md` §1.8, `pr-lifecycle/SKILL.md`, and the `plugin/` agent bundle are **unmodified** — the global 3-cycle limit stands for every other HEAD and every other shipment. This does not clear the §1.9 readiness gate's Check 3, which remains a separate, later gate, and does not waive the merge-blocking consequence §1.8 itself states. |
+
+**P3 — 2**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| P3-1 | Investigated whether `147.032-T` (U1d)'s baseline-probe FAIL count is understated: the task's table names three functions and its "Expected red" and acceptance-criteria prose say "three ... source-shape harness functions" / "the three `TestU1d_*` ... fail on assertions, verified", while its own "Baseline probe" paragraph, the plan's "Units removed from the exempt set in cycle 29" summary table (`2/2 assertion FAILs`), this same cycle's own new remediation narrative above ("each exit 1 with two assertion failures"), the cycle-29 memory document, and `.backlogit/memories.json` all instead record **two**. | **No change made — investigated and found not to be a confident defect.** `147.038-T` (U15) shows the identical structure: three named functions, the third's pre-work failure message explicitly noted as coinciding with an earlier function's case ("fails with case 1 until the type exists" for U1d's third function; "fails with case 2 until the wrapper pair exists" for U15's), and only two named in its own baseline probe — a symmetric pattern across both sibling units, not a one-off slip. The cycle-29 memory document's own "Task widths" line independently records "3 scenarios" for U1d in the same document that records "`--- FAIL` ×2" three lines above it, showing the two figures were not conflated by that document's own author. Because `internal/events/checkpoint_remediation_test.go` does not exist at this HEAD (the task is still `queued`; no production Go was run this cycle), neither "the three functions all fail once scaffolded" nor "only two of the three fail" is mechanically verifiable now. Silently changing the recorded "2" to "3" would assert an observation nobody has made; silently leaving a real defect uncorrected would also be wrong. This record leaves every occurrence of both numbers exactly as found and defers the question to `harness-architect`'s actual wave-1 scaffolding of this harness, when `go test -v -run '^TestU1d_'`'s real output resolves it without guessing. |
+| P3-2 | `.backlogit/memories.json`'s `stage-pr377-cycle-29` entry recorded the go test selector as `-run='^\$'` (one literal backslash before the `$`), while every other occurrence of this selector across the plan, the task files, and the cycle-29 memory document reads `-run='^$'` with no backslash. PowerShell's escape character is a backtick, not a backslash, so the stray character had no quoting function where it was written — it reads as a leaked shell-quoting artifact from whatever command persisted the entry. | Fixed in this pass. The stored value is corrected to `-run='^$'`, matching every other occurrence of the selector; the JSON file re-validated as parseable after the edit. No other file in the repository carries the malformed `^\$` form. |
+
+### Rejected / stale findings
+
+| Claim | Disposition |
+|---|---|
+| `147.038-T` (U15)'s baseline-probe/memory FAIL count should also move from two to three, matching U1d, since it shows the identical three-named/two-observed pattern | Rejected for this pass — P3-1 above applies equally to U15 and was resolved as "no confident defect" for both units together; there is accordingly nothing to change for U1d that would leave U15 inconsistent. |
+| The circuit-breaker limit files (`circuit-breaker.instructions.md`, `constitution.instructions.md`, `.ship.agent.md`, `AGENTS.md`, `github-pr-automation.instructions.md`, `pr-lifecycle/SKILL.md`, `plugin/`) should be amended to reflect this shipment's longer remediation arc | Rejected — the operator's direction is explicit: do not weaken any limit globally. P2-3 is recorded as a one-shipment advisory exception only, and every one of these files is unmodified. |
+| The 42-task / 104-edge / 43-member topology, the ready set, or the eight-unit `harness-exempt` set needs restructuring | Rejected — re-confirmed against the live `147-F` queue via the worktree-bound CLI (`sync`, `query`, `list`, `shipment get`) at this session's HEAD; unchanged by this gate. |
+
+### Remediation queue and authorization
+
+restage_recommendation: none (advisory corrections applied in-pass; one P3 item investigated and
+left unchanged by design)
+
+All findings in this cycle are P2 or P3. The three P2 findings are fixed, or — for P2-3 — recorded
+as an authorized advisory exception, in this same pass under `operator_authorization: approved`. No
+P0 or P1 finding exists. `build-feature/SKILL.md`, `workflow-policies.md` (1.17.0 → 1.18.0),
+`.ship.agent.md`, `.autoharness/drift-ignore`, this plan, `147-F.md`, `.backlogit/memories.json`,
+and a new session checkpoint are updated to record this gate outcome and the corrections applied.
+Feature `147-F`'s plan-review state is set to **ADVISORY authorized / ready for push**;
+`push_allowed: yes`. **This authorization is autonomous completion of this bounded review-and-fix
+cycle, not merge approval** — it does not authorize a shipment claim, does not authorize Ship to
+begin implementation, and does not itself resolve the §1.9 readiness gate's Check 3, which remains
+a separate, later gate pending fresh PR-side review of the pushed HEAD. No subagents were
+dispatched, nothing was pushed or merged, and no Go command was run this cycle.
+
+| Item | Owner | State |
+|---|---|---|
+| Push `chore/stage-130-s` and let PR #377 checks run | operator / Stage | ready |
+| Reply to and resolve the PR #377 review threads on the new HEAD | Ship / pr-lifecycle | unblocked — ready once the branch is pushed |
+| Operator merge approval (P-014) | operator | not requested |
+
+This authorization covers **planning, policy, and skill-prose artifacts only**. It is not merge
+approval, not a shipment claim, and not authorization for Ship to begin implementation.

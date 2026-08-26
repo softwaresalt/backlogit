@@ -252,7 +252,8 @@ without leaving a non-compliant commit behind.
 * Never weaken, delete, relax, rename the selector of, skip, or build-tag away an existing harness assertion to reach green — including on a `harness-exempt` task whose deliverable is a new green-step guard
 * Never author a failing assertion for a `harness-exempt` task; a fabricated RED is a P-002.1 violation, not compliance
 * Never begin the loop for a `harness-exempt` task without first observing `exempt_gate_cmd` fail (Step 0)
-* Never treat an exit-0 run carrying a P-002.3 false-green signal — including a missing `EXEMPT_VERIFY_OK:{task_id}` marker on `exempt_gate_cmd` — as success
+* Never treat an exit-0 run carrying a P-002.3 false-green signal as success
+* Never treat an exit-0 run on `exempt_gate_cmd` that is missing its declared `EXEMPT_VERIFY_OK:{task_id}` marker as success — this is the distinct `EXEMPT_MARKER_MISSING` evidence failure (Step 0 item 4, Step 2), explicitly **not** a P-002.3 false-green signal
 * Never execute an `exempt_gate_cmd` or `harness_owner_command` that the P-002.5 screen matches as destructive; report `EXEMPT_COMMAND_DESTRUCTIVE` and route it to Principle VII approval instead
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
 * Same-error recurrence at attempt 3+ triggers the universal circuit breaker

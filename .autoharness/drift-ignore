@@ -253,6 +253,32 @@
 #       with the source-shape harness and writes no production stub for them;
 #       Steps 4 and 5.2 carry the corresponding rules (repo-authored; still
 #       needs no entry here).
+#
+# NOTE (2026-08-26, cycle-29 confirmatory review): the fresh local plan review
+# cycle 29's own remediation queue required (§1.9 Check 3) found two P2 gaps
+# in the 1.17.0 contract above; a template adoption MUST reconstruct this
+# corrected form, not the bare cycle-29 form. The re-apply obligation now also
+# covers:
+#   .github/policies/workflow-policies.md — P-002.2 gains a fourth wave-
+#       admission halt code, WAVE_SNAPSHOT_UNRELIABLE, for a per-wave snapshot
+#       query/list call that errors, returns non-parseable output, or returns
+#       a task count that does not match the release unit's known task count.
+#       New P-002.6 subsection "Efficient wave-set computation (snapshot
+#       recipe)" requires exactly ONE status+dependency snapshot call per
+#       wave — a single items/item_deps join via `backlogit query` when
+#       `features.sql_query: true` is declared, else the one-call `backlogit
+#       list --type task --json` fallback (dependencies embedded inline) —
+#       never a per-task call repeated over the frontier at every wave.
+#       Version header and Amendment Log now at 1.18.0.
+#   .github/agents/.ship.agent.md — Step 4.0 item 1 gains a one-clause
+#       cross-reference to the snapshot recipe above; no other line changes.
+#   .github/skills/build-feature/SKILL.md — the Behavioral Constraints bullet
+#       no longer names a missing EXEMPT_VERIFY_OK:{task_id} marker as a
+#       P-002.3 false-green signal; the two are siblings — a false-green
+#       signal is one halt, a missing marker is the distinct
+#       EXEMPT_MARKER_MISSING evidence failure — matching Step 0 item 4 and
+#       Step 2 in the same file, which already stated the distinction. No
+#       version field of its own to bump.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
