@@ -60,6 +60,53 @@
 #   .github/skills/harness-architect/SKILL.md — Step 1a is static intake only,
 #       must not raise EXEMPT_OWNER_NOT_RED, and must scaffold covered-by owners
 #       (repo-authored; still needs no drift-ignore entry).
+#
+# NOTE (2026-08-25, cycle 24): the contract gained a positive completion marker
+# and a destructive-command screen; the re-apply obligation above now also
+# covers:
+#   .github/policies/workflow-policies.md  — P-002.3 requires every
+#       exempt_verification_command (and, distinctly, harness_owner_command
+#       under covered-by) to print EXEMPT_VERIFY_OK:{task_id} as its last
+#       statement before its own exit 0; exit 0 alone is no longer a pass
+#       (EXEMPT_MARKER_MISSING). New P-002.5 statically screens both commands
+#       for a Constitution Principle VII destructive-operation pattern before
+#       either is ever executed (EXEMPT_COMMAND_DESTRUCTIVE), routing a match
+#       to Principle VII operator approval instead of running it. Version
+#       header and Amendment Log corrected to 1.16.0.
+#   .github/agents/.ship.agent.md         — the claim-time gate (still named
+#       Step 4.1a) gains the P-002.5 screening bullet ahead of the pre-work
+#       probe, and its probe / completion-gate criteria require the marker;
+#       the claim action itself is renamed Step 4.1b and now runs only after
+#       Step 4.1a passes (cycle-24 confirmatory-review reorder), so a halt
+#       never strands a task `active`.
+#   .github/skills/build-feature/SKILL.md — Step 0 gains the same screening
+#       bullet for exempt_gate_cmd and, under covered-by, the distinct
+#       harness_cmd; Step 2 and the post-loop completion gate require the
+#       marker.
+#   .github/skills/harness-architect/SKILL.md — unaffected: it never executes
+#       either command (Step 1a is static-only), so the marker and screening
+#       requirements do not apply to it (repo-authored; still needs no entry
+#       here).
+#
+# NOTE (2026-08-25, cycle-24 confirmatory review): the P-002 harness-satisfied
+# consumer contract above (P-002, P-002.1-P-002.5) governs
+# .github/policies/workflow-policies.md, .github/agents/.ship.agent.md,
+# .github/skills/build-feature/SKILL.md, and .github/skills/harness-architect/
+# SKILL.md only. It is deliberately NOT propagated to
+# plugin/agents/ship.agent.md or plugin/skills/build-feature/SKILL.md, and
+# this is a pre-existing scope boundary, not a gap this contract introduced.
+# Per docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md
+# (101-F), plugin/ (the distributable product bundle) and .github/ (backlogit's
+# self-hosting harness) are not byte-identical or content-synchronized;
+# TestPluginBundleStructurallyValid (tests/integration/plugin_manifest_test.go)
+# validates the bundle's file set and frontmatter shape only, never cross-tree
+# content parity. plugin/agents/ship.agent.md and
+# plugin/skills/build-feature/SKILL.md carry no P-002 vocabulary at all — not
+# merely the cycle 22-24 additions — confirmed by direct inspection. This
+# file's own path list intentionally carries no plugin/** entries: drift-ignore
+# governs generated .github harness artifacts, and plugin/ is not one. The
+# plugin bundle is not edited by this work; see follow-up stash 633818E1 and
+# the plan's "Ship ready-selection contract" section for the same rationale.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

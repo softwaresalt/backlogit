@@ -2026,9 +2026,11 @@ on `147.010-T`.
   evidence-integrity rows moved to **U10b**: five rows exceeded the four-scenario limit. The nine
   live files under `.backlogit/checkpoints/` are read for shape reference only and are never
   mutation targets (R6); the check is a programmatic before/after SHA-256 comparison of **every**
-  file under `.backlogit/checkpoints/`, not a visual one, and not a count-pinned subset — twelve
-  files are present on this branch now that the staging checkpoint has landed, and that number
-  drifts as sessions add checkpoints, so the guard enumerates the directory rather than a literal.
+  file under `.backlogit/checkpoints/`, not a visual one, and not a count-pinned subset — the count
+  has already moved from twelve (when the staging checkpoint first landed) to twenty as of the
+  cycle-24 confirmatory review, purely from ordinary session checkpoints accumulating alongside the
+  same nine schema-invalid legacy files, and it will keep drifting upward every session that adds
+  one, so the guard enumerates the directory rather than a literal.
 * **Binary provenance (cycle-16 correction)**: build with the repository's own version ldflags —
   the `LDFLAGS` variable in `Makefile:5-8`, whose shape the release workflow reproduces at
   `.github/workflows/release.yml:99-107`:
@@ -2527,6 +2529,21 @@ Satisfaction, fail-closed)** and **P-002.2 (Harness-Exempt Halt Taxonomy)** — 
   `exempt_verification_command` once before any work and MUST see it fail; a pre-work success is
   `EXEMPT_FALSE_GREEN` and a halt. `go test -run <selector>` exiting 0 with `[no tests to run]` is
   a **failure**, not a pass, so a selector-only command is never sufficient on its own.
+* **Plugin bundle parity is out of scope (pre-existing, cycle-24 confirmatory review).** This
+  contract governs `.github/policies/workflow-policies.md`, `.github/agents/.ship.agent.md`,
+  `.github/skills/build-feature/SKILL.md`, and `.github/skills/harness-architect/SKILL.md` only.
+  It is deliberately **not** propagated to `plugin/agents/ship.agent.md` or
+  `plugin/skills/build-feature/SKILL.md`, and this is a pre-existing scope boundary that cycles
+  22-24 did not introduce. Per
+  `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` (101-F), `plugin/`
+  (the distributable product bundle) and `.github/` (backlogit's self-hosting harness) are not
+  byte-identical or content-synchronized; `TestPluginBundleStructurallyValid`
+  (`tests/integration/plugin_manifest_test.go`) validates the bundle's file set and frontmatter
+  shape only, never cross-tree content parity. Direct inspection confirms
+  `plugin/agents/ship.agent.md` and `plugin/skills/build-feature/SKILL.md` carry no P-002
+  vocabulary at all — not merely missing the cycle 22-24 additions. Recorded as a dated note in
+  `.autoharness/drift-ignore` and as follow-up stash `633818E1` (kind `task`, priority `low`); the
+  plugin bundle is not edited by this or any prior cycle of this work.
 
 **Principle I carries no deviation (cycle 17).** The row recorded here through cycle 16 —
 `AbandonCheckpoint`'s `%v` validation wrap left in place — is withdrawn. The cycle-16 gate found
@@ -3072,8 +3089,9 @@ the entry-point audit.
 
 > [!IMPORTANT]
 > **Historical record — cycles 1 through 13 only.** This gate result does **not** cover cycle 14,
-> cycle 15, cycle 16, cycle 17, cycle 18, cycle 20, or cycle 21. The current gate state is the
-> **last** `## Plan Review` record at the end of this document (`cycle: 21`, `decision: FAIL`).
+> cycle 15, cycle 16, cycle 17, cycle 18, cycle 20, cycle 21, or cycle 24. The current gate state is
+> the **last** `## Plan Review` record at the end of this document (`cycle: 24`, `decision:
+> ADVISORY`).
 
 dispatch_mode: multi-agent-dispatch
 
@@ -3485,11 +3503,12 @@ dispatch_mode: multi-agent-dispatch
 decision: FAIL
 
 **Superseded by the cycle-15 gate record immediately below, which is itself superseded by the
-cycle-16, cycle-17, cycle-18, cycle-20, and cycle-21 gate records that follow.** This record
-remains the authoritative history of the cycle-14 dispatch and its findings; the current gate
-state is `cycle: 21`, `decision: FAIL`. It supersedes the earlier `## Plan Review` record in this
-document, which is scoped to cycles 1-13 and does **not** cover the cycle-14 dispatch. The prior
-PASS is retained as history and must not be read as clearance for the plan in its cycle-14 state.
+cycle-16, cycle-17, cycle-18, cycle-20, cycle-21, and cycle-24 gate records that follow.** This
+record remains the authoritative history of the cycle-14 dispatch and its findings; the current
+gate state is `cycle: 24`, `decision: ADVISORY`. It supersedes the earlier `## Plan Review` record
+in this document, which is scoped to cycles 1-13 and does **not** cover the cycle-14 dispatch. The
+prior PASS is retained as history and must not be read as clearance for the plan in its cycle-14
+state.
 
 ### Dispatch record
 
@@ -3629,13 +3648,14 @@ dispatch_mode: multi-agent-dispatch
 
 decision: FAIL
 
-**This record is superseded by the cycle-16, cycle-17, cycle-18, cycle-20, and cycle-21 gate
-records that follow.** It supersedes both earlier `## Plan Review` records: the cycles 1-13
+**This record is superseded by the cycle-16, cycle-17, cycle-18, cycle-20, cycle-21, and cycle-24
+gate records that follow.** It supersedes both earlier `## Plan Review` records: the cycles 1-13
 `PASS` and the `cycle: 14` `FAIL`. Neither may be read as clearance for the plan in its cycle-15
 state. The cycle-16 remediation appendix beneath this record documents what changed in response;
 it did **not** clear the gate. The required fresh, independent cycle-16 review follows later in
 this document and also returned `FAIL`; it was in turn superseded by cycle 17 (`FAIL`), cycle 18
-(`ADVISORY`), cycle 20 (`FAIL`), and then cycle 21 (`FAIL`, the current gate state).
+(`ADVISORY`), cycle 20 (`FAIL`), cycle 21 (`FAIL`), and then cycle 24 (`ADVISORY`, the current gate
+state).
 
 ### Dispatch record
 
@@ -3772,10 +3792,11 @@ decision: FAIL
 severity counts: P0=1, P1=7, P2=3, P3=2
 
 **This record was the current gate state through cycle 16; it is superseded by the `cycle: 17`
-`FAIL` record, then the `cycle: 18` `ADVISORY` record, then the `cycle: 20` `FAIL` record, and
-finally the `cycle: 21` `FAIL` record at the end of this document, the current gate state.** It
-supersedes the cycles 1-13 `PASS`, the `cycle: 14` `FAIL`, and the `cycle: 15` `FAIL`. None of the
-three earlier records may be read as clearance for the plan in its cycle-16 state.
+`FAIL` record, then the `cycle: 18` `ADVISORY` record, then the `cycle: 20` `FAIL` record, then the
+`cycle: 21` `FAIL` record, and finally the `cycle: 24` `ADVISORY` record at the end of this
+document, the current gate state.** It supersedes the cycles 1-13 `PASS`, the `cycle: 14` `FAIL`,
+and the `cycle: 15` `FAIL`. None of the three earlier records may be read as clearance for the plan
+in its cycle-16 state.
 
 ### Dispatch record — degraded to a single-agent sequential pass
 
@@ -3873,7 +3894,8 @@ cycle 17 and is documented in "PR #377 plan remediation, cycle 17 — formal dec
 That appendix is remediation evidence, **not** a gate outcome: this `cycle: 16` record was the
 current gate state at `decision: FAIL` until the fresh, independent `cycle: 17` plan review below
 was dispatched against the decomposed plan, and it is now superseded in turn by the `cycle: 18`
-`ADVISORY` record, the `cycle: 20` `FAIL` record, and finally the `cycle: 21` `FAIL` record at the
+`ADVISORY` record, the `cycle: 20` `FAIL` record, the `cycle: 21` `FAIL` record, and finally the
+`cycle: 24` `ADVISORY` record at the
 end of this document, the current
 gate state. All eight blockers (1 P0, 7
 P1) are dispositioned as closed in the appendix, and the decomposition passed both the cycle-17 and
@@ -3886,7 +3908,8 @@ normative sections above; where this appendix and a normative section disagree, 
 section governs. The `cycle: 16` `## Plan Review` record was the **current gate state** at the time
 this appendix was written; it was `decision: FAIL`, and nothing in this appendix cleared it on its
 own. It has since been superseded by the `cycle: 17` `FAIL` record, the `cycle: 18`
-`ADVISORY` record, the `cycle: 20` `FAIL` record, and the `cycle: 21` `FAIL` record at the end of
+`ADVISORY` record, the `cycle: 20` `FAIL` record, the `cycle: 21` `FAIL` record, and the `cycle: 24`
+`ADVISORY` record at the end of
 this document, the current gate
 state. Cycle 17 executed the
 `restage_recommendation: formal-decomposition` that gate required; the result passed a fresh,
@@ -3961,8 +3984,9 @@ decision: FAIL
 severity counts: P0=0, P1=3, P2=2, P3=4
 
 **This record was the current gate state through cycle 17; it is superseded by the `cycle: 18`
-`ADVISORY` record, then the `cycle: 20` `FAIL` record, and finally the `cycle: 21` `FAIL` record at
-the end of this document, the current gate state.** It supersedes the
+`ADVISORY` record, then the `cycle: 20` `FAIL` record, then the `cycle: 21` `FAIL` record, and
+finally the `cycle: 24` `ADVISORY` record at the end of this document, the current gate state.** It
+supersedes the
 `cycle: 16` `FAIL` record for gate-decision purposes; cycle 16 and every earlier record remain the
 historical trace of how the plan reached its present shape. The "PR #377 plan remediation, cycle 17
 — formal decomposition" appendix above is remediation evidence, not a gate outcome, and this record
@@ -4058,29 +4082,29 @@ to Ship until that review passes.
 
 cycle: 18
 
-**SUPERSEDED by cycle 20, in turn superseded by cycle 21.** This record is no longer the current
-gate state. It was written before the cycle-20 Copilot review of the current head `3bcff086` on PR
-#377, which returned 20 unresolved threads — 17 P1 and 3 P2 — against artifacts this record had
-declared clean. Its `decision: ADVISORY`, its `push_allowed: yes`, and its
-`operator_authorization: approved` are all withdrawn for the purpose of gate state. The current
-gate state is the **cycle 21** record at the end of this document. Read this record as history
-only.
+**SUPERSEDED by cycle 20, in turn superseded by cycle 21, in turn superseded by cycle 24.** This
+record is no longer the current gate state. It was written before the cycle-20 Copilot review of
+the current head `3bcff086` on PR #377, which returned 20 unresolved threads — 17 P1 and 3 P2 —
+against artifacts this record had declared clean. Its `decision: ADVISORY`, its `push_allowed:
+yes`, and its `operator_authorization: approved` are all withdrawn for the purpose of gate state.
+The current gate state is the **cycle 24** record at the end of this document. Read this record as
+history only.
 
 dispatch_mode: single-agent-declared-degradation
 
 TOOL_DEGRADED: reviewer-subagent-dispatch
 
-decision: ADVISORY (superseded — see cycle 20, then cycle 21)
+decision: ADVISORY (superseded — see cycle 20, then cycle 21, then cycle 24)
 
-operator_authorization: approved (superseded — see cycle 20, then cycle 21)
+operator_authorization: approved (superseded — see cycle 20, then cycle 21, then cycle 24)
 
 severity counts: P0=0, P1=0, P2=1, P3=5
 
-push_allowed: yes (superseded — see cycle 20, then cycle 21)
+push_allowed: yes (superseded — see cycle 20, then cycle 21, then cycle 24)
 
 **This record was the current gate state through cycle 18; it is superseded by the `cycle: 20`
-`FAIL` record, and then the `cycle: 21` `FAIL` record at the end of this document, the current
-gate state.** It supersedes the `cycle: 17`
+`FAIL` record, then the `cycle: 21` `FAIL` record, and finally the `cycle: 24` `ADVISORY` record at
+the end of this document, the current gate state.** It supersedes the `cycle: 17`
 `FAIL` record immediately above for gate-decision purposes; cycle 17 and every earlier record remain
 the historical trace of how the plan reached its present shape.
 
@@ -4187,8 +4211,9 @@ implementation — those remain separate gates owned by Ship and the operator.
 Copilot review fresh on that exact commit, but **20 unresolved Copilot threads**: 17 P1 and 3 P2.
 The cycle-18 `decision: ADVISORY` record is therefore **superseded**; its `push_allowed: yes` and
 `operator_authorization: approved` no longer describe the gate. The `cycle: 20` record below was
-the current gate state when this appendix was written; it has since been superseded by the
-`cycle: 21` `FAIL` record at the end of this document, which is the current gate state.
+the current gate state when this appendix was written; it was superseded by the `cycle: 21` `FAIL`
+record, which has itself since been superseded by the `cycle: 24` `ADVISORY` record at the end of
+this document, the current gate state.
 
 **Root causes, not samples.** The 20 threads reduce to four root causes. Every fix below is applied
 to the whole class, not to the individual prose the reviewer happened to quote.
@@ -4229,27 +4254,29 @@ commit in which the assertion lands.
 
 cycle: 20
 
-**SUPERSEDED by cycle 21.** This record is no longer the current gate state. Its own remediation
-queue named "fresh local plan review of the cycle-20 test-lifecycle doctrine, U3c, U6e, and the
-recomputed topology" as `required before push`; the `cycle: 21` record at the end of this document
-**is** that review. The root-cause remediation narrative above (root causes A-D, the new units
-U3c/U6e, and the topology delta) stands unmodified as history — only this record's gate-state role
-(`decision`, `operator_authorization`, `push_allowed`) is superseded. Read the gate fields below as
-history only.
+**SUPERSEDED by cycle 21, in turn superseded by cycle 24.** This record is no longer the current
+gate state. Its own remediation queue named "fresh local plan review of the cycle-20
+test-lifecycle doctrine, U3c, U6e, and the recomputed topology" as `required before push`; the
+`cycle: 21` record later in this document **is** that review, and the `cycle: 24` record at the
+end of this document is the further independent confirmatory review cycle 21 itself required. The
+root-cause remediation narrative above (root causes A-D, the new units U3c/U6e, and the topology
+delta) stands unmodified as history — only this record's gate-state role (`decision`,
+`operator_authorization`, `push_allowed`) is superseded. Read the gate fields below as history
+only.
 
 dispatch_mode: single-agent-declared-degradation
 
 TOOL_DEGRADED: reviewer-subagent-dispatch
 
-decision: FAIL (superseded — see cycle 21)
+decision: FAIL (superseded — see cycle 21, then cycle 24)
 
-operator_authorization: pending (superseded — see cycle 21)
+operator_authorization: pending (superseded — see cycle 21, then cycle 24)
 
 severity counts (inherited from the PR #377 current-head Copilot review at `3bcff086`): P0=0,
 P1=17, P2=3, P3=0
 
-push_allowed: no (superseded — see cycle 21) — a fresh local plan review of the cycle-20 artifacts
-must run before this branch is presented as ready again
+push_allowed: no (superseded — see cycle 21, then cycle 24) — a fresh local plan review of the
+cycle-20 artifacts must run before this branch is presented as ready again
 
 ### Authorization basis
 
@@ -4277,19 +4304,30 @@ claim, and not authorization for Ship to begin implementation.
 
 cycle: 21
 
+**SUPERSEDED by cycle 24.** This record is no longer the current gate state. Its own remediation
+queue named `restage_recommendation: confirmatory-review-of-cycle-21-fixes` as required before
+push; the cycle-22 and cycle-23 remediation appendices and the cycle-24 remediation appendix that
+follow widened that same obligation to also cover their own changes, and the `cycle: 24` record at
+the end of this document **is** that confirmatory review. The root-cause remediation narrative
+below (R1-R4: the ten-unit `harness-exempt` set fully labelled, the Ship ready-selection adapter,
+the ambient docs-lint replacements, the cycle-19 continuity note, and the pointer-chain fix) stands
+unmodified as history — only this record's gate-state role (`decision`, `operator_authorization`,
+`push_allowed`) is superseded. Read the gate fields below as history only.
+
 dispatch_mode: single-agent-declared-degradation
 
 TOOL_DEGRADED: reviewer-subagent-dispatch
 
-decision: FAIL
+decision: FAIL (superseded — see cycle 24)
 
-operator_authorization: pending
+operator_authorization: pending (superseded — see cycle 24)
 
 severity counts: P0=0, P1=1, P2=1, P3=2
 
-push_allowed: no — this pass fixes every finding below at the root-cause level, but a P1 finding
-was present, so a further independent confirmation pass is required before push, matching the
-cycle-16/cycle-17 precedent that a same-pass fix does not itself clear a P1 gate
+push_allowed: no (superseded — see cycle 24) — this pass fixes every finding below at the
+root-cause level, but a P1 finding was present, so a further independent confirmation pass is
+required before push, matching the cycle-16/cycle-17 precedent that a same-pass fix does not
+itself clear a P1 gate
 
 ### Authorization basis
 
@@ -4378,8 +4416,8 @@ checkpoint are updated to record this gate outcome and the corrections applied.
 
 | Item | Owner | State |
 |---|---|---|
-| Independent confirmation review of the cycle-21 label/adapter/docs-lint fixes | Stage | required before push |
-| Reply to and resolve the 20 PR #377 threads | Ship / pr-lifecycle | blocked on the confirmation review above |
+| Independent confirmation review of the cycle-21 label/adapter/docs-lint fixes | Stage | **complete** — performed as the `cycle: 24` record at the end of this document (widened to also cover cycles 22-24) |
+| Reply to and resolve the 20 PR #377 threads | Ship / pr-lifecycle | unblocked — see the `cycle: 24` record |
 | Operator merge approval (P-014) | operator | not requested |
 
 This authorization covers **planning artifacts only**. It is not merge approval, not a shipment
@@ -4389,8 +4427,10 @@ claim, and not authorization for Ship to begin implementation.
 
 **This appendix is remediation evidence, not a gate outcome.** It records a bounded
 prompt/policy-artifact pass. It appends no `## Plan Review` record, claims no `PASS`, and does not
-clear the `cycle: 21` `FAIL`. The current gate state remains the `cycle: 21` record above, whose
-`restage_recommendation: confirmatory-review-of-cycle-21-fixes` is still outstanding. No Go source,
+clear the `cycle: 21` `FAIL`. The `cycle: 21` record above was the current gate state when this
+appendix was written; it has since been superseded by the `cycle: 24` `ADVISORY` record at the end
+of this document, which closes the `restage_recommendation: confirmatory-review-of-cycle-21-fixes`
+obligation this appendix still shows as outstanding. No Go source,
 test, or configuration file was touched; no push, PR action, shipment claim, or Ship handoff
 occurred.
 
@@ -4424,9 +4464,11 @@ operator merge approval has not been requested.
 
 **This appendix is remediation evidence, not a gate outcome.** It records a second bounded
 prompt/policy-artifact pass over the cycle-22 contract. It appends no `## Plan Review` record,
-claims no `PASS`, and does not clear the `cycle: 21` `FAIL`. The current gate state remains the
-`cycle: 21` record above, whose `restage_recommendation: confirmatory-review-of-cycle-21-fixes` is
-still outstanding — and cycle 23's own changes are now also unreviewed. No Go source, test, or
+claims no `PASS`, and does not clear the `cycle: 21` `FAIL`. The `cycle: 21` record above was the
+current gate state when this appendix was written; it has since been superseded by the `cycle: 24`
+`ADVISORY` record at the end of this document, which closes the
+`restage_recommendation: confirmatory-review-of-cycle-21-fixes` obligation this appendix still
+shows as outstanding, widened here to also cover cycle 23's own changes. No Go source, test, or
 configuration file was touched; no subagent was invoked; no push, PR action, shipment claim, or
 Ship handoff occurred.
 
@@ -4481,9 +4523,11 @@ appendix below.
 **This appendix is remediation evidence, not a gate outcome.** It records a third bounded
 prompt/policy/backlog-artifact pass over the cycle-23 contract, run in a dedicated worktree at HEAD
 `35aac6c0` on branch `chore/cycle-24-remediation`. It appends no `## Plan Review` record, claims no
-`PASS`, and does not clear the `cycle: 21` `FAIL`. The current gate state remains the `cycle: 21`
-record above, whose `restage_recommendation: confirmatory-review-of-cycle-21-fixes` is still
-outstanding — and cycles 22, 23, and now 24 are all unreviewed. No Go source, test, or production
+`PASS`, and does not clear the `cycle: 21` `FAIL`. The `cycle: 21` record above was the current
+gate state when this appendix was written; it has since been superseded by the `cycle: 24`
+`ADVISORY` record at the end of this document, which closes the
+`restage_recommendation: confirmatory-review-of-cycle-21-fixes` obligation this appendix still
+shows as outstanding, widened here to also cover cycles 22-24. No Go source, test, or production
 configuration file was touched; no subagent was invoked; no push, PR action, shipment claim, or
 Ship handoff occurred.
 
@@ -4546,3 +4590,130 @@ independent confirmation review must now cover the cycle-21, cycle-22, cycle-23,
 changes together. No P-003 gap remains: all 42 queued tasks (43 with the archived `147.010-T`)
 carry at least one acceptance criterion. No push, merge approval, or shipment claim was performed,
 and no subagent was invoked.
+
+**Resolved by the cycle-24 confirmatory review below.** The `## Plan Review` `cycle: 24` record
+immediately following this appendix is that independent confirmation review. It found five P2
+advisories — none against the acceptance-criteria or exempt-execution work recorded above — and
+fixed them in-pass; the topology, the ten-unit exempt set, and every correction recorded in this
+appendix are re-confirmed unchanged and are not reopened.
+
+## Plan Review
+
+cycle: 24
+
+dispatch_mode: single-agent-declared-degradation
+
+TOOL_DEGRADED: reviewer-subagent-dispatch
+
+decision: ADVISORY
+
+operator_authorization: approved
+
+severity counts: P0=0, P1=0, P2=5, P3=0
+
+push_allowed: yes
+
+**This is the independent confirmatory review that the `cycle: 21` record's own remediation queue
+named `required before push`, widened by the cycle-22, cycle-23, and cycle-24 remediation
+appendices above to also cover their own changes.** It supersedes `cycle: 21` `FAIL` for
+gate-decision purposes; cycle 21 and every earlier record remain the historical trace of how the
+plan reached its present shape, and cycle 21's own root-cause remediation (R1-R4: the ten-unit
+`harness-exempt` set fully labelled, the Ship ready-selection adapter, the ambient docs-lint
+replacements, the cycle-19 continuity note, and the pointer-chain fix) stands unmodified as history
+— only its gate-state role (`decision`, `operator_authorization`, `push_allowed`) is superseded
+here. **This record is the current gate state.**
+
+### Authorization basis
+
+`operator_authorization: approved` records that the operator explicitly directed autonomous
+completion of this bounded cycle — a direction to finish the confirmatory review cycle 21 required
+and apply any advisory corrections it found in the same pass, not to defer them to a further cycle.
+**This is not merge approval.** It authorizes Stage to record this gate outcome, apply the five P2
+corrections below, and mark the branch cleared for push pending PR checks; it does not authorize
+Ship to build, does not authorize a shipment claim, and does not authorize a merge. Those remain
+separate, later gates owned by Ship and the operator respectively.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+Reviewer sub-agent dispatch was unavailable for this pass (this bounded session runs CLI-only,
+worktree-bound, with no subagent delegation); `TOOL_DEGRADED: reviewer-subagent-dispatch` records
+the degradation, matching the cycle-16/17/18/20/21 precedent. The gate ran as a complete
+sequential, single-agent pass applying all seven personas' adapters over the full plan text, the
+cycle-21 through cycle-24 remediation record and appendices, and the referenced backlog artifacts
+(`147-F` and its forty-two queued tasks), achieving **complete seven-adapter coverage**: all seven
+selected personas completed; none was skipped or partially dispatched.
+
+| Persona | Coverage mode | Coverage assignment |
+|---|---|---|
+| Constitution | sequential (single-agent) | Principle VII destructive-command approval framing against the new P-002.5 screen; `operator_authorization` framing against the P-014 merge-approval boundary; Principle II vacuous-satisfaction framing unaffected by the Step 4.1/4.1a reorder |
+| Go | sequential (single-agent) | confirms no Go source, test, or production configuration file is touched this cycle; the exempt-command marker/screening prose describes CLI-observable behavior only |
+| Scope | sequential (single-agent) | topology, task-count, and exempt-set claims against the live `147-F` queue; confirms no topology, edge, ready-set, or exempt-set drift across cycles 21-24 |
+| Learnings | sequential (single-agent) | citation completeness carried forward unchanged; no new external learning required for this pass's P2-level corrections |
+| Architecture | sequential (single-agent) | Ship Step 4.1/4.1a claim-time ordering against the actual state-mutation sequence; the plugin-bundle/`.github` boundary against the 101-F structural-verification decision; blast radius of every correction confirmed plan/task/policy-local |
+| Agent-Native Parity | sequential (single-agent) | `.autoharness/drift-ignore` re-apply-obligation completeness against the live cycle-24 policy/agent/skill diffs; ambient-vs-workspace-pinned command forms re-checked, none found |
+| Security | sequential (single-agent) | confirms the claim-time gate reorder leaves no task stranded `active` on a halt; confirms no destructive command, ambient-executable text, or credential is introduced by any correction |
+
+### Gate rationale
+
+The gate is **ADVISORY**. The 42-task / 104-executable-edge / 43-shipment-member topology and the
+two-root ready set (`147.001-T`, `147.032-T`) are re-confirmed **SOUND** and unchanged across
+cycles 21 through 24 — this cycle finds no P0 and no P1. The five findings below (all P2) are
+sequencing-safety, scope-boundary, drift-bookkeeping, memory-persistence, and evidence-currency
+gaps: a claim-time gate whose physical ordering could strand a task `active` on a halt even though
+its own prose already said it ran "immediately before" the claim; an undeclared but real
+plugin-bundle scope boundary; a drift-ignore re-apply obligation that had not caught up to cycle
+24's own additions; two missing canonical memory entries; and a stale live-corpus illustrative
+count in prose whose surrounding sentence already anticipated the drift. None of them bears on
+architecture, safety, or the implementation contract, so the gate is advisory rather than blocking,
+and every finding is corrected in this same pass under the `operator_authorization` above.
+`push_allowed: yes`.
+
+### Findings by severity
+
+**P0 — 0**
+
+None.
+
+**P1 — 0**
+
+None.
+
+**P2 — 5**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| B1 | Ship's claim-time sequence set a task's status to `active` at **Step 4.1** before the harness-exempt gate at **Step 4.1a** ran, even though Step 4.1a's own text said it runs "immediately before it is claimed." A task that halted at Step 4.1a — `EXEMPT_CONTRACT_INCOMPLETE`, `EXEMPT_OWNER_NOT_RED`, `EXEMPT_COMMAND_DESTRUCTIVE`, `EXEMPT_FALSE_GREEN`, or `EXEMPT_MARKER_MISSING` — was therefore stranded `active` with no further step to move it, since a halt returns the task to the operator or to Stage rather than reversing the claim. | Fixed in this pass. `.github/agents/.ship.agent.md` reordered: the gate is now physically first as **Step 4.1a**, unchanged in name, number, and content, and the status mutation is renamed **Step 4.1b: Claim Task**, positioned after it and reached only once Step 4.1a has passed (or does not apply, for a `harness-ready` task). A new closing sentence makes the invariant explicit: a halt at Step 4.1a stops before Step 4.1b runs, so the task's status is untouched and it is never stranded `active`. No other file references the bare `Step 4.1` label for the claim action (checked repo-wide — the one historical hit, `docs/memory/2026-08-21/ship-129-s-pa8-pa3-approval-gate-memory.md`, predates the harness-exempt system and is left as history), so every existing cross-reference to `Step 4.1a` (the gate) in `workflow-policies.md`, `harness-architect/SKILL.md`, `build-feature/SKILL.md`, this plan, `147-F.md`, `130-S.md`, and all ten exempt task bodies remains correct, unchanged. |
+| B2 | The P-002 harness-exempt consumer contract (cycles 22-24) amended `.github/policies/workflow-policies.md`, `.github/agents/.ship.agent.md`, and `.github/skills/build-feature/SKILL.md`, but no artifact stated whether `plugin/agents/ship.agent.md` or `plugin/skills/build-feature/SKILL.md` were also expected to carry it. Left unstated, a future reader could misread the omission as an uncaught gap rather than a deliberate, pre-existing boundary. | Declared explicitly in three places; the plugin bundle itself is untouched. **Plan**: a new bullet in the "Ship ready-selection contract" section (Documented deviations, above) states the boundary and its rationale. **Drift note**: a new dated note in `.autoharness/drift-ignore` records that `plugin/agents/ship.agent.md` and `plugin/skills/build-feature/SKILL.md` carry no P-002 vocabulary at all — confirmed by direct inspection, not merely missing the cycle 22-24 additions — per the pre-existing `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` (101-F) decision that `plugin/` and `.github/` are not content-synchronized and that `TestPluginBundleStructurallyValid` validates structure only. **Follow-up**: stash entry `633818E1` (kind `task`, priority `low`) records the same boundary as a durable backlog artifact so it survives outside this plan's prose. `plugin/` was not edited. |
+| B3 | `.autoharness/drift-ignore`'s re-apply-obligation note for the P-002.1/P-002.2 contract was corrected in place for cycle 23's split-gate form, but was never extended for cycle 24's positive-completion-marker mandate, the new P-002.5 destructive-command screen, or the two halt codes those additions introduced (`EXEMPT_MARKER_MISSING`, `EXEMPT_COMMAND_DESTRUCTIVE`). A template re-adoption after cycle 24 would have re-applied only the cycle-23 shape and silently dropped the cycle-24 additions. | Fixed in this pass. A new dated note appended immediately after the existing cycle-23 note extends the re-apply obligation to cover the `EXEMPT_VERIFY_OK:{task_id}` marker mandate and P-002.5 screening in `workflow-policies.md`, `.ship.agent.md` (including the Step 4.1/4.1a reorder from finding B1), and `build-feature/SKILL.md`, naming both new halt codes explicitly. `harness-architect/SKILL.md` is reconfirmed unaffected (it never executes either command) and still needs no entry. |
+| B4 | Cycles 21 and 24 each produced a detailed `docs/memory/2026-08-25/...-memory.md` narrative, but neither cycle persisted a corresponding keyed entry to the canonical `.backlogit/memories.json` store — cycles 20, 22, and 23 each have one (`stage-pr377-cycle-20`, `stage-pr377-cycle-22`, `stage-pr377-cycle-23`), so the canonical store carried a two-entry gap relative to the narrative record. | Fixed in this pass using the worktree-bound CLI (`go run ./cmd/backlogit --cwd . memory save --key stage-pr377-cycle-21 --summary "..."` and the equivalent `--key stage-pr377-cycle-24`), matching the existing entries' density and no-invented-content standard: each summary is drawn only from that cycle's own plan record or memory doc, with no fabricated detail. |
+| B5 | The plan's U10 runtime-verification section said "twelve files are present on this branch now that the staging checkpoint has landed" as the illustrative live-corpus count. The actual count had already drifted well past that, which the surrounding sentence anticipated ("that number drifts as sessions add checkpoints, so the guard enumerates the directory rather than a literal") but did not itself keep current. | Refreshed in this pass to the count observed at this session: twenty files (the same nine schema-invalid legacy files this plan's contract has always excluded, plus eleven conforming files, up from two when this section was first written), without changing the guard's own non-literal, directory-enumerating behavior, the nine-file expected-refusal set, or the closure artifact's pre-merge recapture requirement — both preserved verbatim. |
+
+### Rejected / stale findings
+
+| Claim | Disposition |
+|---|---|
+| The 42-task / 104-edge / 43-member topology, the ready set, or the ten-unit `harness-exempt` set needs restructuring | Rejected — re-confirmed against the live `147-F` queue via the worktree-bound CLI; unchanged by this gate. |
+| Cycles 21-24's root-cause remediation (R1-R4, C1-C7, D1-D7, E1-E6) needs to be redone | Rejected — verified still correct and unmodified; only cycle 21's gate-state role is superseded, not its remediation content, and cycles 22-24 remain remediation evidence under this now-ADVISORY gate. |
+| The nine-file expected-refusal set or the closure-artifact recapture requirement needs to change alongside the live-corpus count refresh (B5) | Rejected — the nine legacy filenames and the pre-merge recapture requirement are unaffected by ordinary conforming checkpoints accumulating; both are preserved verbatim. |
+
+### Remediation queue and authorization
+
+restage_recommendation: none (advisory corrections applied in-pass)
+
+All findings in this cycle are P2 and are fixed in the same pass under `operator_authorization:
+approved`. No P0 or P1 finding exists. The plan, `147-F.md`, `.backlogit/memories.json`, and a new
+session checkpoint are updated to record this gate outcome and the corrections applied. Feature
+`147-F`'s plan-review state is set to **ADVISORY authorized / cleared for push pending PR checks**;
+the recorded next action is to push branch `chore/stage-130-s` and reconcile PR #377. This
+authorization is scoped to *pushing the already-reviewed branch and letting PR checks run*; it is
+explicitly **not** merge approval, not a shipment claim, and not authorization for Ship to begin
+implementation — those remain separate gates owned by Ship and the operator.
+
+| Item | Owner | State |
+|---|---|---|
+| Reply to and resolve the 20 PR #377 threads | Ship / pr-lifecycle | unblocked — ready once the branch is pushed |
+| Push `chore/stage-130-s` and let PR #377 checks run | operator / Stage | ready |
+| Operator merge approval (P-014) | operator | not requested |
+
+This authorization covers **planning artifacts only**. It is not merge approval, not a shipment
+claim, and not authorization for Ship to begin implementation.
