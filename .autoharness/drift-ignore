@@ -279,6 +279,77 @@
 #       EXEMPT_MARKER_MISSING evidence failure — matching Step 0 item 4 and
 #       Step 2 in the same file, which already stated the distinction. No
 #       version field of its own to bump.
+#
+# NOTE (2026-08-26, cycle 31): PR #377's six remaining unresolved P1 threads are
+# closed here. They reduce to THREE roots, all of which change contract shape, so
+# a template adoption MUST reconstruct the corrected form rather than the
+# cycle-29/30 form. The re-apply obligation now also covers:
+#   .github/policies/workflow-policies.md — (a) P-002.1 fixes the ORDER, not just
+#       the form, of a declaration harness: the compile-capable source-shape
+#       harness lands FIRST and the declaration SECOND. No agent may scaffold,
+#       request, or accept a production stub ahead of the harness that gates it;
+#       the cycle-20 "declaration step" is withdrawn as the same Principle II
+#       carve-out by another route (the stub is observable production surface
+#       admitted with no observed failing test). New companion rule: behaviour
+#       beyond the declared shape needs its OWN prior red, and a seam or
+#       declaration whose body would absorb real behaviour MUST be split into
+#       declaration -> behaviour-harness -> implementation (the U11 -> U12 -> U13
+#       shape). Do NOT restore any stub-first ordering.
+#       (b) P-002.6 replaces the derived-residual `queued` reading with an
+#       IMMUTABLE shipment manifest member set M, frozen at Ship Step 0.5 and
+#       never re-derived from the shipment's live items list — core.ReturnBlockedItem
+#       REMOVES a returned member from that list, so a re-derived M would let the
+#       member vanish and the loop report completion over a shrunken set. Statuses
+#       are the five recognized tokens queued/active/blocked/done/archived; the
+#       partition M = queued + active + blocked + terminal is TOTAL; terminal is
+#       done or archived; completion is `terminal = M` and nothing else (an empty
+#       ready frontier is NEVER completion). Any blocked member halts with the new
+#       P-002.2 code WAVE_MEMBER_BLOCKED, reporting the full census, each member's
+#       blocked_reason, the TRANSITIVE dependency impact, and whether the existing
+#       return_blocked process has been invoked/recorded. An `active` residual at
+#       wave admission halts with WAVE_NO_PROGRESS (detail: active residual). The
+#       snapshot recipe MUST return blocked and active rows and MUST NOT filter
+#       `status != 'archived'` (archived is terminal). A blocked-injection
+#       validation is mandatory before a wave schedule is relied on.
+#       (c) P-002.6 gains "Wave green semantics": harness-architect MAY scaffold
+#       every current-wave harness in one pass, leaving the wave red at once; each
+#       task's modify->test loop and post-loop gate then use ONLY that task's
+#       scoped command; the tolerated-red set is exactly the explicit, closed,
+#       non-widenable sibling_red_selectors Ship passes in; the full suite is
+#       RELOCATED, not skipped, to the new Ship Step 4.6 wave convergence gate.
+#       Six task-scoped command requirements are stated so the scoping cannot
+#       become a weakening. Version header and Amendment Log at 1.19.0.
+#   .github/agents/.ship.agent.md — Step 3 lists the whole manifest at every
+#       status as the frozen, immutable M (wave budget = count(M)). Step 4.0 is
+#       rewritten to ten items: snapshot ALL of M unfiltered -> halt on any
+#       blocked member -> halt on active residual -> check `terminal = M` for
+#       completion -> compute frontier -> deterministic report -> wave budget ->
+#       classify/scaffold (whole wave at once is expected) -> execute task-scoped
+#       -> converge via Step 4.6. Step 4.2 gains wave_scoped and
+#       sibling_red_selectors dispatch inputs and the task-scoped harness_cmd
+#       requirements. Step 4.3 item 3 becomes a TASK-SCOPED suite and explicitly
+#       forbids a repo-wide suite containing a sibling RED. NEW Step 4.6 is the
+#       wave convergence gate (full `go test ./...` plus repo-wide vet/lint/fmt,
+#       remediate INSIDE the current wave on failure, never advance on red).
+#       Circuit Breakers gain three wave rows. Step 4.4 and all Step 5 branch-wide
+#       gates are unchanged and MUST stay unchanged.
+#   .github/skills/build-feature/SKILL.md — new wave_scoped and
+#       sibling_red_selectors inputs; harness_cmd documented as task-scoped with
+#       the six requirements; post-loop gate 3 branches on wave_scoped (scoped
+#       inside a wave, full `go test ./...` outside one — the non-wave path is
+#       UNCHANGED, this relocates a gate rather than removing one); Step 6's
+#       `-run=^$` compile check stays repo-wide because it runs no test; four new
+#       Behavioral Constraints forbidding widening the tolerated-red set,
+#       accepting a non-conforming scoped command, and narrowing the compile
+#       check. No version field of its own.
+#   .github/skills/harness-architect/SKILL.md — Step 1 item 8 states that
+#       scaffolding the whole wave in one pass is expected and leaves it all red
+#       by design; Step 4 items 3/5/6 restrict stubs to behaviour-on-existing-symbol
+#       deltas, forbid any stub ahead of the harness, and require the
+#       declaration/behaviour split for a seam; Step 5.2 evaluates the red phase
+#       per task against its OWN scoped selector instead of `go test ./...`;
+#       Step 6 records the scoped command; Guardrails and Completion Criteria
+#       updated to match (repo-authored; still needs no entry below).
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml

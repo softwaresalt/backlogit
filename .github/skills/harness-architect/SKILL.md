@@ -76,11 +76,19 @@ scope is the current wave's ready set and nothing else.
    back to the correct backlog item.
 7. Assume every declaration this wave's harnesses compile against has **already
    landed**, because the tasks that own those declarations are dependencies and
-   are therefore `done`. If a scaffold still cannot compile because a declared
-   type or field is absent, the dependency graph is missing an edge: halt and
-   report the missing prerequisite to Ship for a plan amendment. Do not
-   fabricate the declaration, do not stub it into the test file to force
-   compilation, and do not scaffold ahead of the wave.
+   are therefore terminal (`done` or `archived`). If a scaffold still cannot
+   compile because a declared type or field is absent, the dependency graph is
+   missing an edge: halt and report the missing prerequisite to Ship for a plan
+   amendment. Do not fabricate the declaration, do not stub it into the test
+   file to force compilation, and do not scaffold ahead of the wave.
+8. **Scaffolding the whole wave in one pass is expected.** Every non-exempt
+   member of the wave may be scaffolded together, which leaves them all red at
+   the same time. That is the designed state, not a defect: Ship then drives
+   each member green against its **own scoped selector**, and the full
+   repository suite runs once at Ship's Step 4.6 wave convergence gate. Record
+   each task's scoped selector (Step 6) so the build loop and Ship's Step 4.3
+   share one boundary and no sibling's red is ever attributed to the task under
+   build.
 
 ### Step 1a: Harness-exempt static intake (P-002.1, fail-closed)
 
@@ -196,7 +204,9 @@ For each task, select the appropriate harness strategy:
    multiple scenarios.
 3. Create matching production stubs with // TODO: implement bodies
    so the module compiles while the tests still fail for the intended
-   reason.
+   reason. This applies **only** where the task's delta is behaviour on a symbol
+   that already exists. Where the task's delta *introduces* the symbol, write no
+   stub at all — see item 5.
 4. Keep signatures, types, and module names aligned with the current
    codebase.
 5. For a **declaration** task, use the source-shape (`go/ast`) form from Step 1a
@@ -205,7 +215,14 @@ For each task, select the appropriate harness strategy:
    harness parses the named production file and asserts the shape is present.
    A production stub is **not** written for such a task: writing one would make
    the harness pass on the scaffolding commit, which is the "never red" failure
-   mode P-004 rejects.
+   mode P-004 rejects, **and** it would land production surface ahead of the
+   harness that gates it, which P-002.1 forbids outright (cycle-31). The order is
+   always harness first, declaration second.
+6. A **seam or declaration whose body would absorb real behaviour** — reading,
+   mutating, or writing — is not a single task. Its declaration is gated by a
+   source-shape harness; its behaviour is gated by a separate behaviour-harness
+   task in a later wave. If a task asks for both at once, halt and report the
+   plan defect rather than scaffolding a behaviour-carrying stub.
 
 ### File placement rules
 
@@ -232,8 +249,15 @@ with a non-compiling harness.
 
 #### Step 5.2: Red phase check
 
-Run `go test ./...` for the harness tests. ALL tests MUST fail with
-the expected failure marker (// TODO: implement).
+Run each task's **own scoped selector** — `go test -count=1 -run '^TestU<unit>_' ./<pkg>` — for the
+harness tests it scaffolds. ALL of that task's tests MUST fail with the expected failure marker
+(// TODO: implement).
+
+**Do not run `go test ./...` for the red-phase check.** When this skill scaffolds a whole P-002.6
+wave in one pass, every non-exempt member of the wave is red simultaneously and by design; a
+repo-wide run cannot tell one task's intended red from a sibling's. Evaluate each scaffolded task
+against its own selector, and record that selector as the task's scoped harness command so
+`build-feature` and Ship Step 4.3 use the same boundary.
 
 If any test passes (false positive) or fails with an unexpected error
 (compilation vs runtime), fix the harness.
@@ -251,7 +275,10 @@ After both checks pass (P-004 gate satisfied):
 
 1. Update each task with `harness-ready` label using the backlog tool's
    update operation.
-2. Add an implementation note with the harness command.
+2. Add an implementation note with the harness command. It MUST be the task's
+   **scoped** command — an explicit package path, `-count=1`, and a `^TestU<unit>_`
+   selector anchored to this task's own functions — so it can neither match nor be
+   satisfied by a sibling's harness (P-002.6 task-scoped command requirements).
 3. Record the harness manifest: `Compilation: PASS`,
    `Red Phase: CONFIRMED`.
 
@@ -266,10 +293,12 @@ manifest note so Ship's claim-time gate can find the red evidence.
 The skill is complete only when the selected tasks have:
 
 * harness files in the correct modules
-* structural stubs with intentional not-implemented behavior
+* structural stubs with intentional not-implemented behavior, **except** for
+  declaration tasks, which carry a source-shape harness and no stub at all
 * a successful `go test -run=^$ -count=1 ./...` result after scaffolding
-* all harness tests failing with the expected marker
-* clear mapping from backlog task to harness command
+* all harness tests failing with the expected marker, verified per task against
+  that task's own scoped selector
+* clear mapping from backlog task to its scoped harness command
 
 Tasks excluded as P-002.1-valid `harness-exempt` are reported as
 already-satisfied, with their class and reason echoed back. They are not a gap
@@ -278,8 +307,17 @@ reported alongside the exempt task it covers.
 
 ## Guardrails
 
-* Do not implement production logic — stubs only.
+* Do not implement production logic — stubs only, and only where the task's delta
+  is behaviour on an already-declared symbol.
+* Do not write a production stub for a declaration task, and never land any
+  production stub ahead of the harness that gates it (P-002.1, cycle-31). The
+  order is harness first, declaration second.
+* Do not scaffold a behaviour-carrying stub for a seam. Report the plan defect
+  and let the declaration / behaviour-harness / implementation split be made.
 * Do not skip compilation verification.
+* Do not use a repo-wide `go test ./...` as the red-phase check; evaluate each
+  task against its own scoped selector so a sibling's designed red is never
+  mistaken for this task's.
 * Do not apply the harness-ready label until both compilation and red
   phase checks pass.
 * Do not scaffold tests, stubs, or a `harness-ready` label for a P-002.1-valid

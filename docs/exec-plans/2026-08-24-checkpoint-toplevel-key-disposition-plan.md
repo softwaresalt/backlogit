@@ -145,24 +145,40 @@ independently reviewable, and the partition a unit belongs to is stated in that 
 | 4 | Implementation plus MCP/CLI/instruction contracts | U3, U3b, U4, U17, U5, U6, U6d, U6e, U6b, U6c, U7, U7d, U7e, U7b, U7c, U8, U16, U8c, U9, U9b | The per-verb gates and sentinel contracts, the read-surface projections and their total remediation-intent population, the MCP and CLI surfaces, and the agent-facing instruction delta |
 | 5 | Runtime verification and closure | U10, U10b, U10c | Runtime proof of refusal, acceptance, evidence integrity, cross-surface context-duplicate behaviour, and the abandoned-resolve handler mapping |
 
-**Test lifecycle (three steps, normative — cycle-20 rewrite).** A test file that references an
+**Test lifecycle (two steps, normative — cycle-31 rewrite).** A test file that references an
 undeclared symbol does not compile, and a build error is **not** a red assertion. Development
 Workflow #1 requires a *compiling but failing* harness, and P-004's precondition is expected
 failure markers **for every test function** the harness scaffolds. This plan carries exactly one
 test lifecycle, and every unit runs it:
 
-1. **Declaration step** — land the minimum compilable stub so the package builds: the sentinel
-   `var`, the type with `Error()` / `Unwrap()`, or the function with a `return nil` body. No
-   behaviour, and **no test function**.
-2. **Red harness step** — land *only* the test functions that fail. Every function named
-   `TestU<unit>_<Descriptor>` must compile and **fail on an assertion** against the declaration
-   state. `harness-ready` is applied only when the unit's red-verification command reports a
+1. **Red harness step (always first)** — land *only* the test functions that fail. Every function
+   named `TestU<unit>_<Descriptor>` must **compile against the pre-delta tree** and **fail on an
+   assertion**. Where the unit's delta introduces a symbol the harness would otherwise have to
+   name, the harness takes the **source-shape** form: it parses the named production file with
+   `go/parser` and asserts the declared shape through `go/ast`, so it names no undeclared
+   identifier. `harness-ready` is applied only when the unit's red-verification command reports a
    failure for **every** function it selects. A test that passes MUST NOT be committed in this
    step.
-3. **Green step** — land the production delta, turn every red function green, and — in the *same*
-   commit as the implementation — add the already-green regression guards as
-   `TestU<unit>Guard_<Descriptor>`. Guards are green validation of the implementation, never
-   harness scaffolding.
+2. **Green step** — land the production delta (the declaration **and** its behaviour together),
+   turn every red function green, and — in the *same* commit as the implementation — add the
+   already-green regression guards as `TestU<unit>Guard_<Descriptor>`. Guards are green validation
+   of the implementation, never harness scaffolding.
+
+**The cycle-20 "declaration step" is withdrawn (cycle-31).** No production stub — not a sentinel
+`var`, not a `return nil` body, not an "empty but correctly identified" map, and above all not a
+body carrying currently-shipped read/mutate/write behaviour — may be committed **ahead of** the
+unit's own harness. PR #377 review held that such a stub is production surface landing with no
+observed failing test, which is a carve-out from NON-NEGOTIABLE Constitution Principle II. The
+source-shape harness makes the stub unnecessary: it compiles before the declaration exists and
+fails on an assertion, so the correct order is always **harness first, declaration second**.
+
+**Behaviour beyond the declared shape needs its own prior red.** A unit may land a declaration and
+its behaviour in one green step only when the behaviour is either (i) turned green by that same
+commit and retained as a `TestU<unit>Guard_` regression guard, or (ii) owned by a named later unit
+whose behaviour harness lands in a strictly later wave against the landed declaration. A **seam or
+declaration whose body would absorb real behaviour** MUST be split into declaration → behaviour
+harness → implementation, each gated by a harness that precedes it — the **U11 → U12 → U13** shape.
+There is no stub loophole in either direction.
 
 A unit is not red until its **exact** red-verification command prints assertion failures rather
 than a build error. The placeholder `go test ./<pkg>` phrasing used through cycle 15 was not
@@ -273,20 +289,21 @@ them. Tasks reference the table by unit rather than restating the command, so th
 Any unit's guard selector is the same command with `^TestU<unit>Guard_` substituted for
 `^TestU<unit>_`; it is run in the green step and never in the harness step.
 
-**Green-step regression guards (cycle-20 relocation).** A scenario that asserts already-shipped
-behaviour, or that expects the zero value a declaration stub already returns, passes from the
-moment it lands. Through cycle 19 those scenarios were committed **inside** the harness step and
-labelled "declared regression guards", with each unit's **Expected red** line naming which of its
-cases failed and which did not. That arrangement cannot satisfy P-004, whose precondition is
-expected failure markers *for every test function*, and PR #377's cycle-20 Copilot review raised it
-as a P1 on fourteen tasks. It is withdrawn. Guards are **not part of the red harness**. Each unit's
-**Expected red** line now names only the functions the harness step scaffolds — every one of which
-fails — and a separate **Green-step guards** line names the functions that land with the
-implementation. A guard remains a first-class obligation: omitting one is a coverage regression.
-It is simply committed where it is honest, which is the green step and never the harness commit.
-Splitting a unit's red selector to exclude an already-green function (the cycle-17 device used on
-U2g and U2h) is also withdrawn: a guard that is excluded from the red selector is still committed
-in the harness commit, and P-002/P-004 gate the harness commit, not the selector.
+**Green-step regression guards (cycle-20 relocation, cycle-31 restatement).** A scenario that
+asserts already-shipped behaviour, or that a unit's own green step turns true the moment the delta
+lands, passes from the moment it lands. Through cycle 19 those scenarios were committed **inside**
+the harness step and labelled "declared regression guards", with each unit's **Expected red** line
+naming which of its cases failed and which did not. That arrangement cannot satisfy P-004, whose
+precondition is expected failure markers *for every test function*, and PR #377's cycle-20 Copilot
+review raised it as a P1 on fourteen tasks. It is withdrawn. Guards are **not part of the red
+harness**. Each unit's **Expected red** line now names only the functions the harness step
+scaffolds — every one of which fails — and a separate **Green-step guards** line names the
+functions that land with the implementation. A guard remains a first-class obligation: omitting one
+is a coverage regression. It is simply committed where it is honest, which is the green step and
+never the harness commit. Splitting a unit's red selector to exclude an already-green function (the
+cycle-17 device used on U2g and U2h) is also withdrawn: a guard that is excluded from the red
+selector is still committed in the harness commit, and P-002/P-004 gate the harness commit, not the
+selector.
 
 ### U1 — Non-conforming sentinel, typed error, and the canonical remedy predicate
 
@@ -307,10 +324,15 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   `Fields` from a wrapped error; `Error()` renders a non-empty message naming the field count;
   `QuarantineIsRemedy` is true for both `ErrCheckpointUseQuarantine` and `ErrCheckpointNonConforming`
   and false for `ErrCheckpointNotActive` and `nil`.
-* **Expected red**: all three fail on assertions after the declaration step (typed error returns
-  zero-value `Fields`, `Error()` returns the bare sentinel text, `QuarantineIsRemedy` returns
-  `false`).
-* **Green-step guards**: none. Every scenario is a red harness function.
+* **Expected red**: **3 source-shape harness functions (cycle-31).** The harness lands **first** and
+  parses `internal/errors/checkpoint_errors.go` with `go/parser`, asserting through `go/ast` that
+  `ErrCheckpointNonConforming`, `CheckpointNonConformingError{Fields []string}` with
+  `Error()`/`Unwrap()`, and `QuarantineIsRemedy` are declared. All three compile against the
+  pre-declaration tree and fail on assertions naming the absent shape. No declaration stub is
+  committed ahead of them.
+* **Green-step guards** (3, `TestU1Guard_<Descriptor>`): the three behavioural scenarios above —
+  `errors.Is`/`errors.As` recovery through the wrap, the sorted joined `Error()` rendering, and the
+  `QuarantineIsRemedy` truth table. They land with the implementation.
 
 ### U1b — Bounded raw offender path projection with truncation metadata
 
@@ -361,10 +383,16 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   `Truncated: true`, `OmittedPaths: 5`, and **no** synthetic marker element; a path built from
   multi-byte runes that crosses the 128-byte cap is returned cut on a rune boundary, is valid UTF-8
   (`utf8.ValidString`), and is counted in `TruncatedPaths`.
-* **Expected red**: all three fail (`BoundedFieldPaths` returns the zero `BoundedFieldPathSet`
-  after the declaration step, so the raw round-trip, the truncation-metadata, and the rune-boundary
-  assertions all fail on assertions rather than on a build error).
-* **Green-step guards**: none. Every scenario is a red harness function.
+* **Expected red**: **3 source-shape harness functions (cycle-31).** The harness lands **first** and
+  parses `internal/errors/checkpoint_errors.go` with `go/parser`, asserting through `go/ast` that
+  `BoundedFieldPathSet` is declared with `Paths`, `Truncated`, `OmittedPaths`, and `TruncatedPaths`
+  carrying the exact JSON tags with no `omitempty`, and that `BoundedFieldPaths` is declared on
+  `*CheckpointNonConformingError` with the stated signature. All three compile against the
+  pre-declaration tree and fail on assertions naming the absent shape. No declaration stub is
+  committed ahead of them.
+* **Green-step guards** (3, `TestU1bGuard_<Descriptor>`): the three cap scenarios above — the
+  under-cap verbatim round-trip, the 21-path truncation-metadata case, and the multi-byte
+  rune-boundary case. They land with the implementation.
 * **Consumed by**: U6b (`NonConformingFields`), U6c (`non_conforming_fields`), U7 (`unknown_fields`),
   U1c (human rendering).
 * **Depends on**: U1.
@@ -390,9 +418,14 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
 * **Tests** (3): `Error()` contains every offender path in quoted form and contains no raw
   unescaped control byte; a truncated set renders the omitted and shortened counts in the human
   clause; a path containing a double quote and a newline is escaped rather than emitted verbatim.
-* **Expected red**: all three fail (`FieldPathsForDisplay` returns `""` after the declaration step
-  and `Error()` still renders the bare sentinel text from U1).
-* **Green-step guards**: none. Every scenario is a red harness function.
+* **Expected red**: **3 source-shape harness functions (cycle-31).** The harness lands **first** and
+  parses `internal/errors/checkpoint_errors.go` with `go/parser`, asserting through `go/ast` that
+  `FieldPathsForDisplay` is declared on `*CheckpointNonConformingError` with the stated signature
+  and that `Error()` delegates to it. All three compile against the pre-declaration tree and fail
+  on assertions naming the absent shape. No `return ""` stub is committed ahead of them.
+* **Green-step guards** (3, `TestU1cGuard_<Descriptor>`): the three rendering scenarios above — the
+  quoted-path join, the truncation clause, and the control-byte escaping. They land with the
+  implementation.
 * **Consumed by**: U8 (CLI refusal text), U16 (CLI remediation block).
 * **Depends on**: U1b.
 
@@ -449,8 +482,8 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   against the pre-declaration tree and fails on assertions —
   `TestU1d_RemediationIntentCarrierDeclared` ("RemediationIntent struct is not declared in
   checkpoint_schema.go"), `TestU1d_CheckpointSummaryCarriesIntentField` ("CheckpointSummary has no
-  field tagged json:\"remediation_intent\""), and `TestU1d_RemediationIntentHoldsNoShellText`.
-  **Verified at worktree HEAD `6a822ceb`**: `go vet ./internal/events` exits 0 and
+  field tagged json:\"remediation_intent\""), and   `TestU1d_RemediationIntentHoldsNoShellText`. **Verified at worktree HEAD `6a822ceb`**:
+  `go vet ./internal/events` exits 0 and
   `go test -run='^$' -count=1 ./internal/events` reports `[no tests to run]` (compiles), while
   `go test -count=1 -v -run '^TestU1d_' ./internal/events` exits 1 with assertion failures, not
   build errors.
@@ -485,14 +518,17 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   returns the typed error with both keys sorted; a document containing all four `disposition*`
   reserved keys with `status: "abandoned"` returns nil (proving reserved-key admission and the
   deliberate absence of a reserved-status-value check at the read boundary).
-* **Expected red** (1 harness function): `TestU2_UnknownTopLevelKeysRefused` — case 2 fails against
-  the `return nil` stub.
-* **Green-step guards** (2, landing with the implementation as `TestU2Guard_<Descriptor>`): case 1
-  (conforming V1 → nil) guards the trivial-conforming boundary condition; case 3 (reserved-key
-  admission) guards the read-boundary admission of the `disposition*` namespace, which is a shipped
-  behaviour of `checkpointV1ReservedKeys` and not introduced here. Neither is committed in the
-  harness step (cycle-20; cycle-19 committed both inside it and the Copilot review raised the
-  resulting green-in-harness state as a P1).
+* **Expected red** (1 harness function): `TestU2_UnknownTopLevelKeysRefused` — a source-shape
+  function that lands **first** and fails against the pre-delta tree, where
+  `internal/events/checkpoint_conformance.go` does not yet declare
+  `CheckConformingTopLevelNamespace`. No `return nil` stub is committed ahead of it (cycle-31).
+* **Green-step guards** (3, landing with the implementation as `TestU2Guard_<Descriptor>`): case 1
+  (conforming V1 → nil) guards the trivial-conforming boundary condition; case 2 (two unknown
+  top-level keys → typed error with both keys sorted) is the unit's behavioural obligation, turned
+  green by this same commit; case 3 (reserved-key admission) guards the read-boundary admission of
+  the `disposition*` namespace, which is a shipped behaviour of `checkpointV1ReservedKeys` and not
+  introduced here. None is committed in the harness step (cycle-20; cycle-19 committed them inside
+  it and the Copilot review raised the resulting green-in-harness state as a P1).
 * **Depends on**: U1.
 
 ### U2b — Conformance helper: nested `progress` rule and open `context` namespace
@@ -580,13 +616,15 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   naming `docs/decisions/2026-08-24-checkpoint-toplevel-key-disposition-deliberation.md`. This is
   a "revisit the decision before changing this" marker, **not** a permanent ban on top-level
   preservation (see Decisions and Rationale).
-* **Three-step lifecycle**: (a) **Declaration step** lands
-  `var checkpointV1AllTopLevelKeys = map[string]struct{}{}` — a compilable empty stub with the
-  right identity but empty content — leaving `CheckConformingTopLevelNamespace` on U2's inline
-  two-set check unchanged so U2's own tests stay green. (b) **Red harness step** lands only the
-  failing function; case 1 fails on assertions (empty ≠ union). (c) **Green step** fills in the
-  derivation, refactors `CheckConformingTopLevelNamespace` to consult
-  `checkpointV1AllTopLevelKeys`, and lands cases 2 and 3 as `TestU2dGuard_` functions.
+* **Two-step lifecycle (cycle-31)**: (a) **Red harness step lands first** — a source-shape function
+  parses `internal/events/checkpoint_conformance.go` with `go/parser` and asserts through `go/ast`
+  that `checkpointV1AllTopLevelKeys` is declared from
+  `modeledJSONTagKeys(reflect.TypeOf(CheckpointV1{}))` and that `CheckConformingTopLevelNamespace`
+  consults it rather than U2's inline two-set check. It compiles against the pre-delta tree and
+  fails on those assertions. (b) **Green step** lands the derivation, refactors
+  `CheckConformingTopLevelNamespace` onto the single derived set, and lands the set-equality case
+  and cases 2 and 3 as `TestU2dGuard_` functions. The cycle-8 "declaration step lands an empty
+  `map[string]struct{}{}` stub" posture is **withdrawn**: no stub precedes the harness.
 * **Tests** (3): `checkpointV1AllTopLevelKeys` equals `checkpointV1TopLevelKeys ∪
   checkpointV1ReservedKeys` — set equality against the hand-written literal, guarding drift in the
   reserved-key set rather than the reflected field set (the narrower claim is the accurate one);
@@ -594,13 +632,15 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   carries a non-empty `json:"..."` tag**. The third closes a latent escape hatch: `modeledJSONTagKeys`
   skips untagged exported fields, so a future field added without a tag would appear in the
   derived set only when the escape hatch is closed.
-* **Expected red** (1 harness function): case 1 fails against the declaration-step empty stub — set
-  equality does not hold when the derived set is empty.
-* **Green-step guards** (2, `TestU2dGuard_<Descriptor>`): cases 2 and 3 — `CheckpointV1` already
-  declares no `json:"-"` carrier and every exported field is already tagged, so both assertions
-  expect a state that already holds. They land with the implementation. Cycle 19's "P-004 is
-  satisfied by case 1 as the single red assertion" framing is withdrawn: P-004 quantifies over
-  every scaffolded harness function, not over the unit.
+* **Expected red** (1 harness function): the source-shape function fails against the pre-delta tree
+  — `checkpointV1AllTopLevelKeys` is not declared and `CheckConformingTopLevelNamespace` still
+  carries the inline two-set check.
+* **Green-step guards** (3, `TestU2dGuard_<Descriptor>`): the set-equality assertion against the
+  hand-written literal, plus cases 2 and 3 — `CheckpointV1` already declares no `json:"-"` carrier
+  and every exported field is already tagged, so both assertions expect a state that already holds.
+  They land with the implementation. Cycle 19's "P-004 is satisfied by case 1 as the single red
+  assertion" framing is withdrawn: P-004 quantifies over every scaffolded harness function, not
+  over the unit.
 * **Depends on**: U2.
 
 ### U11 — Guarded rewrite seam: declaration
@@ -624,10 +664,19 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   ) error
   ```
 
-  The declaration step lands a compilable stub whose body performs the **currently shipped**
-  behaviour of the callers it will absorb — read, parse, mutate, marshal, atomic replace — with no
-  validity and no conformance precondition. That is deliberate: the stub must compile and must not
-  yet exhibit the guard, so U12's harness fails on assertions rather than on a build error.
+  **Harness-first, declaration/behaviour split (cycle-31).** The **source-shape** harness lands
+  first: `TestU11_RewriteSeamDeclared` parses `internal/events/checkpoint_rewrite.go` with
+  `go/parser` and asserts through `go/ast` that `RewriteCheckpointFile` is declared with the exact
+  signature above. It names no undeclared identifier, so it compiles against the pre-declaration
+  tree and fails on that assertion. Only then does the seam land. The cycle-17 instruction to land
+  "a compilable stub whose body performs the currently shipped behaviour of the callers it will
+  absorb" is **withdrawn**: that stub carried real read/parse/mutate/marshal/atomic-replace
+  behaviour with no observed failing test, which is the Principle II carve-out the
+  `declaration-only` withdrawal was meant to eliminate. The seam's **behaviour** red is owned by
+  **U12**, whose contract harness lands in a strictly later wave against this landed declaration
+  and is turned green by **U13** — declaration → behaviour harness → implementation, each gated by
+  a harness that precedes it. The seam has **no caller** until U14 migrates them, so nothing
+  observable changes on a live path in this unit.
 * **Scope boundary — quarantine is not in the seam**: `QuarantineCheckpoint`'s `moveNoReplace`
   path never parses and never re-marshals; it moves bytes verbatim. It is **correct by
   construction** and MUST NOT be routed through this seam. Doing so would introduce a parse
@@ -635,13 +684,19 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   parsed. `CleanupCheckpoints`' `os.Rename` is excluded for the same reason, and
   `CreateCheckpoint` is excluded because it creates a new file rather than rewriting an existing
   one.
-* **Tests** (2): the seam is declared with the stated signature and is reachable from
-  `internal/core` (an exported-surface compile assertion); calling it with a `mutate` that returns
-  an error propagates that error and leaves the file byte-unchanged.
-* **Expected red** (1 harness function): case 2 fails against the declaration stub, which writes
-  before checking the mutate result.
+* **Tests** (2): the seam is declared with the stated signature (asserted source-shape, red before
+  the declaration lands) and is reachable from `internal/core` (an exported-surface compile
+  assertion, green on landing). The `mutate`-error propagation and byte-identity obligation is a
+  **behaviour** assertion and belongs to U12's contract harness, which runs against this landed
+  declaration in a later wave.
+* **Expected red** (1 harness function): `TestU11_RewriteSeamDeclared`, the source-shape function,
+  fails against the pre-declaration tree — `RewriteCheckpointFile` is not declared. It is an
+  assertion failure, never a build error, and never a failure against a behaviour-carrying stub.
 * **Green-step guards** (1, `TestU11Guard_<Descriptor>`): case 1, the exported-surface reachability
   assertion, lands with the implementation.
+* **Behaviour red owner**: U12 (`147.035-T`). Case 2 — a `mutate` that returns an error propagates
+  it and leaves the file byte-unchanged — is a behaviour obligation of the seam and is asserted in
+  U12's contract harness against the landed declaration, not here.
 * **Depends on**: U2 (the conformance predicate the seam will call).
 
 ### U12 — Guarded rewrite seam: contract harness
@@ -650,7 +705,10 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
 * **Domain**: tests
 * **Files**: `internal/events/checkpoint_rewrite_contract_test.go` (new). **No production change.**
 * **Change**: land the executable contract for the seam. This is a harness-only unit: it compiles
-  against U11's declaration stub and fails on assertions because the stub has no preconditions.
+  against the declaration U11 landed in an earlier wave and fails on assertions because the seam
+  carries no validity and no conformance precondition yet. This is the **behaviour** red for the
+  seam — U11's own harness is source-shape and gates only the declared signature, so every
+  behavioural obligation of the seam is observed failing here, before U13 implements it.
 * **Tests** (3): an unparseable document is refused with `ErrCheckpointCorrupt` and the file bytes
   are SHA-identical afterwards; a parseable but schema-invalid document is refused with
   `ErrCheckpointInvalid` and the bytes are SHA-identical; a valid-but-non-conforming document is
@@ -661,8 +719,9 @@ in the harness commit, and P-002/P-004 gate the harness commit, not the selector
   **not** choose a verb-facing sentinel. Wrapping the verdict into `ErrCheckpointUseQuarantine` or
   `ErrCheckpointNonConforming` is the caller's job, because the wrap differs per verb and per
   gate-ordering rule (I2). This keeps the seam a mechanism and leaves the contract with the verb.
-* **Expected red**: all three fail — the U11 stub performs no validity and no conformance check, so
-  every case currently rewrites the file and returns `nil`.
+* **Expected red**: all three fail — the landed U11 seam performs no validity and no conformance
+  check, so every case currently rewrites the file and returns `nil`. Case 2's byte-identity and
+  `mutate`-error propagation obligation, formerly stated on U11, is asserted here.
 * **Green-step guards**: none. Every scenario is a red harness function; U13 turns all three green.
 * **Depends on**: U11, U2c (the completed top-level conformance predicate the assertions expect).
 
@@ -1266,10 +1325,12 @@ on `147.010-T`.
   func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*CheckpointReadResult, error)
   ```
 
-  The declaration step lands `GetCheckpointResult` as a thin wrapper that calls the **existing**
-  `GetCheckpoint` and returns `&CheckpointReadResult{Checkpoint: cp, Valid: err == nil}` with every
-  other field at its zero value. `GetCheckpoint` is retained unchanged as a wrapper returning
-  `res.Checkpoint`, so every existing caller compiles untouched.
+  `GetCheckpointResult` lands as a thin wrapper that calls the **existing** `GetCheckpoint` and
+  returns `&CheckpointReadResult{Checkpoint: cp, Valid: err == nil}` with every other field at its
+  zero value. `GetCheckpoint` is retained unchanged as a wrapper returning `res.Checkpoint`, so
+  every existing caller compiles untouched. Per the cycle-31 lifecycle this lands in the **green**
+  step, after the `TestU15_*` source-shape harness below has been observed red — no stub precedes
+  the harness.
 * **Declaration boundary**: this unit adds **no** conformance evaluation, **no** intent
   population, and **no** offender projection. Those are U6b's production delta. Keeping the
   declaration separate is what makes U8b's red honest — the harness compiles against a real type
@@ -1827,7 +1888,7 @@ on `147.010-T`.
   partition-1 carriers `BoundedFieldPathSet` (U1b) and `RemediationIntent` (U1d), and the
   already-shipped CLI and MCP handlers. Every symbol it references exists at the moment it lands,
   so it **compiles**; every projection and refusal it asserts is unimplemented, so it **fails on
-  assertions**. That is the three-step lifecycle applied across surfaces instead of inside one
+  assertions**. That is the two-step lifecycle applied across surfaces instead of inside one
   package. The cycle-15/16 "batch harness generation phase" framing is withdrawn: it made the red
   gate depend on when an implementer chose to generate harnesses rather than on the dependency
   graph.
@@ -2392,15 +2453,19 @@ terminal by design — nothing depends on it, and a blocked U2f does not block t
 because the guarded seam rather than the enumeration is what enforces I1; when it is blocked it
 must also be removed from `130-S` with `return_blocked`.
 
-**Declaration → harness → implementation monotonicity (cycle-20 invariant I4, restated cycle-29)**:
-every unit whose delta changes behaviour has a failing harness that lands no later than its own
-harness step and no earlier than the declarations it compiles against. Concretely: units with their
-own red harness satisfy this internally (declaration step → red harness step → green step, in that
-order inside the task); `U13` is covered by `U12`; `U14`'s verb-level conformance contract is
-covered by `U3c`; and `U1d` and `U15` — formerly the two `declaration-only` units — now carry their
-**own** failing source-shape harnesses (`TestU1d_*`, `TestU15_*`) in addition to the downstream
-behaviour REDs in `U6`/`U6e`/`U6c`/`U16` and `U6b`/`U8b`. No behaviour-changing unit in this plan
-lacks a transitive harness prerequisite, and no harness-exempt unit implements behaviour.
+**Harness → declaration → behaviour monotonicity (cycle-20 invariant I4, restated cycle-31)**:
+every unit whose delta changes behaviour has a failing harness that lands **before its own
+production delta** and no earlier than the declarations that harness compiles against. Concretely:
+units with their own red harness satisfy this internally (red harness step → green step, in that
+order inside the task, with the harness taking the source-shape form whenever the delta introduces
+the symbol it would otherwise name); `U13` is covered by `U12`; `U14`'s verb-level conformance
+contract is covered by `U3c`; `U11`'s **behaviour** is covered by `U12` while its **declaration**
+is gated by its own `TestU11_` source-shape harness; and `U1d` and `U15` — formerly the two
+`declaration-only` units — carry their **own** failing source-shape harnesses (`TestU1d_*`,
+`TestU15_*`) in addition to the downstream behaviour REDs in `U6`/`U6e`/`U6c`/`U16` and
+`U6b`/`U8b`. No behaviour-changing unit in this plan lacks a transitive harness prerequisite, no
+harness-exempt unit implements behaviour, and **no unit lands a production stub ahead of its own
+harness**.
 
 **Wave schedule (cycle-29, P-002.6)**: the 42-task / 104-edge DAG partitions into **18** dependency
 waves that schedule all 42 tasks with **zero** stalls and **zero** compile-order violations (every
@@ -2488,7 +2553,7 @@ from the two roots.
 | Principle | Verdict | Notes |
 |---|---|---|
 | I. Safety-First Go | **pass** | All production changes are Go; no `unsafe`. New wraps use multi-`%w` so both sentinels resolve. **Cycle-17 change**: the pre-existing `%v` validation wrap in `AbandonCheckpoint` (`internal/core/checkpoint_disposition.go:~70-73`) is **fixed** by U17 rather than recorded as a deviation. The cycle-16 gate ruled the deviation unavailable: Principle I is not satisfiable by documenting a departure from it, and the "unrelated shipped contract" justification lapses once U4 and U14 edit that same function. |
-| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single three-step lifecycle declared at the head of Implementation Units: a declaration stub so the package **compiles**, then a red harness step that lands **only** functions that **fail on assertions**, then a green step that lands the implementation together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 withdrew the cycle-8 rule that every unit needs at least one failing assertion, on the grounds that a test failing only because a symbol does not exist is a build error and a test passing the moment the declared shape lands was never red. **Cycle 29 reinstates that rule for declaration units in corrected form** after PR #377 review (`workflow-policies.md:75`) held that the resulting `declaration-only` exemption admitted observable production surface — a serialized `CheckpointSummary` field, an exported `GetCheckpointResult` wrapper — with no observed failing test, which is a carve-out from a NON-NEGOTIABLE principle. U1d and U15 are no longer exempt: each carries a **source-shape** harness that parses its own production file with `go/parser` and asserts the declared shape via `go/ast`, so it compiles before the declaration exists (no build error) and fails on an assertion (a genuine red), verified at HEAD `6a822ceb`. Both units' downstream behaviour REDs (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15) are retained on top of that. **No Principle II deviation is recorded for any declaration unit** — the principle is satisfied outright. Test-first is preserved for behaviour with exactly one explicitly allowed, edge-backed carve-out: every behaviour-changing unit is backed by a failing harness observed red before its implementation lands, carried on the unit itself except for **U13**, whose harness is owned by its declared prerequisite **U12** under the `covered-by` class (invariant I4). No other unit may claim that shape. U2d owns a real production delta with a compiling-but-failing harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
+| II. Test-First Development (NON-NEGOTIABLE) | **pass** | Every unit runs the single **two-step** lifecycle declared at the head of Implementation Units (cycle-31): a **red harness step that lands first** — only functions that **fail on assertions**, compiling against the pre-delta tree, taking the **source-shape** (`go/parser` + `go/ast`) form whenever the unit's delta introduces the symbol the harness would otherwise name — then a green step that lands the production delta (declaration **and** behaviour) together with any already-green regression guards as `TestU<unit>Guard_` functions. Expected red is stated per unit, and cycle 16 pins the exact per-unit `-run` selector and `-count=1` invocation that observes it, so "red" is verifiable rather than asserted. Cycle 20 removed the "declared regression guards inside the harness" device on fourteen units and the narrowed-red-selector device on U2g and U2h: P-004's precondition is expected failure markers **for every test function**, and it gates the harness commit rather than the selector or the prose. Cycle 20 withdrew the cycle-8 rule that every unit needs at least one failing assertion, on the grounds that a test failing only because a symbol does not exist is a build error and a test passing the moment the declared shape lands was never red. **Cycle 29 reinstated that rule for declaration units in corrected form** after PR #377 review (`workflow-policies.md:75`) held that the resulting `declaration-only` exemption admitted observable production surface — a serialized `CheckpointSummary` field, an exported `GetCheckpointResult` wrapper — with no observed failing test, which is a carve-out from a NON-NEGOTIABLE principle. **Cycle 31 closes the remaining half of that carve-out**: the cycle-20 "declaration step" — a production stub landed *ahead of* the unit's own harness so the package would compile — is **withdrawn plan-wide**. It was the same violation by a different route, and it was still live on U1, U1b, U1c, U2d, and most severely U11, whose stub was specified to carry real read/parse/mutate/marshal/atomic-replace behaviour. The corrected order is **harness first, declaration second**, with no stub in front of any harness; a seam or declaration whose body would absorb real behaviour is split into declaration → behaviour harness → implementation (the U11 → U12 → U13 shape), so U11's declaration is gated by its own `TestU11_` source-shape red and its behaviour by U12's contract harness. U1d and U15 are not exempt: each carries a **source-shape** harness that parses its own production file with `go/parser` and asserts the declared shape via `go/ast`, so it compiles before the declaration exists (no build error) and fails on an assertion (a genuine red), verified at HEAD `6a822ceb`. Both units' downstream behaviour REDs (U6/U6e/U6c/U16 for U1d; U6b/U8b for U15) are retained on top of that. **No Principle II deviation is recorded for any declaration unit** — the principle is satisfied outright. Test-first is preserved for behaviour with exactly one explicitly allowed, edge-backed carve-out: every behaviour-changing unit is backed by a failing harness observed red before its implementation lands, carried on the unit itself except for **U13**, whose harness is owned by its declared prerequisite **U12** under the `covered-by` class (invariant I4). No other unit may claim that shape. U2d owns a real production delta with a compiling-but-failing source-shape harness case. U8b lands in partition 3 against the U15/U1b/U1d/U2 declarations and fails on assertion behaviour before any partition-4 implementation lands; the cycle-15/16 batch-harness-generation framing is withdrawn because it made the red gate depend on implementer sequencing rather than the dependency graph. U5's withdrawn state-conflict rows never contributed to its red gate. Cycle-10 retired U5b, whose production delta contradicted the decision's scope boundary; cycle-16 corrected U7e's expected-red statement; and cycle-20 moved U3b's only red claim into the new harness unit U3c, because the resolve-verb conformance contract is delivered by U14's seam migration rather than by U3b. |
 | III. Workspace Isolation and Security Boundaries | **pass** | No path handling changes. `ResolveDispositionTarget`, `ensurePathContained`, and `validateCheckpointFilename` are untouched. The new gates operate on already-read bytes. `Fields` carries key **paths** only, never values, so a refusal cannot leak checkpoint content. No secrets introduced. |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | **pass** | All edits are inside the repository tree. U10's scratch workspace is pinned to `.copilot/scratch/checkpoint-verification/` **inside** the working tree — never `%TEMP%`, never a sibling or parent — and the path is asserted to be repo-root-relative before any write. |
 | V. Structured Observability | **deviation (documented)** | Refusals are typed and machine-readable: `unknown_fields` (raw paths plus structural truncation scalars) on MCP, named keys on CLI, `NeedsQuarantine` + a structured `RemediationIntent` on list and get. The audit-before-mutation ordering is **preserved** (not strengthened — the ordering already existed; U4 only moves the new gate to sit ahead of it). **Deviation**: no new counter, log line, or telemetry event is emitted when a refusal occurs, so a spike in refusals is observable only through agent-visible errors. Accepted for this scope; recorded as a follow-up. |
@@ -5015,3 +5080,146 @@ dispatched, nothing was pushed or merged, and no Go command was run this cycle.
 
 This authorization covers **planning, policy, and skill-prose artifacts only**. It is not merge
 approval, not a shipment claim, and not authorization for Ship to begin implementation.
+
+## Plan Review
+
+<!-- BEGIN:plan-review -->
+```yaml
+cycle: 31
+reviewed_at: 2026-08-26
+reviewed_head: 5212ee45c0a36c9255fcf89b5fe61d4804057c45
+dispatch_mode: single-agent-declared-degradation
+tool_degraded: reviewer-subagent-dispatch
+decision: FAIL
+pending: fresh-local-review-required
+operator_authorization: approved
+severity_counts: "P0=0, P1=6 (all remediated in-pass), P2=0, P3=0"
+topology: "42 tasks, 104 executable edges, 43 shipment members, 18 waves, acyclic"
+push_allowed: no
+restage_recommendation: none
+```
+<!-- END:plan-review -->
+
+decision: FAIL — pending fresh review
+
+**This record is the current gate state.** It supersedes `cycle: 29` `ADVISORY` for gate-decision
+purposes. Cycle 29's record and every earlier record remain the historical trace of how the plan
+reached its present shape; only the gate-state role (`decision`, `push_allowed`) is superseded here.
+
+The gate is **FAIL** because this cycle remediated **six P1 review threads** that had been
+acknowledged and deliberately HELD across cycles 29 and 30. A cycle that changes the harness
+lifecycle plan-wide, the wave scheduler's completion semantics, and the per-task green gate is not
+self-certifying: the corrected contract has not yet been reviewed by anything other than the
+session that wrote it. `decision: FAIL` with `pending: fresh-local-review-required` is the honest
+state, and it keeps §1.9 Check 3 blocking until a fresh local review of *these* changes is run.
+
+### Authorization basis
+
+`operator_authorization: approved` records that the operator explicitly directed autonomous
+remediation of the six unresolved PR #377 P1 threads in one bounded cycle, with an explicit scope
+of **no subagents, no push, no merge, no production Go**. That scope was honoured: zero `*.go`
+files were modified, zero subagents were dispatched, and nothing was pushed or merged. The
+authorization covers applying the corrections and recording this gate outcome. It is **not** merge
+approval, **not** a shipment claim, and **not** authorization for Ship to begin implementation.
+
+### Dispatch record — degraded to a single-agent sequential pass
+
+Reviewer sub-agent dispatch was unavailable (the operator's explicit "no subagents" scope);
+`TOOL_DEGRADED: reviewer-subagent-dispatch` records the degradation, matching the
+cycle-16/17/18/20/21/24/29 precedent. The pass ran sequentially over the six thread anchors, the
+1.18.0 policy contract, `.ship.agent.md`, `build-feature/SKILL.md`, `harness-architect/SKILL.md`,
+`.autoharness/drift-ignore`, and the referenced backlog artifacts, re-verified live.
+
+### Findings by severity — the three roots behind six threads
+
+| ID | Sev | Root | Threads | Disposition |
+|---|---|---|---|---|
+| R1 | P1 | Declaration stub landing **before** the harness that gates it | `147.001-T:26`, `147.030-T:44`, `147.031-T:37`, `147.034-T:44` | **Fixed.** Withdrawn plan-wide; harness-first ordering is now normative in P-002.1 |
+| R2 | P1 | Wave state machine had **no disposition for a `blocked` member**, permitting a false completion | `workflow-policies.md:534` | **Fixed.** Immutable manifest set `M`, total status partition, `WAVE_MEMBER_BLOCKED` |
+| R3 | P1 | Wave order **unsatisfiable for `\|ready_k\| > 1`** — per-task loop required the full suite against sibling REDs | `.ship.agent.md:410` | **Fixed.** Scoped per-task loops; full suite relocated to new Step 4.6 convergence gate |
+
+**R1 — declaration doctrine.** Cycle 29 withdrew the `declaration-only` exemption class but did not
+propagate the corrected lifecycle into the staged tasks, leaving four of them instructing "land the
+declaration stub so the package compiles, then the harness, then implement". That is the same
+Principle II carve-out by another route — the stub is observable production surface admitted with
+no observed failing test — and it was additionally *unschedulable*, because `harness-architect` no
+longer fabricates the missing declaration. The plan's three-step lifecycle is replaced by a
+**two-step** one: red harness first (source-shape whenever the delta introduces the symbol),
+green step second. `147.034-T` / U11 was the most severe: its stub was specified to perform real
+read/parse/mutate/marshal/atomic-replace behaviour, so it is corrected to the
+declaration → behaviour-harness → implementation split (U11 → U12 → U13), with U11 gated by its own
+`TestU11_` source-shape red and its behaviour red relocated to U12. The sweep also caught two
+class-matched siblings the threads did not name — `147.005-T` / U2d (empty-map stub) and
+`147.002-T` / U2 (`return nil` stub) — plus the plan's Implementation Units head, the
+Green-step-guards paragraph, the U1/U1b/U1c/U2/U2d/U11/U12/U15 unit sections, invariant I4, and
+Constitution Check II. Historical amendment-log rows are preserved unmodified as history.
+
+**R2 — blocked accounting.** `queued` was overloaded between a derived residual (`M \ done`) and a
+literal status, and neither reading is safe: the derived one silently re-admits a returned member,
+the literal one leaves it in no examined set at all so `WAVE_NO_PROGRESS` never fires. P-002.6 now
+freezes an **immutable manifest member set `M`** at Ship Step 0.5 — never re-derived from the
+shipment's live `items` list, because `core.ReturnBlockedItem` (`internal/core/shipment.go:626-665`)
+removes a returned member from that list — and defines the **total** partition
+`M = queued ⊎ active ⊎ blocked ⊎ terminal` over the five recognized statuses. Completion is
+`terminal = M` and nothing else; an empty frontier is never completion. Any blocked member halts
+with the new `WAVE_MEMBER_BLOCKED` code, reporting the full census, each `blocked_reason`, the
+transitive dependency impact, and whether `return_blocked` has been invoked/recorded. An `active`
+residual halts with `WAVE_NO_PROGRESS`. A **blocked-injection validation** is now mandatory before
+a wave schedule may be relied on.
+
+**R3 — wave green semantics.** Step 4.0 left the whole wave red at once while `build-feature`'s
+post-loop gate required `go test ./...`, so the first task of any multi-member wave could never
+reach green. Eleven of this release unit's eighteen waves carry more than one non-exempt member, so
+this failed on wave 2 of the worked schedule. `harness-architect` may still batch-scaffold the
+whole wave; the per-task loop now uses only the task's **scoped** command, with an explicit, closed,
+non-widenable `sibling_red_selectors` tolerated-red set; and the full suite is **relocated, not
+skipped**, to a new mandatory **Ship Step 4.6 wave convergence gate** that must be fully green
+before the next wave is admitted. Six task-scoped command requirements prevent the scoping from
+becoming a weakening, and every branch-wide gate is preserved unchanged.
+
+### Simulation evidence
+
+Re-run at this cycle's HEAD against the live `.backlogit/queue` manifest; 17/17 assertions PASS.
+
+| Simulation | Result |
+|---|---|
+| Baseline replay (42 tasks / 104 edges) | `COMPLETE`, **18 waves**, 42/42 scheduled, **0** stalls, **0** compile-order violations; sizes 2,2,4,5,4,4,3,2,3,3,1,2,2,1,1,1,1,1 |
+| Blocked-member injection (`147.030-T` → `blocked`) | `WAVE_MEMBER_BLOCKED` at wave 1; **no** false completion; member retained in `M`; dependency impact **26** members |
+| Blocked mid-run variant | `WAVE_MEMBER_BLOCKED` |
+| Active-residual variant | `WAVE_NO_PROGRESS` (detail: `active residual`) |
+| Unrecognized-status variant | `WAVE_MEMBER_BLOCKED` (fails closed) |
+| Non-frozen-`M` control (member dropped) | `WAVE_NO_PROGRESS` at wave 10 — the failure mode the frozen-`M` contract exists to prevent |
+| Sibling-red wave (wave 2, 2 non-exempt) | OLD repo-wide gate progressed **0/2** (original P1 deadlock reproduced); NEW scoped gate progressed **2/2**; 1 convergence full-suite run; 0 full-suite runs inside per-task loops |
+| Negative control (failure outside tolerated set) | gate **HALTS** — the tolerated-red set is not a blanket escape hatch |
+
+### Validation evidence
+
+| Gate | Result |
+|---|---|
+| Markdown P-008 (`markdownlint-cli2` 0.23.1, repo-wide) | 0 issues in 2291 files |
+| Docline frontmatter (`backlogit docs lint`) | `valid: true`, 0 violations |
+| Index sync (`backlogit sync`) | 1209 artifacts indexed, 0 parse failures |
+| Topology (`backlogit query`) | 42 queued + 1 archived task, 104 executable edges, 43 shipment members — unchanged |
+| `go build ./...` / `go vet ./...` | exit 0 / exit 0 |
+| `go test ./...` | **exit 0**, 29 `ok`, 0 `FAIL` |
+| Production Go touched | **none** — 0 `*.go` files modified |
+
+`gofmt -l .` lists every file in this checkout, a pre-existing CRLF artifact of the Windows
+worktree rather than a finding: `git status` shows zero `*.go` modifications this cycle, so its
+output is byte-identical to the baseline.
+
+### Remediation queue and authorization
+
+All six threads are remediated in-pass. The gate is nonetheless **FAIL pending fresh review**,
+because the corrected contract has been reviewed only by the session that authored it.
+
+| Item | Owner | State |
+|---|---|---|
+| Fresh local plan review of the cycle-31 contract | Stage / plan-review | **required before push** — this is what `decision: FAIL` blocks on |
+| Push `chore/stage-130-s` | operator / Stage | blocked on the review above |
+| Reply to and resolve the six PR #377 threads on the new HEAD | Ship / pr-lifecycle | blocked on push |
+| Operator merge approval (P-014) | operator | not requested |
+
+This authorization covers **planning, policy, and skill-prose artifacts only**. It is not merge
+approval, not a shipment claim, and not authorization for Ship to begin implementation. The §1.9
+readiness gate remains **FAIL on Check 3**.
