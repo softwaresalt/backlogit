@@ -51,17 +51,23 @@ Run this step first for a `harness-exempt` task. Skip it when the task carries `
      approval instead of running it here.
    * No match → each command is read-only; proceed.
 2. Run `exempt_gate_cmd` **exactly once** against the pre-work tree, before writing anything.
-3. It MUST fail. Failure is a non-zero exit status, **or** any false-green signal even at exit 0:
+3. It MUST fail, and failure means **non-zero exit**, or exit 0 carrying one of these false-green
+   signals from a *well-formed* command:
    * `[no tests to run]` — `go test -run <selector>` exits 0 when the selector matches nothing
    * `testing: warning: no tests to run` — the same case under `-v`
    * `no test files` — the package has no `_test.go` files
    * zero matching `--- PASS: <name>` lines for a named-selector command
-   * exit 0 without the task's declared `EXEMPT_VERIFY_OK:{task_id}` marker present in stdout
-4. If it **succeeds** before any work is done — exit 0 **with** the marker present — stop
-   immediately and report `EXEMPT_FALSE_GREEN` to the caller. Do not implement, do not weaken or
-   replace the command, and do not proceed on the theory that the deliverable already exists. An
-   exit-0 run **without** the marker is `EXEMPT_MARKER_MISSING`: still a failed attempt, not a
-   green light to skip Step 1.
+4. Classify an **exit 0** run before any work is done by whether the declared
+   `EXEMPT_VERIFY_OK:{task_id}` marker is present in stdout. Both branches halt:
+   * Exit 0 **with** the marker → stop and report `EXEMPT_FALSE_GREEN` to the caller. Do not
+     implement, do not weaken or replace the command, and do not proceed on the theory that the
+     deliverable already exists.
+   * Exit 0 **without** the marker → the command is malformed: P-002.3 requires every
+     `exempt_verification_command` to print its marker as the last statement before its own exit 0,
+     so an unmarked exit 0 is not evidence of anything. Stop and report `EXEMPT_MARKER_MISSING` to
+     the caller. It is **not** the expected failed precondition and **not** a green light to enter
+     Step 1 — this matches Ship Step 4.1a and the P-002.2 taxonomy, where `EXEMPT_MARKER_MISSING`
+     is a halt code rather than a failure observation. Return the task for a contract amendment.
 5. Record the observed pre-work output. It is this task's red-equivalent evidence.
 
 Ship runs the same probe at its Step 4.1a claim-time gate. Running it again here is intentional
