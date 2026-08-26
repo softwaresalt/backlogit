@@ -106,7 +106,61 @@ must be resolved by the operator before Ship claims `130-S` or executes closure.
 
 ## Open questions and next steps
 
-1. Await the fresh Copilot review on the cycle-26 head and re-run the §1.9 readiness gate.
+1. Await the fresh Copilot review on the final head and re-run the §1.9 readiness gate.
 2. Merge remains withheld — this session holds no merge authority (P-014 operator approval
    required, and Stage does not merge).
 3. The operator must resolve or explicitly exempt the two extra worktrees before Ship handoff.
+
+## Cycle 27 — second review-fix cycle (`a83680e7`)
+
+The review on `fcd57a9c` raised two findings against the cycle-26 fixes themselves. Both valid.
+
+1. **The ordering rule defined a partial gate.** Step 2 item 3 said to verify each declaration
+   prerequisite "with its `exempt_verification_command`, requiring the `EXEMPT_VERIFY_OK` marker" —
+   a shortcut probe that skipped the pre-work must-fail observation, the P-002.5 screen, the claim,
+   the `build-feature` dispatch, the quality and delta gates, and the status transition. Rewritten
+   so the rule **selects which tasks run early and in what order** and nothing else: each
+   prerequisite goes through the full Step 4 loop (4.1a → 4.1b → 4.2 → 4.3) unchanged, and any
+   Step 4 halt code halts the early pass exactly as it would the main loop.
+2. **`build-feature` Step 0 let a malformed gate command through.** It listed "exit 0 without the
+   marker" among must-fail signals and then called it "still a failed attempt, not a green light to
+   skip Step 1" — permitting the loop to start after a command that never printed its marker, which
+   contradicts Ship Step 4.1a and the P-002.2 taxonomy. Items 3 and 4 split so both exit-0 branches
+   halt: with marker → `EXEMPT_FALSE_GREEN`, without marker → `EXEMPT_MARKER_MISSING`. Ship Step
+   4.1a's parallel wording was aligned so neither surface reads as more permissive than the other.
+
+## Cycle 28 — third review-fix cycle (`76bf8493`)
+
+The review on `a83680e7` raised one finding: the P-002.4 completion gate could not enforce the
+delta classification it advertised.
+
+* `<pre-task-commit>` was a placeholder in `.ship.agent.md` Step 4.3 and `workflow-policies.md`
+  P-002.4 that **no step ever captured or passed**, and the check was filename-only — so a
+  `declaration-only` task could alter behavior inside a file its own contract names and pass,
+  despite P-002.4's class table already stating content restrictions.
+* Fixed by defining `exempt_baseline_sha`: captured at Ship Step 4.1a item 5 (`git rev-parse HEAD`,
+  after the probe, before claim, halting on a dirty tree), passed through Step 4.2, and consumed by
+  `build-feature` as a required input that must not be re-derived from `HEAD`. An absent or
+  disputed baseline halts with `EXEMPT_DELTA_EXCEEDS_CLASS`.
+* The Evidence rule became **two required passes**: a path pass, plus a per-class **content pass**
+  over the hunks (`declaration-only` may not touch a pre-existing function body absent the
+  behavior-preserving re-expression and its contract pin; `verification-only` may not weaken,
+  delete, rename, or narrow a pre-existing assertion; `docs-only` no `*.go` hunk; `covered-by` no
+  `*_test.go` hunk). Full AST validation was declined as out of reach for this workflow; the rule
+  prefers `list_symbols` / `impact_analysis` when `agent-engram` is installed and falls back to the
+  raw diff.
+
+Three review-fix cycles are now spent, which is the §1.8 limit. Any further Copilot finding is a
+backlog follow-up, not a fix in this session — and per §1.8 it remains merge-blocking rather than
+waived.
+
+## Cumulative validation
+
+| Gate | Result |
+|---|---|
+| CI on `18d41b1f`, `fcd57a9c`, `a83680e7` | 5/5 green each — `test`, `Detect code changes`, `Docline frontmatter gate`, `Markdown lint (P-008)`, `CLI Reference Drift` |
+| `backlogit docs lint` after every cycle | `valid: true, violation_count: 0` |
+| `markdownlint-cli2` over each changed set | 0 issues |
+| Go source touched | none, across all four pushes |
+| `<pre-task-commit>` occurrences remaining | 0 |
+| Threads | 26 replied and resolved (20 cycle-20 + 3 cycle-26 + 2 cycle-27 + 1 cycle-28) |
