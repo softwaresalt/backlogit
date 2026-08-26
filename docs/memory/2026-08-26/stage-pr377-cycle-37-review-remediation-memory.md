@@ -46,6 +46,18 @@ no subagent, no merge, no shipment claim, no worktree deletion, no Go source cha
 | `PRRT_kwDORzozKM6cmdQ0`, `PRRT_kwDORzozKM6cmdRN`, `PRRT_kwDORzozKM6cmdRb` | policy, agent, runner | Fixed — the mirror hole: a newly closed entry is now re-run and required GREEN (`WAVE_GREEN_MAKER_UNVERIFIED`), with its own control scenario |
 | `PRRT_kwDORzozKM6cmdQK` | `.github/agents/.ship.agent.md` | Fixed — Step 3's manifest census and green-regression array count recounted to 44 / 43 |
 
+**Wave 4** — four threads raised against `c45a586f`; the §1.8 three-cycle limit is reached.
+
+| Thread | Path | Disposition |
+|---|---|---|
+| `PRRT_kwDORzozKM6cmx7G` | `.github/policies/workflow-policies.md` | Fixed — `count(S) = 44`; self-introduced counterpart to the `count(M)` update |
+| `PRRT_kwDORzozKM6cmx7W` | `.autoharness/drift-ignore` | Fixed — 150 assertions / 21 scenarios, `count(S)=44` / `count(M)=43`, and the template obligation now names both convergence controls |
+| `PRRT_kwDORzozKM6cmx8M` | `.github/skills/build-feature/SKILL.md` | **Deferred, unresolved** — the declared `red_deliverable` input has no implementing branch; pre-existing since 1.20.0 and a behavioural loop change |
+| `PRRT_kwDORzozKM6cmx7t` | `.backlogit/queue/147.026-T.md` | **Deferred, unresolved** — U10b's mirror sits under unignored `docs/scratch` rather than U10's canonical ignored root; pre-existing and touches U10b/U10c evidence paths |
+
+The two deferred threads are left unresolved on purpose so §1.9 Check 3 keeps failing. They are the
+first two items for the next Stage cycle.
+
 ## Decisions and rationale
 
 **Convergence gate (P1).** Step 4.6 item 2 re-confirmed RED only for red deliverables that
@@ -155,6 +167,10 @@ corrected to the computed truth only after the wave-8 placement was reasoned abo
 
 ## Open questions and next steps
 
+* **Two deferred findings are the next cycle's first items** (both pre-existing, both left as
+  unresolved PR threads): the missing `red_deliverable` branch in `build-feature/SKILL.md`, and
+  U10b's verification mirror under unignored `docs/scratch` instead of U10's canonical
+  `.copilot/scratch/checkpoint-verification/` root.
 * §1.9 readiness requires a Copilot review whose `commit.oid` equals the final `headRefOid`. Any
   further push — including this memory artifact — re-opens Check 2 until a fresh review lands.
 * Merge approval remains unrequested and ungranted. `130-S` stays `queued`.

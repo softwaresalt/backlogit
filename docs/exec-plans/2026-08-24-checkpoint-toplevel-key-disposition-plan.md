@@ -5994,6 +5994,25 @@ was fixed, replied to, and resolved.
 | `PRRT_kwDORzozKM6cmdQ0`, `PRRT_kwDORzozKM6cmdRN`, `PRRT_kwDORzozKM6cmdRb` | `workflow-policies.md`, `.ship.agent.md`, `wave-scheduler-sim.ps1` | The mirror of the wave-2 defect: an entry that *closes* at a gate leaves the open set without its selector ever being required to pass. While another entry keeps the set non-empty the unfiltered suite stays deferred, so a green-maker that landed without turning its selector green is not detected at the wave that was supposed to prove it | Valid | Fixed. The always-run list gains **item 5**: re-run the `red_selector_command` of every entry in `newly_closed_k` and require **GREEN**, halting with the new `WAVE_GREEN_MAKER_UNVERIFIED` code. Items 4 and 5 now **partition** the pre-recomputation open set exactly — still open → RED, newly closed → GREEN — so no entry is skipped. The runner tracks `newly_closed_k`, the fixture gains a `green_maker_leaves_red` mutation and the `green_maker_lands_but_selector_stays_red` control (halt at wave 7, six waves before the deferred suite would have surfaced it), and `open_red_closed_entry_not_reconfirmed` was rewritten from "not re-run" to "re-confirmed GREEN" |
 | `PRRT_kwDORzozKM6cmdQK` | `.ship.agent.md` | Step 3's required manifest census still pinned **43 total / 42 in `M`**, and its green-regression paragraph still said all **42** arrays are empty — both pre-split figures that would make Ship reject the valid current manifest or freeze the wrong wave budget | Valid | Fixed to 44 total / 43 in `M` and 43 empty arrays. The reviewer named both occurrences; a repository-wide sweep for the same census shape found no others |
 
+**Fourth review wave (against `c45a586f`) — cycle limit reached.** Four threads. Two are direct
+consequences of this cycle's own edits and were closed as completion of that work rather than as a
+fourth fix cycle; two are **pre-existing defects this PR did not introduce** and are recorded here
+as open findings for the next Stage cycle, per the `github-pr-automation` §1.8 three-cycle limit.
+The limit stops further automated fixing; it does **not** clear the merge gate, and the two open
+threads keep §1.9 Check 3 failing by design.
+
+| Thread | Path | Finding | Classification | Disposition |
+|---|---|---|---|---|
+| `PRRT_kwDORzozKM6cmx7G` | `workflow-policies.md` | The `S` / `M` census became internally impossible: `count(S) = 43` with `count(M) = 43` and one excluded feature cannot both hold, so an implementation following the policy would reject the valid frozen manifest | Valid — self-introduced | **Fixed.** `count(S) = 44`. The `count(M)` figure was updated when U14b landed but its `count(S)` counterpart three lines above was missed |
+| `PRRT_kwDORzozKM6cmx7W` | `.autoharness/drift-ignore` | The template-adoption obligation still pinned the obsolete fixture size (84 assertions / 16 scenarios) and the pre-split `count(S)=43` / `count(M)=42` census, so a future template adoption could omit the new convergence controls | Valid — self-introduced | **Fixed** at all three cited lines: 150 assertions / 21 scenarios, `count(S)=44` / `count(M)=43`, and the obligation now names both convergence controls explicitly so an adopting template cannot silently drop them |
+| `PRRT_kwDORzozKM6cmx8M` | `.github/skills/build-feature/SKILL.md` | The declared `red_deliverable` input has no implementing branch: the generic loop treats a passing harness as success and a failing harness as code to repair, so a red-deliverable task dispatched through the skill is driven toward green or exhausts the retry loop | **Valid — pre-existing, deferred** | Not fixed in this cycle. The defect predates cycle 37 (`red_deliverable` was declared in 1.20.0 and the loop was never branched), it is a behavioural contract change to the build loop rather than a text correction, and the three-cycle limit is reached. Recorded as an open finding; the thread is left **unresolved** so §1.9 Check 3 keeps failing |
+| `PRRT_kwDORzozKM6cmx7t` | `.backlogit/queue/147.026-T.md` | U10 relocated the verification workspace to the already-ignored `.copilot/scratch/checkpoint-verification/`, but U10b recreates its mirror under unignored `docs/scratch`, contradicting the shared-workspace handoff and able to dirty the tracked tree | **Valid — pre-existing, deferred** | Not fixed in this cycle. The path predates cycle 37 (it survives the cycle-29 U10 relocation) and re-siting it touches U10b's and U10c's declared evidence paths and their `verification-only` exempt surfaces, which needs its own plan pass. Recorded as an open finding; the thread is left **unresolved** |
+
+Both deferred findings are genuine and neither is dismissed. They are carried as open findings
+because the honest options at the cycle limit are "fix and re-review" or "record and halt", and
+both of these change execution contracts that deserve a fresh review rather than an edit made at
+the boundary.
+
 **Why the split, and why it needs no new mechanism.** Cycle 17 already used exactly this move when
 it broke the original five-file seam unit into U11 (declaration), U12 (contract harness), U13
 (implementation), and U14 (caller migration); cycle 20 used it again when it split U7b into U7b and
@@ -6037,7 +6056,7 @@ reviewed_head: 88ced429218f31ef424e24f149471522b771a6c6
 dispatch_mode: single-agent-operator-constrained
 subagents: prohibited-by-operator
 decision: ADVISORY
-pending: none
+pending: two deferred pre-existing findings (build-feature red_deliverable branch; 147.026-T scratch mirror path)
 operator_authorization: approved
 severity_counts: "P0=0, P1=3 (convergence gate open-red omission, its newly-closed mirror, and the missing simulation coverage — all remediated in-pass), P2=4 (U14 three-file width, removal-only structural harnesses, stale simulation README baseline row, stale Ship Step 3 manifest census — all remediated in-pass), P3=0"
 topology: "S=44 explicit shipment members; M=43 exact task IDs; excluded 147-F (feature); forbidden historical sibling 147.010-T absent; 106 executable edges; 18 waves; acyclic"
@@ -6062,7 +6081,16 @@ production source, and changed no Go source file.
 
 ### Closure and next action
 
-The Stage plan gate is **ADVISORY authorized / pushed**. PR #377 checks and review threads are
-reconciled against the pushed HEAD before the separate §1.9 readiness gate is evaluated. Operator
-merge approval remains unrequested and ungranted.
+The Stage plan gate is **ADVISORY authorized / pushed with two open findings**. PR #377 checks and
+review threads are reconciled against the pushed HEAD; the §1.9 readiness gate **fails Check 3**
+with two deliberately unresolved threads. Operator merge approval remains unrequested and
+ungranted, and the next Stage cycle should take the two deferred findings first:
+
+1. `build-feature/SKILL.md` — add an explicit red-deliverable branch ahead of the generic loop:
+   land the harness, require compilation plus assertion RED, then enter the inverted quality gates
+   with no fix iteration. Today the declared `red_deliverable` input has no implementing branch,
+   so `147.016-T`, `147.035-T`, and `147.042-T` would be driven toward green.
+2. `147.026-T` / U10b — re-site the verification mirror beneath U10's canonical
+   `.copilot/scratch/checkpoint-verification/` root, and re-check U10b's and U10c's declared
+   evidence paths and `verification-only` exempt surfaces against the move.
 

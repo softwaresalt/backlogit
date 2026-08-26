@@ -425,18 +425,21 @@
 #       stay red past their own wave), Step 5.2 open-red note, Step 6 records the
 #       declared green-makers in the manifest note.
 #   tests/simulation/wave-scheduler-contract.json + scripts/wave-scheduler-sim.ps1
-#       — the tracked read-only scheduler simulation and its fixture, 84 assertions
-#       over 16 scenarios, re-derivable from the live queue with
+#       — the tracked read-only scheduler simulation and its fixture, 150 assertions
+#       over 21 scenarios, re-derivable from the live queue with
 #       -VerifyAgainstQueue. Repo-authored; needs no entry below, but a template
-#       adoption that keeps P-002.6 MUST carry an equivalent artifact.
+#       adoption that keeps P-002.6 MUST carry an equivalent artifact, including
+#       the convergence-gate controls: open-red RED re-confirmation
+#       (WAVE_RED_DELIVERABLE_EARLY_GREEN) and newly-closed GREEN verification
+#       (WAVE_GREEN_MAKER_UNVERIFIED).
 #
 # NOTE (2026-08-26, cycle 33): four review findings corrected the cycle-32 form;
 # a template adoption MUST preserve the corrections rather than reconstruct
 # 1.20.0 literally:
 #   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
 #       distinguish complete shipment set S from wave set M. S is every explicit
-#       manifest ID; M is exactly the task-type IDs in S. For 130-S, count(S)=43,
-#       count(M)=42, and excluded_non_task_members is 147-F (feature). Snapshot
+#       manifest ID; M is exactly the task-type IDs in S. For 130-S, count(S)=44,
+#       count(M)=43, and excluded_non_task_members is 147-F (feature). Snapshot
 #       row counts and wave budgets use count(M), never count(S). Compare the
 #       covering-unit TASK enumeration with filtered M, not with raw S.
 #   .github/policies/workflow-policies.md, .github/agents/.ship.agent.md, and
@@ -461,8 +464,8 @@
 #   .github/policies/workflow-policies.md and .github/agents/.ship.agent.md —
 #       the SQL snapshot filters on `artifact_type = 'task'` AND an exact
 #       safely-bound/safely-quoted frozen-M ID list. It NEVER filters on
-#       `parent_id`: that query returns 43 task children for 147-F by absorbing
-#       retired archived 147.010-T. The SQL result has exactly 42 distinct IDs.
+#       `parent_id`: that query returns 44 task children for 147-F by absorbing
+#       retired archived 147.010-T. The SQL result has exactly 43 distinct IDs.
 #       Without SQL, retrieve every frozen-M ID DIRECTLY and exactly once with
 #       get-item / `backlogit get {id} --format json` (or an exact-ID batch),
 #       including every status; reject missing, duplicate, extra, and non-task

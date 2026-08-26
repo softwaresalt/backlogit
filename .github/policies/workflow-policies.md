@@ -569,7 +569,7 @@ define the wave scheduler's task set as
   `custom_fields.items` list, regardless of artifact type. Ship resolves and records the type of
   every ID before filtering. Non-task IDs are not silently discarded: Ship reports them in stable
   ID order as `excluded_non_task_members = [(id, artifact_type), …]`. For shipment `130-S`,
-  `count(S) = 43`; its one excluded non-task member is `147-F` (`feature`).
+  `count(S) = 44`; its one excluded non-task member is `147-F` (`feature`).
 * **`M` — the immutable task-type wave set.** `M` is the task-type subset of `S`, frozen at
   **Ship Step 3 (Build Wave Schedule)**, the first step that reads the complete manifest and
   resolves every member's type and status. It is **immutable for the life of the release unit**
