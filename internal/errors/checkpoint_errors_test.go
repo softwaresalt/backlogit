@@ -242,6 +242,72 @@ func TestU1b_BoundedFieldPathSetIsExported(t *testing.T) {
 	assert.True(t, ok, "BoundedFieldPathSet must be a struct type")
 }
 
+// TestU1c_FieldPathsForDisplayDeclared asserts checkpoint_errors.go declares
+// FieldPathsForDisplay() string on *CheckpointNonConformingError (147-F /
+// U1c).
+func TestU1c_FieldPathsForDisplayDeclared(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	methodDecl := findMethodOn(file, "CheckpointNonConformingError", "FieldPathsForDisplay")
+	if !assert.NotNil(t, methodDecl, "FieldPathsForDisplay is not declared on *CheckpointNonConformingError") {
+		return
+	}
+	assert.Empty(t, methodDecl.Type.Params.List, "FieldPathsForDisplay must take no parameters")
+	if assert.Len(t, methodDecl.Type.Results.List, 1, "FieldPathsForDisplay must return exactly one value") {
+		resultType, ok := methodDecl.Type.Results.List[0].Type.(*ast.Ident)
+		assert.True(t, ok && resultType.Name == "string", "FieldPathsForDisplay must return string")
+	}
+}
+
+// TestU1c_ErrorDelegatesToFieldPathsForDisplay asserts Error()'s body calls
+// FieldPathsForDisplay, so the machine Error() message and the human
+// rendering cannot drift apart.
+func TestU1c_ErrorDelegatesToFieldPathsForDisplay(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	methodDecl := findMethodOn(file, "CheckpointNonConformingError", "Error")
+	if !assert.NotNil(t, methodDecl, "CheckpointNonConformingError has no Error() method") {
+		return
+	}
+	delegates := false
+	ast.Inspect(methodDecl.Body, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if ok && sel.Sel.Name == "FieldPathsForDisplay" {
+			delegates = true
+		}
+		return true
+	})
+	assert.True(t, delegates, "Error() must delegate to FieldPathsForDisplay rather than re-deriving its own rendering")
+}
+
+// TestU1cGuard_FieldPathsForDisplayIsOnlyQuotingSite asserts no other method
+// on CheckpointNonConformingError calls strconv.Quote directly, keeping
+// quoting/escaping isolated to the single human-facing rendering method
+// (cycle-16 gate finding H4). This lands with the implementation: before
+// FieldPathsForDisplay exists there is no Quote call anywhere to find, so
+// this assertion cannot fail and is not part of the red harness.
+func TestU1cGuard_FieldPathsForDisplayIsOnlyQuotingSite(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	for _, decl := range file.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || funcDecl.Recv == nil || funcDecl.Name.Name == "FieldPathsForDisplay" || funcDecl.Name.Name == "Error" {
+			continue
+		}
+		if funcDecl.Body == nil {
+			continue
+		}
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if ok && sel.Sel.Name == "Quote" {
+				assert.Fail(t, "only FieldPathsForDisplay may call strconv.Quote", "found in %s", funcDecl.Name.Name)
+			}
+			return true
+		})
+	}
+}
+
 // TestU1Guard_ErrorsIsAsRecoverFields asserts errors.Is matches
 // ErrCheckpointNonConforming through a wrapped CheckpointNonConformingError,
 // and errors.As recovers the Fields slice.

@@ -46,6 +46,19 @@ func findPackageTypeIn(file *ast.File, name string) *ast.TypeSpec {
 	return nil
 }
 
+func findPackageFuncIn(file *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || funcDecl.Recv != nil {
+			continue
+		}
+		if funcDecl.Name.Name == name {
+			return funcDecl
+		}
+	}
+	return nil
+}
+
 // findStructFieldTag returns the raw (quoted) struct tag literal for the
 // named field of the named struct type, or "" if the type, field, or tag is
 // absent.
