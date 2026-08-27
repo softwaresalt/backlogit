@@ -1,6 +1,8 @@
 package errors
 
 import (
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -160,4 +162,40 @@ func TestU1_QuarantineIsRemedyDeclared(t *testing.T) {
 		resultType, ok := funcDecl.Type.Results.List[0].Type.(*ast.Ident)
 		assert.True(t, ok && resultType.Name == "bool", "QuarantineIsRemedy must return bool")
 	}
+}
+
+// TestU1Guard_ErrorsIsAsRecoverFields asserts errors.Is matches
+// ErrCheckpointNonConforming through a wrapped CheckpointNonConformingError,
+// and errors.As recovers the Fields slice.
+func TestU1Guard_ErrorsIsAsRecoverFields(t *testing.T) {
+	base := &CheckpointNonConformingError{Fields: []string{"extra_key", "progress.extra"}}
+	wrapped := fmt.Errorf("disposition refused: %w", base)
+
+	assert.True(t, errors.Is(wrapped, ErrCheckpointNonConforming))
+
+	var recovered *CheckpointNonConformingError
+	require.True(t, errors.As(wrapped, &recovered))
+	assert.Equal(t, []string{"extra_key", "progress.extra"}, recovered.Fields)
+}
+
+// TestU1Guard_ErrorRendersFieldCount asserts Error() renders a non-empty
+// message naming the offending field count.
+func TestU1Guard_ErrorRendersFieldCount(t *testing.T) {
+	err := &CheckpointNonConformingError{Fields: []string{"extra_key", "progress.extra"}}
+	msg := err.Error()
+	assert.NotEmpty(t, msg)
+	assert.Contains(t, msg, "2")
+	assert.Contains(t, msg, "extra_key")
+	assert.Contains(t, msg, "progress.extra")
+}
+
+// TestU1Guard_QuarantineIsRemedyTruthTable asserts QuarantineIsRemedy is true
+// for both ErrCheckpointUseQuarantine and ErrCheckpointNonConforming, and
+// false for ErrCheckpointNotActive and nil.
+func TestU1Guard_QuarantineIsRemedyTruthTable(t *testing.T) {
+	assert.True(t, QuarantineIsRemedy(ErrCheckpointUseQuarantine))
+	assert.True(t, QuarantineIsRemedy(ErrCheckpointNonConforming))
+	assert.True(t, QuarantineIsRemedy(fmt.Errorf("wrapped: %w", ErrCheckpointNonConforming)))
+	assert.False(t, QuarantineIsRemedy(ErrCheckpointNotActive))
+	assert.False(t, QuarantineIsRemedy(nil))
 }

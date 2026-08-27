@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -84,6 +85,18 @@ var (
 	// offending field names should use errors.As to recover a
 	// *CheckpointUnknownFieldError rather than parsing this sentinel's message.
 	ErrCheckpointUnknownField = errors.New("backlogit: checkpoint carries unknown schema field")
+
+	// ErrCheckpointNonConforming indicates a checkpoint disposition rewrite
+	// (abandon or resolve) was refused because the stored document carries
+	// one or more top-level keys outside the read-boundary conformance set:
+	// an unmodeled key, a duplicate or case-fold-variant key, or a nested
+	// progress key outside its own closed set. Rewriting such a document
+	// would silently drop those keys on re-marshal, so the operation refuses
+	// rather than rewriting; QuarantineCheckpoint is the remedy. Callers that
+	// need the offending key paths should use errors.As to recover a
+	// *CheckpointNonConformingError rather than parsing this sentinel's
+	// message.
+	ErrCheckpointNonConforming = errors.New("backlogit: checkpoint carries unmodeled top-level key(s); rewrite refused")
 )
 
 // CheckpointUnknownFieldError is returned when a checkpoint create request
@@ -105,4 +118,35 @@ func (e *CheckpointUnknownFieldError) Error() string {
 // typed error.
 func (e *CheckpointUnknownFieldError) Unwrap() error {
 	return ErrCheckpointUnknownField
+}
+
+// CheckpointNonConformingError is returned when a checkpoint disposition
+// rewrite is refused because the stored document carries one or more
+// top-level keys outside the read-boundary conformance set. Fields is the
+// sorted, de-duplicated set of offending key paths only — never key values.
+// Recover Fields with errors.As rather than parsing Error()'s message.
+type CheckpointNonConformingError struct {
+	Fields []string
+}
+
+// Error returns the formatted error string for CheckpointNonConformingError,
+// naming the offending field count.
+func (e *CheckpointNonConformingError) Error() string {
+	return fmt.Sprintf("backlogit: checkpoint carries %d unmodeled top-level key(s): %s",
+		len(e.Fields), strings.Join(e.Fields, ", "))
+}
+
+// Unwrap returns ErrCheckpointNonConforming so errors.Is matches through this
+// typed error.
+func (e *CheckpointNonConformingError) Unwrap() error {
+	return ErrCheckpointNonConforming
+}
+
+// QuarantineIsRemedy reports whether err means "this checkpoint cannot be
+// rewritten; route it to QuarantineCheckpoint". It matches both the
+// malformed-document refusal (ErrCheckpointUseQuarantine) and the
+// non-conforming-document refusal (ErrCheckpointNonConforming) added for the
+// top-level-key disposition rewrite refusal (147-F / U1, Q1).
+func QuarantineIsRemedy(err error) bool {
+	return errors.Is(err, ErrCheckpointUseQuarantine) || errors.Is(err, ErrCheckpointNonConforming)
 }
