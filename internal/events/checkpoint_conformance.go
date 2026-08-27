@@ -2,7 +2,6 @@ package events
 
 import (
 	"fmt"
-	"strings"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -14,7 +13,8 @@ import (
 // an already-abandoned checkpoint must stay readable — even though they are
 // excluded from the create-time legal set. Unlike checkClosedSchemaNamespace
 // (the create-boundary gate), this performs no reserved-status-value check:
-// status: "abandoned" is a legal read-boundary value.
+// status: "abandoned" is a legal read-boundary value. This unit does not yet
+// recurse into a nested "progress" object — that is U2b's delta.
 //
 // On success (every top-level key legal) it returns nil. On rejection it
 // returns *backlogiterrors.CheckpointNonConformingError directly, naming
@@ -28,10 +28,6 @@ func CheckConformingTopLevelNamespace(data []byte) error {
 
 	var unknown []string
 	for _, e := range entries {
-		if strings.EqualFold(e.key, "progress") {
-			unknown = append(unknown, unknownNestedProgressKeys(e.value)...)
-			continue
-		}
 		if isFoldKeyIn(e.key, checkpointV1TopLevelKeys) || isFoldKeyIn(e.key, checkpointV1ReservedKeys) {
 			continue
 		}
