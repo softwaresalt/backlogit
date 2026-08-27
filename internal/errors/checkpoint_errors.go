@@ -3,7 +3,9 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Checkpoint administrative disposition sentinel errors (136-F).
@@ -149,4 +151,85 @@ func (e *CheckpointNonConformingError) Unwrap() error {
 // top-level-key disposition rewrite refusal (147-F / U1, Q1).
 func QuarantineIsRemedy(err error) bool {
 	return errors.Is(err, ErrCheckpointUseQuarantine) || errors.Is(err, ErrCheckpointNonConforming)
+}
+
+// boundedFieldPathMaxCount and boundedFieldPathMaxBytes bound
+// BoundedFieldPaths' machine projection (147-F / U1b, cycle-17 rewrite).
+const (
+	boundedFieldPathMaxCount = 16
+	boundedFieldPathMaxBytes = 128
+)
+
+// BoundedFieldPathSet is the bounded, raw machine projection of a
+// CheckpointNonConformingError's offender key paths. Paths carries at most
+// boundedFieldPathMaxCount sorted, de-duplicated raw key paths, each capped
+// at boundedFieldPathMaxBytes bytes. Truncation — from either cap — is
+// reported structurally via Truncated, OmittedPaths, and TruncatedPaths,
+// never as a synthetic path element or quoted text: Paths is for machine
+// consumption only (human rendering is FieldPathsForDisplay, U1c).
+type BoundedFieldPathSet struct {
+	Paths          []string `json:"paths"`
+	Truncated      bool     `json:"truncated"`
+	OmittedPaths   int      `json:"omitted_paths"`
+	TruncatedPaths int      `json:"truncated_paths"`
+}
+
+// BoundedFieldPaths returns the sorted, de-duplicated offender paths in RAW
+// form, bounded for machine consumption. At most boundedFieldPathMaxCount
+// paths are returned; each returned path is cut at the last valid UTF-8 rune
+// boundary at or before boundedFieldPathMaxBytes bytes, so a returned path is
+// always valid UTF-8 and never ends mid-rune. This is the only sanctioned
+// source of machine offender data: no other surface may re-derive a list
+// from Fields or apply its own cap (147-F / U1b).
+func (e *CheckpointNonConformingError) BoundedFieldPaths() BoundedFieldPathSet {
+	sorted := dedupeSortedFieldPaths(e.Fields)
+
+	result := BoundedFieldPathSet{}
+	limit := len(sorted)
+	if limit > boundedFieldPathMaxCount {
+		result.Truncated = true
+		result.OmittedPaths = limit - boundedFieldPathMaxCount
+		limit = boundedFieldPathMaxCount
+	}
+
+	result.Paths = make([]string, 0, limit)
+	for _, p := range sorted[:limit] {
+		capped, wasCapped := capFieldPathBytes(p, boundedFieldPathMaxBytes)
+		if wasCapped {
+			result.Truncated = true
+			result.TruncatedPaths++
+		}
+		result.Paths = append(result.Paths, capped)
+	}
+	return result
+}
+
+// dedupeSortedFieldPaths returns a sorted, de-duplicated copy of fields.
+func dedupeSortedFieldPaths(fields []string) []string {
+	sorted := append([]string(nil), fields...)
+	sort.Strings(sorted)
+	out := make([]string, 0, len(sorted))
+	for i, f := range sorted {
+		if i > 0 && f == sorted[i-1] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// capFieldPathBytes cuts path at the last valid UTF-8 rune boundary at or
+// before maxBytes and reports whether truncation occurred. A path whose
+// first rune already exceeds maxBytes is returned as "" (still counted as
+// truncated), so the caller learns an offender existed without receiving
+// invalid or partial bytes.
+func capFieldPathBytes(path string, maxBytes int) (string, bool) {
+	if len(path) <= maxBytes {
+		return path, false
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(path[cut]) {
+		cut--
+	}
+	return path[:cut], true
 }

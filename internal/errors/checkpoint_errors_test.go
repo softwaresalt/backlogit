@@ -6,7 +6,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -274,4 +276,51 @@ func TestU1Guard_QuarantineIsRemedyTruthTable(t *testing.T) {
 	assert.True(t, QuarantineIsRemedy(fmt.Errorf("wrapped: %w", ErrCheckpointNonConforming)))
 	assert.False(t, QuarantineIsRemedy(ErrCheckpointNotActive))
 	assert.False(t, QuarantineIsRemedy(nil))
+}
+
+// TestU1bGuard_UnderCapRoundTripsVerbatim asserts an under-cap field list
+// round-trips verbatim and unquoted with no truncation metadata set.
+func TestU1bGuard_UnderCapRoundTripsVerbatim(t *testing.T) {
+	err := &CheckpointNonConformingError{Fields: []string{"zeta_key", "alpha_key", "alpha_key"}}
+	set := err.BoundedFieldPaths()
+	assert.Equal(t, []string{"alpha_key", "zeta_key"}, set.Paths)
+	assert.False(t, set.Truncated)
+	assert.Equal(t, 0, set.OmittedPaths)
+	assert.Equal(t, 0, set.TruncatedPaths)
+}
+
+// TestU1bGuard_OverCapTruncatesWithMetadataNoSyntheticMarker asserts a
+// 21-path list yields exactly 16 raw entries with Truncated: true,
+// OmittedPaths: 5, and no synthetic marker element.
+func TestU1bGuard_OverCapTruncatesWithMetadataNoSyntheticMarker(t *testing.T) {
+	fields := make([]string, 21)
+	for i := range fields {
+		fields[i] = fmt.Sprintf("key_%02d", i)
+	}
+	err := &CheckpointNonConformingError{Fields: fields}
+	set := err.BoundedFieldPaths()
+	assert.Len(t, set.Paths, 16)
+	assert.True(t, set.Truncated)
+	assert.Equal(t, 5, set.OmittedPaths)
+	for _, p := range set.Paths {
+		assert.NotContains(t, p, "more")
+		assert.NotContains(t, p, "+")
+	}
+}
+
+// TestU1bGuard_MultiByteRuneBoundaryCutIsValidUTF8 asserts a path built from
+// multi-byte runes that crosses the 128-byte cap is returned cut on a rune
+// boundary, is valid UTF-8, and is counted in TruncatedPaths.
+func TestU1bGuard_MultiByteRuneBoundaryCutIsValidUTF8(t *testing.T) {
+	// U+00E9 ("é") encodes as 2 bytes in UTF-8; 70 repetitions is 140 bytes,
+	// well past the 128-byte cap, and 128 is not a multiple of 2 away from 0
+	// plus the ASCII prefix below, forcing a genuine boundary search.
+	longPath := "prefix_" + strings.Repeat("\u00e9", 70)
+	err := &CheckpointNonConformingError{Fields: []string{longPath}}
+	set := err.BoundedFieldPaths()
+	require.Len(t, set.Paths, 1)
+	assert.True(t, utf8.ValidString(set.Paths[0]))
+	assert.LessOrEqual(t, len(set.Paths[0]), 128)
+	assert.True(t, set.Truncated)
+	assert.Equal(t, 1, set.TruncatedPaths)
 }
