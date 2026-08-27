@@ -102,6 +102,30 @@ func findPackageFunc(file *ast.File, name string) *ast.FuncDecl {
 	return nil
 }
 
+// structFieldTag returns the raw (quoted) struct tag literal for the named
+// field of the named struct type declared in file, or "" if absent.
+func structFieldTag(file *ast.File, typeName, fieldName string) string {
+	typeSpec := findPackageType(file, typeName)
+	if typeSpec == nil {
+		return ""
+	}
+	structType, ok := typeSpec.Type.(*ast.StructType)
+	if !ok || structType.Fields == nil {
+		return ""
+	}
+	for _, field := range structType.Fields.List {
+		for _, name := range field.Names {
+			if name.Name == fieldName {
+				if field.Tag == nil {
+					return ""
+				}
+				return field.Tag.Value
+			}
+		}
+	}
+	return ""
+}
+
 // TestU1_NonConformingSentinelDeclared asserts checkpoint_errors.go declares
 // the ErrCheckpointNonConforming sentinel (U1, Q1).
 func TestU1_NonConformingSentinelDeclared(t *testing.T) {
@@ -162,6 +186,58 @@ func TestU1_QuarantineIsRemedyDeclared(t *testing.T) {
 		resultType, ok := funcDecl.Type.Results.List[0].Type.(*ast.Ident)
 		assert.True(t, ok && resultType.Name == "bool", "QuarantineIsRemedy must return bool")
 	}
+}
+
+// TestU1b_BoundedFieldPathSetDeclared asserts checkpoint_errors.go declares
+// BoundedFieldPathSet with Paths, Truncated, OmittedPaths, and
+// TruncatedPaths, each carrying the exact JSON tag with no omitempty
+// (147-F / U1b, cycle-17 rewrite).
+func TestU1b_BoundedFieldPathSetDeclared(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	wantTags := map[string]string{
+		"Paths":          `"paths"`,
+		"Truncated":      `"truncated"`,
+		"OmittedPaths":   `"omitted_paths"`,
+		"TruncatedPaths": `"truncated_paths"`,
+	}
+	for field, want := range wantTags {
+		tag := structFieldTag(file, "BoundedFieldPathSet", field)
+		if !assert.NotEmpty(t, tag, "BoundedFieldPathSet is missing declared field %q", field) {
+			continue
+		}
+		assert.Contains(t, tag, want, "BoundedFieldPathSet.%s must be tagged json:%s", field, want)
+		assert.NotContains(t, tag, "omitempty", "BoundedFieldPathSet.%s must not use omitempty", field)
+	}
+}
+
+// TestU1b_BoundedFieldPathsMethodDeclared asserts checkpoint_errors.go
+// declares BoundedFieldPaths() BoundedFieldPathSet on
+// *CheckpointNonConformingError.
+func TestU1b_BoundedFieldPathsMethodDeclared(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	methodDecl := findMethodOn(file, "CheckpointNonConformingError", "BoundedFieldPaths")
+	if !assert.NotNil(t, methodDecl, "BoundedFieldPaths is not declared on *CheckpointNonConformingError") {
+		return
+	}
+	assert.Empty(t, methodDecl.Type.Params.List, "BoundedFieldPaths must take no parameters")
+	if assert.Len(t, methodDecl.Type.Results.List, 1, "BoundedFieldPaths must return exactly one value") {
+		resultType, ok := methodDecl.Type.Results.List[0].Type.(*ast.Ident)
+		assert.True(t, ok && resultType.Name == "BoundedFieldPathSet",
+			"BoundedFieldPaths must return BoundedFieldPathSet")
+	}
+}
+
+// TestU1b_BoundedFieldPathSetIsExported asserts BoundedFieldPathSet is a
+// struct type (not an alias or interface), keeping the machine projection an
+// exported concrete carrier.
+func TestU1b_BoundedFieldPathSetIsExported(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	typeSpec := findPackageType(file, "BoundedFieldPathSet")
+	if !assert.NotNil(t, typeSpec, "BoundedFieldPathSet is not declared in checkpoint_errors.go") {
+		return
+	}
+	_, ok := typeSpec.Type.(*ast.StructType)
+	assert.True(t, ok, "BoundedFieldPathSet must be a struct type")
 }
 
 // TestU1Guard_ErrorsIsAsRecoverFields asserts errors.Is matches
