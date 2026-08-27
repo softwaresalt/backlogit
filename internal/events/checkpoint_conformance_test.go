@@ -1,6 +1,7 @@
 package events
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // TestU2_UnknownTopLevelKeysRefused is a source-shape harness (147-F / U2,
@@ -49,4 +52,34 @@ func findPackageFuncDecl(file *ast.File, name string) *ast.FuncDecl {
 		}
 	}
 	return nil
+}
+
+// TestU2Guard_ConformingDocumentAccepted asserts a conforming V1 document
+// returns nil.
+func TestU2Guard_ConformingDocumentAccepted(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active"}`
+	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
+}
+
+// TestU2Guard_TwoUnknownTopLevelKeysRefused asserts a document with two
+// unknown top-level keys returns the typed error with both keys sorted.
+func TestU2Guard_TwoUnknownTopLevelKeysRefused(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","zeta_key":"x","alpha_key":"y"}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Equal(t, []string{"alpha_key", "zeta_key"}, typed.Fields)
+}
+
+// TestU2Guard_ReservedDispositionKeysAdmitted asserts a document carrying
+// all four disposition* reserved keys with status:"abandoned" returns nil,
+// proving reserved-key admission and the deliberate absence of a
+// reserved-status-value check at the read boundary (U2 is not U4's
+// create-boundary gate).
+func TestU2Guard_ReservedDispositionKeysAdmitted(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"status":"abandoned","disposition":"abandoned","disposition_reason":"stale",` +
+		`"disposition_operator":"ship","disposition_at":"2026-08-24T00:00:00Z"}`
+	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
 }
