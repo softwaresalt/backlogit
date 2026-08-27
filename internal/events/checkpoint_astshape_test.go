@@ -27,27 +27,6 @@ func parseEventsSource(t *testing.T, filename string) *ast.File {
 	return file
 }
 
-func findPackageVarIn(file *ast.File, name string) *ast.ValueSpec {
-	for _, decl := range file.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok || genDecl.Tok != token.VAR {
-			continue
-		}
-		for _, spec := range genDecl.Specs {
-			valueSpec, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for _, n := range valueSpec.Names {
-				if n.Name == name {
-					return valueSpec
-				}
-			}
-		}
-	}
-	return nil
-}
-
 func findPackageTypeIn(file *ast.File, name string) *ast.TypeSpec {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -62,42 +41,6 @@ func findPackageTypeIn(file *ast.File, name string) *ast.TypeSpec {
 			if typeSpec.Name.Name == name {
 				return typeSpec
 			}
-		}
-	}
-	return nil
-}
-
-func findMethodIn(file *ast.File, receiverType, methodName string) *ast.FuncDecl {
-	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl.Recv == nil || len(funcDecl.Recv.List) == 0 {
-			continue
-		}
-		if funcDecl.Name.Name != methodName {
-			continue
-		}
-		recvType := funcDecl.Recv.List[0].Type
-		if star, ok := recvType.(*ast.StarExpr); ok {
-			if ident, ok := star.X.(*ast.Ident); ok && ident.Name == receiverType {
-				return funcDecl
-			}
-			continue
-		}
-		if ident, ok := recvType.(*ast.Ident); ok && ident.Name == receiverType {
-			return funcDecl
-		}
-	}
-	return nil
-}
-
-func findPackageFuncIn(file *ast.File, name string) *ast.FuncDecl {
-	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl.Recv != nil {
-			continue
-		}
-		if funcDecl.Name.Name == name {
-			return funcDecl
 		}
 	}
 	return nil
