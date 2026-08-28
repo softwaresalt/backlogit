@@ -730,6 +730,36 @@ func TestU3_ResolveRefusesLegacyShapedDocument(t *testing.T) {
 	assert.Equal(t, before, sha256.Sum256(after))
 }
 
+// TestU3_ResolveUnparseableDocumentWrapsUseQuarantine is a regression test
+// (found during 130-S adversarial review): an UNPARSEABLE document (fails
+// ParseCheckpoint, distinct from the schema-invalid-but-parseable class
+// TestU3_ResolveRefusesLegacyShapedDocument covers) was returned RAW by
+// ResolveCheckpoint — never wrapped with ErrCheckpointUseQuarantine at all —
+// so errors.Is(err, ErrCheckpointUseQuarantine) and
+// QuarantineIsRemedy(err) were both false, silently breaking the "does not
+// parse" row of the four-class disposition contract (it must refuse
+// identically to the "parses but schema-invalid" row) and causing 147.025-T
+// / U7d's MCP routing and 147.015-T / U8's CLI message to both fall back to
+// generic error shaping instead of the disposition-refusal shape.
+func TestU3_ResolveUnparseableDocumentWrapsUseQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u3-unparseable.json"
+	body := []byte("not-json{")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+	before := sha256.Sum256(body)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+
+	require.Error(t, err)
+	assert.True(t, backlogiterrors.QuarantineIsRemedy(err),
+		"an unparseable document must satisfy QuarantineIsRemedy just like a schema-invalid one")
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointCorrupt)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
 // TestU3Guard_ConformingActiveDocumentStillResolves pins the shipped accept
 // path.
 func TestU3Guard_ConformingActiveDocumentStillResolves(t *testing.T) {

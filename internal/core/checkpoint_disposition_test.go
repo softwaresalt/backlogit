@@ -829,3 +829,25 @@ func TestU5Guard_ArchivedBytesByteIdenticalToPreQuarantineOriginal(t *testing.T)
 	require.NoError(t, readErr)
 	assert.Equal(t, body, archived, "archived bytes must be byte-identical to the pre-quarantine original")
 }
+
+// TestAbandonCheckpoint_ParseFailureWrapPreservesErrCheckpointCorrupt is a
+// regression test (found during 130-S adversarial review): AbandonCheckpoint
+// wraps a ParseCheckpoint failure as fmt.Errorf("%w: %v", ErrCheckpointUseQuarantine,
+// parseErr) — the %v verb drops the ErrCheckpointCorrupt sentinel ParseCheckpoint
+// itself returns, the same class of bug U17 already fixed for the sibling
+// validation-failure wrap two lines below.
+func TestAbandonCheckpoint_ParseFailureWrapPreservesErrCheckpointCorrupt(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-abandon-unparseable.json"
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("not-json{"), 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointCorrupt,
+		"the %%v verb drops ErrCheckpointCorrupt from the wrap; must be multi-%%w")
+}
