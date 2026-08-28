@@ -235,7 +235,8 @@ func (s *Server) RegisterTools() {
 		mcplib.NewTool("backlogit_quarantine_checkpoint",
 			mcplib.WithDescription("Quarantine a checkpoint file that cannot be safely rewritten (malformed, "+
 				"schema-invalid, or carrying unmodeled top-level keys) by moving its bytes verbatim to the "+
-				"archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."),
+				"archive. Refuses a schema-valid, conforming target; use backlogit_abandon_checkpoint or "+
+				"backlogit_resolve_checkpoint instead."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
 			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),

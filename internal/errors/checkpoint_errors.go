@@ -137,7 +137,7 @@ type CheckpointNonConformingError struct {
 // FieldPathsForDisplay (147-F / U1c) so the machine message and the human
 // rendering cannot drift apart.
 func (e *CheckpointNonConformingError) Error() string {
-	return fmt.Sprintf("backlogit: checkpoint carries %d unmodeled top-level key(s): %s",
+	return fmt.Sprintf("backlogit: checkpoint carries %d non-conforming field path(s): %s",
 		len(e.Fields), e.FieldPathsForDisplay())
 }
 

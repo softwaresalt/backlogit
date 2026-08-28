@@ -352,7 +352,6 @@ func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationInt
 		absRoot, intent.Verb, intent.TargetFilename)
 }
 
-
 // requiresManualQuoting reports whether s contains any character outside a
 // conservative alphanumeric-plus-path-punctuation allow-list. It is
 // deliberately over-inclusive: any character a POSIX shell, PowerShell, or
@@ -540,7 +539,8 @@ which is the sole accepting verb for that class.`,
 // QuarantineCheckpoint accepts a checkpoint target that cannot be safely
 // rewritten — malformed, schema-invalid, or carrying unmodeled/duplicate
 // top-level keys — and refuses a valid, conforming target, which must be
-// abandoned instead (see `checkpoint abandon`).
+// resolved or abandoned instead (see `checkpoint resolve` / `checkpoint
+// abandon`).
 func newCheckpointQuarantineCmd(cwd *string) *cobra.Command {
 	var reason, operatorFlag string
 
@@ -552,9 +552,10 @@ func newCheckpointQuarantineCmd(cwd *string) *cobra.Command {
 Quarantine accepts a target that is malformed (unparseable or
 schema-invalid) OR carries unmodeled/duplicate top-level keys — schema-valid
 but non-conforming. If the target is valid AND conforming, this command
-refuses and directs you to "checkpoint abandon" instead, which is the sole
-accepting verb for that class. The checkpoint's bytes are moved verbatim
-(byte-identical) into the workspace archive/checkpoints directory.`,
+refuses and directs you to "checkpoint resolve" or "checkpoint abandon"
+instead — both are accepting verbs for that class. The checkpoint's bytes
+are moved verbatim (byte-identical) into the workspace archive/checkpoints
+directory.`,
 		Example: `  backlogit checkpoint quarantine checkpoint-20260423-100000.json --reason "corrupt JSON"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

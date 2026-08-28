@@ -19,9 +19,10 @@ Quarantine a checkpoint file that cannot be safely rewritten.
 Quarantine accepts a target that is malformed (unparseable or
 schema-invalid) OR carries unmodeled/duplicate top-level keys — schema-valid
 but non-conforming. If the target is valid AND conforming, this command
-refuses and directs you to "checkpoint abandon" instead, which is the sole
-accepting verb for that class. The checkpoint's bytes are moved verbatim
-(byte-identical) into the workspace archive/checkpoints directory.
+refuses and directs you to "checkpoint resolve" or "checkpoint abandon"
+instead — both are accepting verbs for that class. The checkpoint's bytes
+are moved verbatim (byte-identical) into the workspace archive/checkpoints
+directory.
 
 ```text
 backlogit checkpoint quarantine <filename> [flags]
