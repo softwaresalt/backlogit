@@ -3,27 +3,71 @@ package events
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // RewriteCheckpointFile is the only sanctioned in-place rewrite path for a
-// stored checkpoint (147-F / U11). It is declared here as the seam every
-// in-place rewrite must pass through — QuarantineCheckpoint's verbatim move
-// and CleanupCheckpoints' rename are explicitly excluded, since neither
-// parses or re-marshals.
+// stored checkpoint (147-F / U11, implemented by U13). QuarantineCheckpoint's
+// verbatim move and CleanupCheckpoints' rename are explicitly excluded from
+// this seam, since neither parses or re-marshals.
 //
-// This declaration carries no working behaviour: landing the real
-// read/ParseCheckpoint/ValidateCheckpoint/CheckConformingTopLevelNamespace/
-// mutate/marshal/atomic-replace flow here, ahead of a failing test for that
-// behaviour, would be exactly the Constitution Principle II carve-out the
-// cycle-31 test lifecycle withdraws. The contract harness (147.035-T / U12)
-// lands in a later wave against this declaration and observes it fail; the
-// implementation (147.036-T / U13) then replaces this body. There is no
-// caller of this seam until 147.037-T / U14 migrates ResolveCheckpoint onto
-// it, so nothing observable on a live path changes in this unit.
+// Preconditions run in this exact order: filename validation and path
+// containment (unchanged), ParseCheckpoint, ValidateCheckpoint,
+// CheckConformingTopLevelNamespace, then mutate. Any precondition failure —
+// or a mutate error — returns the raw verdict error (ErrCheckpointCorrupt,
+// ErrCheckpointInvalid, or *CheckpointNonConformingError; a mutate error is
+// returned as mutate returned it) before any marshal or write, and the file
+// is left byte-unchanged. The seam never chooses a verb-facing sentinel
+// (ErrCheckpointUseQuarantine, ErrCheckpointNonConforming); wrapping the
+// verdict is the caller's job, because the wrap differs per verb and per
+// gate-ordering rule (147-F / U12 contract, U14 caller migration).
 func RewriteCheckpointFile(
 	_ context.Context,
-	_, _ string,
-	_ func(*CheckpointV1) error,
+	checkpointDir, filename string,
+	mutate func(*CheckpointV1) error,
 ) error {
-	return fmt.Errorf("RewriteCheckpointFile: not yet implemented (147.035-T / U12 lands the contract harness; 147.036-T / U13 implements it)")
+	if err := validateCheckpointFilename(filename); err != nil {
+		return err
+	}
+
+	path := filepath.Join(checkpointDir, filename)
+	if err := ensurePathContained(checkpointDir, path); err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
+		}
+		return fmt.Errorf("read checkpoint %s: %w", filename, err)
+	}
+
+	cp, err := ParseCheckpoint(data)
+	if err != nil {
+		return err
+	}
+
+	if err := ValidateCheckpoint(cp); err != nil {
+		return err
+	}
+
+	if err := CheckConformingTopLevelNamespace(data); err != nil {
+		return err
+	}
+
+	if err := mutate(cp); err != nil {
+		return err
+	}
+
+	updated, err := jsonutil.MarshalReadable(cp)
+	if err != nil {
+		return fmt.Errorf("marshal rewritten checkpoint: %w", err)
+	}
+
+	return syncWriteFileAtomic(path, updated, 0o644)
 }

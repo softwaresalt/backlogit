@@ -192,20 +192,30 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
-			cp, err := events.GetCheckpoint(ctx, dir, filename)
+			// 147-F / U8c: project the conformance verdict from
+			// events.GetCheckpointResult rather than the shipped
+			// events.GetCheckpoint. Schema-invalid documents keep their
+			// existing refusal — GetCheckpointResult returns
+			// ErrCheckpointInvalid unwrapped, so this command still exits
+			// non-zero on it exactly as before.
+			result, err := events.GetCheckpointResult(ctx, dir, filename)
 			if err != nil {
 				return fmt.Errorf("get checkpoint: %w", err)
 			}
 
-			result := map[string]any{
-				"checkpoint": cp,
-				"filename":   filename,
-				"valid":      true,
+			payload := map[string]any{
+				"checkpoint":            result.Checkpoint,
+				"filename":              filename,
+				"valid":                 result.Valid,
+				"conforming":            result.Conforming,
+				"needs_quarantine":      result.NeedsQuarantine,
+				"remediation_intent":    result.RemediationIntent,
+				"non_conforming_fields": result.NonConformingFields,
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(result)
+			return enc.Encode(payload)
 		},
 	}
 }

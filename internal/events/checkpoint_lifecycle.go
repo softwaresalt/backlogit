@@ -232,7 +232,16 @@ func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*
 		return nil, err
 	}
 
-	result := &CheckpointReadResult{Checkpoint: cp, Valid: true, Conforming: true}
+	result := &CheckpointReadResult{
+		Checkpoint: cp,
+		Valid:      true,
+		Conforming: true,
+		// NonConformingFields.Paths defaults to a non-nil empty slice
+		// (never left nil) so a conforming document still marshals
+		// "paths": [] rather than "paths": null on every JSON-projecting
+		// surface (docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md).
+		NonConformingFields: backlogiterrors.BoundedFieldPathSet{Paths: []string{}},
+	}
 
 	path := filepath.Join(checkpointDir, filename)
 	data, readErr := os.ReadFile(path)

@@ -1200,14 +1200,23 @@ func (s *Server) handleGetCheckpoint(ctx context.Context, request mcplib.CallToo
 		return ValidationFailed("filename is required"), nil
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
-	cp, err := events.GetCheckpoint(ctx, checkpointDir, filename)
+	// 147-F / U6c: project the conformance verdict from events.GetCheckpointResult
+	// rather than the shipped events.GetCheckpoint. Schema-invalid documents keep
+	// their existing refusal — GetCheckpointResult returns ErrCheckpointInvalid
+	// unwrapped, so domainError still maps it to validation_failed, never a
+	// disposition code (a read is not a rewrite).
+	result, err := events.GetCheckpointResult(ctx, checkpointDir, filename)
 	if err != nil {
 		return domainError("get checkpoint", err), nil
 	}
 	return toolResultJSON(map[string]any{
-		"checkpoint": cp,
-		"filename":   filename,
-		"valid":      true,
+		"checkpoint":            result.Checkpoint,
+		"filename":              filename,
+		"valid":                 result.Valid,
+		"conforming":            result.Conforming,
+		"needs_quarantine":      result.NeedsQuarantine,
+		"remediation_intent":    result.RemediationIntent,
+		"non_conforming_fields": result.NonConformingFields,
 	})
 }
 
