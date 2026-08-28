@@ -268,12 +268,59 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 // refusal or a needs_quarantine summary is printed. A nil intent (the
 // conforming path) renders nothing.
 //
-// TODO(147.039-T / U16): implement the real block. Stub renders nothing so
-// callers compile; both TestU16_ scenarios are red until this lands.
+// Binding rules (all mandatory, none suppressible by a flag):
+//  1. the rendered command always carries an explicit --cwd bound to
+//     workspaceRoot — the workspace the intent was computed for;
+//  2. the argument is the bare intent.TargetFilename, never a path or a
+//     concatenation;
+//  3. the A4c approval line, the preimage line, and the no-clobber
+//     destination line are always part of the block;
+//  4. when workspaceRoot or intent.TargetFilename contains a character the
+//     target shell would treat specially, the block renders WITHOUT the
+//     command line and prints "command not rendered: workspace or filename
+//     requires manual quoting" instead — refusing to render is the safe
+//     failure mode; emitting a half-quoted command is not. No cross-shell
+//     paste-safety claim is made; the approval step is a human step by
+//     construction.
 func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationIntent, workspaceRoot string) {
-	_ = w
-	_ = intent
-	_ = workspaceRoot
+	if intent == nil {
+		return
+	}
+	fmt.Fprintf(w, "Disposition required: %s\n", intent.Verb)
+	fmt.Fprintf(w, "  Workspace : %s\n", core.WorkspaceStorageRoot(workspaceRoot))
+	fmt.Fprintf(w, "  Target    : %s\n", intent.TargetFilename)
+	fmt.Fprintln(w, "  Approval  : A4c — operator approval is REQUIRED immediately before execution")
+	fmt.Fprintln(w, "  Preimage  : take a byte copy of the target before running the command")
+	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", intent.TargetFilename)
+
+	if requiresManualQuoting(workspaceRoot) || requiresManualQuoting(intent.TargetFilename) {
+		fmt.Fprintln(w, "command not rendered: workspace or filename requires manual quoting")
+		return
+	}
+
+	fmt.Fprintln(w, "Command (run only after approval):")
+	fmt.Fprintf(w, "  backlogit --cwd %s checkpoint %s %s --operator <you> --reason \"<why>\"\n",
+		workspaceRoot, intent.Verb, intent.TargetFilename)
+}
+
+// requiresManualQuoting reports whether s contains any character outside a
+// conservative alphanumeric-plus-path-punctuation allow-list. It is
+// deliberately over-inclusive: any character a POSIX shell, PowerShell, or
+// cmd.exe might treat specially trips the manual-quoting fallback rather
+// than risk emitting a half-quoted, unsafe command (147-F / U16). The
+// natural corpus never hits this: CreateCheckpoint only ever writes
+// checkpoint-YYYYMMDD-HHMMSS.json, so this exists for out-of-band files
+// only.
+func requiresManualQuoting(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '-' || r == ':' || r == '/' || r == '\\' || r == '~':
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func newCheckpointResolveCmd(cwd *string) *cobra.Command {
