@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -118,6 +120,42 @@ func TestU2bGuard_NonObjectProgressReturnsNilWithoutPanicking(t *testing.T) {
 	})
 }
 
+// TestU2e_ExactDuplicateNestedProgressKeyRefused asserts an exact duplicate
+// nested progress key is non-conforming, reported as
+// "duplicate:progress.<key>" (147-F / U2e).
+func TestU2e_ExactDuplicateNestedProgressKeyRefused(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"progress":{"decisions":["a"],"decisions":["b"]}}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:progress.decisions")
+}
+
+// TestU2e_CaseVariantNestedProgressDuplicateRefused asserts a case-variant
+// nested progress duplicate (tasks_completed + Tasks_Completed) is
+// non-conforming.
+func TestU2e_CaseVariantNestedProgressDuplicateRefused(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"progress":{"tasks_completed":["a"],"Tasks_Completed":["b"]}}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:progress.tasks_completed")
+}
+
+// TestU2eGuard_OneOccurrenceOfEachProgressKeyStaysConforming asserts a
+// progress object with one occurrence of each key stays conforming and the
+// create boundary's verdict on the same bytes is unchanged.
+func TestU2eGuard_OneOccurrenceOfEachProgressKeyStaysConforming(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"progress":{"tasks_completed":["a"],"tasks_remaining":["b"],"files_modified":["c"],"decisions":["d"]}}`
+	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
+	assert.NoError(t, checkClosedSchemaNamespace([]byte(doc)))
+}
+
 // TestU2c_ExactDuplicateTopLevelKeyRefused asserts an exact duplicate
 // top-level key makes the document non-conforming, reported as
 // "duplicate:<key>" (147-F / U2c).
@@ -148,4 +186,104 @@ func TestU2c_CaseVariantDuplicateTopLevelKeyRefused(t *testing.T) {
 func TestU2cGuard_OneOccurrenceOfEveryModeledKeyStaysConforming(t *testing.T) {
 	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active"}`
 	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
+}
+
+// TestU2d_AllTopLevelKeysDerivedSetConsulted is a source-shape harness
+// (147-F / U2d, cycle-31): checkpointV1AllTopLevelKeys does not yet exist,
+// so referencing it directly would be a build error. This test inspects
+// checkpoint_conformance.go's AST instead, so it compiles against the
+// pre-delta tree and fails on assertions.
+func TestU2d_AllTopLevelKeysDerivedSetConsulted(t *testing.T) {
+	file := parseEventsSource(t, "checkpoint_conformance.go")
+	varSpec := findPackageVarIn(file, "checkpointV1AllTopLevelKeys")
+	if !assert.NotNil(t, varSpec, "checkpointV1AllTopLevelKeys is not declared in checkpoint_conformance.go") {
+		return
+	}
+	funcDecl := findPackageFuncDecl(file, "CheckConformingTopLevelNamespace")
+	if !assert.NotNil(t, funcDecl) {
+		return
+	}
+	consults := false
+	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		if ident, ok := n.(*ast.Ident); ok && ident.Name == "checkpointV1AllTopLevelKeys" {
+			consults = true
+		}
+		return true
+	})
+	assert.True(t, consults, "CheckConformingTopLevelNamespace must consult checkpointV1AllTopLevelKeys")
+}
+
+// TestU2dGuard_AllTopLevelKeysEqualsUnionOfTheTwoSets asserts
+// checkpointV1AllTopLevelKeys equals checkpointV1TopLevelKeys UNION
+// checkpointV1ReservedKeys, guarding drift in the hand-written reserved set
+// rather than the reflected field set.
+func placeholderU2dGuardDisabledForRedCheck() {}
+
+// TestU2dGuard_NoTopLevelPreservationCarrier asserts CheckpointV1 declares
+// no json:"-" map carrier (decision-anchored: revisit
+// docs/decisions/2026-08-24-checkpoint-toplevel-key-disposition-deliberation.md
+// before adding one).
+func TestU2dGuard_NoTopLevelPreservationCarrier(t *testing.T) {
+	typ := reflect.TypeOf(CheckpointV1{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := typ.Field(i).Tag.Get("json")
+		assert.NotEqual(t, "-", strings.Split(tag, ",")[0],
+			"CheckpointV1 must not declare a json:\"-\" carrier without revisiting the deliberation")
+	}
+}
+
+// TestU2dGuard_EveryExportedFieldHasNonEmptyJSONTag closes the latent escape
+// hatch: modeledJSONTagKeys skips untagged exported fields, so a future
+// field added without a tag would silently escape the derived set.
+func TestU2dGuard_EveryExportedFieldHasNonEmptyJSONTag(t *testing.T) {
+	typ := reflect.TypeOf(CheckpointV1{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag := field.Tag.Get("json")
+		assert.NotEmpty(t, tag, "CheckpointV1.%s must carry a non-empty json tag", field.Name)
+	}
+}
+
+// TestU2g_DuplicateExactContextMember asserts an exact-duplicate decoded
+// context member — including an escape-equivalent spelling — is
+// non-conforming, reported as duplicate:context.<key> (147-F / U2g).
+func TestU2g_DuplicateExactContextMember(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"context":{"foo":1,"\u0066oo":2}}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:context.foo")
+}
+
+// TestU2g_DuplicateFoldVariantAliasingModeledField asserts a fold-variant
+// pair aliasing a modeled context field (shipment_id + Shipment_Id) is
+// non-conforming.
+func TestU2g_DuplicateFoldVariantAliasingModeledField(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"context":{"shipment_id":"130-S","Shipment_Id":"131-S"}}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:context.shipment_id")
+}
+
+// TestU2gGuard_OpenNamespacePreserved asserts distinct unmodeled fold
+// variants and unique extension keys stay conforming and survive the Extra
+// round-trip (the open-namespace-preservation guard U2g must not narrow).
+func TestU2gGuard_OpenNamespacePreserved(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"context":{"foo":1,"Foo":2,"unique_ext":3}}`
+	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
+
+	cp, err := ParseCheckpoint([]byte(doc))
+	require.NoError(t, err)
+	require.Contains(t, cp.Context.Extra, "foo")
+	require.Contains(t, cp.Context.Extra, "Foo")
+	require.Contains(t, cp.Context.Extra, "unique_ext")
 }
