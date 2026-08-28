@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,6 +25,14 @@ import (
 // QuarantineCheckpoint. Prior to 136-F, ListCheckpoints physically quarantined
 // unparseable files as a side effect of listing; that side effect has been
 // removed so listing can never mutate workspace state.
+//
+// Any summary with NeedsQuarantine: true bypasses every optional filter
+// (Agent, Status, ShipmentID, FeatureID, MaxAge) and is always returned
+// (147-F / U6d): a quarantine candidate's own fields are untrusted data, so
+// filtering on them could silently hide the remediation surface from
+// exactly the query an agent runs at session start. A conforming,
+// schema-valid document that simply does not match a filter is still
+// dropped as usual.
 func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointFilter) ([]CheckpointSummary, error) {
 	pattern := filepath.Join(checkpointDir, "checkpoint-*.json")
 	matches, err := filepath.Glob(pattern)
@@ -52,6 +61,13 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 				ValidationErr:      parseErr.Error(),
 				NeedsQuarantine:    true,
 				RemediationCommand: remediationQuarantineCommand(filename),
+				RemediationIntent: &RemediationIntent{
+					Verb:             "quarantine",
+					TargetFilename:   filename,
+					RequiresApproval: true,
+					ApprovalClass:    "A4c",
+					Reason:           "unparseable",
+				},
 			})
 			continue
 		}
@@ -72,6 +88,13 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 			summary.ValidationErr = valErr.Error()
 			summary.NeedsQuarantine = true
 			summary.RemediationCommand = remediationQuarantineCommand(filename)
+			summary.RemediationIntent = &RemediationIntent{
+				Verb:             "quarantine",
+				TargetFilename:   filename,
+				RequiresApproval: true,
+				ApprovalClass:    "A4c",
+				Reason:           "schema_invalid",
+			}
 		}
 
 		// Conformance check (147-F / U6): runs regardless of valErr, so a
@@ -81,6 +104,10 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		// working directory (cycle-17 gate finding H1). The parse-failure
 		// branch above and the schema-invalid RemediationCommand population
 		// are untouched; this unit adds no new RemediationCommand emission.
+		// When a document is both schema-invalid and non-conforming, this
+		// branch runs after the validity branch and overwrites Reason with
+		// "non_conforming", matching the ValidationErr append order that
+		// already reports both reasons (147-F / U6e precedence rule).
 		if confErr := CheckConformingTopLevelNamespace(data); confErr != nil {
 			summary.NeedsQuarantine = true
 			if summary.ValidationErr != "" {
@@ -95,6 +122,15 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 				ApprovalClass:    "A4c",
 				Reason:           "non_conforming",
 			}
+		}
+
+		// A quarantine candidate bypasses every optional filter (147-F /
+		// U6d): its own fields are untrusted data, and hiding the
+		// remediation surface behind a filter it may not even legitimately
+		// match would be worse than an unfiltered false positive.
+		if summary.NeedsQuarantine {
+			summaries = append(summaries, summary)
+			continue
 		}
 
 		// Apply filters.
@@ -179,12 +215,53 @@ type CheckpointReadResult struct {
 // On error, the error from GetCheckpoint is returned unwrapped — a read is
 // not a rewrite, so ErrCheckpointInvalid still resolves via errors.Is and
 // QuarantineIsRemedy(err) is false; there is nothing to refuse (147-F / U15).
+//
+// On success, Conforming, NeedsQuarantine, RemediationIntent, and
+// NonConformingFields are populated by re-reading the same file's raw bytes
+// and running CheckConformingTopLevelNamespace against them (147-F / U6b).
+// NonConformingFields is recovered via errors.As from the conformance
+// verdict and produced by CheckpointNonConformingError.BoundedFieldPaths —
+// never re-derived or re-capped here — so `checkpoint get` stays an atomic,
+// bounded, per-file offender source with machine-checkable truncation
+// metadata. valid retains its existing (schema-valid) meaning; conforming
+// is reported as a distinct field so no existing consumer's contract
+// silently changes.
 func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*CheckpointReadResult, error) {
 	cp, err := GetCheckpoint(ctx, checkpointDir, filename)
 	if err != nil {
 		return nil, err
 	}
-	return &CheckpointReadResult{Checkpoint: cp, Valid: true}, nil
+
+	result := &CheckpointReadResult{Checkpoint: cp, Valid: true, Conforming: true}
+
+	path := filepath.Join(checkpointDir, filename)
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		// GetCheckpoint just successfully read this same path; a failure
+		// here would be a race with an external actor, not a conformance
+		// question. Report the document as conforming (its own contents
+		// were already proven valid above) rather than manufacturing a
+		// spurious refusal.
+		return result, nil
+	}
+
+	if confErr := CheckConformingTopLevelNamespace(data); confErr != nil {
+		result.Conforming = false
+		result.NeedsQuarantine = true
+		var typed *backlogiterrors.CheckpointNonConformingError
+		if errors.As(confErr, &typed) {
+			result.NonConformingFields = typed.BoundedFieldPaths()
+		}
+		result.RemediationIntent = &RemediationIntent{
+			Verb:             "quarantine",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "non_conforming",
+		}
+	}
+
+	return result, nil
 }
 
 // ResolveCheckpoint marks a checkpoint as resolved (idempotent).
