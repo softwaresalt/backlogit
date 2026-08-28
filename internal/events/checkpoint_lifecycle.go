@@ -74,6 +74,29 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 			summary.RemediationCommand = remediationQuarantineCommand(filename)
 		}
 
+		// Conformance check (147-F / U6): runs regardless of valErr, so a
+		// document can fail both validation and conformance and the operator
+		// sees both reasons. Publishes structured RemediationIntent, never a
+		// command string — internal/events has no knowledge of the caller's
+		// working directory (cycle-17 gate finding H1). The parse-failure
+		// branch above and the schema-invalid RemediationCommand population
+		// are untouched; this unit adds no new RemediationCommand emission.
+		if confErr := CheckConformingTopLevelNamespace(data); confErr != nil {
+			summary.NeedsQuarantine = true
+			if summary.ValidationErr != "" {
+				summary.ValidationErr += "; " + confErr.Error()
+			} else {
+				summary.ValidationErr = confErr.Error()
+			}
+			summary.RemediationIntent = &RemediationIntent{
+				Verb:             "quarantine",
+				TargetFilename:   filename,
+				RequiresApproval: true,
+				ApprovalClass:    "A4c",
+				Reason:           "non_conforming",
+			}
+		}
+
 		// Apply filters.
 		if filter.Agent != "" && cp.Agent != filter.Agent {
 			continue

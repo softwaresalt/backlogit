@@ -33,10 +33,12 @@ var checkpointV1AllTopLevelKeys = modeledJSONTagKeys(reflect.TypeOf(CheckpointV1
 // including exact duplicates — make the document non-conforming, reported
 // as "duplicate:<lowercased key>", because a rewrite would silently drop one
 // member's bytes. The same rule recurses one level into a case-insensitive
-// "progress" match (147-F / U2b, U2e) and into the literal "context" member
-// (147-F / U2g), reporting nested offenders as "duplicate:progress.<key>"
-// and "duplicate:context.<key>" respectively; a non-object progress or
-// context value is not a conformance failure.
+// "progress" match (147-F / U2b, U2e) and into a case-insensitive "context"
+// match (147-F / U2g, widened to any fold-variant spelling by U2h — the
+// same routing rule encoding/json itself applies when decoding into
+// CheckpointV1.Context), reporting nested offenders as
+// "duplicate:progress.<key>" and "duplicate:context.<key>" respectively; a
+// non-object progress or context value is not a conformance failure.
 //
 // On success (no offenders found) it returns nil. On rejection it returns
 // *backlogiterrors.CheckpointNonConformingError directly, naming every
@@ -63,7 +65,7 @@ func CheckConformingTopLevelNamespace(data []byte) error {
 			unknown = append(unknown, duplicateNestedMemberKeys(e.value, "progress")...)
 			continue
 		}
-		if e.key == "context" {
+		if strings.EqualFold(e.key, "context") {
 			unknown = append(unknown, duplicateNestedMemberKeys(e.value, "context")...)
 			continue
 		}

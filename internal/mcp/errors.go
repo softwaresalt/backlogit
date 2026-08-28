@@ -140,6 +140,7 @@ func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
 //	ErrTelemetrySourceMissing         | validation_failed                     | 422
 //	ErrCheckpointInvalid              | validation_failed                     | 422
 //	ErrCheckpointCorrupt              | validation_failed                     | 422
+//	ErrCheckpointCannotResolveAbandoned | validation_failed                   | 422
 //	ErrTelemetryParseFailed           | internal                              | 500
 //	(all others)                      | internal                              | 500
 //
@@ -189,7 +190,8 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		errors.Is(err, corerrors.ErrInvalidLinkType),
 		errors.Is(err, corerrors.ErrTelemetrySourceMissing),
 		errors.Is(err, corerrors.ErrCheckpointInvalid),
-		errors.Is(err, corerrors.ErrCheckpointCorrupt):
+		errors.Is(err, corerrors.ErrCheckpointCorrupt),
+		errors.Is(err, corerrors.ErrCheckpointCannotResolveAbandoned):
 		return ValidationFailed(err.Error())
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
