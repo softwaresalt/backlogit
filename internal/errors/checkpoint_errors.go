@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -132,10 +133,12 @@ type CheckpointNonConformingError struct {
 }
 
 // Error returns the formatted error string for CheckpointNonConformingError,
-// naming the offending field count.
+// naming the offending field count and rendering the offender paths through
+// FieldPathsForDisplay (147-F / U1c) so the machine message and the human
+// rendering cannot drift apart.
 func (e *CheckpointNonConformingError) Error() string {
 	return fmt.Sprintf("backlogit: checkpoint carries %d unmodeled top-level key(s): %s",
-		len(e.Fields), strings.Join(e.Fields, ", "))
+		len(e.Fields), e.FieldPathsForDisplay())
 }
 
 // Unwrap returns ErrCheckpointNonConforming so errors.Is matches through this
@@ -232,4 +235,35 @@ func capFieldPathBytes(path string, maxBytes int) (string, bool) {
 		cut--
 	}
 	return path[:cut], true
+}
+
+// FieldPathsForDisplay renders BoundedFieldPaths() for human consumption:
+// each path is escaped via strconv.Quote and joined with ", ", followed by
+// an explicit clause when the set is truncated (e.g. "(5 more omitted, 1
+// shortened)"). This is the only place quoting or escaping happens — no
+// machine surface may call it, and no human surface may print Paths
+// directly (147-F / U1c, cycle-16 gate finding H4).
+func (e *CheckpointNonConformingError) FieldPathsForDisplay() string {
+	set := e.BoundedFieldPaths()
+
+	quoted := make([]string, 0, len(set.Paths))
+	for _, p := range set.Paths {
+		quoted = append(quoted, strconv.Quote(p))
+	}
+	display := strings.Join(quoted, ", ")
+
+	if !set.Truncated {
+		return display
+	}
+	var clauses []string
+	if set.OmittedPaths > 0 {
+		clauses = append(clauses, fmt.Sprintf("%d more omitted", set.OmittedPaths))
+	}
+	if set.TruncatedPaths > 0 {
+		clauses = append(clauses, fmt.Sprintf("%d shortened", set.TruncatedPaths))
+	}
+	if len(clauses) == 0 {
+		return display
+	}
+	return fmt.Sprintf("%s (%s)", display, strings.Join(clauses, ", "))
 }

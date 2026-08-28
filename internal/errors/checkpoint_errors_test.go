@@ -308,6 +308,37 @@ func TestU1cGuard_FieldPathsForDisplayIsOnlyQuotingSite(t *testing.T) {
 	}
 }
 
+// TestU1cGuard_QuotedPathJoin asserts Error() contains every offender path
+// in quoted form.
+func TestU1cGuard_QuotedPathJoin(t *testing.T) {
+	err := &CheckpointNonConformingError{Fields: []string{"alpha_key", "zeta_key"}}
+	msg := err.Error()
+	assert.Contains(t, msg, `"alpha_key"`)
+	assert.Contains(t, msg, `"zeta_key"`)
+}
+
+// TestU1cGuard_TruncationClauseRendersCounts asserts a truncated set renders
+// the omitted and shortened counts in the human clause.
+func TestU1cGuard_TruncationClauseRendersCounts(t *testing.T) {
+	fields := make([]string, 21)
+	for i := range fields {
+		fields[i] = fmt.Sprintf("key_%02d", i)
+	}
+	err := &CheckpointNonConformingError{Fields: fields}
+	display := err.FieldPathsForDisplay()
+	assert.Contains(t, display, "5 more omitted")
+}
+
+// TestU1cGuard_ControlByteEscaped asserts a path containing a double quote
+// and a newline is escaped rather than emitted verbatim.
+func TestU1cGuard_ControlByteEscaped(t *testing.T) {
+	err := &CheckpointNonConformingError{Fields: []string{"weird\"key\nvalue"}}
+	display := err.FieldPathsForDisplay()
+	assert.NotContains(t, display, "weird\"key\nvalue")
+	assert.Contains(t, display, `\"`)
+	assert.Contains(t, display, `\n`)
+}
+
 // TestU1Guard_ErrorsIsAsRecoverFields asserts errors.Is matches
 // ErrCheckpointNonConforming through a wrapped CheckpointNonConformingError,
 // and errors.As recovers the Fields slice.
