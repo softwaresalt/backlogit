@@ -351,3 +351,124 @@ func TestU6cGuard_SchemaInvalidStillReturnsValidationFailed(t *testing.T) {
 	assert.Equal(t, "validation_failed", resp["error"])
 }
 
+// TestU7_CheckpointDispositionErrorMapsNonConforming asserts
+// checkpointDispositionError returns code checkpoint_non_conforming for
+// ErrCheckpointNonConforming, and that its pre-existing
+// ErrCheckpointNotFound -> NotFound case still fires unchanged (147-F /
+// U7).
+func TestU7_CheckpointDispositionErrorMapsNonConforming(t *testing.T) {
+	nonConforming := &backlogiterrors.CheckpointNonConformingError{Fields: []string{"extra_key"}}
+	result := checkpointDispositionError("abandon checkpoint", "checkpoint-u7.json", nonConforming)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	assert.Equal(t, "checkpoint_non_conforming", resp["code"])
+
+	notFoundResult := checkpointDispositionError("abandon checkpoint", "missing.json", backlogiterrors.ErrCheckpointNotFound)
+	require.NotNil(t, notFoundResult)
+	require.True(t, notFoundResult.IsError)
+	tc2, ok := notFoundResult.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp2 map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc2.Text), &resp2))
+	assert.Equal(t, "not_found", resp2["error"])
+}
+
+// TestU7_HandleAbandonNonConformingReturnsUnknownFields asserts
+// handleAbandonCheckpoint on a non-conforming target returns
+// checkpoint_non_conforming with a populated unknown_fields array (raw,
+// unquoted entries via a .([]any) type assertion), the three truncation
+// scalars all false/zero, and a remediation string naming
+// backlogit_abandon_checkpoint as the originating verb (147-F / U7).
+func TestU7_HandleAbandonNonConformingReturnsUnknownFields(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u7-nonconforming.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z","extra_key":"x"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_abandon_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"filename": name,
+		"reason":   "non-conforming",
+		"operator": "tester@example.com",
+	}
+
+	result, err := s.handleAbandonCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.Equal(t, "checkpoint_non_conforming", resp["code"])
+	fields, ok := resp["unknown_fields"].([]any)
+	require.True(t, ok, "unknown_fields must be a raw array read through .([]any)")
+	assert.Contains(t, fields, "extra_key")
+	for _, f := range fields {
+		s, isString := f.(string)
+		require.True(t, isString)
+		assert.NotContains(t, s, `"`, "unknown_fields entries must be raw, never quoted")
+	}
+	assert.Equal(t, false, resp["unknown_fields_truncated"])
+	assert.Equal(t, float64(0), resp["unknown_fields_omitted"])
+	assert.Equal(t, float64(0), resp["unknown_fields_shortened"])
+	remediation, ok := resp["remediation"].(string)
+	require.True(t, ok)
+	assert.Contains(t, remediation, "backlogit_abandon_checkpoint",
+		"remediation must name the originating verb derived from op, not a hardcoded verb")
+}
+
+// TestU7_ConformingRefusalStillReportsAllFourUnknownFieldsKeys asserts a
+// disposition refusal unrelated to non-conformance (e.g.
+// checkpoint_use_abandon) still reports unknown_fields: [] and all three
+// truncation scalars present, rather than omitting any of the four keys
+// (147-F / U7: none of the four fields carry omitempty).
+func TestU7_ConformingRefusalStillReportsAllFourUnknownFieldsKeys(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u7-conforming-refusal.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_quarantine_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"filename": name,
+		"reason":   "x",
+		"operator": "tester@example.com",
+	}
+
+	result, err := s.handleQuarantineCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError, "a conforming active document is refused by quarantine (use abandon)")
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &raw))
+	for _, key := range []string{"unknown_fields", "unknown_fields_truncated", "unknown_fields_omitted", "unknown_fields_shortened"} {
+		_, present := raw[key]
+		assert.True(t, present, "key %q must be present even when the refusal is not non-conformance-related", key)
+	}
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	assert.Equal(t, "checkpoint_use_abandon", resp["code"])
+	fields, ok := resp["unknown_fields"].([]any)
+	require.True(t, ok)
+	assert.Empty(t, fields)
+	assert.Equal(t, false, resp["unknown_fields_truncated"])
+	assert.Equal(t, float64(0), resp["unknown_fields_omitted"])
+	assert.Equal(t, float64(0), resp["unknown_fields_shortened"])
+}
+
