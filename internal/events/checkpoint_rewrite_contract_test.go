@@ -128,3 +128,42 @@ func TestRewriteCheckpointFile_AcceptedMutationPreservesExistingMode(t *testing.
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
 		"an accepted rewrite must preserve the source 0600 mode, not a hardcoded 0644")
 }
+
+// TestRewriteCheckpointFile_ContentChangedDuringMutateRefusesWrite is a
+// regression test (found during 130-S adversarial review): the seam
+// checked conformance against the bytes read at the top of the function,
+// then committed an unconditional write with no re-verification. A
+// concurrent writer could add an unmodeled key to the file between that
+// read and the write, and the seam would silently overwrite it — the exact
+// evidence-loss condition this feature exists to prevent. The mutate
+// callback is a deterministic injection point for this scenario: it runs
+// after the conformance check and before the write, so mutating the
+// on-disk file from inside it simulates a concurrent writer without a real
+// race. The seam must now detect the change and refuse rather than
+// overwrite, leaving the (externally rewritten) file exactly as the
+// "concurrent writer" left it.
+func TestRewriteCheckpointFile_ContentChangedDuringMutateRefusesWrite(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-race-during-mutate.json"
+	path := filepath.Join(dir, name)
+	original := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`)
+	require.NoError(t, os.WriteFile(path, original, 0o644))
+
+	concurrentlyWritten := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","injected_by_race":"x"}`)
+
+	err := RewriteCheckpointFile(context.Background(), dir, name, func(cp *CheckpointV1) error {
+		// Simulate a concurrent writer landing between this seam's initial
+		// read/conformance-check and its write.
+		return os.WriteFile(path, concurrentlyWritten, 0o644)
+	})
+
+	require.Error(t, err, "the seam must refuse to overwrite content that changed after classification")
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointContentChanged)
+
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, concurrentlyWritten, after,
+		"a refused rewrite must leave the concurrently-written content untouched, not overwrite or restore it")
+}

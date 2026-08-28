@@ -1,6 +1,7 @@
 package events
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -68,6 +69,27 @@ func RewriteCheckpointFile(
 	updated, err := jsonutil.MarshalReadable(cp)
 	if err != nil {
 		return fmt.Errorf("marshal rewritten checkpoint: %w", err)
+	}
+
+	// 147-F: re-verify the on-disk bytes immediately before committing the
+	// replacement (found during 130-S adversarial review). The conformance
+	// verdict above is computed from data, read at the top of this
+	// function; without this check, a concurrent writer could add an
+	// unmodeled key (or otherwise mutate the file) after that read and have
+	// it silently overwritten by this seam's write, recreating the exact
+	// evidence-loss condition the seam exists to prevent. This mirrors
+	// moveNoReplace's classify-then-move content re-check (136.014-T) for
+	// the rewrite path; like that check, it narrows rather than eliminates
+	// the race (a writer could still land between this re-read and the
+	// write below) — full closure requires an advisory lock, tracked as
+	// future work alongside the same residual on the quarantine path.
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("re-read checkpoint %s before write: %w", filename, err)
+	}
+	if !bytes.Equal(data, current) {
+		return fmt.Errorf("checkpoint content changed since classification; refusing rewrite: %w: %s",
+			backlogiterrors.ErrCheckpointContentChanged, filename)
 	}
 
 	// 147-F: route through atomicfile.WriteFileAtomic rather than the local
