@@ -266,7 +266,7 @@ func checkpointDispositionIntent(err error, filename string) *events.Remediation
 // for a resolve/abandon/quarantine refusal (147-F / U8). It states the
 // required disposition verb read from checkpointDispositionIntent rather
 // than leaving the verb as incidental sentinel-message prose. For a
-// non-conforming refusal it also names the offending top-level keys in
+// non-conforming refusal it also names the offending field paths in
 // quoted, bounded form via FieldPathsForDisplay() (147.031-T / U1c). It
 // prints no paste-runnable remediation command; that bound, approval-gated
 // block is rendered separately by RenderCheckpointRemediationBlock, which
@@ -280,7 +280,7 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 	}
 	var nonConforming *blerrors.CheckpointNonConformingError
 	if errors.As(err, &nonConforming) {
-		return fmt.Errorf("%s: checkpoint %s carries unmodeled key(s) %s; required verb: %s: %w",
+		return fmt.Errorf("%s: checkpoint %s carries non-conforming field path(s) %s; required verb: %s: %w",
 			op, filename, nonConforming.FieldPathsForDisplay(), intent.Verb, err)
 	}
 	if errors.Is(err, blerrors.ErrCheckpointUseQuarantine) {

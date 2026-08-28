@@ -76,11 +76,14 @@ var (
 	ErrCheckpointNotActive = errors.New("backlogit: checkpoint is not active; abandon requires an active checkpoint")
 
 	// ErrCheckpointContentChanged indicates that the content of a checkpoint
-	// file changed between the classification read and the quarantine move.
-	// This closes the TOCTOU race in QuarantineCheckpoint: if another process
-	// replaces the malformed file with a valid one before the link executes,
-	// the move is refused so a valid replacement is never quarantined.
-	ErrCheckpointContentChanged = errors.New("backlogit: checkpoint content changed since classification; refusing quarantine move")
+	// file changed between the classification read and the guarded
+	// disposition write that follows it (quarantine's move, or the
+	// conforming-rewrite seam used by resolve/abandon). This narrows the
+	// TOCTOU race in both QuarantineCheckpoint and RewriteCheckpointFile: if
+	// another process mutates the file after classification but before the
+	// write, the write is refused rather than silently clobbering or
+	// misclassifying the concurrent change.
+	ErrCheckpointContentChanged = errors.New("backlogit: checkpoint content changed since classification; refusing disposition write")
 
 	// ErrCheckpointUnknownField indicates a checkpoint create request carried a
 	// key outside the closed CheckpointV1 top-level or nested progress schema

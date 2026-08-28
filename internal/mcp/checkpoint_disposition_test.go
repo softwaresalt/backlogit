@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 )
 
 func writeCheckpointFileMCP(t *testing.T, root, filename, body string) {
@@ -559,4 +560,51 @@ func TestU7dGuard_ResolveMissingFileStillReturnsNotFound(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
 	assert.Equal(t, "not_found", resp["error"])
+}
+
+// TestU7d_ContentChangedRoutesThroughDispositionShape asserts that a real
+// ErrCheckpointContentChanged produced by RewriteCheckpointFile's
+// compare-and-swap guard (147-F, added during 130-S adversarial review) maps
+// to a structured checkpoint_content_changed response via
+// checkpointDispositionError, instead of falling through to a generic
+// internal error the way it did before the resolve-path routing gate was
+// widened. It obtains a real, production-shaped error using the same
+// mutate-callback injection technique as
+// TestRewriteCheckpointFile_ContentChangedDuringMutateRefusesWrite
+// (internal/events/checkpoint_rewrite_contract_test.go), because the
+// underlying condition is a timing race that ResolveCheckpoint's fixed
+// mutate closure does not expose a hook for at the MCP handler layer.
+func TestU7d_ContentChangedRoutesThroughDispositionShape(t *testing.T) {
+	_, ws := setupBugFixServer(t)
+	name := "checkpoint-u7d-content-changed.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
+
+	dir := filepath.Join(ws.RootPath, ".backlogit", "checkpoints")
+	path := filepath.Join(dir, name)
+	concurrentlyWritten := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"status":"active","created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z",` +
+		`"extra_key":"concurrent"}`)
+
+	rewriteErr := events.RewriteCheckpointFile(context.Background(), dir, name, func(cp *events.CheckpointV1) error {
+		// Simulate a concurrent writer landing between RewriteCheckpointFile's
+		// classification read and its write.
+		return os.WriteFile(path, concurrentlyWritten, 0o644)
+	})
+	require.Error(t, rewriteErr)
+	require.ErrorIs(t, rewriteErr, backlogiterrors.ErrCheckpointContentChanged)
+
+	result := checkpointDispositionError("resolve checkpoint", name, rewriteErr)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.NotEqual(t, "internal", resp["error"], "must not fall through to a generic internal error")
+	assert.Equal(t, "checkpoint_content_changed", resp["code"])
+	assert.Equal(t, true, resp["retryable"])
+	assert.Equal(t, name, resp["filename"])
 }

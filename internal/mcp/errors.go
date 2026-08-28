@@ -403,6 +403,14 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 		resp.Code = "checkpoint_audit_not_applied"
 		resp.Retryable = true
 		resp.Remediation = "the audit append definitely did not apply and nothing was moved or rewritten; safe to retry"
+	case errors.Is(err, corerrors.ErrCheckpointContentChanged):
+		// 147-F: a concurrent writer mutated the checkpoint between the
+		// classification read and the guarded disposition write (quarantine's
+		// move, or the conforming-rewrite seam resolve/abandon share). No
+		// data was lost or overwritten; the caller's own read is now stale.
+		resp.Code = "checkpoint_content_changed"
+		resp.Retryable = true
+		resp.Remediation = "the checkpoint was modified by another process between classification and write; re-read the checkpoint and retry the operation"
 	case errors.Is(err, corerrors.ErrCheckpointNotFound):
 		return NotFound(err.Error())
 	default:
