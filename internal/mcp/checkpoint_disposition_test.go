@@ -472,3 +472,94 @@ func TestU7_ConformingRefusalStillReportsAllFourUnknownFieldsKeys(t *testing.T) 
 	assert.Equal(t, float64(0), resp["unknown_fields_shortened"])
 }
 
+// TestU7d_ResolveSchemaInvalidRoutesThroughDispositionShape asserts
+// handleResolveCheckpoint on a schema-invalid legacy document returns
+// code:checkpoint_use_quarantine with a populated filename and a
+// remediation string naming backlogit_resolve_checkpoint — not
+// backlogit_abandon_checkpoint — as the originating verb, and that the
+// payload is not the generic "internal" shape (147-F / U7d).
+func TestU7d_ResolveSchemaInvalidRoutesThroughDispositionShape(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u7d-invalid.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name, `{"status":"active"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_resolve_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": name}
+
+	result, err := s.handleResolveCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.NotEqual(t, "internal", resp["error"])
+	assert.Equal(t, "checkpoint_use_quarantine", resp["code"])
+	assert.Equal(t, name, resp["filename"])
+	remediation, ok := resp["remediation"].(string)
+	require.True(t, ok)
+	assert.Contains(t, remediation, "backlogit_resolve_checkpoint")
+	assert.NotContains(t, remediation, "backlogit_abandon_checkpoint")
+}
+
+// TestU7d_ResolveNonConformingRoutesThroughDispositionShape asserts
+// handleResolveCheckpoint on a valid-but-non-conforming document returns
+// code:checkpoint_non_conforming with a non-empty unknown_fields and a
+// remediation string naming backlogit_resolve_checkpoint as the
+// originating verb (147-F / U7d).
+func TestU7d_ResolveNonConformingRoutesThroughDispositionShape(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u7d-nonconforming.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z","extra_key":"x"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_resolve_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": name}
+
+	result, err := s.handleResolveCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.Equal(t, "checkpoint_non_conforming", resp["code"])
+	fields, ok := resp["unknown_fields"].([]any)
+	require.True(t, ok)
+	assert.NotEmpty(t, fields)
+	remediation, ok := resp["remediation"].(string)
+	require.True(t, ok)
+	assert.Contains(t, remediation, "backlogit_resolve_checkpoint")
+}
+
+// TestU7dGuard_ResolveMissingFileStillReturnsNotFound pins case 3: a
+// missing file still returns the pre-existing not-found refusal, not
+// internal, after the routing change (147-F / U7d).
+func TestU7dGuard_ResolveMissingFileStillReturnsNotFound(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	ctx := context.Background()
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_resolve_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": "checkpoint-u7d-missing.json"}
+
+	result, err := s.handleResolveCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	assert.Equal(t, "not_found", resp["error"])
+}
+
