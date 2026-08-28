@@ -69,7 +69,10 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, parseErr)
 	}
 	if valErr := events.ValidateCheckpoint(cp); valErr != nil {
-		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, valErr)
+		// 147-F / U17: multi-%w (not %v) so ErrCheckpointInvalid stays
+		// traversable via errors.Is, matching the idiom ResolveCheckpoint
+		// already uses (U3/Q2).
+		return fmt.Errorf("%w: %w", blerrors.ErrCheckpointUseQuarantine, valErr)
 	}
 
 	// 147-F / U4: refuse a valid-but-non-conforming document, returning the
@@ -191,7 +194,18 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		validTarget = valErr == nil
 	}
 	if validTarget {
-		return blerrors.ErrCheckpointUseAbandon
+		// 147-F / U5: widen the classification to parse OK && validate OK
+		// && conformance OK. A valid-but-non-conforming document must NOT
+		// be classified as a quarantine-refusal target: abandon (U4)
+		// refuses the same document, so treating it as "valid" here would
+		// leave it with no disposition path at all (the deadlock this unit
+		// closes). Only a target that is ALSO conforming is refused with
+		// ErrCheckpointUseAbandon; the verbatim moveNoReplace path, audit
+		// ordering, sidecar upsert, and MutationEnvelope compensation below
+		// are unchanged either way.
+		if confErr := events.CheckConformingTopLevelNamespace(data); confErr == nil {
+			return blerrors.ErrCheckpointUseAbandon
+		}
 	}
 
 	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
