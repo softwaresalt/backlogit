@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -485,3 +486,80 @@ func TestResolveCheckpoint_NoHTMLEscape(t *testing.T) {
 	assert.NotContains(t, s, `\u003e`, "\\u003e must not appear in resolved checkpoint")
 	assert.NotContains(t, s, `\u003c`, "\\u003c must not appear in resolved checkpoint")
 }
+
+// TestU6_ValidButNonConformingListsNeedsQuarantineWithIntent asserts a
+// valid-but-non-conforming file lists with NeedsQuarantine: true and a
+// RemediationIntent naming verb "quarantine", the bare target filename,
+// RequiresApproval: true, and ApprovalClass "A4c" — and the summary carries
+// no shell text (147-F / U6).
+func TestU6_ValidButNonConformingListsNeedsQuarantineWithIntent(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "quarantine", summaries[0].RemediationIntent.Verb)
+	assert.Equal(t, name, summaries[0].RemediationIntent.TargetFilename)
+	assert.True(t, summaries[0].RemediationIntent.RequiresApproval)
+	assert.Equal(t, "A4c", summaries[0].RemediationIntent.ApprovalClass)
+	assert.Equal(t, "non_conforming", summaries[0].RemediationIntent.Reason)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after), "ListCheckpoints must be read-only")
+}
+
+// TestU6_FailsBothValidationAndConformanceReportsBothReasons asserts a file
+// failing both validation and conformance reports both reasons in
+// ValidationErr.
+func TestU6_FailsBothValidationAndConformanceReportsBothReasons(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-both.json"
+	// Schema-invalid (missing required fields) AND carries an unmodeled key.
+	body := `{"status":"active","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+
+	assert.True(t, summaries[0].NeedsQuarantine)
+	assert.NotEmpty(t, summaries[0].ValidationErr)
+	// Both the schema-validation reason and the conformance reason must be
+	// present; conformance must not overwrite the validation reason. The
+	// schema-validator error alone never names the offending key, so this
+	// assertion only holds once the conformance branch has also run and
+	// appended its own reason.
+	assert.Contains(t, summaries[0].ValidationErr, "extra_key")
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after), "ListCheckpoints must be read-only")
+}
+
+// TestU6Guard_VerdictComputedBeforeFilterBlock asserts the conformance
+// verdict is computed before the filter block, using a filter that matches
+// the non-conforming document.
+func TestU6Guard_VerdictComputedBeforeFilterBlock(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-filtered.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Agent: "ship"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+}
+

@@ -296,3 +296,34 @@ func TestU2gGuard_OpenNamespacePreserved(t *testing.T) {
 	require.Contains(t, cp.Context.Extra, "Foo")
 	require.Contains(t, cp.Context.Extra, "unique_ext")
 }
+
+// TestU2h_LoneNonCanonicalContextSpellingDuplicateRefused asserts a document
+// whose only context-routing member is spelled "Context" (no literal
+// "context" sibling) and whose inner members carry an exact duplicate is
+// non-conforming, reported as duplicate:context.<key> (147-F / U2h). Before
+// this unit's fix, the U2g walk keys on the literal "context" spelling and
+// never inspects a "Context" member.
+func TestU2h_LoneNonCanonicalContextSpellingDuplicateRefused(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"Context":{"foo":1,"\u0066oo":2}}`
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err)
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:context.foo")
+}
+
+// TestU2hGuard_LoneNonCanonicalSpellingOpenNamespacePreserved asserts a
+// document whose only context-routing member is spelled "CONTEXT" and whose
+// inner members are all distinct unmodeled extensions stays conforming and
+// every key survives the Extra round-trip.
+func TestU2hGuard_LoneNonCanonicalSpellingOpenNamespacePreserved(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		`"CONTEXT":{"foo":1,"bar":2}}`
+	assert.NoError(t, CheckConformingTopLevelNamespace([]byte(doc)))
+
+	cp, err := ParseCheckpoint([]byte(doc))
+	require.NoError(t, err)
+	require.Contains(t, cp.Context.Extra, "foo")
+	require.Contains(t, cp.Context.Extra, "bar")
+}

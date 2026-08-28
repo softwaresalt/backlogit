@@ -27,6 +27,15 @@ func parseEventsSource(t *testing.T, filename string) *ast.File {
 	return file
 }
 
+// tryParseEventsSource parses the named file without failing the test,
+// returning the parse error (e.g. file-not-found) to the caller. Used by
+// harnesses whose target file does not exist yet (147-F / U2, U11).
+func tryParseEventsSource(t *testing.T, filename string) (*ast.File, error) {
+	t.Helper()
+	fset := token.NewFileSet()
+	return parser.ParseFile(fset, filename, nil, parser.AllErrors)
+}
+
 func findPackageVarIn(file *ast.File, name string) *ast.ValueSpec {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)

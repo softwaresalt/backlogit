@@ -9,6 +9,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func writeCheckpointFileMCP(t *testing.T, root, filename, body string) {
@@ -232,3 +235,20 @@ func TestHandleQuarantineCheckpoint_WhitespaceOnlyOperatorRejected(t *testing.T)
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "quarantine must reject a whitespace-only operator")
 }
+
+// TestU7e_DomainErrorMapsCannotResolveAbandoned asserts domainError maps a
+// realistically wrapped ErrCheckpointCannotResolveAbandoned to
+// validation_failed rather than falling through to the internal default
+// (147-F / U7e).
+func TestU7e_DomainErrorMapsCannotResolveAbandoned(t *testing.T) {
+	wrapped := fmt.Errorf("resolve %s: %w", "checkpoint-abandoned.json", backlogiterrors.ErrCheckpointCannotResolveAbandoned)
+	result := domainError("resolve checkpoint", wrapped)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	assert.Equal(t, "validation_failed", resp["error"])
+}
+
