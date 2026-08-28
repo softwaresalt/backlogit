@@ -229,3 +229,68 @@ func TestDomainError_MutationPartial_MapsStructuredPayload(t *testing.T) {
 		})
 	}
 }
+
+// TestDomainError_MutationPartial_QuarantineRequired is a regression test
+// (found during 130-S adversarial review): a between-read race can surface a
+// malformed/non-conforming checkpoint verdict through the mutation_partial
+// shape (e.g. AbandonCheckpoint's envelope-wrapped rewrite step) rather than
+// through the dedicated checkpointDispositionError shape. QuarantineIsRemedy
+// traverses through MutationPartialError.Unwrap() to the Cause, so
+// mutationPartialError must surface quarantine_required: true and append
+// quarantine guidance to Recovery, without discarding the existing
+// classification/completed-steps/compensation-state context.
+func TestDomainError_MutationPartial_QuarantineRequired(t *testing.T) {
+	tests := []struct {
+		name  string
+		cause error
+	}{
+		{name: "wrapped ErrCheckpointUseQuarantine", cause: corerrors.ErrCheckpointUseQuarantine},
+		{name: "normalized ErrCheckpointCorrupt", cause: fmt.Errorf("%w: %w", corerrors.ErrCheckpointUseQuarantine, corerrors.ErrCheckpointCorrupt)},
+		{name: "ErrCheckpointNonConforming", cause: corerrors.ErrCheckpointNonConforming},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := domainError("abandon checkpoint", fmt.Errorf("wrap: %w", &corerrors.MutationPartialError{
+				Completed:         []string{},
+				FailedStep:        "rewrite-checkpoint",
+				CompensationState: "compensated",
+				Class:             "not-applied",
+				Cause:             tt.cause,
+			}))
+
+			require.True(t, result.IsError)
+			require.NotEmpty(t, result.Content)
+			text, ok := result.Content[0].(mcplib.TextContent)
+			require.True(t, ok)
+
+			var resp struct {
+				Error              string `json:"error"`
+				Classification     string `json:"classification"`
+				Recovery           string `json:"recovery"`
+				QuarantineRequired bool   `json:"quarantine_required"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(text.Text), &resp))
+			assert.Equal(t, "mutation_partial", resp.Error, "the mutation-partial context must be preserved")
+			assert.Equal(t, "not-applied", resp.Classification)
+			assert.True(t, resp.QuarantineRequired)
+			assert.Contains(t, resp.Recovery, "quarantine")
+		})
+	}
+}
+
+// TestDomainError_MutationPartial_QuarantineNotRequired asserts an ordinary
+// partial-mutation cause (not quarantine-related) omits quarantine_required
+// from the marshaled JSON (via omitempty) rather than emitting false.
+func TestDomainError_MutationPartial_QuarantineNotRequired(t *testing.T) {
+	result := domainError("track commit", fmt.Errorf("wrap: %w", &corerrors.MutationPartialError{
+		FailedStep:        "jsonl-append",
+		CompensationState: "compensated",
+		Class:             "not-applied",
+		Cause:             corerrors.ErrWriteNotApplied,
+	}))
+	require.True(t, result.IsError)
+	text, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	assert.NotContains(t, text.Text, "quarantine_required",
+		"quarantine_required must be omitted (omitempty) when the cause is unrelated to quarantine")
+}

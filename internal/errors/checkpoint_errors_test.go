@@ -375,6 +375,41 @@ func TestU1Guard_QuarantineIsRemedyTruthTable(t *testing.T) {
 	assert.False(t, QuarantineIsRemedy(nil))
 }
 
+// TestNormalizeSeamMalformedVerdict_WrapsCorruptAndInvalid is a regression
+// test (found during 130-S adversarial review): RewriteCheckpointFile's own
+// independent read can observe a checkpoint that became malformed or
+// schema-invalid after a caller's earlier classification read passed
+// (a between-read race), and its ParseCheckpoint/ValidateCheckpoint gate
+// returns the raw, unwrapped verdict by contract. Without normalization, a
+// caller checking QuarantineIsRemedy on the seam's returned error would miss
+// this class. NormalizeSeamMalformedVerdict must wrap both ErrCheckpointCorrupt
+// and ErrCheckpointInvalid with ErrCheckpointUseQuarantine (preserving the
+// underlying cause via errors.Is/errors.As), leave every other error
+// unchanged, and pass nil through as nil.
+func TestNormalizeSeamMalformedVerdict_WrapsCorruptAndInvalid(t *testing.T) {
+	corrupt := fmt.Errorf("%w: unexpected end of JSON input", ErrCheckpointCorrupt)
+	got := NormalizeSeamMalformedVerdict(corrupt)
+	require.Error(t, got)
+	assert.ErrorIs(t, got, ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, got, ErrCheckpointCorrupt, "the underlying cause must remain traversable")
+
+	invalid := fmt.Errorf("%w: Status is required", ErrCheckpointInvalid)
+	got = NormalizeSeamMalformedVerdict(invalid)
+	require.Error(t, got)
+	assert.ErrorIs(t, got, ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, got, ErrCheckpointInvalid, "the underlying cause must remain traversable")
+
+	unrelated := ErrCheckpointNotActive
+	assert.Same(t, unrelated, NormalizeSeamMalformedVerdict(unrelated),
+		"an unrelated error must pass through unchanged")
+
+	nonConforming := &CheckpointNonConformingError{Fields: []string{"extra_key"}}
+	assert.Same(t, error(nonConforming), NormalizeSeamMalformedVerdict(nonConforming),
+		"a non-conforming verdict must not be treated as malformed")
+
+	assert.NoError(t, NormalizeSeamMalformedVerdict(nil), "nil must pass through as nil")
+}
+
 // TestU1bGuard_UnderCapRoundTripsVerbatim asserts an under-cap field list
 // round-trips verbatim and unquoted with no truncation metadata set.
 func TestU1bGuard_UnderCapRoundTripsVerbatim(t *testing.T) {

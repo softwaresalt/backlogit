@@ -123,13 +123,20 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	// against the same initial read — the seam refuses an untrustworthy
 	// document at the write step, which is after those checks.
 	// abandonCheckpointMutate additionally re-checks active status against
-	// the seam's own fresh read (see its doc comment).
+	// the seam's own fresh read (see its doc comment). NormalizeSeamMalformedVerdict
+	// wraps a between-read-race malformed verdict the same way this
+	// function's own earlier read is normalized above (found during 130-S
+	// adversarial review; see its doc comment). errors.Is/errors.As traverse
+	// through MutationPartialError.Unwrap() to this wrapped Cause, so
+	// QuarantineIsRemedy(err) stays true on the envelope's returned
+	// *MutationPartialError too.
 	err = MutationEnvelope(ctx, []MutationStep{
 		{
 			Name: "rewrite-checkpoint",
 			Apply: func(ctx context.Context) error {
-				return events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName,
-					abandonCheckpointMutate(reason, operator, now))
+				return blerrors.NormalizeSeamMalformedVerdict(
+					events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName,
+						abandonCheckpointMutate(reason, operator, now)))
 			},
 		},
 	})

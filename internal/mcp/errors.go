@@ -47,6 +47,15 @@ type mutationPartialResponse struct {
 	CompensationState string   `json:"compensation_state"`
 	Retryable         bool     `json:"retryable"`
 	Recovery          string   `json:"recovery"`
+	// QuarantineRequired is true when the underlying cause (traversable via
+	// errors.Is through MutationPartialError.Unwrap()) indicates the target
+	// checkpoint is malformed or non-conforming and quarantine is the only
+	// accepting verb, so a caller does not have to parse Recovery text to
+	// discover this (147-F, found during 130-S adversarial review: a
+	// between-read race can surface a quarantine-only verdict through this
+	// partial-mutation shape rather than the dedicated disposition-error
+	// shape). Omitted (false) for every other partial-mutation cause.
+	QuarantineRequired bool `json:"quarantine_required,omitempty"`
 }
 
 func makeErrorResult(errType, message string) *mcplib.CallToolResult {
@@ -213,6 +222,19 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 }
 
 func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcplib.CallToolResult {
+	recovery := mutationPartialRecoveryFor(err.Class, err.FailedStep, err.CompensationState)
+	quarantineRequired := corerrors.QuarantineIsRemedy(err)
+	if quarantineRequired {
+		// 147-F: err.Cause is malformed or non-conforming (a between-read
+		// race between the caller's classification and the guarded seam's
+		// own read surfaced it here, rather than through the dedicated
+		// checkpointDispositionError path). Append the quarantine
+		// remediation to the class-based recovery text rather than
+		// replacing it, so the audit-trail/compensation context this shape
+		// exists for is not lost.
+		recovery += "; the current checkpoint bytes are malformed or non-conforming — quarantine is the only " +
+			"accepting verb for this target (backlogit_quarantine_checkpoint / checkpoint quarantine)"
+	}
 	resp := mutationPartialResponse{
 		Error:             "mutation_partial",
 		Message:           fmt.Sprintf("%s: %s", op, err.Error()),
@@ -222,8 +244,9 @@ func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcpli
 		CompensationState: err.CompensationState,
 		// 143.010-T: a partially-compensated result must never advertise itself
 		// as safe to retry while release-scope items remain un-restored.
-		Retryable: err.Class == "not-applied" && err.CompensationState == "compensated",
-		Recovery:  mutationPartialRecoveryFor(err.Class, err.FailedStep, err.CompensationState),
+		Retryable:          err.Class == "not-applied" && err.CompensationState == "compensated",
+		Recovery:           recovery,
+		QuarantineRequired: quarantineRequired,
 	}
 	data, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {

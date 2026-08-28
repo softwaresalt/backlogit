@@ -351,7 +351,11 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 	// abandoned-disposition checks above still run first, against the same
 	// initial read. resolveCheckpointMutate additionally re-checks
 	// disposition against the seam's own fresh read (see its doc comment).
-	return RewriteCheckpointFile(ctx, checkpointDir, filename, resolveCheckpointMutate(filename))
+	// NormalizeSeamMalformedVerdict wraps a between-read-race malformed
+	// verdict the same way this function's own earlier read is normalized
+	// above (found during 130-S adversarial review; see its doc comment).
+	return backlogiterrors.NormalizeSeamMalformedVerdict(
+		RewriteCheckpointFile(ctx, checkpointDir, filename, resolveCheckpointMutate(filename)))
 }
 
 // resolveCheckpointMutate returns the mutate callback ResolveCheckpoint

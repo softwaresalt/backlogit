@@ -159,6 +159,33 @@ func QuarantineIsRemedy(err error) bool {
 	return errors.Is(err, ErrCheckpointUseQuarantine) || errors.Is(err, ErrCheckpointNonConforming)
 }
 
+// NormalizeSeamMalformedVerdict wraps err with ErrCheckpointUseQuarantine if
+// it is (or wraps) ErrCheckpointCorrupt or ErrCheckpointInvalid, matching the
+// wrapping a caller's own earlier classification read already applies to the
+// same verdict classes (see ResolveCheckpoint's and AbandonCheckpoint's
+// classification-read gates). It returns err unchanged for every other
+// error, including nil, so callers can apply it unconditionally to a seam's
+// returned error without an extra type switch.
+//
+// This closes a between-read race found during 130-S adversarial review: a
+// checkpoint may be parseable and schema-valid during a caller's own
+// classification read, then become malformed before RewriteCheckpointFile's
+// independent read runs its own ParseCheckpoint/ValidateCheckpoint gate.
+// That gate returns the raw, unwrapped verdict (by contract — see
+// RewriteCheckpointFile's own doc comment), so without this normalization a
+// caller checking QuarantineIsRemedy would miss the quarantine-only class
+// and fall back to a generic classification, omitting the required
+// quarantine remediation even though the current bytes are quarantine-only.
+func NormalizeSeamMalformedVerdict(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrCheckpointCorrupt) || errors.Is(err, ErrCheckpointInvalid) {
+		return fmt.Errorf("%w: %w", ErrCheckpointUseQuarantine, err)
+	}
+	return err
+}
+
 // boundedFieldPathMaxCount and boundedFieldPathMaxBytes bound
 // BoundedFieldPaths' machine projection (147-F / U1b, cycle-17 rewrite).
 const (
