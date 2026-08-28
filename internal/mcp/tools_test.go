@@ -72,3 +72,51 @@ func TestCreateShipmentMCP_PriorityParamRegistered(t *testing.T) {
 	assert.True(t, hasPriority,
 		"backlogit_create_shipment InputSchema must advertise a 'priority' parameter")
 }
+
+// TestU7b_ReadSurfaceDescriptionsCarryConformanceGuidance is a table-driven
+// assertion over the two registered read-surface tool descriptions, read
+// from the built tool set (147-F / U7b). backlogit_list_checkpoints must
+// state the needs_quarantine filter-bypass and remediation_intent
+// structured-record contract (depends on U6d, U6e). backlogit_get_checkpoint
+// must state the conforming-false / schema-invalid-refused contract
+// (depends on U6b).
+func TestU7b_ReadSurfaceDescriptionsCarryConformanceGuidance(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	defs := map[string]string{}
+	for _, def := range s.ToolDefs() {
+		defs[def.Name] = def.Description
+	}
+
+	cases := []struct {
+		tool      string
+		fragments []string
+	}{
+		{
+			tool: "backlogit_list_checkpoints",
+			fragments: []string{
+				"needs_quarantine true is not safely rewritable",
+				"backlogit_quarantine_checkpoint",
+				"regardless of the status, agent, shipment_id, feature_id, and max_age filters",
+				"remediation_intent is a structured record",
+			},
+		},
+		{
+			tool: "backlogit_get_checkpoint",
+			fragments: []string{
+				"conforming false when it carries unmodeled top-level keys",
+				"cannot be resolved or abandoned",
+				"non_conforming_fields carries raw offender paths",
+				"schema-invalid document is refused before any conformance verdict",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		desc, ok := defs[tc.tool]
+		require.True(t, ok, "%s must be registered", tc.tool)
+		for _, fragment := range tc.fragments {
+			assert.Contains(t, desc, fragment, "%s description missing expected fragment", tc.tool)
+		}
+	}
+}
+
