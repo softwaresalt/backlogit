@@ -771,3 +771,66 @@ func TestU17Guard_MessageTextPreserved(t *testing.T) {
 	assert.Contains(t, err.Error(), valErr.Error(),
 		"the validator's message text must survive the corrected wrap unchanged")
 }
+
+// TestU5_ValidNonConformingActiveAcceptedByQuarantine asserts the
+// accept-half of scenario 1 (147-F / U5): a valid-but-non-conforming active
+// document — schema-valid but carrying an unmodeled top-level key — is
+// ACCEPTED by QuarantineCheckpoint rather than refused with
+// ErrCheckpointUseAbandon. Without this widening, such a document is
+// refused by both abandon (U4, non-conforming) and quarantine (thinks it is
+// "valid"), leaving it with no disposition path at all.
+func TestU5_ValidNonConformingActiveAcceptedByQuarantine(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, name, "non-conforming", "operator@example.com")
+	require.NoError(t, err, "a valid-but-non-conforming active document must be accepted by quarantine")
+
+	assert.NoFileExists(t, filepath.Join(dir, name))
+	assert.FileExists(t, filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", name))
+}
+
+// TestU5Guard_ConformingActiveRefusedByQuarantine pins scenario 2
+// (unchanged, already-shipped behaviour): a conforming active document is
+// still refused by quarantine with ErrCheckpointUseAbandon.
+func TestU5Guard_ConformingActiveRefusedByQuarantine(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-conforming.json"
+	writeDispositionCheckpoint(t, dir, name, validDispositionTestCheckpoint())
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseAbandon)
+
+	assert.FileExists(t, filepath.Join(dir, name), "a refused quarantine must not move the source")
+}
+
+// TestU5Guard_ArchivedBytesByteIdenticalToPreQuarantineOriginal asserts
+// scenario 1's postcondition: once quarantine accepts a valid-but-non-
+// conforming active document, the archived bytes are byte-identical to the
+// pre-quarantine original — quarantine remains a verbatim move, never a
+// rewrite, even for the newly-widened accept case.
+func TestU5Guard_ArchivedBytesByteIdenticalToPreQuarantineOriginal(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-byteidentical.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, QuarantineCheckpoint(context.Background(), ws, ew, name, "non-conforming", "operator@example.com"))
+
+	archived, readErr := os.ReadFile(filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", name))
+	require.NoError(t, readErr)
+	assert.Equal(t, body, archived, "archived bytes must be byte-identical to the pre-quarantine original")
+}
