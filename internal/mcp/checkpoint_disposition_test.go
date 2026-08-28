@@ -252,3 +252,102 @@ func TestU7e_DomainErrorMapsCannotResolveAbandoned(t *testing.T) {
 	assert.Equal(t, "validation_failed", resp["error"])
 }
 
+// TestU6c_ValidButNonConformingProjectsConformanceFields asserts
+// handleGetCheckpoint on a valid-but-non-conforming file returns valid:true,
+// conforming:false, needs_quarantine:true, a remediation_intent object
+// naming verb "quarantine" and approval_class "A4c", and a
+// non_conforming_fields.paths array matching the events result (147-F /
+// U6c).
+func TestU6c_ValidButNonConformingProjectsConformanceFields(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u6c-nonconforming.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z","extra_key":"x"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_get_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": name}
+
+	result, err := s.handleGetCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.Equal(t, true, resp["valid"])
+	assert.Equal(t, false, resp["conforming"])
+	assert.Equal(t, true, resp["needs_quarantine"])
+	intent, ok := resp["remediation_intent"].(map[string]any)
+	require.True(t, ok, "remediation_intent must be a structured object")
+	assert.Equal(t, "quarantine", intent["verb"])
+	assert.Equal(t, "A4c", intent["approval_class"])
+	fields, ok := resp["non_conforming_fields"].(map[string]any)
+	require.True(t, ok, "non_conforming_fields must be a structured object")
+	paths, ok := fields["paths"].([]any)
+	require.True(t, ok)
+	assert.Contains(t, paths, "extra_key")
+}
+
+// TestU6c_ConformingProjectsConformingTrueWithNullIntentAndEmptyPaths
+// asserts a conforming file returns conforming:true, remediation_intent:
+// null, and non_conforming_fields.paths: [] read through a .([]any) type
+// assertion so an absent or null key fails.
+func TestU6c_ConformingProjectsConformingTrueWithNullIntentAndEmptyPaths(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u6c-conforming.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
+			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_get_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": name}
+
+	result, err := s.handleGetCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+
+	assert.Equal(t, true, resp["conforming"])
+	assert.Nil(t, resp["remediation_intent"])
+	fields, ok := resp["non_conforming_fields"].(map[string]any)
+	require.True(t, ok, "non_conforming_fields must be present even for a conforming document")
+	paths, ok := fields["paths"].([]any)
+	require.True(t, ok, "non_conforming_fields.paths must be an array, not absent or null")
+	assert.Empty(t, paths)
+}
+
+// TestU6cGuard_SchemaInvalidStillReturnsValidationFailed pins the shipped
+// read contract: a schema-invalid file returns the pre-existing
+// validation_failed refusal rather than a success payload.
+func TestU6cGuard_SchemaInvalidStillReturnsValidationFailed(t *testing.T) {
+	s, ws := setupBugFixServer(t)
+	ctx := context.Background()
+	name := "checkpoint-u6c-schema-invalid.json"
+	writeCheckpointFileMCP(t, ws.RootPath, name, `{"status":"active"}`)
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_get_checkpoint"
+	request.Params.Arguments = map[string]any{"filename": name}
+
+	result, err := s.handleGetCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
+	assert.Equal(t, "validation_failed", resp["error"])
+}
+
