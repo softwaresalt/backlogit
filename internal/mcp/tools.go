@@ -1242,6 +1242,18 @@ func (s *Server) handleResolveCheckpoint(ctx context.Context, request mcplib.Cal
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 	if err := events.ResolveCheckpoint(ctx, checkpointDir, filename); err != nil {
+		// 147-F / U7d: route by class, not wholesale. Only the two
+		// disposition-shaped refusals (ErrCheckpointUseQuarantine from U3's
+		// validity gate, ErrCheckpointNonConforming from the guarded seam)
+		// go through checkpointDispositionError so `code`, `filename`, and
+		// `unknown_fields` are populated with "resolve checkpoint" as the
+		// op, letting U7's op-derived remediation name
+		// backlogit_resolve_checkpoint. Every other error (not found,
+		// corrupt, cannot-resolve-abandoned, partial mutation) keeps its
+		// existing domainError mapping.
+		if backlogiterrors.QuarantineIsRemedy(err) {
+			return checkpointDispositionError("resolve checkpoint", filename, err), nil
+		}
 		return domainError("resolve checkpoint", err), nil
 	}
 	return toolResultJSON(map[string]any{

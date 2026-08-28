@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -220,6 +221,44 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 	}
 }
 
+// checkpointDispositionRefusalMessage builds an actionable operator message
+// for a resolve/abandon refusal (147-F / U8). It states the required
+// disposition verb read from a RemediationIntent — quarantine is the only
+// verb either refusal ever names, since a malformed-or-invalid target
+// (ErrCheckpointUseQuarantine) and a valid-but-non-conforming target
+// (*CheckpointNonConformingError) both route to the same remedy — rather
+// than leaving the verb as incidental sentinel-message prose. For a
+// non-conforming refusal it also names the offending top-level keys in
+// quoted, bounded form via FieldPathsForDisplay() (147.031-T / U1c). It
+// prints no paste-runnable remediation command; that bound, approval-gated
+// block is owned by 147.039-T / U16. err is wrapped, not replaced, so
+// errors.Is/errors.As still traverse to the original sentinel or typed error.
+func checkpointDispositionRefusalMessage(op, filename string, err error) error {
+	var nonConforming *blerrors.CheckpointNonConformingError
+	if errors.As(err, &nonConforming) {
+		intent := events.RemediationIntent{
+			Verb:             "quarantine",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "non_conforming",
+		}
+		return fmt.Errorf("%s: checkpoint %s carries unmodeled key(s) %s; required verb: %s: %w",
+			op, filename, nonConforming.FieldPathsForDisplay(), intent.Verb, err)
+	}
+	if errors.Is(err, blerrors.ErrCheckpointUseQuarantine) {
+		intent := events.RemediationIntent{
+			Verb:             "quarantine",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "unparseable_or_invalid",
+		}
+		return fmt.Errorf("%s: checkpoint %s is malformed; required verb: %s: %w", op, filename, intent.Verb, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
 func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "resolve <filename>",
@@ -236,7 +275,7 @@ func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
 			if err := events.ResolveCheckpoint(ctx, dir, filename); err != nil {
-				return fmt.Errorf("resolve checkpoint: %w", err)
+				return checkpointDispositionRefusalMessage("resolve checkpoint", filename, err)
 			}
 
 			result := map[string]any{
@@ -356,7 +395,7 @@ disjoint verbs by design.`,
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
 
 			if err := core.AbandonCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
-				return fmt.Errorf("abandon checkpoint: %w", err)
+				return checkpointDispositionRefusalMessage("abandon checkpoint", filename, err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
