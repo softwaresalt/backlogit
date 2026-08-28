@@ -217,7 +217,16 @@ func TestU2d_AllTopLevelKeysDerivedSetConsulted(t *testing.T) {
 // checkpointV1AllTopLevelKeys equals checkpointV1TopLevelKeys UNION
 // checkpointV1ReservedKeys, guarding drift in the hand-written reserved set
 // rather than the reflected field set.
-func placeholderU2dGuardDisabledForRedCheck() {}
+func TestU2dGuard_AllTopLevelKeysEqualsUnionOfTheTwoSets(t *testing.T) {
+	union := map[string]struct{}{}
+	for k := range checkpointV1TopLevelKeys {
+		union[k] = struct{}{}
+	}
+	for k := range checkpointV1ReservedKeys {
+		union[k] = struct{}{}
+	}
+	assert.Equal(t, union, checkpointV1AllTopLevelKeys)
+}
 
 // TestU2dGuard_NoTopLevelPreservationCarrier asserts CheckpointV1 declares
 // no json:"-" map carrier (decision-anchored: revisit
