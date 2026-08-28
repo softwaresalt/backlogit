@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -708,5 +709,64 @@ func TestU6e_SchemaInvalidConformingListsRemediationIntentSchemaInvalid(t *testi
 	require.Len(t, summaries, 1)
 	require.NotNil(t, summaries[0].RemediationIntent)
 	assert.Equal(t, "schema_invalid", summaries[0].RemediationIntent.Reason)
+}
+
+// TestU3_ResolveRefusesLegacyShapedDocument asserts a legacy nine-file-shaped
+// (schema-invalid) document is refused with both errors.Is(err,
+// ErrCheckpointUseQuarantine) and errors.Is(err, ErrCheckpointInvalid)
+// holding (multi-%w, not %v — Q2), and the file SHA is unchanged (147-F /
+// U3).
+func TestU3_ResolveRefusesLegacyShapedDocument(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u3-legacy.json"
+	body := []byte(`{"status":"active"}`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+	before := sha256.Sum256(body)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+
+	require.Error(t, err)
+	assert.True(t, backlogiterrors.QuarantineIsRemedy(err))
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointInvalid))
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestU3Guard_ConformingActiveDocumentStillResolves pins the shipped accept
+// path.
+func TestU3Guard_ConformingActiveDocumentStillResolves(t *testing.T) {
+	dir := t.TempDir()
+	cp := validCheckpointV1()
+	cp.Status = "active"
+	name := "checkpoint-u3-accept.json"
+	writeTestCheckpointNamed(t, dir, name, cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+	require.NoError(t, err)
+
+	result, err := GetCheckpoint(context.Background(), dir, name)
+	require.NoError(t, err)
+	assert.Equal(t, "resolved", result.Status)
+}
+
+// TestU3Guard_AlreadyResolvedConformingDocumentIsIdempotentNoOp pins the
+// shipped idempotent-no-op path.
+func TestU3Guard_AlreadyResolvedConformingDocumentIsIdempotentNoOp(t *testing.T) {
+	dir := t.TempDir()
+	cp := validCheckpointV1()
+	cp.Status = "resolved"
+	name := "checkpoint-u3-already-resolved.json"
+	writeTestCheckpointNamed(t, dir, name, cp)
+
+	before, err := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, err)
+
+	require.NoError(t, ResolveCheckpoint(context.Background(), dir, name))
+
+	after, err := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "an idempotent no-op must not rewrite the file")
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -648,4 +649,80 @@ func TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus(t *testing.T) {
 	require.NoError(t, parseErr)
 	assert.Equal(t, "resolved", cp.Status, "status must remain unchanged when abandon is refused")
 	assert.Empty(t, cp.Disposition, "disposition must not be set when abandon is refused")
+}
+
+// TestU4_ValidButNonConformingActiveRefusedWithNonConforming asserts a
+// valid-but-non-conforming active document is refused with
+// ErrCheckpointNonConforming naming the offending keys (147-F / U4). This
+// already holds via U14b's seam-level check at the write step, so it is a
+// guard rather than a red function; U4's own red is the ordering — see
+// TestU4_RefusalLeavesAuditJSONLByteUnchanged and
+// TestU4_NonConformingAlreadyAbandonedReturnsNonConforming below.
+func TestU4Guard_ValidButNonConformingActiveRefusedWithNonConforming(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err)
+	var typed *blerrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "extra_key")
+}
+
+// TestU4_RefusalLeavesAuditJSONLByteUnchanged asserts the disposition audit
+// JSONL is byte-unchanged after a non-conforming refusal (the gate is a
+// non-writing refusal, placed before the audit append).
+func TestU4_RefusalLeavesAuditJSONLByteUnchanged(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-audit-unchanged.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	logPath := filepath.Join(WorkspaceLogsRoot(ws.RootPath), "checkpoint-disposition-audit.jsonl")
+	beforeData, _ := os.ReadFile(logPath) // may not exist yet; nil is fine
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+	require.Error(t, err)
+
+	afterData, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		require.True(t, os.IsNotExist(readErr))
+		assert.Empty(t, beforeData)
+	} else {
+		assert.Equal(t, beforeData, afterData)
+	}
+}
+
+// TestU4_NonConformingAlreadyAbandonedReturnsNonConforming asserts a
+// non-conforming already-abandoned document returns
+// ErrCheckpointNonConforming rather than nil — the conformance gate runs
+// BEFORE the already-abandoned short-circuit.
+func TestU4_NonConformingAlreadyAbandonedReturnsNonConforming(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-abandoned-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
+		`"disposition":"abandoned","disposition_reason":"stale","disposition_operator":"ship",` +
+		`"disposition_at":"2026-08-24T00:00:00Z",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err, "must not silently no-op (return nil) for a non-conforming already-abandoned document")
+	var typed *blerrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
 }
