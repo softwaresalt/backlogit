@@ -43,9 +43,10 @@ var checkpointDirWriteScanExclusions = map[string]bool{
 
 // enumerateCheckpointDirWriteCalls walks every .go (non-test, non-excluded)
 // file in dir and returns one entry per call to syncWriteFileAtomic,
-// atomicfile.WriteFileAtomic, or os.WriteFile found inside any function
-// whose name contains "Checkpoint" — the closed, discoverable proxy this
-// supplemental guard uses for "resolves under the checkpoint directory".
+// atomicfile.WriteFileAtomic, atomicfile.WriteFileAtomicWithOptions, or
+// os.WriteFile found inside any function whose name contains "Checkpoint"
+// — the closed, discoverable proxy this supplemental guard uses for
+// "resolves under the checkpoint directory".
 func enumerateCheckpointDirWriteCalls(t *testing.T, dir string) []checkpointWriteCall {
 	t.Helper()
 	var found []checkpointWriteCall
@@ -88,7 +89,7 @@ func enumerateCheckpointDirWriteCalls(t *testing.T, dir string) []checkpointWrit
 					if !ok {
 						return true
 					}
-					if (pkgIdent.Name == "atomicfile" && fn.Sel.Name == "WriteFileAtomic") ||
+					if (pkgIdent.Name == "atomicfile" && (fn.Sel.Name == "WriteFileAtomic" || fn.Sel.Name == "WriteFileAtomicWithOptions")) ||
 						(pkgIdent.Name == "os" && fn.Sel.Name == "WriteFile") {
 						found = append(found, checkpointWriteCall{file: name, fn: funcDecl.Name.Name, call: pkgIdent.Name + "." + fn.Sel.Name})
 					}
@@ -112,17 +113,17 @@ func containsSubstring(s, substr string) bool {
 // checkpointDirWriteAllowlist is the post-migration allow-list: after U14
 // and U14b, the only direct writes touching the checkpoint directory are
 // the seam's own atomic replace (RewriteCheckpointFile, routed through
-// atomicfile.WriteFileAtomic since the 130-S adversarial-review mode/
-// durability fix) and the excluded verbatim-move / create sites
-// (QuarantineCheckpoint's disposition-sidecar write, CreateCheckpoint's
-// new-file write), none of which are gated by this seam by design (147-F /
-// U11 scope boundary). moveNoReplace and CleanupCheckpoints use
-// os.Link/os.Rename rather than any of the three enumerated write forms, so
-// they never appear in this set.
+// atomicfile.WriteFileAtomicWithOptions with DurableWrites: true since the
+// 130-S adversarial-review mode/durability fix) and the excluded
+// verbatim-move / create sites (QuarantineCheckpoint's disposition-sidecar
+// write, CreateCheckpoint's new-file write), none of which are gated by
+// this seam by design (147-F / U11 scope boundary). moveNoReplace and
+// CleanupCheckpoints use os.Link/os.Rename rather than any of the three
+// enumerated write forms, so they never appear in this set.
 var checkpointDirWriteAllowlist = map[string]bool{
-	"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomic":    true,
-	"memory.go:CreateCheckpoint:syncWriteFileAtomic":                            true,
-	"checkpoint_disposition.go:QuarantineCheckpoint:atomicfile.WriteFileAtomic": true,
+	"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomicWithOptions": true,
+	"memory.go:CreateCheckpoint:syncWriteFileAtomic":                                    true,
+	"checkpoint_disposition.go:QuarantineCheckpoint:atomicfile.WriteFileAtomic":         true,
 }
 
 // TestU2fGuard_EnumeratedCallSiteSetEqualsAllowlist asserts the enumerated
@@ -145,10 +146,68 @@ func TestU2fGuard_EnumeratedCallSiteSetEqualsAllowlist(t *testing.T) {
 // being silently absorbed.
 func TestU2fGuard_SyntheticUngatedRewriteSiteFailsAssertion(t *testing.T) {
 	synthetic := map[string]bool{
-		"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomic": true,
-		"memory.go:CreateCheckpoint:syncWriteFileAtomic":                         true,
-		"checkpoint_evil.go:EvilCheckpointRewrite:syncWriteFileAtomic":           true,
+		"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomicWithOptions": true,
+		"memory.go:CreateCheckpoint:syncWriteFileAtomic":                                    true,
+		"checkpoint_evil.go:EvilCheckpointRewrite:syncWriteFileAtomic":                      true,
 	}
 	assert.NotEqual(t, checkpointDirWriteAllowlist, synthetic,
 		"an injected ungated rewrite site must not match the allow-list")
+}
+
+// TestRewriteCheckpointFile_RequestsDurableWrites is a regression test
+// (found during 130-S adversarial review): switching from syncWriteFileAtomic
+// (which always fsyncs before rename) to atomicfile.WriteFileAtomic (the
+// durable-off fast path, no fsync) silently regressed the seam's durability
+// guarantee — a "successful" resolve/abandon could be lost after a crash or
+// power failure before the OS itself flushed the rename to disk.
+// atomicfile.WriteFileAtomicWithOptions does not expose an injectable fsync
+// seam through its public API (that hook is package-private, used only by
+// atomicfile's own tests), so this guard statically parses the seam's source
+// and asserts its write call is WriteFileAtomicWithOptions with a
+// DurableWrites: true field, not the bare durable-off WriteFileAtomic.
+func TestRewriteCheckpointFile_RequestsDurableWrites(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "checkpoint_rewrite.go", nil, parser.AllErrors)
+	require.NoError(t, err)
+
+	var found bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok || pkgIdent.Name != "atomicfile" {
+			return true
+		}
+		if sel.Sel.Name != "WriteFileAtomicWithOptions" {
+			return true
+		}
+		require.Len(t, call.Args, 3, "WriteFileAtomicWithOptions must be called with (path, data, opts)")
+		lit, ok := call.Args[2].(*ast.CompositeLit)
+		require.True(t, ok, "the third argument must be an atomicfile.Options composite literal")
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "DurableWrites" {
+				continue
+			}
+			value, ok := kv.Value.(*ast.Ident)
+			if ok && value.Name == "true" {
+				found = true
+			}
+		}
+		return true
+	})
+
+	assert.True(t, found,
+		"RewriteCheckpointFile must call atomicfile.WriteFileAtomicWithOptions with DurableWrites: true, "+
+			"not the durable-off WriteFileAtomic fast path")
 }

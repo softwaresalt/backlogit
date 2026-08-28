@@ -193,6 +193,20 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		errors.Is(err, corerrors.ErrCheckpointCorrupt),
 		errors.Is(err, corerrors.ErrCheckpointCannotResolveAbandoned):
 		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrWriteIndeterminate):
+		// A durable write's outcome is uncertain (e.g. a parent-directory
+		// fsync failure after the rename already committed). Distinct from
+		// the default InternalError fallback because callers MUST NOT
+		// blindly retry an indeterminate write — it may already have
+		// applied. Reached by callers (e.g. ResolveCheckpoint) that do not
+		// wrap RewriteCheckpointFile in a MutationEnvelope; envelope-wrapped
+		// callers (AbandonCheckpoint, QuarantineCheckpoint) already surface
+		// this via mutationPartialError above.
+		return makeErrorResult("write_indeterminate", fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrWriteNotApplied):
+		// A durable write definitely did not apply (a pre-rename failure);
+		// the target is untouched and the write is safe to retry.
+		return makeErrorResult("write_not_applied", fmt.Sprintf("%s: %v", op, err))
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}

@@ -92,14 +92,28 @@ func RewriteCheckpointFile(
 			backlogiterrors.ErrCheckpointContentChanged, filename)
 	}
 
-	// 147-F: route through atomicfile.WriteFileAtomic rather than the local
-	// syncWriteFileAtomic helper (found during 130-S adversarial review).
-	// syncWriteFileAtomic always writes with a hardcoded 0o644, silently
-	// widening a more restrictive checkpoint's existing mode (e.g. 0600) on
-	// every accepted rewrite, and its Windows path removes the destination
-	// before os.Rename — a data-loss window if the rename then fails.
-	// atomicfile.WriteFileAtomic preserves the destination's existing mode
-	// and, on Windows, replaces via MoveFileEx(MOVEFILE_REPLACE_EXISTING),
-	// which never removes the destination before the replacement commits.
-	return atomicfile.WriteFileAtomic(path, updated)
+	// 147-F: route through atomicfile.WriteFileAtomicWithOptions rather than
+	// the local syncWriteFileAtomic helper (found during 130-S adversarial
+	// review). syncWriteFileAtomic always writes with a hardcoded 0o644,
+	// silently widening a more restrictive checkpoint's existing mode (e.g.
+	// 0600) on every accepted rewrite, and its Windows path removes the
+	// destination before os.Rename — a data-loss window if the rename then
+	// fails. atomicfile.WriteFileAtomic* preserves the destination's
+	// existing mode and, on Windows, replaces via
+	// MoveFileEx(MOVEFILE_REPLACE_EXISTING), which never removes the
+	// destination before the replacement commits.
+	//
+	// DurableWrites: true is required (not the plain WriteFileAtomic
+	// fast path) to preserve the fsync-before-rename guarantee
+	// syncWriteFileAtomic always provided — omitting it would have silently
+	// regressed durability: a "successful" resolve/abandon could be lost
+	// after a crash or power failure before the OS itself flushed the
+	// rename to disk (also found during 130-S adversarial review). A
+	// resulting ErrWriteIndeterminate (parent-dir fsync failed after the
+	// rename already committed) or ErrWriteNotApplied (temp-file fsync
+	// failed before the rename) propagates to the caller unwrapped by this
+	// seam; AbandonCheckpoint's MutationEnvelope already classifies both
+	// generically, and domainError classifies them for ResolveCheckpoint's
+	// un-enveloped callers.
+	return atomicfile.WriteFileAtomicWithOptions(path, updated, atomicfile.Options{DurableWrites: true})
 }

@@ -89,6 +89,32 @@ func TestDomainError_Conflict_MapsCorrectly(t *testing.T) {
 	}
 }
 
+// TestDomainError_WriteDurability_MapsCorrectly verifies that the generic
+// durable-write sentinels (surfaced by callers that do not wrap a durable
+// write in a MutationEnvelope, e.g. ResolveCheckpoint) map to their own
+// codes rather than falling through to "internal" (147-F, found during
+// 130-S adversarial review: the fix restoring RewriteCheckpointFile's fsync
+// guarantee reintroduced the possibility of these sentinels reaching
+// domainError directly).
+func TestDomainError_WriteDurability_MapsCorrectly(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "ErrWriteIndeterminate", err: corerrors.ErrWriteIndeterminate, want: "write_indeterminate"},
+		{name: "wrapped ErrWriteIndeterminate", err: fmt.Errorf("wrap: %w", corerrors.ErrWriteIndeterminate), want: "write_indeterminate"},
+		{name: "ErrWriteNotApplied", err: corerrors.ErrWriteNotApplied, want: "write_not_applied"},
+		{name: "wrapped ErrWriteNotApplied", err: fmt.Errorf("wrap: %w", corerrors.ErrWriteNotApplied), want: "write_not_applied"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, domainErrorType(t, tt.err),
+				"%s must map to %s, not fall through to internal", tt.name, tt.want)
+		})
+	}
+}
+
 // TestDomainError_Validation_MapsCorrectly verifies that all validation sentinels
 // produce error="validation_failed".
 func TestDomainError_Validation_MapsCorrectly(t *testing.T) {
