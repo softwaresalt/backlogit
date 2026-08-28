@@ -205,7 +205,10 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_resolve_checkpoint",
-			mcplib.WithDescription("Mark a checkpoint as resolved"),
+			mcplib.WithDescription("Mark a checkpoint as resolved. Refuses a stored document it cannot safely "+
+				"rewrite rather than replacing it: checkpoint_use_quarantine when the document is "+
+				"schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. "+
+				"Use backlogit_quarantine_checkpoint instead."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 		),
 		s.handleResolveCheckpoint,
@@ -219,7 +222,9 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_abandon_checkpoint",
-			mcplib.WithDescription("Administratively abandon a valid checkpoint. Refuses a malformed target; use backlogit_quarantine_checkpoint instead."),
+			mcplib.WithDescription("Administratively abandon a valid checkpoint. Refuses a malformed target; "+
+				"use backlogit_quarantine_checkpoint instead. Also refuses when the document carries "+
+				"unmodeled top-level keys."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
 			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
@@ -228,7 +233,9 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_quarantine_checkpoint",
-			mcplib.WithDescription("Quarantine a malformed checkpoint by moving its bytes verbatim to the archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."),
+			mcplib.WithDescription("Quarantine a checkpoint file that cannot be safely rewritten (malformed, "+
+				"schema-invalid, or carrying unmodeled top-level keys) by moving its bytes verbatim to the "+
+				"archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
 			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
