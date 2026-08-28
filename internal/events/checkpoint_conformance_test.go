@@ -181,6 +181,34 @@ func TestU2c_CaseVariantDuplicateTopLevelKeyRefused(t *testing.T) {
 	assert.Contains(t, typed.Fields, "duplicate:status")
 }
 
+// TestU2c_UnicodeFoldDuplicateNotCaughtByToLowerIsStillRefused is a
+// regression test (found during 130-S adversarial review) for a gap between
+// this function's own documented contract — "any two top-level entries
+// whose keys are strings.EqualFold-equal ... make the document
+// non-conforming" — and an implementation that bucketed keys by
+// strings.ToLower instead of comparing them with strings.EqualFold.
+// strings.ToLower and strings.EqualFold are NOT the same predicate for all
+// Unicode input: "status" and "\u017ftatus" (long s, U+017F, in place of the
+// leading 's') are strings.EqualFold-equal but NOT strings.ToLower-equal
+// (verified: strings.ToLower("s") == "s" but strings.ToLower("\u017f") ==
+// "\u017f", two different byte sequences). A ToLower-keyed duplicate map
+// therefore treats them as two distinct keys, and — because
+// isFoldKeyIn's own EqualFold-based lookup independently recognizes each
+// spelling as an occurrence of the modeled "status" field — the whole
+// document was silently accepted as conforming even though it carries two
+// members that collide onto the same modeled field, which a rewrite would
+// resolve to only one of the two values, exactly the round-trip-unsafe
+// shape this function exists to refuse.
+func TestU2c_UnicodeFoldDuplicateNotCaughtByToLowerIsStillRefused(t *testing.T) {
+	doc := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build",` +
+		"\"status\":\"active\",\"\u017ftatus\":\"resolved\"}"
+	err := CheckConformingTopLevelNamespace([]byte(doc))
+	require.Error(t, err, "an EqualFold-equal top-level key pair must be refused even when strings.ToLower disagrees")
+	var typed *backlogiterrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "duplicate:status")
+}
+
 // TestU2cGuard_OneOccurrenceOfEveryModeledKeyStaysConforming asserts a
 // document with one occurrence of every modeled key remains conforming.
 func TestU2cGuard_OneOccurrenceOfEveryModeledKeyStaysConforming(t *testing.T) {
