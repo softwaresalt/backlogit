@@ -14,7 +14,7 @@ dark_mode_event: DARK_MODE_SCOPE
 ## Dark Mode Contract
 
 - **Activation**: 2026-08-28T16:30:22.055-07:00
-- **Scope**: Shipment 130-S, feature 147-F, all 43 task members (147.001-T – 147.044-T, excluding 147.010 never created)
+- **Scope**: Shipment 130-S, feature 147-F, all 43 task members (147.001-T – 147.044-T); 147.010-T was a separate U5b task created but retired before implementation (archived_status: done) and excluded from the 130-S shipment manifest
 - **Merge authority**: Normal PR merges pre-authorized; admin fallback NOT authorized
 - **Operator**: AFK; intercom not established — durable memory/checkpoint path used
 - **Halt conditions**: P-001, P-005, P-009 (merge commits only), P-014 (Copilot readiness), P-016 topology
@@ -48,7 +48,7 @@ Staged (correct):
 - D .backlogit/queue/147-F.md and 43 task files
 
 Unstaged (to be staged):
-- .backlogit/hooks_queue.jsonl (44 new status-done events seqs 2371-2414+)
+- .backlogit/hooks_queue.jsonl (43 task review→done events seqs 2371-2413 plus 1 ship_shipment event seq 2414 = 44 new lines total)
 
 Untracked (to be staged):
 - .backlogit/archive/147-F.md + 43 task archive files
@@ -66,7 +66,7 @@ Restored (CRLF-only noise, not content changes):
 6. Poll (§1.2 backoff), address comments, resolve threads, CI green
 7. Pre-merge readiness gate (§1.9 GraphQL)
 8. Merge commit (--no-ff, merge commit only, P-009)
-9. Post-merge: backlogit sync + shipment ship 130-S
+9. Post-merge: sync backlog index only — shipment ship was already recorded at seq 2414 (ship_shipment event, 2026-08-28T08:59:40Z)
 10. Write final DARK_MODE_COMPLETE memory
 
 ## Next Steps
