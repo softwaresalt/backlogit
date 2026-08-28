@@ -43,6 +43,6 @@ checkpoint files.
 * [backlogit checkpoint create](backlogit_checkpoint_create.md)	 - Create a session state checkpoint (open context, closed schema)
 * [backlogit checkpoint get](backlogit_checkpoint_get.md)	 - Get and validate a specific checkpoint
 * [backlogit checkpoint list](backlogit_checkpoint_list.md)	 - List session state checkpoints
-* [backlogit checkpoint quarantine](backlogit_checkpoint_quarantine.md)	 - Quarantine a malformed checkpoint
+* [backlogit checkpoint quarantine](backlogit_checkpoint_quarantine.md)	 - Quarantine a checkpoint that cannot be safely rewritten
 * [backlogit checkpoint resolve](backlogit_checkpoint_resolve.md)	 - Mark a checkpoint as resolved
 

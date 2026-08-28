@@ -299,19 +299,26 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 // conforming path) renders nothing.
 //
 // Binding rules (all mandatory, none suppressible by a flag):
-//  1. the rendered command always carries an explicit --cwd bound to
-//     workspaceRoot — the workspace the intent was computed for;
+//  1. the rendered command always carries an explicit --cwd bound to the
+//     RESOLVED, ABSOLUTE workspace root — never the caller's possibly
+//     relative workspaceRoot value (e.g. the CLI's default "."). Rendering
+//     a relative --cwd would only be valid if the operator later runs the
+//     command from the same directory, silently reintroducing the
+//     ambient-cwd hazard this carrier exists to remove (found during 130-S
+//     adversarial review). When workspaceRoot cannot be resolved to an
+//     absolute path, that failure is treated the same as a manual-quoting
+//     trip: the command line is not rendered;
 //  2. the argument is the bare intent.TargetFilename, never a path or a
 //     concatenation;
 //  3. the A4c approval line, the preimage line, and the no-clobber
 //     destination line are always part of the block;
-//  4. when workspaceRoot or intent.TargetFilename contains a character the
-//     target shell would treat specially, the block renders WITHOUT the
-//     command line and prints "command not rendered: workspace or filename
-//     requires manual quoting" instead — refusing to render is the safe
-//     failure mode; emitting a half-quoted command is not. No cross-shell
-//     paste-safety claim is made; the approval step is a human step by
-//     construction.
+//  4. when the resolved workspace root or intent.TargetFilename contains a
+//     character the target shell would treat specially, the block renders
+//     WITHOUT the command line and prints "command not rendered: workspace
+//     or filename requires manual quoting" instead — refusing to render is
+//     the safe failure mode; emitting a half-quoted command is not. No
+//     cross-shell paste-safety claim is made; the approval step is a human
+//     step by construction.
 //
 // The Target and Destination lines render intent.TargetFilename through
 // strconv.Quote, the same quoting policy FieldPathsForDisplay already uses
@@ -321,7 +328,8 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 // the manual-quoting gate below runs (found during 130-S adversarial
 // review). Quoting neutralizes a raw control byte without needing to
 // suppress the informational lines the way the gate suppresses the command
-// line.
+// line. The rendered command also quotes the "<you>" operator placeholder,
+// matching "<why>" — an unquoted "<you>" is POSIX input-redirection syntax.
 func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationIntent, workspaceRoot string) {
 	if intent == nil {
 		return
@@ -333,15 +341,17 @@ func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationInt
 	fmt.Fprintln(w, "  Preimage  : take a byte copy of the target before running the command")
 	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", strconv.Quote(intent.TargetFilename))
 
-	if requiresManualQuoting(workspaceRoot) || requiresManualQuoting(intent.TargetFilename) {
+	absRoot, absErr := filepath.Abs(workspaceRoot)
+	if absErr != nil || requiresManualQuoting(absRoot) || requiresManualQuoting(intent.TargetFilename) {
 		fmt.Fprintln(w, "command not rendered: workspace or filename requires manual quoting")
 		return
 	}
 
 	fmt.Fprintln(w, "Command (run only after approval):")
-	fmt.Fprintf(w, "  backlogit --cwd %s checkpoint %s %s --operator <you> --reason \"<why>\"\n",
-		workspaceRoot, intent.Verb, intent.TargetFilename)
+	fmt.Fprintf(w, "  backlogit --cwd %s checkpoint %s %s --operator \"<you>\" --reason \"<why>\"\n",
+		absRoot, intent.Verb, intent.TargetFilename)
 }
+
 
 // requiresManualQuoting reports whether s contains any character outside a
 // conservative alphanumeric-plus-path-punctuation allow-list. It is
@@ -473,10 +483,11 @@ func newCheckpointAbandonCmd(cwd *string) *cobra.Command {
 		Short: "Administratively abandon a valid checkpoint",
 		Long: `Administratively abandon a session state checkpoint.
 
-Abandon operates ONLY on a parseable, schema-valid checkpoint. If the target
-file is malformed (unparseable or schema-invalid), this command refuses and
-directs you to "checkpoint quarantine" instead — abandon and quarantine are
-disjoint verbs by design.`,
+Abandon operates on a parseable, schema-valid, AND conforming checkpoint —
+one carrying no unmodeled or duplicate top-level keys. If the target does
+not parse, fails schema validation, or carries unmodeled/duplicate keys,
+this command refuses and directs you to "checkpoint quarantine" instead,
+which is the sole accepting verb for that class.`,
 		Example: `  backlogit checkpoint abandon checkpoint-20260423-100000.json --reason "superseded by newer session"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -526,22 +537,24 @@ disjoint verbs by design.`,
 
 // newCheckpointQuarantineCmd returns the `backlogit checkpoint quarantine`
 // subcommand. It mirrors the MCP backlogit_quarantine_checkpoint tool:
-// QuarantineCheckpoint operates only on a malformed (unparseable or
-// schema-invalid) checkpoint target — a valid target must be abandoned
-// instead (see `checkpoint abandon`).
+// QuarantineCheckpoint accepts a checkpoint target that cannot be safely
+// rewritten — malformed, schema-invalid, or carrying unmodeled/duplicate
+// top-level keys — and refuses a valid, conforming target, which must be
+// abandoned instead (see `checkpoint abandon`).
 func newCheckpointQuarantineCmd(cwd *string) *cobra.Command {
 	var reason, operatorFlag string
 
 	cmd := &cobra.Command{
 		Use:   "quarantine <filename>",
-		Short: "Quarantine a malformed checkpoint",
-		Long: `Quarantine a malformed session state checkpoint.
+		Short: "Quarantine a checkpoint that cannot be safely rewritten",
+		Long: `Quarantine a checkpoint file that cannot be safely rewritten.
 
-Quarantine operates ONLY on a malformed (unparseable or schema-invalid)
-checkpoint. If the target file parses and validates cleanly, this command
-refuses and directs you to "checkpoint abandon" instead — abandon and
-quarantine are disjoint verbs by design. The checkpoint's bytes are moved
-verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
+Quarantine accepts a target that is malformed (unparseable or
+schema-invalid) OR carries unmodeled/duplicate top-level keys — schema-valid
+but non-conforming. If the target is valid AND conforming, this command
+refuses and directs you to "checkpoint abandon" instead, which is the sole
+accepting verb for that class. The checkpoint's bytes are moved verbatim
+(byte-identical) into the workspace archive/checkpoints directory.`,
 		Example: `  backlogit checkpoint quarantine checkpoint-20260423-100000.json --reason "corrupt JSON"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

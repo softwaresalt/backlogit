@@ -8,6 +8,8 @@ package cli_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,6 +61,40 @@ func TestU16_RenderedBlockCarriesCwdFilenameAndMandatoryLines(t *testing.T) {
 	require.NotEmpty(t, commandLine, "must render a command line")
 	assert.Contains(t, commandLine, "checkpoint "+intent.Verb,
 		"the command must use the intent's own Verb as the checkpoint subcommand, not a hardcoded one")
+	assert.Contains(t, commandLine, `"<you>"`, `the operator placeholder must be quoted like "<why>", or an unquoted <you> is POSIX input-redirection syntax`)
+}
+
+// TestU16_RelativeWorkspaceRootResolvedToAbsoluteInCommand is a regression
+// test (found during 130-S adversarial review): the rendered command must
+// bind --cwd to the RESOLVED, ABSOLUTE workspace root, never the caller's
+// possibly-relative workspaceRoot value (e.g. the CLI default "."). A
+// relative --cwd in the rendered command is only valid if the operator
+// later runs it from the same directory, silently reintroducing the
+// ambient-cwd hazard this carrier exists to remove.
+func TestU16_RelativeWorkspaceRootResolvedToAbsoluteInCommand(t *testing.T) {
+	workDir := t.TempDir()
+	restoreWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() { _ = os.Chdir(restoreWd) })
+
+	intent := &events.RemediationIntent{
+		Verb:             "quarantine",
+		TargetFilename:   "checkpoint-20260824-100000.json",
+		RequiresApproval: true,
+		ApprovalClass:    "A4c",
+		Reason:           "non_conforming",
+	}
+
+	var buf bytes.Buffer
+	cli.RenderCheckpointRemediationBlock(&buf, intent, ".")
+	out := buf.String()
+
+	require.NotEmpty(t, out)
+	assert.NotContains(t, out, "--cwd .\n", "the rendered command must not carry a bare relative --cwd")
+	absWorkDir, err := filepath.Abs(workDir)
+	require.NoError(t, err)
+	assert.Contains(t, out, "--cwd "+absWorkDir, "the rendered command must bind --cwd to the resolved absolute workspace root")
 }
 
 // TestU16_ShellSpecialCharacterSuppressesCommandLine asserts a target whose

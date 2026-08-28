@@ -85,7 +85,11 @@ to recover because no file was written.
 
 ### The Refusal Contract
 
-Within `status: "active"`, exactly one verb accepts any given stored file:
+Within `status: "active"`, every stored file has at least one accepting verb,
+and `quarantine` is the exclusive accepting verb for exactly the class
+`resolve`/`abandon` refuse — it is not a uniqueness claim for every class:
+a valid, conforming document is accepted by **both** `resolve` and `abandon`
+(and refused by `quarantine`).
 
 * `resolve` and `abandon` refuse a stored document that is schema-invalid or
   non-conforming. The discriminator is validity **and** top-level conformance,
@@ -97,6 +101,7 @@ Within `status: "active"`, exactly one verb accepts any given stored file:
 * `quarantine` accepts a schema-invalid, unparseable, or non-conforming
   document and moves its bytes verbatim into `archive/checkpoints/`, with a
   `<filename>.disposition.json` sidecar recording the disposition.
+
 
 When `resolve` or `abandon` refuses, the remedy is **quarantine**, never a
 retry of the same verb and never a fresh create.
