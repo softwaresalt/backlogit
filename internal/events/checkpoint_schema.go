@@ -395,7 +395,41 @@ type CheckpointSummary struct {
 	NeedsQuarantine bool `json:"needs_quarantine,omitempty"`
 	// RemediationCommand is the exact CLI invocation an operator or agent can
 	// run to quarantine this checkpoint when NeedsQuarantine is true.
+	//
+	// Deprecated: use RemediationIntent; RemediationCommand is an unbound
+	// command string and will be removed.
 	RemediationCommand string `json:"remediation_command,omitempty"`
+	// RemediationIntent describes, as structured non-executable data, what an
+	// operator must do to dispose of a checkpoint that cannot be safely
+	// rewritten. It is populated on every quarantine-candidate branch
+	// (parse-failure, schema-invalid, and non-conforming) and is nil
+	// otherwise. It is not omitempty: a nil intent marshals as
+	// "remediation_intent": null so the key is always present for callers to
+	// check (147-F / U1d).
+	RemediationIntent *RemediationIntent `json:"remediation_intent"`
+}
+
+// RemediationIntent describes what an operator must do to dispose of a
+// checkpoint that cannot be safely rewritten. It carries no shell text and is
+// not runnable: TargetFilename is a bare, already-validated filename, never a
+// path, never shell-quoted, and never concatenated with a directory. Only the
+// CLI boundary (147-F / U16) is permitted to render an executable command
+// from this structured record, bound to the resolved workspace and the A4c
+// approval / preimage / no-clobber contract.
+type RemediationIntent struct {
+	// Verb is the disposition verb the operator must invoke, e.g. "quarantine".
+	Verb string `json:"verb"`
+	// TargetFilename is the bare checkpoint filename, never a path.
+	TargetFilename string `json:"target_filename"`
+	// RequiresApproval is always true: every remediation action is gated by
+	// Constitution Principle VII / A4c operator approval.
+	RequiresApproval bool `json:"requires_approval"`
+	// ApprovalClass names the approval class governing this remediation,
+	// e.g. "A4c".
+	ApprovalClass string `json:"approval_class"`
+	// Reason names why remediation is required: "schema_invalid",
+	// "non_conforming", or "unparseable".
+	Reason string `json:"reason"`
 }
 
 // CleanupResult reports the outcome of a checkpoint cleanup operation.

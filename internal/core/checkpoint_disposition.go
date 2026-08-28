@@ -13,7 +13,6 @@ import (
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
-	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // dispositionVerbAbandon and dispositionVerbQuarantine are the audit "verb"
@@ -67,10 +66,29 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 
 	cp, parseErr := events.ParseCheckpoint(data)
 	if parseErr != nil {
-		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, parseErr)
+		return fmt.Errorf("%w: %w", blerrors.ErrCheckpointUseQuarantine, parseErr)
 	}
 	if valErr := events.ValidateCheckpoint(cp); valErr != nil {
-		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, valErr)
+		// 147-F / U17: multi-%w (not %v) so ErrCheckpointInvalid stays
+		// traversable via errors.Is, matching the idiom ResolveCheckpoint
+		// already uses (U3/Q2).
+		return fmt.Errorf("%w: %w", blerrors.ErrCheckpointUseQuarantine, valErr)
+	}
+
+	// 147-F / U4: refuse a valid-but-non-conforming document, returning the
+	// typed error unchanged. Placed immediately after ValidateCheckpoint and
+	// BEFORE the already-abandoned short-circuit: a file carrying
+	// disposition:"abandoned" plus an unmodeled key would otherwise return
+	// nil here while U5's widened quarantine accepts it and U6 reports
+	// NeedsQuarantine:true — three surfaces disagreeing about one file. It
+	// is a non-writing refusal, so nothing is lost by refusing earlier. It
+	// remains strictly before appendCheckpointDispositionAudit, preserving
+	// the shipped audit-then-mutate ordering. The guarded seam (U14b) does
+	// not satisfy this unit: it refuses the same document at the *write*
+	// step, which is after the audit append and the short-circuit — this
+	// gate is what makes the refusal audit-free and short-circuit-proof.
+	if confErr := events.CheckConformingTopLevelNamespace(data); confErr != nil {
+		return confErr
 	}
 
 	// Idempotent no-op: already abandoned. Preserve the original disposition
@@ -95,27 +113,30 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	}
 
 	now := time.Now().UTC()
-	cp.Status = "abandoned"
-	cp.Disposition = events.DispositionAbandoned
-	cp.DispositionReason = reason
-	cp.DispositionOperator = operator
-	cp.DispositionAt = &now
-	cp.UpdatedAt = now
 
-	updated, err := jsonutil.MarshalReadable(cp)
-	if err != nil {
-		return fmt.Errorf("abandon checkpoint: marshal %s: %w", baseName, err)
-	}
-
+	// 147-F / U14b: the rewrite itself routes through the guarded seam
+	// (events.RewriteCheckpointFile), which re-requires ParseCheckpoint,
+	// ValidateCheckpoint, and CheckConformingTopLevelNamespace to all
+	// succeed before any marshal or write. This introduces no new
+	// verb-facing sentinel and changes no ordering: the audit append and
+	// the already-abandoned / not-active checks above still run first,
+	// against the same initial read — the seam refuses an untrustworthy
+	// document at the write step, which is after those checks.
+	// abandonCheckpointMutate additionally re-checks active status against
+	// the seam's own fresh read (see its doc comment). NormalizeSeamMalformedVerdict
+	// wraps a between-read-race malformed verdict the same way this
+	// function's own earlier read is normalized above (found during 130-S
+	// adversarial review; see its doc comment). errors.Is/errors.As traverse
+	// through MutationPartialError.Unwrap() to this wrapped Cause, so
+	// QuarantineIsRemedy(err) stays true on the envelope's returned
+	// *MutationPartialError too.
 	err = MutationEnvelope(ctx, []MutationStep{
 		{
 			Name: "rewrite-checkpoint",
-			Apply: func(context.Context) error {
-				// atomicfile.WriteFileAtomic replaces an existing destination
-				// correctly on Windows (a plain os.Rename(tmp, path) fails
-				// there when path already exists), unlike a hand-rolled
-				// temp-then-rename helper.
-				return atomicfile.WriteFileAtomic(target, updated)
+			Apply: func(ctx context.Context) error {
+				return blerrors.NormalizeSeamMalformedVerdict(
+					events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName,
+						abandonCheckpointMutate(reason, operator, now)))
 			},
 		},
 	})
@@ -123,6 +144,31 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		return fmt.Errorf("abandon checkpoint %s: %w", baseName, err)
 	}
 	return nil
+}
+
+// abandonCheckpointMutate returns the mutate callback AbandonCheckpoint
+// passes to RewriteCheckpointFile. It is a named function (rather than an
+// inline closure) so a test can invoke RewriteCheckpointFile with this exact
+// production logic directly, against a checkpoint whose on-disk content
+// reflects a state RewriteCheckpointFile's own independent read observes —
+// which may differ from what AbandonCheckpoint's earlier classification read
+// observed if a concurrent ResolveCheckpoint won the race in between (147-F,
+// found during 130-S adversarial review). The active-status re-check below
+// is what keeps that race from silently overwriting a newly resolved
+// checkpoint with disposition:"abandoned".
+func abandonCheckpointMutate(reason, operator string, now time.Time) func(*events.CheckpointV1) error {
+	return func(cp *events.CheckpointV1) error {
+		if cp.Status != "active" {
+			return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
+		}
+		cp.Status = "abandoned"
+		cp.Disposition = events.DispositionAbandoned
+		cp.DispositionReason = reason
+		cp.DispositionOperator = operator
+		cp.DispositionAt = &now
+		cp.UpdatedAt = now
+		return nil
+	}
 }
 
 // QuarantineCheckpoint administratively quarantines a checkpoint: it
@@ -175,7 +221,18 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		validTarget = valErr == nil
 	}
 	if validTarget {
-		return blerrors.ErrCheckpointUseAbandon
+		// 147-F / U5: widen the classification to parse OK && validate OK
+		// && conformance OK. A valid-but-non-conforming document must NOT
+		// be classified as a quarantine-refusal target: abandon (U4)
+		// refuses the same document, so treating it as "valid" here would
+		// leave it with no disposition path at all (the deadlock this unit
+		// closes). Only a target that is ALSO conforming is refused with
+		// ErrCheckpointUseAbandon; the verbatim moveNoReplace path, audit
+		// ordering, sidecar upsert, and MutationEnvelope compensation below
+		// are unchanged either way.
+		if confErr := events.CheckConformingTopLevelNamespace(data); confErr == nil {
+			return blerrors.ErrCheckpointUseAbandon
+		}
 	}
 
 	archiveDir := filepath.Join(WorkspaceStorageRoot(ws.RootPath), "archive")
@@ -336,5 +393,3 @@ func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) er
 
 	return nil
 }
-
-

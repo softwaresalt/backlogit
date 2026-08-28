@@ -2,7 +2,9 @@ package events
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -423,10 +425,6 @@ func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
 	assert.Equal(t, 1, result.SkippedCount)
 }
 
-
-
-
-
 // TestListCheckpoints_RemediationCommandIsShellSafe is the follow-up
 // regression to TestListCheckpoints_FlagsBadFilesReadOnly: the advertised
 // remediation command must be safe to run verbatim in a POSIX shell even
@@ -484,4 +482,316 @@ func TestResolveCheckpoint_NoHTMLEscape(t *testing.T) {
 	assert.NotContains(t, s, `\u0026`, "\\u0026 must not appear in resolved checkpoint")
 	assert.NotContains(t, s, `\u003e`, "\\u003e must not appear in resolved checkpoint")
 	assert.NotContains(t, s, `\u003c`, "\\u003c must not appear in resolved checkpoint")
+}
+
+// TestU6_ValidButNonConformingListsNeedsQuarantineWithIntent asserts a
+// valid-but-non-conforming file lists with NeedsQuarantine: true and a
+// RemediationIntent naming verb "quarantine", the bare target filename,
+// RequiresApproval: true, and ApprovalClass "A4c" — and the summary carries
+// no shell text (147-F / U6).
+func TestU6_ValidButNonConformingListsNeedsQuarantineWithIntent(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "quarantine", summaries[0].RemediationIntent.Verb)
+	assert.Equal(t, name, summaries[0].RemediationIntent.TargetFilename)
+	assert.True(t, summaries[0].RemediationIntent.RequiresApproval)
+	assert.Equal(t, "A4c", summaries[0].RemediationIntent.ApprovalClass)
+	assert.Equal(t, "non_conforming", summaries[0].RemediationIntent.Reason)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after), "ListCheckpoints must be read-only")
+}
+
+// TestU6_FailsBothValidationAndConformanceReportsBothReasons asserts a file
+// failing both validation and conformance reports both reasons in
+// ValidationErr.
+func TestU6_FailsBothValidationAndConformanceReportsBothReasons(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-both.json"
+	// Schema-invalid (missing required fields) AND carries an unmodeled key.
+	body := `{"status":"active","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+
+	assert.True(t, summaries[0].NeedsQuarantine)
+	assert.NotEmpty(t, summaries[0].ValidationErr)
+	// Both the schema-validation reason and the conformance reason must be
+	// present; conformance must not overwrite the validation reason. The
+	// schema-validator error alone never names the offending key, so this
+	// assertion only holds once the conformance branch has also run and
+	// appended its own reason.
+	assert.Contains(t, summaries[0].ValidationErr, "extra_key")
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after), "ListCheckpoints must be read-only")
+}
+
+// TestU6Guard_VerdictComputedBeforeFilterBlock asserts the conformance
+// verdict is computed before the filter block, using a filter that matches
+// the non-conforming document.
+func TestU6Guard_VerdictComputedBeforeFilterBlock(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6-filtered.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Agent: "ship"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+}
+
+// TestU6b_ValidButNonConformingResultProjectsConformanceFields asserts
+// GetCheckpointResult on a valid-but-non-conforming document returns
+// Valid:true, Conforming:false, NeedsQuarantine:true, a RemediationIntent
+// naming verb "quarantine" and approval class "A4c", and
+// NonConformingFields.Paths naming the offenders in raw, unquoted form
+// (147-F / U6b).
+func TestU6b_ValidButNonConformingResultProjectsConformanceFields(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	result, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Valid)
+	assert.False(t, result.Conforming)
+	assert.True(t, result.NeedsQuarantine)
+	require.NotNil(t, result.RemediationIntent)
+	assert.Equal(t, "quarantine", result.RemediationIntent.Verb)
+	assert.Equal(t, "A4c", result.RemediationIntent.ApprovalClass)
+	assert.Contains(t, result.NonConformingFields.Paths, "extra_key")
+	for _, p := range result.NonConformingFields.Paths {
+		assert.NotContains(t, p, `"`, "NonConformingFields.Paths must carry raw, unquoted offender paths")
+	}
+}
+
+// TestU6b_ConformingResultProjectsConformingTrue asserts a conforming file
+// returns Conforming:true, a nil RemediationIntent, and an empty
+// NonConformingFields.Paths with Truncated:false.
+func TestU6b_ConformingResultProjectsConformingTrue(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-conforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	result, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Conforming)
+	assert.Nil(t, result.RemediationIntent)
+	assert.Empty(t, result.NonConformingFields.Paths)
+	assert.False(t, result.NonConformingFields.Truncated)
+}
+
+// TestU6bGuard_ByteUnchangedAfterGet pins GetCheckpoint's read-only contract.
+func TestU6bGuard_ByteUnchangedAfterGet(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-readonly.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	_, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestU6d_NonConformingResolvedStatusSurvivesActiveFilter asserts a
+// valid-but-non-conforming status:"resolved" file is still returned when
+// filter.Status == "active", carrying NeedsQuarantine:true (147-F / U6d).
+func TestU6d_NonConformingResolvedStatusSurvivesActiveFilter(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-resolved-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"resolved",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "active"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1, "a quarantine candidate must bypass the filter block entirely")
+	assert.True(t, summaries[0].NeedsQuarantine)
+}
+
+// TestU6d_NonConformingSurvivesAgentFilterMismatch asserts a non-conforming
+// file is still returned when filter.Agent names a different agent,
+// matching the parse-failure precedent.
+func TestU6d_NonConformingSurvivesAgentFilterMismatch(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-agent-mismatch.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Agent: "stage"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1, "a quarantine candidate must bypass an agent filter mismatch")
+	assert.True(t, summaries[0].NeedsQuarantine)
+}
+
+// TestU6dGuard_ConformingResolvedStatusStillDroppedByActiveFilter proves the
+// exemption is scoped to quarantine candidates and is not a blanket filter
+// bypass: a conforming status:"resolved" file is still dropped by an
+// "active" status filter.
+func TestU6dGuard_ConformingResolvedStatusStillDroppedByActiveFilter(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-resolved-conforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"resolved",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "active"})
+	require.NoError(t, err)
+	assert.Empty(t, summaries, "a conforming, non-matching document must still be dropped by the filter")
+}
+
+// TestU6e_UnparseableListsRemediationIntentUnparseable asserts an
+// unparseable file lists with NeedsQuarantine:true and a RemediationIntent
+// whose Reason is "unparseable" (147-F / U6e).
+func TestU6e_UnparseableListsRemediationIntentUnparseable(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6e-unparseable.json"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("not-json{"), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "unparseable", summaries[0].RemediationIntent.Reason)
+	assert.Equal(t, name, summaries[0].RemediationIntent.TargetFilename)
+	assert.True(t, summaries[0].RemediationIntent.RequiresApproval)
+}
+
+// TestU6e_SchemaInvalidConformingListsRemediationIntentSchemaInvalid asserts
+// a schema-invalid but conforming file lists with a RemediationIntent whose
+// Reason is "schema_invalid".
+func TestU6e_SchemaInvalidConformingListsRemediationIntentSchemaInvalid(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6e-schema-invalid.json"
+	// Parses fine, has only modeled keys (conforming), but fails
+	// ValidateCheckpoint (missing required fields).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(`{"status":"active"}`), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "schema_invalid", summaries[0].RemediationIntent.Reason)
+}
+
+// TestU3_ResolveRefusesLegacyShapedDocument asserts a legacy nine-file-shaped
+// (schema-invalid) document is refused with both errors.Is(err,
+// ErrCheckpointUseQuarantine) and errors.Is(err, ErrCheckpointInvalid)
+// holding (multi-%w, not %v — Q2), and the file SHA is unchanged (147-F /
+// U3).
+func TestU3_ResolveRefusesLegacyShapedDocument(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u3-legacy.json"
+	body := []byte(`{"status":"active"}`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+	before := sha256.Sum256(body)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+
+	require.Error(t, err)
+	assert.True(t, backlogiterrors.QuarantineIsRemedy(err))
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointInvalid))
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestU3_ResolveUnparseableDocumentWrapsUseQuarantine is a regression test
+// (found during 130-S adversarial review): an UNPARSEABLE document (fails
+// ParseCheckpoint, distinct from the schema-invalid-but-parseable class
+// TestU3_ResolveRefusesLegacyShapedDocument covers) was returned RAW by
+// ResolveCheckpoint — never wrapped with ErrCheckpointUseQuarantine at all —
+// so errors.Is(err, ErrCheckpointUseQuarantine) and
+// QuarantineIsRemedy(err) were both false, silently breaking the "does not
+// parse" row of the four-class disposition contract (it must refuse
+// identically to the "parses but schema-invalid" row) and causing 147.025-T
+// / U7d's MCP routing and 147.015-T / U8's CLI message to both fall back to
+// generic error shaping instead of the disposition-refusal shape.
+func TestU3_ResolveUnparseableDocumentWrapsUseQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u3-unparseable.json"
+	body := []byte("not-json{")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+	before := sha256.Sum256(body)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+
+	require.Error(t, err)
+	assert.True(t, backlogiterrors.QuarantineIsRemedy(err),
+		"an unparseable document must satisfy QuarantineIsRemedy just like a schema-invalid one")
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointCorrupt)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestU3Guard_ConformingActiveDocumentStillResolves pins the shipped accept
+// path.
+func TestU3Guard_ConformingActiveDocumentStillResolves(t *testing.T) {
+	dir := t.TempDir()
+	cp := validCheckpointV1()
+	cp.Status = "active"
+	name := "checkpoint-u3-accept.json"
+	writeTestCheckpointNamed(t, dir, name, cp)
+
+	err := ResolveCheckpoint(context.Background(), dir, name)
+	require.NoError(t, err)
+
+	result, err := GetCheckpoint(context.Background(), dir, name)
+	require.NoError(t, err)
+	assert.Equal(t, "resolved", result.Status)
+}
+
+// TestU3Guard_AlreadyResolvedConformingDocumentIsIdempotentNoOp pins the
+// shipped idempotent-no-op path.
+func TestU3Guard_AlreadyResolvedConformingDocumentIsIdempotentNoOp(t *testing.T) {
+	dir := t.TempDir()
+	cp := validCheckpointV1()
+	cp.Status = "resolved"
+	name := "checkpoint-u3-already-resolved.json"
+	writeTestCheckpointNamed(t, dir, name, cp)
+
+	before, err := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, err)
+
+	require.NoError(t, ResolveCheckpoint(context.Background(), dir, name))
+
+	after, err := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "an idempotent no-op must not rewrite the file")
 }

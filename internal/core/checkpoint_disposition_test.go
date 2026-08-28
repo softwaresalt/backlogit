@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -311,8 +312,6 @@ func TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved(t *testing.T) {
 	})
 }
 
-
-
 // TestCheckpointDisposition_IndeterminateAuditLeavesTargetUnmoved is the
 // companion to TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved: it
 // exercises the ErrWriteIndeterminate branch (not just ErrWriteNotApplied) by
@@ -396,8 +395,6 @@ func TestResolveDispositionTarget_RejectsSymlinkedCheckpointsDir(t *testing.T) {
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
 
-
-
 // TestResolveDispositionTarget_RejectsSymlinkedStorageRoot asserts that a
 // symlinked .backlogit directory (not merely a symlinked checkpoints
 // subdirectory) pointing entirely outside the workspace root is refused. A
@@ -421,7 +418,6 @@ func TestResolveDispositionTarget_RejectsSymlinkedStorageRoot(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
-
 
 // ── 136.014-T: TOCTOU classify-then-move race ─────────────────────────────────
 
@@ -648,4 +644,242 @@ func TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus(t *testing.T) {
 	require.NoError(t, parseErr)
 	assert.Equal(t, "resolved", cp.Status, "status must remain unchanged when abandon is refused")
 	assert.Empty(t, cp.Disposition, "disposition must not be set when abandon is refused")
+}
+
+// TestAbandonCheckpointMutate_RefusesWhenSeamReadShowsResolved is a
+// regression test (found during 130-S adversarial review): AbandonCheckpoint
+// classifies status against its own initial read, but
+// events.RewriteCheckpointFile performs an independent read of its own. If a
+// concurrent ResolveCheckpoint wins between those two reads, the seam's own
+// read reflects the newly resolved document — a state the CAS check alone
+// cannot catch, since nothing changes between the seam's read and its write
+// in that scenario. abandonCheckpointMutate (the exact callback
+// AbandonCheckpoint passes to the seam) must refuse rather than
+// unconditionally overwrite the resolved document with
+// disposition:"abandoned". Calling events.RewriteCheckpointFile directly
+// with the checkpoint already reflecting a post-race resolved state
+// exercises exactly what the seam's own read would observe in that race,
+// without needing a real concurrent goroutine.
+func TestAbandonCheckpointMutate_RefusesWhenSeamReadShowsResolved(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-abandon-mutate-resolved.json"
+	resolvedCP := validDispositionTestCheckpoint()
+	resolvedCP.Status = "resolved"
+	body := writeDispositionCheckpoint(t, dir, name, resolvedCP)
+
+	mutate := abandonCheckpointMutate("reason", "operator@example.com", time.Now().UTC())
+	err := events.RewriteCheckpointFile(context.Background(), dir, name, mutate)
+
+	require.Error(t, err, "the abandon mutate callback must refuse a document the seam's own read shows resolved")
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointNotActive)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, body, after, "a refused rewrite must leave the resolved document's bytes untouched")
+}
+
+// TestU4_ValidButNonConformingActiveRefusedWithNonConforming asserts a
+// valid-but-non-conforming active document is refused with
+// ErrCheckpointNonConforming naming the offending keys (147-F / U4). This
+// already holds via U14b's seam-level check at the write step, so it is a
+// guard rather than a red function; U4's own red is the ordering — see
+// TestU4_RefusalLeavesAuditJSONLByteUnchanged and
+// TestU4_NonConformingAlreadyAbandonedReturnsNonConforming below.
+func TestU4Guard_ValidButNonConformingActiveRefusedWithNonConforming(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err)
+	var typed *blerrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+	assert.Contains(t, typed.Fields, "extra_key")
+}
+
+// TestU4_RefusalLeavesAuditJSONLByteUnchanged asserts the disposition audit
+// JSONL is byte-unchanged after a non-conforming refusal (the gate is a
+// non-writing refusal, placed before the audit append).
+func TestU4_RefusalLeavesAuditJSONLByteUnchanged(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-audit-unchanged.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	logPath := filepath.Join(WorkspaceLogsRoot(ws.RootPath), "checkpoint-disposition-audit.jsonl")
+	beforeData, _ := os.ReadFile(logPath) // may not exist yet; nil is fine
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+	require.Error(t, err)
+
+	afterData, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		require.True(t, os.IsNotExist(readErr))
+		assert.Empty(t, beforeData)
+	} else {
+		assert.Equal(t, beforeData, afterData)
+	}
+}
+
+// TestU4_NonConformingAlreadyAbandonedReturnsNonConforming asserts a
+// non-conforming already-abandoned document returns
+// ErrCheckpointNonConforming rather than nil — the conformance gate runs
+// BEFORE the already-abandoned short-circuit.
+func TestU4_NonConformingAlreadyAbandonedReturnsNonConforming(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u4-abandoned-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
+		`"disposition":"abandoned","disposition_reason":"stale","disposition_operator":"ship",` +
+		`"disposition_at":"2026-08-24T00:00:00Z",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err, "must not silently no-op (return nil) for a non-conforming already-abandoned document")
+	var typed *blerrors.CheckpointNonConformingError
+	require.True(t, errors.As(err, &typed))
+}
+
+// TestU17_AbandonValidationWrapPreservesErrCheckpointInvalid asserts
+// AbandonCheckpoint's validation-failure wrap keeps ErrCheckpointInvalid
+// traversable via errors.Is (147-F / U17). The shipped wrap uses
+// fmt.Errorf("%w: %v", ErrCheckpointUseQuarantine, valErr) — the %v verb
+// drops the sentinel ValidateCheckpoint returns.
+func TestU17_AbandonValidationWrapPreservesErrCheckpointInvalid(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	cp := validDispositionTestCheckpoint()
+	cp.Agent = "not-a-real-agent" // fails the `oneof=ship stage` validator tag
+	writeDispositionCheckpoint(t, dir, "checkpoint-u17-invalid-agent.json", cp)
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-u17-invalid-agent.json", "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointInvalid,
+		"the %%v verb drops ErrCheckpointInvalid from the wrap; must be multi-%%w")
+}
+
+// TestU17Guard_MessageTextPreserved pins that the underlying validator
+// message text survives the corrected multi-%w wrap unchanged (green on
+// landing, committed with the implementation).
+func TestU17Guard_MessageTextPreserved(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	cp := validDispositionTestCheckpoint()
+	cp.Agent = "not-a-real-agent"
+	writeDispositionCheckpoint(t, dir, "checkpoint-u17-message.json", cp)
+
+	parsedForValidation := *cp
+	valErr := events.ValidateCheckpoint(&parsedForValidation)
+	require.Error(t, valErr)
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-u17-message.json", "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), valErr.Error(),
+		"the validator's message text must survive the corrected wrap unchanged")
+}
+
+// TestU5_ValidNonConformingActiveAcceptedByQuarantine asserts the
+// accept-half of scenario 1 (147-F / U5): a valid-but-non-conforming active
+// document — schema-valid but carrying an unmodeled top-level key — is
+// ACCEPTED by QuarantineCheckpoint rather than refused with
+// ErrCheckpointUseAbandon. Without this widening, such a document is
+// refused by both abandon (U4, non-conforming) and quarantine (thinks it is
+// "valid"), leaving it with no disposition path at all.
+func TestU5_ValidNonConformingActiveAcceptedByQuarantine(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-nonconforming.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, name, "non-conforming", "operator@example.com")
+	require.NoError(t, err, "a valid-but-non-conforming active document must be accepted by quarantine")
+
+	assert.NoFileExists(t, filepath.Join(dir, name))
+	assert.FileExists(t, filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", name))
+}
+
+// TestU5Guard_ConformingActiveRefusedByQuarantine pins scenario 2
+// (unchanged, already-shipped behaviour): a conforming active document is
+// still refused by quarantine with ErrCheckpointUseAbandon.
+func TestU5Guard_ConformingActiveRefusedByQuarantine(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-conforming.json"
+	writeDispositionCheckpoint(t, dir, name, validDispositionTestCheckpoint())
+
+	ew := newDispositionEventWriter(t, ws)
+	err := QuarantineCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseAbandon)
+
+	assert.FileExists(t, filepath.Join(dir, name), "a refused quarantine must not move the source")
+}
+
+// TestU5Guard_ArchivedBytesByteIdenticalToPreQuarantineOriginal asserts
+// scenario 1's postcondition: once quarantine accepts a valid-but-non-
+// conforming active document, the archived bytes are byte-identical to the
+// pre-quarantine original — quarantine remains a verbatim move, never a
+// rewrite, even for the newly-widened accept case.
+func TestU5Guard_ArchivedBytesByteIdenticalToPreQuarantineOriginal(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-u5-byteidentical.json"
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), body, 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	require.NoError(t, QuarantineCheckpoint(context.Background(), ws, ew, name, "non-conforming", "operator@example.com"))
+
+	archived, readErr := os.ReadFile(filepath.Join(ws.RootPath, ".backlogit", "archive", "checkpoints", name))
+	require.NoError(t, readErr)
+	assert.Equal(t, body, archived, "archived bytes must be byte-identical to the pre-quarantine original")
+}
+
+// TestAbandonCheckpoint_ParseFailureWrapPreservesErrCheckpointCorrupt is a
+// regression test (found during 130-S adversarial review): AbandonCheckpoint
+// wraps a ParseCheckpoint failure as fmt.Errorf("%w: %v", ErrCheckpointUseQuarantine,
+// parseErr) — the %v verb drops the ErrCheckpointCorrupt sentinel ParseCheckpoint
+// itself returns, the same class of bug U17 already fixed for the sibling
+// validation-failure wrap two lines below.
+func TestAbandonCheckpoint_ParseFailureWrapPreservesErrCheckpointCorrupt(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+	name := "checkpoint-abandon-unparseable.json"
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("not-json{"), 0o644))
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, name, "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointCorrupt,
+		"the %%v verb drops ErrCheckpointCorrupt from the wrap; must be multi-%%w")
 }

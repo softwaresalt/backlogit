@@ -175,7 +175,14 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_list_checkpoints",
-			mcplib.WithDescription("List session state checkpoints with optional filters"),
+			mcplib.WithDescription("List session state checkpoints with optional filters. "+
+				"A summary with needs_quarantine true is not safely rewritable; use "+
+				"backlogit_quarantine_checkpoint, not backlogit_resolve_checkpoint or "+
+				"backlogit_abandon_checkpoint. Such a summary is returned regardless of the "+
+				"status, agent, shipment_id, feature_id, and max_age filters, so a filtered "+
+				"result can contain rows that do not match the filter. The accompanying "+
+				"remediation_intent is a structured record of the required disposition, not "+
+				"a runnable command."),
 			mcplib.WithString("consumer_id", mcplib.Description("Filter by consumer/agent ID")),
 			mcplib.WithString("status", mcplib.Description("Filter by status (active, resolved)")),
 			mcplib.WithString("shipment_id", mcplib.Description("Filter by shipment ID")),
@@ -186,14 +193,22 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_get_checkpoint",
-			mcplib.WithDescription("Get and validate a specific checkpoint by filename"),
+			mcplib.WithDescription("Get and validate a specific checkpoint by filename. "+
+				"For a schema-valid document, returns conforming false when it carries "+
+				"unmodeled top-level keys; such a document cannot be resolved or abandoned. "+
+				"non_conforming_fields carries raw offender paths with explicit truncation "+
+				"counts. A schema-invalid document is refused before any conformance verdict "+
+				"is produced."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 		),
 		s.handleGetCheckpoint,
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_resolve_checkpoint",
-			mcplib.WithDescription("Mark a checkpoint as resolved"),
+			mcplib.WithDescription("Mark a checkpoint as resolved. Refuses a stored document it cannot safely "+
+				"rewrite rather than replacing it: checkpoint_use_quarantine when the document is "+
+				"schema-invalid, checkpoint_non_conforming when it carries unmodeled top-level keys. "+
+				"Use backlogit_quarantine_checkpoint instead."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 		),
 		s.handleResolveCheckpoint,
@@ -207,7 +222,9 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_abandon_checkpoint",
-			mcplib.WithDescription("Administratively abandon a valid checkpoint. Refuses a malformed target; use backlogit_quarantine_checkpoint instead."),
+			mcplib.WithDescription("Administratively abandon a valid checkpoint. Refuses a malformed target; "+
+				"use backlogit_quarantine_checkpoint instead. Also refuses when the document carries "+
+				"unmodeled top-level keys."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
 			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
@@ -216,7 +233,10 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_quarantine_checkpoint",
-			mcplib.WithDescription("Quarantine a malformed checkpoint by moving its bytes verbatim to the archive. Refuses a valid target; use backlogit_abandon_checkpoint instead."),
+			mcplib.WithDescription("Quarantine a checkpoint file that cannot be safely rewritten (malformed, "+
+				"schema-invalid, or carrying unmodeled top-level keys) by moving its bytes verbatim to the "+
+				"archive. Refuses a schema-valid, conforming target; use backlogit_abandon_checkpoint or "+
+				"backlogit_resolve_checkpoint instead."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for the disposition")),
 			mcplib.WithString("operator", mcplib.Required(), mcplib.Description("Operator identity performing the disposition; never inferred")),
@@ -1200,14 +1220,23 @@ func (s *Server) handleGetCheckpoint(ctx context.Context, request mcplib.CallToo
 		return ValidationFailed("filename is required"), nil
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
-	cp, err := events.GetCheckpoint(ctx, checkpointDir, filename)
+	// 147-F / U6c: project the conformance verdict from events.GetCheckpointResult
+	// rather than the shipped events.GetCheckpoint. Schema-invalid documents keep
+	// their existing refusal — GetCheckpointResult returns ErrCheckpointInvalid
+	// unwrapped, so domainError still maps it to validation_failed, never a
+	// disposition code (a read is not a rewrite).
+	result, err := events.GetCheckpointResult(ctx, checkpointDir, filename)
 	if err != nil {
 		return domainError("get checkpoint", err), nil
 	}
 	return toolResultJSON(map[string]any{
-		"checkpoint": cp,
-		"filename":   filename,
-		"valid":      true,
+		"checkpoint":            result.Checkpoint,
+		"filename":              filename,
+		"valid":                 result.Valid,
+		"conforming":            result.Conforming,
+		"needs_quarantine":      result.NeedsQuarantine,
+		"remediation_intent":    result.RemediationIntent,
+		"non_conforming_fields": result.NonConformingFields,
 	})
 }
 
@@ -1221,6 +1250,19 @@ func (s *Server) handleResolveCheckpoint(ctx context.Context, request mcplib.Cal
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
 	if err := events.ResolveCheckpoint(ctx, checkpointDir, filename); err != nil {
+		// 147-F / U7d: route by class, not wholesale. The disposition-shaped
+		// refusals (ErrCheckpointUseQuarantine from U3's validity gate,
+		// ErrCheckpointNonConforming from the guarded seam) and the guarded
+		// seam's TOCTOU refusal (ErrCheckpointContentChanged, added for the
+		// rewrite compare-and-swap check) go through checkpointDispositionError
+		// so `code`, `filename`, and `unknown_fields` are populated with
+		// "resolve checkpoint" as the op, letting U7's op-derived remediation
+		// name backlogit_resolve_checkpoint. Every other error (not found,
+		// corrupt, cannot-resolve-abandoned, partial mutation) keeps its
+		// existing domainError mapping.
+		if backlogiterrors.QuarantineIsRemedy(err) || errors.Is(err, backlogiterrors.ErrCheckpointContentChanged) {
+			return checkpointDispositionError("resolve checkpoint", filename, err), nil
+		}
 		return domainError("resolve checkpoint", err), nil
 	}
 	return toolResultJSON(map[string]any{

@@ -16,10 +16,11 @@ Administratively abandon a valid checkpoint
 
 Administratively abandon a session state checkpoint.
 
-Abandon operates ONLY on a parseable, schema-valid checkpoint. If the target
-file is malformed (unparseable or schema-invalid), this command refuses and
-directs you to "checkpoint quarantine" instead — abandon and quarantine are
-disjoint verbs by design.
+Abandon operates on a parseable, schema-valid, AND conforming checkpoint —
+one carrying no unmodeled or duplicate top-level keys. If the target does
+not parse, fails schema validation, or carries unmodeled/duplicate keys,
+this command refuses and directs you to "checkpoint quarantine" instead,
+which is the sole accepting verb for that class.
 
 ```text
 backlogit checkpoint abandon <filename> [flags]

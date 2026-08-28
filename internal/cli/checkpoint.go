@@ -2,11 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -192,22 +195,181 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
-			cp, err := events.GetCheckpoint(ctx, dir, filename)
+			// 147-F / U8c: project the conformance verdict from
+			// events.GetCheckpointResult rather than the shipped
+			// events.GetCheckpoint. Schema-invalid documents keep their
+			// existing refusal — GetCheckpointResult returns
+			// ErrCheckpointInvalid unwrapped, so this command still exits
+			// non-zero on it exactly as before.
+			result, err := events.GetCheckpointResult(ctx, dir, filename)
 			if err != nil {
 				return fmt.Errorf("get checkpoint: %w", err)
 			}
 
-			result := map[string]any{
-				"checkpoint": cp,
-				"filename":   filename,
-				"valid":      true,
+			payload := map[string]any{
+				"checkpoint":            result.Checkpoint,
+				"filename":              filename,
+				"valid":                 result.Valid,
+				"conforming":            result.Conforming,
+				"needs_quarantine":      result.NeedsQuarantine,
+				"remediation_intent":    result.RemediationIntent,
+				"non_conforming_fields": result.NonConformingFields,
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(result)
+			return enc.Encode(payload)
 		},
 	}
+}
+
+// checkpointDispositionIntent returns the RemediationIntent describing the
+// remedy for a disposition-class refusal (a non-conforming target, a
+// malformed-or-invalid target, or — for quarantine — a valid target that
+// must be abandoned instead), or nil if err is not one of those three
+// classes. It is the single source both checkpointDispositionRefusalMessage
+// and the CLI command handlers consult, so the message text and the
+// rendered remediation block can never disagree about the required verb.
+func checkpointDispositionIntent(err error, filename string) *events.RemediationIntent {
+	var nonConforming *blerrors.CheckpointNonConformingError
+	switch {
+	case errors.As(err, &nonConforming):
+		return &events.RemediationIntent{
+			Verb:             "quarantine",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "non_conforming",
+		}
+	case errors.Is(err, blerrors.ErrCheckpointUseQuarantine):
+		return &events.RemediationIntent{
+			Verb:             "quarantine",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "unparseable_or_invalid",
+		}
+	case errors.Is(err, blerrors.ErrCheckpointUseAbandon):
+		return &events.RemediationIntent{
+			Verb:             "abandon",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "valid_target",
+		}
+	default:
+		return nil
+	}
+}
+
+// checkpointDispositionRefusalMessage builds an actionable operator message
+// for a resolve/abandon/quarantine refusal (147-F / U8). It states the
+// required disposition verb read from checkpointDispositionIntent rather
+// than leaving the verb as incidental sentinel-message prose. For a
+// non-conforming refusal it also names the offending field paths in
+// quoted, bounded form via FieldPathsForDisplay() (147.031-T / U1c). It
+// prints no paste-runnable remediation command; that bound, approval-gated
+// block is rendered separately by RenderCheckpointRemediationBlock, which
+// callers invoke alongside this message (147.039-T / U16). err is wrapped,
+// not replaced, so errors.Is/errors.As still traverse to the original
+// sentinel or typed error.
+func checkpointDispositionRefusalMessage(op, filename string, err error) error {
+	intent := checkpointDispositionIntent(err, filename)
+	if intent == nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	var nonConforming *blerrors.CheckpointNonConformingError
+	if errors.As(err, &nonConforming) {
+		return fmt.Errorf("%s: checkpoint %s carries non-conforming field path(s) %s; required verb: %s: %w",
+			op, filename, nonConforming.FieldPathsForDisplay(), intent.Verb, err)
+	}
+	if errors.Is(err, blerrors.ErrCheckpointUseQuarantine) {
+		return fmt.Errorf("%s: checkpoint %s is malformed; required verb: %s: %w", op, filename, intent.Verb, err)
+	}
+	// ErrCheckpointUseAbandon: quarantine refused a valid target.
+	return fmt.Errorf("%s: checkpoint %s is valid; required verb: %s: %w", op, filename, intent.Verb, err)
+}
+
+// RenderCheckpointRemediationBlock is the CLI-boundary remediation command
+// renderer (147-F / 147.039-T / U16). It is the ONLY surface allowed to
+// render an operator-runnable disposition command, because the CLI is the
+// only layer that knows the resolved workspace. It consumes a
+// RemediationIntent and writes a bound, approval-gated block to w wherever a
+// refusal or a needs_quarantine summary is printed. A nil intent (the
+// conforming path) renders nothing.
+//
+// Binding rules (all mandatory, none suppressible by a flag):
+//  1. the rendered command always carries an explicit --cwd bound to the
+//     RESOLVED, ABSOLUTE workspace root — never the caller's possibly
+//     relative workspaceRoot value (e.g. the CLI's default "."). Rendering
+//     a relative --cwd would only be valid if the operator later runs the
+//     command from the same directory, silently reintroducing the
+//     ambient-cwd hazard this carrier exists to remove (found during 130-S
+//     adversarial review). When workspaceRoot cannot be resolved to an
+//     absolute path, that failure is treated the same as a manual-quoting
+//     trip: the command line is not rendered;
+//  2. the argument is the bare intent.TargetFilename, never a path or a
+//     concatenation;
+//  3. the A4c approval line, the preimage line, and the no-clobber
+//     destination line are always part of the block;
+//  4. when the resolved workspace root or intent.TargetFilename contains a
+//     character the target shell would treat specially, the block renders
+//     WITHOUT the command line and prints "command not rendered: workspace
+//     or filename requires manual quoting" instead — refusing to render is
+//     the safe failure mode; emitting a half-quoted command is not. No
+//     cross-shell paste-safety claim is made; the approval step is a human
+//     step by construction.
+//
+// The Target and Destination lines render intent.TargetFilename through
+// strconv.Quote, the same quoting policy FieldPathsForDisplay already uses
+// for offender key names: validateCheckpointFilename admits any byte other
+// than '/' and '\' in the checkpoint-*.json identifier segment, including
+// ASCII control characters, and those two informational lines print before
+// the manual-quoting gate below runs (found during 130-S adversarial
+// review). Quoting neutralizes a raw control byte without needing to
+// suppress the informational lines the way the gate suppresses the command
+// line. The rendered command also quotes the "<you>" operator placeholder,
+// matching "<why>" — an unquoted "<you>" is POSIX input-redirection syntax.
+func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationIntent, workspaceRoot string) {
+	if intent == nil {
+		return
+	}
+	fmt.Fprintf(w, "Disposition required: %s\n", intent.Verb)
+	fmt.Fprintf(w, "  Workspace : %s\n", core.WorkspaceStorageRoot(workspaceRoot))
+	fmt.Fprintf(w, "  Target    : %s\n", strconv.Quote(intent.TargetFilename))
+	fmt.Fprintln(w, "  Approval  : A4c — operator approval is REQUIRED immediately before execution")
+	fmt.Fprintln(w, "  Preimage  : take a byte copy of the target before running the command")
+	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", strconv.Quote(intent.TargetFilename))
+
+	absRoot, absErr := filepath.Abs(workspaceRoot)
+	if absErr != nil || requiresManualQuoting(absRoot) || requiresManualQuoting(intent.TargetFilename) {
+		fmt.Fprintln(w, "command not rendered: workspace or filename requires manual quoting")
+		return
+	}
+
+	fmt.Fprintln(w, "Command (run only after approval):")
+	fmt.Fprintf(w, "  backlogit --cwd %s checkpoint %s %s --operator \"<you>\" --reason \"<why>\"\n",
+		absRoot, intent.Verb, intent.TargetFilename)
+}
+
+// requiresManualQuoting reports whether s contains any character outside a
+// conservative alphanumeric-plus-path-punctuation allow-list. It is
+// deliberately over-inclusive: any character a POSIX shell, PowerShell, or
+// cmd.exe might treat specially trips the manual-quoting fallback rather
+// than risk emitting a half-quoted, unsafe command (147-F / U16). The
+// natural corpus never hits this: CreateCheckpoint only ever writes
+// checkpoint-YYYYMMDD-HHMMSS.json, so this exists for out-of-band files
+// only.
+func requiresManualQuoting(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '-' || r == ':' || r == '/' || r == '\\' || r == '~':
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func newCheckpointResolveCmd(cwd *string) *cobra.Command {
@@ -226,7 +388,10 @@ func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
 			if err := events.ResolveCheckpoint(ctx, dir, filename); err != nil {
-				return fmt.Errorf("resolve checkpoint: %w", err)
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
+				return checkpointDispositionRefusalMessage("resolve checkpoint", filename, err)
 			}
 
 			result := map[string]any{
@@ -317,10 +482,11 @@ func newCheckpointAbandonCmd(cwd *string) *cobra.Command {
 		Short: "Administratively abandon a valid checkpoint",
 		Long: `Administratively abandon a session state checkpoint.
 
-Abandon operates ONLY on a parseable, schema-valid checkpoint. If the target
-file is malformed (unparseable or schema-invalid), this command refuses and
-directs you to "checkpoint quarantine" instead — abandon and quarantine are
-disjoint verbs by design.`,
+Abandon operates on a parseable, schema-valid, AND conforming checkpoint —
+one carrying no unmodeled or duplicate top-level keys. If the target does
+not parse, fails schema validation, or carries unmodeled/duplicate keys,
+this command refuses and directs you to "checkpoint quarantine" instead,
+which is the sole accepting verb for that class.`,
 		Example: `  backlogit checkpoint abandon checkpoint-20260423-100000.json --reason "superseded by newer session"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -346,7 +512,10 @@ disjoint verbs by design.`,
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
 
 			if err := core.AbandonCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
-				return fmt.Errorf("abandon checkpoint: %w", err)
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
+				return checkpointDispositionRefusalMessage("abandon checkpoint", filename, err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
@@ -367,22 +536,26 @@ disjoint verbs by design.`,
 
 // newCheckpointQuarantineCmd returns the `backlogit checkpoint quarantine`
 // subcommand. It mirrors the MCP backlogit_quarantine_checkpoint tool:
-// QuarantineCheckpoint operates only on a malformed (unparseable or
-// schema-invalid) checkpoint target — a valid target must be abandoned
-// instead (see `checkpoint abandon`).
+// QuarantineCheckpoint accepts a checkpoint target that cannot be safely
+// rewritten — malformed, schema-invalid, or carrying unmodeled/duplicate
+// top-level keys — and refuses a valid, conforming target, which must be
+// resolved or abandoned instead (see `checkpoint resolve` / `checkpoint
+// abandon`).
 func newCheckpointQuarantineCmd(cwd *string) *cobra.Command {
 	var reason, operatorFlag string
 
 	cmd := &cobra.Command{
 		Use:   "quarantine <filename>",
-		Short: "Quarantine a malformed checkpoint",
-		Long: `Quarantine a malformed session state checkpoint.
+		Short: "Quarantine a checkpoint that cannot be safely rewritten",
+		Long: `Quarantine a checkpoint file that cannot be safely rewritten.
 
-Quarantine operates ONLY on a malformed (unparseable or schema-invalid)
-checkpoint. If the target file parses and validates cleanly, this command
-refuses and directs you to "checkpoint abandon" instead — abandon and
-quarantine are disjoint verbs by design. The checkpoint's bytes are moved
-verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
+Quarantine accepts a target that is malformed (unparseable or
+schema-invalid) OR carries unmodeled/duplicate top-level keys — schema-valid
+but non-conforming. If the target is valid AND conforming, this command
+refuses and directs you to "checkpoint resolve" or "checkpoint abandon"
+instead — both are accepting verbs for that class. The checkpoint's bytes
+are moved verbatim (byte-identical) into the workspace archive/checkpoints
+directory.`,
 		Example: `  backlogit checkpoint quarantine checkpoint-20260423-100000.json --reason "corrupt JSON"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -408,7 +581,10 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
 
 			if err := core.QuarantineCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
-				return fmt.Errorf("quarantine checkpoint: %w", err)
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
+				return checkpointDispositionRefusalMessage("quarantine checkpoint", filename, err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())

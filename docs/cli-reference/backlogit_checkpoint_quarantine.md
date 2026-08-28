@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Quarantine a malformed checkpoint
+description: Quarantine a checkpoint that cannot be safely rewritten
 doc_type: reference
 ingested_at: "2026-08-10T08:26:43Z"
 schema_version: "1.0"
@@ -10,17 +10,19 @@ title: backlogit checkpoint quarantine
 
 ## backlogit checkpoint quarantine
 
-Quarantine a malformed checkpoint
+Quarantine a checkpoint that cannot be safely rewritten
 
 ### Synopsis
 
-Quarantine a malformed session state checkpoint.
+Quarantine a checkpoint file that cannot be safely rewritten.
 
-Quarantine operates ONLY on a malformed (unparseable or schema-invalid)
-checkpoint. If the target file parses and validates cleanly, this command
-refuses and directs you to "checkpoint abandon" instead — abandon and
-quarantine are disjoint verbs by design. The checkpoint's bytes are moved
-verbatim (byte-identical) into the workspace archive/checkpoints directory.
+Quarantine accepts a target that is malformed (unparseable or
+schema-invalid) OR carries unmodeled/duplicate top-level keys — schema-valid
+but non-conforming. If the target is valid AND conforming, this command
+refuses and directs you to "checkpoint resolve" or "checkpoint abandon"
+instead — both are accepting verbs for that class. The checkpoint's bytes
+are moved verbatim (byte-identical) into the workspace archive/checkpoints
+directory.
 
 ```text
 backlogit checkpoint quarantine <filename> [flags]

@@ -47,6 +47,15 @@ type mutationPartialResponse struct {
 	CompensationState string   `json:"compensation_state"`
 	Retryable         bool     `json:"retryable"`
 	Recovery          string   `json:"recovery"`
+	// QuarantineRequired is true when the underlying cause (traversable via
+	// errors.Is through MutationPartialError.Unwrap()) indicates the target
+	// checkpoint is malformed or non-conforming and quarantine is the only
+	// accepting verb, so a caller does not have to parse Recovery text to
+	// discover this (147-F, found during 130-S adversarial review: a
+	// between-read race can surface a quarantine-only verdict through this
+	// partial-mutation shape rather than the dedicated disposition-error
+	// shape). Omitted (false) for every other partial-mutation cause.
+	QuarantineRequired bool `json:"quarantine_required,omitempty"`
 }
 
 func makeErrorResult(errType, message string) *mcplib.CallToolResult {
@@ -140,6 +149,7 @@ func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
 //	ErrTelemetrySourceMissing         | validation_failed                     | 422
 //	ErrCheckpointInvalid              | validation_failed                     | 422
 //	ErrCheckpointCorrupt              | validation_failed                     | 422
+//	ErrCheckpointCannotResolveAbandoned | validation_failed                   | 422
 //	ErrTelemetryParseFailed           | internal                              | 500
 //	(all others)                      | internal                              | 500
 //
@@ -189,14 +199,42 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		errors.Is(err, corerrors.ErrInvalidLinkType),
 		errors.Is(err, corerrors.ErrTelemetrySourceMissing),
 		errors.Is(err, corerrors.ErrCheckpointInvalid),
-		errors.Is(err, corerrors.ErrCheckpointCorrupt):
+		errors.Is(err, corerrors.ErrCheckpointCorrupt),
+		errors.Is(err, corerrors.ErrCheckpointCannotResolveAbandoned):
 		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrWriteIndeterminate):
+		// A durable write's outcome is uncertain (e.g. a parent-directory
+		// fsync failure after the rename already committed). Distinct from
+		// the default InternalError fallback because callers MUST NOT
+		// blindly retry an indeterminate write — it may already have
+		// applied. Reached by callers (e.g. ResolveCheckpoint) that do not
+		// wrap RewriteCheckpointFile in a MutationEnvelope; envelope-wrapped
+		// callers (AbandonCheckpoint, QuarantineCheckpoint) already surface
+		// this via mutationPartialError above.
+		return makeErrorResult("write_indeterminate", fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrWriteNotApplied):
+		// A durable write definitely did not apply (a pre-rename failure);
+		// the target is untouched and the write is safe to retry.
+		return makeErrorResult("write_not_applied", fmt.Sprintf("%s: %v", op, err))
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}
 }
 
 func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcplib.CallToolResult {
+	recovery := mutationPartialRecoveryFor(err.Class, err.FailedStep, err.CompensationState)
+	quarantineRequired := corerrors.QuarantineIsRemedy(err)
+	if quarantineRequired {
+		// 147-F: err.Cause is malformed or non-conforming (a between-read
+		// race between the caller's classification and the guarded seam's
+		// own read surfaced it here, rather than through the dedicated
+		// checkpointDispositionError path). Append the quarantine
+		// remediation to the class-based recovery text rather than
+		// replacing it, so the audit-trail/compensation context this shape
+		// exists for is not lost.
+		recovery += "; the current checkpoint bytes are malformed or non-conforming — quarantine is the only " +
+			"accepting verb for this target (backlogit_quarantine_checkpoint / checkpoint quarantine)"
+	}
 	resp := mutationPartialResponse{
 		Error:             "mutation_partial",
 		Message:           fmt.Sprintf("%s: %s", op, err.Error()),
@@ -206,8 +244,14 @@ func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcpli
 		CompensationState: err.CompensationState,
 		// 143.010-T: a partially-compensated result must never advertise itself
 		// as safe to retry while release-scope items remain un-restored.
-		Retryable: err.Class == "not-applied" && err.CompensationState == "compensated",
-		Recovery:  mutationPartialRecoveryFor(err.Class, err.FailedStep, err.CompensationState),
+		// 147-F: also gated on !quarantineRequired (found during 130-S
+		// adversarial review) — retrying the same resolve/abandon call
+		// cannot succeed against bytes that are malformed or non-conforming;
+		// "safe to retry" would contradict the quarantine-only guidance
+		// above.
+		Retryable:          err.Class == "not-applied" && err.CompensationState == "compensated" && !quarantineRequired,
+		Recovery:           recovery,
+		QuarantineRequired: quarantineRequired,
 	}
 	data, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {
@@ -284,18 +328,42 @@ func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult 
 }
 
 // checkpointDispositionErrorResponse is the structured MCP error shape for
-// checkpoint disposition (abandon/quarantine) failures. It carries a stable
-// code, the offending checkpoint filename, a class-derived retryable flag,
-// and an actionable remediation hint so an agent caller does not need to
-// parse the error message to decide what to do next.
+// checkpoint disposition (abandon/quarantine/resolve) failures. It carries a
+// stable code, the offending checkpoint filename, a class-derived retryable
+// flag, and an actionable remediation hint so an agent caller does not need
+// to parse the error message to decide what to do next.
+//
+// UnknownFields, UnknownFieldsTruncated, UnknownFieldsOmitted, and
+// UnknownFieldsShortened (147-F / U7) carry the bounded, raw machine
+// projection of a non-conforming refusal's offender key paths (populated via
+// errors.As from *corerrors.CheckpointNonConformingError.BoundedFieldPaths()).
+// None of the four carry omitempty: a refusal unrelated to non-conformance
+// still reports unknown_fields: [] and the three scalars at their zero value,
+// so a caller can rely on all four keys always being present.
 type checkpointDispositionErrorResponse struct {
-	Error       string `json:"error"`
-	Message     string `json:"message"`
-	Code        string `json:"code"`
-	Filename    string `json:"filename"`
-	Retryable   bool   `json:"retryable"`
-	Outcome     string `json:"outcome,omitempty"`
-	Remediation string `json:"remediation"`
+	Error                  string   `json:"error"`
+	Message                string   `json:"message"`
+	Code                   string   `json:"code"`
+	Filename               string   `json:"filename"`
+	Retryable              bool     `json:"retryable"`
+	Outcome                string   `json:"outcome,omitempty"`
+	Remediation            string   `json:"remediation"`
+	UnknownFields          []string `json:"unknown_fields"`
+	UnknownFieldsTruncated bool     `json:"unknown_fields_truncated"`
+	UnknownFieldsOmitted   int      `json:"unknown_fields_omitted"`
+	UnknownFieldsShortened int      `json:"unknown_fields_shortened"`
+}
+
+// dispositionOperatorVerb derives the operator-facing verb from the first
+// word of op (e.g. "abandon checkpoint" -> "abandon") and returns the
+// corresponding backlogit_<verb>_checkpoint tool name, so a remediation
+// string's "instead of" clause always names the caller's actual originating
+// verb instead of a hardcoded one (147-F / U7). This lets
+// checkpointDispositionError serve resolve refusals (147.025-T / U7d) with
+// the same accurate wording it already gives abandon and quarantine.
+func dispositionOperatorVerb(op string) string {
+	verb, _, _ := strings.Cut(op, " ")
+	return "backlogit_" + verb + "_checkpoint"
 }
 
 // checkpointDispositionError maps a checkpoint disposition sentinel error
@@ -316,16 +384,38 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 		Error:    "checkpoint_disposition_failed",
 		Message:  fmt.Sprintf("%s: %v", op, err),
 		Filename: filename,
+		// Default to a non-nil empty slice (never left nil) so a refusal
+		// unrelated to non-conformance still marshals "unknown_fields": []
+		// rather than "unknown_fields": null
+		// (docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md).
+		UnknownFields: []string{},
 	}
 	switch {
+	case errors.Is(err, corerrors.ErrCheckpointNonConforming):
+		// 147-F / U7: distinct from ErrCheckpointUseQuarantine — this
+		// sentinel means the document IS schema-valid but carries
+		// unmodeled/duplicate top-level or nested keys (post-U5, quarantine
+		// itself no longer returns this; it now originates from abandon and
+		// resolve refusing to rewrite such a document).
+		resp.Code = "checkpoint_non_conforming"
+		resp.Retryable = false
+		resp.Remediation = fmt.Sprintf("this target has unmodeled or duplicate keys; call backlogit_quarantine_checkpoint instead of %s", dispositionOperatorVerb(op))
+		var typed *corerrors.CheckpointNonConformingError
+		if errors.As(err, &typed) {
+			bounded := typed.BoundedFieldPaths()
+			resp.UnknownFields = bounded.Paths
+			resp.UnknownFieldsTruncated = bounded.Truncated
+			resp.UnknownFieldsOmitted = bounded.OmittedPaths
+			resp.UnknownFieldsShortened = bounded.TruncatedPaths
+		}
 	case errors.Is(err, corerrors.ErrCheckpointUseQuarantine):
 		resp.Code = "checkpoint_use_quarantine"
 		resp.Retryable = false
-		resp.Remediation = "this target is malformed; call backlogit_quarantine_checkpoint instead of backlogit_abandon_checkpoint"
+		resp.Remediation = fmt.Sprintf("this target is malformed; call backlogit_quarantine_checkpoint instead of %s", dispositionOperatorVerb(op))
 	case errors.Is(err, corerrors.ErrCheckpointUseAbandon):
 		resp.Code = "checkpoint_use_abandon"
 		resp.Retryable = false
-		resp.Remediation = "this target is valid; call backlogit_abandon_checkpoint instead of backlogit_quarantine_checkpoint"
+		resp.Remediation = fmt.Sprintf("this target is valid; call backlogit_abandon_checkpoint instead of %s", dispositionOperatorVerb(op))
 	case errors.Is(err, corerrors.ErrCheckpointNotActive):
 		resp.Code = "checkpoint_not_active"
 		resp.Retryable = false
@@ -355,6 +445,14 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 		resp.Code = "checkpoint_audit_not_applied"
 		resp.Retryable = true
 		resp.Remediation = "the audit append definitely did not apply and nothing was moved or rewritten; safe to retry"
+	case errors.Is(err, corerrors.ErrCheckpointContentChanged):
+		// 147-F: a concurrent writer mutated the checkpoint between the
+		// classification read and the guarded disposition write (quarantine's
+		// move, or the conforming-rewrite seam resolve/abandon share). No
+		// data was lost or overwritten; the caller's own read is now stale.
+		resp.Code = "checkpoint_content_changed"
+		resp.Retryable = true
+		resp.Remediation = "the checkpoint was modified by another process between classification and write; re-read the checkpoint and retry the operation"
 	case errors.Is(err, corerrors.ErrCheckpointNotFound):
 		return NotFound(err.Error())
 	default:
