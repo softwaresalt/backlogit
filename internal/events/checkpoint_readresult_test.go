@@ -1,10 +1,17 @@
 package events
 
 import (
+	"context"
+	"errors"
 	"go/ast"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // TestU15_CheckpointReadResultDeclared asserts checkpoint_lifecycle.go
@@ -93,4 +100,43 @@ func TestU15Guard_GetCheckpointRetainedAsWrapper(t *testing.T) {
 			assert.True(t, ok && ident.Name == "CheckpointV1", "GetCheckpoint must still return *CheckpointV1")
 		}
 	}
+}
+
+// TestU15Guard_ConformingDocumentReturnsValidResult asserts
+// GetCheckpointResult on a conforming active document returns a non-nil
+// result whose Checkpoint matches GetCheckpoint's return and whose Valid is
+// true.
+func TestU15Guard_ConformingDocumentReturnsValidResult(t *testing.T) {
+	dir := t.TempDir()
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active"}`
+	created, err := CreateCheckpoint(context.Background(), dir, stateDump)
+	require.NoError(t, err)
+	filename := filepath.Base(created.Path)
+
+	want, err := GetCheckpoint(context.Background(), dir, filename)
+	require.NoError(t, err)
+
+	got, err := GetCheckpointResult(context.Background(), dir, filename)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, want, got.Checkpoint)
+	assert.True(t, got.Valid)
+}
+
+// TestU15Guard_SchemaInvalidDocumentReturnsUnwrappedErr asserts a
+// schema-invalid document returns the pre-existing ErrCheckpointInvalid
+// unwrapped: errors.Is(err, ErrCheckpointInvalid) holds and
+// QuarantineIsRemedy(err) is false, because a read is not a rewrite and
+// there is nothing to refuse.
+func TestU15Guard_SchemaInvalidDocumentReturnsUnwrappedErr(t *testing.T) {
+	dir := t.TempDir()
+	// A legacy pre-V1 file: parses as JSON but fails ValidateCheckpoint
+	// (no schema_version, agent, session_id, created_at, updated_at).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "checkpoint-legacy.json"), []byte(`{"status":"active"}`), 0o644))
+
+	got, err := GetCheckpointResult(context.Background(), dir, "checkpoint-legacy.json")
+	assert.Nil(t, got)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointInvalid))
+	assert.False(t, backlogiterrors.QuarantineIsRemedy(err))
 }

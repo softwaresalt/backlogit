@@ -27,6 +27,27 @@ func parseEventsSource(t *testing.T, filename string) *ast.File {
 	return file
 }
 
+func findPackageVarIn(file *ast.File, name string) *ast.ValueSpec {
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			valueSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, n := range valueSpec.Names {
+				if n.Name == name {
+					return valueSpec
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func findPackageTypeIn(file *ast.File, name string) *ast.TypeSpec {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)

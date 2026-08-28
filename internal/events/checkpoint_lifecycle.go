@@ -135,6 +135,35 @@ func GetCheckpoint(_ context.Context, checkpointDir, filename string) (*Checkpoi
 	return cp, nil
 }
 
+// CheckpointReadResult is the structured read result for a checkpoint,
+// carrying conformance and remediation metadata alongside the parsed
+// document (147-F / U15). This declaration adds no conformance evaluation,
+// no intent population, and no offender projection of its own — every field
+// beyond Checkpoint and Valid starts at its zero value here; U6b's
+// production delta populates them from a live read.
+type CheckpointReadResult struct {
+	Checkpoint          *CheckpointV1
+	Valid               bool
+	Conforming          bool
+	NeedsQuarantine     bool
+	RemediationIntent   *RemediationIntent
+	NonConformingFields backlogiterrors.BoundedFieldPathSet
+}
+
+// GetCheckpointResult reads and validates a specific checkpoint file via the
+// existing GetCheckpoint, returning a CheckpointReadResult. GetCheckpoint
+// itself is retained unchanged so every existing caller compiles untouched.
+// On error, the error from GetCheckpoint is returned unwrapped — a read is
+// not a rewrite, so ErrCheckpointInvalid still resolves via errors.Is and
+// QuarantineIsRemedy(err) is false; there is nothing to refuse (147-F / U15).
+func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*CheckpointReadResult, error) {
+	cp, err := GetCheckpoint(ctx, checkpointDir, filename)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckpointReadResult{Checkpoint: cp, Valid: true}, nil
+}
+
 // ResolveCheckpoint marks a checkpoint as resolved (idempotent).
 func ResolveCheckpoint(_ context.Context, checkpointDir, filename string) error {
 	if err := validateCheckpointFilename(filename); err != nil {
