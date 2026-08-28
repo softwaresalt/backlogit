@@ -168,8 +168,6 @@ func TestHandleQuarantineCheckpoint_MissingOperator(t *testing.T) {
 	assert.True(t, result.IsError, "quarantine must fail when operator is not supplied")
 }
 
-
-
 // TestHandleAbandonCheckpoint_WhitespaceOnlyOperatorRejected asserts CLI/MCP
 // parity: the CLI trims and rejects a whitespace-only operator, so the MCP
 // surface must reject it too rather than persisting a blank audit identity.
@@ -562,4 +560,3 @@ func TestU7dGuard_ResolveMissingFileStillReturnsNotFound(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(tc.Text), &resp))
 	assert.Equal(t, "not_found", resp["error"])
 }
-

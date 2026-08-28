@@ -457,6 +457,3 @@ func ensurePathContained(dir, path string) error {
 	}
 	return nil
 }
-
-
-

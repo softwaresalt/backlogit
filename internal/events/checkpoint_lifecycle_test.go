@@ -425,10 +425,6 @@ func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
 	assert.Equal(t, 1, result.SkippedCount)
 }
 
-
-
-
-
 // TestListCheckpoints_RemediationCommandIsShellSafe is the follow-up
 // regression to TestListCheckpoints_FlagsBadFilesReadOnly: the advertised
 // remediation command must be safe to run verbatim in a POSIX shell even
@@ -769,4 +765,3 @@ func TestU3Guard_AlreadyResolvedConformingDocumentIsIdempotentNoOp(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, before, after, "an idempotent no-op must not rewrite the file")
 }
-

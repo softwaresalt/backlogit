@@ -97,4 +97,3 @@ func TestU16Guard_ConformingPathUnchanged(t *testing.T) {
 
 	assert.Empty(t, buf.String(), "a nil RemediationIntent must render nothing")
 }
-

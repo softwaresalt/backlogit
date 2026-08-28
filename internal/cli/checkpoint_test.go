@@ -125,4 +125,3 @@ func TestU8_AbandonNonConformingNamesOffendingKeys(t *testing.T) {
 	assert.Contains(t, err.Error(), "required verb: quarantine",
 		"must state the required verb explicitly, read from a RemediationIntent")
 }
-

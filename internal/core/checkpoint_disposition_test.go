@@ -312,8 +312,6 @@ func TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved(t *testing.T) {
 	})
 }
 
-
-
 // TestCheckpointDisposition_IndeterminateAuditLeavesTargetUnmoved is the
 // companion to TestCheckpointDisposition_FailedAuditLeavesTargetUnmoved: it
 // exercises the ErrWriteIndeterminate branch (not just ErrWriteNotApplied) by
@@ -397,8 +395,6 @@ func TestResolveDispositionTarget_RejectsSymlinkedCheckpointsDir(t *testing.T) {
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
 
-
-
 // TestResolveDispositionTarget_RejectsSymlinkedStorageRoot asserts that a
 // symlinked .backlogit directory (not merely a symlinked checkpoints
 // subdirectory) pointing entirely outside the workspace root is refused. A
@@ -422,7 +418,6 @@ func TestResolveDispositionTarget_RejectsSymlinkedStorageRoot(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrCheckpointTargetUnsafe)
 }
-
 
 // ── 136.014-T: TOCTOU classify-then-move race ─────────────────────────────────
 

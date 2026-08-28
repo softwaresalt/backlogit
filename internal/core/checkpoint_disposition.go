@@ -366,5 +366,3 @@ func moveNoReplace(src, dst string, ws *Workspace, classificationData []byte) er
 
 	return nil
 }
-
-
