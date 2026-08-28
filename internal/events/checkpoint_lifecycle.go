@@ -208,26 +208,53 @@ type CheckpointReadResult struct {
 	NonConformingFields backlogiterrors.BoundedFieldPathSet
 }
 
-// GetCheckpointResult reads and validates a specific checkpoint file via the
-// existing GetCheckpoint, returning a CheckpointReadResult. GetCheckpoint
-// itself is retained unchanged so every existing caller compiles untouched.
-// On error, the error from GetCheckpoint is returned unwrapped — a read is
-// not a rewrite, so ErrCheckpointInvalid still resolves via errors.Is and
-// QuarantineIsRemedy(err) is false; there is nothing to refuse (147-F / U15).
+// GetCheckpointResult reads and validates a specific checkpoint file,
+// returning a CheckpointReadResult. It reads the file's bytes exactly once
+// and derives parsing, validation, and conformance all from that same
+// snapshot (147-F, found during 130-S adversarial review) — an earlier
+// version called GetCheckpoint (which performs its own internal read) and
+// then re-read the same path a second time to run the conformance check.
+// If the file changed between those two reads, the returned Checkpoint and
+// conformance metadata could describe different byte sequences; if the
+// second read failed, the result was misreported as conforming rather than
+// surfacing the read error. On error, the error is returned unwrapped — a
+// read is not a rewrite, so ErrCheckpointInvalid still resolves via
+// errors.Is and QuarantineIsRemedy(err) is false; there is nothing to
+// refuse (147-F / U15).
 //
 // On success, Conforming, NeedsQuarantine, RemediationIntent, and
-// NonConformingFields are populated by re-reading the same file's raw bytes
-// and running CheckConformingTopLevelNamespace against them (147-F / U6b).
-// NonConformingFields is recovered via errors.As from the conformance
-// verdict and produced by CheckpointNonConformingError.BoundedFieldPaths —
-// never re-derived or re-capped here — so `checkpoint get` stays an atomic,
-// bounded, per-file offender source with machine-checkable truncation
-// metadata. valid retains its existing (schema-valid) meaning; conforming
-// is reported as a distinct field so no existing consumer's contract
-// silently changes.
-func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*CheckpointReadResult, error) {
-	cp, err := GetCheckpoint(ctx, checkpointDir, filename)
+// NonConformingFields are populated by running
+// CheckConformingTopLevelNamespace against the same bytes that produced
+// Checkpoint (147-F / U6b). NonConformingFields is recovered via errors.As
+// from the conformance verdict and produced by
+// CheckpointNonConformingError.BoundedFieldPaths — never re-derived or
+// re-capped here — so `checkpoint get` stays an atomic, bounded, per-file
+// offender source with machine-checkable truncation metadata. valid
+// retains its existing (schema-valid) meaning; conforming is reported as a
+// distinct field so no existing consumer's contract silently changes.
+func GetCheckpointResult(_ context.Context, checkpointDir, filename string) (*CheckpointReadResult, error) {
+	if err := validateCheckpointFilename(filename); err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(checkpointDir, filename)
+	if err := ensurePathContained(checkpointDir, path); err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
+		}
+		return nil, fmt.Errorf("read checkpoint %s: %w", filename, err)
+	}
+
+	cp, err := ParseCheckpoint(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateCheckpoint(cp); err != nil {
 		return nil, err
 	}
 
@@ -240,17 +267,6 @@ func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*
 		// "paths": [] rather than "paths": null on every JSON-projecting
 		// surface (docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md).
 		NonConformingFields: backlogiterrors.BoundedFieldPathSet{Paths: []string{}},
-	}
-
-	path := filepath.Join(checkpointDir, filename)
-	data, readErr := os.ReadFile(path)
-	if readErr != nil {
-		// GetCheckpoint just successfully read this same path; a failure
-		// here would be a race with an external actor, not a conformance
-		// question. Report the document as conforming (its own contents
-		// were already proven valid above) rather than manufacturing a
-		// spurious refusal.
-		return result, nil
 	}
 
 	if confErr := CheckConformingTopLevelNamespace(data); confErr != nil {
