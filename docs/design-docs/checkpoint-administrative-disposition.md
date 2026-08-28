@@ -18,25 +18,66 @@ quarantine`) and the MCP server (`backlogit_abandon_checkpoint`,
 `backlogit_quarantine_checkpoint`), and both route through the same core
 implementation so the two surfaces produce identical observable state.
 
-## Malformed-Only vs Valid-Only Split Rationale
+## Total Four-Class Disposition Contract
 
-Abandon and quarantine are disjoint by design:
+The classification below is **total only over `status: "active"` documents with
+no administrative disposition** (I3 scoping, pinned by 147.009-T / U5). A
+document already carrying an administrative disposition (`disposition:
+abandoned` or `disposition: quarantined`) is governed by the precedence rule
+in the next section, not by this table.
 
-* `AbandonCheckpoint` operates only on a parseable, schema-valid checkpoint.
-  It refuses a malformed target with `ErrCheckpointUseQuarantine`, naming the
-  correct verb.
-* `QuarantineCheckpoint` operates only on a malformed (unparseable or
-  schema-invalid) checkpoint. It refuses a valid target with
-  `ErrCheckpointUseAbandon`, naming the correct verb.
+| Class | abandon | resolve | quarantine |
+|---|---|---|---|
+| valid + conforming | accept | accept | refuse (`ErrCheckpointUseAbandon`) |
+| valid but non-conforming | refuse (`ErrCheckpointNonConforming`) | refuse (`ErrCheckpointNonConforming`) | **accept** |
+| parses but schema-invalid | refuse (`ErrCheckpointUseQuarantine`) | refuse (`ErrCheckpointUseQuarantine`) | accept |
+| does not parse | refuse (`ErrCheckpointUseQuarantine`) | refuse (`ErrCheckpointUseQuarantine`) | accept |
 
-The split exists because the two verbs have different safety requirements.
-Abandon rewrites the checkpoint in place (it can only do so safely once the
-document is known to parse and validate). Quarantine must never rewrite a
-malformed document — since the document cannot be trusted to round-trip
-through parse/marshal, quarantine moves the original bytes verbatim instead.
-Combining both behaviors into a single verb would require guessing which
-safety contract applies to a given target; keeping them disjoint makes the
-contract explicit and machine-checkable at the boundary.
+The "parses but schema-invalid" and "does not parse" classes are named
+separately rather than folded into a single "malformed" row: they are
+distinct failure modes at the `ParseCheckpoint` boundary versus the
+`ValidateCheckpoint` boundary, and the schema-invalid-but-parseable shape is
+the exact shape of the nine live legacy checkpoint files this feature exists
+to handle. A table that only named parse failure would not be total over
+active checkpoints and would silently omit the class most in need of a
+disposition path.
+
+The split exists because the three verbs have different safety requirements:
+
+* `AbandonCheckpoint` and `ResolveCheckpoint` both rewrite the checkpoint in
+  place. They can only do so safely once the document is known to parse,
+  validate, and conform to the closed top-level (and nested `progress` /
+  `context`) key namespace — hence both refuse the non-conforming class in
+  addition to the two malformed classes.
+* `QuarantineCheckpoint` must never rewrite a document it cannot fully trust
+  to round-trip through parse/marshal. Since a non-conforming document is
+  schema-valid but carries structure outside the enforced namespace, it is
+  safer to move it verbatim than to risk losing or reshaping the unmodeled
+  data during a rewrite — so quarantine **accepts** it rather than refusing.
+  The invariant preserved is C2: a document that cannot be trusted to
+  round-trip is moved verbatim, never rewritten.
+
+Combining these behaviors into a single verb would require guessing which
+safety contract applies to a given target; keeping the three verbs' accept/
+refuse boundaries explicit and machine-checkable (via `ErrCheckpointUseAbandon`,
+`ErrCheckpointUseQuarantine`, and `ErrCheckpointNonConforming`) removes that
+guesswork at the boundary.
+
+## Administrative Disposition Precedence
+
+`ResolveCheckpoint` checks the document's existing administrative disposition
+**before** applying the four-class validity/conformance classification above.
+A document that has already been administratively abandoned
+(`disposition: abandoned`) returns `ErrCheckpointCannotResolveAbandoned` from
+`resolve` regardless of which of the four validity/conformance classes it
+would otherwise fall into — the disposition guard fires first, and resolve
+never reaches the classification table for such a document.
+
+This precedence guard is a regression test for the implemented check
+ordering, not a new feature: it existed before the four-class table above was
+written and is recorded here only so the table's scope — "active documents
+with no administrative disposition" — is not read as silently overriding it.
+
 
 ## Metadata Fields and Allowlist
 
