@@ -309,6 +309,16 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 		return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointCannotResolveAbandoned, filename)
 	}
 
+	// 147-F / U3: refuse a schema-invalid document rather than replacing it
+	// with a fabricated skeleton. Multi-%w (not %v — Q2) so both
+	// errors.Is(err, ErrCheckpointUseQuarantine) and errors.Is(err,
+	// ErrCheckpointInvalid) hold: the caller learns both the remedy verb and
+	// the underlying validation-class reason. This gate does not write; the
+	// file is left byte-identical on refusal.
+	if valErr := ValidateCheckpoint(cp); valErr != nil {
+		return fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointUseQuarantine, valErr)
+	}
+
 	// 147-F / U14: the rewrite itself routes through the guarded seam, which
 	// requires ParseCheckpoint, ValidateCheckpoint, and
 	// CheckConformingTopLevelNamespace to all succeed before any marshal or

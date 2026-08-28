@@ -72,6 +72,22 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, valErr)
 	}
 
+	// 147-F / U4: refuse a valid-but-non-conforming document, returning the
+	// typed error unchanged. Placed immediately after ValidateCheckpoint and
+	// BEFORE the already-abandoned short-circuit: a file carrying
+	// disposition:"abandoned" plus an unmodeled key would otherwise return
+	// nil here while U5's widened quarantine accepts it and U6 reports
+	// NeedsQuarantine:true — three surfaces disagreeing about one file. It
+	// is a non-writing refusal, so nothing is lost by refusing earlier. It
+	// remains strictly before appendCheckpointDispositionAudit, preserving
+	// the shipped audit-then-mutate ordering. The guarded seam (U14b) does
+	// not satisfy this unit: it refuses the same document at the *write*
+	// step, which is after the audit append and the short-circuit — this
+	// gate is what makes the refusal audit-free and short-circuit-proof.
+	if confErr := events.CheckConformingTopLevelNamespace(data); confErr != nil {
+		return confErr
+	}
+
 	// Idempotent no-op: already abandoned. Preserve the original disposition
 	// fields rather than overwriting reason/operator/timestamp on a repeat call.
 	if cp.Disposition == events.DispositionAbandoned {
