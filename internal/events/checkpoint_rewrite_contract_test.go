@@ -129,6 +129,39 @@ func TestRewriteCheckpointFile_AcceptedMutationPreservesExistingMode(t *testing.
 		"an accepted rewrite must preserve the source 0600 mode, not a hardcoded 0644")
 }
 
+// TestResolveCheckpointMutate_RefusesWhenSeamReadShowsAbandoned is a
+// regression test (found during 130-S adversarial review): ResolveCheckpoint
+// classifies disposition against its own initial read, but
+// RewriteCheckpointFile performs an independent read of its own. If a
+// concurrent AbandonCheckpoint wins between those two reads, the seam's own
+// read reflects the newly abandoned document — a state the CAS check alone
+// cannot catch, since nothing changes between the seam's read and its write
+// in that scenario. resolveCheckpointMutate (the exact callback
+// ResolveCheckpoint passes to the seam) must refuse rather than flip status
+// to "resolved" while leaving disposition:"abandoned" in place. Calling
+// RewriteCheckpointFile directly with the checkpoint already reflecting a
+// post-race abandoned state exercises exactly what the seam's own read
+// would observe in that race, without needing a real concurrent goroutine.
+func TestResolveCheckpointMutate_RefusesWhenSeamReadShowsAbandoned(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-resolve-mutate-abandoned.json"
+	path := filepath.Join(dir, name)
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"abandoned",` +
+		`"disposition":"abandoned","disposition_reason":"stale","disposition_operator":"ship",` +
+		`"disposition_at":"2026-08-24T00:00:00Z",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`)
+	require.NoError(t, os.WriteFile(path, body, 0o644))
+
+	err := RewriteCheckpointFile(context.Background(), dir, name, resolveCheckpointMutate(name))
+
+	require.Error(t, err, "the resolve mutate callback must refuse a document the seam's own read shows abandoned")
+	assert.ErrorIs(t, err, backlogiterrors.ErrCheckpointCannotResolveAbandoned)
+
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, body, after, "a refused rewrite must leave the abandoned document's bytes untouched")
+}
+
 // TestRewriteCheckpointFile_ContentChangedDuringMutateRefusesWrite is a
 // regression test (found during 130-S adversarial review): the seam
 // checked conformance against the bytes read at the top of the function,

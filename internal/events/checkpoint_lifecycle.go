@@ -349,12 +349,30 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 	// rewritten with a fabricated skeleton. This introduces no new
 	// verb-facing sentinel and changes no ordering: the idempotent and
 	// abandoned-disposition checks above still run first, against the same
-	// initial read.
-	return RewriteCheckpointFile(ctx, checkpointDir, filename, func(cp *CheckpointV1) error {
+	// initial read. resolveCheckpointMutate additionally re-checks
+	// disposition against the seam's own fresh read (see its doc comment).
+	return RewriteCheckpointFile(ctx, checkpointDir, filename, resolveCheckpointMutate(filename))
+}
+
+// resolveCheckpointMutate returns the mutate callback ResolveCheckpoint
+// passes to RewriteCheckpointFile. It is a named function (rather than an
+// inline closure) so a test can invoke RewriteCheckpointFile with this exact
+// production logic directly, against a checkpoint whose on-disk content
+// reflects a state RewriteCheckpointFile's own independent read observes —
+// which may differ from what ResolveCheckpoint's earlier classification read
+// observed if a concurrent AbandonCheckpoint won the race in between (147-F,
+// found during 130-S adversarial review). The disposition re-check below is
+// what keeps that race from silently flipping status to "resolved" on an
+// already-abandoned document.
+func resolveCheckpointMutate(filename string) func(*CheckpointV1) error {
+	return func(cp *CheckpointV1) error {
+		if cp.Disposition == DispositionAbandoned {
+			return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointCannotResolveAbandoned, filename)
+		}
 		cp.Status = "resolved"
 		cp.UpdatedAt = time.Now().UTC()
 		return nil
-	})
+	}
 }
 
 // CleanupCheckpoints archives resolved and stale checkpoints. retentionDays must be > 0.

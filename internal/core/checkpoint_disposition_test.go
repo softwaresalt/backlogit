@@ -646,6 +646,38 @@ func TestAbandonCheckpoint_RefusesNonActiveNonAbandonedStatus(t *testing.T) {
 	assert.Empty(t, cp.Disposition, "disposition must not be set when abandon is refused")
 }
 
+// TestAbandonCheckpointMutate_RefusesWhenSeamReadShowsResolved is a
+// regression test (found during 130-S adversarial review): AbandonCheckpoint
+// classifies status against its own initial read, but
+// events.RewriteCheckpointFile performs an independent read of its own. If a
+// concurrent ResolveCheckpoint wins between those two reads, the seam's own
+// read reflects the newly resolved document — a state the CAS check alone
+// cannot catch, since nothing changes between the seam's read and its write
+// in that scenario. abandonCheckpointMutate (the exact callback
+// AbandonCheckpoint passes to the seam) must refuse rather than
+// unconditionally overwrite the resolved document with
+// disposition:"abandoned". Calling events.RewriteCheckpointFile directly
+// with the checkpoint already reflecting a post-race resolved state
+// exercises exactly what the seam's own read would observe in that race,
+// without needing a real concurrent goroutine.
+func TestAbandonCheckpointMutate_RefusesWhenSeamReadShowsResolved(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-abandon-mutate-resolved.json"
+	resolvedCP := validDispositionTestCheckpoint()
+	resolvedCP.Status = "resolved"
+	body := writeDispositionCheckpoint(t, dir, name, resolvedCP)
+
+	mutate := abandonCheckpointMutate("reason", "operator@example.com", time.Now().UTC())
+	err := events.RewriteCheckpointFile(context.Background(), dir, name, mutate)
+
+	require.Error(t, err, "the abandon mutate callback must refuse a document the seam's own read shows resolved")
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointNotActive)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, body, after, "a refused rewrite must leave the resolved document's bytes untouched")
+}
+
 // TestU4_ValidButNonConformingActiveRefusedWithNonConforming asserts a
 // valid-but-non-conforming active document is refused with
 // ErrCheckpointNonConforming naming the offending keys (147-F / U4). This

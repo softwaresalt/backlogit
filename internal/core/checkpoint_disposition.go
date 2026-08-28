@@ -122,19 +122,14 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	// the already-abandoned / not-active checks above still run first,
 	// against the same initial read — the seam refuses an untrustworthy
 	// document at the write step, which is after those checks.
+	// abandonCheckpointMutate additionally re-checks active status against
+	// the seam's own fresh read (see its doc comment).
 	err = MutationEnvelope(ctx, []MutationStep{
 		{
 			Name: "rewrite-checkpoint",
 			Apply: func(ctx context.Context) error {
-				return events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName, func(cp *events.CheckpointV1) error {
-					cp.Status = "abandoned"
-					cp.Disposition = events.DispositionAbandoned
-					cp.DispositionReason = reason
-					cp.DispositionOperator = operator
-					cp.DispositionAt = &now
-					cp.UpdatedAt = now
-					return nil
-				})
+				return events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName,
+					abandonCheckpointMutate(reason, operator, now))
 			},
 		},
 	})
@@ -142,6 +137,31 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 		return fmt.Errorf("abandon checkpoint %s: %w", baseName, err)
 	}
 	return nil
+}
+
+// abandonCheckpointMutate returns the mutate callback AbandonCheckpoint
+// passes to RewriteCheckpointFile. It is a named function (rather than an
+// inline closure) so a test can invoke RewriteCheckpointFile with this exact
+// production logic directly, against a checkpoint whose on-disk content
+// reflects a state RewriteCheckpointFile's own independent read observes —
+// which may differ from what AbandonCheckpoint's earlier classification read
+// observed if a concurrent ResolveCheckpoint won the race in between (147-F,
+// found during 130-S adversarial review). The active-status re-check below
+// is what keeps that race from silently overwriting a newly resolved
+// checkpoint with disposition:"abandoned".
+func abandonCheckpointMutate(reason, operator string, now time.Time) func(*events.CheckpointV1) error {
+	return func(cp *events.CheckpointV1) error {
+		if cp.Status != "active" {
+			return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
+		}
+		cp.Status = "abandoned"
+		cp.Disposition = events.DispositionAbandoned
+		cp.DispositionReason = reason
+		cp.DispositionOperator = operator
+		cp.DispositionAt = &now
+		cp.UpdatedAt = now
+		return nil
+	}
 }
 
 // QuarantineCheckpoint administratively quarantines a checkpoint: it
