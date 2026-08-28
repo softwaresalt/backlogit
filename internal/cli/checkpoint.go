@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/user"
@@ -257,6 +258,22 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 		return fmt.Errorf("%s: checkpoint %s is malformed; required verb: %s: %w", op, filename, intent.Verb, err)
 	}
 	return fmt.Errorf("%s: %w", op, err)
+}
+
+// RenderCheckpointRemediationBlock is the CLI-boundary remediation command
+// renderer (147-F / 147.039-T / U16). It is the ONLY surface allowed to
+// render an operator-runnable disposition command, because the CLI is the
+// only layer that knows the resolved workspace. It consumes a
+// RemediationIntent and writes a bound, approval-gated block to w wherever a
+// refusal or a needs_quarantine summary is printed. A nil intent (the
+// conforming path) renders nothing.
+//
+// TODO(147.039-T / U16): implement the real block. Stub renders nothing so
+// callers compile; both TestU16_ scenarios are red until this lands.
+func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationIntent, workspaceRoot string) {
+	_ = w
+	_ = intent
+	_ = workspaceRoot
 }
 
 func newCheckpointResolveCmd(cwd *string) *cobra.Command {
