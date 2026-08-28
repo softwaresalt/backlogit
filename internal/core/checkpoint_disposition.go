@@ -13,7 +13,6 @@ import (
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
-	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // dispositionVerbAbandon and dispositionVerbQuarantine are the audit "verb"
@@ -95,27 +94,28 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	}
 
 	now := time.Now().UTC()
-	cp.Status = "abandoned"
-	cp.Disposition = events.DispositionAbandoned
-	cp.DispositionReason = reason
-	cp.DispositionOperator = operator
-	cp.DispositionAt = &now
-	cp.UpdatedAt = now
 
-	updated, err := jsonutil.MarshalReadable(cp)
-	if err != nil {
-		return fmt.Errorf("abandon checkpoint: marshal %s: %w", baseName, err)
-	}
-
+	// 147-F / U14b: the rewrite itself routes through the guarded seam
+	// (events.RewriteCheckpointFile), which re-requires ParseCheckpoint,
+	// ValidateCheckpoint, and CheckConformingTopLevelNamespace to all
+	// succeed before any marshal or write. This introduces no new
+	// verb-facing sentinel and changes no ordering: the audit append and
+	// the already-abandoned / not-active checks above still run first,
+	// against the same initial read — the seam refuses an untrustworthy
+	// document at the write step, which is after those checks.
 	err = MutationEnvelope(ctx, []MutationStep{
 		{
 			Name: "rewrite-checkpoint",
-			Apply: func(context.Context) error {
-				// atomicfile.WriteFileAtomic replaces an existing destination
-				// correctly on Windows (a plain os.Rename(tmp, path) fails
-				// there when path already exists), unlike a hand-rolled
-				// temp-then-rename helper.
-				return atomicfile.WriteFileAtomic(target, updated)
+			Apply: func(ctx context.Context) error {
+				return events.RewriteCheckpointFile(ctx, filepath.Dir(target), baseName, func(cp *events.CheckpointV1) error {
+					cp.Status = "abandoned"
+					cp.Disposition = events.DispositionAbandoned
+					cp.DispositionReason = reason
+					cp.DispositionOperator = operator
+					cp.DispositionAt = &now
+					cp.UpdatedAt = now
+					return nil
+				})
 			},
 		},
 	})

@@ -175,7 +175,14 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_list_checkpoints",
-			mcplib.WithDescription("List session state checkpoints with optional filters"),
+			mcplib.WithDescription("List session state checkpoints with optional filters. "+
+				"A summary with needs_quarantine true is not safely rewritable; use "+
+				"backlogit_quarantine_checkpoint, not backlogit_resolve_checkpoint or "+
+				"backlogit_abandon_checkpoint. Such a summary is returned regardless of the "+
+				"status, agent, shipment_id, feature_id, and max_age filters, so a filtered "+
+				"result can contain rows that do not match the filter. The accompanying "+
+				"remediation_intent is a structured record of the required disposition, not "+
+				"a runnable command."),
 			mcplib.WithString("consumer_id", mcplib.Description("Filter by consumer/agent ID")),
 			mcplib.WithString("status", mcplib.Description("Filter by status (active, resolved)")),
 			mcplib.WithString("shipment_id", mcplib.Description("Filter by shipment ID")),
@@ -186,7 +193,12 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_get_checkpoint",
-			mcplib.WithDescription("Get and validate a specific checkpoint by filename"),
+			mcplib.WithDescription("Get and validate a specific checkpoint by filename. "+
+				"For a schema-valid document, returns conforming false when it carries "+
+				"unmodeled top-level keys; such a document cannot be resolved or abandoned. "+
+				"non_conforming_fields carries raw offender paths with explicit truncation "+
+				"counts. A schema-invalid document is refused before any conformance verdict "+
+				"is produced."),
 			mcplib.WithString("filename", mcplib.Required(), mcplib.Description("Checkpoint filename (basename only)")),
 		),
 		s.handleGetCheckpoint,

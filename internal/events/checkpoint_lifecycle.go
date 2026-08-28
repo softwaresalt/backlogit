@@ -13,7 +13,6 @@ import (
 	"time"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
-	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // ListCheckpoints returns checkpoint summaries from checkpointDir, applying optional filter.
@@ -274,7 +273,7 @@ func GetCheckpointResult(ctx context.Context, checkpointDir, filename string) (*
 }
 
 // ResolveCheckpoint marks a checkpoint as resolved (idempotent).
-func ResolveCheckpoint(_ context.Context, checkpointDir, filename string) error {
+func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) error {
 	if err := validateCheckpointFilename(filename); err != nil {
 		return err
 	}
@@ -310,15 +309,20 @@ func ResolveCheckpoint(_ context.Context, checkpointDir, filename string) error 
 		return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointCannotResolveAbandoned, filename)
 	}
 
-	cp.Status = "resolved"
-	cp.UpdatedAt = time.Now().UTC()
-
-	updated, err := jsonutil.MarshalReadable(cp)
-	if err != nil {
-		return fmt.Errorf("marshal resolved checkpoint: %w", err)
-	}
-
-	return syncWriteFileAtomic(path, updated, 0o644)
+	// 147-F / U14: the rewrite itself routes through the guarded seam, which
+	// requires ParseCheckpoint, ValidateCheckpoint, and
+	// CheckConformingTopLevelNamespace to all succeed before any marshal or
+	// write. A valid-but-non-conforming or schema-invalid document is
+	// therefore refused here with the seam's raw verdict error, rather than
+	// rewritten with a fabricated skeleton. This introduces no new
+	// verb-facing sentinel and changes no ordering: the idempotent and
+	// abandoned-disposition checks above still run first, against the same
+	// initial read.
+	return RewriteCheckpointFile(ctx, checkpointDir, filename, func(cp *CheckpointV1) error {
+		cp.Status = "resolved"
+		cp.UpdatedAt = time.Now().UTC()
+		return nil
+	})
 }
 
 // CleanupCheckpoints archives resolved and stale checkpoints. retentionDays must be > 0.
