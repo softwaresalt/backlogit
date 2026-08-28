@@ -726,3 +726,48 @@ func TestU4_NonConformingAlreadyAbandonedReturnsNonConforming(t *testing.T) {
 	var typed *blerrors.CheckpointNonConformingError
 	require.True(t, errors.As(err, &typed))
 }
+
+// TestU17_AbandonValidationWrapPreservesErrCheckpointInvalid asserts
+// AbandonCheckpoint's validation-failure wrap keeps ErrCheckpointInvalid
+// traversable via errors.Is (147-F / U17). The shipped wrap uses
+// fmt.Errorf("%w: %v", ErrCheckpointUseQuarantine, valErr) — the %v verb
+// drops the sentinel ValidateCheckpoint returns.
+func TestU17_AbandonValidationWrapPreservesErrCheckpointInvalid(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	cp := validDispositionTestCheckpoint()
+	cp.Agent = "not-a-real-agent" // fails the `oneof=ship stage` validator tag
+	writeDispositionCheckpoint(t, dir, "checkpoint-u17-invalid-agent.json", cp)
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-u17-invalid-agent.json", "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointUseQuarantine)
+	assert.ErrorIs(t, err, blerrors.ErrCheckpointInvalid,
+		"the %%v verb drops ErrCheckpointInvalid from the wrap; must be multi-%%w")
+}
+
+// TestU17Guard_MessageTextPreserved pins that the underlying validator
+// message text survives the corrected multi-%w wrap unchanged (green on
+// landing, committed with the implementation).
+func TestU17Guard_MessageTextPreserved(t *testing.T) {
+	ws := newCheckpointTargetTestWorkspace(t)
+	dir := filepath.Join(ws.RootPath, ".backlogit", checkpointsSubdir)
+
+	cp := validDispositionTestCheckpoint()
+	cp.Agent = "not-a-real-agent"
+	writeDispositionCheckpoint(t, dir, "checkpoint-u17-message.json", cp)
+
+	parsedForValidation := *cp
+	valErr := events.ValidateCheckpoint(&parsedForValidation)
+	require.Error(t, valErr)
+
+	ew := newDispositionEventWriter(t, ws)
+	err := AbandonCheckpoint(context.Background(), ws, ew, "checkpoint-u17-message.json", "reason", "operator@example.com")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), valErr.Error(),
+		"the validator's message text must survive the corrected wrap unchanged")
+}
