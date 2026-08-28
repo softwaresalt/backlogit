@@ -244,7 +244,12 @@ func mutationPartialError(op string, err *corerrors.MutationPartialError) *mcpli
 		CompensationState: err.CompensationState,
 		// 143.010-T: a partially-compensated result must never advertise itself
 		// as safe to retry while release-scope items remain un-restored.
-		Retryable:          err.Class == "not-applied" && err.CompensationState == "compensated",
+		// 147-F: also gated on !quarantineRequired (found during 130-S
+		// adversarial review) — retrying the same resolve/abandon call
+		// cannot succeed against bytes that are malformed or non-conforming;
+		// "safe to retry" would contradict the quarantine-only guidance
+		// above.
+		Retryable:          err.Class == "not-applied" && err.CompensationState == "compensated" && !quarantineRequired,
 		Recovery:           recovery,
 		QuarantineRequired: quarantineRequired,
 	}

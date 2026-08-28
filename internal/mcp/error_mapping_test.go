@@ -267,6 +267,7 @@ func TestDomainError_MutationPartial_QuarantineRequired(t *testing.T) {
 				Error              string `json:"error"`
 				Classification     string `json:"classification"`
 				Recovery           string `json:"recovery"`
+				Retryable          bool   `json:"retryable"`
 				QuarantineRequired bool   `json:"quarantine_required"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(text.Text), &resp))
@@ -274,6 +275,10 @@ func TestDomainError_MutationPartial_QuarantineRequired(t *testing.T) {
 			assert.Equal(t, "not-applied", resp.Classification)
 			assert.True(t, resp.QuarantineRequired)
 			assert.Contains(t, resp.Recovery, "quarantine")
+			assert.False(t, resp.Retryable,
+				"retryable must be false when quarantine is required, even though class=not-applied and "+
+					"compensation_state=compensated would otherwise mark it retryable — retrying the same "+
+					"resolve/abandon call cannot succeed against quarantine-only bytes")
 		})
 	}
 }
