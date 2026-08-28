@@ -563,3 +563,150 @@ func TestU6Guard_VerdictComputedBeforeFilterBlock(t *testing.T) {
 	require.NotNil(t, summaries[0].RemediationIntent)
 }
 
+// TestU6b_ValidButNonConformingResultProjectsConformanceFields asserts
+// GetCheckpointResult on a valid-but-non-conforming document returns
+// Valid:true, Conforming:false, NeedsQuarantine:true, a RemediationIntent
+// naming verb "quarantine" and approval class "A4c", and
+// NonConformingFields.Paths naming the offenders in raw, unquoted form
+// (147-F / U6b).
+func TestU6b_ValidButNonConformingResultProjectsConformanceFields(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	result, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Valid)
+	assert.False(t, result.Conforming)
+	assert.True(t, result.NeedsQuarantine)
+	require.NotNil(t, result.RemediationIntent)
+	assert.Equal(t, "quarantine", result.RemediationIntent.Verb)
+	assert.Equal(t, "A4c", result.RemediationIntent.ApprovalClass)
+	assert.Contains(t, result.NonConformingFields.Paths, "extra_key")
+	for _, p := range result.NonConformingFields.Paths {
+		assert.NotContains(t, p, `"`, "NonConformingFields.Paths must carry raw, unquoted offender paths")
+	}
+}
+
+// TestU6b_ConformingResultProjectsConformingTrue asserts a conforming file
+// returns Conforming:true, a nil RemediationIntent, and an empty
+// NonConformingFields.Paths with Truncated:false.
+func TestU6b_ConformingResultProjectsConformingTrue(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-conforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	result, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Conforming)
+	assert.Nil(t, result.RemediationIntent)
+	assert.Empty(t, result.NonConformingFields.Paths)
+	assert.False(t, result.NonConformingFields.Truncated)
+}
+
+// TestU6bGuard_ByteUnchangedAfterGet pins GetCheckpoint's read-only contract.
+func TestU6bGuard_ByteUnchangedAfterGet(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6b-readonly.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	before := sha256.Sum256([]byte(body))
+
+	_, err := GetCheckpointResult(context.Background(), dir, name)
+	require.NoError(t, err)
+
+	after, readErr := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, readErr)
+	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestU6d_NonConformingResolvedStatusSurvivesActiveFilter asserts a
+// valid-but-non-conforming status:"resolved" file is still returned when
+// filter.Status == "active", carrying NeedsQuarantine:true (147-F / U6d).
+func TestU6d_NonConformingResolvedStatusSurvivesActiveFilter(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-resolved-nonconforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"resolved",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "active"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1, "a quarantine candidate must bypass the filter block entirely")
+	assert.True(t, summaries[0].NeedsQuarantine)
+}
+
+// TestU6d_NonConformingSurvivesAgentFilterMismatch asserts a non-conforming
+// file is still returned when filter.Agent names a different agent,
+// matching the parse-failure precedent.
+func TestU6d_NonConformingSurvivesAgentFilterMismatch(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-agent-mismatch.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z","extra_key":"x"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Agent: "stage"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1, "a quarantine candidate must bypass an agent filter mismatch")
+	assert.True(t, summaries[0].NeedsQuarantine)
+}
+
+// TestU6dGuard_ConformingResolvedStatusStillDroppedByActiveFilter proves the
+// exemption is scoped to quarantine candidates and is not a blanket filter
+// bypass: a conforming status:"resolved" file is still dropped by an
+// "active" status filter.
+func TestU6dGuard_ConformingResolvedStatusStillDroppedByActiveFilter(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6d-resolved-conforming.json"
+	body := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"resolved",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{Status: "active"})
+	require.NoError(t, err)
+	assert.Empty(t, summaries, "a conforming, non-matching document must still be dropped by the filter")
+}
+
+// TestU6e_UnparseableListsRemediationIntentUnparseable asserts an
+// unparseable file lists with NeedsQuarantine:true and a RemediationIntent
+// whose Reason is "unparseable" (147-F / U6e).
+func TestU6e_UnparseableListsRemediationIntentUnparseable(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6e-unparseable.json"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("not-json{"), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.True(t, summaries[0].NeedsQuarantine)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "unparseable", summaries[0].RemediationIntent.Reason)
+	assert.Equal(t, name, summaries[0].RemediationIntent.TargetFilename)
+	assert.True(t, summaries[0].RemediationIntent.RequiresApproval)
+}
+
+// TestU6e_SchemaInvalidConformingListsRemediationIntentSchemaInvalid asserts
+// a schema-invalid but conforming file lists with a RemediationIntent whose
+// Reason is "schema_invalid".
+func TestU6e_SchemaInvalidConformingListsRemediationIntentSchemaInvalid(t *testing.T) {
+	dir := t.TempDir()
+	name := "checkpoint-u6e-schema-invalid.json"
+	// Parses fine, has only modeled keys (conforming), but fails
+	// ValidateCheckpoint (missing required fields).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(`{"status":"active"}`), 0o644))
+
+	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	require.NotNil(t, summaries[0].RemediationIntent)
+	assert.Equal(t, "schema_invalid", summaries[0].RemediationIntent.Reason)
+}
+
