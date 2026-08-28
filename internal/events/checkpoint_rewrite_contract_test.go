@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -93,4 +94,37 @@ func TestU12_NonConformingRefusedNamingOffendersWithByteIdentity(t *testing.T) {
 	after, readErr := os.ReadFile(path)
 	require.NoError(t, readErr)
 	assert.Equal(t, before, sha256.Sum256(after))
+}
+
+// TestRewriteCheckpointFile_AcceptedMutationPreservesExistingMode is a
+// regression test (found during 130-S adversarial review): the seam wrote
+// its replacement via syncWriteFileAtomic(path, updated, 0o644), which
+// always applies a hardcoded 0644 regardless of the target's existing
+// mode, silently widening a more restrictive checkpoint (e.g. 0600) on
+// every accepted rewrite. atomicfile.WriteFileAtomic — already used
+// elsewhere in this codebase — preserves the destination's existing mode.
+// POSIX permission bits are not represented on Windows filesystems, so this
+// assertion is skipped there, matching internal/atomicfile's own
+// TestWriteFileAtomic_OverwritePreservesExistingMode convention.
+func TestRewriteCheckpointFile_AcceptedMutationPreservesExistingMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not represented on Windows filesystems")
+	}
+	dir := t.TempDir()
+	name := "checkpoint-u12-mode-preserved.json"
+	path := filepath.Join(dir, name)
+	body := []byte(`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",` +
+		`"created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T00:00:00Z"}`)
+	require.NoError(t, os.WriteFile(path, body, 0o600))
+
+	err := RewriteCheckpointFile(context.Background(), dir, name, func(cp *CheckpointV1) error {
+		cp.Status = "resolved"
+		return nil
+	})
+	require.NoError(t, err, "a valid, conforming document must be accepted")
+
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
+		"an accepted rewrite must preserve the source 0600 mode, not a hardcoded 0644")
 }

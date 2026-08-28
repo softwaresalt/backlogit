@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
@@ -69,5 +70,14 @@ func RewriteCheckpointFile(
 		return fmt.Errorf("marshal rewritten checkpoint: %w", err)
 	}
 
-	return syncWriteFileAtomic(path, updated, 0o644)
+	// 147-F: route through atomicfile.WriteFileAtomic rather than the local
+	// syncWriteFileAtomic helper (found during 130-S adversarial review).
+	// syncWriteFileAtomic always writes with a hardcoded 0o644, silently
+	// widening a more restrictive checkpoint's existing mode (e.g. 0600) on
+	// every accepted rewrite, and its Windows path removes the destination
+	// before os.Rename — a data-loss window if the rename then fails.
+	// atomicfile.WriteFileAtomic preserves the destination's existing mode
+	// and, on Windows, replaces via MoveFileEx(MOVEFILE_REPLACE_EXISTING),
+	// which never removes the destination before the replacement commits.
+	return atomicfile.WriteFileAtomic(path, updated)
 }

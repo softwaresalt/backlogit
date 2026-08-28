@@ -111,14 +111,16 @@ func containsSubstring(s, substr string) bool {
 
 // checkpointDirWriteAllowlist is the post-migration allow-list: after U14
 // and U14b, the only direct writes touching the checkpoint directory are
-// the seam's own atomic replace (RewriteCheckpointFile) and the excluded
-// verbatim-move / create sites (QuarantineCheckpoint's disposition-sidecar
-// write, CreateCheckpoint's new-file write), none of which are gated by
-// this seam by design (147-F / U11 scope boundary). moveNoReplace and
-// CleanupCheckpoints use os.Link/os.Rename rather than any of the three
-// enumerated write forms, so they never appear in this set.
+// the seam's own atomic replace (RewriteCheckpointFile, routed through
+// atomicfile.WriteFileAtomic since the 130-S adversarial-review mode/
+// durability fix) and the excluded verbatim-move / create sites
+// (QuarantineCheckpoint's disposition-sidecar write, CreateCheckpoint's
+// new-file write), none of which are gated by this seam by design (147-F /
+// U11 scope boundary). moveNoReplace and CleanupCheckpoints use
+// os.Link/os.Rename rather than any of the three enumerated write forms, so
+// they never appear in this set.
 var checkpointDirWriteAllowlist = map[string]bool{
-	"checkpoint_rewrite.go:RewriteCheckpointFile:syncWriteFileAtomic":           true,
+	"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomic":    true,
 	"memory.go:CreateCheckpoint:syncWriteFileAtomic":                            true,
 	"checkpoint_disposition.go:QuarantineCheckpoint:atomicfile.WriteFileAtomic": true,
 }
@@ -143,9 +145,9 @@ func TestU2fGuard_EnumeratedCallSiteSetEqualsAllowlist(t *testing.T) {
 // being silently absorbed.
 func TestU2fGuard_SyntheticUngatedRewriteSiteFailsAssertion(t *testing.T) {
 	synthetic := map[string]bool{
-		"checkpoint_rewrite.go:RewriteCheckpointFile:syncWriteFileAtomic": true,
-		"memory.go:CreateCheckpoint:syncWriteFileAtomic":                  true,
-		"checkpoint_evil.go:EvilCheckpointRewrite:syncWriteFileAtomic":    true,
+		"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomic": true,
+		"memory.go:CreateCheckpoint:syncWriteFileAtomic":                         true,
+		"checkpoint_evil.go:EvilCheckpointRewrite:syncWriteFileAtomic":           true,
 	}
 	assert.NotEqual(t, checkpointDirWriteAllowlist, synthetic,
 		"an injected ungated rewrite site must not match the allow-list")
