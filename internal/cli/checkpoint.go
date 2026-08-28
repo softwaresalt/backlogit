@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,42 +223,71 @@ func newCheckpointGetCmd(cwd *string) *cobra.Command {
 	}
 }
 
-// checkpointDispositionRefusalMessage builds an actionable operator message
-// for a resolve/abandon refusal (147-F / U8). It states the required
-// disposition verb read from a RemediationIntent — quarantine is the only
-// verb either refusal ever names, since a malformed-or-invalid target
-// (ErrCheckpointUseQuarantine) and a valid-but-non-conforming target
-// (*CheckpointNonConformingError) both route to the same remedy — rather
-// than leaving the verb as incidental sentinel-message prose. For a
-// non-conforming refusal it also names the offending top-level keys in
-// quoted, bounded form via FieldPathsForDisplay() (147.031-T / U1c). It
-// prints no paste-runnable remediation command; that bound, approval-gated
-// block is owned by 147.039-T / U16. err is wrapped, not replaced, so
-// errors.Is/errors.As still traverse to the original sentinel or typed error.
-func checkpointDispositionRefusalMessage(op, filename string, err error) error {
+// checkpointDispositionIntent returns the RemediationIntent describing the
+// remedy for a disposition-class refusal (a non-conforming target, a
+// malformed-or-invalid target, or — for quarantine — a valid target that
+// must be abandoned instead), or nil if err is not one of those three
+// classes. It is the single source both checkpointDispositionRefusalMessage
+// and the CLI command handlers consult, so the message text and the
+// rendered remediation block can never disagree about the required verb.
+func checkpointDispositionIntent(err error, filename string) *events.RemediationIntent {
 	var nonConforming *blerrors.CheckpointNonConformingError
-	if errors.As(err, &nonConforming) {
-		intent := events.RemediationIntent{
+	switch {
+	case errors.As(err, &nonConforming):
+		return &events.RemediationIntent{
 			Verb:             "quarantine",
 			TargetFilename:   filename,
 			RequiresApproval: true,
 			ApprovalClass:    "A4c",
 			Reason:           "non_conforming",
 		}
-		return fmt.Errorf("%s: checkpoint %s carries unmodeled key(s) %s; required verb: %s: %w",
-			op, filename, nonConforming.FieldPathsForDisplay(), intent.Verb, err)
-	}
-	if errors.Is(err, blerrors.ErrCheckpointUseQuarantine) {
-		intent := events.RemediationIntent{
+	case errors.Is(err, blerrors.ErrCheckpointUseQuarantine):
+		return &events.RemediationIntent{
 			Verb:             "quarantine",
 			TargetFilename:   filename,
 			RequiresApproval: true,
 			ApprovalClass:    "A4c",
 			Reason:           "unparseable_or_invalid",
 		}
+	case errors.Is(err, blerrors.ErrCheckpointUseAbandon):
+		return &events.RemediationIntent{
+			Verb:             "abandon",
+			TargetFilename:   filename,
+			RequiresApproval: true,
+			ApprovalClass:    "A4c",
+			Reason:           "valid_target",
+		}
+	default:
+		return nil
+	}
+}
+
+// checkpointDispositionRefusalMessage builds an actionable operator message
+// for a resolve/abandon/quarantine refusal (147-F / U8). It states the
+// required disposition verb read from checkpointDispositionIntent rather
+// than leaving the verb as incidental sentinel-message prose. For a
+// non-conforming refusal it also names the offending top-level keys in
+// quoted, bounded form via FieldPathsForDisplay() (147.031-T / U1c). It
+// prints no paste-runnable remediation command; that bound, approval-gated
+// block is rendered separately by RenderCheckpointRemediationBlock, which
+// callers invoke alongside this message (147.039-T / U16). err is wrapped,
+// not replaced, so errors.Is/errors.As still traverse to the original
+// sentinel or typed error.
+func checkpointDispositionRefusalMessage(op, filename string, err error) error {
+	intent := checkpointDispositionIntent(err, filename)
+	if intent == nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	var nonConforming *blerrors.CheckpointNonConformingError
+	if errors.As(err, &nonConforming) {
+		return fmt.Errorf("%s: checkpoint %s carries unmodeled key(s) %s; required verb: %s: %w",
+			op, filename, nonConforming.FieldPathsForDisplay(), intent.Verb, err)
+	}
+	if errors.Is(err, blerrors.ErrCheckpointUseQuarantine) {
 		return fmt.Errorf("%s: checkpoint %s is malformed; required verb: %s: %w", op, filename, intent.Verb, err)
 	}
-	return fmt.Errorf("%s: %w", op, err)
+	// ErrCheckpointUseAbandon: quarantine refused a valid target.
+	return fmt.Errorf("%s: checkpoint %s is valid; required verb: %s: %w", op, filename, intent.Verb, err)
 }
 
 // RenderCheckpointRemediationBlock is the CLI-boundary remediation command
@@ -282,16 +312,26 @@ func checkpointDispositionRefusalMessage(op, filename string, err error) error {
 //     failure mode; emitting a half-quoted command is not. No cross-shell
 //     paste-safety claim is made; the approval step is a human step by
 //     construction.
+//
+// The Target and Destination lines render intent.TargetFilename through
+// strconv.Quote, the same quoting policy FieldPathsForDisplay already uses
+// for offender key names: validateCheckpointFilename admits any byte other
+// than '/' and '\' in the checkpoint-*.json identifier segment, including
+// ASCII control characters, and those two informational lines print before
+// the manual-quoting gate below runs (found during 130-S adversarial
+// review). Quoting neutralizes a raw control byte without needing to
+// suppress the informational lines the way the gate suppresses the command
+// line.
 func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationIntent, workspaceRoot string) {
 	if intent == nil {
 		return
 	}
 	fmt.Fprintf(w, "Disposition required: %s\n", intent.Verb)
 	fmt.Fprintf(w, "  Workspace : %s\n", core.WorkspaceStorageRoot(workspaceRoot))
-	fmt.Fprintf(w, "  Target    : %s\n", intent.TargetFilename)
+	fmt.Fprintf(w, "  Target    : %s\n", strconv.Quote(intent.TargetFilename))
 	fmt.Fprintln(w, "  Approval  : A4c — operator approval is REQUIRED immediately before execution")
 	fmt.Fprintln(w, "  Preimage  : take a byte copy of the target before running the command")
-	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", intent.TargetFilename)
+	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", strconv.Quote(intent.TargetFilename))
 
 	if requiresManualQuoting(workspaceRoot) || requiresManualQuoting(intent.TargetFilename) {
 		fmt.Fprintln(w, "command not rendered: workspace or filename requires manual quoting")
@@ -339,6 +379,9 @@ func newCheckpointResolveCmd(cwd *string) *cobra.Command {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
 			if err := events.ResolveCheckpoint(ctx, dir, filename); err != nil {
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
 				return checkpointDispositionRefusalMessage("resolve checkpoint", filename, err)
 			}
 
@@ -459,6 +502,9 @@ disjoint verbs by design.`,
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
 
 			if err := core.AbandonCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
 				return checkpointDispositionRefusalMessage("abandon checkpoint", filename, err)
 			}
 
@@ -521,7 +567,10 @@ verbatim (byte-identical) into the workspace archive/checkpoints directory.`,
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
 
 			if err := core.QuarantineCheckpoint(ctx, ws, ew, filename, reason, operator); err != nil {
-				return fmt.Errorf("quarantine checkpoint: %w", err)
+				if intent := checkpointDispositionIntent(err, filename); intent != nil {
+					RenderCheckpointRemediationBlock(cmd.ErrOrStderr(), intent, *cwd)
+				}
+				return checkpointDispositionRefusalMessage("quarantine checkpoint", filename, err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
