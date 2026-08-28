@@ -46,9 +46,29 @@ func sha256Of(t *testing.T, path string) [32]byte {
 	return sha256.Sum256(data)
 }
 
+// closeMCPServerWorkspace registers a t.Cleanup that closes the server's
+// lazily-opened workspace (and its underlying sqlite handle), if any, before
+// t.TempDir()'s own removal cleanup runs. mcp.NewServerForRoot constructs a
+// Server with no workspace open; InvokeTool's requireWorkspace call lazily
+// opens and caches one on first use, and — unlike setupBugFixServer, which
+// pairs core.NewWorkspace with an explicit close — nothing else in this
+// helper's caller closes it. Without this, a passing assertion sequence that
+// reaches the natural end of the test surfaces a Windows-only
+// "TempDir RemoveAll cleanup" failure from the still-open db file, unrelated
+// to the assertions themselves.
+func closeMCPServerWorkspace(t *testing.T, s *mcp.Server) {
+	t.Helper()
+	t.Cleanup(func() {
+		if s.Workspace != nil {
+			_ = s.Workspace.Close()
+		}
+	})
+}
+
 func mcpGetCheckpointPayload(t *testing.T, root, filename string) (map[string]any, bool) {
 	t.Helper()
 	s := mcp.NewServerForRoot(root)
+	closeMCPServerWorkspace(t, s)
 	request := mcplib.CallToolRequest{}
 	request.Params.Arguments = map[string]any{"filename": filename}
 	result, err := s.InvokeTool(context.Background(), "backlogit_get_checkpoint", request)
@@ -67,6 +87,7 @@ func mcpGetCheckpointPayload(t *testing.T, root, filename string) (map[string]an
 func mcpResolveCheckpoint(t *testing.T, root, filename string) (map[string]any, bool) {
 	t.Helper()
 	s := mcp.NewServerForRoot(root)
+	closeMCPServerWorkspace(t, s)
 	request := mcplib.CallToolRequest{}
 	request.Params.Arguments = map[string]any{"filename": filename}
 	result, err := s.InvokeTool(context.Background(), "backlogit_resolve_checkpoint", request)
