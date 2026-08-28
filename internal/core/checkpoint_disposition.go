@@ -66,7 +66,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 
 	cp, parseErr := events.ParseCheckpoint(data)
 	if parseErr != nil {
-		return fmt.Errorf("%w: %v", blerrors.ErrCheckpointUseQuarantine, parseErr)
+		return fmt.Errorf("%w: %w", blerrors.ErrCheckpointUseQuarantine, parseErr)
 	}
 	if valErr := events.ValidateCheckpoint(cp); valErr != nil {
 		// 147-F / U17: multi-%w (not %v) so ErrCheckpointInvalid stays

@@ -293,7 +293,13 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 
 	cp, err := ParseCheckpoint(data)
 	if err != nil {
-		return err
+		// 147-F: multi-%w so both errors.Is(err, ErrCheckpointUseQuarantine)
+		// and errors.Is(err, ErrCheckpointCorrupt) hold — matching the same
+		// disposition-refusal shape the schema-invalid-but-parseable class
+		// gets below, so the two "does not parse" / "parses but
+		// schema-invalid" rows of the four-class contract stay identical in
+		// remedy verb, and QuarantineIsRemedy(err) is true for both.
+		return fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointUseQuarantine, err)
 	}
 
 	// Idempotent: already resolved.

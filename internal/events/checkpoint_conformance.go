@@ -50,15 +50,40 @@ func CheckConformingTopLevelNamespace(data []byte) error {
 		return fmt.Errorf("checkpoint conformance decode: %w", err)
 	}
 
-	var unknown []string
-	seen := map[string]struct{}{}
-	for _, e := range entries {
-		lower := strings.ToLower(e.key)
-		if _, dup := seen[lower]; dup {
-			unknown = append(unknown, "duplicate:"+lower)
+	// Pass 1: detect exact or Unicode-fold-equal top-level key pairs via
+	// pairwise comparison, mirroring duplicateNestedMemberKeys below.
+	// strings.ToLower is NOT a safe canonicalization key for this check:
+	// strings.ToLower and strings.EqualFold disagree for some Unicode input
+	// (e.g. "status" vs "\u017ftatus", long s U+017F, are EqualFold-equal but
+	// not ToLower-equal), so a ToLower-keyed map could miss a duplicate pair
+	// this function's own contract requires it to catch — and because
+	// isFoldKeyIn (below) independently recognizes each EqualFold-equal
+	// spelling as a legitimate occurrence of the same modeled field, the
+	// miss would silently accept a round-trip-unsafe document as conforming.
+	isDuplicate := make([]bool, len(entries))
+	var duplicateNames []string
+	reportedDuplicate := map[string]struct{}{}
+	for i, a := range entries {
+		for j := i + 1; j < len(entries); j++ {
+			b := entries[j]
+			if a.key != b.key && !strings.EqualFold(a.key, b.key) {
+				continue
+			}
+			isDuplicate[i] = true
+			isDuplicate[j] = true
+			lower := strings.ToLower(a.key)
+			if _, already := reportedDuplicate[lower]; !already {
+				reportedDuplicate[lower] = struct{}{}
+				duplicateNames = append(duplicateNames, "duplicate:"+lower)
+			}
+		}
+	}
+
+	unknown := append([]string(nil), duplicateNames...)
+	for i, e := range entries {
+		if isDuplicate[i] {
 			continue
 		}
-		seen[lower] = struct{}{}
 
 		if strings.EqualFold(e.key, "progress") {
 			unknown = append(unknown, unknownNestedProgressKeys(e.value)...)
