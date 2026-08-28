@@ -286,18 +286,42 @@ func blockingChildrenResult(children []core.ChildStatus) *mcplib.CallToolResult 
 }
 
 // checkpointDispositionErrorResponse is the structured MCP error shape for
-// checkpoint disposition (abandon/quarantine) failures. It carries a stable
-// code, the offending checkpoint filename, a class-derived retryable flag,
-// and an actionable remediation hint so an agent caller does not need to
-// parse the error message to decide what to do next.
+// checkpoint disposition (abandon/quarantine/resolve) failures. It carries a
+// stable code, the offending checkpoint filename, a class-derived retryable
+// flag, and an actionable remediation hint so an agent caller does not need
+// to parse the error message to decide what to do next.
+//
+// UnknownFields, UnknownFieldsTruncated, UnknownFieldsOmitted, and
+// UnknownFieldsShortened (147-F / U7) carry the bounded, raw machine
+// projection of a non-conforming refusal's offender key paths (populated via
+// errors.As from *corerrors.CheckpointNonConformingError.BoundedFieldPaths()).
+// None of the four carry omitempty: a refusal unrelated to non-conformance
+// still reports unknown_fields: [] and the three scalars at their zero value,
+// so a caller can rely on all four keys always being present.
 type checkpointDispositionErrorResponse struct {
-	Error       string `json:"error"`
-	Message     string `json:"message"`
-	Code        string `json:"code"`
-	Filename    string `json:"filename"`
-	Retryable   bool   `json:"retryable"`
-	Outcome     string `json:"outcome,omitempty"`
-	Remediation string `json:"remediation"`
+	Error                  string   `json:"error"`
+	Message                string   `json:"message"`
+	Code                   string   `json:"code"`
+	Filename               string   `json:"filename"`
+	Retryable              bool     `json:"retryable"`
+	Outcome                string   `json:"outcome,omitempty"`
+	Remediation            string   `json:"remediation"`
+	UnknownFields          []string `json:"unknown_fields"`
+	UnknownFieldsTruncated bool     `json:"unknown_fields_truncated"`
+	UnknownFieldsOmitted   int      `json:"unknown_fields_omitted"`
+	UnknownFieldsShortened int      `json:"unknown_fields_shortened"`
+}
+
+// dispositionOperatorVerb derives the operator-facing verb from the first
+// word of op (e.g. "abandon checkpoint" -> "abandon") and returns the
+// corresponding backlogit_<verb>_checkpoint tool name, so a remediation
+// string's "instead of" clause always names the caller's actual originating
+// verb instead of a hardcoded one (147-F / U7). This lets
+// checkpointDispositionError serve resolve refusals (147.025-T / U7d) with
+// the same accurate wording it already gives abandon and quarantine.
+func dispositionOperatorVerb(op string) string {
+	verb, _, _ := strings.Cut(op, " ")
+	return "backlogit_" + verb + "_checkpoint"
 }
 
 // checkpointDispositionError maps a checkpoint disposition sentinel error
@@ -318,16 +342,38 @@ func checkpointDispositionError(op, filename string, err error) *mcplib.CallTool
 		Error:    "checkpoint_disposition_failed",
 		Message:  fmt.Sprintf("%s: %v", op, err),
 		Filename: filename,
+		// Default to a non-nil empty slice (never left nil) so a refusal
+		// unrelated to non-conformance still marshals "unknown_fields": []
+		// rather than "unknown_fields": null
+		// (docs/compound/2026-07-21-omitempty-defeats-arrays-always-json-contract.md).
+		UnknownFields: []string{},
 	}
 	switch {
+	case errors.Is(err, corerrors.ErrCheckpointNonConforming):
+		// 147-F / U7: distinct from ErrCheckpointUseQuarantine — this
+		// sentinel means the document IS schema-valid but carries
+		// unmodeled/duplicate top-level or nested keys (post-U5, quarantine
+		// itself no longer returns this; it now originates from abandon and
+		// resolve refusing to rewrite such a document).
+		resp.Code = "checkpoint_non_conforming"
+		resp.Retryable = false
+		resp.Remediation = fmt.Sprintf("this target has unmodeled or duplicate keys; call backlogit_quarantine_checkpoint instead of %s", dispositionOperatorVerb(op))
+		var typed *corerrors.CheckpointNonConformingError
+		if errors.As(err, &typed) {
+			bounded := typed.BoundedFieldPaths()
+			resp.UnknownFields = bounded.Paths
+			resp.UnknownFieldsTruncated = bounded.Truncated
+			resp.UnknownFieldsOmitted = bounded.OmittedPaths
+			resp.UnknownFieldsShortened = bounded.TruncatedPaths
+		}
 	case errors.Is(err, corerrors.ErrCheckpointUseQuarantine):
 		resp.Code = "checkpoint_use_quarantine"
 		resp.Retryable = false
-		resp.Remediation = "this target is malformed; call backlogit_quarantine_checkpoint instead of backlogit_abandon_checkpoint"
+		resp.Remediation = fmt.Sprintf("this target is malformed; call backlogit_quarantine_checkpoint instead of %s", dispositionOperatorVerb(op))
 	case errors.Is(err, corerrors.ErrCheckpointUseAbandon):
 		resp.Code = "checkpoint_use_abandon"
 		resp.Retryable = false
-		resp.Remediation = "this target is valid; call backlogit_abandon_checkpoint instead of backlogit_quarantine_checkpoint"
+		resp.Remediation = fmt.Sprintf("this target is valid; call backlogit_abandon_checkpoint instead of %s", dispositionOperatorVerb(op))
 	case errors.Is(err, corerrors.ErrCheckpointNotActive):
 		resp.Code = "checkpoint_not_active"
 		resp.Retryable = false
