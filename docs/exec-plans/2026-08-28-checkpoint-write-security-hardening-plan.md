@@ -47,7 +47,7 @@ data-integrity gaps that share the same call chain.
 
 1. Add a `json.Valid(data)` pre-check before the V1 probe in `CreateCheckpoint`.
 2. When `json.Valid` returns false, return a typed `*CheckpointMalformedInputError`
-   with the raw byte prefix for diagnostics.
+   with a generic malformed-input message (no raw payload excerpt — checkpoint context may contain sensitive data per Constitution III).
 3. Ensure no checkpoint file is written and no success-shaped result is returned.
 4. Preserve legacy compatibility: valid JSON without `schema_version: 1` continues
    through the legacy path unchanged.
@@ -67,12 +67,12 @@ data-integrity gaps that share the same call chain.
 
 **Stash**: E429A031 (task, medium)
 **Package**: `internal/events`
-**Files**: `checkpoint_strict.go`, `checkpoint_strict_test.go`
+**Files**: `checkpoint_strict.go`, `checkpoint_strict_test.go`, `memory.go`
 **Approach**:
 
 1. Extend `checkClosedSchemaNamespace` (or its token-stream walker) to detect
    exact-duplicate and case-fold-aliased context member names at the create boundary.
-2. Reject with the existing `*CheckpointUnknownFieldError` or a new typed error
+2. Reject with a new typed `*CheckpointDuplicateContextKeyError`
    that names the duplicate keys.
 3. Ensure "fail before the write" ordering — rejection before `syncWriteFileAtomic`.
 
@@ -92,7 +92,7 @@ data-integrity gaps that share the same call chain.
 
 **Stash**: EA1F5912 (task, medium)
 **Package**: `internal/events`, `internal/atomicfile`
-**Files**: `memory.go`, `fsutil.go`, `atomicfile.go`
+**Files**: `memory.go`, `fsutil.go`, `atomicfile.go`, `mcp/checkpoint_tools.go`, `cli/checkpoint.go`
 **Approach**:
 
 1. Converge `internal/events` onto the existing `internal/atomicfile` outcome
@@ -116,7 +116,7 @@ data-integrity gaps that share the same call chain.
 
 **Stash**: 35A27CD0 (task, medium)
 **Package**: `internal/events`, `internal/core`
-**Files**: `memory.go`, `checkpoint_disposition.go`
+**Files**: `checkpoint_disposition.go`, `checkpoint_read.go`, `memory.go` (read paths only — U4 does not modify the create path in memory.go)
 **Approach**:
 
 1. Add `O_NOFOLLOW` or equivalent real-root open to checkpoint read/write paths.
@@ -173,7 +173,7 @@ U4 (filesystem containment) — independent, parallel-safe
 
 ## Wave Schedule
 
-**Wave 1**: U1 + U4 (independent, parallel-safe)
+**Wave 1**: U1 (create path) + U4 (disposition/read paths — no memory.go overlap)
 **Wave 2**: U2 + U3 + U5 (all depend on U1)
 
 ## Risk Assessment
@@ -182,7 +182,7 @@ U4 (filesystem containment) — independent, parallel-safe
 |---|---|
 | Legacy checkpoint compatibility | Explicit test: valid non-V1 JSON passes through unchanged |
 | Performance regression from json.Valid pre-check | json.Valid is O(n) single pass; checkpoint payloads are small |
-| Symlink detection platform differences | Use Go's os.Lstat for symlink detection (portable) |
+| Symlink detection platform differences | Use O_NOFOLLOW on open (or platform equivalent) rather than Lstat-then-open which is itself TOCTOU |
 | Concurrent write races in tests | Use t.TempDir() for isolation |
 
 ## Monitoring Plan (release-observability)
@@ -206,6 +206,19 @@ for a non-malformed payload → revert immediately.
 - No changes to recovery policy or agent templates
 - No reopening of shipped 146-F work (3C7AAC71, 90F2A9F8)
 
+## Copilot Review Remediation (PR #381)
+
+Findings addressed:
+1. Removed premature harness-ready labels — applied by harness-architect, not Stage
+2. U1: No raw byte prefix in error diagnostic — Constitution III / secrets safety
+3. U2: Use distinct CheckpointDuplicateContextKeyError, not reuse UnknownFieldError
+4. U3: Added MCP/CLI handler files to file list for transport parity
+5. U4: Clarified file scope (disposition/read paths, not create-path memory.go)
+6. Wave 1 parallelism: Confirmed safe — U1 and U4 target different code paths
+7. U4: O_NOFOLLOW on open, not Lstat-then-open (avoids TOCTOU in detection itself)
+8. Adversarial review: NOT escalated — standard plan review sufficient for this scope
+   (5 tasks, narrow input-validation + containment changes, no auth/crypto/PII surface)
+
 ## Plan Review
 
 <!-- plan-review-attempt: 0 -->
@@ -213,3 +226,4 @@ dispatch_mode: single-agent-declared-degradation
 decision: PASS
 rationale: Security-focused hardening with clear scope boundaries, test-first contracts, explicit non-goals, and wave-parallel dependency graph. All five units target the same call chain with no scope creep risk. Single-agent declared degradation is appropriate because this is a CLI-mode Stage session without multi-agent dispatch capability.
 operator_authorization: approved (dark-mode pre-authorized, operator AFK)
+
