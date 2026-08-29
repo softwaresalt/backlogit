@@ -26,7 +26,7 @@ dark_mode_event: DARK_MODE_SUBUNIT_COMPLETE
 ## Manifested Items
 
 - **147-F** (feature) — archived, shipped
-- **147.001-T – 147.043-T** (43 tasks; 147.010-T retired pre-implementation, excluded from manifest) — all done, archived
+- **147.001-T – 147.044-T** (43 tasks; 147.010-T retired pre-implementation, excluded from manifest) — all done, archived
 
 ## Gate Outcomes
 
