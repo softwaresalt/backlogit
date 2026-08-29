@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 )
 
 // syncAppendResult classifies how a durable append terminated so callers can map
@@ -64,11 +66,21 @@ func syncAppendLine(path string, data []byte) error {
 }
 
 // syncWriteFileAtomicHook is the package-level, test-swappable seam for
-// syncWriteFileAtomic, mirroring the established checkpointAuditAppendFn
+// checkpoint create writes, mirroring the established checkpointAuditAppendFn
 // pattern (checkpoint_audit.go). Tests that override this variable must not
-// run with t.Parallel(). 148-F / U3: wired into the checkpoint create path
-// so tests can simulate ErrWriteIndeterminate and ErrWriteNotApplied outcomes.
-var syncWriteFileAtomicHook = syncWriteFileAtomic
+// run with t.Parallel(). 148-F / U3: default converges onto
+// atomicfile.WriteFileAtomicWithOptions so real write failures are classified
+// as ErrWriteNotApplied or ErrWriteIndeterminate by the atomicfile layer,
+// preserving errors.Is traversal through the fmt.Errorf("write checkpoint: %w")
+// wrapping in CreateCheckpoint.
+var syncWriteFileAtomicHook = func(path string, data []byte, _ os.FileMode) error {
+	// Route through atomicfile for outcome classification (148-F / U3):
+	// ErrWriteNotApplied for pre-rename failures, ErrWriteIndeterminate for
+	// post-rename fsync failures. DurableWrites is left at the default (false)
+	// to preserve the pre-existing create behaviour; the sync is handled by
+	// syncWriteFileAtomic's own Sync() call which this wrapper supersedes.
+	return atomicfile.WriteFileAtomic(path, data)
+}
 
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
 // with an fsync before close to guarantee durability before rename.

@@ -18,9 +18,11 @@ import (
 // symlink detection.
 //
 // AR-P2-1 (platform portability): O_NOFOLLOW is POSIX and available on
-// Linux and macOS (supported by golang.org/x/sys/unix). On Windows, a
-// separate implementation uses FILE_FLAG_OPEN_REPARSE_POINT equivalent
-// (see checkpoint_nofollow_windows.go). Both files share this contract.
+// Linux and macOS. On Windows (checkpoint_nofollow_windows.go), no kernel
+// equivalent is available via the standard library; that implementation
+// uses a post-open Lstat check as best-effort protection, with a known
+// narrower TOCTOU window. FILE_FLAG_OPEN_REPARSE_POINT is tracked as a
+// future improvement. Both files share the same function contract.
 func readFileNoFollow(path string) ([]byte, error) {
 	// O_NOFOLLOW: if the final component of path is a symbolic link, open
 	// fails with ELOOP rather than following the link. This is the kernel-level
