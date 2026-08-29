@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "Windows os.Rename pre-Remove blocks are universally unnecessary in Go 1.24.0"
-doc_type: compound
+doc_type: learning
 schema_version: "1.0"
 source: 133-S closure
 title: Go 1.24.0 os.Rename on Windows — pre-Remove is unnecessary and dangerous
