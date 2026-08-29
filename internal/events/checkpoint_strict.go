@@ -190,33 +190,43 @@ func checkClosedSchemaNamespace(data []byte) error {
 // differ only by case are NOT rejected here (the context namespace is open),
 // matching the read-boundary rule in duplicateNestedMemberKeys for "context".
 // Returns nil when no duplicate-class key pairs are found.
+// contextDuplicateCreateKeys walks ALL top-level entries that case-insensitively
+// match "context" (never just the first one) and returns the sorted,
+// de-duplicated set of context member names that appear more than once across
+// the union of those entries. This mirrors the all-alias recursion used by
+// the "progress" path in checkClosedSchemaNamespace (FINDING-2 of the 148-F
+// adversarial review): a payload with "context" (clean) + "Context" (dirty)
+// would pass if only the first entry were scanned, because encoding/json uses
+// last-wins semantics and populates cp.Context from the last fold-match.
 func contextDuplicateCreateKeys(data []byte) []string {
 	entries, err := decodeTopLevelEntries(data)
 	if err != nil {
 		return nil
 	}
-	// Find context-keyed entries in the top-level object.
-	var contextRaw json.RawMessage
-	found := false
+	// Collect nested members from ALL top-level entries whose keys
+	// case-insensitively match "context", then union them for pairwise check.
+	var allCtxEntries []topLevelEntry
 	for _, e := range entries {
-		if strings.EqualFold(e.key, "context") {
-			contextRaw = e.value
-			found = true
-			break
+		if !strings.EqualFold(e.key, "context") {
+			continue
 		}
+		if bytes.Equal(bytes.TrimSpace(e.value), []byte("null")) {
+			continue
+		}
+		sub, subErr := decodeTopLevelEntries(e.value)
+		if subErr != nil {
+			continue
+		}
+		allCtxEntries = append(allCtxEntries, sub...)
 	}
-	if !found || bytes.Equal(bytes.TrimSpace(contextRaw), []byte("null")) {
+	if len(allCtxEntries) == 0 {
 		return nil
 	}
-	ctxEntries, err := decodeTopLevelEntries(contextRaw)
-	if err != nil {
-		return nil
-	}
-	// Pairwise check: exact or fold-aliased modeled-field pair → offender.
+	// Pairwise check across the union of all context entries.
 	var offenders []string
 	reported := map[string]struct{}{}
-	for i, a := range ctxEntries {
-		for _, b := range ctxEntries[i+1:] {
+	for i, a := range allCtxEntries {
+		for _, b := range allCtxEntries[i+1:] {
 			exact := a.key == b.key
 			fold := !exact && strings.EqualFold(a.key, b.key)
 			if !exact && !fold {

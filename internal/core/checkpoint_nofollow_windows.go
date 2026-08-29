@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -39,5 +40,5 @@ func readFileNoFollow(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: target is a symlink", blerrors.ErrCheckpointTargetUnsafe)
 	}
 
-	return os.ReadFile(path)
+	return io.ReadAll(f)
 }

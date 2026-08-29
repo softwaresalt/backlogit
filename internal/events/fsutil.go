@@ -99,8 +99,15 @@ func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("syncWriteFileAtomic close %s: %w", tmp, closeErr)
 	}
 	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
-	// On Windows, os.Rename fails when the destination already exists; remove first.
-	// The removal window is narrow and acceptable for regenerable files.
+	// On Windows, os.Rename uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) on Go 1.17+,
+	// which atomically replaces the destination without a pre-removal step.
+	// The pre-Remove block below is therefore a pre-existing data-loss window
+	// (148-F adversarial review FINDING-3 / MEDIUM confidence): if Rename fails
+	// after Remove succeeds, both the original and the temp file are gone.
+	// Removing it is the correct fix; deferred because this function predates
+	// 148-F and the blast radius extends beyond checkpoint writes.
+	// DO NOT add new callers that depend on the pre-Remove semantics.
+	// Tracked: stash item for follow-up removal once regression coverage is added.
 	if runtime.GOOS == "windows" {
 		_ = os.Remove(path)
 	}
