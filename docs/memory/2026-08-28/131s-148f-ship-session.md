@@ -1,7 +1,9 @@
 ---
-schema_version: '1.0'
+chunk_strategy: h1-h2-h3
 doc_type: memory
-title: 131-S/148-F Ship Session Memory
+schema_version: "1.0"
+source: docs/memory/2026-08-28/131s-148f-ship-session.md
+title: "131-S/148-F Ship Session Memory"
 ---
 
 # 131-S/148-F Ship Session Memory
@@ -36,7 +38,7 @@ title: 131-S/148-F Ship Session Memory
 
 ## P2/P3 Follow-up Items
 
-- syncWriteFileAtomic pre-Remove Windows data-loss (deferred stash)
+- syncWriteFileAtomic pre-Remove Windows data-loss: RESIDUAL RISK documented in fsutil.go, deferred follow-up (not fixed in 148-F)
 - Directory symlink protection in O_NOFOLLOW chain (stash 35A27CD0 extended)
 - FILE_FLAG_OPEN_REPARSE_POINT for Windows (tracked in checkpoint_nofollow_windows.go)
 
