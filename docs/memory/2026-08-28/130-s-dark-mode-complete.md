@@ -6,10 +6,14 @@ shipment: 130-S
 feature: 147-F
 phase: post-merge-closure-complete
 dark_mode: active
-dark_mode_event: DARK_MODE_COMPLETE
+dark_mode_event: DARK_MODE_SUBUNIT_COMPLETE
 ---
 
-# DARK_MODE_COMPLETE — 130-S / 147-F Post-Merge Closure Complete
+# DARK_MODE_SUBUNIT_COMPLETE — 130-S / 147-F Subunit Closure Complete
+
+> **Scope note**: This event covers only the 130-S subunit of the ongoing dark factory run.
+> The overall `DARK_MODE_COMPLETE` event is NOT emitted here; it remains with the orchestrator
+> after all 28 original dark-factory stash entries are processed.
 
 ## Shipped Shipments
 
@@ -29,7 +33,7 @@ dark_mode_event: DARK_MODE_COMPLETE
 
 | Gate | Result |
 |---|---|
-| P-001 (post-merge closure before next impl) | ✅ Completed |
+| P-001 (post-merge closure for 130-S before next impl) | ✅ Completed — scoped to 130-S |
 | P-009 (merge commits only) | ✅ e37a8c5a is a merge commit |
 | P-014 (Copilot review on current HEAD) | ✅ Copilot reviewed 1517ae94, zero unresolved threads |
 | P-016 (single active worktree) | ✅ Only chore/130-s-post-merge-closure worktree active |
@@ -63,9 +67,12 @@ dark_mode_event: DARK_MODE_COMPLETE
 | Restore path for quarantined checkpoints | Medium | Stash 35A27CD0 |
 | Create-boundary hardening (duplicate context members) | Low | Stash E429A031 |
 
-## DARK_MODE_COMPLETE
+## Subunit Closure
 
-Scope 130-S / 147-F fully absorbed. Implementation merged, quality gates passed,
-runtime verification complete, design knowledge graduated, backlog archived and synced,
-closure PR reviewed (4 rounds), merged with merge commit. All P-001/P-009/P-014/P-016/P-005
-gates satisfied.
+130-S / 147-F fully absorbed within the dark factory scope. Implementation merged, quality gates
+passed, runtime verification complete, design knowledge graduated, backlog archived and synced,
+closure PR #379 reviewed (4 rounds), merged with merge commit e37a8c5a. All
+P-001/P-009/P-014/P-016/P-005 gates satisfied for this subunit.
+
+Overall dark-factory `DARK_MODE_COMPLETE` is NOT declared here. The orchestrator will emit
+that event after all 28 original dark-factory stash entries have been processed.
