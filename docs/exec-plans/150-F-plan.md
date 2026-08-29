@@ -66,8 +66,12 @@ pattern with any other function through a shared helper or call chain.
 - Remove the 3-line Windows pre-Remove block from `CleanupCheckpoints`
 - Remove unused `runtime` import
 - Verify `TestCleanupCheckpoints_NoPreRemoveInAST` turns GREEN
-- Run full `go test ./internal/events/...`
-- Run `go vet ./...`
+- Run targeted verification: `go test ./internal/events/...`
+- Run full quality gate sequence (AGENTS.md §Quality Gates):
+  1. `go test ./...`
+  2. `go vet ./...`
+  3. `golangci-lint run`
+  4. `gofmt -l .`
 
 ## Rollback Plan
 Revert the fix commit. The pre-Remove block is self-contained; reverting restores the
