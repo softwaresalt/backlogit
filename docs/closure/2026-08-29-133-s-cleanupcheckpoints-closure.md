@@ -130,3 +130,22 @@ Archived post-merge:
 ## Durable Knowledge
 
 Compound learning: same pre-Remove data-loss pattern applied to a third location (checkpoint_lifecycle.go CleanupCheckpoints). Pattern: Windows os.Rename pre-Remove blocks are universally unnecessary in Go 1.24.0 — MoveFileExW(MOVEFILE_REPLACE_EXISTING) handles existing destination. See docs/compound/ for the pattern entry.
+
+## Addendum — P-001 Lifecycle Incident (2026-08-29)
+
+A post-Ship read-only remote check detected a P-001 lifecycle contradiction: `150.001-T` and
+`150.002-T` have `archived_status: active` in their archive frontmatter. The required lifecycle
+path is `active → done → archived`; both tasks skipped the `done` transition and went
+`active → archived` directly in closure commit `5e1b385d`.
+
+All governed backlogit lifecycle operations to correct `archived_status` were attempted and blocked
+by the `validate_status_transition` hook. Direct frontmatter editing is harmful: `archived_status`
+is used by `UnarchiveItem` to restore the pre-archive state, so overwriting it would corrupt
+restore semantics. Only Option A (accept the lifecycle gap as documented) is safe with current
+tooling. A `backlogit restore` command is recommended as a tooling follow-up.
+
+**Full incident record**: `docs/closure/2026-08-29-133-s-lifecycle-incident.md`
+
+**Round 2 Copilot review body note** (not a thread): The Copilot review body in PR #390 flagged
+that both tasks remained active (not done) at merge. This was disclosed in the original closure
+record but not corrected at that time. This addendum closes the disclosure gap.
