@@ -3,7 +3,6 @@ package events
 import (
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 )
@@ -85,8 +84,10 @@ var syncWriteFileAtomicHook = func(path string, data []byte, _ os.FileMode) erro
 
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
 // with an fsync before close to guarantee durability before rename.
-// On Windows, removes the destination file before renaming because os.Rename
-// does not atomically overwrite an existing destination on Windows.
+// On POSIX, rename(2) is atomic by specification. On Windows, Go 1.24.0 uses
+// MoveFileExW(MOVEFILE_REPLACE_EXISTING), which replaces the destination
+// without a pre-Remove step and eliminates the two-file loss window; it does
+// not provide the full crash-atomicity of POSIX rename(2). (149-F / CB71B412)
 func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
@@ -110,19 +111,6 @@ func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if closeErr != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("syncWriteFileAtomic close %s: %w", tmp, closeErr)
-	}
-	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
-	// On Windows, os.Rename uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) on Go 1.17+,
-	// which atomically replaces the destination without a pre-removal step.
-	// The pre-Remove block below is therefore a pre-existing data-loss window
-	// (148-F adversarial review FINDING-3 / MEDIUM confidence): if Rename fails
-	// after Remove succeeds, both the original and the temp file are gone.
-	// Removing it is the correct fix; deferred because this function predates
-	// 148-F and the blast radius extends beyond checkpoint writes.
-	// DO NOT add new callers that depend on the pre-Remove semantics.
-	// Tracked: stash item for follow-up removal once regression coverage is added.
-	if runtime.GOOS == "windows" {
-		_ = os.Remove(path)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)

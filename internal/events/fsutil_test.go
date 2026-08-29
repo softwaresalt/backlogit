@@ -7,6 +7,7 @@ package events
 
 import (
 	"errors"
+	"go/ast"
 	"os"
 	"path/filepath"
 	"testing"
@@ -130,4 +131,48 @@ func TestSyncWriteFileAtomic_ErrorOnUnwritablePath(t *testing.T) {
 	dir := t.TempDir()
 	err := syncWriteFileAtomic(filepath.Join(dir, "no_such_dir", "out.json"), []byte("{}"), 0o644)
 	assert.Error(t, err, "writing to an unwritable path must return an error")
+}
+
+// TestSyncWriteFileAtomic_NoPreRemoveInAST is a P-002 FC-1 structural assertion
+// (149-F / 149.001-T / stash CB71B412 / INC-P002-131S-148F).
+// It parses fsutil.go and asserts that syncWriteFileAtomic contains no
+// os.Remove(path) call targeting the destination parameter. The pre-Remove
+// block was a data-loss window: if os.Rename fails after os.Remove succeeds
+// both the original and the temp file are gone. This test is RED against
+// the pre-change source because os.Remove(path) IS present; it turns GREEN
+// after the block is removed.
+func TestSyncWriteFileAtomic_NoPreRemoveInAST(t *testing.T) {
+	file := parseEventsSource(t, "fsutil.go")
+	funcDecl := findPackageFuncIn(file, "syncWriteFileAtomic")
+	require.NotNil(t, funcDecl, "syncWriteFileAtomic must be declared in fsutil.go")
+
+	// Walk the function body and detect any os.Remove call whose sole argument
+	// is the identifier "path" (the destination parameter, not "tmp").
+	// os.Remove("tmp") calls are expected on error paths and must not be flagged.
+	var foundPreRemove bool
+	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok || pkgIdent.Name != "os" || sel.Sel.Name != "Remove" {
+			return true
+		}
+		if len(call.Args) == 1 {
+			if argIdent, ok := call.Args[0].(*ast.Ident); ok && argIdent.Name == "path" {
+				foundPreRemove = true
+			}
+		}
+		return true
+	})
+
+	assert.False(t, foundPreRemove,
+		"syncWriteFileAtomic must not call os.Remove(path): "+
+			"the pre-Remove block creates a data-loss window where the destination "+
+			"is deleted before Rename succeeds (CB71B412 / 149-F / INC-P002-131S-148F)")
 }
