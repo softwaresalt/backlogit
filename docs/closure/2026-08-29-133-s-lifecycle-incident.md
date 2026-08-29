@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Lifecycle incident record for 133-S / 150-F: P-001 violation — tasks archived from active status, skipping done transition"
 doc_type: closure
 schema_version: "1.0"
-source: ship-agent
+source: docs/closure/2026-08-29-133-s-lifecycle-incident.md
 title: 133-S Lifecycle Incident — P-001 Task Lifecycle Gap (150.001-T, 150.002-T)
 ---
 
@@ -11,7 +11,7 @@ title: 133-S Lifecycle Incident — P-001 Task Lifecycle Gap (150.001-T, 150.002
 
 **Detected**: 2026-08-29T19:06:31Z (post-Ship read-only remote check, after PR #391 merge)
 **Reported by**: Ship agent (autonomous post-closure verification)
-**Status**: All governed remediation paths blocked; no durable correction applied. `archived_status` field requires operator action.
+**Status**: All governed remediation paths blocked; no durable correction applied. `archived_status` field requires operator action via the governed restore path (currently unavailable via CLI).
 
 ## P-001 Contradiction
 
@@ -38,6 +38,16 @@ directly. This is a real lifecycle gap, not a documentation error.
 - This incident was detected AFTER PR #391 merged. No backdating is claimed. The incident is
   documented with current timestamps.
 
+## Why `archived_status` Cannot Be Directly Corrected
+
+The `archived_status` field is NOT a documentation annotation. It is a functional field:
+`ArchiveItem` stores the pre-archive status there (`internal/core/archive.go:229-231`) and
+`UnarchiveItem` reads it to restore the task to its original state (`internal/core/archive.go:775-784`).
+Directly changing `archived_status: active → done` would cause a future `UnarchiveItem` call to
+restore the task as `done` when the task was never formally moved to `done`. This would fabricate
+history and corrupt the restore semantics. **Direct frontmatter editing of `archived_status` is
+therefore harmful, not corrective.**
+
 ## Completeness Evidence (Tasks Were Functionally Done)
 
 Both tasks were effectively complete when archived. The lifecycle gap is procedural, not substantive:
@@ -55,13 +65,12 @@ Note: A `pre_task_completion_gate_passed` event exists in the local `.backlogit/
 `150.001-T`, but with `"old_status":"archived"` — confirming it was emitted during the
 post-archive remediation attempt (trying to move from archived to done), not during any original
 `active → done` completion flow. This event does not constitute evidence that the gate was
-properly evaluated at task-completion time. The RED/GREEN commit SHAs and test results above
-are the authoritative evidence of functional completeness.
+properly evaluated at task-completion time.
 
 ## Governed Remediation Attempts
 
 The Ship agent investigated ALL governed backlogit lifecycle operations that might correct the
-`archived_status` field without ad-hoc frontmatter editing.
+`archived_status` field.
 
 ### Operations Attempted
 
@@ -71,29 +80,27 @@ The Ship agent investigated ALL governed backlogit lifecycle operations that mig
 | Lifecycle transition | `backlogit move 150.002-T --status done` | BLOCKED: same lifecycle hook rejection |
 | Field update | `backlogit update 150.001-T --status done` | BLOCKED: same lifecycle hook rejection |
 | Force gate override | `backlogit move 150.001-T --status done --force-gates --force-reason "..."` | BLOCKED: `--force-gates` bypasses pre-task-completion gate only; `validate_status_transition` hook is not bypassable |
-| Log annotation | `backlogit comment add 150.001-T --actor ship-agent --comment "..."` | SUCCESS (local only — gitignored) |
-| Log annotation | `backlogit comment add 150.002-T --actor ship-agent --comment "..."` | SUCCESS (local only — gitignored) |
+| Log annotation | `backlogit comment add 150.001-T --actor ship-agent --comment "..."` | SUCCESS (local only — gitignored, not PR-able) |
+| Log annotation | `backlogit comment add 150.002-T --actor ship-agent --comment "..."` | SUCCESS (local only — gitignored, not PR-able) |
 
-### Why Log Annotations Are Not a Governed Durable Correction
+### Why Direct Frontmatter Editing Is Harmful
 
-The `.backlogit/logs/*.jsonl` files are gitignored. The lifecycle incident comments appended
-locally to `150.001-T.jsonl` and `150.002-T.jsonl` exist only in the local worktree filesystem.
-They are NOT persisted to `origin/main` and are NOT part of the permanent git record.
+The `.backlogit/logs/*.jsonl` files are gitignored — log annotations do not persist to the git
+record. And as described above, direct frontmatter editing of `archived_status` would corrupt
+`UnarchiveItem` restore semantics. **The correct governed path is restore → transition → re-archive,
+which is not currently exposed as a CLI command.**
 
-## What Cannot Be Done (Governed Operations)
+## What Cannot Be Done (Current CLI)
 
 The `backlogit` lifecycle state machine treats `archived` as a terminal state with NO allowed
-transitions. This is enforced by the `validate_status_transition` pre-update hook, which cannot
-be bypassed by any current flag (including `--force-gates`). There is no `unarchive`, `restore`,
-or `--archived-status` operation in the current backlogit API surface.
+transitions (`validate_status_transition` hook; cannot be bypassed by `--force-gates`). There is
+no `unarchive` or `restore` CLI command, even though `UnarchiveItem` exists internally. Direct
+frontmatter editing is harmful to provenance. No current CLI operation can safely correct
+`archived_status` for these items.
 
-**Conclusion**: The `archived_status: active` field in `.backlogit/archive/150.001-T.md` and
-`.backlogit/archive/150.002-T.md` CANNOT be corrected to `archived_status: done` via any
-governed backlogit lifecycle operation.
+## Operator Recovery
 
-## Operator Recovery Options
-
-Two options are available. The operator must choose one:
+Only one safe option exists with the current tooling:
 
 ### Option A: Accept the Lifecycle Gap (Permanent Incident Record)
 
@@ -105,60 +112,37 @@ The lifecycle gap is permanently documented in:
 3. The merged remediation PR
 
 **P-001 status**: Lifecycle gap acknowledged; the historical record (`archived_status: active`)
-remains as a factual artifact. Tasks were functionally complete (see evidence above).
+is preserved as a factual artifact reflecting the actual state at archiving time. Tasks were
+functionally complete (see evidence above). `UnarchiveItem` restore semantics remain intact.
 
-### Option B: Manual Frontmatter Correction
+### Option B (Future — When Governed Restore Is Available)
 
-**Action**: Directly edit the two archive markdown files to correct `archived_status`.
+When a `backlogit restore` or `unarchive` CLI command is added to the tool, the correct
+remediation flow would be:
 
-Step-by-step:
+1. `backlogit restore 150.001-T` — restores item from archive to queue at `active` status,
+   removes `archived_status` field (preserves correct restore semantics via `UnarchiveItem`)
+2. `backlogit move 150.001-T --status done` — drives the required done transition with a
+   `pre_task_completion_gate_passed` event in the audit log
+3. `backlogit archive 150.001-T` — re-archives with `archived_status: done` (correct value)
+4. Repeat for `150.002-T`
 
-1. **Edit both files**:
-   - `.backlogit/archive/150.001-T.md`: change `archived_status: active` to `archived_status: done`
-   - `.backlogit/archive/150.002-T.md`: change `archived_status: active` to `archived_status: done`
-   - Do NOT add inline YAML comments in the frontmatter (backlogit may strip them on round-trips)
+This path creates a genuine `done` transition event, correctly sets `archived_status: done`,
+and does not corrupt `UnarchiveItem` restore semantics. **This option is UNAVAILABLE today.**
 
-2. **Rebuild the index**:
-   ```
-   backlogit sync
-   ```
-   Without this step the SQLite query cache retains `archived_status: active`.
+## Tooling Gaps — Systemic Follow-Up
 
-3. **Verify**:
-   ```
-   backlogit get 150.001-T
-   backlogit get 150.002-T
-   ```
-   Confirm both report `archived_status: done`.
+Two backlog items are recommended for the backlogit tool:
 
-4. **Commit** with a transparent provenance note:
-   ```
-   fix(harness): correct archived_status to done for 150.001-T and 150.002-T
+1. **Governed restore CLI command**: A `backlogit restore <id>` command that wraps `UnarchiveItem`,
+   moving an archived item back to its pre-archive status with a full audit event trail. This is the
+   prerequisite for the correct P-001 remediation path (Option B above).
 
-   - Archived from active in PR #391 (1dfdd6ce); governed ops blocked.
-   - Incident: docs/closure/2026-08-29-133-s-lifecycle-incident.md
-
-   ⚠️ - Generated by Copilot
-   ```
-
-**P-001 status**: Option B corrects the `archived_status` metadata field to reflect the
-intended terminal value. It does NOT retroactively create a governed `active → done` transition
-event. The historical lifecycle gap (no done event was ever emitted in the original flow)
-remains a documented fact. The P-001 violation is partially addressed by correcting the recorded
-field value and this incident record.
-
-**Note**: The Ship agent does NOT execute Option B because the operator instruction states to
-halt with precise operator recovery rather than editing archived headers by hand.
-
-## Tooling Gap — Systemic Follow-Up
-
-Two backlog items are recommended for the backlogit tool itself:
-
-1. **Administrative `archived_status` correction command**: A governed `backlogit archive --set-archived-status done <id>` or similar operation that allows operators to correct `archived_status` with an explicit audit event, bypassing the lifecycle state machine for administrative corrections.
-
-2. **Pre-archive lifecycle guard**: A pre-archive check that rejects archiving an item whose `status` is not `done` (for tasks/subtasks) or `shipped` (for shipments), forcing the correct terminal transition before archival.
-
-These gaps mean the current backlogit API cannot recover from this class of lifecycle protocol error.
+2. **Pre-archive lifecycle guard for completion-claiming archival**: A pre-archive check that warns
+   (or rejects) when archiving a task/subtask from a non-terminal status in a completion context.
+   This guard must distinguish between explicit descope archival (where archiving from `active` or
+   `queued` is intentional, per `docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`)
+   and completion-claiming archival (where the expectation is `done → archived`).
 
 ## P-001 Status Summary
 
@@ -167,8 +151,9 @@ These gaps mean the current backlogit API cannot recover from this class of life
 | Substantive completeness (code merged, tests pass) | ✓ COMPLETE |
 | Lifecycle protocol (active → done → archived) | ✗ GAP — tasks went active → archived |
 | Governed correction attempted | ✓ ATTEMPTED — all paths blocked |
+| Direct frontmatter fix | ✗ HARMFUL — corrupts UnarchiveItem restore semantics |
 | Incident documented | ✓ THIS DOCUMENT |
-| Operator action required | Pending (Option A or B above) |
+| Operator action required | Option A (accept gap) is the only safe current path |
 
 ## 11FFF601 Final Closure Status
 
@@ -187,5 +172,5 @@ release unit. All other closure criteria are met:
 - Compound learning: ✓
 - `150-F archived_status: done`: ✓
 - `133-S archived_status: shipped`: ✓
-- `150.001-T archived_status: done`: ✗ OPEN — `active` in archive (requires operator action)
-- `150.002-T archived_status: done`: ✗ OPEN — `active` in archive (requires operator action)
+- `150.001-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
+- `150.002-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)

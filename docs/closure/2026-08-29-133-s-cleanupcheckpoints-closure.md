@@ -139,10 +139,10 @@ path is `active → done → archived`; both tasks skipped the `done` transition
 `active → archived` directly in closure commit `5e1b385d`.
 
 All governed backlogit lifecycle operations to correct `archived_status` were attempted and blocked
-by the `validate_status_transition` hook (archived state has no allowed transitions). Operator
-action is required: either accept the documented lifecycle gap (Option A) or apply manual
-frontmatter correction (Option B). See the full incident record for both paths and their
-tradeoffs.
+by the `validate_status_transition` hook. Direct frontmatter editing is harmful: `archived_status`
+is used by `UnarchiveItem` to restore the pre-archive state, so overwriting it would corrupt
+restore semantics. Only Option A (accept the lifecycle gap as documented) is safe with current
+tooling. A `backlogit restore` command is tracked as a tooling follow-up.
 
 **Full incident record**: `docs/closure/2026-08-29-133-s-lifecycle-incident.md`
 
