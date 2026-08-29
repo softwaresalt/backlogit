@@ -92,7 +92,7 @@ data-integrity gaps that share the same call chain.
 
 **Stash**: EA1F5912 (task, medium)
 **Package**: `internal/events`, `internal/atomicfile`
-**Files**: `memory.go`, `fsutil.go`, `atomicfile.go`, `mcp/checkpoint_tools.go`, `cli/checkpoint.go`
+**Files**: `memory.go`, `fsutil.go` (core write path only; transport-level surfacing deferred to Group 4 items EB93E236 + 63E810D9)
 **Approach**:
 
 1. Converge `internal/events` onto the existing `internal/atomicfile` outcome
@@ -116,7 +116,7 @@ data-integrity gaps that share the same call chain.
 
 **Stash**: 35A27CD0 (task, medium)
 **Package**: `internal/events`, `internal/core`
-**Files**: `checkpoint_disposition.go`, `checkpoint_read.go`, `memory.go` (read paths only — U4 does not modify the create path in memory.go)
+**Files**: `internal/core/checkpoint_disposition.go`, `internal/events/memory.go` (disposition/rewrite paths only — U4 does not modify the create path in memory.go)
 **Approach**:
 
 1. Add `O_NOFOLLOW` or equivalent real-root open to checkpoint read/write paths.
@@ -226,4 +226,5 @@ dispatch_mode: single-agent-declared-degradation
 decision: PASS
 rationale: Security-focused hardening with clear scope boundaries, test-first contracts, explicit non-goals, and wave-parallel dependency graph. All five units target the same call chain with no scope creep risk. Single-agent declared degradation is appropriate because this is a CLI-mode Stage session without multi-agent dispatch capability.
 operator_authorization: approved (dark-mode pre-authorized, operator AFK)
+
 
