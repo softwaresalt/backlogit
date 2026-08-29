@@ -74,12 +74,13 @@ func syncAppendLine(path string, data []byte) error {
 // preserving errors.Is traversal through the fmt.Errorf("write checkpoint: %w")
 // wrapping in CreateCheckpoint.
 var syncWriteFileAtomicHook = func(path string, data []byte, _ os.FileMode) error {
-	// Route through atomicfile for outcome classification (148-F / U3):
-	// ErrWriteNotApplied for pre-rename failures, ErrWriteIndeterminate for
-	// post-rename fsync failures. DurableWrites is left at the default (false)
-	// to preserve the pre-existing create behaviour; the sync is handled by
-	// syncWriteFileAtomic's own Sync() call which this wrapper supersedes.
-	return atomicfile.WriteFileAtomic(path, data)
+	// Route through atomicfile with DurableWrites for outcome classification
+	// (148-F / U3): ErrWriteNotApplied for pre-rename failures,
+	// ErrWriteIndeterminate for post-rename fsync failures. DurableWrites
+	// preserves the pre-existing syncWriteFileAtomic behaviour of fsyncing
+	// the file before close (Copilot review: using WriteFileAtomic without
+	// durability regressed checkpoint write safety).
+	return atomicfile.WriteFileAtomicWithOptions(path, data, atomicfile.Options{DurableWrites: true})
 }
 
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
