@@ -56,7 +56,11 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	}
 	baseName := filepath.Base(target)
 
-	data, err := os.ReadFile(target)
+	// 148-F / U4: readFileNoFollow refuses to read through a symlink,
+	// closing the TOCTOU race between ResolveDispositionTarget's Lstat
+	// check and the actual read (see checkpoint_nofollow_*.go for platform
+	// specifics and AR-P2-1 portability notes).
+	data, err := readFileNoFollow(target)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointNotFound, baseName)
@@ -204,7 +208,8 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 	}
 	baseName := filepath.Base(target)
 
-	data, err := os.ReadFile(target)
+	// 148-F / U4: readFileNoFollow for the same TOCTOU protection.
+	data, err := readFileNoFollow(target)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointNotFound, baseName)

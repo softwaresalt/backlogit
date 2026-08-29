@@ -63,6 +63,13 @@ func syncAppendLine(path string, data []byte) error {
 	return nil
 }
 
+// syncWriteFileAtomicHook is the package-level, test-swappable seam for
+// syncWriteFileAtomic, mirroring the established checkpointAuditAppendFn
+// pattern (checkpoint_audit.go). Tests that override this variable must not
+// run with t.Parallel(). 148-F / U3: wired into the checkpoint create path
+// so tests can simulate ErrWriteIndeterminate and ErrWriteNotApplied outcomes.
+var syncWriteFileAtomicHook = syncWriteFileAtomic
+
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
 // with an fsync before close to guarantee durability before rename.
 // On Windows, removes the destination file before renaming because os.Rename

@@ -312,6 +312,14 @@ func (c CheckpointContext) emit() ([]string, []byte, error) {
 		}
 		buf.Write(keyBytes)
 		buf.WriteByte(':')
+		// 148-F / U5: validate each Extra value before appending. A nil or
+		// malformed json.RawMessage would make MarshalJSON produce invalid JSON
+		// bytes with a nil error — silently corrupting any consumer. By checking
+		// here (in emit, shared by both MarshalJSON and Keys) both surfaces fail
+		// with a named error rather than silently producing broken output.
+		if !json.Valid(c.Extra[k]) {
+			return nil, nil, fmt.Errorf("checkpoint context: extra key %q has invalid JSON value", k)
+		}
 		buf.Write(c.Extra[k])
 	}
 	buf.WriteByte('}')
