@@ -15,11 +15,11 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 **Active out-of-scope**: 302EFF07 (active but not in bounded set — excluded per dark-factory boundary)
 **Active bounded entries**: 20 IDs remaining for planning
 
-## Group 1 — Checkpoint Create/Write Path Security Hardening (STAGED — Batch 1)
+## Group 1 — Checkpoint Create/Write Path Security Hardening (SHIPPED — 130-S/131-S)
 
 **Priority**: FIRST — highest priority, security-sensitive, active bugs
 **Risk**: HIGH — data-integrity bugs + attack surface
-**Status**: Staged as first shipment
+**Status**: SHIPPED/ARCHIVED (130-S/131-S)
 **Deliberation**: 060-DL
 **Plan**: docs/exec-plans/2026-08-28-checkpoint-write-security-hardening-plan.md
 
@@ -31,9 +31,25 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 | 35A27CD0 | medium | task | Checkpoint filesystem containment hardening (symlink/TOCTOU) |
 | F89CADB7 | low | bug | CheckpointContext.Extra validation in emit() |
 
-## Group 2 — Docline Decode Convergence + Contract Cleanup (DEFERRED)
 
-**Priority**: SECOND — high-priority convergence + upstream template
+## Group 2 — syncWriteFileAtomic Windows Pre-Remove Fix (STAGED — 132-S)
+
+**Priority**: SECOND — P1 data-loss bug, FC-4 mandate, operator directive
+**Risk**: MODERATE — single-function bug fix with AST-verified regression coverage
+**Status**: Staged as shipment 132-S
+**Provenance**: Post-activation causal item from 131-S P-002 audit (CB71B412)
+**Plan**: docs/exec-plans/2026-08-29-remove-syncwritefileatomic-preremove-plan.md
+
+| Stash ID | Priority | Kind | Summary |
+|---|---|---|---|
+| CB71B412 | high | bug | syncWriteFileAtomic Windows pre-Remove data-loss risk |
+
+**Grouping rationale**: Isolated — no code dependency on any other stash item.
+CB71B412 touches only `internal/events/fsutil.go`. P1 severity and FC-4 mandate
+require it to ship before lower-priority convergence/refactor groups.
+## Group 3 — Docline Decode Convergence + Contract Cleanup (DEFERRED)
+
+**Priority**: FIFTH — high-priority convergence + upstream template
 **Risk**: LOW-MEDIUM — refactor + doc update
 **Status**: Active stash, awaiting Group 1 shipment completion
 
@@ -43,9 +59,9 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 | 360A183F | high | task | Upstream checkpoint context wording to template |
 | EC987334 | medium | task | Drop omitempty from MigrateReport collection fields |
 
-## Group 3 — Checkpoint Governance & Disposition Hardening (DEFERRED)
+## Group 4 — Checkpoint Governance & Disposition Hardening (DEFERRED)
 
-**Priority**: THIRD — deliberation-gated + state machine hardening
+**Priority**: FIFTH — deliberation-gated + state machine hardening
 **Risk**: MEDIUM — deliberation-gated, deprecated field removal
 **Status**: Active stash, requires deliberation resolution first
 
@@ -58,9 +74,9 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 | 6FA45E69 | low | task | Pin conforming+resolved double-refusal state-conflict test |
 | DBBA62AA | low | task | CLI coverage for checkpoint resolve on abandoned doc |
 
-## Group 4 — CLI/MCP Parity + Harness Hygiene (DEFERRED)
+## Group 5 — CLI/MCP Parity + Harness Hygiene (DEFERRED)
 
-**Priority**: FOURTH — parity, hygiene, low blast radius
+**Priority**: FIFTH — parity, hygiene, low blast radius
 **Risk**: LOW — no security surface
 **Status**: Active stash, some entries depend on Group 3 deliberations
 
