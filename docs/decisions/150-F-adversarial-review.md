@@ -1,11 +1,17 @@
 ---
+chunk_strategy: h1-h2-h3
+description: Multi-model adversarial review consensus for the 150-F CleanupCheckpoints pre-Remove data-loss fix
+doc_type: decision
+schema_version: "1.0"
+source: docs/decisions/150-F-adversarial-review.md
 title: "150-F Adversarial Review Consensus"
-feature_id: 150-F
-review_type: adversarial
-reviewers: 3
-models: [claude-sonnet-5, gpt-5.6-terra, gemini-3.7-flash]
-status: remediated
-created_at: 2026-08-29T09:48:00Z
+docline:
+    feature_id: 150-F
+    review_type: adversarial
+    reviewers: 3
+    models: [claude-sonnet-5, gpt-5.6-terra, gemini-3.7-flash]
+    status: remediated
+    created_at: 2026-08-29T09:48:00Z
 ---
 
 # 150-F Adversarial Review — Consensus Report

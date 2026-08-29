@@ -1,10 +1,16 @@
 ---
+chunk_strategy: h1-h2-h3
+description: Implementation plan for removing the CleanupCheckpoints Windows pre-Remove data-loss window in checkpoint_lifecycle.go
+doc_type: plan
+schema_version: "1.0"
+source: docs/exec-plans/150-F-plan.md
 title: "150-F Implementation Plan: Remove CleanupCheckpoints Windows pre-Remove data-loss window"
-feature_id: 150-F
-shipment_id: 133-S
-stash_id: 11FFF601
-status: approved
-created_at: 2026-08-29T09:44:00Z
+docline:
+    feature_id: 150-F
+    shipment_id: 133-S
+    stash_id: 11FFF601
+    status: approved
+    created_at: 2026-08-29T09:44:00Z
 ---
 
 # 150-F Implementation Plan
