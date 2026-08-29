@@ -216,8 +216,41 @@ Findings addressed:
 5. U4: Clarified file scope (disposition/read paths, not create-path memory.go)
 6. Wave 1 parallelism: Confirmed safe — U1 and U4 target different code paths
 7. U4: O_NOFOLLOW on open, not Lstat-then-open (avoids TOCTOU in detection itself)
-8. Adversarial review: NOT escalated — standard plan review sufficient for this scope
-   (5 tasks, narrow input-validation + containment changes, no auth/crypto/PII surface)
+8. Adversarial review: ESCALATED — multi-persona review completed post-merge
+   (see Adversarial Review Gate section below and
+   docs/closure/2026-08-28-131s-adversarial-review-evidence.md)
+
+## Adversarial Review Gate
+
+<!-- adversarial-review-attempt: 1 -->
+dispatch_mode: multi-persona (3 independent reviewers via Adversarial Review agent)
+reviewers: Reviewer-A (Tier 1, gemini-3.5-flash), Reviewer-B (Tier 2, gpt-5.5), Reviewer-C (Tier 3, claude-opus-5)
+assembly_model: claude-sonnet-5
+decision: PASS — no verified P0/P1 findings after independent verification
+evidence: docs/closure/2026-08-28-131s-adversarial-review-evidence.md
+
+### Verified P2 findings (deferred, tracked)
+
+| ID | Finding | Severity | Confidence | Disposition |
+|---|---|---|---|---|
+| AR-P2-1 | U4 platform portability: plan says "O_NOFOLLOW or equivalent" but does not specify Windows strategy explicitly | P2 | MEDIUM | Deferred to Ship — plan language already accommodates platform equivalents; Ship agent selects implementation |
+| AR-P2-2 | Create path MkdirAll in CreateCheckpoint not covered by U4 (scoped to disposition/rewrite paths) | P2 | MEDIUM | Deferred — create path receives checkpointDir from workspace config, not user input directly; can be tracked as follow-up |
+| AR-P2-3 | Observability: no structured slog logging added for security rejections in CreateCheckpoint | P2 | MEDIUM | Deferred to Ship — monitoring plan has SLIs; Ship can add slog calls during implementation |
+
+### Verified P3 findings (advisory)
+
+| ID | Finding | Severity | Confidence | Disposition |
+|---|---|---|---|---|
+| AR-P3-1 | U1 schema_version type confusion: valid JSON with schema_version:"1" (string) or 1.0 (float) passes json.Valid but fails int-typed probe, falling through to legacy path | P3 | LOW (single reviewer) | Advisory — valid JSON is NOT malformed; this is a separate schema-detection gap outside U1 scope. Legacy fallthrough for non-integer schema_version is the designed behavior for backward compatibility |
+| AR-P3-2 | U5 guards currently unreachable production code: CheckpointContext.Extra is only populated via UnmarshalJSON | P3 | LOW (single reviewer) | Advisory — defensive invariant is valid engineering practice; guards against future direct construction |
+
+### Rejected findings (factually incorrect)
+
+| ID | Reviewer claim | Rejection rationale |
+|---|---|---|
+| C-1 | Provenance failure — artifacts absent from repo | FALSE: all artifacts confirmed at origin/main via git show; PR #381 confirmed MERGED via gh pr view 381 with correct merge commit |
+| C-2 | Ledger arithmetic 28-8-1-1=18≠20 | FALSE: 28 original = 8 consumed + 20 active (5+3+6+6); 40A985BB was a candidate outside the original 28; 302EFF07 was never in bounded set |
+| M-1 | Wave 1 parallelism false (U1+U4 edit same function) | FALSE: plan explicitly scopes U4 to "disposition/rewrite paths only — U4 does not modify the create path in memory.go" |
 
 ## Plan Review
 
@@ -226,5 +259,10 @@ dispatch_mode: single-agent-declared-degradation
 decision: PASS
 rationale: Security-focused hardening with clear scope boundaries, test-first contracts, explicit non-goals, and wave-parallel dependency graph. All five units target the same call chain with no scope creep risk. Single-agent declared degradation is appropriate because this is a CLI-mode Stage session without multi-agent dispatch capability.
 operator_authorization: approved (dark-mode pre-authorized, operator AFK)
+
+<!-- plan-review-attempt: 1 (adversarial gate remediation) -->
+dispatch_mode: multi-persona (Adversarial Review agent, 3 independent reviewers)
+decision: PASS — no verified P0/P1 findings; 3 P2 deferred, 2 P3 advisory, 3 findings rejected as factually incorrect
+operator_authorization: approved (operator-mandated adversarial review gate remediation)
 
 
