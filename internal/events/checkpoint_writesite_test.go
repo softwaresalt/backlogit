@@ -81,7 +81,7 @@ func enumerateCheckpointDirWriteCalls(t *testing.T, dir string) []checkpointWrit
 				}
 				switch fn := call.Fun.(type) {
 				case *ast.Ident:
-					if fn.Name == "syncWriteFileAtomic" {
+					if fn.Name == "syncWriteFileAtomic" || fn.Name == "syncWriteFileAtomicHook" {
 						found = append(found, checkpointWriteCall{file: name, fn: funcDecl.Name.Name, call: fn.Name})
 					}
 				case *ast.SelectorExpr:
@@ -122,7 +122,7 @@ func containsSubstring(s, substr string) bool {
 // enumerated write forms, so they never appear in this set.
 var checkpointDirWriteAllowlist = map[string]bool{
 	"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomicWithOptions": true,
-	"memory.go:CreateCheckpoint:syncWriteFileAtomic":                                    true,
+	"memory.go:CreateCheckpoint:syncWriteFileAtomicHook":                                true,
 	"checkpoint_disposition.go:QuarantineCheckpoint:atomicfile.WriteFileAtomic":         true,
 }
 
@@ -147,7 +147,7 @@ func TestU2fGuard_EnumeratedCallSiteSetEqualsAllowlist(t *testing.T) {
 func TestU2fGuard_SyntheticUngatedRewriteSiteFailsAssertion(t *testing.T) {
 	synthetic := map[string]bool{
 		"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomicWithOptions": true,
-		"memory.go:CreateCheckpoint:syncWriteFileAtomic":                                    true,
+		"memory.go:CreateCheckpoint:syncWriteFileAtomicHook":                                true,
 		"checkpoint_evil.go:EvilCheckpointRewrite:syncWriteFileAtomic":                      true,
 	}
 	assert.NotEqual(t, checkpointDirWriteAllowlist, synthetic,

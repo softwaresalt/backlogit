@@ -103,6 +103,16 @@ var (
 	// *CheckpointNonConformingError rather than parsing this sentinel's
 	// message.
 	ErrCheckpointNonConforming = errors.New("backlogit: checkpoint carries unmodeled top-level key(s); rewrite refused")
+
+	// ErrCheckpointMalformedInput indicates a checkpoint create request supplied
+	// a state_dump that is not syntactically valid JSON. Rejected before any
+	// file is written. Use errors.As to recover *CheckpointMalformedInputError.
+	ErrCheckpointMalformedInput = errors.New("backlogit: checkpoint state_dump is not valid JSON")
+
+	// ErrCheckpointDuplicateContextKey indicates a checkpoint create request
+	// supplied a context object with duplicate or case-fold-aliased member names.
+	// Use errors.As to recover *CheckpointDuplicateContextKeyError.
+	ErrCheckpointDuplicateContextKey = errors.New("backlogit: checkpoint context carries duplicate or aliased key(s)")
 )
 
 // CheckpointUnknownFieldError is returned when a checkpoint create request
@@ -296,4 +306,42 @@ func (e *CheckpointNonConformingError) FieldPathsForDisplay() string {
 		return display
 	}
 	return fmt.Sprintf("%s (%s)", display, strings.Join(clauses, ", "))
+}
+
+// CheckpointMalformedInputError is returned (148-F / U1) when a checkpoint
+// create request's state_dump is not syntactically valid JSON. It carries no
+// raw payload excerpt — checkpoint context may contain sensitive data
+// (Constitution III). Recover with errors.As; check errors.Is for the
+// ErrCheckpointMalformedInput sentinel.
+type CheckpointMalformedInputError struct{}
+
+// Error returns the error message for CheckpointMalformedInputError.
+func (e *CheckpointMalformedInputError) Error() string {
+	return "backlogit: checkpoint state_dump is not valid JSON"
+}
+
+// Unwrap returns ErrCheckpointMalformedInput so errors.Is matches through
+// this typed error.
+func (e *CheckpointMalformedInputError) Unwrap() error {
+	return ErrCheckpointMalformedInput
+}
+
+// CheckpointDuplicateContextKeyError is returned (148-F / U2) when a
+// checkpoint create request's context object carries duplicate or
+// case-fold-aliased member names. Keys is the sorted, de-duplicated set
+// of offending key names. Recover with errors.As rather than parsing
+// Error()'s message.
+type CheckpointDuplicateContextKeyError struct {
+	Keys []string
+}
+
+// Error returns the error message for CheckpointDuplicateContextKeyError.
+func (e *CheckpointDuplicateContextKeyError) Error() string {
+	return "backlogit: checkpoint context carries duplicate or aliased key(s): " + strings.Join(e.Keys, ", ")
+}
+
+// Unwrap returns ErrCheckpointDuplicateContextKey so errors.Is matches
+// through this typed error.
+func (e *CheckpointDuplicateContextKeyError) Unwrap() error {
+	return ErrCheckpointDuplicateContextKey
 }

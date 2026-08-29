@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
@@ -62,6 +63,14 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 	data := []byte(stateDump)
 	var contextKeys []string
 
+	// 148-F / U1: Validate JSON syntactic correctness FIRST, before classification.
+	// A truncated V1-shaped payload would otherwise fall through to the legacy
+	// path and be written as corrupt bytes. No raw payload excerpt in error
+	// (Constitution III: checkpoint context may contain sensitive data).
+	if !json.Valid(data) {
+		return CreateCheckpointResult{}, &backlogiterrors.CheckpointMalformedInputError{}
+	}
+
 	// Probe for V1 schema.
 	var probe struct {
 		SchemaVersion int `json:"schema_version"`
@@ -79,6 +88,14 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		// hop.
 		if err := checkClosedSchemaNamespace(data); err != nil {
 			return CreateCheckpointResult{}, err
+		}
+		// 148-F / U2: check for duplicate or case-fold-aliased context member
+		// names at the create boundary. Returns typed
+		// *CheckpointDuplicateContextKeyError so callers can recover the offending
+		// key names via errors.As. Ordered after checkClosedSchemaNamespace so
+		// the top-level and progress namespace is already clean.
+		if dupKeys := contextDuplicateCreateKeys(data); len(dupKeys) > 0 {
+			return CreateCheckpointResult{}, &backlogiterrors.CheckpointDuplicateContextKeyError{Keys: dedupeSorted(dupKeys)}
 		}
 		if cp.CreatedAt.IsZero() {
 			cp.CreatedAt = time.Now().UTC()
@@ -109,7 +126,9 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		}
 	}
 
-	if err := syncWriteFileAtomic(path, data, 0o644); err != nil {
+	// 148-F / U3: route through the seam so tests can simulate ErrWriteIndeterminate
+	// and ErrWriteNotApplied outcomes and callers can classify the error class.
+	if err := syncWriteFileAtomicHook(path, data, 0o644); err != nil {
 		return CreateCheckpointResult{}, fmt.Errorf("write checkpoint: %w", err)
 	}
 

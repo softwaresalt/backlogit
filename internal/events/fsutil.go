@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 )
 
 // syncAppendResult classifies how a durable append terminated so callers can map
@@ -63,6 +65,24 @@ func syncAppendLine(path string, data []byte) error {
 	return nil
 }
 
+// syncWriteFileAtomicHook is the package-level, test-swappable seam for
+// checkpoint create writes, mirroring the established checkpointAuditAppendFn
+// pattern (checkpoint_audit.go). Tests that override this variable must not
+// run with t.Parallel(). 148-F / U3: default converges onto
+// atomicfile.WriteFileAtomicWithOptions so real write failures are classified
+// as ErrWriteNotApplied or ErrWriteIndeterminate by the atomicfile layer,
+// preserving errors.Is traversal through the fmt.Errorf("write checkpoint: %w")
+// wrapping in CreateCheckpoint.
+var syncWriteFileAtomicHook = func(path string, data []byte, _ os.FileMode) error {
+	// Route through atomicfile with DurableWrites for outcome classification
+	// (148-F / U3): ErrWriteNotApplied for pre-rename failures,
+	// ErrWriteIndeterminate for post-rename fsync failures. DurableWrites
+	// preserves the pre-existing syncWriteFileAtomic behaviour of fsyncing
+	// the file before close (Copilot review: using WriteFileAtomic without
+	// durability regressed checkpoint write safety).
+	return atomicfile.WriteFileAtomicWithOptions(path, data, atomicfile.Options{DurableWrites: true})
+}
+
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
 // with an fsync before close to guarantee durability before rename.
 // On Windows, removes the destination file before renaming because os.Rename
@@ -92,8 +112,15 @@ func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("syncWriteFileAtomic close %s: %w", tmp, closeErr)
 	}
 	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
-	// On Windows, os.Rename fails when the destination already exists; remove first.
-	// The removal window is narrow and acceptable for regenerable files.
+	// On Windows, os.Rename uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) on Go 1.17+,
+	// which atomically replaces the destination without a pre-removal step.
+	// The pre-Remove block below is therefore a pre-existing data-loss window
+	// (148-F adversarial review FINDING-3 / MEDIUM confidence): if Rename fails
+	// after Remove succeeds, both the original and the temp file are gone.
+	// Removing it is the correct fix; deferred because this function predates
+	// 148-F and the blast radius extends beyond checkpoint writes.
+	// DO NOT add new callers that depend on the pre-Remove semantics.
+	// Tracked: stash item for follow-up removal once regression coverage is added.
 	if runtime.GOOS == "windows" {
 		_ = os.Remove(path)
 	}
