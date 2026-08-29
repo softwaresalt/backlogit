@@ -57,7 +57,12 @@ Consensus: HIGH (3/3) — fix is correct and safe.
 | Round | State | Threads | Outcome |
 |-------|-------|---------|---------|
 | Round 1 (1ace3861) | COMMENTED | 1 unresolved | Fixed: corrected data-loss scope and rename property in comment |
-| Round 2 (af54c6a3) | COMMENTED | 0 unresolved | CLEAN |
+| Round 2 (af54c6a3) | COMMENTED | 0 unresolved | 0 unresolved threads; review body flagged tasks-not-done (see note) |
+
+**Round 2 review body finding (not a thread)**: Copilot flagged 🔵 Needs a closer look — both tasks
+remained ctive (not done) at merge. The move done CLI ops executed locally in the impl
+worktree were not staged/committed before merge; tasks went ctive → archived in this closure
+PR rather than ctive → done → archived. Functionally complete: code merged, tests pass.
 
 ## P-014 Gate (pre-merge, defense-in-depth)
 
