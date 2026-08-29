@@ -95,7 +95,7 @@ justified in a plan amendment.
 
 File: `internal/events/fsutil_test.go`
 
-Add test function `TestSyncWriteFileAtomic_OverwriteWithoutPreRemove` that:
+Add test function `TestSyncWriteFileAtomic_NoPreRemoveInAST` that:
 
 1. Creates a destination file with known content ("original")
 2. Calls `syncWriteFileAtomic` to overwrite it with new content ("updated")
@@ -201,8 +201,7 @@ Shipment 132-S closure MUST include:
 ### Blast radius
 
 * **Direct**: `syncWriteFileAtomic` function (1 function, 1 file)
-* **Callers**: `SaveCheckpoint` in `hook_checkpoint.go`, `EvilCheckpointRewrite`
-  in `checkpoint_evil.go`
+* **Callers**: `SaveCheckpoint` in `hook_checkpoint.go`
 * **Indirect**: Hook checkpoint persistence (non-critical — ephemeral state)
 * **Cross-platform**: The removed block only runs on Windows. Unix behavior
   is unchanged. Test coverage is platform-independent (AST-based).

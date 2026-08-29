@@ -47,11 +47,12 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 **Grouping rationale**: Isolated — no code dependency on any other stash item.
 CB71B412 touches only `internal/events/fsutil.go`. P1 severity and FC-4 mandate
 require it to ship before lower-priority convergence/refactor groups.
+
 ## Group 3 — Docline Decode Convergence + Contract Cleanup (DEFERRED)
 
-**Priority**: FIFTH — high-priority convergence + upstream template
+**Priority**: THIRD — high-priority convergence + upstream template
 **Risk**: LOW-MEDIUM — refactor + doc update
-**Status**: Active stash, awaiting Group 1 shipment completion
+**Status**: Active stash, awaiting Group 2 shipment completion
 
 | Stash ID | Priority | Kind | Summary |
 |---|---|---|---|
@@ -61,7 +62,7 @@ require it to ship before lower-priority convergence/refactor groups.
 
 ## Group 4 — Checkpoint Governance & Disposition Hardening (DEFERRED)
 
-**Priority**: FIFTH — deliberation-gated + state machine hardening
+**Priority**: FOURTH — deliberation-gated + state machine hardening
 **Risk**: MEDIUM — deliberation-gated, deprecated field removal
 **Status**: Active stash, requires deliberation resolution first
 
@@ -93,8 +94,12 @@ require it to ship before lower-priority convergence/refactor groups.
 
 | Group | Entry Count | Priority Order | Status |
 |---|---|---|---|
-| Group 1 | 5 | FIRST | STAGED (Batch 1) |
-| Group 2 | 3 | SECOND | DEFERRED |
-| Group 3 | 6 | THIRD | DEFERRED |
+| Group 1 (130-S/131-S) | 5 | FIRST | SHIPPED/ARCHIVED |
+| Group 2 (132-S) | 1 | SECOND | STAGED (CB71B412) |
+| Group 3 | 3 | THIRD | DEFERRED |
 | Group 4 | 6 | FOURTH | DEFERRED |
-| **Total** | **20** | | |
+| Group 5 | 6 | FIFTH | DEFERRED |
+| **Total** | **21** | | |
+
+**Post-activation causal item**: CB71B412 (1 entry) added to scope per
+P-002 incident decision INC-P002-131S-148F, FC-4 sequencing constraint.
