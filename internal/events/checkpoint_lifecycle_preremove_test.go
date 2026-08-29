@@ -12,10 +12,11 @@ import (
 // (150-F / 150.001-T / stash 11FFF601).
 // It parses checkpoint_lifecycle.go and asserts that CleanupCheckpoints contains
 // no os.Remove(dst) call targeting the archive destination. The pre-Remove
-// block was a data-loss window: if os.Rename fails after os.Remove succeeds both
-// the original checkpoint and any previously archived copy at dst are destroyed.
-// Go 1.24.0 os.Rename uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) on Windows,
-// which replaces atomically without pre-Remove.
+// block was a data-loss window: if os.Rename fails after os.Remove succeeds,
+// any previously archived copy at dst is permanently destroyed (the source at
+// path remains). Go 1.24.0 os.Rename on Windows calls MoveFileExW with
+// MOVEFILE_REPLACE_EXISTING, which handles an existing dst without requiring a
+// pre-Remove; the fix relies on this property, not full crash-atomic replacement.
 // This test is RED against the pre-change source because os.Remove(dst) IS present;
 // it turns GREEN after the block is removed.
 func TestCleanupCheckpoints_NoPreRemoveInAST(t *testing.T) {
@@ -48,9 +49,9 @@ func TestCleanupCheckpoints_NoPreRemoveInAST(t *testing.T) {
 	})
 
 	assert.False(t, foundPreRemove,
-		"CleanupCheckpoints must not contain os.Remove(dst): pre-Remove creates a data-loss window "+
-			"if os.Rename fails after os.Remove succeeds — any previously archived copy at dst is "+
-			"destroyed. Go 1.24.0 os.Rename uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) on Windows "+
-			"which replaces atomically without pre-Remove. "+
+		"CleanupCheckpoints must not contain os.Remove(dst): if os.Rename fails after os.Remove "+
+			"succeeds, any previously archived copy at dst is permanently destroyed. "+
+			"Go 1.24.0 os.Rename on Windows calls MoveFileExW(MOVEFILE_REPLACE_EXISTING), "+
+			"which handles an existing dst without requiring a pre-Remove. "+
 			"RED marker: PREREMOVE_FOUND_IN_CLEANUPCHECKPOINTS")
 }
