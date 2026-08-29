@@ -15,10 +15,6 @@ import (
 // Reconcile corrects archived items whose archived_status does not reflect the
 // correct terminal status.  Each item is unarchived, updated to the target
 // status, and re-archived with a durable lifecycle_reconciliation event.
-//
-// STUB: the handler calls core.ReconcileArchivedLifecycle and validates the
-// workspace but outputs a placeholder JSON response.  Replace with real JSON
-// serialisation of the ReconciliationResult in the green phase.
 func newReconcileCommand(cwd *string) *cobra.Command {
 	var reason string
 	var actor string
@@ -57,14 +53,9 @@ as no_op without modification.`,
 			if err != nil {
 				return fmt.Errorf("reconcile: %w", err)
 			}
-
-			// STUB: discard the real result and output a placeholder.
-			// Replace with json.NewEncoder(cmd.OutOrStdout()).Encode(result)
-			// once the green phase wires the full response shape.
-			_ = result
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(map[string]string{"outcome": "not_implemented"})
+			return enc.Encode(result)
 		},
 	}
 
