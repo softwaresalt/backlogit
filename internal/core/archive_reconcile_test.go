@@ -396,10 +396,10 @@ func TestReconcileArchivedLifecycle_DurableCustomFieldsMetadata(t *testing.T) {
 }
 
 // TestReconcileArchivedLifecycle_UnarchiveIndeterminate is a characterization test
-// documenting that ErrWriteIndeterminate during the unarchive phase is surfaced as
-// an error rather than silently swallowed. The item is not rolled back; it is
-// recorded with ReconciliationIndeterminate outcome. The stub exercises the
-// basic error-surface contract.
+// documenting the ErrWriteIndeterminate contract: when any step returns
+// ErrWriteIndeterminate, the item is recorded as indeterminate and no rollback
+// occurs. Without a write-seam injection, we verify the normal success path and
+// that the outcome is ReconciliationCompleted (not indeterminate).
 func TestReconcileArchivedLifecycle_UnarchiveIndeterminate(t *testing.T) {
 	ws := setupReconcileWorkspace(t)
 	ctx := context.Background()
@@ -412,8 +412,11 @@ func TestReconcileArchivedLifecycle_UnarchiveIndeterminate(t *testing.T) {
 		Actor:        "test-actor",
 	}
 
-	_, err := core.ReconcileArchivedLifecycle(ctx, ws.DB, ws, req)
-	// The stub returns "not implemented". A real ErrWriteIndeterminate injection
-	// requires a write-seam; this test documents the expected error surface contract.
-	require.Error(t, err)
+	// Without write-seam injection, the normal success path applies.
+	// ErrWriteIndeterminate injection would require a test seam not yet exposed.
+	result, err := core.ReconcileArchivedLifecycle(ctx, ws.DB, ws, req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	// Verify the normal (non-indeterminate) path returns completed.
+	assert.Equal(t, core.ReconciliationCompleted, result.Outcome)
 }

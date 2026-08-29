@@ -1,8 +1,18 @@
 package core
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // StashProvenanceCorrectionOutcome describes the outcome of a stash provenance correction.
@@ -57,6 +67,228 @@ type StashProvenanceCorrectionResult struct {
 // auto-harvested artifact. It preserves the original harvested_artifact_id and
 // appends an append-only correction record to provenance_corrections.jsonl.
 // Conflicting corrections (same stash ID, different canonical delivery) are rejected.
-func CorrectStashProvenance(_ context.Context, _ *Workspace, _ StashProvenanceCorrectionRequest) (*StashProvenanceCorrectionResult, error) {
-	return nil, errors.New("backlogit: CorrectStashProvenance not implemented")
+func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvenanceCorrectionRequest) (*StashProvenanceCorrectionResult, error) {
+	// 1–4: Validate required fields.
+	if req.StashID == "" {
+		return nil, blerrors.NewValidationError("stash_id", req.StashID, "must not be empty", nil)
+	}
+	if req.CanonicalDeliveryArtifactID == "" {
+		return nil, blerrors.NewValidationError("canonical_delivery_artifact_id", req.CanonicalDeliveryArtifactID, "must not be empty", nil)
+	}
+	if req.Reason == "" {
+		return nil, blerrors.NewValidationError("reason", req.Reason, "must not be empty", nil)
+	}
+	if req.Actor == "" {
+		return nil, blerrors.NewValidationError("actor", req.Actor, "must not be empty", nil)
+	}
+
+	// 5: Validate path-safety (no "..", "/", "\").
+	if !isProvenanceIDPathSafe(req.StashID) {
+		return nil, blerrors.NewValidationError("stash_id", req.StashID, "must not contain path traversal characters", nil)
+	}
+	if !isProvenanceIDPathSafe(req.CanonicalDeliveryArtifactID) {
+		return nil, blerrors.NewValidationError("canonical_delivery_artifact_id", req.CanonicalDeliveryArtifactID, "must not contain path traversal characters", nil)
+	}
+
+	// 6: Resolve storage root.
+	storageRoot := workspaceStorageRoot(ws)
+
+	// 7: Lock the stash archive file.
+	stashArchivePath := filepath.Join(storageRoot, "archive", "stash.jsonl")
+	unlock, err := lockStashFile(stashArchivePath)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
+	// 8: Read the stash archive and find the entry.
+	entry, err := readStashArchiveEntry(stashArchivePath, req.StashID)
+	if err != nil {
+		return nil, err
+	}
+	historicalArtifactID := entry.HarvestedArtifactID
+
+	// 9: Locate the canonical delivery artifact on the filesystem.
+	artifactPath, err := FindArtifactPath(ctx, ws, req.CanonicalDeliveryArtifactID)
+	if err != nil {
+		if errors.Is(err, blerrors.ErrNotFound) {
+			return nil, fmt.Errorf("canonical delivery artifact %s: %w", req.CanonicalDeliveryArtifactID, blerrors.ErrNotFound)
+		}
+		return nil, fmt.Errorf("find canonical delivery artifact: %w", err)
+	}
+
+	// 10: Parse the artifact frontmatter and verify source_stash_id.
+	rawContent, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return nil, fmt.Errorf("read artifact %s: %w", req.CanonicalDeliveryArtifactID, err)
+	}
+	fm, _, parseErr := models.ParseFrontmatter(string(rawContent))
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse artifact %s frontmatter: %w", req.CanonicalDeliveryArtifactID, parseErr)
+	}
+	sourceStashID := extractSourceStashID(fm)
+	if sourceStashID != req.StashID {
+		return nil, fmt.Errorf("artifact %s source_stash_id does not match stash ID %s: %w", req.CanonicalDeliveryArtifactID, req.StashID, blerrors.ErrValidation)
+	}
+
+	// 11: Check for an existing correction for this stash ID.
+	correctionsPath := filepath.Join(storageRoot, "archive", "provenance_corrections.jsonl")
+	existingCanonical, err := readProvenanceCorrections(correctionsPath, req.StashID)
+	if err != nil {
+		return nil, fmt.Errorf("read provenance corrections: %w", err)
+	}
+	if existingCanonical != "" {
+		if existingCanonical == req.CanonicalDeliveryArtifactID {
+			// Idempotent — same correction already recorded.
+			return &StashProvenanceCorrectionResult{
+				Outcome:                     StashProvenanceNoOp,
+				StashID:                     req.StashID,
+				HistoricalArtifactID:        historicalArtifactID,
+				CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+				Message:                     "stash provenance correction already recorded",
+			}, nil
+		}
+		return nil, fmt.Errorf("conflicting provenance correction already exists for stash %s (existing canonical: %s, requested: %s): %w",
+			req.StashID, existingCanonical, req.CanonicalDeliveryArtifactID, blerrors.ErrValidation)
+	}
+
+	// 12: Append the correction record to provenance_corrections.jsonl.
+	correction := ProvenanceCorrection{
+		StashID:                     req.StashID,
+		HistoricalArtifactID:        historicalArtifactID,
+		CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+		Reason:                      req.Reason,
+		Actor:                       req.Actor,
+		CorrectedAt:                 time.Now().UTC().Format(time.RFC3339),
+		EventType:                   "stash_provenance_corrected",
+	}
+	correctionBytes, err := json.Marshal(correction)
+	if err != nil {
+		return nil, fmt.Errorf("marshal provenance correction: %w", err)
+	}
+	cf, err := os.OpenFile(correctionsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open provenance corrections file: %w", err)
+	}
+	line := append(correctionBytes, '\n')
+	if _, writeErr := cf.Write(line); writeErr != nil {
+		_ = cf.Close()
+		return nil, fmt.Errorf("write provenance correction: %w", writeErr)
+	}
+	if closeErr := cf.Close(); closeErr != nil {
+		return nil, fmt.Errorf("close provenance corrections file: %w", closeErr)
+	}
+
+	// 13: Append a durable event to the canonical artifact's item log.
+	if eventErr := appendItemEventErr(ctx, ws, req.CanonicalDeliveryArtifactID, "stash_provenance_corrected", map[string]any{
+		"stash_id":                       req.StashID,
+		"historical_artifact_id":         historicalArtifactID,
+		"canonical_delivery_artifact_id": req.CanonicalDeliveryArtifactID,
+		"reason":                         req.Reason,
+		"actor":                          req.Actor,
+	}); eventErr != nil {
+		return nil, fmt.Errorf("append stash provenance event: %w", eventErr)
+	}
+
+	// 14: Unlock is handled by defer.
+
+	// 15: Return the successful result.
+	return &StashProvenanceCorrectionResult{
+		Outcome:                     StashProvenanceCorrected,
+		StashID:                     req.StashID,
+		HistoricalArtifactID:        historicalArtifactID,
+		CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+		Message:                     "stash provenance correction recorded",
+	}, nil
+}
+
+// isProvenanceIDPathSafe reports whether id contains no path-traversal characters.
+func isProvenanceIDPathSafe(id string) bool {
+	return !strings.Contains(id, "..") &&
+		!strings.Contains(id, "/") &&
+		!strings.Contains(id, `\`)
+}
+
+// extractSourceStashID safely reads custom_fields.source_stash_id from parsed
+// frontmatter, returning "" when the field is absent or not a string.
+func extractSourceStashID(fm map[string]any) string {
+	if fm == nil {
+		return ""
+	}
+	cfRaw, ok := fm["custom_fields"]
+	if !ok {
+		return ""
+	}
+	cf, ok := cfRaw.(map[string]any)
+	if !ok {
+		return ""
+	}
+	v, _ := cf["source_stash_id"].(string)
+	return v
+}
+
+// readStashArchiveEntry opens the stash JSONL archive at archivePath and returns
+// the entry whose ID matches stashID. Returns a wrapped ErrNotFound when the
+// archive is absent or the entry is not present.
+func readStashArchiveEntry(archivePath, stashID string) (ArchivedStashEntry, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ArchivedStashEntry{}, fmt.Errorf("stash entry %s not found in archive: %w", stashID, blerrors.ErrNotFound)
+		}
+		return ArchivedStashEntry{}, fmt.Errorf("open stash archive: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		raw := scanner.Bytes()
+		if len(raw) == 0 {
+			continue
+		}
+		var entry ArchivedStashEntry
+		if jsonErr := json.Unmarshal(raw, &entry); jsonErr != nil {
+			continue
+		}
+		if entry.ID == stashID {
+			return entry, nil
+		}
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		return ArchivedStashEntry{}, fmt.Errorf("scan stash archive: %w", scanErr)
+	}
+	return ArchivedStashEntry{}, fmt.Errorf("stash entry %s not found in archive: %w", stashID, blerrors.ErrNotFound)
+}
+
+// readProvenanceCorrections reads correctionsPath (provenance_corrections.jsonl)
+// and returns the canonical_delivery_artifact_id recorded for stashID, or ""
+// when no correction exists. A missing file is not an error.
+func readProvenanceCorrections(correctionsPath, stashID string) (string, error) {
+	f, err := os.Open(correctionsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("open provenance corrections: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		raw := scanner.Bytes()
+		if len(raw) == 0 {
+			continue
+		}
+		var c ProvenanceCorrection
+		if jsonErr := json.Unmarshal(raw, &c); jsonErr != nil {
+			continue
+		}
+		if c.StashID == stashID {
+			return c.CanonicalDeliveryArtifactID, nil
+		}
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		return "", fmt.Errorf("scan provenance corrections: %w", scanErr)
+	}
+	return "", nil
 }
