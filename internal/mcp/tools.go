@@ -534,6 +534,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.registerHookTools()
 	s.registerDocsTools()
+	s.registerReconcileTools()
 }
 
 func (s *Server) handleListItems(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
