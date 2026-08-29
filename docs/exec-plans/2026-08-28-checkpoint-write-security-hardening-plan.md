@@ -229,13 +229,13 @@ assembly_model: claude-sonnet-5
 decision: PASS — no verified P0/P1 findings after independent verification
 evidence: docs/closure/2026-08-28-131s-adversarial-review-evidence.md
 
-### Verified P2 findings (deferred, tracked)
+### Remediation Queue (adversarial-review.instructions.md §43-53)
 
-| ID | Finding | Severity | Confidence | Disposition |
-|---|---|---|---|---|
-| AR-P2-1 | U4 platform portability: plan says "O_NOFOLLOW or equivalent" but does not specify Windows strategy explicitly | P2 | MEDIUM | Deferred to Ship — plan language already accommodates platform equivalents; Ship agent selects implementation |
-| AR-P2-2 | Create path MkdirAll in CreateCheckpoint not covered by U4 (scoped to disposition/rewrite paths) | P2 | MEDIUM | Deferred — create path receives checkpointDir from workspace config, not user input directly; can be tracked as follow-up |
-| AR-P2-3 | Observability: no structured slog logging added for security rejections in CreateCheckpoint | P2 | MEDIUM | Deferred to Ship — monitoring plan has SLIs; Ship can add slog calls during implementation |
+| ID | Finding | File/Line | Severity | Confidence | Action Class | Disposition |
+|---|---|---|---|---|---|---|
+| AR-P2-1 | U4 platform portability: plan says "O_NOFOLLOW or equivalent" but does not specify Windows strategy | internal/events/memory.go, internal/core/checkpoint_disposition.go | P2 | MEDIUM | advisory | Deferred to Ship — plan language accommodates platform equivalents |
+| AR-P2-2 | Create path MkdirAll in CreateCheckpoint not covered by U4 (scoped to disposition/rewrite paths) | internal/events/memory.go:68 (CreateCheckpoint) | P2 | MEDIUM | advisory | Deferred — create path receives checkpointDir from workspace config |
+| AR-P2-3 | No structured slog logging for security rejections in CreateCheckpoint | internal/events/memory.go:68 (CreateCheckpoint) | P2 | MEDIUM | gated_auto | Deferred to Ship — monitoring plan provides framework |
 
 ### Verified P3 findings (advisory)
 

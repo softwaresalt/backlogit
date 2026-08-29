@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Multi-persona adversarial review evidence for shipment 131-S planning artifacts"
 doc_type: closure
 schema_version: "1.0"
-source: stage-adversarial-review-gate
+source: docs/closure/2026-08-28-131s-adversarial-review-evidence.md
 title: "Adversarial Review Evidence — Shipment 131-S"
 ---
 
@@ -51,17 +51,85 @@ Scope narrowness is not an exemption from the adversarial review gate.
 11. Residual risk (post-ship gaps)
 12. Ledger integrity (28-ID arithmetic)
 
+## Per-Reviewer Finding Matrix
+
+### Reviewer A (Tier 1: gemini-3.5-flash)
+
+| Dimension | Result | Notes |
+|---|---|---|
+| Plan correctness | PASS | Bug descriptions accurate, fixes appropriate |
+| Dependency graph | PASS | No issues identified |
+| Scope containment | PASS | Non-goals respected |
+| Security/containment | PASS | No concerns raised |
+| Constitution compliance | PASS | All principles satisfied |
+| Task granularity | PASS | Within 2-hour bounds |
+| Harness contracts | PASS | Contracts defined |
+| Observability/rollback | PASS | Monitoring plan present |
+| Deliberation quality | PASS | Option B justified |
+| Shipment assembly | PASS | Manifest complete |
+| Residual risk | PASS | No concerns |
+| Ledger integrity | PASS | No concerns |
+| **Unique findings** | None | Largely clean pass |
+
+### Reviewer B (Tier 2: gpt-5.5)
+
+| Dimension | Result | Findings |
+|---|---|---|
+| Plan correctness | PASS | No issues |
+| Dependency graph | WARN | Raised M-1 (wave parallelism concern) — rejected after verification |
+| Scope containment | WARN | Raised M-2 (scope too narrow for blast radius) — partially valid as P2 |
+| Security/containment | WARN | Raised C-3 partially (O_NOFOLLOW portability) — valid as P2 |
+| Constitution compliance | WARN | Raised M-3 (test-first evidence gap) — partially valid as P2 |
+| Task granularity | WARN | Raised M-4 (U4 too large) — advisory |
+| Harness contracts | WARN | Raised M-5 (harness-ready unsubstantiated) — advisory |
+| Observability/rollback | WARN | Raised C-4 (observability incomplete) — valid as P2 |
+| Deliberation quality | WARN | Raised M-6 (problem framing inaccurate) — advisory |
+| Shipment assembly | WARN | Raised M-7 (manifest ordering) — advisory |
+| Residual risk | WARN | Raised M-8 (under-tracked) — advisory |
+| Ledger integrity | FAIL | Raised C-2 (arithmetic wrong) — rejected as factually incorrect |
+| **Unique findings** | None | Multiple advisory findings |
+
+### Reviewer C (Tier 3: claude-opus-5)
+
+| Dimension | Result | Findings |
+|---|---|---|
+| Plan correctness | WARN | Raised U-1 (schema_version type confusion bypass) — valid P3 advisory |
+| Dependency graph | WARN | Raised M-1 independently (wave parallelism) — rejected after verification |
+| Scope containment | WARN | Raised M-2 independently (scope narrow) — partially valid |
+| Security/containment | WARN | Raised C-3 (O_NOFOLLOW + package architecture) — valid P2 |
+| Constitution compliance | WARN | Raised M-3 independently (evidence gap) — partially valid |
+| Task granularity | WARN | Raised M-4 independently (U4 size) — advisory |
+| Harness contracts | WARN | Raised M-5 independently (platform-fragile tests) — advisory |
+| Observability/rollback | WARN | Raised C-4 independently (no slog logging) — valid P2 |
+| Deliberation quality | WARN | Raised M-6 independently (framing inaccurate) — advisory |
+| Shipment assembly | WARN | Raised M-7 independently (ordering) — advisory |
+| Residual risk | PASS | Raised U-2 (U5 reachability) — valid P3 advisory |
+| Ledger integrity | FAIL | Raised C-1 (provenance failure) — rejected as factually incorrect |
+| **Unique findings** | U-1 (type confusion), U-2 (U5 reachability) | Deepest technical analysis |
+
+### Consensus Derivation
+
+| Finding | Reviewer A | Reviewer B | Reviewer C | Consensus |
+|---|---|---|---|---|
+| C-1 (provenance) | not raised | not raised | raised | LOW — rejected (factually incorrect) |
+| C-2 (ledger arithmetic) | not raised | raised | not raised | LOW — rejected (factually incorrect) |
+| C-3 (containment underscoped) | not raised | raised | raised | MEDIUM — partially valid as P2 |
+| C-4 (observability gap) | not raised | raised | raised | MEDIUM — valid as P2 |
+| M-1 (wave parallelism) | not raised | raised | raised | MEDIUM — rejected (factually incorrect) |
+| U-1 (type confusion) | not raised | not raised | raised | LOW — valid P3 advisory |
+| U-2 (U5 reachability) | not raised | not raised | raised | LOW — valid P3 advisory |
+
 ## Consensus Outcome
 
 **Decision**: PASS — no verified P0/P1 findings after independent verification of
 all reviewer claims against actual repository state and source code.
 
-The reviewers produced several HIGH-confidence CRITICAL findings (C-1, C-2) that
-were independently verified as **factually incorrect** — the review agents failed to
+The reviewers produced HIGH-confidence CRITICAL findings (C-1, C-2) that were
+independently verified as **factually incorrect** — the review agents failed to
 correctly access repository state. All artifacts exist at origin/main, the merge
-commit is verified, and the ledger arithmetic is correct. Three additional findings
-(M-1 wave parallelism claim) were also factually wrong after checking the plan's
-explicit scoping language.
+commit is verified, and the ledger arithmetic is correct. One additional finding
+(M-1, wave parallelism claim) was also factually wrong after checking the plan's
+explicit scoping language. Total rejected: 3 findings (C-1, C-2, M-1).
 
 ## Verified Findings
 
@@ -71,25 +139,27 @@ explicit scoping language.
 The plan states "O_NOFOLLOW or equivalent real-root open" but does not specify
 the Windows implementation strategy explicitly. The codebase actively supports
 Windows (see `runtime.GOOS=="windows"` branches in fsutil.go).
-**Disposition**: Deferred to Ship. The plan language already accommodates platform
-equivalents; the Ship agent selects the concrete implementation. No plan change
-required.
+**Affected files**: `internal/events/memory.go`, `internal/core/checkpoint_disposition.go`
+**Action class**: `advisory` — plan language already accommodates platform equivalents
+**Disposition**: Deferred to Ship. The Ship agent selects the concrete implementation.
 
 **AR-P2-2: Create path MkdirAll not covered by U4** (MEDIUM confidence)
 U4 scopes to disposition/rewrite paths. The create path's
 `os.MkdirAll(checkpointDir, 0o755)` in `CreateCheckpoint` is not covered. The
 create path receives `checkpointDir` from workspace configuration, not from
 user-controlled input directly.
-**Disposition**: Deferred. The create path's MkdirAll creates new directories
-from trusted workspace config. Can be tracked as a separate follow-up if the
+**Affected file**: `internal/events/memory.go` (line ~68, `CreateCheckpoint`)
+**Action class**: `advisory` — trusted input path from workspace config
+**Disposition**: Deferred. Can be tracked as a separate follow-up stash if the
 threat model expands.
 
 **AR-P2-3: Observability gap — no structured logging for rejections** (MEDIUM confidence)
 The plan's monitoring section defines SLIs but does not specify `slog` calls for
 security-relevant rejections in `CreateCheckpoint`. Currently zero slog calls in
 the function.
-**Disposition**: Deferred to Ship. The Ship agent can add structured logging
-during implementation. The monitoring plan provides the framework.
+**Affected file**: `internal/events/memory.go` (line ~68, `CreateCheckpoint`)
+**Action class**: `gated_auto` — Ship agent can add slog calls during implementation
+**Disposition**: Deferred to Ship. The monitoring plan provides the framework.
 
 ### P3 — Advisory (2 findings)
 
@@ -98,24 +168,26 @@ Valid JSON with `schema_version:"1"` (string) or `1.0` (float) passes
 `json.Valid` but causes `json.Unmarshal` to return an `UnmarshalTypeError` on
 the int-typed probe field. The V1 branch is skipped and the payload falls
 through to the legacy write path.
-**Assessment**: This is valid JSON, not malformed. The legacy fallthrough for
-non-integer `schema_version` is the designed behavior preserving backward
-compatibility. A payload with a string-typed `schema_version` is not a V1
-checkpoint. This is a separate concern from U1's scope (malformed JSON
-rejection) and would require its own deliberation if deemed a vulnerability.
+**Affected file**: `internal/events/memory.go` (line ~78, V1 probe logic)
+**Action class**: `advisory` — valid JSON with wrong schema_version type is not a
+malformed input; legacy fallthrough is designed behavior
+**Assessment**: This is a separate concern from U1's scope (malformed JSON
+rejection). A payload with a string-typed `schema_version` is not a V1
+checkpoint. Would require its own deliberation if deemed a vulnerability.
 
 **AR-P3-2: U5 guards currently unreachable production code** (LOW confidence, single reviewer)
 `CheckpointContext.Extra` is only populated via `UnmarshalJSON` in production.
 No direct `CheckpointContext{Extra: ...}` construction exists outside the
-unmarshal path (verified by grep).
-**Assessment**: Defensive invariant guarding against future direct construction.
-Valid engineering practice even if currently unreachable. Priority `low` is
-appropriate.
+unmarshal path (verified by grep against all non-test `.go` files).
+**Affected file**: `internal/events/checkpoint_schema.go` (emit function)
+**Action class**: `advisory` — defensive invariant is valid engineering practice
+**Assessment**: Priority `low` is appropriate for a defensive guard.
 
-## Rejected Findings
+## Rejected Findings (3 total)
 
 ### C-1: Provenance failure (REJECTED — factually incorrect)
 
+**Reviewer source**: Reviewer C (Tier 3)
 **Reviewer claim**: Cited merge commit 579d6b08 resolves to an unrelated PR #225
 dependency-update merge. None of the artifacts exist in origin/main.
 
@@ -130,12 +202,12 @@ dependency-update merge. None of the artifacts exist in origin/main.
 - All task files (148.001-T through 148.005-T), deliberation (060-DL), execution
   plan, and grouping ledger confirmed present via direct git show
 
-**Root cause**: The review agents likely inspected working tree state in a
-worktree that was behind origin/main, or failed to fetch remote refs before
-querying. The claims about PR #225 are fabricated hallucination.
+**Root cause**: The review agent likely inspected working tree state in a
+worktree behind origin/main, or failed to fetch remote refs before querying.
 
 ### C-2: Ledger arithmetic (REJECTED — factually incorrect)
 
+**Reviewer source**: Reviewer B (Tier 2)
 **Reviewer claim**: 28 − 8 − 1 − 1 = 18, not the stated 20 active entries.
 
 **Rejection evidence**:
@@ -144,12 +216,12 @@ querying. The claims about PR #225 are fabricated hallucination.
 - 20 active: Group 1 (5) + Group 2 (3) + Group 3 (6) + Group 4 (6) = 20
 - 8 + 20 = 28 ✓
 - 40A985BB was a candidate discovered outside the original 28 bounded set
-  (described as "Not found in stash — already consumed by 130-S closure")
 - 302EFF07 is "active but not in bounded set" — never part of the 28
-- Neither 40A985BB nor 302EFF07 should be subtracted from 28
+- Neither should be subtracted from 28
 
 ### M-1: Wave 1 parallelism false (REJECTED — factually incorrect)
 
+**Reviewer sources**: Reviewer B (Tier 2) and Reviewer C (Tier 3)
 **Reviewer claim**: U1 and U4 both edit CreateCheckpoint in the same region of
 memory.go, so Wave 1 parallelism is unsafe.
 
@@ -174,8 +246,8 @@ No function overlap.
 |---|---|
 | Multi-persona adversarial review | ✅ COMPLETED (3 reviewers, 3 model families) |
 | P0/P1 findings | ✅ NONE (after independent verification) |
-| P2 findings recorded | ✅ 3 findings deferred with disposition |
-| P3 findings recorded | ✅ 2 findings noted as advisory |
-| Rejected findings documented | ✅ 3 findings rejected with evidence |
+| P2 findings recorded | ✅ 3 findings deferred with file/line and action class |
+| P3 findings recorded | ✅ 2 findings noted as advisory with file/line |
+| Rejected findings documented | ✅ 3 findings rejected with evidence (C-1, C-2, M-1) |
 | 131-S admission readiness | ✅ READY for Ship claim |
 | 28-ID grouping ledger | ✅ UNCHANGED — arithmetic verified correct |
