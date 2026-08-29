@@ -56,5 +56,4 @@ FC-3: COMPLETE (audit trail in docs/closure/2026-08-29-132-s-closure.md)
 ## Next Steps
 
 - Complete closure PR (`chore/132-s-closure`)
-- Archive 149-F and 149.001-T after closure PR merges
 - Remove implementation worktree after closure is confirmed
