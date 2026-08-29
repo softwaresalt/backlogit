@@ -142,7 +142,7 @@ All governed backlogit lifecycle operations to correct `archived_status` were at
 by the `validate_status_transition` hook. Direct frontmatter editing is harmful: `archived_status`
 is used by `UnarchiveItem` to restore the pre-archive state, so overwriting it would corrupt
 restore semantics. Only Option A (accept the lifecycle gap as documented) is safe with current
-tooling. A `backlogit restore` command is tracked as a tooling follow-up.
+tooling. A `backlogit restore` command is recommended as a tooling follow-up.
 
 **Full incident record**: `docs/closure/2026-08-29-133-s-lifecycle-incident.md`
 
