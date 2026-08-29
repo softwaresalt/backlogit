@@ -1,0 +1,84 @@
+---
+chunk_strategy: h1-h2-h3
+description: "Dark-factory stash grouping ledger for bounded activation scope"
+doc_type: decision
+schema_version: "1.0"
+source: stage-dark-batch1
+title: "Dark-Factory Bounded Stash Grouping Ledger"
+---
+
+# Dark-Factory Bounded Stash Grouping Ledger
+
+**Dark-mode scope**: 28 original bounded stash IDs
+**Already consumed by 130-S**: 5A4DBE3C, C1808666, B212512E, E053034D, 4863B04B, 48F28B8D, C0A382C7, B7CE5FF9 (8 IDs)
+**Candidate 40A985BB**: Not found in stash — already consumed by 130-S closure. Decision: EXCLUDED (no entry to process).
+**Active out-of-scope**: 302EFF07 (active but not in bounded set — excluded per dark-factory boundary)
+**Active bounded entries**: 20 IDs remaining for planning
+
+## Group 1 — Checkpoint Create/Write Path Security Hardening (STAGED — Batch 1)
+
+**Priority**: FIRST — highest priority, security-sensitive, active bugs
+**Risk**: HIGH — data-integrity bugs + attack surface
+**Status**: Staged as first shipment
+**Deliberation**: 060-DL
+**Plan**: docs/exec-plans/2026-08-28-checkpoint-write-security-hardening-plan.md
+
+| Stash ID | Priority | Kind | Summary |
+|---|---|---|---|
+| 3A33E404 | high | bug | CreateCheckpoint accepts malformed JSON, writes corrupt file |
+| E429A031 | medium | task | Checkpoint create-boundary context duplicate detection |
+| EA1F5912 | medium | task | Classify syncWriteFileAtomic outcomes on checkpoint creates |
+| 35A27CD0 | medium | task | Checkpoint filesystem containment hardening (symlink/TOCTOU) |
+| F89CADB7 | low | bug | CheckpointContext.Extra validation in emit() |
+
+## Group 2 — Docline Decode Convergence + Contract Cleanup (DEFERRED)
+
+**Priority**: SECOND — high-priority convergence + upstream template
+**Risk**: LOW-MEDIUM — refactor + doc update
+**Status**: Active stash, awaiting Group 1 shipment completion
+
+| Stash ID | Priority | Kind | Summary |
+|---|---|---|---|
+| 1787FD85 | high | task | Converge LintTree/PlanMigration on classifyDecodeFailure |
+| 360A183F | high | task | Upstream checkpoint context wording to template |
+| EC987334 | medium | task | Drop omitempty from MigrateReport collection fields |
+
+## Group 3 — Checkpoint Governance & Disposition Hardening (DEFERRED)
+
+**Priority**: THIRD — deliberation-gated + state machine hardening
+**Risk**: MEDIUM — deliberation-gated, deprecated field removal
+**Status**: Active stash, requires deliberation resolution first
+
+| Stash ID | Priority | Kind | Summary |
+|---|---|---|---|
+| 6CE00B88 | medium | unknown | Decide gitignore/redaction posture for checkpoint context |
+| 5F4E0FC3 | medium | unknown | Decide whether create_checkpoint becomes governed |
+| A12BBAFA | medium | task | Quarantine sidecar no-clobber write hardening |
+| F350503F | medium | task | Remove deprecated CheckpointSummary.RemediationCommand |
+| 6FA45E69 | low | task | Pin conforming+resolved double-refusal state-conflict test |
+| DBBA62AA | low | task | CLI coverage for checkpoint resolve on abandoned doc |
+
+## Group 4 — CLI/MCP Parity + Harness Hygiene (DEFERRED)
+
+**Priority**: FOURTH — parity, hygiene, low blast radius
+**Risk**: LOW — no security surface
+**Status**: Active stash, some entries depend on Group 3 deliberations
+
+| Stash ID | Priority | Kind | Summary |
+|---|---|---|---|
+| EB93E236 | low | task | Factor transport-agnostic response builder |
+| 63E810D9 | medium | task | Structured JSON error envelope for CLI validation |
+| 5672D73E | low | task | Add backlogit_docs_classify MCP tool |
+| 66834D9E | low | task | Update commit-message.instructions.md scope guidance |
+| BE32CAE2 | low | task | Forward repair for under-advanced shipment records |
+| 633818E1 | low | task | Plugin bundle P-002 parity scope boundary recording |
+
+## Summary
+
+| Group | Entry Count | Priority Order | Status |
+|---|---|---|---|
+| Group 1 | 5 | FIRST | STAGED (Batch 1) |
+| Group 2 | 3 | SECOND | DEFERRED |
+| Group 3 | 6 | THIRD | DEFERRED |
+| Group 4 | 6 | FOURTH | DEFERRED |
+| **Total** | **20** | | |
