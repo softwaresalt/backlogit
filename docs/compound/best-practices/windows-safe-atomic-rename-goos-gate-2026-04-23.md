@@ -30,6 +30,13 @@ source: docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-0
 title: 'Windows-Safe Atomic Rename: Gate os.Remove on runtime.GOOS'
 ---
 
+> [!CAUTION]
+> **SUPERSEDED by 133-S / 150-F (2026-08-29).** This learning recommended adding a Windows pre-Remove gate
+> before os.Rename. Go 1.24.0 os.Rename on Windows uses MoveFileExW(MOVEFILE_REPLACE_EXISTING), which handles
+> existing destinations without a pre-Remove. The pre-Remove creates a data-loss window (149-F/CB71B412,
+> 150-F/11FFF601). Do not follow this pattern.
+> See: docs/compound/2026-08-29-windows-preremove-rename-pattern.md
+
 ## Problem
 
 A temp-file-then-rename write pattern requires different pre-rename behavior on
