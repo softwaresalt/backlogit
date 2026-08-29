@@ -84,10 +84,10 @@ var syncWriteFileAtomicHook = func(path string, data []byte, _ os.FileMode) erro
 
 // syncWriteFileAtomic writes data to path via a temp-file-then-rename pattern
 // with an fsync before close to guarantee durability before rename.
-// os.Rename atomically replaces an existing destination on all supported
-// platforms: POSIX rename(2) is atomic by specification, and Go 1.24.0 on
-// Windows uses MoveFileExW(MOVEFILE_REPLACE_EXISTING) which replaces without
-// a pre-Remove step (149-F / stash CB71B412).
+// On POSIX, rename(2) is atomic by specification. On Windows, Go 1.24.0 uses
+// MoveFileExW(MOVEFILE_REPLACE_EXISTING), which replaces the destination
+// without a pre-Remove step and eliminates the two-file loss window; it does
+// not provide the full crash-atomicity of POSIX rename(2). (149-F / CB71B412)
 func syncWriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
