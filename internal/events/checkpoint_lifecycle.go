@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -432,9 +431,6 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 		}
 
 		dst := filepath.Join(archiveDir, filename)
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(dst)
-		}
 		if mvErr := os.Rename(path, dst); mvErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("archive %s: %v", filename, mvErr))
 			result.SkippedCount++
