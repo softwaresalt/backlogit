@@ -672,6 +672,11 @@ type provenanceCorrection struct {
 // function to return an error (fail-closed), consistent with
 // readProvenanceCorrections in stash_provenance.go (thread iV).
 func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctionsPath string) error {
+	// Reject symlinks at the file leaf to prevent path traversal through a planted
+	// provenance_corrections.jsonl symlink during rehydration/merge-sync.
+	if linfo, lstatErr := os.Lstat(correctionsPath); lstatErr == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("provenance corrections file %q is a symlink; refusing to read through it", correctionsPath)
+	}
 	f, err := os.Open(correctionsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -722,7 +727,28 @@ func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctio
 		 ON CONFLICT(stash_id) DO UPDATE SET
 		   item_id = excluded.item_id,
 		   linked_at = excluded.linked_at`
+		const verifySQL = `SELECT json_extract(custom_fields, '$.source_stash_id') FROM items WHERE id = ?`
 		for _, c := range final {
+			// Re-validate the invariant from CorrectStashProvenance: the canonical
+			// artifact must exist and have source_stash_id == stashID. A Git-merged
+			// or tampered record must not publish an arbitrary canonical link.
+			var storedStashID string
+			verifyErr := tx.QueryRowContext(ctx, verifySQL, c.CanonicalDeliveryArtifactID).Scan(&storedStashID)
+			if verifyErr != nil {
+				// Canonical artifact not found in DB: skip this correction rather than
+				// publishing a dangling link. The operator can re-sync after the artifact
+				// is indexed.
+				slog.WarnContext(ctx, "provenance correction: canonical artifact not indexed; skipping override",
+					"stash_id", c.StashID, "canonical", c.CanonicalDeliveryArtifactID)
+				continue
+			}
+			if storedStashID != c.StashID {
+				// source_stash_id mismatch: skip to prevent publishing an arbitrary link.
+				slog.WarnContext(ctx, "provenance correction: source_stash_id mismatch; skipping override",
+					"stash_id", c.StashID, "canonical", c.CanonicalDeliveryArtifactID,
+					"stored_source_stash_id", storedStashID)
+				continue
+			}
 			if _, execErr := tx.ExecContext(ctx, updateLinkSQL,
 				c.StashID, c.CanonicalDeliveryArtifactID, now.Format(time.RFC3339Nano),
 			); execErr != nil {
