@@ -1,4 +1,4 @@
----
+﻿---
 chunk_strategy: h1-h2-h3
 description: "Lifecycle incident record for 133-S / 150-F: P-001 violation — tasks archived from active status, skipping done transition"
 doc_type: closure
@@ -128,7 +128,10 @@ remediation flow would be:
 4. Repeat for `150.002-T`
 
 This path creates a genuine `done` transition event, correctly sets `archived_status: done`,
-and does not corrupt `UnarchiveItem` restore semantics. **This option is UNAVAILABLE today.**
+and does not corrupt `UnarchiveItem` restore semantics. This was the proposed Option B.
+
+> **Applied 2026-08-30**: `ReconcileArchivedLifecycle` (152-F, PR #394) implements exactly this
+> sequence. Applied in PR #395. See Resolution Record below.
 
 ## Tooling Gaps — Systemic Follow-Up
 
@@ -144,7 +147,7 @@ Two backlog items are recommended for the backlogit tool:
    `queued` is intentional, per `docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`)
    and completion-claiming archival (where the expectation is `done → archived`).
 
-## P-001 Status Summary
+## P-001 Status Summary (Historical — at 2026-08-29)
 
 | Aspect | Status |
 |--------|--------|
@@ -155,9 +158,11 @@ Two backlog items are recommended for the backlogit tool:
 | Incident documented | ✓ THIS DOCUMENT |
 | Operator action required | Option A (accept gap) is the only safe current path |
 
-## 11FFF601 Final Closure Status
+**Superseded**: See Resolution Record (2026-08-30) — Option B was applied via 152-F.
 
-This lifecycle incident is the only remaining open item for the 11FFF601 / 150-F / 133-S
+## 11FFF601 Final Closure Status (Historical — at 2026-08-29)
+
+At 2026-08-29, this lifecycle incident was the only remaining open item for the 11FFF601 / 150-F / 133-S
 release unit. All other closure criteria are met:
 
 - Code fix merged: ✓ (PR #390, `e3deede6`)
@@ -172,8 +177,8 @@ release unit. All other closure criteria are met:
 - Compound learning: ✓
 - `150-F archived_status: done`: ✓
 - `133-S archived_status: shipped`: ✓
-- `150.001-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
-- `150.002-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
+- `150.001-T archived_status: done`: ✓ RESOLVED — corrected to `done` on 2026-08-30 (PR #395)
+- `150.002-T archived_status: done`: ✓ RESOLVED — corrected to `done` on 2026-08-30 (PR #395)
 
 ## Resolution Record (2026-08-30)
 
@@ -183,17 +188,17 @@ release unit. All other closure criteria are met:
 
 The governed reconciliation sequence was:
 
-1. UnarchiveItem(150.001-T) — restored to queue at ctive (from rchived_status)
-2. setItemStatusAndMeta(150.001-T, "done") — set status: done, wrote reconciliation metadata
-3. ArchiveItem(150.001-T, WithCascade(false)) — re-archived with rchived_status: done
-4. Repeat steps 1–3 for 150.002-T
+1. UnarchiveItem(150.001-T) — restored to queue at active status (from archived_status field)
+2. setItemStatusAndMeta(150.001-T, done) — set status=done, wrote reconciliation metadata
+3. ArchiveItem(150.001-T, WithCascade=false) — re-archived with archived_status=done
+4. Repeat steps 1-3 for 150.002-T
 
 **Post-correction state**:
 
-| Item | rchived_status | econciled_at | original_archived_status |
-|------|-------------------|-----------------|---------------------------|
-| 150.001-T | done | 2026-08-30T05:00:02Z | ctive |
-| 150.002-T | done | 2026-08-30T05:00:53Z | ctive |
+| Item | archived_status | reconciled_at | original_archived_status |
+|------|-----------------|---------------|--------------------------|
+| 150.001-T | done | 2026-08-30T05:00:02Z | active |
+| 150.002-T | done | 2026-08-30T05:00:53Z | active |
 
 The P-001 violation is corrected. The historical direct-archive fact is preserved in
 custom_fields.original_archived_status and the original commit history.

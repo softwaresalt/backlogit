@@ -1,4 +1,4 @@
----
+﻿---
 chunk_strategy: h1-h2-h3
 description: "Post-merge closure record for 133-S / 150-F: CleanupCheckpoints pre-Remove data-loss fix"
 doc_type: closure
@@ -190,12 +190,12 @@ The governed CorrectStashProvenance operation (152-F) was applied:
 
 The correction is recorded in .backlogit/archive/provenance_corrections.jsonl.
 The original harvested_artifact_id: 151-F in the stash archive is preserved (never mutated).
-After acklogit sync, stash_links resolves 11FFF601 → 150-F.
+After `backlogit sync`, `stash_links` resolves 11FFF601 → 150-F.
 
 ### Verification Evidence
 
-- 150.001-T archive: rchived_status: done, econciled_at: 2026-08-30T05:00:02Z ✅
-- 150.002-T archive: rchived_status: done, econciled_at: 2026-08-30T05:00:53Z ✅
-- provenance_corrections.jsonl: entry with stash_id: 11FFF601, canonical_delivery_artifact_id: 150-F ✅
-- stash_links DB: 11FFF601 → 150-F (after sync) ✅
-- Item log events: lifecycle_reconciliation on 150.001-T and 150.002-T, stash_provenance_corrected on 150-F ✅
+- 150.001-T archive: archived_status=done, reconciled_at=2026-08-30T05:00:02Z
+- 150.002-T archive: archived_status=done, reconciled_at=2026-08-30T05:00:53Z
+- provenance_corrections.jsonl: stash_id=11FFF601, canonical_delivery_artifact_id=150-F
+- stash_links DB: 11FFF601 -> 150-F (verified after backlogit sync)
+- Item log events: lifecycle_reconciliation (150.001-T, 150.002-T), stash_provenance_corrected (150-F)
