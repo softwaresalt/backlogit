@@ -341,16 +341,22 @@ func setItemStatusAndMeta(ctx context.Context, database *sql.DB, ws *Workspace, 
 	artifact, _, parseErr := parseFile(artifactPath)
 	if parseErr != nil {
 		restoreErr := replaceFileWithOptions(ws, artifactPath, rawBefore)
-		if restoreErr != nil && blerrors.IsWriteIndeterminate(restoreErr) {
-			return fmt.Errorf("re-parse artifact after write: %w; restore write indeterminate: %w",
+		if restoreErr != nil {
+			// Any restore failure (indeterminate or definite) means file state is
+			// unknowable. Surface as indeterminate so the caller does not attempt
+			// further rollback (e.g. ArchiveItem) on a file of unknown content.
+			return fmt.Errorf("re-parse artifact after write: %v; restore failed (state unknown): %w",
 				parseErr, blerrors.ErrWriteIndeterminate)
 		}
 		return fmt.Errorf("re-parse artifact after write: %w", parseErr)
 	}
 	if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
 		restoreErr := replaceFileWithOptions(ws, artifactPath, rawBefore)
-		if restoreErr != nil && blerrors.IsWriteIndeterminate(restoreErr) {
-			return fmt.Errorf("upsert item: %w; restore write indeterminate: %w",
+		if restoreErr != nil {
+			// Any restore failure (indeterminate or definite) means file state is
+			// unknowable. Surface as indeterminate so the caller does not attempt
+			// further rollback on a file of unknown content.
+			return fmt.Errorf("upsert item: %v; restore failed (state unknown): %w",
 				upsertErr, blerrors.ErrWriteIndeterminate)
 		}
 		return fmt.Errorf("upsert item: %w", upsertErr)

@@ -272,17 +272,28 @@ func MergeSync(
 		}
 	}
 
-	// Step 6b: Apply provenance corrections when provenance_corrections.jsonl appears
-	// in the diff. Instead of calling rehydrateStash (which would clear all stash_links
-	// when passed an empty harvested map), we call applyProvenanceCorrections directly
-	// so only the corrected stash_links rows are overridden. This avoids data-loss on
-	// unrelated harvested entries (Copilot review cycle 4, thread OF).
+	// Step 6b: React to provenance_corrections.jsonl changes in the diff.
+	// - When the file is added or changed: apply targeted correction overrides so
+	//   only the corrected stash_links rows are updated (avoids clearing unrelated rows).
+	// - When the file is deleted: do a full stash rehydration to rebuild stash_links
+	//   without any correction overrides (the deleted file must no longer affect the cache).
 	if diffContainsKind(diff, FileKindProvenanceCorrections) && !result.StashRefreshed {
-		correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
-		if corrErr := applyProvenanceCorrections(ctx, database, correctionsPath); corrErr != nil {
-			log.Warn("provenance correction refresh failed after merge sync", "error", corrErr)
+		correctionsDeleted := diffDeletedKind(diff, FileKindProvenanceCorrections)
+		if correctionsDeleted {
+			// Full rehydration needed to clear correction overrides from deleted file.
+			harvestedStash := make(map[string]StashRecord)
+			if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
+				log.Warn("stash refresh failed after provenance corrections deletion", "error", stashErr)
+			} else {
+				result.StashRefreshed = true
+			}
 		} else {
-			result.StashRefreshed = true
+			correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
+			if corrErr := applyProvenanceCorrections(ctx, database, correctionsPath); corrErr != nil {
+				log.Warn("provenance correction refresh failed after merge sync", "error", corrErr)
+			} else {
+				result.StashRefreshed = true
+			}
 		}
 	}
 
@@ -318,6 +329,16 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 		out = append(out, SyncEntry{ID: r.ItemID, Path: r.NewPath})
 	}
 	return out
+}
+
+// diffDeletedKind reports whether a file of the given kind was deleted in the diff.
+func diffDeletedKind(diff DiffResult, kind FileKind) bool {
+	for _, e := range diff.Deleted {
+		if e.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // diffContainsKind reports whether any entry in the diff has the given FileKind.
