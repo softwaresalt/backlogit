@@ -3,8 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"time"
+
 	"errors"
 	"fmt"
+	"github.com/softwaresalt/backlogit/internal/models"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -272,6 +276,57 @@ func MergeSync(
 		}
 	}
 
+	// Step 6b: React to provenance_corrections.jsonl changes in the diff.
+	// - When the file is added or changed: apply targeted correction overrides so
+	//   only the corrected stash_links rows are updated (avoids clearing unrelated rows).
+	// - When the file is deleted: do a full stash rehydration to rebuild stash_links
+	//   without any correction overrides (the deleted file must no longer affect the cache).
+	// Step 6b runs unconditionally: rehydrateStash in Step 6 calls applyProvenanceCorrections
+	// internally, but correction failures there only log a warning without propagating.
+	// Keeping Step 6b independent ensures corrections are retried even after Step 6 ran.
+	if diffContainsKind(diff, FileKindProvenanceCorrections) {
+		correctionsDeleted := diffDeletedKind(diff, FileKindProvenanceCorrections)
+		if correctionsDeleted {
+			// Full rehydration needed to clear correction overrides from deleted file.
+			// Rebuild the harvested map from the DB so unrelated stash_links are
+			// preserved (passing an empty map would clear all stash_links). Abort
+			// if the DB query fails to prevent erasing valid provenance.
+			correctionsRelPath := filepath.ToSlash(filepath.Join("archive", "provenance_corrections.jsonl"))
+			harvestedStash, harvestedErr := harvestedStashFromDB(ctx, database)
+			if harvestedErr != nil {
+				log.Warn("provenance correction deletion: failed to build harvested map; skipping rebuild to preserve stash_links", "error", harvestedErr)
+				// Restore old manifest entry so next MergeSync still sees the deletion.
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				}
+			} else if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
+				log.Warn("stash refresh failed after provenance corrections deletion", "error", stashErr)
+				// Restore old manifest entry so next MergeSync retries the rebuild.
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				}
+			} else {
+				result.StashRefreshed = true
+			}
+		} else {
+			correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
+			if corrErr := applyProvenanceCorrections(ctx, database, correctionsPath); corrErr != nil {
+				log.Warn("provenance correction refresh failed after merge sync", "error", corrErr)
+				// Restore the old manifest entry for provenance_corrections.jsonl so the
+				// next MergeSync call sees the file as still-changed and retries the
+				// application rather than treating it as already-processed.
+				correctionsRelPath := filepath.ToSlash(filepath.Join("archive", "provenance_corrections.jsonl"))
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				} else {
+					delete(current, correctionsRelPath)
+				}
+			} else {
+				result.StashRefreshed = true
+			}
+		}
+	}
+
 	// Step 7: Refresh item logs when any logs/*.jsonl appears in the diff.
 	if diffContainsKind(diff, FileKindLog) {
 		if _, logErr := rehydrateItemLogs(ctx, workspacePath, database); logErr != nil {
@@ -304,6 +359,77 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 		out = append(out, SyncEntry{ID: r.ItemID, Path: r.NewPath})
 	}
 	return out
+}
+
+// harvestedStashFromDB queries the items table for all artifacts that carry a
+// source_stash_id custom field and returns them as a StashRecord map keyed by
+// stash ID. It uses stashRecordFromArtifact to ensure the same field extraction
+// logic (kind, text, source path, deliberation, priority, updated_at) as the
+// full workspace-walk rehydration path.
+// Returns an error if the query, scan, JSON parse, or rows.Err fails so that
+// callers can abort any destructive rebuild when the input map is incomplete.
+func harvestedStashFromDB(ctx context.Context, database *sql.DB) (map[string]StashRecord, error) {
+	// ORDER BY id ASC ensures deterministic first-wins semantics when multiple
+	// artifacts share the same source_stash_id (e.g. after provenance correction).
+	// The earliest (lowest-ID) artifact is treated as the baseline harvest target,
+	// matching the historical harvest relationship before any correction was applied.
+	const q = `SELECT id, custom_fields, updated_at FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != '' ORDER BY id ASC`
+	rows, err := database.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("harvestedStashFromDB query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]StashRecord)
+	for rows.Next() {
+		var itemID, updatedAtStr string
+		var cfRaw []byte
+		if scanErr := rows.Scan(&itemID, &cfRaw, &updatedAtStr); scanErr != nil {
+			return nil, fmt.Errorf("harvestedStashFromDB scan: %w", scanErr)
+		}
+		var cf map[string]any
+		if jsonErr := json.Unmarshal(cfRaw, &cf); jsonErr != nil {
+			return nil, fmt.Errorf("harvestedStashFromDB unmarshal custom_fields for %s: %w", itemID, jsonErr)
+		}
+		updatedAt, tsErr := time.Parse(time.RFC3339Nano, updatedAtStr)
+		if tsErr != nil {
+			// Fall back to RFC3339 (without nanoseconds) before giving up.
+			updatedAt, tsErr = time.Parse(time.RFC3339, updatedAtStr)
+		}
+		if tsErr != nil {
+			// A malformed timestamp would produce a zero-time artifact feeding into
+			// a destructive rebuild; skip this item and let the caller handle a
+			// possibly-incomplete map.
+			return nil, fmt.Errorf("harvestedStashFromDB: malformed updated_at for item %s: %w", itemID, tsErr)
+		}
+		// Build a minimal Artifact so stashRecordFromArtifact can apply its full
+		// field extraction (kind, text, source path, deliberation ID, priority).
+		a := &models.Artifact{
+			ID:           itemID,
+			CustomFields: cf,
+			UpdatedAt:    updatedAt,
+		}
+		if record, ok := stashRecordFromArtifact(a); ok {
+			// First-wins: keep the earliest artifact for each stash_id.
+			if _, dup := result[record.ID]; !dup {
+				result[record.ID] = record
+			}
+		}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("harvestedStashFromDB rows: %w", rowsErr)
+	}
+	return result, nil
+}
+
+// diffDeletedKind reports whether a file of the given kind was deleted in the diff.
+func diffDeletedKind(diff DiffResult, kind FileKind) bool {
+	for _, e := range diff.Deleted {
+		if e.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // diffContainsKind reports whether any entry in the diff has the given FileKind.

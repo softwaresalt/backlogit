@@ -39,6 +39,7 @@ be planned later and harvested into formal work items when ready.
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
 * [backlogit stash add](backlogit_stash_add.md)	 - Add an item to the stash
 * [backlogit stash archive](backlogit_stash_archive.md)	 - Archive an active stash entry
+* [backlogit stash correct](backlogit_stash_correct.md)	 - Record a stash provenance correction
 * [backlogit stash edit](backlogit_stash_edit.md)	 - Edit a stash entry's text, kind, or priority
 * [backlogit stash get](backlogit_stash_get.md)	 - Get a stash entry by ID
 * [backlogit stash harvest](backlogit_stash_harvest.md)	 - Harvest a stash item into a planned work item

@@ -538,6 +538,27 @@ operations:
     params:
       retention_days: "retention_days"
 
+  # --- Lifecycle reconciliation and provenance correction ---
+
+  reconcile_archived_lifecycle:
+    mcp_tool: "backlogit_reconcile_archived_lifecycle"
+    cli_command: "backlogit reconcile {{item_ids}} --reason {{reason}} --actor {{actor}}"
+    params:
+      item_ids: "item_ids"
+      reason: "reason"
+      actor: "actor"
+      target_status: "target_status"
+      idempotency_key: "idempotency_key"
+
+  correct_stash_provenance:
+    mcp_tool: "backlogit_correct_stash_provenance"
+    mcp_only: true
+    params:
+      stash_id: "stash_id"
+      canonical_delivery_artifact_id: "canonical_delivery_artifact_id"
+      reason: "reason"
+      actor: "actor"
+
 field_mapping:
   task_id: "id"
   title: "title"
