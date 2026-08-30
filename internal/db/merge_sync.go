@@ -281,7 +281,10 @@ func MergeSync(
 	//   only the corrected stash_links rows are updated (avoids clearing unrelated rows).
 	// - When the file is deleted: do a full stash rehydration to rebuild stash_links
 	//   without any correction overrides (the deleted file must no longer affect the cache).
-	if diffContainsKind(diff, FileKindProvenanceCorrections) && !result.StashRefreshed {
+	// Step 6b runs unconditionally: rehydrateStash in Step 6 calls applyProvenanceCorrections
+	// internally, but correction failures there only log a warning without propagating.
+	// Keeping Step 6b independent ensures corrections are retried even after Step 6 ran.
+	if diffContainsKind(diff, FileKindProvenanceCorrections) {
 		correctionsDeleted := diffDeletedKind(diff, FileKindProvenanceCorrections)
 		if correctionsDeleted {
 			// Full rehydration needed to clear correction overrides from deleted file.
@@ -384,7 +387,17 @@ func harvestedStashFromDB(ctx context.Context, database *sql.DB) (map[string]Sta
 		if jsonErr := json.Unmarshal(cfRaw, &cf); jsonErr != nil {
 			return nil, fmt.Errorf("harvestedStashFromDB unmarshal custom_fields for %s: %w", itemID, jsonErr)
 		}
-		updatedAt, _ := time.Parse(time.RFC3339Nano, updatedAtStr)
+		updatedAt, tsErr := time.Parse(time.RFC3339Nano, updatedAtStr)
+		if tsErr != nil {
+			// Fall back to RFC3339 (without nanoseconds) before giving up.
+			updatedAt, tsErr = time.Parse(time.RFC3339, updatedAtStr)
+		}
+		if tsErr != nil {
+			// A malformed timestamp would produce a zero-time artifact feeding into
+			// a destructive rebuild; skip this item and let the caller handle a
+			// possibly-incomplete map.
+			return nil, fmt.Errorf("harvestedStashFromDB: malformed updated_at for item %s: %w", itemID, tsErr)
+		}
 		// Build a minimal Artifact so stashRecordFromArtifact can apply its full
 		// field extraction (kind, text, source path, deliberation ID, priority).
 		a := &models.Artifact{
