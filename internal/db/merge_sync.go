@@ -369,7 +369,11 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 // Returns an error if the query, scan, JSON parse, or rows.Err fails so that
 // callers can abort any destructive rebuild when the input map is incomplete.
 func harvestedStashFromDB(ctx context.Context, database *sql.DB) (map[string]StashRecord, error) {
-	const q = `SELECT id, custom_fields, updated_at FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != ''`
+	// ORDER BY id ASC ensures deterministic first-wins semantics when multiple
+	// artifacts share the same source_stash_id (e.g. after provenance correction).
+	// The earliest (lowest-ID) artifact is treated as the baseline harvest target,
+	// matching the historical harvest relationship before any correction was applied.
+	const q = `SELECT id, custom_fields, updated_at FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != '' ORDER BY id ASC`
 	rows, err := database.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("harvestedStashFromDB query: %w", err)
@@ -406,7 +410,10 @@ func harvestedStashFromDB(ctx context.Context, database *sql.DB) (map[string]Sta
 			UpdatedAt:    updatedAt,
 		}
 		if record, ok := stashRecordFromArtifact(a); ok {
-			result[record.ID] = record
+			// First-wins: keep the earliest artifact for each stash_id.
+			if _, dup := result[record.ID]; !dup {
+				result[record.ID] = record
+			}
 		}
 	}
 	if rowsErr := rows.Err(); rowsErr != nil {
