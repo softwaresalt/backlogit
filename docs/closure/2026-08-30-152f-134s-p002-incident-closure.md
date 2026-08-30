@@ -29,8 +29,8 @@ terminal resolution of the closure block.
 |---|---|
 | Incident | INC-P002-152F-134S |
 | Related incident | INC-P002-131S-148F |
-| Breach sequence | `87f06f62` (stubs) → `e7276bcf` (RED) → `4c964c21` (GREEN) |
-| Nature | Production stubs returning `ErrNotImplemented` committed before RED harness |
+| Breach sequence | (1) `87f06f62` stubs → `e7276bcf` RED; (2) `3b651ae8` all-in-one reconcile surface; (3) `af9ef8d0` no-RED stash-correct surface |
+| Nature | Three breach points: stub-before-RED (core), all-in-one surface commit (reconcile), no-RED-state surface (stash-correct) |
 | Disposition | `acknowledged_historical_incident` — operator explicit acknowledgement 2026-08-30 |
 | Compliance claim | NONE — P-002 breach is not claimed compliant |
 | Policy impact | NONE — P-002 NON-NEGOTIABLE remains fully in force |
@@ -54,9 +54,9 @@ P-002 compliance table.
 | 152.005-T | Declaration (stubs) | `87f06f62` | DEVIATION — production stubs committed before RED | INC-P002-152F-134S |
 | 152.006-T | RED surface tests | `e7276bcf` | Fail-verified | None additional |
 | 152.007-T | GREEN surfaces | `4c964c21` | Tests pass GREEN | None |
-| 152.008-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+| 152.008-T | RED surface (stash-correct) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start, no red-only state | INC-P002-152F-134S (breach point 3) |
 | 152.009-T | Integration tests | `8c813ef1` | P-002 exemption (verification-only) | Exemption class: FC-2 exempt |
-| 152.010-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+| 152.010-T | GREEN surfaces (reconcile+stash-correct) | `af9ef8d0` | Tests pass GREEN | DEVIATION in same commit (breach point 3 in 152.008-T) |
 | 152.011-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
 
 Reference: INC-P002-131S-148F (`docs/decisions/2026-08-29-p002-breach-incident-131s-148f.md`)
@@ -220,4 +220,5 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
 
