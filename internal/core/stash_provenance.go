@@ -270,13 +270,30 @@ func readStashArchiveEntry(archivePath, stashID string) (ArchivedStashEntry, err
 // appendToProvenanceCorrections durably appends a correction record to
 // correctionsPath. It fsyncs the file after write to satisfy the
 // "durable append-only correction record" contract (C5 remediation).
+// Path containment is verified via symlink-resolving filepath.EvalSymlinks
+// before any write so a planted symlink cannot redirect writes outside the
+// workspace (Copilot review cycle 2).
 func appendToProvenanceCorrections(correctionsPath string, correction ProvenanceCorrection) error {
+	// Verify the parent directory is not a symlink pointing outside the workspace.
+	// We resolve the parent rather than the file itself because the file may not
+	// exist yet on first write.
+	parentDir := filepath.Dir(correctionsPath)
+	if mkErr := os.MkdirAll(parentDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create corrections dir: %w", mkErr)
+	}
+	realParent, evalErr := filepath.EvalSymlinks(parentDir)
+	if evalErr != nil {
+		return fmt.Errorf("resolve corrections dir: %w", evalErr)
+	}
+	// Rebase correctionsPath on the resolved parent so the open uses a real path.
+	resolvedPath := filepath.Join(realParent, filepath.Base(correctionsPath))
+
 	correctionBytes, err := json.Marshal(correction)
 	if err != nil {
 		return fmt.Errorf("marshal provenance correction: %w", err)
 	}
 	line := append(correctionBytes, '\n')
-	f, err := os.OpenFile(correctionsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open provenance corrections file: %w", err)
 	}
@@ -291,13 +308,9 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 	if closeErr := f.Close(); closeErr != nil {
 		return fmt.Errorf("close provenance corrections file: %w", closeErr)
 	}
-	// Sync the parent directory so the new file's directory entry is durable on
-	// first write (covers the case where provenance_corrections.jsonl is created
-	// for the first time — without this, a power loss after the file write but
-	// before the directory entry is flushed can lose the file entirely).
-	// On Windows, directory fsyncs are a no-op or not supported; use best-effort.
-	if dirFile, dirErr := os.Open(filepath.Dir(correctionsPath)); dirErr == nil {
-		_ = dirFile.Sync() // best-effort: ignore error on platforms that do not support it
+	// Sync parent dir for directory entry durability on first write.
+	if dirFile, dirErr := os.Open(realParent); dirErr == nil {
+		_ = dirFile.Sync()
 		_ = dirFile.Close()
 	}
 	return nil

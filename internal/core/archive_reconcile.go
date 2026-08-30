@@ -100,7 +100,7 @@ func ReconcileArchivedLifecycle(ctx context.Context, database *sql.DB, ws *Works
 	}
 	if _, ok := validReconciliationTargetStatuses[targetStatus]; !ok {
 		return nil, fmt.Errorf(
-			"target_status %q is not a valid reconciliation target (must be one of: done, accepted, rejected, abandoned, shipped): %w",
+			"target_status %q is not a valid reconciliation target (must be one of: done, accepted, rejected, abandoned): %w",
 			targetStatus, blerrors.ErrValidation,
 		)
 	}
@@ -185,7 +185,7 @@ func reconcileArchivedItem(
 	currentStatus, _ := fm["status"].(string)
 	archivedStatus, _ := fm["archived_status"].(string)
 	if currentStatus != string(models.StatusArchived) || archivedStatus == "" {
-		wrErr := fmt.Errorf("item %s is not archived (status=%q, archived_status=%q)", itemID, currentStatus, archivedStatus)
+		wrErr := fmt.Errorf("item %s is not archived (status=%q, archived_status=%q): %w", itemID, currentStatus, archivedStatus, blerrors.ErrValidation)
 		return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 	}
 
