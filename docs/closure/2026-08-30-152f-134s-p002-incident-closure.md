@@ -52,10 +52,10 @@ P-002 compliance table.
 | 152.003-T | GREEN implementation | `4c964c21` | Tests pass GREEN | None |
 | 152.004-T | RED surface tests | `3b651ae8` | Fail-verified | None |
 | 152.005-T | Declaration (stubs) | `87f06f62` | DEVIATION — production stubs committed before RED | INC-P002-152F-134S |
-| 152.006-T | RED surface tests | `e7276bcf` | Fail-verified | None additional |
-| 152.007-T | GREEN surfaces | `4c964c21` | Tests pass GREEN | None |
+| 152.006-T | RED harness (CorrectStashProvenance core) | `e7276bcf` | Fail-verified (9 tests FAIL RED against ErrNotImplemented stub) | None |
+| 152.007-T | GREEN implementation (CorrectStashProvenance core + rehydration + merge-sync) | `4c964c21` | Tests pass GREEN | None |
 | 152.008-T | RED surface (stash-correct) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start, no red-only state | INC-P002-152F-134S (breach point 3) |
-| 152.009-T | Integration tests | `8c813ef1` | P-002 exemption (verification-only) | Exemption class: FC-2 exempt |
+| 152.009-T | Integration tests (verification-only) | `8c813ef1` | P-002 exemption applied | Exemption class: verification-only; harness owners: 152.002-T (ReconcileArchivedLifecycle) and 152.006-T (CorrectStashProvenance) |
 | 152.010-T | GREEN implementation (reconcile surface) | `af9ef8d0` | Tests pass GREEN | None — reconcile GREEN surfaces in same commit as stash-correct; breach point 3 is in 152.008-T/152.011-T rows |
 | 152.011-T | GREEN implementation (stash-correct surface) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start alongside 152.008-T; no red-only state | INC-P002-152F-134S (breach point 3) |
 
@@ -220,6 +220,7 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
 
 
 
