@@ -11,7 +11,7 @@ title: 133-S Lifecycle Incident — P-001 Task Lifecycle Gap (150.001-T, 150.002
 
 **Detected**: 2026-08-29T19:06:31Z (post-Ship read-only remote check, after PR #391 merge)
 **Reported by**: Ship agent (autonomous post-closure verification)
-**Status**: All governed remediation paths blocked; no durable correction applied. `archived_status` field requires operator action via the governed restore path (currently unavailable via CLI).
+**Status**: RESOLVED — 2026-08-30. `ReconcileArchivedLifecycle` (152-F, PR #394) implements the Option B path. Applied in application PR #395. Both `150.001-T` and `150.002-T` now have `archived_status: done`. See `docs/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md` Lifecycle Reconciliation Addendum.
 
 ## P-001 Contradiction
 
@@ -174,3 +174,29 @@ release unit. All other closure criteria are met:
 - `133-S archived_status: shipped`: ✓
 - `150.001-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
 - `150.002-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
+
+## Resolution Record (2026-08-30)
+
+**Applied**: PR #395 (chore/152-application, shipment 134-S)
+**Operator**: ship-agent
+**Method**: ReconcileArchivedLifecycle (152-F, shipped in PR #394)
+
+The governed reconciliation sequence was:
+
+1. UnarchiveItem(150.001-T) — restored to queue at ctive (from rchived_status)
+2. setItemStatusAndMeta(150.001-T, "done") — set status: done, wrote reconciliation metadata
+3. ArchiveItem(150.001-T, WithCascade(false)) — re-archived with rchived_status: done
+4. Repeat steps 1–3 for 150.002-T
+
+**Post-correction state**:
+
+| Item | rchived_status | econciled_at | original_archived_status |
+|------|-------------------|-----------------|---------------------------|
+| 150.001-T | done | 2026-08-30T05:00:02Z | ctive |
+| 150.002-T | done | 2026-08-30T05:00:53Z | ctive |
+
+The P-001 violation is corrected. The historical direct-archive fact is preserved in
+custom_fields.original_archived_status and the original commit history.
+
+**Open item resolved**: This was the only remaining open item noted in the original incident
+record. No further action is required.
