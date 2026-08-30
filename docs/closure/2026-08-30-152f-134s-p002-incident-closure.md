@@ -1,15 +1,13 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Operational acceptance closure for 152-F/134-S P-002 breach and terminal disposition for 11FFF601/150-F/133-S closure block"
+description: "Operational incident closure for 152-F/134-S P-002 breach and terminal disposition for 11FFF601/150-F/133-S closure block"
 doc_type: closure
 schema_version: "1.0"
 source: ship-agent
-title: "152-F / 134-S P-002 Acceptance — Operational Closure for 11FFF601 / 150-F / 133-S"
+title: "152-F / 134-S P-002 Incident Closure — Terminal Disposition for 11FFF601 / 150-F / 133-S"
 ---
 
-# 152-F / 134-S P-002 Acceptance — Operational Closure
-
-**Acceptance date**: 2026-08-30
+**Acknowledgement date**: 2026-08-30
 **Incident ID**: INC-P002-152F-134S
 **Incident record**: `docs/decisions/2026-08-30-p002-breach-incident-152f-134s.md`
 
@@ -19,25 +17,50 @@ The prior closure of 11FFF601 / 150-F / 133-S was blocked pending disposition
 of the P-002 commit-order breach discovered in the causal repair release unit
 152-F / 134-S.
 
-The operator has explicitly accepted this breach as a permanent historical
-process incident. This document records that acceptance, the runtime
-verification evidence confirming that all archives and provenance corrections
-are correct, and the terminal disposition of the closure block.
+The operator has explicitly acknowledged this breach as a permanent historical
+process incident. P-002 violations cannot be accepted or normalized. This
+document records the breach disposition, the runtime verification evidence
+confirming that all archives and provenance corrections are correct, and the
+terminal resolution of the closure block.
 
 ## P-002 Breach Disposition
 
 | Field | Value |
 |---|---|
 | Incident | INC-P002-152F-134S |
+| Related incident | INC-P002-131S-148F |
 | Breach sequence | `87f06f62` (stubs) → `e7276bcf` (RED) → `4c964c21` (GREEN) |
 | Nature | Production stubs returning `ErrNotImplemented` committed before RED harness |
-| Disposition | `accepted_historical_incident` — operator explicit acceptance 2026-08-30 |
+| Disposition | `acknowledged_historical_incident` — operator explicit acknowledgement 2026-08-30 |
 | Compliance claim | NONE — P-002 breach is not claimed compliant |
 | Policy impact | NONE — P-002 NON-NEGOTIABLE remains fully in force |
+| Forward-control | FC-5 established; deferred to stash A2C91FE5 (active, not yet implemented) |
 | Precedent | NONE — applies exclusively to INC-P002-152F-134S |
 
-The acceptance is terminal: no further disposition, remediation, or
-re-evaluation is required or appropriate for this specific incident.
+The acknowledgement is terminal for this incident: no further disposition or
+re-evaluation is required for 11FFF601/150-F/133-S or 152-F/134-S.
+
+## P-002 Compliance Record (FC-3) — 134-S Tasks
+
+Per FC-3 (established by INC-P002-131S-148F), shipment closure includes a per-task
+P-002 compliance table.
+
+| Task | P-002 Role | Commit | Status | Deviation |
+|---|---|---|---|---|
+| 152.001-T | Declaration (stubs) | `87f06f62` | DEVIATION — production stubs committed before RED | INC-P002-152F-134S |
+| 152.002-T | RED harness | `e7276bcf` | Fail-verified (compiled against stubs, tests FAIL) | None additional |
+| 152.003-T | GREEN implementation | `4c964c21` | Tests pass GREEN | None |
+| 152.004-T | RED surface tests | `3b651ae8` | Fail-verified | None |
+| 152.005-T | Declaration (stubs) | `87f06f62` | DEVIATION — production stubs committed before RED | INC-P002-152F-134S |
+| 152.006-T | RED surface tests | `e7276bcf` | Fail-verified | None additional |
+| 152.007-T | GREEN surfaces | `4c964c21` | Tests pass GREEN | None |
+| 152.008-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+| 152.009-T | Integration tests | `8c813ef1` | P-002 exemption (verification-only) | Exemption class: FC-2 exempt |
+| 152.010-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+| 152.011-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+
+Reference: INC-P002-131S-148F (`docs/decisions/2026-08-29-p002-breach-incident-131s-148f.md`)
+Deviations in 152.001-T and 152.005-T are acknowledged under INC-P002-152F-134S.
 
 ## Runtime Verification — Remote Source-of-Truth State
 
@@ -115,12 +138,12 @@ Verified at `origin/main` HEAD `d453bdb8` (PR #397 merge), 2026-08-30.
 | Priority | `high` |
 | Merged via | PR #397 (`d453bdb8`) — Stage agent |
 | Content | Deterministic harness-wide workflow-policy enforcement engine |
-| Action | NONE — must remain active and unimplemented per operator instruction |
+| Action | NONE — must remain active and unimplemented pending Stage deliberation |
 
 ## Terminal Disposition: 11FFF601 / 150-F / 133-S Closure Block
 
 The closure block on 11FFF601 / 150-F / 133-S is **terminally resolved** as of
-2026-08-30 with disposition `accepted_historical_incident`.
+2026-08-30 with disposition `acknowledged_historical_incident`.
 
 | Release unit item | Prior block | Terminal status |
 |---|---|---|
@@ -129,10 +152,10 @@ The closure block on 11FFF601 / 150-F / 133-S is **terminally resolved** as of
 | 150.001-T (task archive) | P-001: archived from active | ✅ RESOLVED — ReconcileArchivedLifecycle applied (PR #395) |
 | 150.002-T (task archive) | P-001: archived from active | ✅ RESOLVED — ReconcileArchivedLifecycle applied (PR #395) |
 | 133-S (shipment archive) | Dependent on reconciliation | ✅ RESOLVED — archived_status: shipped |
-| 152-F (causal repair) | P-002 breach: stubs before RED | ✅ ACCEPTED — INC-P002-152F-134S, permanent historical incident |
-| 134-S (causal repair shipment) | Dependent on 152-F disposition | ✅ ACCEPTED — terminal disposition granted |
+| 152-F (causal repair) | P-002 breach: stubs before RED | ✅ ACKNOWLEDGED — INC-P002-152F-134S, permanent historical incident |
+| 134-S (causal repair shipment) | Dependent on 152-F disposition | ✅ ACKNOWLEDGED — terminal disposition granted |
 
-**All closure criteria met or accepted**:
+**All closure criteria met or acknowledged:**
 
 | Criterion | Status |
 |---|---|
@@ -148,9 +171,10 @@ The closure block on 11FFF601 / 150-F / 133-S is **terminally resolved** as of
 | original_archived_status preserved | ✅ `active` in custom_fields |
 | 11FFF601 provenance corrected | ✅ canonical: 150-F, historical: 151-F preserved |
 | 133-S archived_status | ✅ `shipped` |
-| 152-F P-002 breach | ✅ `accepted_historical_incident` — INC-P002-152F-134S |
+| 152-F P-002 breach | ✅ `acknowledged_historical_incident` — INC-P002-152F-134S |
 | 134-S archived_status | ✅ `shipped` |
 | A2C91FE5 active/unimplemented | ✅ Confirmed active in stash |
+| FC-5 forward control | ✅ Established; deferred to A2C91FE5 |
 
 ## Provenance Preservation Statement
 
@@ -159,26 +183,28 @@ retroactive modification, no frontmatter rewrite, no event mutation:
 
 1. The commit sequence `87f06f62 → e7276bcf → 4c964c21` in the git history
 2. The session memory at `docs/memory/2026-08-30/152-ship-session-memory.md`
-   (which stated "Session Outcome: COMPLETE" at the time of writing)
+   (which stated "Session Outcome: COMPLETE" — accurate at time of authorship
+   before post-closure breach characterization)
 3. The stash archive for `11FFF601` with `harvested_artifact_id: 151-F`
 4. The `archived_status: active` original values preserved in
    `custom_fields.original_archived_status` for 150.001-T and 150.002-T
 5. The incident record at `docs/closure/2026-08-29-133-s-lifecycle-incident.md`
 6. The prior closure at `docs/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md`
+7. Stash A2C91FE5 text (active, unmodified, not subject to correction in the stash)
 
 ## P-002 Policy Clarity
 
-This acceptance does not weaken, amend, waive, or create any exception to
-P-002 (TDD Gate / Harness-Satisfied Precondition) or Constitution Principle II
-(Test-First Development, NON-NEGOTIABLE).
+P-002 (TDD Gate / Harness-Satisfied Precondition) and Constitution Principle II
+(Test-First Development, NON-NEGOTIABLE) are not weakened, amended, waived, or
+subject to any exception as a result of this closure.
 
 P-002 continues to require: write test first, confirm it fails (RED), then
 implement, confirm it passes (GREEN). Production stub functions returning
 sentinel errors constitute observable production behavior and must follow, not
 precede, the RED harness.
 
-This acceptance is a one-time, terminal, named disposition for a specific
-historical incident. It is not a policy change, not a waiver class, and not
+This closure is a one-time, terminal, named disposition for a specific
+historical incident. It is not a policy change, not a waiver, and not
 a precedent that any future work may cite or reference as justification for
 violating P-002.
 
@@ -186,10 +212,12 @@ violating P-002.
 
 **11FFF601 / 150-F / 133-S**: CLOSED — operational closure granted 2026-08-30.
 
-**152-F / 134-S**: CLOSED — P-002 breach accepted as permanent historical
+**152-F / 134-S**: CLOSED — P-002 breach acknowledged as permanent historical
 incident INC-P002-152F-134S. Operational closure granted 2026-08-30.
 
-No further action required for these release units. The stash entry A2C91FE5
-(deterministic enforcement engine) remains active for future Stage deliberation
-and is the correct systemic response to both INC-P002-131S-148F and
-INC-P002-152F-134S.
+**FC-5**: ACTIVE — forward-control obligation established; deferred to stash
+A2C91FE5 for machine enforcement implementation.
+
+No further action required for these release units. Stash A2C91FE5 remains
+active for future Stage deliberation as the systemic remedy for both
+INC-P002-131S-148F and INC-P002-152F-134S.
