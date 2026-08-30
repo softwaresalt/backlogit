@@ -11,7 +11,7 @@ title: 133-S Lifecycle Incident — P-001 Task Lifecycle Gap (150.001-T, 150.002
 
 **Detected**: 2026-08-29T19:06:31Z (post-Ship read-only remote check, after PR #391 merge)
 **Reported by**: Ship agent (autonomous post-closure verification)
-**Status**: All governed remediation paths blocked; no durable correction applied. `archived_status` field requires operator action via the governed restore path (currently unavailable via CLI).
+**Status**: RESOLVED — 2026-08-30. `ReconcileArchivedLifecycle` (152-F, PR #394) implements the Option B path. Applied in application PR #395. Both `150.001-T` and `150.002-T` now have `archived_status: done`. See `docs/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md` Lifecycle Reconciliation Addendum.
 
 ## P-001 Contradiction
 
@@ -128,7 +128,10 @@ remediation flow would be:
 4. Repeat for `150.002-T`
 
 This path creates a genuine `done` transition event, correctly sets `archived_status: done`,
-and does not corrupt `UnarchiveItem` restore semantics. **This option is UNAVAILABLE today.**
+and does not corrupt `UnarchiveItem` restore semantics. This was the proposed Option B.
+
+> **Applied 2026-08-30**: `ReconcileArchivedLifecycle` (152-F, PR #394) implements exactly this
+> sequence. Applied in PR #395. See Resolution Record below.
 
 ## Tooling Gaps — Systemic Follow-Up
 
@@ -144,7 +147,7 @@ Two backlog items are recommended for the backlogit tool:
    `queued` is intentional, per `docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`)
    and completion-claiming archival (where the expectation is `done → archived`).
 
-## P-001 Status Summary
+## P-001 Status Summary (Historical — at 2026-08-29)
 
 | Aspect | Status |
 |--------|--------|
@@ -155,9 +158,11 @@ Two backlog items are recommended for the backlogit tool:
 | Incident documented | ✓ THIS DOCUMENT |
 | Operator action required | Option A (accept gap) is the only safe current path |
 
-## 11FFF601 Final Closure Status
+**Superseded**: See Resolution Record (2026-08-30) — Option B was applied via 152-F.
 
-This lifecycle incident is the only remaining open item for the 11FFF601 / 150-F / 133-S
+## 11FFF601 Final Closure Status (Historical — at 2026-08-29)
+
+At 2026-08-29, this lifecycle incident was the only remaining open item for the 11FFF601 / 150-F / 133-S
 release unit. All other closure criteria are met:
 
 - Code fix merged: ✓ (PR #390, `e3deede6`)
@@ -172,5 +177,31 @@ release unit. All other closure criteria are met:
 - Compound learning: ✓
 - `150-F archived_status: done`: ✓
 - `133-S archived_status: shipped`: ✓
-- `150.001-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
-- `150.002-T archived_status: done`: ✗ OPEN — `active` in archive; safe correction requires Option B (unavailable)
+- `150.001-T archived_status: done`: ✓ RESOLVED — corrected to `done` on 2026-08-30 (PR #395)
+- `150.002-T archived_status: done`: ✓ RESOLVED — corrected to `done` on 2026-08-30 (PR #395)
+
+## Resolution Record (2026-08-30)
+
+**Applied**: PR #395 (chore/152-application, shipment 134-S)
+**Operator**: ship-agent
+**Method**: ReconcileArchivedLifecycle (152-F, shipped in PR #394)
+
+The governed reconciliation sequence was:
+
+1. UnarchiveItem(150.001-T) — restored to queue at active status (from archived_status field)
+2. setItemStatusAndMeta(150.001-T, done) — set status=done, wrote reconciliation metadata
+3. ArchiveItem(150.001-T, WithCascade=false) — re-archived with archived_status=done
+4. Repeat steps 1-3 for 150.002-T
+
+**Post-correction state**:
+
+| Item | archived_status | reconciled_at | original_archived_status |
+|------|-----------------|---------------|--------------------------|
+| 150.001-T | done | 2026-08-30T05:00:02Z | active |
+| 150.002-T | done | 2026-08-30T05:00:53Z | active |
+
+The P-001 violation is corrected. The historical direct-archive fact is preserved in
+custom_fields.original_archived_status and the original commit history.
+
+**Open item resolved**: This was the only remaining open item noted in the original incident
+record. No further action is required.

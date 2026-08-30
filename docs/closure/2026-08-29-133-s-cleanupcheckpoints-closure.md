@@ -149,3 +149,53 @@ tooling. A `backlogit restore` command is recommended as a tooling follow-up.
 **Round 2 Copilot review body note** (not a thread): The Copilot review body in PR #390 flagged
 that both tasks remained active (not done) at merge. This was disclosed in the original closure
 record but not corrected at that time. This addendum closes the disclosure gap.
+
+## Lifecycle Reconciliation Addendum (2026-08-30)
+
+Added as part of 152-F post-merge application (PR #395, shipment 134-S).
+
+### P-001 Incident Correction
+
+Tasks 150.001-T and 150.002-T were archived directly from ctive status, bypassing the
+done transition — a P-001 violation noted in the lifecycle incident record
+docs/closure/2026-08-29-133-s-lifecycle-incident.md.
+
+The governed ReconcileArchivedLifecycle operation (152-F) was applied to correct this:
+
+| Task | Original archived_status | Reconciled to | Reconciled at | Actor |
+|------|--------------------------|---------------|---------------|-------|
+| 150.001-T | active | done | 2026-08-30T05:00:02Z | ship-agent |
+| 150.002-T | active | done | 2026-08-30T05:00:53Z | ship-agent |
+
+Each item was unarchived → updated to done → re-archived with a durable
+lifecycle_reconciliation event. The original direct-archive history is preserved;
+the reconciliation records are additive (see custom_fields.reconciled_at,
+custom_fields.original_archived_status).
+
+### Stash Provenance Correction
+
+Stash entry 11FFF601 was auto-harvested as 151-F (duplicate artifact) but the canonical
+actual delivery was 150-F/133-S.
+
+The governed CorrectStashProvenance operation (152-F) was applied:
+
+| Field | Value |
+|-------|-------|
+| Stash ID | 11FFF601 |
+| Historical artifact (stash archive) | 151-F |
+| Canonical delivery | 150-F |
+| Corrected at | 2026-08-30T05:02:13Z |
+| Actor | ship-agent |
+| Reason | Stash auto-harvested as 151-F but actual delivery was 150-F/133-S; 151-F was a duplicate artifact |
+
+The correction is recorded in .backlogit/archive/provenance_corrections.jsonl.
+The original harvested_artifact_id: 151-F in the stash archive is preserved (never mutated).
+After `backlogit sync`, `stash_links` resolves 11FFF601 → 150-F.
+
+### Verification Evidence
+
+- 150.001-T archive: archived_status=done, reconciled_at=2026-08-30T05:00:02Z
+- 150.002-T archive: archived_status=done, reconciled_at=2026-08-30T05:00:53Z
+- provenance_corrections.jsonl: stash_id=11FFF601, canonical_delivery_artifact_id=150-F
+- stash_links DB: 11FFF601 -> 150-F (verified after backlogit sync)
+- Item log events: lifecycle_reconciliation (150.001-T, 150.002-T), stash_provenance_corrected (150-F)
