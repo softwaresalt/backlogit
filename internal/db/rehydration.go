@@ -668,8 +668,9 @@ type provenanceCorrection struct {
 // applyProvenanceCorrections reads provenance_corrections.jsonl and updates
 // the stash_links table so that corrected stash entries resolve to their
 // canonical delivery artifact rather than the historical auto-harvest target.
-// A missing corrections file is not an error. Malformed lines are skipped with
-// a warning.
+// A missing corrections file is not an error. A malformed line causes the
+// function to return an error (fail-closed), consistent with
+// readProvenanceCorrections in stash_provenance.go (thread iV).
 func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctionsPath string) error {
 	f, err := os.Open(correctionsPath)
 	if err != nil {
@@ -693,9 +694,7 @@ func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctio
 		}
 		var c provenanceCorrection
 		if jsonErr := json.Unmarshal(raw, &c); jsonErr != nil {
-			slog.Warn("provenance corrections: skip malformed line",
-				"path", correctionsPath, "line", lineNum, "error", jsonErr)
-			continue
+			return fmt.Errorf("provenance corrections line %d: malformed JSON: %w", lineNum, jsonErr)
 		}
 		if c.StashID != "" && c.CanonicalDeliveryArtifactID != "" {
 			final[c.StashID] = c

@@ -93,8 +93,36 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 	// 6: Resolve storage root.
 	storageRoot := workspaceStorageRoot(ws)
 
+	// 7a: Containment check — resolve the archive directory through any symlinks
+	// before creating the lock file, so a planted symlink cannot redirect the lock
+	// (and subsequent archive writes) outside the workspace (thread iO).
+	archiveDir := filepath.Join(storageRoot, "archive")
+	realArchiveDir, evalErr := filepath.EvalSymlinks(archiveDir)
+	if evalErr != nil {
+		if os.IsNotExist(evalErr) {
+			// Archive directory doesn't exist yet — check the storage root is real.
+			realStorageRoot, storageRootErr := filepath.EvalSymlinks(storageRoot)
+			if storageRootErr != nil {
+				return nil, fmt.Errorf("resolve workspace storage root: %w", storageRootErr)
+			}
+			realArchiveDir = filepath.Join(realStorageRoot, "archive")
+		} else {
+			return nil, fmt.Errorf("resolve archive directory: %w", evalErr)
+		}
+	} else {
+		// Verify the resolved archive dir is still under the storage root.
+		realStorageRoot, storageRootErr := filepath.EvalSymlinks(storageRoot)
+		if storageRootErr != nil {
+			return nil, fmt.Errorf("resolve workspace storage root: %w", storageRootErr)
+		}
+		if !strings.HasPrefix(realArchiveDir, realStorageRoot) {
+			return nil, fmt.Errorf("archive directory %q resolves outside workspace storage root %q: %w",
+				archiveDir, storageRoot, blerrors.ErrValidation)
+		}
+	}
+
 	// 7: Lock the stash archive file.
-	stashArchivePath := filepath.Join(storageRoot, "archive", "stash.jsonl")
+	stashArchivePath := filepath.Join(realArchiveDir, "stash.jsonl")
 	unlock, err := lockStashFile(stashArchivePath)
 	if err != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
@@ -140,7 +168,7 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 	}
 
 	// 11: Check for an existing correction for this stash ID.
-	correctionsPath := filepath.Join(storageRoot, "archive", "provenance_corrections.jsonl")
+	correctionsPath := filepath.Join(realArchiveDir, "provenance_corrections.jsonl")
 	existingCanonical, err := readProvenanceCorrections(correctionsPath, req.StashID)
 	if err != nil {
 		return nil, fmt.Errorf("read provenance corrections: %w", err)
@@ -287,6 +315,15 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 	}
 	// Rebase correctionsPath on the resolved parent so the open uses a real path.
 	resolvedPath := filepath.Join(realParent, filepath.Base(correctionsPath))
+
+	// Additional check: if the corrections file already exists, verify it is not
+	// itself a symlink (a planted leaf symlink would be followed by os.OpenFile,
+	// redirecting writes outside the workspace) (thread ib).
+	if info, statErr := os.Lstat(resolvedPath); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("provenance corrections file %q is a symlink; refusing to write through it", resolvedPath)
+		}
+	}
 
 	correctionBytes, err := json.Marshal(correction)
 	if err != nil {
