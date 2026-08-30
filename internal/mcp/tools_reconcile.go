@@ -67,8 +67,9 @@ func (s *Server) registerReconcileTools() {
 // It parses the comma-separated item IDs, delegates to core.ReconcileArchivedLifecycle, and
 // returns the serialised ReconciliationResult.
 func (s *Server) handleReconcileArchivedLifecycle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	if s.Workspace == nil {
-		return WorkspaceNotInitialized(), nil
+	ws, errResult := s.requireWorkspace(ctx)
+	if errResult != nil {
+		return errResult, nil
 	}
 
 	itemIDsStr, _ := req.Params.Arguments["item_ids"].(string)
@@ -87,7 +88,7 @@ func (s *Server) handleReconcileArchivedLifecycle(ctx context.Context, req mcpli
 		IdempotencyKey: idempotencyKey,
 	}
 
-	result, err := core.ReconcileArchivedLifecycle(ctx, s.Workspace.DB, s.Workspace, reconReq)
+	result, err := core.ReconcileArchivedLifecycle(ctx, ws.DB, ws, reconReq)
 	if err != nil {
 		return domainError("reconcile_archived_lifecycle", err), nil
 	}
@@ -102,8 +103,9 @@ func (s *Server) handleReconcileArchivedLifecycle(ctx context.Context, req mcpli
 // handleCorrectStashProvenance implements the backlogit_correct_stash_provenance tool.
 // It delegates to core.CorrectStashProvenance and returns the serialised result.
 func (s *Server) handleCorrectStashProvenance(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	if s.Workspace == nil {
-		return WorkspaceNotInitialized(), nil
+	ws, errResult := s.requireWorkspace(ctx)
+	if errResult != nil {
+		return errResult, nil
 	}
 
 	stashID, _ := req.Params.Arguments["stash_id"].(string)
@@ -118,7 +120,7 @@ func (s *Server) handleCorrectStashProvenance(ctx context.Context, req mcplib.Ca
 		Actor:                       actor,
 	}
 
-	result, err := core.CorrectStashProvenance(ctx, s.Workspace, corrReq)
+	result, err := core.CorrectStashProvenance(ctx, ws, corrReq)
 	if err != nil {
 		return domainError("correct_stash_provenance", err), nil
 	}

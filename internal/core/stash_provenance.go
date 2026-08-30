@@ -152,7 +152,30 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 			req.StashID, existingCanonical, req.CanonicalDeliveryArtifactID, blerrors.ErrValidation)
 	}
 
-	// 12: Append the correction record to provenance_corrections.jsonl.
+	// C1 ordering: append the durable item-log event BEFORE writing to
+	// provenance_corrections.jsonl. If the event append fails, the correction
+	// record is not yet persisted, so the operation is safe to retry — the retry
+	// will re-check readProvenanceCorrections, find no existing correction, and
+	// re-attempt both the event and the persistence. If the persistence write
+	// fails after the event succeeds, the next retry will find no correction and
+	// re-emit a duplicate event (benign for audit logs) before persisting.
+	// This ordering prevents the irrecoverable case: correction persisted + event
+	// lost, which would cause retries to short-circuit as NoOp without the event.
+
+	// 13 (reordered): Append a durable event to the canonical artifact's item log.
+	if eventErr := appendItemEventErr(ctx, ws, req.CanonicalDeliveryArtifactID, "stash_provenance_corrected", map[string]any{
+		"stash_id":                       req.StashID,
+		"historical_artifact_id":         historicalArtifactID,
+		"canonical_delivery_artifact_id": req.CanonicalDeliveryArtifactID,
+		"reason":                         req.Reason,
+		"actor":                          req.Actor,
+	}); eventErr != nil {
+		return nil, fmt.Errorf("append stash provenance event: %w", eventErr)
+	}
+
+	// 12 (reordered): Append the correction record to provenance_corrections.jsonl.
+	// C5: Use durable append (fsync file + ensure archive dir exists) so the record
+	// survives crash-after-write within the OS page-cache flush window.
 	correction := ProvenanceCorrection{
 		StashID:                     req.StashID,
 		HistoricalArtifactID:        historicalArtifactID,
@@ -162,32 +185,8 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		CorrectedAt:                 time.Now().UTC().Format(time.RFC3339),
 		EventType:                   "stash_provenance_corrected",
 	}
-	correctionBytes, err := json.Marshal(correction)
-	if err != nil {
-		return nil, fmt.Errorf("marshal provenance correction: %w", err)
-	}
-	cf, err := os.OpenFile(correctionsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("open provenance corrections file: %w", err)
-	}
-	line := append(correctionBytes, '\n')
-	if _, writeErr := cf.Write(line); writeErr != nil {
-		_ = cf.Close()
-		return nil, fmt.Errorf("write provenance correction: %w", writeErr)
-	}
-	if closeErr := cf.Close(); closeErr != nil {
-		return nil, fmt.Errorf("close provenance corrections file: %w", closeErr)
-	}
-
-	// 13: Append a durable event to the canonical artifact's item log.
-	if eventErr := appendItemEventErr(ctx, ws, req.CanonicalDeliveryArtifactID, "stash_provenance_corrected", map[string]any{
-		"stash_id":                       req.StashID,
-		"historical_artifact_id":         historicalArtifactID,
-		"canonical_delivery_artifact_id": req.CanonicalDeliveryArtifactID,
-		"reason":                         req.Reason,
-		"actor":                          req.Actor,
-	}); eventErr != nil {
-		return nil, fmt.Errorf("append stash provenance event: %w", eventErr)
+	if appendErr := appendToProvenanceCorrections(correctionsPath, correction); appendErr != nil {
+		return nil, fmt.Errorf("append provenance correction record: %w", appendErr)
 	}
 
 	// 14: Unlock is handled by defer.
@@ -260,6 +259,33 @@ func readStashArchiveEntry(archivePath, stashID string) (ArchivedStashEntry, err
 	return ArchivedStashEntry{}, fmt.Errorf("stash entry %s not found in archive: %w", stashID, blerrors.ErrNotFound)
 }
 
+// appendToProvenanceCorrections durably appends a correction record to
+// correctionsPath. It fsyncs the file after write to satisfy the
+// "durable append-only correction record" contract (C5 remediation).
+func appendToProvenanceCorrections(correctionsPath string, correction ProvenanceCorrection) error {
+	correctionBytes, err := json.Marshal(correction)
+	if err != nil {
+		return fmt.Errorf("marshal provenance correction: %w", err)
+	}
+	line := append(correctionBytes, '\n')
+	f, err := os.OpenFile(correctionsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open provenance corrections file: %w", err)
+	}
+	if _, writeErr := f.Write(line); writeErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("write provenance correction: %w", writeErr)
+	}
+	if syncErr := f.Sync(); syncErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("fsync provenance corrections file: %w", syncErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("close provenance corrections file: %w", closeErr)
+	}
+	return nil
+}
+
 // readProvenanceCorrections reads correctionsPath (provenance_corrections.jsonl)
 // and returns the canonical_delivery_artifact_id recorded for stashID, or ""
 // when no correction exists. A missing file is not an error.
@@ -281,7 +307,11 @@ func readProvenanceCorrections(correctionsPath, stashID string) (string, error) 
 		}
 		var c ProvenanceCorrection
 		if jsonErr := json.Unmarshal(raw, &c); jsonErr != nil {
-			continue
+			// C4: Fail closed on unparseable lines. A torn/corrupt line that is
+			// silently skipped would bypass conflict detection and allow a conflicting
+			// canonical delivery to be appended. Return the line number with context
+			// so the operator can inspect and repair the corrections file.
+			return "", fmt.Errorf("parse provenance corrections line %q: %w", string(raw), jsonErr)
 		}
 		if c.StashID == stashID {
 			return c.CanonicalDeliveryArtifactID, nil

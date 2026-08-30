@@ -20,7 +20,7 @@ var validReconciliationTargetStatuses = map[string]struct{}{
 	"accepted":  {},
 	"rejected":  {},
 	"abandoned": {},
-	"shipped":   {},
+	// "shipped" excluded: reconciling to "shipped" bypasses the governed ShipShipment workflow
 }
 
 // ReconciliationOutcome describes the per-item or overall outcome of a lifecycle reconciliation.
@@ -263,21 +263,28 @@ func reconcileArchivedItem(
 		})
 		return ReconciliationItemResult{
 			ID:      itemID,
-			Outcome: ReconciliationCompleted,
-			Error:   fmt.Sprintf("re-archive failed (forward-recovery: item at %s in queue): %v", targetStatus, err),
+			Outcome: ReconciliationPartial,
+			Error:   fmt.Sprintf("re-archive failed (forward-recovery: item at %s in queue, requires manual archive): %v", targetStatus, err),
 		}, nil
 	}
 
 	// Step 13: Append a durable lifecycle_reconciliation event to the item log.
-	_ = appendItemEventErr(ctx, ws, itemID, "lifecycle_reconciliation", map[string]any{
+	// C8: Surface append errors as a note in the Error field rather than discarding.
+	// The item is correctly archived at this point, so the outcome remains Completed.
+	// Retries short-circuit at the NoOp check (archived_status == targetStatus), so
+	// the event would be permanently lost if silently discarded here.
+	eventNote := ""
+	if eventErr := appendItemEventErr(ctx, ws, itemID, "lifecycle_reconciliation", map[string]any{
 		"reason":                   reason,
 		"actor":                    actor,
 		"original_archived_status": archivedStatus,
 		"new_archived_status":      targetStatus,
 		"idempotency_key":          idempotencyKey,
-	})
+	}); eventErr != nil {
+		eventNote = fmt.Sprintf("reconciliation complete but audit event append failed: %v", eventErr)
+	}
 
-	return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationCompleted}, nil
+	return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationCompleted, Error: eventNote}, nil
 }
 
 // setItemStatusAndMeta writes a targeted status + custom_fields update directly
@@ -325,13 +332,23 @@ func setItemStatusAndMeta(ctx context.Context, database *sql.DB, ws *Workspace, 
 	// Update the DB index to reflect the new status. Re-parse the written file
 	// so the artifact struct is authoritative. On failure, restore the original
 	// file content so the caller's rollback path (ArchiveItem) sees archivedStatus.
+	// C2: If the restore write is itself indeterminate, join the errors and surface
+	// as indeterminate so the caller does not attempt further rollback on unknown state.
 	artifact, _, parseErr := parseFile(artifactPath)
 	if parseErr != nil {
-		_ = replaceFileWithOptions(ws, artifactPath, rawBefore) // best-effort restore
+		restoreErr := replaceFileWithOptions(ws, artifactPath, rawBefore)
+		if restoreErr != nil && blerrors.IsWriteIndeterminate(restoreErr) {
+			return fmt.Errorf("re-parse artifact after write: %w; restore write indeterminate: %w",
+				parseErr, blerrors.ErrWriteIndeterminate)
+		}
 		return fmt.Errorf("re-parse artifact after write: %w", parseErr)
 	}
 	if upsertErr := db.UpsertItem(ctx, database, artifact); upsertErr != nil {
-		_ = replaceFileWithOptions(ws, artifactPath, rawBefore) // best-effort restore
+		restoreErr := replaceFileWithOptions(ws, artifactPath, rawBefore)
+		if restoreErr != nil && blerrors.IsWriteIndeterminate(restoreErr) {
+			return fmt.Errorf("upsert item: %w; restore write indeterminate: %w",
+				upsertErr, blerrors.ErrWriteIndeterminate)
+		}
 		return fmt.Errorf("upsert item: %w", upsertErr)
 	}
 	return nil
