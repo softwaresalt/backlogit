@@ -288,11 +288,20 @@ func MergeSync(
 			// Rebuild the harvested map from the DB so unrelated stash_links are
 			// preserved (passing an empty map would clear all stash_links). Abort
 			// if the DB query fails to prevent erasing valid provenance.
+			correctionsRelPath := filepath.ToSlash(filepath.Join("archive", "provenance_corrections.jsonl"))
 			harvestedStash, harvestedErr := harvestedStashFromDB(ctx, database)
 			if harvestedErr != nil {
 				log.Warn("provenance correction deletion: failed to build harvested map; skipping rebuild to preserve stash_links", "error", harvestedErr)
+				// Restore old manifest entry so next MergeSync still sees the deletion.
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				}
 			} else if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
 				log.Warn("stash refresh failed after provenance corrections deletion", "error", stashErr)
+				// Restore old manifest entry so next MergeSync retries the rebuild.
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				}
 			} else {
 				result.StashRefreshed = true
 			}
