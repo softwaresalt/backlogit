@@ -1,4 +1,4 @@
-﻿---
+---
 chunk_strategy: h1-h2-h3
 description: "Post-merge closure record for 133-S / 150-F: CleanupCheckpoints pre-Remove data-loss fix"
 doc_type: closure

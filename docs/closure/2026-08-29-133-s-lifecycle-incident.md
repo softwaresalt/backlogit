@@ -1,4 +1,4 @@
-﻿---
+---
 chunk_strategy: h1-h2-h3
 description: "Lifecycle incident record for 133-S / 150-F: P-001 violation — tasks archived from active status, skipping done transition"
 doc_type: closure
