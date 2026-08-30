@@ -60,7 +60,7 @@ P-002 compliance table.
 | 152.011-T | GREEN implementation (stash-correct surface) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start alongside 152.008-T; no red-only state | INC-P002-152F-134S (breach point 3) |
 
 Reference: INC-P002-131S-148F (`docs/decisions/2026-08-29-p002-breach-incident-131s-148f.md`)
-Deviations in 152.001-T and 152.005-T are acknowledged under INC-P002-152F-134S.
+Deviations acknowledged under INC-P002-152F-134S: 152.001-T (stubs before RED, breach point 1), 152.005-T (stubs before RED, breach point 1), 152.004-T (reconcile all-in-one, breach point 2), 152.008-T (stash-correct no-RED state, breach point 3), 152.011-T (stash-correct GREEN from start, breach point 3).
 
 ## Runtime Verification — Remote Source-of-Truth State
 
@@ -220,6 +220,7 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
 
 
 
