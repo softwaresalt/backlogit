@@ -272,13 +272,15 @@ func MergeSync(
 		}
 	}
 
-	// Step 6b: Refresh stash when provenance_corrections.jsonl appears in the diff.
-	// A correction file change means stash_links may need to be overridden.
-	// Skip if StashRefreshed is already true (stash.jsonl also changed) to avoid
-	// a redundant double-rebuild of the stash_links table.
+	// Step 6b: Apply provenance corrections when provenance_corrections.jsonl appears
+	// in the diff. Instead of calling rehydrateStash (which would clear all stash_links
+	// when passed an empty harvested map), we call applyProvenanceCorrections directly
+	// so only the corrected stash_links rows are overridden. This avoids data-loss on
+	// unrelated harvested entries (Copilot review cycle 4, thread OF).
 	if diffContainsKind(diff, FileKindProvenanceCorrections) && !result.StashRefreshed {
-		if _, stashErr := rehydrateStash(ctx, workspacePath, database, make(map[string]StashRecord)); stashErr != nil {
-			log.Warn("stash refresh failed after provenance correction sync", "error", stashErr)
+		correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
+		if corrErr := applyProvenanceCorrections(ctx, database, correctionsPath); corrErr != nil {
+			log.Warn("provenance correction refresh failed after merge sync", "error", corrErr)
 		} else {
 			result.StashRefreshed = true
 		}

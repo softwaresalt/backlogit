@@ -18,6 +18,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/db"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -293,4 +294,72 @@ func TestStashProvenance_EndToEnd(t *testing.T) {
 	_, err = core.CorrectStashProvenance(ctx, ws, req2)
 	require.Error(t, err,
 		"correcting the same stash entry to a different canonical must be rejected as a conflict")
+}
+
+// TestStashProvenance_RehydrationResolvesCanonical verifies that after recording
+// a provenance correction, a full db.Rehydrate (backlogit sync) resolves
+// stash_links to the canonical delivery artifact ID rather than the historical
+// harvested_artifact_id (152.009-T RehydrationResolvesCanonical scenario).
+func TestStashProvenance_RehydrationResolvesCanonical(t *testing.T) {
+	ws := setupReconcileIntegrationWorkspace(t)
+	ctx := context.Background()
+
+	const stashID = "REHYDRATION-TEST-STASH"
+	const historicalID = "historical-rehydration-F"
+
+	// Seed the stash archive entry.
+	writeStashProvenanceArchiveEntry(t, ws, stashID, historicalID)
+
+	// Create canonical delivery artifact with source_stash_id.
+	canonical, err := core.CreateArtifact(ctx, ws, "Rehydration canonical feature", "feature",
+		core.WithFields(map[string]any{"source_stash_id": stashID}),
+	)
+	require.NoError(t, err)
+
+	// Correct the provenance.
+	req := core.StashProvenanceCorrectionRequest{
+		StashID:                     stashID,
+		CanonicalDeliveryArtifactID: canonical.ID,
+		Reason:                      "rehydration integration test",
+		Actor:                       "integration-test",
+	}
+	result, err := core.CorrectStashProvenance(ctx, ws, req)
+	require.NoError(t, err)
+	assert.Equal(t, core.StashProvenanceCorrected, result.Outcome)
+
+	// Run full rehydration (backlogit sync) to rebuild the DB index.
+	storageRoot := ws.StorageRoot
+	_, rehydrateErr := db.Rehydrate(ctx, storageRoot, ws.DB)
+	require.NoError(t, rehydrateErr, "rehydration must succeed after provenance correction")
+
+	// Query the DB to verify stash_links resolves to the canonical artifact.
+	rows, queryErr := ws.DB.QueryContext(ctx,
+		`SELECT item_id FROM stash_links WHERE stash_id = ?`, stashID)
+	require.NoError(t, queryErr)
+	defer func() { _ = rows.Close() }()
+	var itemIDs []string
+	for rows.Next() {
+		var itemID string
+		require.NoError(t, rows.Scan(&itemID))
+		itemIDs = append(itemIDs, itemID)
+	}
+	require.NoError(t, rows.Err())
+
+	require.Len(t, itemIDs, 1, "stash_links must contain exactly one row for stash %s after correction", stashID)
+	assert.Equal(t, canonical.ID, itemIDs[0],
+		"stash_links must resolve to the canonical delivery artifact after rehydration")
+}
+
+// TestStashProvenance_ManifestClassifiesCorrectionsFile verifies that
+// internal/db/manifest.ClassifyFile returns FileKindProvenanceCorrections for
+// archive/provenance_corrections.jsonl, enabling merge-sync to react to
+// provenance correction diffs (152.009-T MergeSyncResolvesCanonical scenario).
+func TestStashProvenance_ManifestClassifiesCorrectionsFile(t *testing.T) {
+	kind := db.ClassifyFile("archive/provenance_corrections.jsonl")
+	assert.Equal(t, db.FileKindProvenanceCorrections, kind,
+		"ClassifyFile must return FileKindProvenanceCorrections for the corrections file")
+
+	// Verify unrelated archive files are NOT classified as provenance corrections.
+	assert.NotEqual(t, db.FileKindProvenanceCorrections, db.ClassifyFile("archive/stash.jsonl"))
+	assert.NotEqual(t, db.FileKindProvenanceCorrections, db.ClassifyFile("archive/001-F.md"))
 }
