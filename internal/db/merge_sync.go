@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
+
 	"errors"
 	"fmt"
+	"github.com/softwaresalt/backlogit/internal/models"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -345,10 +348,11 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 
 // harvestedStashFromDB queries the items table for all artifacts that carry a
 // source_stash_id custom field and returns them as a StashRecord map keyed by
-// stash ID. This lets callers rebuild the stash_links harvested projection
-// incrementally without a full workspace file-scan.
+// stash ID. It uses stashRecordFromArtifact to ensure the same field extraction
+// logic (kind, text, source path, deliberation, priority, updated_at) as the
+// full workspace-walk rehydration path.
 func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]StashRecord {
-	const q = `SELECT id, custom_fields FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != ''`
+	const q = `SELECT id, custom_fields, updated_at FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != ''`
 	rows, err := database.QueryContext(ctx, q)
 	if err != nil {
 		return make(map[string]StashRecord)
@@ -357,24 +361,25 @@ func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]Stas
 
 	result := make(map[string]StashRecord)
 	for rows.Next() {
-		var itemID string
+		var itemID, updatedAtStr string
 		var cfRaw []byte
-		if err := rows.Scan(&itemID, &cfRaw); err != nil {
+		if scanErr := rows.Scan(&itemID, &cfRaw, &updatedAtStr); scanErr != nil {
 			continue
 		}
 		var cf map[string]any
-		if err := json.Unmarshal(cfRaw, &cf); err != nil {
+		if jsonErr := json.Unmarshal(cfRaw, &cf); jsonErr != nil {
 			continue
 		}
-		stashID, _ := cf["source_stash_id"].(string)
-		if stashID == "" {
-			continue
+		updatedAt, _ := time.Parse(time.RFC3339Nano, updatedAtStr)
+		// Build a minimal Artifact so stashRecordFromArtifact can apply its full
+		// field extraction (kind, text, source path, deliberation ID, priority).
+		a := &models.Artifact{
+			ID:           itemID,
+			CustomFields: cf,
+			UpdatedAt:    updatedAt,
 		}
-		result[stashID] = StashRecord{
-			ID:       stashID,
-			ItemID:   itemID,
-			State:    "harvested",
-			Priority: "medium",
+		if record, ok := stashRecordFromArtifact(a); ok {
+			result[record.ID] = record
 		}
 	}
 	_ = rows.Err()
