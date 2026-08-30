@@ -265,7 +265,12 @@ func extractSourceStashID(fm map[string]any) string {
 // readStashArchiveEntry opens the stash JSONL archive at archivePath and returns
 // the entry whose ID matches stashID. Returns a wrapped ErrNotFound when the
 // archive is absent or the entry is not present.
+// readStashArchiveEntry rejects symlinks at the file leaf via os.Lstat to
+// prevent path traversal through a planted archive/stash.jsonl symlink.
 func readStashArchiveEntry(archivePath, stashID string) (ArchivedStashEntry, error) {
+	if linfo, lstatErr := os.Lstat(archivePath); lstatErr == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return ArchivedStashEntry{}, fmt.Errorf("stash archive %q is a symlink; refusing to read through it", archivePath)
+	}
 	f, err := os.Open(archivePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -356,7 +361,12 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 // readProvenanceCorrections reads correctionsPath (provenance_corrections.jsonl)
 // and returns the canonical_delivery_artifact_id recorded for stashID, or ""
 // when no correction exists. A missing file is not an error.
+// readProvenanceCorrections rejects symlinks at the file leaf to prevent
+// path traversal through a planted provenance_corrections.jsonl symlink.
 func readProvenanceCorrections(correctionsPath, stashID string) (string, error) {
+	if linfo, lstatErr := os.Lstat(correctionsPath); lstatErr == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("provenance corrections file %q is a symlink; refusing to read through it", correctionsPath)
+	}
 	f, err := os.Open(correctionsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
