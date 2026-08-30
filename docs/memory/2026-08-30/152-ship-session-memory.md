@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Session memory for 152-F/134-S Ship execution — original ship session record"
+description: "Annotated copy of 152-F/134-S ship session memory — original at daf1dd29 on chore/134-s-closure"
 doc_type: memory
 schema_version: "1.0"
 source: docs/memory/2026-08-30/152-ship-session-memory.md
@@ -89,3 +89,4 @@ shipped and closed.
 - 150.002-T: archived_status=done, reconciled_at=2026-08-30T05:00:53Z
 - 11FFF601 → 150-F in stash_links (post-sync)
 - 134-S: archived; 152-F: done (in archive)
+

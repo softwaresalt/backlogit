@@ -56,8 +56,8 @@ P-002 compliance table.
 | 152.007-T | GREEN surfaces | `4c964c21` | Tests pass GREEN | None |
 | 152.008-T | RED surface (stash-correct) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start, no red-only state | INC-P002-152F-134S (breach point 3) |
 | 152.009-T | Integration tests | `8c813ef1` | P-002 exemption (verification-only) | Exemption class: FC-2 exempt |
-| 152.010-T | GREEN surfaces (reconcile+stash-correct) | `af9ef8d0` | Tests pass GREEN | DEVIATION in same commit (breach point 3 in 152.008-T) |
-| 152.011-T | GREEN surfaces | `af9ef8d0` | Tests pass GREEN | None |
+| 152.010-T | GREEN implementation (reconcile surface) | `af9ef8d0` | Tests pass GREEN | None — reconcile GREEN surfaces in same commit as stash-correct; breach point 3 is in 152.008-T/152.011-T rows |
+| 152.011-T | GREEN implementation (stash-correct surface) | `af9ef8d0` | DEVIATION — production stash_correct.go + tests GREEN from start alongside 152.008-T; no red-only state | INC-P002-152F-134S (breach point 3) |
 
 Reference: INC-P002-131S-148F (`docs/decisions/2026-08-29-p002-breach-incident-131s-148f.md`)
 Deviations in 152.001-T and 152.005-T are acknowledged under INC-P002-152F-134S.
@@ -181,8 +181,8 @@ The closure block on 11FFF601 / 150-F / 133-S is **terminally resolved** as of
 The following historical artifacts are preserved exactly as committed — no
 retroactive modification, no frontmatter rewrite, no event mutation:
 
-1. The commit sequence `87f06f62 → e7276bcf → 4c964c21` in the git history
-2. The session memory at `docs/memory/2026-08-30/152-ship-session-memory.md` (added to origin/main via this PR; which stated "Session Outcome: COMPLETE" — accurate at time of authorship
+1. The commit sequence `87f06f62 → e7276bcf → 4c964c21` in the git history (immutable)
+2. The original session memory commit `daf1dd29` on `chore/134-s-closure` (not merged into origin/main via PR #396); this PR adds an annotated copy to `docs/memory/2026-08-30/152-ship-session-memory.md` with post-closure annotation. The annotated copy differs from `daf1dd29` in frontmatter, heading structure, and annotation. The unmodified original is at commit `daf1dd29` on branch `chore/134-s-closure`. The annotated copy's characterization (which stated "Session Outcome: COMPLETE" — accurate at time of authorship
    before post-closure breach characterization)
 3. The stash archive for `11FFF601` with `harvested_artifact_id: 151-F`
 4. The `archived_status: active` original values preserved in
@@ -220,5 +220,6 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
 
 
