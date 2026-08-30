@@ -286,9 +286,12 @@ func MergeSync(
 		if correctionsDeleted {
 			// Full rehydration needed to clear correction overrides from deleted file.
 			// Rebuild the harvested map from the DB so unrelated stash_links are
-			// preserved (passing an empty map would clear all stash_links).
-			harvestedStash := harvestedStashFromDB(ctx, database)
-			if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
+			// preserved (passing an empty map would clear all stash_links). Abort
+			// if the DB query fails to prevent erasing valid provenance.
+			harvestedStash, harvestedErr := harvestedStashFromDB(ctx, database)
+			if harvestedErr != nil {
+				log.Warn("provenance correction deletion: failed to build harvested map; skipping rebuild to preserve stash_links", "error", harvestedErr)
+			} else if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
 				log.Warn("stash refresh failed after provenance corrections deletion", "error", stashErr)
 			} else {
 				result.StashRefreshed = true
@@ -351,11 +354,13 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 // stash ID. It uses stashRecordFromArtifact to ensure the same field extraction
 // logic (kind, text, source path, deliberation, priority, updated_at) as the
 // full workspace-walk rehydration path.
-func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]StashRecord {
+// Returns an error if the query, scan, JSON parse, or rows.Err fails so that
+// callers can abort any destructive rebuild when the input map is incomplete.
+func harvestedStashFromDB(ctx context.Context, database *sql.DB) (map[string]StashRecord, error) {
 	const q = `SELECT id, custom_fields, updated_at FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != ''`
 	rows, err := database.QueryContext(ctx, q)
 	if err != nil {
-		return make(map[string]StashRecord)
+		return nil, fmt.Errorf("harvestedStashFromDB query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -364,11 +369,11 @@ func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]Stas
 		var itemID, updatedAtStr string
 		var cfRaw []byte
 		if scanErr := rows.Scan(&itemID, &cfRaw, &updatedAtStr); scanErr != nil {
-			continue
+			return nil, fmt.Errorf("harvestedStashFromDB scan: %w", scanErr)
 		}
 		var cf map[string]any
 		if jsonErr := json.Unmarshal(cfRaw, &cf); jsonErr != nil {
-			continue
+			return nil, fmt.Errorf("harvestedStashFromDB unmarshal custom_fields for %s: %w", itemID, jsonErr)
 		}
 		updatedAt, _ := time.Parse(time.RFC3339Nano, updatedAtStr)
 		// Build a minimal Artifact so stashRecordFromArtifact can apply its full
@@ -382,8 +387,10 @@ func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]Stas
 			result[record.ID] = record
 		}
 	}
-	_ = rows.Err()
-	return result
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("harvestedStashFromDB rows: %w", rowsErr)
+	}
+	return result, nil
 }
 
 // diffDeletedKind reports whether a file of the given kind was deleted in the diff.
