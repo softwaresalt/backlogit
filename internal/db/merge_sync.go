@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -281,7 +282,9 @@ func MergeSync(
 		correctionsDeleted := diffDeletedKind(diff, FileKindProvenanceCorrections)
 		if correctionsDeleted {
 			// Full rehydration needed to clear correction overrides from deleted file.
-			harvestedStash := make(map[string]StashRecord)
+			// Rebuild the harvested map from the DB so unrelated stash_links are
+			// preserved (passing an empty map would clear all stash_links).
+			harvestedStash := harvestedStashFromDB(ctx, database)
 			if _, stashErr := rehydrateStash(ctx, workspacePath, database, harvestedStash); stashErr != nil {
 				log.Warn("stash refresh failed after provenance corrections deletion", "error", stashErr)
 			} else {
@@ -291,6 +294,15 @@ func MergeSync(
 			correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
 			if corrErr := applyProvenanceCorrections(ctx, database, correctionsPath); corrErr != nil {
 				log.Warn("provenance correction refresh failed after merge sync", "error", corrErr)
+				// Restore the old manifest entry for provenance_corrections.jsonl so the
+				// next MergeSync call sees the file as still-changed and retries the
+				// application rather than treating it as already-processed.
+				correctionsRelPath := filepath.ToSlash(filepath.Join("archive", "provenance_corrections.jsonl"))
+				if oldEntry, ok := manifest[correctionsRelPath]; ok {
+					current[correctionsRelPath] = oldEntry
+				} else {
+					delete(current, correctionsRelPath)
+				}
 			} else {
 				result.StashRefreshed = true
 			}
@@ -329,6 +341,44 @@ func relocationSyncEntries(relocations []RelocationEntry) []SyncEntry {
 		out = append(out, SyncEntry{ID: r.ItemID, Path: r.NewPath})
 	}
 	return out
+}
+
+// harvestedStashFromDB queries the items table for all artifacts that carry a
+// source_stash_id custom field and returns them as a StashRecord map keyed by
+// stash ID. This lets callers rebuild the stash_links harvested projection
+// incrementally without a full workspace file-scan.
+func harvestedStashFromDB(ctx context.Context, database *sql.DB) map[string]StashRecord {
+	const q = `SELECT id, custom_fields FROM items WHERE custom_fields IS NOT NULL AND custom_fields != '{}' AND custom_fields != ''`
+	rows, err := database.QueryContext(ctx, q)
+	if err != nil {
+		return make(map[string]StashRecord)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]StashRecord)
+	for rows.Next() {
+		var itemID string
+		var cfRaw []byte
+		if err := rows.Scan(&itemID, &cfRaw); err != nil {
+			continue
+		}
+		var cf map[string]any
+		if err := json.Unmarshal(cfRaw, &cf); err != nil {
+			continue
+		}
+		stashID, _ := cf["source_stash_id"].(string)
+		if stashID == "" {
+			continue
+		}
+		result[stashID] = StashRecord{
+			ID:       stashID,
+			ItemID:   itemID,
+			State:    "harvested",
+			Priority: "medium",
+		}
+	}
+	_ = rows.Err()
+	return result
 }
 
 // diffDeletedKind reports whether a file of the given kind was deleted in the diff.
