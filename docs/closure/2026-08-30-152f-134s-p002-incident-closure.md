@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Operational incident closure for 152-F/134-S P-002 breach and terminal disposition for 11FFF601/150-F/133-S closure block"
 doc_type: closure
 schema_version: "1.0"
-source: ship-agent
+source: docs/closure/2026-08-30-152f-134s-p002-incident-closure.md
 title: "152-F / 134-S P-002 Incident Closure — Terminal Disposition for 11FFF601 / 150-F / 133-S"
 ---
 
@@ -182,8 +182,7 @@ The following historical artifacts are preserved exactly as committed — no
 retroactive modification, no frontmatter rewrite, no event mutation:
 
 1. The commit sequence `87f06f62 → e7276bcf → 4c964c21` in the git history
-2. The session memory at `docs/memory/2026-08-30/152-ship-session-memory.md`
-   (which stated "Session Outcome: COMPLETE" — accurate at time of authorship
+2. The session memory at `docs/memory/2026-08-30/152-ship-session-memory.md` (added to origin/main via this PR; which stated "Session Outcome: COMPLETE" — accurate at time of authorship
    before post-closure breach characterization)
 3. The stash archive for `11FFF601` with `harvested_artifact_id: 151-F`
 4. The `archived_status: active` original values preserved in
@@ -221,3 +220,4 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
