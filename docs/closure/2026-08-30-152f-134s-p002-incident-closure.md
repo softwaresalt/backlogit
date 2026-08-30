@@ -152,7 +152,7 @@ The closure block on 11FFF601 / 150-F / 133-S is **terminally resolved** as of
 | 150.001-T (task archive) | P-001: archived from active | ✅ RESOLVED — ReconcileArchivedLifecycle applied (PR #395) |
 | 150.002-T (task archive) | P-001: archived from active | ✅ RESOLVED — ReconcileArchivedLifecycle applied (PR #395) |
 | 133-S (shipment archive) | Dependent on reconciliation | ✅ RESOLVED — archived_status: shipped |
-| 152-F (causal repair) | P-002 breach: stubs before RED | ✅ ACKNOWLEDGED — INC-P002-152F-134S, permanent historical incident |
+| 152-F (causal repair) | P-002 breach: (1) 87f06f62 stubs before RED; (2) 3b651ae8 reconcile all-in-one; (3) af9ef8d0 stash-correct no-RED state | ✅ ACKNOWLEDGED — INC-P002-152F-134S, permanent historical incident |
 | 134-S (causal repair shipment) | Dependent on 152-F disposition | ✅ ACKNOWLEDGED — terminal disposition granted |
 
 **All closure criteria met or acknowledged:**
@@ -220,6 +220,7 @@ A2C91FE5 for machine enforcement implementation.
 No further action required for these release units. Stash A2C91FE5 remains
 active for future Stage deliberation as the systemic remedy for both
 INC-P002-131S-148F and INC-P002-152F-134S.
+
 
 
 
