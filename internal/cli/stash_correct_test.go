@@ -88,6 +88,6 @@ func TestStashCorrectCommand_ValidRequest_OutputsJSON(t *testing.T) {
 	require.NoError(t, err)
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(outBuf.Bytes(), &result))
-	outcome, _ := result["Outcome"].(string)
+	outcome, _ := result["outcome"].(string)
 	assert.Equal(t, "corrected", outcome, "output must contain real correction outcome; got: %s", outBuf.String())
 }

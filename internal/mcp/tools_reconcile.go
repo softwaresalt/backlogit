@@ -29,7 +29,7 @@ func (s *Server) registerReconcileTools() {
 				mcplib.Description("Agent or operator performing the reconciliation"),
 			),
 			mcplib.WithString("target_status",
-				mcplib.Description("Target terminal status (default: done; allowed: done, accepted, rejected, abandoned, shipped)"),
+				mcplib.Description("Target terminal status (default: done; allowed: done, accepted, rejected, abandoned)"),
 				mcplib.DefaultString("done"),
 			),
 			mcplib.WithString("idempotency_key",

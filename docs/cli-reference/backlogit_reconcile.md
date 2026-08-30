@@ -40,7 +40,7 @@ backlogit reconcile <item-id...> [flags]
   -h, --help                     help for reconcile
       --idempotency-key string   Optional idempotency key for deduplication
       --reason string            Reason for reconciliation (required)
-      --target-status string     Target terminal status (done, accepted, rejected, abandoned, shipped) (default "done")
+      --target-status string     Target terminal status (done, accepted, rejected, abandoned) (default "done")
 ```
 
 ### Options inherited from parent commands

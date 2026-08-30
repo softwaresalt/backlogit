@@ -40,35 +40,35 @@ const (
 // ReconciliationRequest is the input to ReconcileArchivedLifecycle.
 type ReconciliationRequest struct {
 	// ItemIDs is the list of archived item IDs to reconcile. At least one required.
-	ItemIDs []string
+	ItemIDs []string `json:"item_ids"`
 	// TargetStatus is the terminal status to transition to before re-archiving.
 	// Defaults to "done" when empty.
-	TargetStatus string
+	TargetStatus string `json:"target_status,omitempty"`
 	// Reason is a human-readable explanation for the reconciliation. Required.
-	Reason string
+	Reason string `json:"reason"`
 	// Actor is the operator or agent performing the reconciliation. Required.
-	Actor string
+	Actor string `json:"actor"`
 	// IdempotencyKey is an optional caller-supplied key. If a previously reconciled
 	// item already carries this key in custom_fields, the item is returned as no_op.
-	IdempotencyKey string
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // ReconciliationItemResult is the per-item outcome.
 type ReconciliationItemResult struct {
 	// ID is the item ID.
-	ID string
+	ID string `json:"id"`
 	// Outcome is the per-item outcome.
-	Outcome ReconciliationOutcome
+	Outcome ReconciliationOutcome `json:"outcome"`
 	// Error is a human-readable error message, empty when no error.
-	Error string
+	Error string `json:"error,omitempty"`
 }
 
 // ReconciliationResult is the structured outcome of ReconcileArchivedLifecycle.
 type ReconciliationResult struct {
 	// Items contains per-item results in the same order as the request.
-	Items []ReconciliationItemResult
+	Items []ReconciliationItemResult `json:"items"`
 	// Outcome is the overall outcome across all items.
-	Outcome ReconciliationOutcome
+	Outcome ReconciliationOutcome `json:"outcome"`
 }
 
 // ReconcileArchivedLifecycle is a governed, fail-closed operation that corrects
@@ -178,10 +178,14 @@ func reconcileArchivedItem(
 		return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 	}
 
-	// Step 4: Validate that the item is actually archived (has an archived_status).
+	// Step 4: Validate that the item is actually archived (status == "archived"
+	// AND archived_status is present). A queued or active file with stale
+	// archive metadata would pass an archived_status-only check, so we verify
+	// both invariants (Copilot review: line 185).
+	currentStatus, _ := fm["status"].(string)
 	archivedStatus, _ := fm["archived_status"].(string)
-	if archivedStatus == "" {
-		wrErr := fmt.Errorf("item %s is not archived (no archived_status field)", itemID)
+	if currentStatus != string(models.StatusArchived) || archivedStatus == "" {
+		wrErr := fmt.Errorf("item %s is not archived (status=%q, archived_status=%q)", itemID, currentStatus, archivedStatus)
 		return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 	}
 
@@ -274,7 +278,7 @@ func reconcileArchivedItem(
 	// Retries short-circuit at the NoOp check (archived_status == targetStatus), so
 	// the event would be permanently lost if silently discarded here.
 	eventNote := ""
-	if eventErr := appendItemEventErr(ctx, ws, itemID, "lifecycle_reconciliation", map[string]any{
+	if eventErr := appendItemEventWithActorErr(ctx, ws, itemID, actor, "lifecycle_reconciliation", map[string]any{
 		"reason":                   reason,
 		"actor":                    actor,
 		"original_archived_status": archivedStatus,

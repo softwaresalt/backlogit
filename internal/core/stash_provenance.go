@@ -51,15 +51,15 @@ type StashProvenanceCorrectionRequest struct {
 // StashProvenanceCorrectionResult is the outcome of CorrectStashProvenance.
 type StashProvenanceCorrectionResult struct {
 	// Outcome is corrected or no_op.
-	Outcome StashProvenanceCorrectionOutcome
+	Outcome StashProvenanceCorrectionOutcome `json:"outcome"`
 	// StashID is the stash entry ID.
-	StashID string
+	StashID string `json:"stash_id"`
 	// HistoricalArtifactID is the harvested_artifact_id from the stash archive.
-	HistoricalArtifactID string
+	HistoricalArtifactID string `json:"historical_artifact_id"`
 	// CanonicalDeliveryArtifactID is the confirmed actual delivery artifact ID.
-	CanonicalDeliveryArtifactID string
+	CanonicalDeliveryArtifactID string `json:"canonical_delivery_artifact_id"`
 	// Message is a human-readable summary.
-	Message string
+	Message string `json:"message"`
 }
 
 // CorrectStashProvenance records a provenance correction for a stash entry, noting
@@ -107,6 +107,14 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		return nil, err
 	}
 	historicalArtifactID := entry.HarvestedArtifactID
+	// Reject corrections for stash entries that have no harvested_artifact_id.
+	// A manually archived stash entry with no harvest link cannot establish the
+	// historical artifact baseline that this correction operation is designed to
+	// override. Without a historical artifact, the "correction" concept is undefined.
+	if historicalArtifactID == "" {
+		return nil, fmt.Errorf("stash entry %s has no harvested_artifact_id; provenance correction requires a prior harvest: %w",
+			req.StashID, blerrors.ErrValidation)
+	}
 
 	// 9: Locate the canonical delivery artifact on the filesystem.
 	artifactPath, err := FindArtifactPath(ctx, ws, req.CanonicalDeliveryArtifactID)
@@ -282,6 +290,15 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 	}
 	if closeErr := f.Close(); closeErr != nil {
 		return fmt.Errorf("close provenance corrections file: %w", closeErr)
+	}
+	// Sync the parent directory so the new file's directory entry is durable on
+	// first write (covers the case where provenance_corrections.jsonl is created
+	// for the first time — without this, a power loss after the file write but
+	// before the directory entry is flushed can lose the file entirely).
+	// On Windows, directory fsyncs are a no-op or not supported; use best-effort.
+	if dirFile, dirErr := os.Open(filepath.Dir(correctionsPath)); dirErr == nil {
+		_ = dirFile.Sync() // best-effort: ignore error on platforms that do not support it
+		_ = dirFile.Close()
 	}
 	return nil
 }

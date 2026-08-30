@@ -61,7 +61,7 @@ as no_op without modification.`,
 
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason for reconciliation (required)")
 	cmd.Flags().StringVar(&actor, "actor", "", "Actor performing the reconciliation (required)")
-	cmd.Flags().StringVar(&targetStatus, "target-status", "done", "Target terminal status (done, accepted, rejected, abandoned, shipped)")
+	cmd.Flags().StringVar(&targetStatus, "target-status", "done", "Target terminal status (done, accepted, rejected, abandoned)")
 	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Optional idempotency key for deduplication")
 	_ = cmd.MarkFlagRequired("reason")
 	_ = cmd.MarkFlagRequired("actor")
