@@ -516,6 +516,10 @@ drift_report:
       description: "Added a copilot_review configuration block (enforcement: auto, max_wait_seconds: 0) so the P-018 Copilot-review gate reference in Ship Step 5 item 7c resolves against this profile."
       affected_artifacts:
         - ".autoharness/workspace-profile.yaml"
+    - category: "breaking"
+      description: "Raised copilot_review.enforcement from `auto` to `required` and max_wait_seconds from 0 to 900. Upstream 1.5.0 made shadow review non-blocking by default (github-pr-automation.instructions.md 1.8) and made requesting Copilot review optional (1.1), so under `auto` the P-018 gate returned NOT_APPLICABLE on any PR where Copilot was never engaged, allowing unresolved review threads to reach merge. Verified against the real gate: classify(unresolved-threads, 'auto') -> NOT_APPLICABLE (merge allowed) vs classify(..., 'required') -> WAITING_FOR_REVIEW (merge held). Copilot reviewed 100% of sampled PRs (394-399), so forcing the gate on carries no wedge risk; max_wait_seconds 900 matches the documented 15-minute review budget so the gate polls instead of halting on a not-yet-landed review."
+      affected_artifacts:
+        - ".autoharness/workspace-profile.yaml"
     - category: "degrading"
       description: "Refreshed LF-normalized SHA-256 checksums for the seven managed artifacts changed in the final remediation cycle. Post-cycle audit: 64 tracked artifacts, 46 LF-normalized matches, 0 raw-byte matches, 18 pre-existing stale entries deliberately untouched (down from 19 because workflow-policies.md was refreshed with its P-018..P-021 merge)."
       affected_artifacts:
@@ -600,8 +604,17 @@ runtime_validation:
 # `max_wait_seconds: 0` means do not wait for an engaged reviewer; on expiry the gate
 # emits REVIEW_TIMEOUT and still BLOCKS (only an audited --force overrides a BLOCK).
 copilot_review:
-  enforcement: "auto"        # auto | required | disabled
-  max_wait_seconds: 0        # integer >= 0
+  # `required` (not the `auto` default) because upstream 1.5.0 made shadow review
+  # non-blocking by default and made requesting Copilot review optional. Under
+  # `auto` the P-018 gate is NOT_APPLICABLE on any PR where Copilot was never
+  # engaged, so unresolved review threads could ride through to merge. Copilot
+  # reviews 100% of PRs in this repo (verified across PRs #394-#399), so forcing
+  # the gate on carries no wedge risk.
+  enforcement: "required"    # auto | required | disabled
+  # Non-zero so the gate polls instead of returning WAITING_FOR_REVIEW the instant
+  # a review has not landed yet. 900s matches the 15-minute Copilot review budget
+  # documented in github-pr-automation.instructions.md §1.2.
+  max_wait_seconds: 900      # integer >= 0
 
 # P-019 local quality-gate enforcement surface. Consumed by the pre-push and
 # pre-commit hook scripts installed under scripts/ during the 2026-08-31 1.5.0

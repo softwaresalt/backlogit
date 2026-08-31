@@ -411,3 +411,39 @@ placeholders in installed output.
 Verification: `doc-review/SKILL.md` reports `unchanged` in the checksum scan,
 markdownlint is clean, and `verify-workspace` holds at 0 blockers / 0 unresolved
 placeholders / 80 rendered with only the 2 known-false-positive warnings.
+
+## Phase 5 — P-018 enforcement restored (guardrail regression from Phase 3)
+
+Phase 3 replaced `github-pr-automation.instructions.md` with the upstream 1.5.0
+render. That replacement was correct as a merge, but it carried a **behavioural**
+change that the content diff did not flag as risky:
+
+| | Before (installed) | After (upstream 1.5.0) |
+|---|---|---|
+| §1.1 request review | mandatory | "optionally request ... during the migration period" |
+| §1.8 cycle limits | "Cycle limits do not clear the merge gate" — unresolved threads **always** merge-blocking | "do not make shadow review merge-blocking **by default**" — blocking only when P-018 is engaged |
+
+Under `copilot_review.enforcement: auto`, P-018 treats a PR with no Copilot
+engagement signal as `NOT_APPLICABLE` (PASS). Combined with review requests
+becoming optional, a PR could reach merge with unresolved review threads.
+
+Verified directly against the shipped gate rather than inferred from prose:
+
+```text
+enforcement=auto      -> NOT_APPLICABLE      PASS - merge allowed
+enforcement=required  -> WAITING_FOR_REVIEW  BLOCK - merge held
+```
+
+(synthetic `ReviewState`: Copilot never requested, two unresolved threads)
+
+**Resolution.** `.autoharness/workspace-profile.yaml`:
+
+* `copilot_review.enforcement`: `auto` -> `required` — forces `engaged = True`
+  regardless of per-PR signal, restoring the pre-merge strictness.
+* `copilot_review.max_wait_seconds`: `0` -> `900` — with `0` the gate returns
+  `WAITING_FOR_REVIEW` the instant a review has not yet landed; `900` matches the
+  15-minute review budget in §1.2 so the gate polls rather than halting.
+
+**Wedge risk assessed, not assumed.** `auto` exists to avoid waiting for a
+reviewer that never comes. Sampling PRs #394-#399 showed Copilot review present
+on every one (1, 7, 3, 1, 4, 4 reviews), so `required` cannot wedge this repo.
