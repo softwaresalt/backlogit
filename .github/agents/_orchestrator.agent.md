@@ -141,11 +141,33 @@ merge/fallback status, closure status, and follow-up items before
 
 **Preserved safety** (dark mode is NOT a waiver): P-001 single-release-unit
 completion, P-009 merge-commit-only, P-014 Copilot review merge gate, P-016
-no-parallel-branch/worktree, Stage/Ship role boundaries, local review readiness,
+no-parallel-branch/worktree, P-021 bounded fix-cycle scope containment,
+Stage/Ship role boundaries, local review readiness,
 and required post-merge closure all remain in force. Local review readiness is
 authoritative; do not merge with unresolved P0/P1 local findings.
 `READY_WITH_FOLLOWUPS` is allowed only with follow-up item IDs or explicit
 residual-risk notes.
+
+**P-021 non-bypass (see P-021's "Relationship to P-017" subsection)**: a
+`DARK_MODE_ACTIVE` activation record does not satisfy or waive P-021.
+`DARK_MODE_SCOPE` bounds which shipments run — it never authorizes expanding the
+scope of a shipment already in flight. When a deferred-expansion entry is
+captured during a dark run, the capture does NOT interrupt the run: the entry is
+captured (P-021 C2) and left for the next Stage triage cycle; it is never triaged
+or planned inside the dark run itself.
+
+**Multi-shipment ordered scope**: for a multi-shipment dark run,
+`DARK_MODE_SCOPE` MUST record the **ordered shipment sequence** and its restart
+cursor — the ordered list, the last completed shipment (none at activation), and
+the next shipment to claim (the first in the order) — derived at activation per
+P-017 and the **Shipment Sequencing Protocol** in
+`.github/instructions/backlogit.instructions.md`, by listing queued shipments and
+traversing their `blocks` edges in sequence order. Successors stay `queued` from
+creation; dependency edges, not status mutations, suppress them until their
+predecessor ships. Shipments support only `queued -> active`, `active -> shipped`,
+and `active -> abandoned` — there is no shipment `blocked` lifecycle. This cursor
+is what the Step 2 "Route to Ship" rule consumes; without it there is no next
+shipment ID for the first handoff.
 
 **Visibility events**: emit `DARK_MODE_START`, `DARK_MODE_SCOPE`,
 `BRAINSTORM_HANDOFF_READY` (when a brainstorm/requirements artifact is part of
@@ -225,7 +247,8 @@ Gather the full current backlog state:
    - Active Ship work: {shipment_id or none}
    - Queued shipments: {count}
    - Stash entries: {count}
-   - Mode: {sequential | pipelined}
+   - Mode: {sequential | pipelined | dark-factory}
+   - DARK_MODE_ACTIVE: {inactive | active(scope={ids})}
    ```
 
 When the `agent-intercom` capability pack is installed, broadcast the state summary.
@@ -283,8 +306,13 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
 
 **Skip if**: No queued shipments exist or all queued shipments are blocked by an in-flight active shipment in sequential mode.
 
-1. Select the highest-priority queued shipment.
-2. Enforce P-001: confirm no other top-level release unit is currently `Active` (unless pipelined mode is explicitly enabled).
+1. Select the next `queued` shipment by **queue ordering**, not priority alone:
+   * **First-pass candidate source**: list the `queued` shipments in the backlog tool's **execution/queue order** — queue position first, then priority. backlogit provides this directly as `queue view` (registry `get_queue`). A plain `backlogit_list_shipments` enumeration does **not** by itself guarantee queue-position order, so select with the queue-ordered operation, not a bare shipment list. See the **Shipment Sequencing Protocol** in `.github/instructions/backlogit.instructions.md` for the concrete recipe (`queue view`, `item_deps`, `queue_position`, `dep add --type blocks`). Treat this as an ordering aid and first filter — **not** the sole eligibility authority.
+   * **Constrain the candidate to the recorded scope**: in a multi-shipment dark run the candidate is the **next shipment ID in the P-017 `DARK_MODE_SCOPE` ordered cursor**, not merely the global queue head. If the queue head is a different, out-of-scope shipment, **halt** rather than substitute it — silently claiming another queue head violates P-017's no-silent-scope-expansion rule.
+   * **Re-check eligibility before claim (explicit, required)**: before claiming, run an explicit dependency + status re-check confirming the candidate has **no unshipped blocking predecessor**. Do not rely on the ready-work listing alone — a stale or non-filtering listing could surface a successor early. This honors the Queue and Dependency Protocol ("Re-check unfinished dependencies before claiming") in the backlogit instructions.
+   * **Precedence**: dependency (blocks) suppression is a **hard eligibility gate** — a `queued` shipment with an unshipped blocking predecessor is never eligible, regardless of its queue position; queue position only orders among the already-eligible shipments. When the two disagree, eligibility wins.
+   * **Scope-reconstruction caveat**: the ready-work listing selects the next **eligible** shipment only; it does not by itself reconstruct the full ordered sequence. Derive the complete ordered shipment list (the P-017 ordered scope and restart cursor) from queued shipments plus `blocks`-edge traversal — successors remain queued from creation and are suppressed by unfinished predecessors, not by a `blocked` shipment status filter.
+2. Enforce P-001/P-016: confirm no other top-level release unit is currently `Active` (unless pipelined mode is explicitly enabled), no previously merged shipment is still awaiting required post-merge release closure, and no prohibited parallel implementation branch/worktree exists before routing a shipment to Ship. Required post-merge context compaction (**P-020**) is part of that closure set: because a shipment is no longer `Active` after archival, read the previously merged shipment's **operational-closure artifact** in `docs/closure/` and route the next shipment only when its **compaction status** is `done` (or the non-blocking `degraded`); a `pending`, unset, or missing compaction status is an incomplete post-merge closure that blocks routing until compaction completes.
 3. **TOPOLOGY_GATE: pre_claim (route-to-Ship eligibility, before invocation)**: If the `pipeline-topology` gate is
    installed for this workspace, before invoking Ship in the next step, run
    `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`

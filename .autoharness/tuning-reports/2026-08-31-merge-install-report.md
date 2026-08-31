@@ -164,3 +164,112 @@ Unrelated in-flight work was left untouched: `.backlogit/` state,
 `test_rename.go`.
 
 Nothing was pushed, and no change was made to the default branch.
+
+---
+
+## Phase 2 — Stale-Artifact Remediation
+
+### Why a second pass was required
+
+Phase 1 diffed the template inventory against the workspace by **file
+existence**. That check cannot see an artifact that is present but **stale** —
+a file carrying the pre-1.5.0 body while the template has since gained new
+guardrail content. Every such artifact was silently reported as "already
+installed".
+
+The gap surfaced when the operator asked whether dark-mode installation was
+included. All four `feature-flow*` prompt shims existed, so Phase 1 had skipped
+them; a byte comparison showed `feature-flow-dark.prompt.md` was 1509 B against
+the template's 1966 B and was missing the entire **P-021 non-bypass clause**.
+
+**Methodology correction**: for merge-install, existence is not a sufficient
+test. Phase 2 re-ran the comparison on **content**.
+
+### Method
+
+* All 42 variable-free templates were compared byte-for-byte against their
+  installed counterparts. 8 diverged.
+* For each divergence, `Compare-Object` was used to inspect the
+  **installed-only** side. Zero installed-only lines means the installed file is
+  a strict subset of the template and can be replaced verbatim; installed-only
+  lines that are genuine workspace prose must be preserved.
+* Variable-bearing templates (agents, which the variable-free scan cannot
+  cover) were compared on **guardrail-marker coverage** — counting P-017
+  dark-mode and P-021 markers in template versus installed — and every shortfall
+  was spliced in by hand so workspace customizations survived.
+
+### Variable-free artifacts
+
+| Artifact | Verdict |
+|---|---|
+| `.github/prompts/feature-flow-dark.prompt.md` | **Replaced** — gained the P-021 non-bypass clause |
+| `.github/instructions/role-enforcement.instructions.md` | **Replaced** — gained the P-021 capture-only carve-out and the P-013.5 Skill-Delegation Model Inheritance section |
+| `.github/instructions/concurrency.instructions.md` | **Replaced** — gained the P-016 Branch and Worktree Boundary section |
+| `.github/instructions/capability-pack-enforcement.instructions.md` | Left as-is — template-only lines are all `graphtor-docs`, a pack this workspace deliberately excludes |
+| `.github/instructions/release-observability.instructions.md` | Left as-is — trailing-whitespace only, zero line differences |
+| `.github/instructions/backlogit.instructions.md` | Left as-is — installed is substantially larger and heavily customized |
+| `.github/skills/file-lock/SKILL.md` | Left as-is — `#` vs template `##` heading, the established P-008/MD041 convention here |
+| `.github/skills/skill-search/SKILL.md` | Left as-is — same heading convention |
+
+### Pipeline agents (variable-bearing, spliced not replaced)
+
+Marker coverage before remediation:
+
+| Agent | dark-mode (template/installed) | P-021 (template/installed) |
+|---|---|---|
+| `_stage.agent.md` | 0 / 0 | 7 / **0** |
+| `_ship.agent.md` | 8 / 8 | 9 / **8** |
+| `_orchestrator.agent.md` | 20 / **12** | 1 / 2 |
+
+Content added:
+
+* **`_stage.agent.md`** — P-021 was entirely absent. Added the Step 1
+  deferred-scope-expansion precedence classification (which forces the
+  `deliberate` route ahead of shape classification), the extended traceability
+  duty, the full **Deferred-Expansion Triage Obligations (P-021 C5/C6)**
+  subsection, the Step 1.5 grouping exclusion, and the Step 2
+  "Ready for planning" unavailability rule.
+* **`_ship.agent.md`** — added the P-021 C5 capture-only carve-out to the Role
+  Boundary Backlog row, the P-021 C4 review-fix-cycle-limit annotation, the
+  P-020 compaction-status initialization, and the dark-mode closure-summary
+  requirement.
+* **`_orchestrator.agent.md`** — added the P-021 non-bypass paragraph, the
+  multi-shipment **ordered `DARK_MODE_SCOPE` cursor** requirement, P-021 to the
+  preserved-safety list, the `dark-factory` mode plus `DARK_MODE_ACTIVE` line in
+  the session-state block, and the five Step 2 candidate-selection bullets
+  (queue ordering, dark-run scope constraint, dependency re-check, precedence,
+  scope-reconstruction caveat) that replaced a bare
+  "Select the highest-priority queued shipment".
+
+### A functional break this pass fixed
+
+Ship's Role Boundary forbade **all** stash operations, while P-021 C2/C5
+*requires* Ship to create capture-only stash entries for deferred scope
+expansions. The replaced `role-enforcement.instructions.md` applies fail-closed
+semantics — an unlisted state mutation is treated as forbidden — so Ship's own
+boundary table would have blocked the C2 capture the policy mandates. The
+carve-out now makes the allowance explicit.
+
+### Deviations from template text
+
+* The orchestrator's ordered-scope paragraph cites the **Shipment Sequencing
+  Protocol** in `.github/instructions/backlogit.instructions.md` rather than the
+  template's `docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`,
+  which does not exist in this workspace.
+* The Stage triage subsection cites `.github/policies/workflow-policies.md`
+  rather than the template's `templates/policies/workflow-policies.md.tmpl`
+  source path.
+
+### Verification
+
+* `markdownlint-cli2@0.23.1` over all 6 changed files — 0 issues.
+* Manifest checksums refreshed (LF-normalized SHA-256) for all 6.
+* `autoharness verify-workspace` — 0 strict-schema blockers, 0 blockers, 0
+  unresolved placeholders, 80 rendered, 2 known false-positive warnings, and the
+  1 known-defective `pipeline_topology_gate_ship_agent_wiring` FAIL. Identical
+  to the Phase 1 baseline: no regression.
+* All `P-021 C1`–`C6` clause labels referenced by the new agent text were
+  confirmed present in `.github/policies/workflow-policies.md`.
+
+Pre-edit copies of all 6 files are in
+`.autoharness/backups/2026-08-31/`.

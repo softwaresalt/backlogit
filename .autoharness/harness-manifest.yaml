@@ -182,7 +182,7 @@ artifacts:
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "81a7b997eefe10d15689479e169963ee4aa71e65cdd840940de7e0df7142aa78"
+    checksum: "e3a09c6ed5215be68bdb31344c6b3119147877e4a692349f58a464bb6b34d223"
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
@@ -234,7 +234,7 @@ artifacts:
   - path: ".github/instructions/role-enforcement.instructions.md"
     primitive: 5
     template: "templates/instructions/role-enforcement.instructions.md.tmpl"
-    checksum: "8b8699e88cd50c3d9912db898b3c81c04e1acda836cadc8fcec26210be3ee0ac"
+    checksum: "fd3af24626eeecda69699937a395f898017f592546156d45a76edf76013f2a85"
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
@@ -298,7 +298,7 @@ artifacts:
   - path: ".github/prompts/feature-flow-dark.prompt.md"
     primitive: 4
     template: "templates/prompts/feature-flow-dark.prompt.md.tmpl"
-    checksum: "2d62ce667f92a5c8a453a1e93ad68bf49681d4404b3ed980c30a840c3344186f"
+    checksum: "5dc67d3ad19127993568a5015b099fbd7fb94eb524fcdaf28afb5371248cf597"
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
@@ -314,15 +314,15 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "a79de90249f95b468c13833b8b9608c50db398581da216577b09bc03a78c3e2f"
+    checksum: "3394a1bdc2f12cfe42234eabbad42fdcfbad67c323e13a42f52254e0a6cb18cd"
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "2b1c590ac39043572e92e3a758be74d726ee731add3e945292285e93c5152a5d"
+    checksum: "31abc8457cda752412f1c15e4850174fd225256188625dc08fbe8a2f29f061cd"
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "4af768da7f49b905527e1e49a5b438e4898834bc60c3bf086685dcc41c8d82bd"
+    checksum: "c8f1c91060cbebbe8f44f90a1e48f56bb2169544d9aac51bf733522ac65c9dbd"
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -837,3 +837,13 @@ tuning_history:
       - ".github/workflows/ci.yml"
       - ".autoharness/harness-manifest.yaml"
       - ".autoharness/workspace-profile.yaml"
+  - at: "2026-08-31T12:00:00-07:00"
+    summary: "Merge-install Phase 2 (stale-artifact remediation). Phase 1 diffed by file existence, which cannot detect artifacts that are present but stale. Re-ran the comparison on content: byte-compared all 42 variable-free templates (8 diverged, 3 replaced), and compared the variable-bearing pipeline agents on P-017 dark-mode and P-021 guardrail-marker coverage, splicing every shortfall in by hand to preserve workspace customizations. Added the P-021 non-bypass clause to the dark-mode prompt shim; the P-021 capture-only carve-out and P-013.5 skill-delegation model inheritance to role-enforcement; the P-016 branch/worktree boundary to concurrency; the complete P-021 deferred-scope-expansion triage machinery to stage (previously absent entirely); the P-021 C5 Role Boundary carve-out, C4 cycle-limit annotation, P-020 compaction-status initialization and dark-mode closure-summary requirement to ship; and the P-021 non-bypass paragraph, ordered DARK_MODE_SCOPE cursor requirement, dark-factory session-state fields and five Step 2 candidate-selection bullets to orchestrator. Fixed a functional break where Ship's Role Boundary forbade all stash operations while P-021 C2/C5 requires Ship to create capture-only deferred-expansion entries."
+    artifacts:
+      - ".github/prompts/feature-flow-dark.prompt.md"
+      - ".github/instructions/role-enforcement.instructions.md"
+      - ".github/instructions/concurrency.instructions.md"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/agents/_orchestrator.agent.md"
+      - ".autoharness/harness-manifest.yaml"

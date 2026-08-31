@@ -36,7 +36,7 @@ Ship is an execution and delivery agent. Acting outside this boundary is a **P-0
 
 | Category | Allowed | Forbidden |
 |---|---|---|
-| Backlog | Claim shipments, move tasks to active/done, close shipments, archive completed items | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria), stash operations, triage, deliberate |
+| Backlog | Claim shipments, move tasks to active/done, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal) | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
 | Source code | Delegate reads and writes to build/fix skills | — |
 | Git | Create and checkout feature/chore branches, commit, push | Commit or push directly to `main` |
 | Build | Run build systems, test suites, linters, format checks | — |
@@ -1258,7 +1258,10 @@ branch-per-release-unit principle.
    e. Commit the backlog state in two separate terminal commands:
       `git add .backlogit/`
       `git commit -m "chore: archive {shipment_id} backlog artifacts"`
-2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`.
+2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
+   In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
+   merge/fallback status, admin fallback result if any, **compaction status (P-020)**,
+   closure status, and follow-up items before `DARK_MODE_COMPLETE` can be emitted.
 3. Evaluate whether documentation or compound learnings need updates for the shipped scope:
    * `docs/ARCHITECTURE.md` for structural changes
    * `AGENTS.md` for agent or skill changes
@@ -1301,6 +1304,8 @@ A merged PR does not complete the top-level release unit by itself. For P-001 pu
 | Fix-CI cycles              | 5     | Halt, leave PR for manual intervention             |
 | Review comment fix cycles  | 3     | Present PR with remaining unresolved comments listed for operator |
 | Session stalls             | 3     | Halt, write checkpoint, prompt operator            |
+
+**P-021 C4 annotation — Review-fix cycles per task**: Reaching the 3-cycle limit does not authorize expanding into an out-of-scope finding, and neither does an operator instruction to continue. The halt-and-prompt at the cycle limit is exactly where a same-cycle "go ahead" is most likely to be solicited; remaining out-of-scope findings are accepted as captured P-021 deferred entries (Step 4.4a), never as silently expanded fixes. Operator authorization at the limit can only open a SEPARATE work unit through P-021 C2 capture plus C6 Stage deliberation — it never makes the expansion in-scope for the cycle already in flight (P-021 C4).
 | Waves per release unit (P-002.6) | `count(M)` — the frozen task-type wave-member count | Halt with `WAVE_BUDGET_EXCEEDED`, write checkpoint, report the wave index and the residual census |
 | Consecutive empty waves (P-002.6) | 1 | Halt with `WAVE_NO_PROGRESS`, emit the deterministic blocked report, prompt operator |
 | Blocked members at wave admission (P-002.6) | 0 | Halt with `WAVE_MEMBER_BLOCKED`, emit the dependency-impact report, invoke/record `return_blocked` where applicable, prompt operator |
