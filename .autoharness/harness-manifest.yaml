@@ -369,8 +369,8 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "0512c3ea98f6b47d85541912ba80cc6ce8676ef4e9a446034d8b5b9227316443"
-    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY rendered EMPTY because config.yaml declares no model_routing.alt_doc_review block; this matches the already-installed adversarial-review.instructions.md convention. Configure model_routing.alt_doc_review to bind a concrete alternate model."
+    checksum: "9c399d4638d169ebe06651b133158dca2918d36cdc8a32def1f5592a0273ff2c"
+    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
     template: "templates/scripts/pre-commit-markdownlint.ps1.tmpl"
@@ -433,8 +433,8 @@ variables_used:
   # model_routing.alt_doc_review block, and the already-installed
   # adversarial-review.instructions.md uses the same empty-render convention.
   # Configure model_routing.alt_doc_review to bind a concrete alternate model.
-  ALT_DOC_REVIEW_PROVIDER: ""
-  ALT_DOC_REVIEW_FAMILY: ""
+  ALT_DOC_REVIEW_PROVIDER: "google"
+  ALT_DOC_REVIEW_FAMILY: "gemini-3.1-pro-preview"
   LINT_TOOL: "golangci-lint"
   FORMAT_TOOL: "gofmt"
   # Go has no distinct typecheck binary; `go vet ./...` is Gate 2 in AGENTS.md and
@@ -859,3 +859,9 @@ tuning_history:
       - ".github/instructions/circuit-breaker.instructions.md"
       - ".github/instructions/github-pr-automation.instructions.md"
       - ".autoharness/harness-manifest.yaml"
+  - at: "2026-08-31T11:10:00-07:00"
+    summary: "Operator-directed follow-ups. (1) P-016: removed 16 stale git worktrees (17 implementation worktrees against a limit of 1). 14 branches were already merged to origin/main; the 2 carrying unmerged commits (chore/134-s-closure daf1dd29, chore/cycle-24-remediation cd2ad50b) survive because worktree removal does not touch branch refs, and no branch was deleted. Uncommitted content from 6 worktrees (28 files) was preserved to the gitignored .autoharness/backups/worktree-preservation-2026-08-31/ with per-worktree STATUS.txt, git diff HEAD patch, verbatim untracked copies, and a restore README. git fsck clean; pipeline-topology gate now passes. (2) Bound model_routing.alt_doc_review to google / gemini-3.1-pro-preview - deliberately a third provider since tiers are Anthropic and escalation is OpenAI, maximizing cross-model diversity for the documentation review pass. Leaving it unset was not neutral: it rendered four broken fragments into doc-review/SKILL.md including the instruction step 'Read `` and ``'. Wiring required setting ALT_DOC_REVIEW_PROVIDER/ALT_DOC_REVIEW_FAMILY in variables_used as well as the config block, because _derive_template_variables seeds from the manifest rather than re-reading config; without it the staged render stays empty and the artifact shows perpetual false drift. Reinstalled the skill from the corrected render, re-applying the workspace's concrete 'backlogit add --type task --title <title>' over the template's unresolved {{artifact_type}}/{{title}}."
+    artifacts:
+      - ".autoharness/config.yaml"
+      - ".autoharness/harness-manifest.yaml"
+      - ".github/skills/doc-review/SKILL.md"

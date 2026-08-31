@@ -72,3 +72,12 @@ model_routing:
     model_family: "gpt-5.4"
     reasoning_effort: "high"
     model_provider: "openai"
+  alt_doc_review:
+    # Alternate route for the doc-review skill's review pass. Deliberately a
+    # third provider: the tiers are Anthropic and escalation is OpenAI, so
+    # routing documentation review to Google maximizes cross-model diversity —
+    # the review is least likely to share blind spots with whichever model
+    # authored the docs. Schema allows only these two keys (no
+    # reasoning_effort). Clearing either field falls back to Tier 2.
+    model_provider: "google"
+    model_family: "gemini-3.1-pro-preview"

@@ -340,3 +340,74 @@ equivalent step. Aligned to `backlogit_stash_archive`.
   known-defective FAIL. Process exit status improved from 1 to 0.
 * `go test ./tests/...` for `TestPluginBundleStructurallyValid` and
   `TestGitHubSpikeSkillFrontmatterMatchesPluginCopy` — pass.
+
+---
+
+## Phase 4 — Operator-Directed Follow-Ups
+
+### P-016 worktree topology (operator approved removal)
+
+The topology gate reported `MULTIPLE_IMPLEMENTATION_WORKTREES` with **17**
+implementation worktrees against a limit of one — more than the 9 first
+estimated, because `.copilot/worktrees/` held 8 in addition to the 9 under
+`.copilot/session-state/`.
+
+Audit before removal:
+
+* **14 branches** were fully merged into `origin/main`.
+* **2 branches** carried unmerged commits — `chore/134-s-closure` (`daf1dd29`)
+  and `chore/cycle-24-remediation` (`cd2ad50b`). Both survive removal untouched
+  because `git worktree remove` deletes only the working directory; branch refs
+  are unaffected. No branch was deleted.
+* **6 worktrees** held uncommitted work, and spot-checking showed those backlog
+  mutations were *not* mirrored in the main worktree — so they could not be
+  discarded as redundant.
+
+Everything uncommitted was therefore captured first to
+`.autoharness/backups/worktree-preservation-2026-08-31/` (gitignored): a
+`STATUS.txt`, a `git diff HEAD` patch, and verbatim copies of every untracked
+file per worktree, plus a `README.md` documenting the restore procedure. 28
+files preserved.
+
+All 16 extra worktrees were then removed, `git worktree prune` run, and the
+empty `.copilot/worktrees/` directory deleted. `git fsck` is clean and the
+topology gate now reports **pass**.
+
+The ~130 remaining directories under `.copilot/session-state/` are ordinary
+Copilot session artifacts, not worktrees. They were left untouched.
+
+### Alternate documentation-review route
+
+`model_routing.alt_doc_review` was unset, which was not a neutral no-op — it
+rendered four broken fragments into the installed `doc-review` skill, including
+the instruction step `1. Read `` and ``.` and the dangling
+`When `` / `` are set:`.
+
+Bound to **google / gemini-3.1-pro-preview**. Google is deliberately a *third*
+provider: the tiers are Anthropic and escalation is OpenAI, so routing the
+documentation review pass to Google maximizes cross-model diversity — the review
+is least likely to share blind spots with whichever model authored the docs.
+
+Wiring required two edits, because the verifier seeds its template variables
+from the manifest rather than re-reading the config:
+
+1. `.autoharness/config.yaml` — added the `model_routing.alt_doc_review` block
+   (validated against `harness-config.schema.json`; the schema permits only
+   `model_provider` and `model_family`, with `additionalProperties: false`).
+2. `.autoharness/harness-manifest.yaml` — set `ALT_DOC_REVIEW_PROVIDER` and
+   `ALT_DOC_REVIEW_FAMILY` under `variables_used`, which
+   `_derive_template_variables` reads. Without this the staged render stays
+   empty regardless of config, and the artifact would show perpetual false
+   drift on every future tune.
+
+The skill was then reinstalled from the corrected staging render. One workspace
+customization was re-applied by hand: the staged template regresses the
+follow-up command to `backlogit add --type {{artifact_type}} --title {{title}}`,
+whereas the workspace resolves it to the concrete
+`backlogit add --type task --title <title>`. Keeping the concrete form is also
+consistent with the doc-review skill's own P0 rule against unresolved
+placeholders in installed output.
+
+Verification: `doc-review/SKILL.md` reports `unchanged` in the checksum scan,
+markdownlint is clean, and `verify-workspace` holds at 0 blockers / 0 unresolved
+placeholders / 80 rendered with only the 2 known-false-positive warnings.
