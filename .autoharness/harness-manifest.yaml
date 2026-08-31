@@ -102,7 +102,7 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "02efc9abacda133d741314ac59a5d1d0b6387be0f11feebfe2035ecac90e3ebe"
+    checksum: "319dc97ccc8605ede2814326f0f16abe8752ed792b38ad29d892d135607d34d5"
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -114,7 +114,7 @@ artifacts:
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "44198df85c982783b39430b8a0f087cbfcd3521e896d7329bcdf9bd49dcd902c"
+    checksum: "e4b1b437cf9e97a0f45a670163d9f5688707d1ca2eabc5ed1a8315187d70fdae"
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
@@ -134,7 +134,7 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "ca1c2d1d55ed337dbec50460cd5e5a01d773668a69249fa3cf6844e961a44e4b"
+    checksum: "8428073c24585a3386a4767cafd21550355bd2688d2d1a1350182fdc23bcd363"
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
@@ -142,7 +142,7 @@ artifacts:
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
-    checksum: "ae768c39c1bb1ec9dffc40e189ee33aead436431b407b08f8aebcd8298d5132b"
+    checksum: "6666d37291be61b5a9f27ebd17090bb59e8a9c99f85384dde36281f55f8bb97d"
   - path: ".github/skills/compound-refresh/SKILL.md"
     primitive: 1
     template: "templates/skills/compound-refresh/SKILL.md.tmpl"
@@ -178,7 +178,7 @@ artifacts:
   - path: ".github/instructions/circuit-breaker.instructions.md"
     primitive: 6
     template: "templates/instructions/circuit-breaker.instructions.md.tmpl"
-    checksum: "27368b75943f6a57cbfe740017d43f9dba2242f74f2be0da55273acf16bf5a7d"
+    checksum: "5e0a6a43180edcabd37d7601adaafc04bf40337ddd2732769c9dcf81ac4d655e"
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
@@ -198,7 +198,7 @@ artifacts:
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "4615af9bdf5bda0a5663f68870a232a1ce0bfc170fd408a2fed30d8e64b8b037"
+    checksum: "98014e4f0b43f793a906611f800b503405b28a1cf07db3fa9d153bbe268d54b2"
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
@@ -230,7 +230,7 @@ artifacts:
   - path: ".github/instructions/context-efficiency.instructions.md"
     primitive: 1
     template: "templates/instructions/context-efficiency.instructions.md.tmpl"
-    checksum: "7ee9531b3ef7f31f497780230f7e40788904dd76d46c66df19c43b28c108d8fd"
+    checksum: "e90a66ebab83ff0b4d6cace14752866be83c26bff88813ef11dbb018e29e9c53"
   - path: ".github/instructions/role-enforcement.instructions.md"
     primitive: 5
     template: "templates/instructions/role-enforcement.instructions.md.tmpl"
@@ -238,7 +238,7 @@ artifacts:
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "0b53cbcadf40591a84b12c6ab625ad4a5da263113bbce7fa1a39d720f7390421"
+    checksum: "58ac08af1ecf2d18abe66b17a450b7498fc1ce47eb91f1dba8e2f5114e19e563"
   - path: ".github/instructions/continuous-learning.instructions.md"
     primitive: 1
     template: "templates/instructions/continuous-learning.instructions.md.tmpl"
@@ -846,4 +846,16 @@ tuning_history:
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_orchestrator.agent.md"
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-08-31T13:30:00-07:00"
+    summary: "Merge-install Phase 3 (full content sweep). Applied the corrected content-based methodology to all 80 manifest artifacts by diffing each against its fully-rendered staging copy, which covers variable-bearing templates. Closed 6 policy-reference gaps: replaced circuit-breaker (149->412 lines, gained cooldown-delay and same-operation-identity sections), github-pr-automation (570->802 lines, gained shell-safe comment construction, local readiness record and advisory bot identity; Copilot bot identity preserved through the upstream Shadow Review rename), context-efficiency and plan-harden; spliced P-020 compaction into AGENTS.md and the operational-closure skill. Inserted missing policies P-013.5 (Invocation-Time Model-Routing Enforcement) and P-013.6 (Telemetry-driven Auto-escalation Protocol), whose absence left every reference in escalation-protocol.instructions.md dangling. Expanded the review skill's dark-mode readiness bullets. Aligned operational-closure to backlogit_stash_archive over the deprecated backlogit_stash_remove. Post-sweep re-scan reports 0 artifacts missing policy references."
+    artifacts:
+      - "AGENTS.md"
+      - ".github/policies/workflow-policies.md"
+      - ".github/skills/review/SKILL.md"
+      - ".github/skills/operational-closure/SKILL.md"
+      - ".github/skills/plan-harden/SKILL.md"
+      - ".github/instructions/context-efficiency.instructions.md"
+      - ".github/instructions/circuit-breaker.instructions.md"
+      - ".github/instructions/github-pr-automation.instructions.md"
       - ".autoharness/harness-manifest.yaml"

@@ -20,6 +20,8 @@ Invoke when a feature, fix, or risky change is ready to hand off into merge, dep
 
 * Closure artifact at `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`
 * Explicit go/no-go or ready/blocked recommendation
+* Structured releasability evidence summarizing whether the change is `READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`
+* A **compaction status** field (`pending` → `done` / `degraded`) recording P-020 post-merge context compaction state
 * Follow-up tasks or compound-learnings triggers when needed
 
 ## Required Protocol
@@ -75,6 +77,8 @@ The closure artifact MUST include:
 * **Rollback procedure** — the actual rollback or mitigation action to take when the trigger fires
 * **Validation window** — how long the change should be watched
 * **Owner** — who is responsible for observing or acting
+* **Compaction status (P-020)** — the post-merge context compaction state, one of `pending`, `done`, or `degraded`. operational-closure initializes this field to `pending` when it creates the closure artifact; the Ship post-merge closure finalizes it to `done` after compact-context completes, or `degraded` if compact-context was invoked but failed (non-blocking). Allowed transitions are `pending` → `done` and `pending` → `degraded` only. The Orchestrator's next-shipment routing (P-001 + P-020) treats `pending`, unset, or missing as an incomplete post-merge closure that blocks routing, and `done` or `degraded` as satisfied.
+* **Releasability evidence** — the final structured record showing which required evidence from `runtime_validation.releasability` is satisfied, conditional, or still blocked
 
 ### Step 3: Record Readiness Status
 
@@ -100,7 +104,8 @@ shipped scope stays traceable instead of heuristically searching for "stale" ite
 
 * For each shipped top-level item (feature or chore) in scope, read
   `custom_fields.source_stash_id`. If present, retire the source stash entry via
-  `backlogit_stash_remove` (skip and log if it is already removed).
+  `backlogit_stash_archive` (preferred over the deprecated `backlogit_stash_remove` —
+  archiving preserves traceability; skip and log if it is already archived).
 * For each shipped top-level item in scope, read `custom_fields.source_deliberation_id`.
   If present and the deliberation artifact exists and is not already archived, archive
   it via `backlogit_archive_item` (skip and log if already archived or not found).

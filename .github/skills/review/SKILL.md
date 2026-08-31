@@ -121,9 +121,16 @@ The readiness summary must include:
 * whether runtime verification follow-up is required
 
 When `DARK_MODE_ACTIVE` is present under P-017, this local review record is the
-authoritative merge-readiness signal: unresolved P0/P1 findings always produce
-`BLOCKED`; hosted Copilot/GitHub review cannot replace it; and the reviewed HEAD
-SHA must be current when the PR readiness block is written.
+authoritative merge-readiness signal:
+
+* unresolved P0/P1 findings always produce `BLOCKED`
+* `READY_WITH_FOLLOWUPS` must include concrete follow-up item IDs or explicit
+  residual-risk notes
+* hosted Copilot/GitHub review cannot replace this local review record
+* advisory shadow-review comments are follow-ups by default unless the operator
+  or policy explicitly elevates them to blocking status
+* the reviewed HEAD SHA or equivalent diff identity must be current when the PR
+  readiness block is written
 
 ## Reviewer Personas
 

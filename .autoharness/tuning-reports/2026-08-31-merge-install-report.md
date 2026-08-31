@@ -273,3 +273,70 @@ carve-out now makes the allowance explicit.
 
 Pre-edit copies of all 6 files are in
 `.autoharness/backups/2026-08-31/`.
+
+---
+
+## Phase 3 — Full Content Sweep
+
+Phase 2 fixed the artifacts the operator's dark-mode question pointed at, but it
+still only examined variable-free templates plus the three pipeline agents. The
+methodology was then applied to **every** installed artifact.
+
+### Method
+
+`autoharness verify-workspace` stages a fully-rendered copy of each template
+under `.autoharness/staging/` using this workspace's own profile. That render is
+the exact "what 1.5.0 would install here" baseline, so installed artifacts were
+diffed against it directly — this covers variable-bearing templates that a raw
+template comparison cannot.
+
+Two sweeps were run over the manifest's 80 artifacts:
+
+1. **Policy-reference coverage** — every `P-0NN` identifier present in the
+   rendered template but absent from the installed file.
+2. **Section coverage** — every heading present in the render but absent from
+   the installed file.
+
+### Policy-reference gaps (6 found, all closed)
+
+| Artifact | Missing | Action |
+|---|---|---|
+| `.github/instructions/circuit-breaker.instructions.md` | P-021 | Replaced — installed was 149 lines against 412; gained *Same-Operation Identity and Hidden Details*, *Counted Diagnostic Transport*, *Cooldown Delay (No Auto-Reset)*, and *Frontmatter YAML-Safety Regression Cases*. All installed-only lines were older wordings, not customizations. |
+| `.github/instructions/github-pr-automation.instructions.md` | P-018, P-021 | Replaced — 570 lines against 802; gained *Shell-Safe Comment Body Construction*, *Local Readiness Record*, *Local Review Readiness*, and *Advisory Bot Identity*. Upstream generalized "Copilot Review" to "Shadow Review", but all 62 Copilot references and the concrete `copilot-pull-request-reviewer` bot identity survive the rename, so GitHub-specific mechanics are unchanged. |
+| `.github/instructions/context-efficiency.instructions.md` | P-020 | Replaced — strict subset (zero installed-only lines). |
+| `.github/skills/plan-harden/SKILL.md` | P-012 | Replaced — gained review-gate capability risks and `dispatch_mode:` / `decision:` marker carry-forward. `#` h1 preserved. |
+| `AGENTS.md` | P-020 | Spliced — post-merge compaction added to the dark-factory contract and to *Closure before forgetfulness*. |
+| `.github/skills/operational-closure/SKILL.md` | P-001, P-020 | Spliced — added the compaction-status field and releasability-evidence outputs. The workspace-only *Source Artifact Cleanup (backlogit)* section was preserved. |
+
+### Section gaps
+
+Most heading differences were benign — renamed headings, or the `graphtor-docs`
+sections for a pack this workspace excludes. Two were real:
+
+* **`.github/policies/workflow-policies.md`** was missing **P-013.5
+  (Invocation-Time Model-Routing Enforcement)** and **P-013.6 (Telemetry-driven
+  Auto-escalation Protocol)** — it stopped at P-013.4. This mattered because the
+  installed `escalation-protocol.instructions.md` cites both policies
+  extensively, so every one of those references was dangling. Both were inserted
+  ahead of P-014.
+* **`.github/skills/review/SKILL.md`** carried a condensed dark-mode readiness
+  paragraph missing two bullets: the `READY_WITH_FOLLOWUPS` follow-up-ID
+  requirement, and the rule that advisory shadow-review comments are follow-ups
+  by default unless explicitly elevated. Expanded to the full upstream list.
+
+### Incidental consistency fix
+
+`operational-closure/SKILL.md` called `backlogit_stash_remove`, which the
+backlogit instructions deprecate and the ship agent already avoids in the
+equivalent step. Aligned to `backlogit_stash_archive`.
+
+### Verification
+
+* Post-sweep re-scan: **0 artifacts** missing policy references.
+* `markdownlint-cli2@0.23.1` over all 8 changed files — 0 issues.
+* Manifest checksums refreshed for all 8.
+* `autoharness verify-workspace` — 0 strict-schema blockers, 0 blockers, 0
+  unresolved placeholders, 80 rendered, 2 known false-positive warnings, 1
+  known-defective FAIL. Process exit status improved from 1 to 0.
+* `go test ./tests/...` for `TestPluginBundleStructurallyValid` and
+  `TestGitHubSpikeSkillFrontmatterMatchesPluginCopy` — pass.
