@@ -30,6 +30,7 @@ backlogit.db
 .backlogit/backlogit.db
 .backlogit/backlogit.db-shm
 .backlogit/backlogit.db-wal
+.backlogit/review/
 
 # Runtime state (per-consumer checkpoints, not committed)
 .backlogit/runtime/
@@ -52,6 +53,9 @@ prompt.md
 !.engram/config.toml
 !.engram/registry.yaml
 
-# graphtor-docs — managed by graphtor-docs install
-.graphtor/
+# graphtor-docs — managed by graphtor-docs install (keep config/sources.yaml)
+.graphtor/*
+!.graphtor/config/
+.graphtor/config/*
+!.graphtor/config/sources.yaml
 diff.txt

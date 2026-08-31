@@ -12,6 +12,8 @@ capability_packs:
   - agent-engram
   - adversarial-review
   - release-observability
+  - continuous-learning
+  - graphtor-docs
 capability_pack_overlays:
   - pack: backlogit
     overlay_targets:
@@ -71,6 +73,27 @@ capability_pack_overlays:
       - operational-closure integration
     verification_checks:
       - "release-observability.instructions.md exists in .github/instructions/"
+  - pack: continuous-learning
+    overlay_targets:
+      - continuous-learning instruction file
+      - foundation guidance docs
+      - continuous-learning state directory
+    verification_checks:
+      - "continuous-learning.instructions.md exists in .github/instructions/"
+      - "Instruction file documents observe, learn, and evolve operations"
+      - "State directories exist under .autoharness/continuous-learning/"
+  - pack: graphtor-docs
+    overlay_targets:
+      - graphtor-docs instruction file
+      - capability-pack-enforcement routing and deferral blocks
+      - foundation guidance docs
+      - constitution capability overlay
+      - pipeline agents (stage, ship)
+    verification_checks:
+      - "graphtor-docs.instructions.md exists in .github/instructions/"
+      - "Instruction file documents all eight graphtor-docs MCP tools"
+      - "Stage and Ship agents reference graphtor-docs.instructions.md"
+      - "capability-pack-enforcement routes and deferral blocks include graphtor-docs"
 primitives_installed:
   - 1
   - 2
@@ -134,11 +157,11 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "8428073c24585a3386a4767cafd21550355bd2688d2d1a1350182fdc23bcd363"
+    checksum: "8324ef652eb56a4fac0f24799eac74325821a4c4cc318ad6c2d493ee59bed320"
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "e2870f01a40549e26d6c883d87bc502ca077174662fb1ea6b29da6f9968b9c13"
+    checksum: "9b95e280ceb8f45ac3b92f249ff3748256af21fc71db2fc1d4228281ededdd9f"
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
@@ -167,6 +190,14 @@ artifacts:
     primitive: 6
     template: "templates/instructions/agent-engram.instructions.md.tmpl"
     checksum: "a3f0fd41709651834e56edf89b24335ca5f56b8cfa3d798df70babb1380c61f4"
+  - path: ".github/instructions/graphtor-docs.instructions.md"
+    primitive: 6
+    template: "templates/instructions/graphtor-docs.instructions.md.tmpl"
+    checksum: "4ac8ea3d32fabc6a96e875fe3b9afa4bac8e517221d3f2ab2b716481c9318020"
+  - path: ".github/instructions/constitution.instructions.md"
+    primitive: 1
+    template: "templates/foundation/constitution.instructions.md.tmpl"
+    checksum: "8e49985ac156432a7c637c1849992a919a9938f7e17c22237cdeeed246c4cdcd"
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
@@ -242,7 +273,7 @@ artifacts:
   - path: ".github/instructions/continuous-learning.instructions.md"
     primitive: 1
     template: "templates/instructions/continuous-learning.instructions.md.tmpl"
-    checksum: "e60f2521574db6b9362972a8a8c10bb9ed378ec269d384a50c1cfcd255b1c8a3"
+    checksum: "eebc47441cd4b7a5ce6df8fc9cf376962e21ee768f5e11f5458dd7d5aeb50e6c"
   - path: ".github/instructions/technology.instructions.md"
     primitive: 6
     template: "templates/instructions/technology.instructions.md.tmpl"
@@ -330,7 +361,7 @@ artifacts:
   - path: ".github/instructions/capability-pack-enforcement.instructions.md"
     primitive: 6
     template: "templates/instructions/capability-pack-enforcement.instructions.md.tmpl"
-    checksum: "db79cbe1e21c00c965daf3a8382a6aed41c0dcf4de1daf879f74ef6fdbce33b4"
+    checksum: "57ee627109e698d9fb3117606dcdab2b1c85b546599d8fd889aa8a2c7984ccdc"
   - path: ".github/instructions/escalation-protocol.instructions.md"
     primitive: 1
     template: "templates/instructions/escalation-protocol.instructions.md.tmpl"
@@ -450,7 +481,17 @@ variables_used:
   PACK_REGISTRY_PATH: "templates/packs/capability-pack-registry.yaml"
   COPILOT_EXE_PATH: "copilot"
   INSTALL_PRESET: "full"
-  CAPABILITY_PACKS: "backlogit,strict-safety,agent-engram,adversarial-review,release-observability"
+  CAPABILITY_PACKS: "backlogit,strict-safety,agent-engram,adversarial-review,release-observability,continuous-learning,graphtor-docs"
+  # --- Added 2026-08-31 (continuous-learning + graphtor-docs pack enablement) ---
+  # CONTINUOUS_LEARNING_* resolve from config.yaml `continuous_learning`.
+  # GRAPHTOR_* resolve from workspace-profile.yaml `graphtor_docs`.
+  # Values match exactly what was rendered into the installed instruction files.
+  CONTINUOUS_LEARNING_DIR: ".autoharness/continuous-learning"
+  CONTINUOUS_LEARNING_CAPTURE_HOOKS: "false"
+  CONTINUOUS_LEARNING_ENVIRONMENT_ADAPTER: "none"
+  CONTINUOUS_LEARNING_PROMOTION_THRESHOLD: "5"
+  GRAPHTOR_SOURCES_PATH: ".graphtor/config/sources.yaml"
+  GRAPHTOR_BINARY_PATH: ".graphtor/bin/graphtor-docs.exe"
   BACKLOG_TOOL_NAME: "backlogit"
   BACKLOG_DIRECTORY: ".backlogit"
   PREFIX_FEATURE: "F"
@@ -865,3 +906,18 @@ tuning_history:
       - ".autoharness/config.yaml"
       - ".autoharness/harness-manifest.yaml"
       - ".github/skills/doc-review/SKILL.md"
+  - at: "2026-08-31T21:15:00-07:00"
+    summary: "Operator-directed capability-pack enablement: continuous-learning and graphtor-docs (both previously excluded). Enabled both in config.yaml capability_packs and added the continuous_learning block (directory .autoharness/continuous-learning, capture_hooks false, environment_adapter none, promotion_threshold 5, matching the already-installed instruction) and the graphtor_docs block; both validate against the config JSON schema. Added matching graphtor_docs and continuous_learning blocks to workspace-profile.yaml because the two variable families resolve from different sources: CONTINUOUS_LEARNING_* from config.yaml but GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH from the profile via _resolve_graphtor_*. Installed the new .github/instructions/graphtor-docs.instructions.md (all eight MCP tools present) and re-rendered continuous-learning.instructions.md to schema-accurate capture_hooks/environment_adapter values, splicing the previously-installed capture trigger list back in as an explicit manual-capture section rather than discarding it. Expanded BOTH the capability-pack-routes and capability-pack-deferral blocks in capability-pack-enforcement.instructions.md together and removed the now-false note claiming graphtor-docs is not installed. Added the graphtor-docs capability overlay to AGENTS.md (plus the agent-engram + graphtor-docs interaction-rules row), .github/copilot-instructions.md, and constitution.instructions.md (the constitution template carries a graphtor overlay that had been skipped while the pack was disabled). Stage/Ship graphtor weaving already satisfied the assertion. Registered graphtor-docs in .mcp.json (graphtor-docs serve --config ${workspace_folder}/.graphtor/config/sources.yaml) - its absence there, not the harness, is why the pack had no reachable tool surface. Corrected .gitignore so .graphtor/config/sources.yaml is shareable instead of machine-local; the pre-existing .engram/ negation pattern is silently broken for the same reason (git cannot re-include a file under an excluded directory) and .engram/registry.yaml is consequently untracked - left as-is, out of scope. Populated the source registry with the repository docs/ corpus, excluding archive/ and memory/ to mirror `backlogit docs scope`. KNOWN LIMITATION: the index is still empty. graphtor-docs enforces a docline v1 contract requiring source_path, but backlogit's schemas/docline/base-frontmatter-v1.schema.json requires only title/source/ingested_at/doc_type and treats source_path as optional - zero files in the repo populate it, so all 932 files fail ingestion. graphtor-docs sync exposes no lenient mode. Agents therefore take the documented not-indexed fallback path in graphtor-docs.instructions.md. Closing that gap needs a deliberate docline migration across ~900 docs and was NOT performed here. Registered the previously untracked constitution.instructions.md as a manifest artifact so future tunes can detect drift on it, refreshed LF-normalized SHA-256 checksums for every changed artifact, updated the stale CAPABILITY_PACKS variable (manifest seeds variable derivation ahead of config, so leaving it would have regressed future renders), and added CONTINUOUS_LEARNING_*/GRAPHTOR_* bindings."
+    artifacts:
+      - ".autoharness/config.yaml"
+      - ".autoharness/workspace-profile.yaml"
+      - ".autoharness/harness-manifest.yaml"
+      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".github/instructions/continuous-learning.instructions.md"
+      - ".github/instructions/capability-pack-enforcement.instructions.md"
+      - ".github/instructions/constitution.instructions.md"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".mcp.json"
+      - ".gitignore"
+      - ".graphtor/config/sources.yaml"

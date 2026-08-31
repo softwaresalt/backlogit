@@ -6,6 +6,8 @@ capability_packs:
   - agent-engram
   - adversarial-review
   - release-observability
+  - continuous-learning
+  - graphtor-docs
 backlog:
   tool: backlogit
   directory: .backlogit
@@ -81,3 +83,25 @@ model_routing:
     # reasoning_effort). Clearing either field falls back to Tier 2.
     model_provider: "google"
     model_family: "gemini-3.1-pro-preview"
+
+# Continuous-learning capability pack. Observations/instincts/learned artifacts
+# live under .autoharness/ alongside the rest of the harness-managed state.
+continuous_learning:
+  directory: .autoharness/continuous-learning
+  # Hook capture stays off: this workspace has no installed capture adapter, and
+  # the pack explicitly supports manual capture through review findings, closure
+  # artifacts, and memory files instead.
+  capture_hooks: false
+  environment_adapter: none
+  # 5 (not the default 3) to match the promotion threshold already documented in
+  # .github/instructions/continuous-learning.instructions.md.
+  promotion_threshold: 5
+
+# Graphtor-docs capability pack. Indexed local documentation retrieval via the
+# graphtor-docs MCP server. binary_path/embed_model_dir stay null so the binary
+# resolves from PATH then .graphtor/bin/, and the embedding model defaults to
+# .graphtor/models/all-MiniLM-L6-v2.
+graphtor_docs:
+  sources_path: .graphtor/config/sources.yaml
+  binary_path: null
+  embed_model_dir: null

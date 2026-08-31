@@ -1,0 +1,43 @@
+# graphtor-docs sources.yaml
+# Documentation source registry. Add sources below to index them.
+# Run `graphtor-docs sync` to ingest all sources.
+#
+# Supported source types:
+#   git   — shallow-clone a Git repository
+#   local — scan a local directory
+
+sources:
+  # Durable repository knowledge: design docs, product specs, decisions,
+  # compound learnings, references, and closure records. This is the corpus the
+  # capability-pack routing table sends documentation / domain / business-context
+  # questions to (see .github/instructions/capability-pack-enforcement.instructions.md).
+  - id: backlogit-docs
+    type: local
+    path: docs
+    include:
+      - "**/*.md"
+    # Mirrors the repository docline scope (`backlogit docs scope`), which
+    # excludes archive/ and memory/ from the tracked documentation corpus.
+    exclude:
+      - "**/archive/**"
+      - "**/memory/**"
+      - "**/scratch/**"
+
+# Example Git source:
+# sources:
+#   - id: azure-docs
+#     type: git
+#     url: https://github.com/MicrosoftDocs/azure-docs.git
+#     branch: main
+#     include:
+#       - "**/*.md"
+#     exclude:
+#       - "**/node_modules/**"
+
+# Example local source:
+# sources:
+#   - id: my-internal-docs
+#     type: local
+#     path: /absolute/or/relative/path/to/docs
+#     include:
+#       - "**/*.md"

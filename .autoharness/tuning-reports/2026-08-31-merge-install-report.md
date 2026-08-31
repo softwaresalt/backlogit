@@ -447,3 +447,88 @@ enforcement=required  -> WAITING_FOR_REVIEW  BLOCK - merge held
 **Wedge risk assessed, not assumed.** `auto` exists to avoid waiting for a
 reviewer that never comes. Sampling PRs #394-#399 showed Copilot review present
 on every one (1, 7, 3, 1, 4, 4 reviews), so `required` cannot wedge this repo.
+
+## Phase 6 — Capability pack enablement: continuous-learning + graphtor-docs
+
+Operator direction: both packs are "absolutely needed". Both were absent from
+`capability_packs`.
+
+### Why they were excluded
+
+`continuous-learning` had its instruction file installed but the pack was never
+enabled, so its state directory and manifest overlay were missing.
+
+`graphtor-docs` is the more interesting case. The tooling is fully provisioned —
+`.graphtor/bin/graphtor-docs.exe` (34.5 MB) and `.graphtor/config/sources.yaml`
+both exist, and the binary exposes all eight required MCP tools. But the server
+was **not registered in `.mcp.json`** and the source registry was empty
+(`sources: []`). The pack had no reachable tool surface and nothing indexed, so
+enabling it would only have produced the `TOOL_DEGRADED` state its own
+instructions warn about. The gap was in workspace wiring, not in the harness.
+
+### What was installed
+
+| Surface | Change |
+|---|---|
+| `config.yaml` | Both packs enabled; `continuous_learning` and `graphtor_docs` blocks added (schema-validated) |
+| `workspace-profile.yaml` | Matching pack blocks — `GRAPHTOR_*` resolves from the **profile**, `CONTINUOUS_LEARNING_*` from **config** |
+| `graphtor-docs.instructions.md` | New; all eight MCP tools present |
+| `continuous-learning.instructions.md` | Re-rendered to schema-accurate values, capture-trigger list preserved as manual-capture guidance |
+| `capability-pack-enforcement.instructions.md` | Routes **and** deferral blocks expanded together; stale "not installed here" note removed |
+| `AGENTS.md` | graphtor overlay + `agent-engram + graphtor-docs` interaction row |
+| `copilot-instructions.md` | graphtor overlay |
+| `constitution.instructions.md` | graphtor overlay (template carried one; it was skipped while the pack was disabled) |
+| `.mcp.json` | `graphtor-docs serve` registered |
+| `.gitignore` | `.graphtor/config/sources.yaml` made shareable |
+
+`_stage` / `_ship` graphtor weaving already satisfied the assertion.
+
+Verification: 0 blockers, 0 strict schema blockers, 0 unresolved placeholders,
+82 rendered artifacts, 71 targeted checks with 0 failures (up from 67 — the four
+new checks are `continuous_learning_instruction`, `graphtor_docs_instruction`,
+`graphtor_docs_stage_weaving`, `graphtor_docs_ship_weaving`).
+
+### Two traps avoided
+
+**Manifest wins over config.** `_derive_template_variables` seeds from
+`manifest["variables_used"]` first and only then applies `setdefault` from
+config. `CAPABILITY_PACKS` still listed the old five packs; leaving it would have
+regressed every future render. Same lesson as the `alt_doc_review` binding in
+Phase 4.
+
+**The `.engram/` negation pattern is silently broken.** `.gitignore` contains
+`.engram/` followed by `!.engram/registry.yaml`, but git cannot re-include a file
+whose parent directory is excluded — `.engram/registry.yaml` is consequently
+untracked. The graphtor entry uses a working pattern instead
+(`.graphtor/*` + `!.graphtor/config/` + `.graphtor/config/*` +
+`!.graphtor/config/sources.yaml`), verified with `git add --dry-run`: the config
+is addable, the 34.5 MB binary is refused. The `.engram/` defect is pre-existing
+and was left alone.
+
+### KNOWN LIMITATION — the graphtor index is empty
+
+`graphtor-docs sync` failed on **all 932** files. The cause is a contract
+mismatch between producer and consumer:
+
+* backlogit's `schemas/docline/base-frontmatter-v1.schema.json` requires
+  `title`, `source`, `ingested_at`, `doc_type` and treats `source_path` as
+  **optional**.
+* graphtor-docs requires `source_path` and rejects it when empty.
+* **Zero** files in the repository populate `source_path`.
+
+`backlogit docs lint` reports the in-scope corpus as essentially clean (3
+violations in 1 file), so this is not a docs-quality problem — it is a field
+mismatch across two docline versions. `graphtor-docs sync` exposes no lenient
+mode.
+
+Consequence: agents take the documented not-indexed fallback path in
+`graphtor-docs.instructions.md` ("fall back to grep, glob, or direct file
+reading and note reduced confidence"). This is handled, documented behavior
+rather than a silent failure — but the pack delivers no retrieval benefit until
+the corpus is migrated.
+
+Closing it requires adding `source_path` frontmatter across roughly 900
+documents. That is a deliberate, high-blast-radius migration — and the subject
+of an existing decision doc on the docline base/extension seam — so it was
+**not** performed as part of pack enablement. It needs an explicit operator
+decision.

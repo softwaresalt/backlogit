@@ -524,6 +524,28 @@ drift_report:
       description: "Refreshed LF-normalized SHA-256 checksums for the seven managed artifacts changed in the final remediation cycle. Post-cycle audit: 64 tracked artifacts, 46 LF-normalized matches, 0 raw-byte matches, 18 pre-existing stale entries deliberately untouched (down from 19 because workflow-policies.md was refreshed with its P-018..P-021 merge)."
       affected_artifacts:
         - ".autoharness/harness-manifest.yaml"
+    - category: "growth"
+      description: "Enabled the continuous-learning and graphtor-docs capability packs at operator direction. Added config.yaml continuous_learning and graphtor_docs blocks plus matching profile blocks, because CONTINUOUS_LEARNING_* resolve from config.yaml while GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH resolve from this profile via _resolve_graphtor_*. Installed graphtor-docs.instructions.md (all eight MCP tools), re-rendered continuous-learning.instructions.md to schema-accurate values while preserving its capture-trigger list as an explicit manual-capture section, expanded both the routes and deferral blocks in capability-pack-enforcement.instructions.md together, and added the graphtor overlay to AGENTS.md, copilot-instructions.md, and constitution.instructions.md."
+      affected_artifacts:
+        - ".autoharness/config.yaml"
+        - ".autoharness/workspace-profile.yaml"
+        - ".github/instructions/graphtor-docs.instructions.md"
+        - ".github/instructions/continuous-learning.instructions.md"
+        - ".github/instructions/capability-pack-enforcement.instructions.md"
+        - ".github/instructions/constitution.instructions.md"
+        - "AGENTS.md"
+        - ".github/copilot-instructions.md"
+    - category: "growth"
+      description: "Registered graphtor-docs in .mcp.json and made .graphtor/config/sources.yaml shareable in .gitignore. The pack's absence from .mcp.json - not any harness gap - is why it had no reachable tool surface. Note the pre-existing .engram/ negation pattern is silently broken for the same reason git cannot re-include a file under an excluded directory, leaving .engram/registry.yaml untracked; left as-is, out of scope."
+      affected_artifacts:
+        - ".mcp.json"
+        - ".gitignore"
+        - ".graphtor/config/sources.yaml"
+    - category: "degrading"
+      description: "KNOWN LIMITATION - the graphtor-docs index is empty. graphtor-docs enforces a docline v1 contract requiring source_path, but schemas/docline/base-frontmatter-v1.schema.json requires only title/source/ingested_at/doc_type and treats source_path as optional; zero repository files populate it, so all 932 docs files fail ingestion and `graphtor-docs sync` exposes no lenient mode. Agents take the documented not-indexed fallback path in graphtor-docs.instructions.md. Closing the gap requires a deliberate docline migration across roughly 900 documents and was not performed as part of pack enablement."
+      affected_artifacts:
+        - ".graphtor/config/sources.yaml"
+        - ".github/instructions/graphtor-docs.instructions.md"
   checksum_scan:
     manifest_present: true
     ignore_file: ".autoharness/drift-ignore"
@@ -598,11 +620,12 @@ runtime_validation:
         required: false
 
 # P-018 Copilot review completion & thread-resolution merge gate configuration.
-# Consumed by Ship Step 5 item 7c and the pr-lifecycle skill. `enforcement: auto`
-# treats a Copilot review request or an existing Copilot review as engagement, so a
-# PR with no Copilot engagement signal resolves NOT_APPLICABLE rather than wedging.
-# `max_wait_seconds: 0` means do not wait for an engaged reviewer; on expiry the gate
-# emits REVIEW_TIMEOUT and still BLOCKS (only an audited --force overrides a BLOCK).
+# Consumed by Ship Step 5 item 7c and the pr-lifecycle skill. `enforcement: required`
+# forces the gate on regardless of per-PR engagement signal (under `auto` a PR with no
+# Copilot engagement resolves NOT_APPLICABLE and would not hold the merge).
+# `max_wait_seconds: 900` bounds how long the gate polls for an engaged reviewer to
+# complete for the current HEAD; on expiry it emits REVIEW_TIMEOUT and still BLOCKS
+# (only an audited --force overrides a BLOCK).
 copilot_review:
   # `required` (not the `auto` default) because upstream 1.5.0 made shadow review
   # non-blocking by default and made requesting Copilot review optional. Under
@@ -615,6 +638,27 @@ copilot_review:
   # a review has not landed yet. 900s matches the 15-minute Copilot review budget
   # documented in github-pr-automation.instructions.md §1.2.
   max_wait_seconds: 900      # integer >= 0
+
+# Graphtor-docs capability pack (enabled 2026-08-31). `_resolve_graphtor_sources_path`
+# and `_resolve_graphtor_binary_path` in verify_workspace.py read these from the
+# PROFILE (not config.yaml), so they are declared here to pin the rendered
+# GRAPHTOR_SOURCES_PATH / GRAPHTOR_BINARY_PATH values rather than relying on the
+# on-disk candidate probe. The binary and sources registry are already provisioned
+# under the gitignored .graphtor/ tree; all 8 tools the instruction file promises were
+# verified present via `graphtor-docs manifest`.
+graphtor_docs:
+  sources_path: .graphtor/config/sources.yaml
+  binary_path: .graphtor/bin/graphtor-docs.exe
+  embed_model_dir: null
+
+# Continuous-learning capability pack (enabled 2026-08-31). Mirrors the
+# `continuous_learning` block in config.yaml, which is where
+# `_derive_template_variables` reads CONTINUOUS_LEARNING_* from.
+continuous_learning:
+  directory: .autoharness/continuous-learning
+  capture_hooks: false
+  environment_adapter: none
+  promotion_threshold: 5
 
 # P-019 local quality-gate enforcement surface. Consumed by the pre-push and
 # pre-commit hook scripts installed under scripts/ during the 2026-08-31 1.5.0
