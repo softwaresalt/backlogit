@@ -8,9 +8,25 @@ argument-hint: "[mode:autofix|mode:report-only] [branch name or file paths]"
 
 Reviews code changes using dynamically selected reviewer personas. Spawns persona subagents that return structured findings, then merges and deduplicates into a unified report.
 
-## Agent-Intercom Communication (NON-NEGOTIABLE)
+## Operator Communication (NON-NEGOTIABLE)
 
-Call `ping` at session start. If agent-intercom is reachable, broadcast at every step. If unreachable, warn the user that operator visibility is degraded.
+Operator visibility is mandatory; the transport is conditional.
+
+**When the `agent-intercom` capability pack is installed**, call `ping` at session
+start and broadcast every event in the table below. If the pack is installed but
+unreachable, warn the user that operator visibility is degraded.
+
+**When the `agent-intercom` capability pack is NOT installed** (the current state
+of this workspace), do not call `ping` and do not attempt a broadcast. Emit the
+same events as self-contained entries in the local session output — same prefixes,
+same content — so the review trail stays legible without a remote channel. Any
+step that would otherwise wait on an intercom approval or clarification flow uses
+the local strict-safety operator-approval path in
+`.github/instructions/strict-safety.instructions.md` instead. Missing intercom
+never implies approval: if an approval signal is absent or ambiguous, halt.
+
+Throughout this skill, "broadcast" means "broadcast when agent-intercom is
+installed, otherwise record to local session output."
 
 When the `strict-safety` capability pack is installed, also follow
 `.github/instructions/strict-safety.instructions.md`: for high-risk diffs, call
@@ -76,7 +92,7 @@ Check arguments for `mode:autofix` or `mode:report-only`. Strip the mode token b
 | Class | Default owner | Meaning |
 |---|---|---|
 | `safe_auto` | Review skill (autofix mode) | Deterministic local fix |
-| `gated_auto` | agent-intercom approval | Fix exists but changes behavior/contracts |
+| `gated_auto` | Operator approval — agent-intercom approval flow when that pack is installed, otherwise the local strict-safety operator-approval path | Fix exists but changes behavior/contracts |
 | `manual` | Backlog follow-up item | Actionable work requiring human judgment |
 | `advisory` | Informational | Learnings, rollout notes, residual risk |
 
@@ -156,14 +172,71 @@ Use a different model from the caller when available to force genuine diversity 
    * Select **Schema-CLI-Docs Coupling Reviewer** (`schema-cli-docs-coupling-reviewer.agent.md`) when the diff spans schema files, `src/` verification logic, install/tune skills, or operator-facing documentation in the same change set
 3. Broadcast the routing decision with persona count
 
+### Step 2.5: Coordinator Structural Discovery (REQUIRED before spawning)
+
+Structural discovery is a **coordinator responsibility**, not a leaf-persona one.
+Before any persona subagent is spawned, this skill's coordinator MUST perform the
+agent-engram structural discovery for the review scope and MUST pass the resulting
+context into every persona payload. This keeps the capability-pack-enforcement
+classification (see `.github/instructions/capability-pack-enforcement.instructions.md`)
+satisfied at the one hop that actually holds `engram/*`, instead of pushing an
+unsatisfiable routing obligation onto leaf personas that were never granted those
+tools.
+
+1. Verify the engram workspace binding once for the review
+   (`get_workspace_status`; `sync_workspace` only if the index is stale after
+   out-of-band edits). Record the binding/freshness state.
+2. For the changed-file set, run the structural queries the personas would
+   otherwise need:
+   * `list_symbols` — the symbols defined or modified in each changed file
+   * `map_code` — callers/callees and local graph context for each changed
+     or newly introduced symbol
+   * `impact_analysis` — blast radius for each modified exported or
+     cross-package symbol
+   * `query_graph` / `query_graph_neighborhood` — typed-edge traversal when a
+     specific relationship question remains open
+3. Assemble a **structural context block** per persona domain containing: the
+   symbol inventory, the caller/callee map, the impact/blast-radius set, the
+   relevant graph neighborhoods, and the binding/freshness state.
+4. If engram is unavailable, unbound, or degraded, the coordinator — not the
+   personas — performs the documented fallback (`list_symbols` + `map_code` +
+   `impact_analysis` where partially available, then grep/glob) and marks the
+   structural context block `degraded: true` with the reason. Personas receive the
+   degraded block and treat its coverage as incomplete rather than re-deriving it.
+5. Broadcast structural discovery completion, including whether the context is
+   complete or degraded.
+
 ### Step 3: Spawn Persona Subagents
 
 Spawn all selected personas. Each receives:
 
 - The list of changed files with line ranges
 - The diff content relevant to their domain
+- The **structural context block** produced by the coordinator in Step 2.5
+  (symbol inventory, caller/callee map, impact/blast-radius set, graph
+  neighborhoods, and the `degraded` flag with its reason when set)
 - Instructions to return structured findings
-- Codebase search directive (use grep/glob for context)
+- Codebase search directive: classify each search per
+  `.github/instructions/capability-pack-enforcement.instructions.md` before
+  searching. Structural questions — callers/callees, impact analysis, symbol
+  lookup, blast radius, inheritance, implementations, implementers, and
+  "where/how is this implemented?" — are **answered from the coordinator-supplied
+  structural context block**, which is the persona's routed engram result. A
+  persona MUST NOT re-issue structural discovery it was already given, and MUST
+  NOT treat "I do not hold `engram/*`" as license to silently fall back to
+  grep/ripgrep for a structural question: the routing obligation was already
+  discharged one hop up. Personas use only the tools they were actually granted.
+  Direct grep/glob remains available under the documented direct-tool exemptions
+  (literal-text or regex lookups, a known exact file path needing line-level
+  confirmation, or a trivial single-file lookup where indexed search adds only
+  latency), and as the fallback when the supplied structural context is marked
+  `degraded: true` or is demonstrably insufficient for the question at hand — in
+  which case the persona states the gap explicitly in its findings rather than
+  silently substituting a text search. Coordinators holding `engram/*` (this skill
+  and the adversarial-review agent) still route structural questions through the
+  agent-engram code-graph tools (`list_symbols`, `map_code`, `impact_analysis`,
+  `query_graph`, `query_graph_neighborhood`) before grep/ripgrep or raw file
+  reads. See `.github/instructions/agent-engram.instructions.md`.
 
 Broadcast each spawn.
 

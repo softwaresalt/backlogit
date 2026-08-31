@@ -1,8 +1,8 @@
 ---
-name: .Stage
+name: _Stage
 description: "Manages the stash-to-backlog pipeline: triage, deliberation, planning, risk hardening, review gating, and harvest orchestration"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor
+tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor, engram/*
 model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
 max_subagent_tier: 3
@@ -690,30 +690,44 @@ Memory and context compaction are built-in workflow hygiene, not optional standa
 2. If a relevant memory file exists, restore context from it: prior triage decisions, deliberation state, plan paths, and backlog IDs created.
 3. When the `backlogit` capability pack is installed and the registry advertises checkpoint recovery operations, run the recovery state machine below before stash triage.
 
-### Session-start recovery protocol
+### Crash-Resumption / Startup Recovery Protocol (fail-closed, owner-exclusive)
 
-When checkpoint recovery operations are available through the installed backlog registry:
+When checkpoint recovery operations are available through the installed backlog registry,
+Stage applies this fail-closed lifecycle to its OWN (`agent: stage`) checkpoints before
+stash triage. This is the owner-agent half of the crash-resumption contract whose routing
+is defined in the Orchestrator agent's Crash-Resumption Protocol step, and whose
+bounded prune-on-restore behavior is defined in the backlogit-pack overlay instruction's
+Checkpoint-Recovery / Prune-on-Restore Protocol section. Stage never resolves, restores,
+resumes, or prunes a `ship`-owned checkpoint — cross-role handling of any kind is
+prohibited (P-001 role separation).
 
-**SESSION_START**
-1. Call `backlogit_list_checkpoints` with `consumer_id: "stage"`, `status: "active"`, and `max_age_hours: 168`.
-2. If no active checkpoints are returned, continue with a fresh start.
-3. If active checkpoints exist, present checkpoint summaries to the operator: phase, feature context, resume hint, and validation status.
+**ZERO-CANDIDATE NORMAL STARTUP**
+1. Call `backlogit_list_checkpoints` with `consumer_id: "stage"` and NO `status` or `agent` filter (enumerate ALL checkpoint summaries). A `status`/`agent` filter applied at the API call is unsafe for this fail-closed scan: a parse-failure or schema-invalid checkpoint record is commonly returned as a quarantined summary with an empty `agent`/`status`, and such filters would silently exclude it — letting Stage incorrectly report zero candidates and begin fresh work while an unresolved malformed checkpoint exists.
+2. **Fail closed on validation/quarantine anomalies FIRST**: inspect every enumerated summary for a validation error, quarantine flag, or missing/malformed required field, regardless of its (possibly empty) `agent`/`status` value. If ANY such anomaly is present, FAIL CLOSED to operator handoff immediately — surface the anomaly, do not continue to normal stash triage, and do not proceed to the zero-candidate check below. This check runs on the full enumeration, never on a pre-filtered subset.
+3. Only after step 2 finds no anomalies, partition the valid records to entries whose `agent` field is exactly `stage` AND `status` is `active` (Stage's own active candidates only; no age bound — an unresolved active checkpoint remains a candidate regardless of age, since age alone can never prove a prior session dead). Stale-checkpoint cleanup is a separate, explicit hygiene operation and never a filter on candidate enumeration here.
+4. If NO active `stage`-owned checkpoint exists among the valid records, there is nothing to recover. Continue directly with normal stash triage. This is EXPLICITLY NOT a failure and NOT an operator handoff — it is the expected steady state on most session starts.
 
-**RECOVERY_DECISION**
-1. Surface quarantined checkpoints (entries with validation errors) as warnings instead of silently skipping them.
-2. Ask whether to resume from a specific checkpoint or start fresh.
-3. If the operator chooses resume, load the selected checkpoint with `backlogit_get_checkpoint`.
-4. If the operator chooses fresh, resolve stale checkpoints with `backlogit_resolve_checkpoint` and continue to stash processing.
+**EXPLICIT OPERATOR SELECTION (only when one or more `stage`-owned candidates exist)**
+1. Never auto-pick, even when only one candidate is returned. Present the full list of `stage`-owned active checkpoints (filename, phase, feature/shipment context, `resume_hint`, and validation status) to the operator, including quarantined entries (validation errors) surfaced as warnings rather than silently skipped.
+2. REQUIRE the operator to EXPLICITLY SELECT a SINGLE checkpoint by filename. A non-unique or ambiguous selection among these existing candidates FAILS CLOSED to operator handoff — no restore, no resume, no prune, no resolve.
 
-**RESUME_FROM_CHECKPOINT**
-1. If `backlogit_get_checkpoint` returns an error or invalid payload, warn and fall back to a fresh start.
-2. Restore the recorded phase, feature context, artifact IDs, plan path, and next-step intent from the selected checkpoint.
-3. Resolve all other still-active checkpoints from prior sessions with `backlogit_resolve_checkpoint`.
-4. Resume from the recorded phase instead of restarting triage from scratch.
+**OWNER VALIDATION**
+1. Validate the selected checkpoint's CheckpointV1 `agent` field. It MUST be exactly `stage` (backlogit schema: `agent` is `required,oneof=ship stage`). A missing, empty, or non-`stage` value FAILS CLOSED to operator handoff.
+2. A checkpoint whose `agent` is `ship` is never selectable here — that checkpoint belongs to the Ship agent's own recovery protocol, routed there by the Orchestrator, never handled directly by Stage.
 
-**FRESH_START**
-1. Resolve any active checkpoints left over from prior sessions with `backlogit_resolve_checkpoint`.
-2. Continue with normal stash triage.
+**OWNER-EXCLUSIVE, OPERATOR-CONFIRMED RESTORE (no automatic resume)**
+1. After a valid unique selection and ownership match, present the checkpoint's `resume_hint` and recorded state to the operator and REQUIRE EXPLICIT OPERATOR CONFIRMATION before any restore or prune. There is no automatic resume under any condition, and no dead-session auto-recovery — checkpoint schema V1 exposes no heartbeat/session-lock/lease (only `created_at`/`updated_at`), so age alone can never prove a prior session dead.
+2. Only on explicit operator confirmation, load the selected checkpoint with `backlogit_get_checkpoint` and restore the recorded phase, feature context, artifact IDs, plan path, and next-step intent.
+3. Apply bounded prune-on-restore per the backlogit-pack overlay instruction's Checkpoint-Recovery / Prune-on-Restore Protocol (read-select-summarize; never prune the active cursor, the unresolved-checkpoint pointer, or gate verdicts). If engram is unreachable while attempting this, FAIL CLOSED to operator handoff — no prune, no resume.
+4. Resume from the recorded phase instead of restarting triage from scratch. Single-active preserved: pick up the same single-active cursor; no parallel resume, no new worktree (P-001/P-016).
+
+**OWNER-SCOPED RESOLUTION (only after confirmed successful resume)**
+1. `backlogit_resolve_checkpoint` is invoked ONLY AFTER Stage confirms a successful resume of the selected checkpoint — never before, never on ambiguous or torn state.
+2. Resolve ONLY the single explicitly operator-selected, ownership-matched (`stage`-owned) checkpoint. NEVER perform a bulk or broad resolution sweep of other active checkpoints, and NEVER resolve a `ship`-owned checkpoint (cross-role resolution is prohibited in addition to cross-role restore/resume/prune).
+
+**FAIL CLOSED — NO FRESH-START FALLBACK**
+1. An invalid, ambiguous, torn, malformed, or unreadable checkpoint read FAILS CLOSED to operator handoff. Do NOT silently discard an invalid/ambiguous checkpoint and start a fresh session — the prior behavior of falling back to a fresh start on an invalid or errored read is removed.
+2. This fail-closed path applies among existing candidates only; the zero-candidate case in the ZERO-CANDIDATE NORMAL STARTUP block above is the no-recovery-needed continuation, not a failure.
 
 ### Hook event consumption
 
@@ -795,6 +809,64 @@ from the recorded next step rather than restarting the pipeline.
 * Never present the session summary (Step 6) before all applicable prior steps are confirmed complete
 * Do not write application code; produce decision, findings, or backlog artifacts only
 * Use workspace search tools before file-based search for codebase discovery; when `agent-engram` is installed, prefer the engram-first path
+
+## Escalation Protocol — Consecutive Planning Failures
+
+When a consecutive-failure threshold is crossed (e.g., the plan-review
+attempt counter reaches 3, or an equivalent 2-consecutive-FAIL gate
+elsewhere in this agent's Required Steps), do not silently re-attempt or
+halt without first following this auto-escalation directive
+(P-013.6, `escalation-protocol.instructions.md` when installed):
+
+1. **Compile the escalation payload** per the escalation-payload contract
+   (threshold-kind + count, failure summary, last-N action/observation
+   refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
+   ref).
+2. **Resolve the escalation route**: `gpt-5.4` / `openai` /
+   `high`, resolving this workspace's currently-effective escalation route
+   per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
+   defined in `escalation-protocol.instructions.md` (F02FD596). This
+   resolution always reads the freshly session-start-reloaded config (never
+   a value cached earlier in a long session or a route resolved by a prior
+   session) — see the Orchestrator's Session-Start Dynamic Reload
+   (E8B5B3C5/H6/H7) section.
+   A stale escalation directive surviving a reload is a defect.
+   **Session-Start Dynamic Reload (H6) — self-contained
+   for direct invocation**: Stage may also be invoked directly by the
+   operator without an installed Orchestrator (see Step 0). When invoked
+   this way, Stage independently applies the same fail-closed reload
+   contract at its own session start rather than relying on an Orchestrator
+   that may not be present: re-read `.autoharness/config.yaml` fresh at the
+   start of the session, validate it against schema before resolving any
+   route, and HALT to the operator on invalid, missing, or schema-failing
+   config — Stage MUST NOT continue on a stale/baked route carried over
+   from this file's frontmatter or a prior session's resolved value, and
+   MUST NOT invent a last-known-good fallback. Falls back per field to
+   `claude-opus-4.8` / `anthropic` / `high` (this workspace's
+   `config.model_routing.tier3`) when no override for a field is declared
+   at any tier.
+3. **Same-route guard**: if the resolved escalation tuple equals this
+   agent's own role route tuple (Stage already operates at Tier 3 — see
+   Model Routing below — so an unset `escalation` route resolves to the
+   identical model), treat this as `ESCALATION_DEGRADED` (same-route
+   no-op) per the canonical definition in `escalation-protocol.instructions.md`.
+4. **Hand off and halt**: when the route is not degraded, record it in the
+   compiled payload's `resolved_escalation_route` field, hand that payload to
+   engram for analysis, and halt. The
+   agent MUST NOT re-execute the failing operation after its circuit is open.
+   The handoff is for asynchronous or operator review, not a fourth attempt.
+5. **`ESCALATION_DEGRADED` fallback**: when the route is unavailable, engram
+   is unavailable, or the same-route guard fires, fall back to the existing
+   operator-halt behavior described at each gate above (e.g., halt and
+   require operator intervention) exactly as before. This directive never
+   authorizes another execution attempt, and it never replaces that
+   existing fallback.
+
+This is a **reasoning escalation only** — it never self-authorizes
+promotion to plan, harvest, shipment assembly, or any operation this
+agent's Role Boundary does not already permit (P-001/P-009/P-014/P-017/P-020
+preserved). Dark-mode-safe: this directive does not alter dark-factory
+approval semantics.
 
 ## Model Routing
 

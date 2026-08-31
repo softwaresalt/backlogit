@@ -109,7 +109,7 @@ task in scope that carries the label. The label alone is not admission.
 generated, so no predecessor owner can have red evidence yet. Evaluating owner
 red evidence here would make `covered-by` unsatisfiable by construction and
 deadlock the release unit. Owner red evidence belongs to Ship's claim-time gate
-(`.ship.agent.md` Step 4.1a).
+(`_ship.agent.md` Step 4.1a).
 
 A task is statically admitted as exempt and MUST NOT be scaffolded when all of
 the following hold:

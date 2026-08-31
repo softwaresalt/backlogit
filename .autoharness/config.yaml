@@ -1,9 +1,8 @@
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 preset: full
 capability_packs:
   - backlogit
   - strict-safety
-  - agent-intercom
   - agent-engram
   - adversarial-review
   - release-observability
@@ -64,3 +63,12 @@ model_routing:
     model_family: "claude-opus-4.8"     # Orchestrator model override (default: claude-opus-4.8)
     reasoning_effort: "high"
     model_provider: "anthropic"
+  escalation:
+    # P-013.6 auto-escalation route (F02FD596). Deliberately a distinct
+    # provider/family from tier3 so Stage's escalation (Stage already runs at
+    # tier3/frontier) is never a same-route ESCALATION_DEGRADED no-op; Ship's
+    # escalation from tier2 also resolves to this distinct route rather than
+    # falling back to tier3.
+    model_family: "gpt-5.4"
+    reasoning_effort: "high"
+    model_provider: "openai"

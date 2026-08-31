@@ -1,8 +1,8 @@
 ---
-name: .Ship
+name: _Ship
 description: "Manages the backlog-to-shipped pipeline: harness generation, build execution, review, CI remediation, and PR lifecycle"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor
+tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor, engram/*
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 2
@@ -165,6 +165,14 @@ build work begins:
 2. Confirm the shipment has explicit item membership (feature + tasks).
 3. Verify no item in the shipment is missing a covering feature parent.
 3a. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**: Before claiming (the first workspace mutation), ensure a feature branch is active:
+    - **TOPOLOGY_GATE: pre_claim (before branch/worktree creation)** — if the `pipeline-topology` gate is installed
+      for this workspace, before any branch creation or selection below, run
+      `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`. Exit 0:
+      proceed to the branch checks below. Exit 1 (`blocked`) or exit 2 (`invalid`): halt immediately with the
+      reported token/message — never inferred, never fail-open. (Bootstrap exemption: a workspace that has not yet
+      installed the `autoharness gate pipeline-topology` CLI cannot enforce this gate against itself; skip this
+      sub-step until the gate is installed, so self-referential bootstrapping shipments are not blocked by an
+      as-yet-uninstalled gate.)
     - Check current branch:
       `git branch --show-current`
     - If already on a branch matching this shipment (e.g., `feat/{slug}` or `chore/{slug}`): log `BRANCH_OK: {branch_name}` and proceed to step 4.
@@ -182,8 +190,29 @@ build work begins:
       e. Log `BRANCH_CREATED: {branch_name}`.
     - If on an unrelated non-default branch: halt with `BRANCH_MISMATCH: currently on {branch_name} — does not match shipment scope. Checkout the correct branch or create one manually.`
     - Note: All four git commands above are run as separate sequential steps, not chained.
+    - **TOPOLOGY_GATE: pre_claim (immediately before claim)** — if the gate is installed, immediately before the
+      claim in step 4, re-run `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase
+      pre_claim --json` to narrow the TOCTOU window between branch setup and the claim. Same exit-code handling as
+      above: exit 0 proceeds to the claim; exit 1/2 halts immediately.
 4. If the shipment is still in `queued` status, claim it using `backlogit_claim_shipment` before
    build work begins. Broadcast `[SHIP] Shipment claimed: {shipment_id}`.
+4a. **TOPOLOGY_GATE: post_claim (immediately after claim, GLOBAL verification)** — Post-claim shipment-status
+    verification. Immediately after the claim and before any task moves to `active`:
+    - If the `pipeline-topology` gate is installed for this workspace, run
+      `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase post_claim --json`. This is
+      the GLOBAL verification contract: it re-reads all shipment records (not just this one) and requires exactly
+      one active shipment, the claimed target.
+      - Exit 0: log `CLAIM_VERIFY_OK: shipment {shipment_id} reached active and is the sole active shipment` and proceed.
+      - Token `CLAIM_NOT_OBSERVED` (exit 3, `retry_required`, not `blocked`): pre-claim topology was valid but the
+        claim is not yet observed. This is not a terminal halt — re-read the shipment's own status; if it is already
+        `active`, re-run the post_claim verification once to confirm convergence (`CLAIM_VERIFY_OK`); if still
+        `queued` with zero active shipments, re-run the pre_claim check and retry the claim exactly once, then
+        re-verify. A second `CLAIM_NOT_OBSERVED`, or any other non-zero/ambiguous verdict, halts terminally with
+        `CLAIM_VERIFY_FAILED: shipment {shipment_id} did not converge after bounded reclaim`.
+      - Any other non-zero verdict is terminal at this invocation point: halt immediately with
+        `CLAIM_VERIFY_FAILED: shipment {shipment_id} returned {token}` — no retry, no reclaim — the
+        `CLAIM_NOT_OBSERVED` carve-out above is the only retry-required outcome.
+    - Independent of gate installation, re-read the shipment record and assert it reached `active` status.
 5. Record `shipment_id` as the session scope. All build execution and PR scope is bounded
    by this shipment.
 6. **Intake reconciliation check**: Invoke `shipment-reconcile` with `mode: pre` and
@@ -622,6 +651,11 @@ When the `agent-intercom` capability pack is installed, broadcast the task claim
 
 #### Step 4.2: Delegate to Build Feature
 
+**TOPOLOGY_GATE: lifecycle (before build)** — if the `pipeline-topology` gate is installed for this workspace,
+before delegating to build-feature below, run
+`autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
+proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
+
 When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking build-feature for {item_id}` before delegating.
 
 Invoke the **build-feature** skill with:
@@ -761,9 +795,80 @@ radius of a risky fix.
 
 When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking review gate for shipment branch` before invoking review.
 
-Invoke the **review** skill in `mode:report-only` against the changed files. If P0/P1 findings are reported, fix them before proceeding.
+Invoke the **review** skill in `mode:report-only` against the changed files. The review result must include a readiness outcome for the current HEAD:
 
-When the `adversarial-review` capability pack is installed, Ship invokes the **adversarial-review** agent in place of the standard review skill, with `mode: report-only` and `reviewers: 3`. HIGH-confidence consensus findings block the gate identically to standard review P0/P1 findings. MEDIUM-confidence findings are advisory but must be acknowledged in the task completion note.
+* `READY` — zero unresolved P0/P1 findings and no required follow-up items; proceed
+* `READY_WITH_FOLLOWUPS` — zero unresolved P0/P1 findings, but one or more P2/P3 findings need explicit follow-up tracking or residual-risk notes; proceed only after recording that follow-up handling
+* `BLOCKED` — one or more unresolved P0/P1 findings remain; halt and fix them before proceeding
+
+The readiness record must carry the reviewed HEAD SHA (or equivalent diff identity), P0/P1/P2/P3 counts, follow-up item IDs or residual-risk notes when the outcome is `READY_WITH_FOLLOWUPS`, and whether runtime verification follow-up is required.
+
+When `DARK_MODE_ACTIVE` is present under P-017, this review gate is the
+authoritative local readiness gate for PR preparation. Hosted Copilot/GitHub
+review is optional advisory shadow review by default; it cannot replace local
+review, cannot override unresolved P0/P1 findings, and does not block on timeout
+or unavailability unless the operator explicitly elevated it for the shipment.
+Perform the local review before PR creation/presentation and carry its reviewed
+HEAD into the PR readiness block; do not rely on hosted review as a substitute
+while the operator is AFK.
+
+When the `adversarial-review` capability pack is installed, adversarial review **supplements** the standard review gate — it never replaces it. Run the standard **review** skill first, then escalate to the **adversarial-review** agent (`mode: report-only`, `reviewers: 3`) only when one of the configured escalation criteria is met:
+
+* the standard review surfaced **3 or more P0/P1 findings**, or
+* the change is **security-sensitive** and touches auth, crypto, data processing, or PII handling, or
+* the **operator explicitly requested** multi-model validation.
+
+When escalation occurs, merge the adversarial findings into the standard review report and recompute the readiness outcome over the merged set. HIGH-confidence consensus findings block the gate identically to standard review P0/P1 findings. MEDIUM-confidence findings are advisory but must be acknowledged in the task completion note. `mode: report-only` is a real contract on the adversarial-review agent: in that mode it makes no file, artifact, or backlog writes and runs no remediation or re-review — Ship owns every subsequent write. See `.github/instructions/adversarial-review.instructions.md` and `.github/agents/review/adversarial-review.agent.md`.
+
+#### Step 4.4a: P-021 Scope Classification and Defer-Capture Procedure
+
+Before applying any fix in the review-fix loop (this Step 4.4, and the Step 5 optional shadow-review loop) or the build/CI-fix loop (Step 5 item 7 `fix-ci` invocation), classify EVERY finding against the **P-021 C1** same-contract-surface scope test. Only findings that pass C1 (the fix requires ONLY completing the exact change already authorized) may be fixed directly; every other finding is out of scope and MUST follow the defer-capture procedure below instead of being fixed. Path selection below is determined by whether a review thread ACTUALLY EXISTS for the finding at the moment it is classified — not by which loop raised it.
+
+**Deferred-entry discovery (performed BEFORE any capture, so reuse is enforceable across run boundaries)**:
+
+* **Lookup sources**: the active stash AND the archived stash (a prior-run entry may already have been triaged or archived by Stage — an active-only query would report a false absence), plus the task-level, run-level, and PR/closure residual-risk records of the current task and PR.
+* **Join keys**: narrow candidates by the literal `DEFERRED SCOPE EXPANSION` token, then by the source refs always populated at capture (task ID, feature ID, shipment ID), then by PR number where both the candidate and the finding in hand carry one, then by the entry's one-sentence expansion statement naming the same contract surface. The deferred entry ID is the entry's stable identity for its whole lifetime; these refs are only the discovery key used to find that identity when it is not already in hand — the two roles MUST NOT be conflated.
+* **Disposition — a complete four-case truth table over (candidate count, identity confirmation)**:
+  * Zero matches — proceed to the C2 capture below.
+  * Exactly one match whose expansion statement is POSITIVELY CONFIRMED to describe the SAME expansion on the SAME contract surface — reuse it, cite its ID, create NO new entry.
+  * Exactly one match that CANNOT be so confirmed — not a match for reuse purposes; follow the discovery fail-safe below.
+  * More than one match — follow the discovery fail-safe below.
+  * Positive confirmation is a required predicate for reuse and is never inferred from proximity, recency, or a partial key hit: reuse attaches this finding permanently to another finding's entry, so an unconfirmed reuse is unrecoverable, whereas an unnecessary capture is a recoverable duplicate.
+
+**Discovery fail-safe (both failure modes still capture)**: capture is NEVER suppressed by a discovery failure — C2 is capture-first in every case, and the discovery lookup exists only to avoid duplicates, never as a precondition for recording a finding.
+
+* **Ambiguous or unconfirmed identity** (more than one candidate, or a single candidate that cannot be positively confirmed): capture a DISTINCT C2 entry with the full six-field payload below, and append to field (2) — the one-sentence expansion statement — the literal token `DISCOVERY-STATUS: AMBIGUOUS` followed by every candidate entry ID found; cite the same candidate IDs in the reply (thread-present path) and in the residual-risk record. Do NOT reuse any candidate and do NOT guess which is "the" entry.
+* **Lookup unavailable** (the stash or the residual-risk records cannot be queried at all): capture and append to field (2) the literal token `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`.
+* In both cases the token lives inside the existing six-field payload's field (2) — it is not a seventh field — and is also noted in the residual-risk record, with the entry itself as the authoritative carrier since Stage triages entries. Both fail-safe modes rely on Stage's unconditional duplicate detection (see the `_stage.agent.md` deferred-scope-expansion triage step) to remediate any resulting duplicate.
+
+**C2 mandatory capture — the SINGLE-WRITE CAPTURE INVARIANT**: For every out-of-scope finding with no confirmed reusable entry, capture BEFORE any thread reply and BEFORE the finding is closed in any form — capture is a precondition for closing the finding under P-021 C2, and it is NEVER conditional on a PR or thread existing. This is the ONLY write Ship ever makes to the entry: Ship MUST NOT edit, amend, back-fill, re-classify, or re-prioritize a captured entry afterwards, and MUST NOT create a second entry for the same expansion — this follows directly from the P-021 C5 capture-only carve-out (134.002-T / 134.003-T), which grants Ship entry CREATION only. Record the full six-field payload, with every field POPULATED IN FULL AT CAPTURE TIME:
+
+1. The literal token `DEFERRED SCOPE EXPANSION`.
+2. A one-sentence statement of the expansion.
+3. Why it is out of scope, citing P-021 C1.
+4. Source refs, with availability judged INDEPENDENTLY PER FIELD: task ID, feature ID, and shipment ID are always populated. The PR number is populated with its actual value whenever a PR is already open — the normal case for a build/CI finding, since `fix-ci` runs against an open PR — and is recorded as `N/A` only for a genuinely pre-PR finding. The review-thread ID is populated whenever the finding already has a thread and is recorded as `N/A` whenever no thread exists. `N/A` is a PER-FIELD availability marker, never a path-level default: a field known at capture MUST carry that value, because the single-write invariant forbids supplying it later. The PR number and the review-thread ID are `N/A` together only for a genuinely pre-PR finding.
+5. A `requires deliberation` flag.
+6. Kind and a PROVISIONAL priority only — re-prioritization remains Stage-only.
+
+**Thread-present path** (a PR exists and the finding already has a review thread at classification time) — contains NO write-back to the entry:
+
+* (a) Capture, per above.
+* (b) Post a substantive thread reply explaining the finding, why it is out of scope citing the P-021 C1 boundary, that no code change was made, and CITING THE DEFERRED ENTRY ID returned by the capture, per C3.
+* (c) Resolve the thread — permitted only after that reply is posted.
+* (d) Name the SAME deferred entry ID in the PR/closure residual-risk record.
+
+Replying to or resolving the thread BEFORE the capture exists is prohibited: the reply cannot cite an entry ID that has not been generated yet, and a reply omitting the deferred entry ID does not satisfy C3.
+
+**Threadless path** (no review thread exists for the finding at classification time — pre-PR local-review findings, because Ship's local review runs BEFORE PR creation, and build/CI findings, which have no review thread even when a PR is already open):
+
+* (a) Capture, per above, with source-ref availability evaluated independently per field.
+* The generated deferred entry ID is cited in the task-level, run-level, and closure residual-risk records. No thread reply and no thread resolution are required or possible on this path, and their absence is NOT a C3 shortfall — C3's reference obligation is discharged in full by the residual-risk citations.
+
+**Late-surfacing thread** (a threadless-captured finding later surfaces on a PR review thread): perform ONLY the thread-present reply-and-resolve steps — post a reply CITING THE ALREADY-CAPTURED deferred entry ID, then resolve the thread. Ship MUST NOT create a second entry and MUST NOT revise ANY recorded field of the entry, including any field recorded as `N/A`. Record the newly available identifiers (the review-thread ID, plus the PR number in the genuinely pre-PR case where it too was `N/A` at capture) in the Ship-owned PR/closure residual-risk record alongside the deferred entry ID — reconciling the entry itself is Stage's C6 intake responsibility, not Ship's.
+
+Both paths preserve identically: the mandatory capture-first ordering, the full six-field payload, the C1-cited out-of-scope rationale, and the provisional-priority / Stage-only reprioritization rule. Neither path may be described as a relaxation of C2.
+
+**C3 symmetric guard**: (i) a same-contract-surface completion of the authorized change IS in scope and MUST be fixed, not deferred; AND (ii) deferring such a completion WITHOUT a captured deferred entry and a residual-risk record is itself a P-021 violation, actioned per C7.
 
 #### Step 4.5: Complete Task
 
@@ -876,95 +981,114 @@ After all tasks in the queue are complete:
    `done` — halt with `WAVE_OPEN_RED_UNCLOSED` and return the release unit to Stage. A release unit
    never merges with an undischarged deferral.
 2. Write a session memory summary to `docs/memory/` capturing: items completed, items blocked, branch state, decisions with rationale, and next steps
-3. Invoke the **pr-lifecycle** skill to create or update the pull request
-4. If CI or automated review comments fail:
+3. **Full local build evidence**: Before creating or updating any PR that adds, removes, or
+   changes source code, run the full local build command for the codebase
+   (`go build ./cmd/backlogit`) in addition to the targeted checks already run in Step 4.3 and
+   Step 4.6. Documentation-only and backlog-only PRs may record full-build non-applicability
+   instead. Capture the command and its successful result, or the non-applicability rationale, in
+   the PR readiness evidence.
+4. **Current-HEAD local review confirmation**: Confirm the most recent local review readiness
+   result (Step 4.4) covers the current branch HEAD and records any residual follow-up handling.
+   If the HEAD advanced after that review, re-run Step 4.4 before proceeding — a readiness record
+   for a superseded HEAD is stale and MUST NOT be carried into the PR.
+5. Prepare the PR body so it includes the `## Local Review Readiness` block required by
+   `.github/instructions/github-pr-automation.instructions.md` §1.9: reviewed HEAD SHA, readiness
+   outcome (`READY` / `READY_WITH_FOLLOWUPS` / `BLOCKED`), blocking-finding summary with P0/P1/P2/P3
+   counts, full-build evidence or its non-applicability rationale, and follow-up handling.
+5a. **TOPOLOGY_GATE: lifecycle (before PR creation)** — if the `pipeline-topology` gate is installed for this
+    workspace, before invoking **pr-lifecycle** below, run
+    `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
+    exit-code handling as above.
+6. Invoke the **pr-lifecycle** skill to create or update the pull request
+7. If CI or optional shadow-review comments fail:
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking fix-ci for shipment PR` before invoking the skill.
-   * Invoke the **fix-ci** skill before proceeding.
-4a. **Automated Review Comment Resolution Loop**: After CI passes (or after fix-ci completes), poll for unresolved Copilot review comments and resolve them iteratively:
+   * Invoke the **fix-ci** skill before proceeding. The build/CI-fix loop carries the SAME P-021 classification requirement as the review-fix loop: classify every CI/build failure against **P-021 C1** before fixing it, per Step 4.4a above. A build or CI failure whose real fix lies outside the approved scope is deferred via the Step 4.4a defer-capture procedure, never expanded into.
+   * **CI confirmation**: before advancing past this item, confirm every required CI check reports success for the current `headRefOid`. A pending, missing, cancelled, or failed required check is not a pass — re-run fix-ci or halt. Never infer CI success from a stale run against an earlier HEAD.
+7a. **Optional Shadow Review Loop**: If GitHub-hosted automated review is enabled in advisory shadow mode, address actionable bot comments with bounded fix cycles. Treat unresolved shadow-review comments as advisory follow-up items by default unless the operator explicitly elevates them to blocking status for the current PR.
+    In dark mode, wait patiently for requested hosted review to complete or time
+    out per the GitHub automation instructions. For each actionable bot comment,
+    apply the fix, commit and push it, reply to the comment with the fixing commit,
+    resolve the bot-authored thread via GraphQL, and continue bounded iterations
+    until clean, follow-up-only, or unsafe. Bounded means the review-fix cycle limit
+    in Circuit Breakers below; human-authored threads are never auto-resolved.
+7b. **P-014 Local Review Readiness Gate (NON-NEGOTIABLE)**: Before presenting the PR as merge-ready, run the defense-in-depth verification from `.github/instructions/github-pr-automation.instructions.md` §1.9 as an independent re-check. This gate verifies that:
 
-   ```
-   review_fix_cycle = 0
-   WHILE review_fix_cycle < 3:
-     1. Fetch unresolved review threads via GraphQL (paginate if needed):
-        gh api graphql -f query='
-          query($cursor: String) {
-            repository(owner:"{owner}", name:"{repo}") {
-              pullRequest(number:{pr_number}) {
-                reviewThreads(first:50, after: $cursor) {
-                  nodes {
-                    id, isResolved,
-                    comments(first:1) {
-                      nodes { id, databaseId, body, path, line, author { login } }
-                    }
-                  }
-                  pageInfo { hasNextPage endCursor }
-                }
-              }
-            }
-          }' -F cursor=null
-        On the first request, pass null for the cursor (omits the after
-        argument). If pageInfo.hasNextPage is true, re-query with
-        -f cursor="{endCursor}" and merge results. Repeat until
-        hasNextPage is false.
-     2. Filter to unresolved threads only (isResolved: false)
-     3. Classify each thread by the FIRST comment's author (thread initiator):
-        - Copilot threads: author.login matches "copilot-pull-request-reviewer"
-          (with or without [bot] suffix)
-        - Human threads: all other non-bot authors
-        - Other bot threads: author.login ends with [bot] but is not Copilot
-     4. IF zero unresolved Copilot threads: BREAK (loop complete)
-     5. Re-run fix-ci Step 6.5 reply gate: if any threads (Copilot, human,
-        or bot) arrived since the last fix-ci run and lack replies, reply
-        to them before proceeding with fixes.
-     6. FOR EACH unresolved Copilot thread:
-        a. Read the comment body to understand the issue
-        b. Apply the fix to the affected file(s)
-        c. Commit the fix
-     7. Push all fixes in a single push
-     8. FOR EACH fixed Copilot thread:
-        a. Reply using the REST API with the numeric comment ID (databaseId):
-           gh api repos/{owner}/{repo}/pulls/{pr_number}/comments
-           -f body="Fixed in {commit_sha}. {brief description of fix}"
-           -F in_reply_to={databaseId}
-           (Use databaseId from the GraphQL query — the numeric integer,
-           NOT the GraphQL node ID which starts with PRRC_.)
-        b. Resolve the thread via GraphQL using the thread node ID:
-           gh api graphql -f query='mutation {
-             resolveReviewThread(input: { threadId: "{thread_id}" }) {
-               thread { id isResolved }
-             }
-           }'
-           Confirm isResolved: true in the response.
-     9. Poll for Copilot re-review completion (max wait: 600s):
-        Query the PR's latest review status. If the Copilot review has not
-        yet posted new comments after the push, wait 30s
-        and re-check. Exit the wait when either new comments appear or
-        the max wait is reached.
-     10. review_fix_cycle += 1
-   END WHILE
-   ```
+    * the local review readiness record exists for the current `headRefOid`
+    * the recorded outcome is `READY` or `READY_WITH_FOLLOWUPS`
+    * code-changing PRs include full local build evidence, or documentation-only /
+      backlog-only PRs explicitly mark full-build non-applicability
+    * any residual P2/P3 findings have explicit follow-up handling
 
-   * If the loop exits at the cycle limit (3) with unresolved threads remaining, list the unresolved comments in the PR-ready summary for operator attention.
-   * Human review threads are never auto-resolved — surface them to the operator.
-   * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Review comment fix cycle {n}: {resolved_count} resolved, {remaining_count} remaining` after each cycle.
-5. If the changed work touches runtime surfaces, invoke **runtime-verification** with the affected surfaces
-6. Invoke **operational-closure** to produce release-readiness, monitoring, rollback, and follow-up artifacts
-7. **Stash follow-up items**: If the closure artifact or runtime-verification report identified follow-up tasks, stash every follow-up so it is visible to the Stage agent:
-   * When `backlogit` is the installed backlog tool, create a stash entry per follow-up using `backlogit_create_item` with `artifact_type: "stash"`, `title` from the follow-up summary, `description` linking to the closure artifact, and `status: "queued"`. After creation, re-read each entry to confirm it persisted correctly.
-   * When `backlog-md` is the installed backlog tool, create a follow-up item using `backlogit_create_item` with `title` from the follow-up summary, `description` linking to the closure artifact, `status: "queued"`, and `labels: ["stash", "follow-up"]`.
-   * When no backlog tool is installed, append each follow-up to `.backlogit/queue/.stash.md` using the format: `- [{YYYY-MM-DD}] **Follow-up**: {summary} — Source: {closure_artifact_path}`.
-   * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Stashed {count} follow-up item(s): {summary_list}` listing each item's title.
-8. Push the feature or chore branch
-9. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] PR ready for review: {pr_url}`.
-10. Present the pull request state to the operator when the branch is reviewable
-11. **Branch retention (NON-NEGOTIABLE)**: Remain on the feature or chore branch until the
+    If the branch HEAD changed after local review, re-run the local review before proceeding. If any check fails, halt and record a P-014 violation via P-005 telemetry. Optional shadow-review comments are surfaced in the readiness summary but are not merge-blocking by default.
+
+    In dark mode, this local readiness result is authoritative: unresolved local
+    P0/P1 findings block merge, `READY_WITH_FOLLOWUPS` requires explicit
+    follow-up item IDs or residual-risk notes, and shadow-review timeout or
+    unavailability is advisory unless elevated by the P-017 activation contract
+    or operator.
+    Emit `LOCAL_REVIEW_READY` when the gate passes, including reviewed HEAD,
+    readiness outcome, P0/P1 counts, follow-up handling, and shadow-review
+    posture. If the gate fails under dark mode, emit `DARK_MODE_HALTED` with the
+    failed check and affected shipment/PR.
+
+    When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-merge review gate: {PASS|HALT} — {detail}` with the gate outcome. That pack is not installed in this workspace, so record the gate outcome in the local session output and in the PR readiness summary instead.
+7c. **P-018 Copilot-Review Completion Gate (NON-NEGOTIABLE, fail-closed)**: Before presenting the PR as merge-ready and before any `gh pr merge` — including `--admin` — verify that Copilot review has completed for the current `headRefOid` and that every Copilot-authored review thread is resolved. See policy **P-018** in `.github/policies/workflow-policies.md`.
+
+    * **Deterministic gate (preferred)**: when the `copilot-review` gate is installed for this workspace, run
+      `autoharness gate copilot-review <pr> --repo softwaresalt/backlogit --enforcement <mode> [--max-wait <seconds>]`,
+      where `<mode>` comes from `copilot_review.enforcement` in `.autoharness/workspace-profile.yaml`
+      (`auto` | `required` | `disabled`, default `auto`) and `<seconds>` comes from
+      `copilot_review.max_wait_seconds` (integer ≥ 0, default `0`).
+    * **Manual fallback (gate not installed)**: perform the equivalent verification by hand using
+      `.github/instructions/github-pr-automation.instructions.md` §1.9.3 Checks 1–3 (review completion,
+      review freshness against the current HEAD, and zero unresolved Copilot threads) with the §1.9.4
+      terminal-state dispositions. The fallback is fail-closed in exactly the same way: an unverifiable
+      state BLOCKS. Absence of the gate CLI is never a PASS.
+    * `SATISFIED` / `NOT_APPLICABLE` (exit 0): Copilot review is complete for the current HEAD with no open Copilot threads, or Copilot is not in play. Proceed.
+    * Any BLOCK verdict — `WAITING_FOR_REVIEW`, `UNRESOLVED_THREADS`, `REVIEW_TIMEOUT`, `DETECTION_AMBIGUOUS`, `VERIFY_FAILED` (non-zero exit): halt, emit `COPILOT_REVIEW_BLOCK` (with PR number, verdict, and current HEAD), and record a P-018 event via P-005 telemetry. **`--admin` does NOT bypass this block.** Wait for review completion, resolve every Copilot-authored thread, then re-run. `REVIEW_TIMEOUT` still blocks; only an explicit, operator-authored, audited `autoharness gate copilot-review ... --force` (logged under `.autoharness/gates/`) may override.
+    * This gate re-runs whenever the branch HEAD advances (each push re-arms Copilot), exactly like the §1.9 readiness gate.
+
+    When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Copilot-review gate: {PASS|BLOCK} — {verdict}` with the gate outcome. That pack is not installed in this workspace, so record the verdict in the local session output and in the PR readiness summary instead.
+8. If the changed work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces validator evidence for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites. Do not fake unsupported automation.
+9. Invoke **operational-closure** with the validator evidence plus `runtime_validation.releasability` so closure produces explicit releasability evidence (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements.
+10. **Stash follow-up items**: If the closure artifact, runtime-verification report, or local review readiness result identified follow-up tasks, stash every follow-up so it is visible to the Stage agent:
+    * When `backlogit` is the installed backlog tool, create a stash entry per follow-up using `backlogit_create_item` with `artifact_type: "stash"`, `title` from the follow-up summary, `description` linking to the closure artifact, and `status: "queued"`. After creation, re-read each entry to confirm it persisted correctly.
+    * When `backlog-md` is the installed backlog tool, create a follow-up item using `backlogit_create_item` with `title` from the follow-up summary, `description` linking to the closure artifact, `status: "queued"`, and `labels: ["stash", "follow-up"]`.
+    * When no backlog tool is installed, append each follow-up to `.backlogit/queue/.stash.md` using the format: `- [{YYYY-MM-DD}] **Follow-up**: {summary} — Source: {closure_artifact_path}`.
+    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Stashed {count} follow-up item(s): {summary_list}` listing each item's title.
+    * P-021 C5 note: this follow-up stash grant is Ship's pre-existing capture allowance and is separate from the Step 4.4a deferred-scope-expansion capture. Neither grants Ship triage, prioritization, deliberation, or discretionary removal/archival.
+11. Push the feature or chore branch
+12. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] PR ready for review: {pr_url}`.
+13. Present the pull request state to the operator when the branch is reviewable
+14. **Branch retention (NON-NEGOTIABLE)**: Remain on the feature or chore branch until the
     PR is successfully merged. Do NOT checkout `main` or any other branch
     while awaiting merge approval, during CI remediation, or during review-fix cycles.
     Switching away from the feature branch risks losing uncommitted work, creating merge
     conflicts, and breaking the Ship pipeline's assumption of single-branch scope.
-12. **Never merge automatically. Await explicit user approval before any merge.**
+15. **P-014 Operator Approval Gate (NON-NEGOTIABLE)**: After the §1.9 gate passes, present
+    the PR readiness summary to the operator and wait for an explicit approval signal.
+    **Never merge automatically.** Never treat silence, green CI, or a passing §1.9 gate as
+    approval. Record a P-014 violation (via P-005 telemetry) if merge is executed without an
+    explicit approval signal.
+    * In dark mode, the `DARK_MODE_ACTIVE` activation record may satisfy this approval
+      signal only when the PR is inside the recorded scope, `merge_approval_pre_authorized`
+      is true, §1.9 passed for the current HEAD, required CI/checks are green or explicitly
+      non-applicable, and P-009/P-016 checks have passed. Otherwise, wait for explicit
+      operator approval.
+      When the activation record supplies approval, emit `DARK_MODE_MERGE_AUTHORIZED`
+      with PR number, reviewed HEAD, checks state, merge strategy, approval source,
+      and scope match.
     * When the `agent-intercom` capability pack is installed, broadcast `[WAIT] Awaiting user merge approval` and use the intercom clarification flow if unresolved operator guidance is needed before merge.
-12. **Pre-merge strategy guardrail (P-009)**: Before executing any merge, verify the PR is
+16. **Last-mile gate re-check**: Immediately before any normal merge or admin
+    fallback, re-run the P-018 copilot-review gate in full, **unconditionally** — a
+    Copilot review can be dismissed or a Copilot-authored thread reopened without
+    advancing `headRefOid`, so a prior P-018 PASS must never be trusted as still-fresh
+    at the last mile. Additionally re-query the PR `headRefOid`: if the branch HEAD
+    advanced at any point after the latest passed §1.9 gate, re-run §1.9 in full as
+    well (the §1.9 result is stale once HEAD advances). Both re-runs apply regardless
+    of whether approval came from an operator message or a `DARK_MODE_ACTIVE`
+    activation record.
+17. **Pre-merge strategy guardrail (P-009)**: Before executing any merge, verify the PR is
     configured to use a merge commit strategy (not squash or rebase).
     * On GitHub: confirm the active merge button is "Create a merge commit" — not
       "Squash and merge" or "Rebase and merge".
@@ -974,35 +1098,48 @@ After all tasks in the queue are complete:
       `action: halted`). Instruct the operator to update repository settings (GitHub Settings
       → General → Pull Requests → uncheck "Allow squash merging" and "Allow rebase merging")
       before proceeding.
+18. **Dark-mode merge/admin fallback state machine (P-017)**: When `DARK_MODE_ACTIVE`
+    is present, attempt the normal merge path first. If it is rejected, classify the
+    result as `REVIEW_REQUIRED_BLOCK`, `CONVERSATION_RESOLUTION_BLOCK`, `CHECKS_BLOCK`,
+    `MERGE_STRATEGY_BLOCK`, `MISSING_ADMIN_RIGHTS`, `COPILOT_REVIEW_BLOCK`, or
+    `UNKNOWN_MERGE_BLOCK`.
+    Admin fallback may be attempted only when `admin_fallback_pre_authorized` is true
+    and the block is an explicitly covered branch-protection review/conversation block.
+    Never use admin fallback for failed/pending/missing required checks, stale local
+    readiness, unresolved local P0/P1 findings, a P-018 `COPILOT_REVIEW_BLOCK`, P-009
+    violations, P-016 violations, secrets-safety risk, scope mismatch, or unknown merge
+    blocks. A `COPILOT_REVIEW_BLOCK` is resolved only by Copilot review completion for
+    the current HEAD plus resolution of every Copilot-authored thread — never by
+    `--admin`. Record every normal merge and admin fallback attempt as operator-visible
+    audit evidence, including the state, decision, command/API used, and result.
+    Emit `ADMIN_FALLBACK_ATTEMPTED` after any authorized fallback command/API returns
+    and include the block classification, fallback authority, command/API, and actual
+    result. Emit `DARK_MODE_HALTED` instead of fallback when the block is not
+    explicitly covered.
+19. **Dark-mode halt and closure conditions (P-017)**: Emit `DARK_MODE_HALTED` and stop on
+    scope expansion, missing current-HEAD readiness, P-016 topology violations, destructive
+    actions outside the contract, secrets exposure, or any P-005 policy violation. After a
+    successful merge, complete the required Step 6 post-merge closure and emit
+    `DARK_MODE_COMPLETE` listing reviewed HEADs, merge/fallback outcome, closure status,
+    and follow-ups. See policy **P-017** in `.github/policies/workflow-policies.md` for the
+    authoritative dark-mode contract.
 
-### Step 5.5: Dark Factory Execution (P-017, when DARK_MODE_ACTIVE)
+**Dark-mode visibility (workspace note).** When the `agent-intercom` capability pack is
+installed, emit the dark-mode events above (`LOCAL_REVIEW_READY`,
+`DARK_MODE_MERGE_AUTHORIZED`, `ADMIN_FALLBACK_ATTEMPTED`, `DARK_MODE_HALTED`,
+`COPILOT_REVIEW_BLOCK`, `DARK_MODE_COMPLETE`) through its broadcast workflow per the Dark
+Factory Visibility Protocol in `.github/instructions/agent-intercom.instructions.md`.
+**That pack is not installed in this workspace**, so record each event as a self-contained
+entry in the local session output and in the PR readiness / merge summary instead — scope,
+authority, gate state, reviewed HEAD, and risk must be legible without the chat transcript.
+Note the degraded remote visibility once per dark run.
 
-When the Orchestrator activated dark factory mode (`DARK_MODE_ACTIVE`) for a
-declared bounded scope, Ship executes the PR lifecycle autonomously but under the
-full safety envelope — dark mode is not a waiver of P-001, P-009, P-014, or P-016.
-
-1. **Local review readiness is authoritative.** Emit `LOCAL_REVIEW_READY` with the
-   reviewed `headRefOid`, P0/P1 counts, and any follow-up IDs. Do not merge with
-   unresolved P0/P1 local findings; `READY_WITH_FOLLOWUPS` requires explicit
-   follow-up item IDs or residual-risk notes.
-2. **Merge authorization.** The activation record satisfies the P-014 operator
-   approval signal only when the PR is in scope, `merge_approval_pre_authorized`
-   is true, the §1.9 readiness gate passed for the current `headRefOid`, required
-   checks are green or non-applicable, and P-009 + P-016 checks pass. Record
-   `DARK_MODE_MERGE_AUTHORIZED` before merging.
-3. **Admin fallback.** Follow the §1.9.6 / pr-lifecycle Step 5d state machine.
-   Record `ADMIN_FALLBACK_ATTEMPTED` with the block classification and result.
-   Admin fallback is forbidden for failed/pending checks, stale readiness,
-   unresolved P0/P1 findings, squash/rebase merge strategy, secrets risk, or
-   scope mismatch.
-4. **Halt conditions.** Emit `DARK_MODE_HALTED` and stop on scope expansion,
-   missing current-HEAD readiness, P-016 topology violations, destructive actions
-   outside the contract, secrets exposure, or any P-005 policy violation.
-5. **Closure.** Complete required post-merge closure and emit `DARK_MODE_COMPLETE`
-   listing reviewed HEADs, merge/fallback outcome, closure status, and follow-ups.
-
-See policy **P-017** in `.github/policies/workflow-policies.md` and the
-Dark Factory Visibility Protocol in `.github/instructions/agent-intercom.instructions.md`.
+**Fail-closed approval (workspace note).** Missing intercom never implies approval. Any step
+that would otherwise route through an intercom approval flow falls back to the local
+strict-safety operator-approval path in
+`.github/instructions/strict-safety.instructions.md`. Destructive actions and
+`ActionRisk: high` steps require an explicit local operator approval signal; if that signal
+is absent or ambiguous, emit `DARK_MODE_HALTED` and stop rather than proceeding.
 
 ### Step 6: Post-Merge Closure (mandatory after user-approved merge)
 
@@ -1046,8 +1183,14 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    `git push -u origin post-merge/{feature_slug}`
    Then invoke the **pr-lifecycle** skill for the closure PR. The closure PR title
    should be: `chore: post-merge closure for {feature_id} — {feature_title}`.
+   The closure PR is **not exempt** from the pre-merge gates: run the Step 5 item 7b
+   **P-014 local review readiness gate** (local review of the closure diff at its current
+   HEAD, with the `## Local Review Readiness` block in the PR body) and the Step 5 item 7c
+   **P-018 Copilot-review completion gate** against the closure PR exactly as for the
+   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10.
 5. **Await operator approval** for the closure PR before merge, just like the feature PR.
-   Never merge closure work automatically.
+   Never merge closure work automatically. P-014 approval for the feature PR does **not**
+   carry over to the closure PR — the operator must approve each merge individually.
 
 When the `agent-intercom` capability pack is installed, broadcast
 `[SHIP] Created post-merge closure branch: post-merge/{feature_slug}`.
@@ -1058,6 +1201,10 @@ work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
 1. **Close the shipment** (when `Shipments group related work items into a single release unit. Each shipment tracks its items through queued -> active -> done -> shipped lifecycle.` is true):
+   a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
+       this workspace, before the pre-archive reconciliation gate below, run
+       `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
+       proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
@@ -1125,11 +1272,11 @@ branch-per-release-unit principle.
    * When no backlog tool is installed, append each follow-up to `.backlogit/queue/.stash.md` using the format: `- [{YYYY-MM-DD}] **Follow-up**: {summary} — Source: {closure_artifact_path}`.
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Stashed {count} follow-up item(s) from post-merge closure: {summary_list}` listing each item's title.
 7. **Source artifact cleanup** (backlogit only): When the `backlogit` capability pack is installed, retire the source artifacts that directly fed the shipped scope instead of heuristically searching for "stale" backlog items.
-   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_stash_id`. If present, call `backlogit_stash_remove` with the stash ID only. If the stash entry is already removed, skip and log it.
+   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_stash_id`. If present, call `backlogit_stash_archive` with the stash ID only (preferred over the deprecated `backlogit_stash_remove` — archiving preserves traceability). If the stash entry is already archived, skip and log it.
    * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_deliberation_id`. If present, verify the deliberation artifact exists via `backlogit_get_item`. If it exists and is not already archived, call `backlogit_archive_item`. If it is already archived or not found, skip and log it.
    * After processing the full shipped scope, record the archived and skipped source artifact IDs in the closure artifact's `Source artifact cleanup` section so the closure report remains the traceable system of record.
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`.
-8. **Mandatory**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence.
+8. **Mandatory (P-020)**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence. Per **P-020**, the *invocation* is guaranteed at every post-merge closure while the skill's own threshold-gated candidate selection is unchanged; record the resulting compaction status in the operational-closure artifact. Skipping the invocation is a P-020 violation (closure incomplete); a compact-context run that *fails* is non-blocking — record `compaction: degraded` and continue closure.
 9. **Backlog index resync** (backlogit only): After all archival, source-artifact mutations, and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
    - On success: log `CLOSURE_INDEX_SYNC_OK`. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Backlog index resynced after closure`.
    - On failure: log `CLOSURE_INDEX_SYNC_WARN`. When the `agent-intercom` capability pack is installed, broadcast `[WARN] Closure index sync failed — backlogit index may not reflect archived items. Run \`backlogit sync\` manually.` Otherwise write the warning to session output only. Proceed — this is a degraded completion, not a halt.
@@ -1168,17 +1315,64 @@ for — the task-level counters.
 
 ### Escalation Protocol — Consecutive Task Failures
 
-Upon 3 consecutive task failures:
+Upon 3 consecutive task failures, follow the auto-escalation directive
+below (P-013.6, `escalation-protocol.instructions.md` when installed)
+before falling back to the operator-halt checkpoint:
 
-1. Write a checkpoint to `docs/memory/` capturing:
-   * Task IDs that failed
-   * Root causes for each failure
-   * Attempts made to resolve
-   * Current branch state
-2. Prompt the operator:
-   `3 consecutive task failures. Session state preserved at docs/memory/. Please review failure patterns and advise.`
-3. Halt and await operator guidance. Do not attempt further tasks without
-   operator direction.
+1. **Compile the escalation payload** per the escalation-payload contract
+   (threshold-kind + count = `consecutive_task_failures` / 3, failure
+   summary, last-N action/observation refs, artifact refs, telemetry-
+   evidence pointers, resumption checkpoint ref).
+2. **Resolve the escalation route**: `gpt-5.4` / `openai` /
+   `high`, resolving this workspace's currently-effective escalation route
+   per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
+   defined in `escalation-protocol.instructions.md` (F02FD596). This
+   resolution always reads the freshly session-start-reloaded config
+   (never a value cached earlier in a long session or a route resolved by
+   a prior session) — see the Orchestrator's Session-Start Dynamic Reload
+   (E8B5B3C5/H6/H7) section.
+   A stale escalation directive surviving a reload is a defect.
+   **Session-Start Dynamic Reload (H6) — self-contained
+   for direct invocation**: Ship supports being invoked directly without an
+   installed Orchestrator (see the Fallback path above). When invoked this
+   way, Ship independently applies the same fail-closed reload contract at
+   its own session start rather than relying on an Orchestrator that may
+   not be present: re-read `.autoharness/config.yaml` fresh at the start of
+   the session, validate it against schema before resolving any route, and
+   HALT to the operator on invalid, missing, or schema-failing config —
+   Ship MUST NOT continue on a stale/baked route carried over from this
+   file's frontmatter or a prior session's resolved value, and MUST NOT
+   invent a last-known-good fallback. Falls back per field to
+   `claude-opus-4.8` / `anthropic` / `high` (this workspace's
+   `config.model_routing.tier3`) when no override for a field is declared
+   at any tier. This is the config-resolved successor to ad hoc "suggest a
+   frontier-tier model" prose — the route is now declared, not improvised.
+3. **Same-route guard**: if the resolved escalation tuple equals this
+   agent's own role route tuple (P-013.5), treat this as
+   `ESCALATION_DEGRADED` (same-route no-op) per the canonical definition in
+   `escalation-protocol.instructions.md`.
+4. **Hand off and halt**: when the route is not degraded, record it in the
+   compiled payload's `resolved_escalation_route` field, hand that payload to
+   engram for analysis, and halt. The
+   agent MUST NOT re-execute the failing operation after its circuit is open.
+   The handoff is for asynchronous or operator review, not a fourth attempt.
+5. **`ESCALATION_DEGRADED` fallback / existing operator-halt path** (route
+   unavailable, engram unavailable, or same-route no-op):
+   a. Write a checkpoint to `docs/memory/` capturing:
+      * Task IDs that failed
+      * Root causes for each failure
+      * Attempts made to resolve
+      * Current branch state
+   b. Prompt the operator:
+      `3 consecutive task failures. Session state preserved at docs/memory/. Please review failure patterns and advise.`
+   c. Halt and await operator guidance. Do not attempt further tasks
+      without operator direction, and do not treat the handoff above as
+      authorizing another execution attempt.
+
+This is a **reasoning escalation only** — it never self-authorizes a
+shipment claim, merge, or any operation this agent's Role Boundary does not
+already permit (P-001/P-009/P-014/P-017/P-020 preserved). Dark-mode-safe:
+this directive does not alter dark-factory approval semantics.
 
 ## Remote Operator Integration (agent-intercom)
 
@@ -1215,30 +1409,44 @@ Memory, learnings capture, and documentation hygiene are built-in workflow steps
 2. If a relevant memory file exists, restore context: completed items, branch context, PR status, and prior build decisions.
 3. When the `backlogit` capability pack is installed and the registry advertises checkpoint recovery operations, run the recovery state machine below before shipment validation.
 
-### Session-start recovery protocol
+### Crash-Resumption / Startup Recovery Protocol (fail-closed, owner-exclusive)
 
-When checkpoint recovery operations are available through the installed backlog registry:
+When checkpoint recovery operations are available through the installed backlog registry,
+Ship applies this fail-closed lifecycle to its OWN (`agent: ship`) checkpoints before
+shipment validation. This is the owner-agent half of the crash-resumption contract whose
+routing is defined in the Orchestrator agent's Crash-Resumption Protocol step, and
+whose bounded prune-on-restore behavior is defined in the backlogit-pack overlay
+instruction's Checkpoint-Recovery / Prune-on-Restore Protocol section. Ship never resolves,
+restores, resumes, or prunes a `stage`-owned checkpoint — cross-role handling of any kind
+is prohibited (P-001 role separation).
 
-**SESSION_START**
-1. Call `backlogit_list_checkpoints` with `consumer_id: "ship"`, `status: "active"`, and `max_age_hours: 168`.
-2. If no active checkpoints are returned, continue with a fresh start.
-3. If active checkpoints exist, present checkpoint summaries to the operator: phase, shipment or feature context, tasks completed, resume hint, and validation status.
+**ZERO-CANDIDATE NORMAL STARTUP**
+1. Call `backlogit_list_checkpoints` with `consumer_id: "ship"` and NO `status` or `agent` filter (enumerate ALL checkpoint summaries). A `status`/`agent` filter applied at the API call is unsafe for this fail-closed scan: a parse-failure or schema-invalid checkpoint record is commonly returned as a quarantined summary with an empty `agent`/`status`, and such filters would silently exclude it — letting Ship incorrectly report zero candidates and begin fresh work while an unresolved malformed checkpoint exists.
+2. **Fail closed on validation/quarantine anomalies FIRST**: inspect every enumerated summary for a validation error, quarantine flag, or missing/malformed required field, regardless of its (possibly empty) `agent`/`status` value. If ANY such anomaly is present, FAIL CLOSED to operator handoff immediately — surface the anomaly, do not continue to normal shipment validation, and do not proceed to the zero-candidate check below. This check runs on the full enumeration, never on a pre-filtered subset.
+3. Only after step 2 finds no anomalies, partition the valid records to entries whose `agent` field is exactly `ship` AND `status` is `active` (Ship's own active candidates only; no age bound — an unresolved active checkpoint remains a candidate regardless of age, since age alone can never prove a prior session dead). Stale-checkpoint cleanup is a separate, explicit hygiene operation and never a filter on candidate enumeration here.
+4. If NO active `ship`-owned checkpoint exists among the valid records, there is nothing to recover. Continue directly with normal shipment validation. This is EXPLICITLY NOT a failure and NOT an operator handoff — it is the expected steady state on most session starts.
 
-**RECOVERY_DECISION**
-1. Surface quarantined checkpoints (entries with validation errors) as warnings instead of silently skipping them.
-2. Ask whether to resume from a specific checkpoint or start fresh.
-3. If the operator chooses resume, load the selected checkpoint with `backlogit_get_checkpoint`.
-4. If the operator chooses fresh, resolve stale checkpoints with `backlogit_resolve_checkpoint` and continue to shipment validation.
+**EXPLICIT OPERATOR SELECTION (only when one or more `ship`-owned candidates exist)**
+1. Never auto-pick, even when only one candidate is returned. Present the full list of `ship`-owned active checkpoints (filename, phase, shipment/feature context, tasks completed, `resume_hint`, and validation status) to the operator, including quarantined entries (validation errors) surfaced as warnings rather than silently skipped.
+2. REQUIRE the operator to EXPLICITLY SELECT a SINGLE checkpoint by filename. A non-unique or ambiguous selection among these existing candidates FAILS CLOSED to operator handoff — no restore, no resume, no prune, no resolve.
 
-**RESUME_FROM_CHECKPOINT**
-1. If `backlogit_get_checkpoint` returns an error or invalid payload, warn and fall back to a fresh start.
-2. Restore the recorded phase, shipment or feature context, task IDs, branch state, and next-step intent from the selected checkpoint.
-3. Resolve all other still-active checkpoints from prior sessions with `backlogit_resolve_checkpoint`.
-4. Resume from the recorded phase instead of restarting execution from scratch.
+**OWNER VALIDATION**
+1. Validate the selected checkpoint's CheckpointV1 `agent` field. It MUST be exactly `ship` (backlogit schema: `agent` is `required,oneof=ship stage`). A missing, empty, or non-`ship` value FAILS CLOSED to operator handoff.
+2. A checkpoint whose `agent` is `stage` is never selectable here — that checkpoint belongs to the Stage agent's own recovery protocol, routed there by the Orchestrator, never handled directly by Ship.
 
-**FRESH_START**
-1. Resolve any active checkpoints left over from prior sessions with `backlogit_resolve_checkpoint`.
-2. Continue with normal shipment validation.
+**OWNER-EXCLUSIVE, OPERATOR-CONFIRMED RESTORE (no automatic resume)**
+1. After a valid unique selection and ownership match, present the checkpoint's `resume_hint` and recorded state to the operator and REQUIRE EXPLICIT OPERATOR CONFIRMATION before any restore or prune. There is no automatic resume under any condition, and no dead-session auto-recovery — checkpoint schema V1 exposes no heartbeat/session-lock/lease (only `created_at`/`updated_at`), so age alone can never prove a prior session dead.
+2. Only on explicit operator confirmation, load the selected checkpoint with `backlogit_get_checkpoint` and restore the recorded phase, shipment or feature context, task IDs, branch state, and next-step intent.
+3. Apply bounded prune-on-restore per the backlogit-pack overlay instruction's Checkpoint-Recovery / Prune-on-Restore Protocol (read-select-summarize; never prune the active cursor, the unresolved-checkpoint pointer, or gate verdicts). If engram is unreachable while attempting this, FAIL CLOSED to operator handoff — no prune, no resume.
+4. Resume from the recorded phase instead of restarting execution from scratch. Single-active preserved: pick up the same single-active cursor; no parallel resume, no new worktree (P-001/P-016).
+
+**OWNER-SCOPED RESOLUTION (only after confirmed successful resume)**
+1. `backlogit_resolve_checkpoint` is invoked ONLY AFTER Ship confirms a successful resume of the selected checkpoint — never before, never on ambiguous or torn state.
+2. Resolve ONLY the single explicitly operator-selected, ownership-matched (`ship`-owned) checkpoint. NEVER perform a bulk or broad resolution sweep of other active checkpoints, and NEVER resolve a `stage`-owned checkpoint (cross-role resolution is prohibited in addition to cross-role restore/resume/prune).
+
+**FAIL CLOSED — NO FRESH-START FALLBACK**
+1. An invalid, ambiguous, torn, malformed, or unreadable checkpoint read FAILS CLOSED to operator handoff. Do NOT silently discard an invalid/ambiguous checkpoint and start a fresh session — the prior behavior of falling back to a fresh start on an invalid or errored read is removed.
+2. This fail-closed path applies among existing candidates only; the zero-candidate case in the ZERO-CANDIDATE NORMAL STARTUP block above is the no-recovery-needed continuation, not a failure.
 
 ### Hook event consumption
 
@@ -1321,7 +1529,13 @@ from the recorded next step rather than restarting the pipeline.
 
 This agent operates at **Tier 2 (Standard)** — orchestration, coordination, and quality verification.
 
-**Escalation**: When 3 consecutive task failures occur, escalate to operator: present the failures with context, request guidance on whether to retry with a different approach, skip the task, or halt the session. If the environment supports model selection, suggest retrying the failing task with a frontier-tier model.
+**Escalation**: When 3 consecutive task failures occur, follow the
+**Escalation Protocol — Consecutive Task Failures** above (P-013.6): compile
+the escalation payload, resolve the escalation route, hand off for analysis,
+and halt when not `ESCALATION_DEGRADED`. If that flow degrades, present the
+failures with context and halt for operator guidance. This paragraph does not
+independently improvise a model-selection suggestion or authorize another
+execution attempt — the single flow above is authoritative.
 
 ## Subagent Depth
 

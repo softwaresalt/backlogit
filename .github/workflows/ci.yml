@@ -199,3 +199,31 @@ jobs:
           node-version: "22"
       - name: Run markdownlint (P-008 MD001/MD025/MD041, repo-wide)
         run: make md-lint
+
+  # Pipeline-topology CI backstop (Gate C, P-001/P-016/P-019). Always runs; it is
+  # deliberately NOT gated on the `changes` path filter, because docs/backlog-only
+  # commits are the ones most likely to touch `.backlogit/` topology state.
+  #
+  # Required-vs-advisory is an operator toggle, not a re-render: leaving the
+  # PIPELINE_TOPOLOGY_GATE_REQUIRED repository variable unset keeps this job
+  # advisory (non-blocking); setting it to 'true' flips it to blocking.
+  topology-check:
+    name: pipeline-topology (ambient)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install autoharness
+        run: pip install autoharness
+      - name: Run CI topology-check entrypoint
+        run: bash scripts/ci-topology-check.sh

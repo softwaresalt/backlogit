@@ -1,14 +1,15 @@
 ---
-description: "Adversarial-review workflow rules for multi-model dispatch, consensus-weighted findings, and remediation queue assembly"
+description: "Adversarial-review workflow rules for multi-model dispatch, alternate model provider routing, post-remediation re-review, consensus-weighted findings, and remediation queue assembly"
 applyTo: '**'
 ---
 
 # Adversarial Review Instructions
 
-Use these rules when the workspace enabled the `adversarial-review`
+Use these rules when the workspace has enabled the `adversarial-review`
 capability pack. This pack provides multi-model parallel review for higher
 review confidence on security-sensitive, compliance-critical, or large-scale
-code changes.
+code changes. It also supports a first-class Anchor Reviewer route and alternate model providers
+(e.g., Gemini) so reviewer diversity is not limited to the standard tier routing set.
 
 ## When to Escalate
 
@@ -29,24 +30,86 @@ instances across different model tiers:
 * each reviewer operates independently and does not see other reviewers'
   findings until consensus assembly
 
+## Anchor Reviewer Support
+
+When `openai` and `gpt-5.6-sol` are configured,
+launch an **Anchor Reviewer** as a separately identified reviewer slot before
+standard Tier 1/2/3 assignment. Pass `high` to the
+anchor reviewer when it is non-empty; an empty value means use the model default.
+The default anchor route is OpenAI GPT-5.6 Sol, but generated artifacts stay
+environment-agnostic by using the configured provider and family identifiers
+rather than hard-coding a runtime.
+
+If the anchor route is unavailable, record `TOOL_DEGRADED: anchor-review-model`
+with a declared fallback and continue only when the remaining reviewer pool still
+meets the minimum reviewer count and consensus rules. Never silently drop the
+Anchor Reviewer from the report.
+
+## Alternate Model Provider Support
+
+When `` and `` are configured,
+one reviewer slot (Reviewer-B, the Tier 2 slot by default) is reassigned to
+the alternate provider and family. This allows a Gemini model, a different
+Anthropic family, or any registered provider to participate in the reviewer
+pool without requiring additional reviewer count.
+
+**Escalation path**: If the standard tier routing set produces repeated
+disagreements (no consensus after 3 invocations on the same change), consider
+enabling the alternate provider to break the deadlock with a genuinely
+different perspective.
+
+**Provider failure handling**: If the alternate provider is unreachable or
+returns an error, fall back to the Tier 2 standard model for that reviewer
+slot. Log the fallback. Do not halt the review.
+
+## Post-Remediation Re-Review
+
+After `safe_auto` fixes are applied from the remediation plan, the
+adversarial-review agent re-dispatches the same reviewer pool over the fixed
+files to verify no new issues were introduced. This prevents a targeted fix
+from inadvertently breaking a related invariant.
+
+**Recursion rules**:
+
+* Maximum 2 re-review cycles per invocation.
+* Re-review scope is limited to files modified by `safe_auto` fixes only —
+  not the full original scope.
+* If the cap is reached and findings remain, they are recorded as
+  `post_remediation_residual` in the output report. No further fixes are
+  applied automatically.
+* The recursion cap is a hard limit. The agent MUST NOT recurse more than
+  twice, regardless of the number or severity of residual findings.
+* `post_remediation_review: false` disables the re-review phase entirely for
+  callers that manage their own fix-verify loop.
+
+**Cap reached with residual findings**: When 2 cycles complete and residual
+findings remain, the output report records them as follow-up backlog items
+with `post_remediation_residual: true`. The operator should review these
+before merge.
+
 ## Consensus Assembly
 
 After all reviewers return findings:
 
-* **HIGH confidence** — finding identified by all reviewers (consensus).
+* **HIGH confidence / Consensus section** — finding identified by all reviewers.
   Treat identically to a standard review P0/P1 finding: blocks the gate.
-* **MEDIUM confidence** — finding identified by a majority of reviewers.
-  Requires explicit acknowledgment (fix or defer with rationale).
-* **LOW confidence** — finding identified by a single reviewer only.
-  Preserved as an advisory observation.
+* **MEDIUM confidence / Majority section** — finding identified by a strict
+  majority of reviewers (`agreement_count > reviewers / 2`). Requires explicit
+  acknowledgment (fix or defer with rationale).
+* **MEDIUM confidence / Plurality section** — finding identified by more than one
+  reviewer but not by a strict majority, such as 2 of 4 reviewers. Requires
+  explicit acknowledgment and uses the same action-class rules as other MEDIUM
+  findings.
+* **LOW confidence / Unique section** — finding identified by a single reviewer
+  only. Preserved as an advisory observation.
 
 ## Remediation Queue
 
 Assemble findings into a structured remediation queue ordered by
 `confidence × severity`:
 
-* each entry includes: finding summary, affected file/line, confidence
-  tier, severity (P0–P3), and action class (safe_auto / gated_auto /
+* each entry includes: finding summary, affected file/line, report section,
+  confidence tier, severity (P0–P3), and action class (safe_auto / gated_auto /
   manual / advisory)
 * HIGH-confidence P0/P1 entries are ready for direct backlog creation
 * remediation entries carry enough context to be actionable without
