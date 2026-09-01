@@ -86,8 +86,14 @@ class StrictLoader(yaml.SafeLoader):
 
     def construct_mapping(self, node, deep=False):
         seen = set()
+        merge_seen = False
         for key_node, _value_node in node.value:
             if key_node.tag == MERGE_TAG:
+                if merge_seen:
+                    raise ConstructorError(
+                        'while constructing a mapping', node.start_mark,
+                        "duplicate merge key: '<<'", key_node.start_mark)
+                merge_seen = True
                 continue          # '<<' is not a data key
             key = self.construct_object(key_node, deep=deep)
             if not isinstance(key, collections.abc.Hashable):
@@ -132,10 +138,18 @@ Any duplicate-rejecting loader should be pinned by tests before it is trusted:
 | Duplicate key, nested mapping | raises |
 | `<<` merge key with override | loads; parity with `safe_load` |
 | `<<: [*a, *b]` multi-merge | loads, keys from both |
+| Two authored `<<` keys in one mapping | raises |
 | Recursive anchor (`self: *r`) | loads, self-reference preserved |
 | Duplicate alongside a merge key | raises |
 | Unhashable key | still raises PyYAML's own error |
 | Real target document | loads; parity with `safe_load` |
+
+The two merge-key rows are easy to conflate and pull in opposite directions.
+`<<: [*a, *b]` is a *single* merge key whose value is a sequence — valid, and
+it must still load. Two separate `<<:` entries in the same mapping are a
+duplicate key and must be rejected. A loop that simply skips every merge-tagged
+node satisfies the first case but silently accepts the second, so track whether
+a merge key has already been seen rather than unconditionally continuing.
 
 `ruamel.yaml` in round-trip mode raises `DuplicateKeyError` by default and is a
 drop-in alternative when it is already a dependency — it needs no custom

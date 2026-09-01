@@ -60,20 +60,33 @@ about the `pip index versions` output disclosed that.
 (Invoke-RestMethod 'https://pypi.org/pypi/<package>/json').info.version
 ```
 
-### Forcing a genuinely isolated comparison
+### Isolating package sources and candidate selection
 
 `--index-url` alone is **not** sufficient. It replaces the *primary* index, but
 pip still consults any configured `extra-index-url` or `PIP_EXTRA_INDEX_URL` —
 which is the very class of setting most likely to have produced the misleading
 answer. Two further variables survive `PIP_CONFIG_FILE` neutralization and must
 be cleared explicitly: `PIP_FIND_LINKS` (adds out-of-band link sources) and
-`PIP_NO_INDEX` (suppresses index lookup entirely). Neutralize the config file
-and every environment override:
+`PIP_NO_INDEX` (suppresses index lookup entirely).
+
+Pip exposes essentially every long option as a `PIP_*` environment variable, so
+the relevant settings fall into two distinct classes:
+
+* **Package-source overrides** — where pip looks: `PIP_INDEX_URL`,
+  `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`, `PIP_NO_INDEX`.
+* **Candidate-selection overrides** — which of the found distributions are
+  considered eligible: `PIP_PRE`, `PIP_PYTHON_VERSION`, `PIP_PLATFORM`,
+  `PIP_IMPLEMENTATION`, `PIP_ABI`.
+
+Both classes can change the reported maximum, so clearing only the first class
+answers "which index answered" but not "what did it consider eligible".
+Neutralize the config file and both classes:
 
 ```bash
 # POSIX shells (bash, zsh)
 export PIP_CONFIG_FILE=/dev/null      # make pip ignore all config files
 unset PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_FIND_LINKS PIP_NO_INDEX
+unset PIP_PRE PIP_PYTHON_VERSION PIP_PLATFORM PIP_IMPLEMENTATION PIP_ABI
 
 pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
 ```
@@ -81,9 +94,9 @@ pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
 ```powershell
 # PowerShell (the null device is 'nul' on Windows)
 $env:PIP_CONFIG_FILE = 'nul'          # make pip ignore all config files
-foreach ($v in 'PIP_INDEX_URL','PIP_EXTRA_INDEX_URL','PIP_FIND_LINKS','PIP_NO_INDEX') {
-    Remove-Item "Env:$v" -ErrorAction SilentlyContinue
-}
+$vars = 'PIP_INDEX_URL','PIP_EXTRA_INDEX_URL','PIP_FIND_LINKS','PIP_NO_INDEX',
+        'PIP_PRE','PIP_PYTHON_VERSION','PIP_PLATFORM','PIP_IMPLEMENTATION','PIP_ABI'
+foreach ($v in $vars) { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 
 pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
 ```
@@ -92,9 +105,10 @@ The null-device path differs by platform — `/dev/null` on POSIX, `nul` on
 Windows. For a shell-agnostic value, use `python -c "import os; print(os.devnull)"`.
 
 Setting `PIP_CONFIG_FILE` to the null device makes pip skip global, user, and
-site config files; clearing the four environment variables removes the
-higher-precedence overrides. Only then does `--index-url` describe the complete
-resolver view.
+site config files; clearing the nine environment variables removes the
+higher-precedence overrides in both classes. Scope the conclusion to what was
+actually neutralized: this establishes the package-source and candidate-selection
+view, not a guarantee about every pip behavior.
 
 Run against the same package that produced the bad pin, this returned
 `LATEST: 1.5.0` — the value the proxy feed had been withholding.
@@ -128,8 +142,11 @@ Note also that `gh run list` includes the Copilot reviewer run (job
   which index answered before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
   gates CI. `--index-url` alone does not isolate the comparison — also clear
-  `PIP_CONFIG_FILE`, `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`,
-  and `PIP_NO_INDEX`.
+  `PIP_CONFIG_FILE` and both override classes: the package-source variables
+  (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`, `PIP_NO_INDEX`)
+  and the candidate-selection variables (`PIP_PRE`, `PIP_PYTHON_VERSION`,
+  `PIP_PLATFORM`, `PIP_IMPLEMENTATION`, `PIP_ABI`). Claim only the isolation
+  you actually established.
 * When any job sets `continue-on-error`, verify the *per-job* conclusion rather
   than the workflow run conclusion.
 * An automated reviewer repeating the same version claim is not corroboration —
