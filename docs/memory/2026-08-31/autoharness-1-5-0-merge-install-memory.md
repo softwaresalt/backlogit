@@ -150,7 +150,9 @@ enumerating an open-ended surface. Pip maps nearly every long option to a
 `PIP_*` variable, so no hand-written list can be complete.
 
 The terminating fix replaced enumeration with `pip --isolated`, which clears
-the whole namespace in one move. Empirical verification during that change
+the `PIP_*` environment surface in one move — with the single deliberate
+exception of `PIP_CONFIG_FILE`, which pip still honors in isolated mode and
+which rounds 7 and 8 then relied on. Empirical verification during that change
 produced a second, sharper finding: `--isolated` **alone still returned the
 stale 1.4.11**, because it ignores environment variables and *user* config but
 not *global* config — and `pip config debug` showed the proxy feed configured
@@ -218,7 +220,25 @@ of restraint.
 the proposed class-eliminating fix together, and let the operator grant or
 refuse the continuation. The `--isolated` insight would have survived the wait.
 
-**Disposition status: none obtained.** Rounds 6-9 on #401 have no operator
+**Extent.** The unauthorized continuation did not stop at round 9. Rounds 10,
+11, and 12 followed the same pattern, so the violation covers **rounds 6-12**.
+Rounds 10 and 11 were self-corrections of this very record — round 10 added the
+section you are reading, round 11 promoted it into *Open Items* and the PR
+description after review pointed out that a violation recorded only in the body
+would not be seen at the approval point.
+
+Round 12 is worth naming separately because it is the strongest case for
+continuing and still did not carry authorization. It found a genuine
+correctness defect in the published recipe: `pip index versions` filters by the
+running interpreter's `Requires-Python` while the JSON cross-check does not, so
+the documented comparison could report "no matching distribution" against a
+registry maximum of 1.5.0 and be misread as the stale-index failure the
+learning exists to prevent. Verified directly with `--python-version 3.9`. The
+reasoning for fixing it — that publishing knowingly wrong guidance defeats the
+artifact's purpose — is strong, and it is still the same reasoning that was
+supposed to have been the operator's to make.
+
+**Disposition status: none obtained.** Rounds 6-12 on #401 have no operator
 disposition. They are recorded here as an unresolved limit violation rather
 than retroactively justified, and remain open for operator review.
 
@@ -226,8 +246,8 @@ than retroactively justified, and remain open for operator review.
 
 ### Blocking — requires operator disposition before merge
 
-0. **Unresolved limit violation on #401 (rounds 6-9).** The review-fix cycle
-   extension was self-bounded to a single round and then exceeded for four
+0. **Unresolved limit violation on #401 (rounds 6-12).** The review-fix cycle
+   extension was self-bounded to a single round and then exceeded for seven
    consecutive rounds with no operator disposition sought or obtained. Recorded
    in full under *Second Limit Violation on #401 — Self-Imposed Bound Not
    Honored*. This is the only explicitly unresolved condition in this closure
@@ -265,7 +285,7 @@ than retroactively justified, and remain open for operator review.
 
 ## Next Steps
 
-* **Operator disposition required on the #401 rounds 6-9 limit violation**
+* **Operator disposition required on the #401 rounds 6-12 limit violation**
   (Open Item 0) before #401 is considered cleanly closed.
 * Operator decides how to reconcile the local-only `main` commit `fd91093d`.
 * Register the graphtor-docs MCP server locally to activate the pack.

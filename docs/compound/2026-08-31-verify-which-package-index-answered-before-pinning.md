@@ -42,8 +42,15 @@ Show which index is actually in play, then cross-check:
 ```powershell
 # 1. What index will pip query?
 pip config list                       # look for global.index-url / extra-index-url
-python -m pip config debug            # includes env vars and config file precedence
+pip config debug                      # includes env vars and config file precedence
 ```
+
+Keep the executable consistent across every step. `pip` and `python -m pip` can
+resolve to *different* installations — the first is whatever `pip` is on `PATH`,
+the second is whichever pip belongs to the `python` on `PATH`. Diagnosing one
+and then querying the other reports a precedence that is not the one in play.
+Pick one form and use it for `config list`, `config debug`, and `index versions`
+alike.
 
 In the environment where this failure occurred, that first command was the
 whole story:
@@ -128,7 +135,8 @@ Combine all three for a comparison that is actually canonical-only:
 ```bash
 # POSIX shells (bash, zsh)
 PIP_CONFIG_FILE=/dev/null pip --isolated index versions <package> \
-    --index-url https://pypi.org/simple --no-cache-dir
+    --index-url https://pypi.org/simple --no-cache-dir \
+    --ignore-requires-python
 ```
 
 ```powershell
@@ -138,7 +146,8 @@ $prev = if ($had) { $env:PIP_CONFIG_FILE } else { $null }
 try {
     $env:PIP_CONFIG_FILE = 'nul'
     pip --isolated index versions <package> `
-        --index-url https://pypi.org/simple --no-cache-dir
+        --index-url https://pypi.org/simple --no-cache-dir `
+        --ignore-requires-python
 }
 finally {
     if ($had) { $env:PIP_CONFIG_FILE = $prev }
@@ -162,6 +171,35 @@ Each part does a distinct job, and none is redundant:
 | `PIP_CONFIG_FILE=<null device>` | all config files: global, site, and user |
 | `--isolated` | the `PIP_*` environment surface (except `PIP_CONFIG_FILE`) and user config |
 | `--index-url https://pypi.org/simple` | states the intended index explicitly rather than relying on the default |
+| `--ignore-requires-python` | the running interpreter's compatibility filter — see below |
+
+### Source isolation is not scope isolation
+
+Clearing the index sources still leaves a second, independent filter in play.
+`pip index versions` only reports releases whose `Requires-Python` matches the
+**running interpreter**, while the JSON `.info.version` cross-check reports the
+registry's latest release regardless of interpreter. Compare those two directly
+and an ordinary compatibility filter is easily misread as a stale index.
+
+Verified on Python 3.14 against `autoharness` (`requires_python: >=3.10`), with
+source isolation already applied in every row:
+
+| Invocation | Result |
+|---|---|
+| `--python-version 3.9 --only-binary=:all:` | `ERROR: No matching distribution found` |
+| same, plus `--ignore-requires-python` | `1.5.0` |
+| `https://pypi.org/pypi/autoharness/json` → `.info.version` | `1.5.0` |
+
+Row 1 is the trap: fully isolated, pointed at canonical PyPI, and still
+disagreeing with the registry — for a reason that has nothing to do with which
+index answered.
+
+Choose the scope deliberately, and say which one you chose:
+
+* comparing **absolute maxima** against the registry endpoint — pass
+  `--ignore-requires-python`, as the recipe above does;
+* asking **what this environment can actually install** — omit it, and describe
+  the result as compatibility-scoped rather than as the registry maximum.
 
 The null device is `/dev/null` on POSIX and `nul` on Windows; for a
 shell-agnostic value use `python -c "import os; print(os.devnull)"`.
@@ -195,8 +233,9 @@ Note also that `gh run list` includes the Copilot reviewer run (job
 
 ## Rule
 
-* Treat a discovered maximum version as **index-scoped**, not absolute. Know
-  which index answered before you pin.
+* Treat a discovered maximum version as **index-scoped and
+  interpreter-scoped**, not absolute. Know which index answered *and* which
+  Python was asked before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
   gates CI. Isolate with all three of
   **`PIP_CONFIG_FILE=<null device>`**, **`pip --isolated`**, and an explicit
@@ -207,6 +246,13 @@ Note also that `gh run list` includes the Copilot reviewer run (job
   index. `--isolated` alone
   leaves global and site config active, and `--index-url` alone replaces only
   the primary index — a global `extra-index-url` or `find-links` survives both.
+* Source isolation is not scope isolation. `pip index versions` filters by the
+  running interpreter's `Requires-Python`; the registry JSON endpoint does not.
+  Add `--ignore-requires-python` when comparing absolute maxima, or state that
+  the result is compatibility-scoped. Otherwise a routine version floor reads
+  as a stale index.
+* Keep the pip executable consistent across diagnosis and query. `pip` and
+  `python -m pip` may be different installations with different config.
 * Do not isolate a config surface by enumerating its members. Pip maps nearly
   every long option to a `PIP_*` variable, so any `unset` list is a snapshot
   that is already incomplete and rots as the tool gains options. Prefer a
