@@ -140,9 +140,15 @@ standard Tier 2 route until an operator configures them.
    ready to create in the backlog using `backlogit add --type {{artifact_type}} --title {{title}}`.
 
 7. **Readiness verdict** — `READY`, `READY_WITH_FOLLOWUPS`, or `BLOCKED`, derived
-   from the finding set: any HIGH-confidence P0/P1 finding yields `BLOCKED`;
-   MEDIUM-confidence P0/P1 findings that are acknowledged and deferred yield
-   `READY_WITH_FOLLOWUPS`; otherwise `READY`.
+   from the finding set in this order:
+   * any HIGH-confidence P0/P1 finding yields `BLOCKED`;
+   * any MEDIUM-confidence P0/P1 finding that has **not** been explicitly
+     acknowledged yields `BLOCKED` — the consensus protocol requires every MEDIUM
+     finding to be acknowledged, so an unacknowledged one must never fall through
+     to a ready verdict while a major or critical issue is still open;
+   * MEDIUM-confidence P0/P1 findings that are acknowledged and deferred yield
+     `READY_WITH_FOLLOWUPS`;
+   * otherwise `READY`.
 
 Output file at `docs/closure/{YYYY-MM-DD}-{slug}-adversarial-review.md` when
 `mode: autofix`. When `mode: report-only`, no file is written — items 1–7 are

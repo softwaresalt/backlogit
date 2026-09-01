@@ -197,8 +197,9 @@ artifacts:
   - path: ".github/instructions/graphtor-docs.instructions.md"
     primitive: 6
     template: "templates/instructions/graphtor-docs.instructions.md.tmpl"
-    checksum: "35737e996871fdaf6d8de0e09e8f7a85ae35542274d1968a7a82f41c4702cbef"
+    checksum: "21d199523e8f98c6227b3b062048b95a752f46efebac496bf9e0b70ac48a2227"
     drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Added a reproducible MCP registration snippet (serve --read-only) and documented that the eight read verbs are granted by name in the stage/ship/orchestrator allowlists, so an enabled pack is actually callable instead of silently degrading. Do not auto-revert."
     drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning graphtor-docs to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Do not auto-revert."
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
@@ -207,9 +208,9 @@ artifacts:
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "af877d06af2cc4c508df8f5769a4977c22e2fe241b87f0cf1b96802c9c763354"
+    checksum: "13c865e0da2e3ec95adea0eabd8f0a720e9c1320a6719187f4b0a6212cf4e531"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation."
+    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
@@ -359,15 +360,21 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "3394a1bdc2f12cfe42234eabbad42fdcfbad67c323e13a42f52254e0a6cb18cd"
+    checksum: "6300556430d3f73326ec4f48d3cb72f90f8650d913862e7e3cc539267df9ed9b"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Granted the eight read-only graphtor verbs by name so the enabled graphtor-docs pack is actually callable, matching the stage and ship allowlists. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "31abc8457cda752412f1c15e4850174fd225256188625dc08fbe8a2f29f061cd"
+    checksum: "12f7a10b541ac079fd0cb4608118eef33497d53c82fa03f09915bff11531afde"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "c8f1c91060cbebbe8f44f90a1e48f56bb2169544d9aac51bf733522ac65c9dbd"
+    checksum: "06294ba193d57582da0284b57cbd79932bcadacf86ecf7f5c3da1330c9d5607b"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -414,9 +421,9 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "aeb4689c700f0b893c6f6f1dcd0e6e99ec931eaa3fcebfa6d6543aefdcd54231"
+    checksum: "7ba550d5d5b76564e3f3d339749de2954fe76ce86a94c6542ac1e1e7554e7f93"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken."
+    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
@@ -973,4 +980,14 @@ tuning_history:
     artifacts:
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/skills/doc-review/SKILL.md"
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-01T00:00:00Z"
+    summary: "Copilot review round 4 on PR #400. graphtor-docs was an enabled pack whose tools were never callable: stage, ship, and orchestrator granted only engram/* while stage and ship mandate search_local_docs, search_semantic, and research_topic, so the pack always degraded. Granted the eight read-only graphtor verbs by name in all three allowlists — enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is reachable from an agent — and documented a reproducible serve --read-only MCP registration path. Retargeted the doc-review gated_auto owner from the absent agent-intercom pack to the local strict-safety decision gate. Closed an adversarial-review readiness hole where an unacknowledged medium-confidence P0/P1 fell through to READY."
+    artifacts:
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/agents/_orchestrator.agent.md"
+      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".github/skills/doc-review/SKILL.md"
+      - ".github/agents/review/adversarial-review.agent.md"
       - ".autoharness/harness-manifest.yaml"

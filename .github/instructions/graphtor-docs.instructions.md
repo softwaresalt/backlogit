@@ -107,6 +107,39 @@ curated corpus is an operator decision made outside the harness.
 
 When the binary is not on PATH, it may be found at `.graphtor/bin/graphtor-docs.exe`.
 
+### Reproducible MCP Registration
+
+Registration is machine-local and deliberately not committed (`.graphtor/` is
+gitignored). To make the read-only tool surface callable, register the server in
+your editor's MCP configuration (`.vscode/mcp.json`, `.mcp.json`, or editor
+settings):
+
+```json
+{
+  "servers": {
+    "graphtor-docs": {
+      "command": "graphtor-docs",
+      "args": ["serve", "--read-only"]
+    }
+  }
+}
+```
+
+Replace `"graphtor-docs"` with `.graphtor/bin/graphtor-docs.exe` when the binary
+is not on PATH. The `--read-only` flag is mandatory — it forces every database to
+ReadOnly posture and is what makes the Workspace Usage Rule enforceable rather
+than merely advisory.
+
+The eight read verbs in the tool surface table above are granted to `_stage`,
+`_ship`, and `_orchestrator` by name in their `tools:` allowlists. They are
+enumerated individually rather than granted as a `graphtor-docs/*` wildcard so
+that no ingestion or index-write verb is ever reachable from an agent, even if
+the server later registers one.
+
+Until this registration exists, the pack is enabled but its tools are not
+callable, and agents will correctly report `GRAPHTOR_UNAVAILABLE` and take the
+Fallback Protocol path.
+
 The local sentence-transformer embedding model used for offline vector search is
 configured via the `GRAPHTOR_EMBED_MODEL_DIR` environment variable, set in the
 workspace-root `.env.local` and defaulting to `.graphtor/models/all-MiniLM-L6-v2`.

@@ -91,7 +91,7 @@ Check arguments for `mode:autofix` or `mode:report-only`.
 | Class | Default owner | Meaning |
 |---|---|---|
 | `safe_auto` | Doc-review skill (autofix mode) | Deterministic local fix |
-| `gated_auto` | agent-intercom approval | Fix changes meaning or structure |
+| `gated_auto` | Operator approval via the local strict-safety decision gate; route through `agent-intercom` only when that pack is installed | Fix changes meaning or structure |
 | `manual` | Backlog follow-up item | Requires human judgment |
 | `advisory` | Informational | Suggestion; no defect |
 
