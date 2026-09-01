@@ -229,11 +229,11 @@ jobs:
         # could change pipeline-topology gate semantics — or break this job —
         # with no change to this repository.
         #
-        # Pinned to 1.4.11, the highest version published to PyPI. Note this is
-        # NOT the 1.5.0 that was merge-installed into this workspace: 1.5.0 is
-        # git-sourced and unpublished, so `==1.5.0` would fail to resolve here.
-        # 1.4.11 is the version this job has actually been running and passing
-        # with. Bump this pin to 1.5.0 once 1.5.0 is published to PyPI.
-        run: pip install 'autoharness==1.4.11'
+        # Keep this pin in step with the version merge-installed into this
+        # workspace (see .autoharness/harness-manifest.yaml). The gate invoked
+        # by scripts/ci-topology-check.sh is `autoharness gate pipeline-topology`,
+        # which does not exist before 1.5.0 — pinning below that floor makes this
+        # job exit 2 with "Unknown gate subcommand".
+        run: pip install 'autoharness==1.5.0'
       - name: Run CI topology-check entrypoint
         run: bash scripts/ci-topology-check.sh
