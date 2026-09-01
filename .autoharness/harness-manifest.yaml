@@ -109,7 +109,7 @@ artifacts:
   - path: ".autoharness/backlog-registry.yaml"
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
-    checksum: "8462d407446993a72febb3e42c03d9269ebffe5e0a4110d473228302aff9f7dd"
+    checksum: "d0d9e5894eb055c597b820aebacd7b53d82527723dcbb42be83b9ad83ec8196f"
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
@@ -129,11 +129,11 @@ artifacts:
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "e6a8bf8c7aa140063a535da898146f5314e5b093c8f391375d66372203099cc9"
+    checksum: "23b206be39c38e0ab68299b48f2f654d6c9fcacb2e29738a6e19015810c5fb95"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "a04f6d5d4db2fe121bf9eb74a989d9021eeff7fb0210ba830a4c2ce99e6fd18b"
+    checksum: "c474ff546aaec9b921990ac07f085310226f9a946260fc06305d5b524e0c8776"
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
@@ -141,15 +141,15 @@ artifacts:
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
-    checksum: "12cff288698ddd5b2365ba5939eae148fe56240cf09af74d470402517a510942"
+    checksum: "0afb7deebfb6aade3807fd7bf00c4aecdc14880a91d197a6d5f1ae501b48799c"
   - path: ".backlogit/config.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "dcfd8ff4992cc647b1286a47ece13b2e7136cafb856a41c3bf795e118e3df9bb"
+    checksum: "e6b0aec7c3d9bb5c8ff3b1bc3c4ff363b9c2e70ecad509e37ba8c88cfcfba801"
   - path: ".backlogit/header-def.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "3d44b2940c577d7d69b15e75f18f72e41f6effdccdc6ab28bee911c75556d1f2"
+    checksum: "92532b37c242d0818c927fa93ce1cbafba6eec2cfd61c6c97d2755aea8826192"
   - path: ".backlogit/templates/deliberation.md"
     primitive: 1
     template: "workspace deliberation template"
@@ -169,7 +169,7 @@ artifacts:
   - path: ".github/skills/compound-refresh/SKILL.md"
     primitive: 1
     template: "templates/skills/compound-refresh/SKILL.md.tmpl"
-    checksum: "99f849184442886817ffd58f0060428e62c510fb516c85e546b6cfbfd4f28e11"
+    checksum: "a1dc2e56b83991dcbbbeb88ae4f53c581d2536664253b2c4da29d80dca5839ca"
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
@@ -223,11 +223,11 @@ artifacts:
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
-    checksum: "92f9ab1fd3de3a5e2967e9aa9c4dea2f49c58589c892df04c47c892be3a0a563"
+    checksum: "bb17bed11ef3555f034262b2913eb6e3858cba0cab825f01089c453cfdbd9808"
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
-    checksum: "4b5b4423eef36132a30108880409010fb25d1d3b2bbb5869eaa706955604b578"
+    checksum: "7c8949c34afeeb55c48b0cb4e33290328dd51c7e386f7e84ac2ed46e87b6131f"
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
@@ -247,7 +247,7 @@ artifacts:
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "3900e9d814a29f44837c67d461119c39afc96fdd9dc6f4efdbc0d0460bcdbe3c"
+    checksum: "a2bc60e95e61e3db64e6d90db825276895edd000207d4e046b4d83dc5e980e31"
   - path: "scripts/release_lock.sh"
     primitive: 5
     template: "concurrency pack script"
@@ -259,7 +259,7 @@ artifacts:
   - path: "scripts/search.sh"
     primitive: 4
     template: "skill-search pack script"
-    checksum: "43b464100063496fa1965e3e312c127d22aeb0c0ec9209906972a4ade465d430"
+    checksum: "3d97a8e4acc2d9bb173297e8496a93935b54963a115d59161c4051663dc666f5"
   - path: ".github/instructions/context-efficiency.instructions.md"
     primitive: 1
     template: "templates/instructions/context-efficiency.instructions.md.tmpl"
@@ -311,7 +311,7 @@ artifacts:
   - path: ".github/skills/security-audit/SKILL.md"
     primitive: 5
     template: "templates/skills/security-audit/SKILL.md.tmpl"
-    checksum: "555e6aa9c066b2d42581f85df44df55f3be0796e79022203043b906009c18c34"
+    checksum: "6f98865408143b8e1142c81082eff3cf33a735b43eb543c1ede2ed61882b9a66"
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
@@ -335,11 +335,11 @@ artifacts:
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
-    checksum: "ad4523e1930f311c99d199b6e456a233342e066ea318f7410c3e11e4e0504498"
+    checksum: "da985aac01f84889fa21a8a9aff91886ad9b0b7a2d86cabb6c11a195abeb0271"
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "0a0ea35f4e0bd6f4db4378eb0d5e9a13a9c52ee21231ce4e33c45aafd4cc960c"
+    checksum: "99fca57813ad09a681074bf33385b0243eab2342feb9e30ef599ae7b57249407"
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
