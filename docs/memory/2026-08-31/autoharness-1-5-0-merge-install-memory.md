@@ -140,9 +140,27 @@ the P-021 C3 violation.
 branches, extending the limit and fixing was selected over accepting residual
 risk, because both findings were verified correct, documentation-only, and
 carried no implementation risk — remediating strictly dominates accepting.
-The fix supplies separate POSIX and PowerShell isolation blocks and clears all
-four overriding environment variables (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`,
-`PIP_FIND_LINKS`, `PIP_NO_INDEX`).
+
+**The extension then surfaced a better answer than the original fix.** Rounds 5
+and 6 each raised one more `PIP_*` environment variable missing from the
+isolation list (`PIP_FIND_LINKS`/`PIP_NO_INDEX`, then the candidate-selection
+set, then `PIP_IGNORE_REQUIRES_PYTHON`). Three rounds of adding one variable at
+a time exposed the real defect: the guidance was enumerating an open-ended
+surface. Pip maps nearly every long option to a `PIP_*` variable, so no
+hand-written list can be complete.
+
+The terminating fix replaced enumeration with `pip --isolated`, which clears
+the whole namespace in one move. Empirical verification during that change
+produced a second, sharper finding: `--isolated` **alone still returned the
+stale 1.4.11**, because it ignores environment variables and *user* config but
+not *global* config — and `pip config debug` showed the proxy feed configured
+at global scope. Only `--isolated` combined with an explicit
+`--index-url https://pypi.org/simple` returned 1.5.0, matching the canonical
+registry. Both flags are required and they do different jobs.
+
+Had the disposition been "accept residual risk", the document would have
+shipped with an incomplete list *and* without the `--isolated` insight that
+makes the list unnecessary.
 
 **Why this entry matters.** The section immediately above records the cap being
 crossed *without* an escalation checkpoint. This section records the same cap

@@ -60,58 +60,65 @@ about the `pip index versions` output disclosed that.
 (Invoke-RestMethod 'https://pypi.org/pypi/<package>/json').info.version
 ```
 
-### Isolating package sources and candidate selection
+### Isolating the comparison: stop enumerating, use `--isolated`
 
 `--index-url` alone is **not** sufficient. It replaces the *primary* index, but
-pip still consults any configured `extra-index-url` or `PIP_EXTRA_INDEX_URL` —
-which is the very class of setting most likely to have produced the misleading
-answer. Two further variables survive `PIP_CONFIG_FILE` neutralization and must
-be cleared explicitly: `PIP_FIND_LINKS` (adds out-of-band link sources) and
-`PIP_NO_INDEX` (suppresses index lookup entirely).
+pip still consults `extra-index-url`, `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`,
+`PIP_NO_INDEX`, and more.
 
-Pip exposes essentially every long option as a `PIP_*` environment variable, so
-the relevant settings fall into two distinct classes:
+The tempting fix is to `unset` the offending variables. **Do not take that
+path.** Pip exposes essentially every long option as a `PIP_<LONG_OPTION>`
+environment variable, and `pip index versions` alone honors `--pre`,
+`--all-releases`, `--only-final`, `--python-version`, `--platform`,
+`--implementation`, `--abi`, `--ignore-requires-python`, `--no-binary`,
+`--only-binary`, `--prefer-binary`, `--uploaded-prior-to`, and others. Any
+hand-written list is a snapshot of an open-ended surface: each variable you add
+still leaves the next one unhandled, and the list silently rots as pip gains
+options.
 
-* **Package-source overrides** — where pip looks: `PIP_INDEX_URL`,
-  `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`, `PIP_NO_INDEX`.
-* **Candidate-selection overrides** — which of the found distributions are
-  considered eligible: `PIP_PRE`, `PIP_PYTHON_VERSION`, `PIP_PLATFORM`,
-  `PIP_IMPLEMENTATION`, `PIP_ABI`.
-
-Both classes can change the reported maximum, so clearing only the first class
-answers "which index answered" but not "what did it consider eligible".
-Neutralize the config file and both classes:
+Clear the *namespace*, not the members. Pip ships a first-class flag for
+exactly this:
 
 ```bash
-# POSIX shells (bash, zsh)
-export PIP_CONFIG_FILE=/dev/null      # make pip ignore all config files
-unset PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_FIND_LINKS PIP_NO_INDEX
-unset PIP_PRE PIP_PYTHON_VERSION PIP_PLATFORM PIP_IMPLEMENTATION PIP_ABI
-
-pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
+pip --isolated index versions <package> \
+    --index-url https://pypi.org/simple --no-cache-dir
 ```
 
-```powershell
-# PowerShell (the null device is 'nul' on Windows)
-$env:PIP_CONFIG_FILE = 'nul'          # make pip ignore all config files
-$vars = 'PIP_INDEX_URL','PIP_EXTRA_INDEX_URL','PIP_FIND_LINKS','PIP_NO_INDEX',
-        'PIP_PRE','PIP_PYTHON_VERSION','PIP_PLATFORM','PIP_IMPLEMENTATION','PIP_ABI'
-foreach ($v in $vars) { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
+`--isolated` runs pip "ignoring environment variables and user configuration",
+which neutralizes the entire `PIP_*` surface in one move — no enumeration, no
+shell-specific `unset` loop, and identical syntax on POSIX and PowerShell.
 
-pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
+### `--isolated` alone is still not enough
+
+Verified empirically, and this is the part that is easy to get wrong:
+
+| Invocation | Reported max |
+|---|---|
+| `pip index versions autoharness` | 1.4.11 |
+| `pip --isolated index versions autoharness` | **1.4.11** |
+| `pip --isolated index versions autoharness --index-url https://pypi.org/simple` | **1.5.0** |
+| `https://pypi.org/pypi/autoharness/json` → `.info.version` | 1.5.0 |
+
+`--isolated` ignores environment variables and **user** configuration — but not
+**global** or **site** configuration. On this machine `pip config debug` located
+the proxy in the global scope:
+
+```text
+global:
+    global.index-url: https://packagefeedproxy.microsoft.io/pypi/simple/
+user:
+  C:\Users\<user>\pip\pip.ini, exists: False
 ```
 
-The null-device path differs by platform — `/dev/null` on POSIX, `nul` on
-Windows. For a shell-agnostic value, use `python -c "import os; print(os.devnull)"`.
+So `--isolated` stripped the environment and still returned the stale 1.4.11.
+Only adding an explicit `--index-url` — which outranks the surviving global
+config — produced 1.5.0, matching the canonical registry.
 
-Setting `PIP_CONFIG_FILE` to the null device makes pip skip global, user, and
-site config files; clearing the nine environment variables removes the
-higher-precedence overrides in both classes. Scope the conclusion to what was
-actually neutralized: this establishes the package-source and candidate-selection
-view, not a guarantee about every pip behavior.
-
-Run against the same package that produced the bad pin, this returned
-`LATEST: 1.5.0` — the value the proxy feed had been withholding.
+**Both flags are required, and they do different jobs:** `--isolated` removes
+the open-ended environment and user-config surface; explicit `--index-url`
+overrides the global/site config that `--isolated` leaves standing. Use
+`pip config debug` to see which scope actually holds a setting rather than
+assuming `--isolated` covered it.
 
 ## Why It Bites
 
@@ -141,12 +148,15 @@ Note also that `gh run list` includes the Copilot reviewer run (job
 * Treat a discovered maximum version as **index-scoped**, not absolute. Know
   which index answered before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
-  gates CI. `--index-url` alone does not isolate the comparison — also clear
-  `PIP_CONFIG_FILE` and both override classes: the package-source variables
-  (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`, `PIP_NO_INDEX`)
-  and the candidate-selection variables (`PIP_PRE`, `PIP_PYTHON_VERSION`,
-  `PIP_PLATFORM`, `PIP_IMPLEMENTATION`, `PIP_ABI`). Claim only the isolation
-  you actually established.
+  gates CI. Isolate with **`pip --isolated ... --index-url https://pypi.org/simple`** —
+  both parts are required. `--isolated` clears the open-ended `PIP_*` and
+  user-config surface; explicit `--index-url` overrides the global/site config
+  that `--isolated` leaves in place.
+* Do not isolate a config surface by enumerating its members. Pip maps nearly
+  every long option to a `PIP_*` variable, so any `unset` list is a snapshot
+  that is already incomplete and rots as the tool gains options. Prefer a
+  namespace-clearing switch; where none exists, say plainly which subset was
+  neutralized rather than implying the whole surface was.
 * When any job sets `continue-on-error`, verify the *per-job* conclusion rather
   than the workflow run conclusion.
 * An automated reviewer repeating the same version claim is not corroboration —
