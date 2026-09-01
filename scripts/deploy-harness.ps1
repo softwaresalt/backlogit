@@ -88,6 +88,10 @@ $WorkspaceRoot = (Get-Location).Path
 $PythonBin = "python"
 $AutoharnessHomeDefault = "$HOME/.autoharness"
 $PackRegistryRelPath = "templates/packs/capability-pack-registry.yaml"
+# Minimum autoharness version this deployment script and its generated
+# artifacts require. Bumped whenever the script depends on a gate, schema, or
+# template that older releases lack.
+$AutoharnessMinVersion = [version]"1.5.0"
 
 function Write-Phase([string]$Name) { Write-Host "== $Name ==" -ForegroundColor Cyan }
 function Write-Ok([string]$Msg) { Write-Host "  [OK]   $Msg" -ForegroundColor Green }
@@ -132,6 +136,42 @@ function Resolve-AutoharnessHome {
     }
     if (Test-Path -LiteralPath $AutoharnessHomeDefault) { return $AutoharnessHomeDefault }
     return $null
+}
+
+function Get-ResolvedVersion([string]$HomePath) {
+    # Return the version of the autoharness install at $HomePath, or $null when
+    # it cannot be determined.
+    $raw = $null
+    if (Get-Command autoharness -ErrorAction SilentlyContinue) {
+        $raw = (& autoharness version 2>$null | Select-Object -First 1)
+        if ($raw) { $raw = ($raw -split '\s+')[-1] }
+    }
+    if (-not $raw -and $HomePath) {
+        $versionFile = Join-Path $HomePath "VERSION"
+        if (Test-Path $versionFile) { $raw = (Get-Content $versionFile -TotalCount 1) }
+    }
+    if (-not $raw) { return $null }
+    $m = [regex]::Match($raw.Trim(), '\d+(\.\d+)*')
+    if (-not $m.Success) { return $null }
+    try { return [version]$m.Value } catch { return $null }
+}
+
+function Test-HomeVersion([string]$HomePath) {
+    # Gate: refuse to hand off to an autoharness older than the minimum this
+    # script targets. Reusing a pre-existing home must not silently downgrade
+    # the installer behind the generated artifacts.
+    $v = Get-ResolvedVersion $HomePath
+    if (-not $v) {
+        Write-Warn "Could not determine the autoharness version at $HomePath; expected >= $AutoharnessMinVersion. Proceeding unverified."
+        return $true
+    }
+    if ($v -lt $AutoharnessMinVersion) {
+        Write-Fail "autoharness $v at $HomePath is older than the required $AutoharnessMinVersion."
+        Write-Fail "Upgrade with '$PythonBin -m pip install --upgrade `"autoharness>=$AutoharnessMinVersion`"', or point -Home / AUTOHARNESS_HOME at a newer install."
+        return $false
+    }
+    Write-Ok "autoharness $v satisfies the required >= $AutoharnessMinVersion"
+    return $true
 }
 
 function Get-RegistryPacks([string]$HomePath) {
@@ -305,6 +345,7 @@ function Invoke-Bootstrap {
     $resolved = Resolve-AutoharnessHome
     if ($resolved -and (Test-Path -LiteralPath $resolved)) {
         Write-Ok "autoharness_home found: $resolved (reusing; idempotent skip)"
+        if (-not (Test-HomeVersion $resolved)) { return $null }
         return $resolved
     }
 
@@ -321,7 +362,7 @@ function Invoke-Bootstrap {
     switch ($InstallMethod) {
         "pip" {
             Write-Info "Installing autoharness via pip (global tool)..."
-            & $PythonBin -m pip install --upgrade autoharness
+            & $PythonBin -m pip install --upgrade "autoharness>=$AutoharnessMinVersion"
             if ($LASTEXITCODE -ne 0) { Write-Fail "pip install exited $LASTEXITCODE"; return $null }
         }
         "clone" {
@@ -331,7 +372,11 @@ function Invoke-Bootstrap {
         }
     }
     $resolved = Resolve-AutoharnessHome
-    if ($resolved) { Write-Ok "autoharness_home installed: $resolved"; return $resolved }
+    if ($resolved) {
+        Write-Ok "autoharness_home installed: $resolved"
+        if (-not (Test-HomeVersion $resolved)) { return $null }
+        return $resolved
+    }
     Write-Fail "bootstrap failed: autoharness_home still unresolved after install."
     return $null
 }

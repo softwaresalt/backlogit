@@ -67,6 +67,10 @@ PYTHON_BIN=""
 WORKSPACE_ROOT="$(pwd)"
 AUTOHARNESS_HOME_DEFAULT="$HOME/.autoharness"
 PACK_REGISTRY_REL_PATH="templates/packs/capability-pack-registry.yaml"
+# Minimum autoharness version this deployment script and its generated
+# artifacts require. Bumped whenever the script depends on a gate, schema, or
+# template that older releases lack.
+AUTOHARNESS_MIN_VERSION="1.5.0"
 
 phase()  { printf '== %s ==\n' "$1"; }
 ok()     { printf '  [OK]   %s\n' "$1"; }
@@ -127,6 +131,60 @@ resolve_home() {
 	fi
 	if [[ -d "$AUTOHARNESS_HOME_DEFAULT" ]]; then echo "$AUTOHARNESS_HOME_DEFAULT"; return; fi
 	echo ""
+}
+
+version_lt() {
+	# True when $1 is strictly older than $2, compared as dotted numeric
+	# components. Uses sort -V when available, else a pure-shell field compare.
+	[[ "$1" == "$2" ]] && return 1
+	if printf '%s\n' "$1" "$2" | sort -V >/dev/null 2>&1; then
+		[[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+		return
+	fi
+	local IFS=.
+	local -a a=($1) b=($2)
+	local i
+	for ((i = 0; i < 4; i++)); do
+		local x="${a[i]:-0}" y="${b[i]:-0}"
+		x="${x%%[!0-9]*}"; y="${y%%[!0-9]*}"
+		((10#${x:-0} < 10#${y:-0})) && return 0
+		((10#${x:-0} > 10#${y:-0})) && return 1
+	done
+	return 1
+}
+
+resolved_version() {
+	# Echo the version of the autoharness install at $1, or empty when it
+	# cannot be determined.
+	local home_path="$1" v=""
+	if command -v autoharness >/dev/null 2>&1; then
+		v="$(autoharness version 2>/dev/null | head -n1 | tr -d '\r')"
+		v="${v##* }"
+	fi
+	if [[ -z "$v" && -n "$home_path" && -f "${home_path}/VERSION" ]]; then
+		v="$(head -n1 "${home_path}/VERSION" 2>/dev/null | tr -d '\r')"
+	fi
+	echo "$v"
+}
+
+verify_home_version() {
+	# Gate: refuse to hand off to an autoharness older than the minimum this
+	# script targets. Reusing a pre-existing home must not silently downgrade
+	# the installer behind the generated artifacts.
+	local home_path="$1"
+	local v
+	v="$(resolved_version "$home_path")"
+	if [[ -z "$v" ]]; then
+		warn "Could not determine the autoharness version at ${home_path}; expected >= ${AUTOHARNESS_MIN_VERSION}. Proceeding unverified."
+		return 0
+	fi
+	if version_lt "$v" "$AUTOHARNESS_MIN_VERSION"; then
+		fail "autoharness ${v} at ${home_path} is older than the required ${AUTOHARNESS_MIN_VERSION}."
+		fail "Upgrade with '${PYTHON_BIN:-python} -m pip install --upgrade \"autoharness>=${AUTOHARNESS_MIN_VERSION}\"', or point --home / AUTOHARNESS_HOME at a newer install."
+		return 1
+	fi
+	ok "autoharness ${v} satisfies the required >= ${AUTOHARNESS_MIN_VERSION}"
+	return 0
 }
 
 registry_packs() {
@@ -295,6 +353,7 @@ invoke_bootstrap() {
 	resolved="$(resolve_home)"
 	if [[ -n "$resolved" && -d "$resolved" ]]; then
 		ok "autoharness_home found: $resolved (reusing; idempotent skip)"
+		verify_home_version "$resolved" || return 1
 		RESOLVED_HOME="$resolved"; return 0
 	fi
 
@@ -309,11 +368,15 @@ invoke_bootstrap() {
 	fi
 
 	case "$INSTALL_METHOD" in
-		pip) info "Installing autoharness via pip (global tool)..."; if ! "${PYTHON_BIN:-python}" -m pip install --upgrade autoharness; then fail "pip install failed"; return 1; fi ;;
+		pip) info "Installing autoharness via pip (global tool)..."; if ! "${PYTHON_BIN:-python}" -m pip install --upgrade "autoharness>=${AUTOHARNESS_MIN_VERSION}"; then fail "pip install failed"; return 1; fi ;;
 		clone) info "Cloning autoharness to $AUTOHARNESS_HOME_DEFAULT ..."; if ! git clone https://github.com/softwaresalt/autoharness "$AUTOHARNESS_HOME_DEFAULT"; then fail "git clone failed"; return 1; fi ;;
 	esac
 	resolved="$(resolve_home)"
-	if [[ -n "$resolved" ]]; then ok "autoharness_home installed: $resolved"; RESOLVED_HOME="$resolved"; return 0; fi
+	if [[ -n "$resolved" ]]; then
+		ok "autoharness_home installed: $resolved"
+		verify_home_version "$resolved" || return 1
+		RESOLVED_HOME="$resolved"; return 0
+	fi
 	fail "bootstrap failed: autoharness_home still unresolved after install."
 	return 1
 }

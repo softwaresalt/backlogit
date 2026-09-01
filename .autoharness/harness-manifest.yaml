@@ -472,12 +472,16 @@ artifacts:
   - path: "scripts/deploy-harness.ps1"
     primitive: 6
     template: "templates/scripts/deploy-harness.ps1.tmpl"
-    checksum: "fe3f26d1d6b04ea3437831e4c4272abb5cc52d93e5623e097aeb697de72105c3"
+    checksum: "3b28dc6474c6c855dc0c397d2ef3284c86f2168f0702862d256fefc995c3f338"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Bootstrap reused a pre-existing autoharness_home with no version check and installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these artifacts require. Added AutoharnessMinVersion, Get-ResolvedVersion (via `autoharness version`), and a Test-HomeVersion gate applied to both the reuse path and the post-install path; pip bootstrap now installs autoharness>=<min>. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Rendered with preset=full, register target=copilot-cli, install method=pip."
   - path: "scripts/deploy-harness.sh"
     primitive: 6
     template: "templates/scripts/deploy-harness.sh.tmpl"
-    checksum: "1971b50258dd94e453e1579f6a6db12723ab3f76c5503d11e22c1903ca5db75f"
+    checksum: "de7e303d01f1a9fe79933f8f2f86ac45c68ef066f56522d7114a18e8811c5a82"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Bootstrap reused a pre-existing autoharness_home with no version check and installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these artifacts require. Added AUTOHARNESS_MIN_VERSION, version_lt / resolved_version (via `autoharness version`), and a verify_home_version gate applied to both the reuse path and the post-install path; pip bootstrap now installs autoharness>=<min>. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Passes bash -n."
   - path: "start.sh"
     primitive: 6
@@ -1001,3 +1005,9 @@ tuning_history:
       - ".github/agents/review/correctness-reviewer.agent.md"
       - ".github/agents/review/maintainability-reviewer.agent.md"
       - ".github/skills/doc-review/SKILL.md"
+  - at: "2026-09-01T05:00:00Z"
+    summary: "Copilot review round 6 on PR #400. deploy-harness bootstrap reused a pre-existing autoharness_home without any version check and pip-installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these generated artifacts require. Added a minimum-version constant, a version resolver built on the `autoharness version` subcommand, and a gate applied to BOTH the reuse path and the post-install path in each script; pip bootstrap now requests autoharness>=<min>. The bash comparator uses sort -V with a pure-shell numeric-field fallback, verified to order 1.10.0 above 1.5.0 rather than lexically. Verified: bash -n clean, PowerShell AST parse clean, and the gate exercised in both directions against the live 1.5.0 install. Note the reviewer's premise that PyPI's newest is 1.4.11 is stale — 1.5.0 is published — but the missing version verification was real and is what this fix addresses."
+    artifacts:
+      - "scripts/deploy-harness.sh"
+      - "scripts/deploy-harness.ps1"
+      - ".autoharness/harness-manifest.yaml"
